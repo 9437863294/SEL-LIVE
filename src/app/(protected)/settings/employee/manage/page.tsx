@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import type { Employee, Department } from '@/lib/types';
+import type { Employee, Department, EmployeePosition } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -48,11 +48,15 @@ const initialNewEmployeeState = {
   gender: '',
 };
 
+type EnrichedEmployee = Employee & {
+  positions?: Record<string, string>;
+};
+
 export default function ManageEmployeePage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employees, setEmployees] = useState<EnrichedEmployee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -92,13 +96,29 @@ export default function ManageEmployeePage() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [employeesSnap, deptsSnap] = await Promise.all([
+      const [employeesSnap, deptsSnap, positionsSnap] = await Promise.all([
         getDocs(collection(db, 'employees')),
         getDocs(collection(db, 'departments')),
+        getDocs(collection(db, 'employeePositions')),
       ]);
 
       const employeesData: Employee[] = employeesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
-      setEmployees(employeesData);
+      const positionsData = positionsSnap.docs.map(doc => doc.data() as EmployeePosition);
+      
+      const positionsMap = new Map<string, Record<string, string>>();
+      positionsData.forEach(pos => {
+          const posRecord: Record<string, string> = {};
+          pos.categoryList.forEach(cat => {
+              posRecord[cat.category] = cat.value;
+          });
+          positionsMap.set(pos.employeeId, posRecord);
+      });
+
+      const enrichedEmployees: EnrichedEmployee[] = employeesData.map(emp => ({
+          ...emp,
+          positions: positionsMap.get(emp.employeeNo || emp.employeeId),
+      }));
+      setEmployees(enrichedEmployees);
 
       const deptsData: Department[] = deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
       setDepartments(deptsData);
@@ -113,6 +133,16 @@ export default function ManageEmployeePage() {
     }
     setIsLoading(false);
   };
+
+  const dynamicColumns = useMemo(() => {
+    const columns = new Set<string>();
+    employees.forEach(emp => {
+      if (emp.positions) {
+        Object.keys(emp.positions).forEach(key => columns.add(key));
+      }
+    });
+    return Array.from(columns).sort();
+  }, [employees]);
 
 
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
@@ -401,6 +431,7 @@ export default function ManageEmployeePage() {
                   <TableHead>Name</TableHead>
                   <TableHead>Date of Join</TableHead>
                   <TableHead>Status</TableHead>
+                  {dynamicColumns.map(col => <TableHead key={col}>{col}</TableHead>)}
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -408,16 +439,7 @@ export default function ManageEmployeePage() {
                 {isLoading ? (
                   Array.from({ length: 10 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell><Skeleton className="h-5 w-5" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-32" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                      <TableCell className="text-right space-x-2">
-                         <Skeleton className="h-8 w-16 inline-block" />
-                         <Skeleton className="h-8 w-16 inline-block" />
-                      </TableCell>
+                      <TableCell colSpan={7 + dynamicColumns.length}><Skeleton className="h-6 w-full" /></TableCell>
                     </TableRow>
                   ))
                 ) : filteredEmployees.length > 0 ? (
@@ -436,6 +458,7 @@ export default function ManageEmployeePage() {
                       <TableCell className="font-medium">{emp.name}</TableCell>
                       <TableCell>{emp.dateOfJoin}</TableCell>
                       <TableCell>{emp.status}</TableCell>
+                      {dynamicColumns.map(col => <TableCell key={col}>{emp.positions?.[col] || '-'}</TableCell>)}
                       <TableCell className="text-right space-x-2">
                         <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)} disabled={!canEdit}>Edit</Button>
                         <Button variant="destructive" size="sm" onClick={() => handleDeleteEmployee(emp.id)} disabled={!canDelete}><Trash2 className="h-4 w-4" /></Button>
@@ -444,7 +467,7 @@ export default function ManageEmployeePage() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center h-24">
+                    <TableCell colSpan={7 + dynamicColumns.length} className="text-center h-24">
                       No employees found.
                     </TableCell>
                   </TableRow>
@@ -502,5 +525,3 @@ export default function ManageEmployeePage() {
     </div>
   );
 }
-
-    
