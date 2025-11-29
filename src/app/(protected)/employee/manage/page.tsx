@@ -311,7 +311,7 @@ export default function ManageEmployeePage() {
     return (
       <div className="w-full max-w-4xl mx-auto px-4">
         <div className="mb-6 flex items-center gap-4">
-          <Link href="/settings/employee">
+          <Link href="/employee">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-6 w-6" />
             </Button>
@@ -337,7 +337,7 @@ export default function ManageEmployeePage() {
     <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/settings/employee">
+          <Link href="/employee">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-6 w-6" />
             </Button>
@@ -409,9 +409,7 @@ export default function ManageEmployeePage() {
             </div>
             <DialogFooter>
               <DialogClose asChild>
-                <Button variant="outline" onClick={resetAddDialog}>
-                  Cancel
-                </Button>
+                <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
               </DialogClose>
               <Button onClick={handleAddEmployee}>Add Employee</Button>
             </DialogFooter>
@@ -473,7 +471,7 @@ export default function ManageEmployeePage() {
         <CardContent className="p-0">
           <ScrollArea className="h-[calc(100vh-20rem)] w-full">
             <div className="relative">
-              <Table className="min-w-full" style={{ tableLayout: 'auto' }}>
+              <Table style={{ tableLayout: 'auto' }}>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="w-[50px]">
@@ -677,5 +675,7 @@ export default function ManageEmployeePage() {
     </div>
   );
 }
+
+    
 
     

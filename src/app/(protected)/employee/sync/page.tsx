@@ -56,7 +56,7 @@ export default function SyncEmployeePage() {
     return (
         <div className="w-full max-w-4xl mx-auto">
             <div className="mb-6 flex items-center gap-4">
-              <Link href="/settings/employee">
+              <Link href="/employee">
                 <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
               </Link>
               <h1 className="text-2xl font-bold">Sync & Import from GreytHR</h1>
@@ -78,7 +78,7 @@ export default function SyncEmployeePage() {
     <div className="w-full max-w-5xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/settings/employee">
+          <Link href="/employee">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-6 w-6" />
             </Button>
@@ -106,3 +106,5 @@ export default function SyncEmployeePage() {
     </div>
   );
 }
+
+    

@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -171,7 +170,7 @@ export default function EmployeePositionDetailsPage() {
     return (
         <div className="w-full max-w-4xl mx-auto">
             <div className="mb-6 flex items-center gap-4">
-              <Link href="/settings/employee">
+              <Link href="/employee">
                 <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
               </Link>
               <h1 className="text-2xl font-bold">All Employee Position Details</h1>
@@ -193,7 +192,7 @@ export default function EmployeePositionDetailsPage() {
     <div className="w-full max-w-6xl mx-auto">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-            <Link href="/settings/employee">
+            <Link href="/employee">
             <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
             </Button>
@@ -324,3 +323,5 @@ export default function EmployeePositionDetailsPage() {
     </div>
   );
 }
+
+    

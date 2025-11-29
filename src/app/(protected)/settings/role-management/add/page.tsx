@@ -335,6 +335,23 @@ export default function AddRolePage() {
                                                                           const grantedInNestedGroup = newRole.permissions?.[nestedFullKey] || [];
                                                                           const isAllInNestedSelected = nestedPerms.length > 0 && grantedInNestedGroup.length === nestedPerms.length;
                                                                           
+                                                                          // Special case for 'View' with an empty array
+                                                                          if (nestedPerms.length === 0) {
+                                                                            return (
+                                                                              <div key={nestedFullKey} className="p-2 border-t mt-2 first:mt-0 first:border-t-0">
+                                                                                <div className="flex items-center space-x-2">
+                                                                                  <Checkbox
+                                                                                    id={`new-${nestedFullKey}-View`}
+                                                                                    checked={grantedInNestedGroup.includes('View')}
+                                                                                    onCheckedChange={(checked) => handlePermissionChange(nestedFullKey, 'View', !!checked)}
+                                                                                    disabled={!isViewModulePermission}
+                                                                                  />
+                                                                                  <Label htmlFor={`new-${nestedFullKey}-View`} className="text-sm font-normal">{nestedKey}</Label>
+                                                                                </div>
+                                                                              </div>
+                                                                            );
+                                                                          }
+                                                                          
                                                                           return (
                                                                               <div key={nestedFullKey} className="p-2 border-t mt-2 first:mt-0 first:border-t-0">
                                                                                   <div className="flex justify-between items-center mb-2">
@@ -388,3 +405,5 @@ export default function AddRolePage() {
     );
 }
 
+
+    
