@@ -38,7 +38,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
+import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
@@ -51,6 +51,8 @@ type WorkOrder = {
   workOrderNo: string;
   subcontractorId: string;
   subcontractorName?: string;
+  totalAmount?: number;
+  items: WorkOrderItem[];
 };
 
 /** Utilities **/
@@ -78,7 +80,7 @@ const nanoid = () => {
 };
 
 /** UI types (client-side enriched) **/
-type EnrichedSubItem = SubItem & {
+type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
   id: string;
   billedQty: string;
   totalAmount: string;
@@ -89,7 +91,7 @@ type EnrichedSubItem = SubItem & {
   availableQty: number;
 };
 
-type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'executedQty' | 'subItems' | 'orderQty'> & {
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'subItems' | 'jmcItemId'> & {
   id: string;
   isBreakdown: boolean;
   orderQty: number;
@@ -99,10 +101,10 @@ type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'e
   billedQty: string;
   totalAmount: string;
   rate: string;
-  executedQty: string;
   subItems: EnrichedSubItem[];
   boqItemId?: string;
   boqSlNo?: string;
+  jmcItemId: string; // Ensure this is mandatory
 };
 
 type AdvanceDeductionItem = {
@@ -355,7 +357,7 @@ export default function CreateBillPage() {
         billedQty: '',
         totalAmount: '',
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
-        executedQty: String(woItem.orderQty || 0),
+        executedQty: '',
         subItems: (woItem.subItems || []).map(si => {
           const qtyPerSet = toNumber((si as any).quantity);
           const subItemAvailable = Math.max(0, availableForBilling * qtyPerSet);
@@ -369,9 +371,9 @@ export default function CreateBillPage() {
             jmcCertifiedQty: 0,
             alreadyBilledQty: 0,
             availableQty: subItemAvailable,
-          } as EnrichedSubItem;
+          };
         }),
-      } as EnrichedBillItem;
+      };
     });
 
     setItems(prev => [...prev, ...newBillItems]);
@@ -546,18 +548,17 @@ export default function CreateBillPage() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
   };
 
-  // alreadyAddedItems for selector expects WorkOrderItem[] (numbers for rate etc.)
   const alreadyAddedWorkOrderItems = useMemo<WorkOrderItem[]>(() => {
     return items.map(it => ({
-      id: it.jmcItemId || it.id,
-      boqItemId: (it as any).boqItemId || '',
-      description: it.description || '',
-      unit: it.unit || '',
-      orderQty: toNumber(it.orderQty),
+      id: it.jmcItemId,
+      boqItemId: it.boqItemId || '',
+      description: it.description,
+      unit: it.unit,
+      orderQty: it.orderQty,
       rate: toNumber(it.rate),
       totalAmount: toNumber(it.totalAmount),
-      boqSlNo: it.boqSlNo || '',
-      subItems: (it.subItems || []).map(si => ({
+      boqSlNo: it.boqSlNo,
+      subItems: it.subItems.map(si => ({
         id: si.id,
         slNo: si.slNo,
         name: si.name,
@@ -636,7 +637,7 @@ export default function CreateBillPage() {
                 <CardTitle>Bill Items</CardTitle>
                 <CardDescription>Add items from the selected Work Order to this bill.</CardDescription>
               </div>
-              <Button variant="outline" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
+              <Button variant="outline" type="button" onClick={() => setIsSelectorOpen(true)} disabled={!selectedWorkOrder}>
                 <Library className="mr-2 h-4 w-4" /> Add Items from Work Order
               </Button>
             </div>
@@ -817,14 +818,26 @@ export default function CreateBillPage() {
                     <Button variant="outline" size="sm" onClick={addAdvanceField} className="mt-2"><Plus className="mr-2 h-4 w-4" /> Add Advance</Button>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 mt-4">
                     <Label htmlFor="otherDeduction">Other Deductions</Label>
                     <Input id="otherDeduction" type="number" placeholder="Enter other deductions" value={otherDeduction} onChange={(e) => setOtherDeduction(toNumber(e.target.value))} />
                   </div>
                 </div>
               </div>
-
-            </CardContent>
+            </div>
+            
+            <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatCurrency(financials.subtotal)}</span></div>
+                <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">GST</span><span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span></div>
+                <Separator />
+                <div className="flex justify-between font-semibold"><span>Gross Amount</span><span>{formatCurrency(financials.grossAmount)}</span></div>
+                <div className="flex justify-between text-sm text-destructive"><span className="text-muted-foreground">Retention</span><span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span></div>
+                <div className="flex justify-between text-sm text-destructive"><span className="text-muted-foreground">Advance Deductions</span><span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span></div>
+                <div className="flex justify-between text-sm text-destructive"><span className="text-muted-foreground">Other Deductions</span><span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span></div>
+                <Separator />
+                <div className="flex justify-between font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(financials.netPayable)}</span></div>
+            </div>
+          </CardContent>
         </Card>
       </div>
 
