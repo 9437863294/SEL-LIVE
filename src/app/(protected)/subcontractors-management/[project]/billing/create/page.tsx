@@ -91,7 +91,7 @@ type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
   availableQty: number;
 };
 
-type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'subItems' | 'jmcItemId'> & {
+type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'subItems' | 'jmcItemId' | 'executedQty'> & {
   id: string;
   isBreakdown: boolean;
   orderQty: number;
@@ -103,8 +103,8 @@ type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 's
   rate: string;
   subItems: EnrichedSubItem[];
   boqItemId?: string;
-  boqSlNo?: string;
   jmcItemId: string; // Ensure this is mandatory
+  executedQty: number;
 };
 
 type AdvanceDeductionItem = {
@@ -216,8 +216,8 @@ export default function CreateBillPage() {
   }, [allWorkOrders, details.subcontractorId]);
 
   const subcontractorsWithWorkOrders = useMemo(() => {
-    const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
-    return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
+      const subIdsWithWo = new Set(allWorkOrders.map(wo => wo.subcontractorId));
+      return subcontractors.filter(sub => subIdsWithWo.has(sub.id));
   }, [allWorkOrders, subcontractors]);
 
   const handleSubcontractorChange = (subcontractorId: string) => {
@@ -229,7 +229,7 @@ export default function CreateBillPage() {
   useEffect(() => {
     const wo = allWorkOrders.find(w => w.id === details.workOrderId) || null;
     setSelectedWorkOrder(wo);
-    setItems([]);
+    setItems([]); // reset items when WO changes
   }, [details.workOrderId, allWorkOrders]);
 
   const availableProformaBills = useMemo(() => {
@@ -314,8 +314,17 @@ export default function CreateBillPage() {
       const rateNum = toNumber(subItem.rate);
       subItem.totalAmount = !isNaN(rateNum) && subItem.billedQty ? (toNumber(subItem.billedQty) * rateNum).toFixed(2) : '';
     }
-
+    
     mainItem.subItems[subIndex] = subItem;
+
+    const qtyPerSet = toNumber(subItem.quantity);
+    if(qtyPerSet > 0) {
+        const newMainItemQty = Math.floor(toNumber(subItem.billedQty) / qtyPerSet);
+        if(String(newMainItemQty) !== mainItem.billedQty) {
+            mainItem.billedQty = String(newMainItemQty);
+        }
+    }
+    
     mainItem.totalAmount = mainItem.subItems.reduce((s, si) => s + toNumber(si.totalAmount || '0'), 0).toFixed(2);
 
     newItems[itemIndex] = mainItem;
@@ -357,7 +366,7 @@ export default function CreateBillPage() {
         billedQty: '',
         totalAmount: '',
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
-        executedQty: '',
+        executedQty: 0,
         subItems: (woItem.subItems || []).map(si => {
           const qtyPerSet = toNumber((si as any).quantity);
           const subItemAvailable = Math.max(0, availableForBilling * qtyPerSet);
@@ -557,7 +566,7 @@ export default function CreateBillPage() {
       orderQty: it.orderQty,
       rate: toNumber(it.rate),
       totalAmount: toNumber(it.totalAmount),
-      boqSlNo: it.boqSlNo,
+      boqSlNo: it.boqSlNo || '',
       subItems: it.subItems.map(si => ({
         id: si.id,
         slNo: si.slNo,
