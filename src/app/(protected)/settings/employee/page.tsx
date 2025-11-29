@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -14,6 +15,7 @@ import {
   DownloadCloud,
   Briefcase,
   IndianRupee,
+  BarChart3,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -69,6 +71,12 @@ const employeeSettingsItemsBase = [
     text: 'Employee Salary',
     description: 'View and manage employee salary details.',
     href: '/settings/employee/salary'
+  },
+  { 
+    icon: BarChart3,
+    text: 'Reports',
+    description: 'View employee-related reports.',
+    href: '#'
   },
   { 
     icon: FileText, 
