@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
-import type { Employee, SalaryDetail, SalarySyncLog } from '@/lib/types';
+import type { Employee, SalaryDetail, SalarySyncLog, EmployeePosition } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { syncSalary } from '@/ai';
@@ -19,10 +19,14 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+interface EnrichedEmployee extends Employee {
+    positions?: Record<string, string>;
+}
+
 export default function EmployeeSalaryPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const [displayedEmployees, setDisplayedEmployees] = useState<Employee[]>([]);
+  const [displayedEmployees, setDisplayedEmployees] = useState<EnrichedEmployee[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
@@ -53,13 +57,35 @@ export default function EmployeeSalaryPage() {
     }
   }, []);
 
-  const fetchSalariesForMonth = useCallback(async (monthStr: string) => {
+  const fetchSalariesAndPositions = useCallback(async (monthStr: string) => {
     setIsLoading(true);
     try {
         const salaryQuery = query(collection(db, 'employees'), where('salaryMonth', '==', monthStr));
-        const snapshot = await getDocs(salaryQuery);
+        const positionsQuery = query(collection(db, 'employeePositions'));
+
+        const [snapshot, positionsSnap] = await Promise.all([
+          getDocs(salaryQuery),
+          getDocs(positionsQuery)
+        ]);
+        
+        const positionsMap = new Map<string, Record<string, string>>();
+        positionsSnap.docs.forEach(doc => {
+            const pos = doc.data() as EmployeePosition;
+            const posRecord: Record<string, string> = {};
+            pos.categoryList.forEach(cat => {
+                posRecord[cat.category] = cat.value;
+            });
+            positionsMap.set(pos.employeeId, posRecord);
+        });
+
         if(!snapshot.empty) {
-            const employeesFromDb = snapshot.docs.map(doc => doc.data() as Employee);
+            const employeesFromDb = snapshot.docs.map(doc => {
+                const emp = doc.data() as Employee;
+                return {
+                    ...emp,
+                    positions: positionsMap.get(emp.employeeNo || emp.employeeId),
+                };
+            });
             setDisplayedEmployees(employeesFromDb);
         } else {
             setDisplayedEmployees([]);
@@ -75,9 +101,9 @@ export default function EmployeeSalaryPage() {
   useEffect(() => {
     if (!isAuthLoading && canView) {
         const monthStr = format(new Date(selectedYear, selectedMonth), 'yyyy-MM');
-        fetchSalariesForMonth(monthStr);
+        fetchSalariesAndPositions(monthStr);
     }
-  }, [isAuthLoading, canView, selectedYear, selectedMonth, fetchSalariesForMonth]);
+  }, [isAuthLoading, canView, selectedYear, selectedMonth, fetchSalariesAndPositions]);
 
   const handleSync = async () => {
     if (!canSync) {
@@ -91,12 +117,30 @@ export default function EmployeeSalaryPage() {
         const monthString = format(firstDayOfMonth, 'yyyy-MM-dd');
         
         const result = await syncSalary({ month: monthString });
-        if (result.success) {
+        if (result.success && result.employees) {
             toast({
                 title: 'Sync Successful',
                 description: result.message,
             });
-            setDisplayedEmployees(result.employees || []);
+
+            const positionsQuery = query(collection(db, 'employeePositions'));
+            const positionsSnap = await getDocs(positionsQuery);
+            const positionsMap = new Map<string, Record<string, string>>();
+            positionsSnap.docs.forEach(doc => {
+                const pos = doc.data() as EmployeePosition;
+                const posRecord: Record<string, string> = {};
+                pos.categoryList.forEach(cat => {
+                    posRecord[cat.category] = cat.value;
+                });
+                positionsMap.set(pos.employeeId, posRecord);
+            });
+
+            const enrichedEmployees = result.employees.map(emp => ({
+                ...emp,
+                positions: positionsMap.get(emp.employeeId),
+            }));
+
+            setDisplayedEmployees(enrichedEmployees as EnrichedEmployee[]);
             await fetchLastSyncedTime(format(new Date(selectedYear, selectedMonth), 'yyyy-MM'));
         } else {
             throw new Error(result.message);
@@ -148,9 +192,14 @@ export default function EmployeeSalaryPage() {
     if (!term) return displayedEmployees;
 
     return displayedEmployees.filter(emp => {
-        return emp.name.toLowerCase().includes(term) || emp.employeeId.toLowerCase().includes(term);
+        return emp.name.toLowerCase().includes(term) || (emp.employeeNo || emp.employeeId).toLowerCase().includes(term);
     })
   }, [displayedEmployees, searchTerm]);
+
+  const dynamicColumns = useMemo(() => {
+    return ['Project Name', 'Location', 'EMPLOYEE TYPE', 'Designation', 'Department'];
+  }, []);
+
 
   return (
     <div className="w-full">
@@ -213,42 +262,48 @@ export default function EmployeeSalaryPage() {
       <Card>
         <CardContent className="p-0">
           <ScrollArea className="h-[calc(100vh-22rem)] w-full">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                <TableRow>
-                  <TableHead className="w-[120px]">Employee ID</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Gross Salary</TableHead>
-                  <TableHead>TOTAL DEDUCTIONS</TableHead>
-                  <TableHead>Net Salary</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading || isSyncing ? (
-                  Array.from({length: 5}).map((_, i) => (
-                      <TableRow key={i}>
-                          <TableCell colSpan={5}><Skeleton className="h-6 w-full" /></TableCell>
-                      </TableRow>
-                  ))
-                ) : filteredEmployees.length > 0 ? (
-                  filteredEmployees.map(emp => (
-                    <TableRow key={emp.employeeId}>
-                      <TableCell>{emp.employeeId}</TableCell>
-                      <TableCell className="font-medium">{emp.name}</TableCell>
-                      <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
-                      <TableCell>{formatCurrency(getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS'))}</TableCell>
-                      <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
-                    </TableRow>
-                  ))
-                ) : (
+            <div className="min-w-[1200px]">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableCell colSpan={5} className="h-24 text-center">
-                      No salary data to display. Please select a month and sync.
-                    </TableCell>
+                    <TableHead className="w-[120px]">Employee ID</TableHead>
+                    <TableHead>Name</TableHead>
+                    {dynamicColumns.map(col => <TableHead key={col}>{col}</TableHead>)}
+                    <TableHead>Gross Salary</TableHead>
+                    <TableHead>TOTAL DEDUCTIONS</TableHead>
+                    <TableHead>Net Salary</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {isLoading || isSyncing ? (
+                    Array.from({length: 5}).map((_, i) => (
+                        <TableRow key={i}>
+                            <TableCell colSpan={5 + dynamicColumns.length}><Skeleton className="h-6 w-full" /></TableCell>
+                        </TableRow>
+                    ))
+                  ) : filteredEmployees.length > 0 ? (
+                    filteredEmployees.map(emp => (
+                      <TableRow key={emp.employeeId}>
+                        <TableCell>{emp.employeeNo || emp.employeeId}</TableCell>
+                        <TableCell className="font-medium">{emp.name}</TableCell>
+                        {dynamicColumns.map(col => (
+                            <TableCell key={col}>{emp.positions?.[col] || '-'}</TableCell>
+                        ))}
+                        <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
+                        <TableCell>{formatCurrency(getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS'))}</TableCell>
+                        <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5 + dynamicColumns.length} className="h-24 text-center">
+                        No salary data to display. Please select a month and sync.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </ScrollArea>
         </CardContent>
       </Card>
