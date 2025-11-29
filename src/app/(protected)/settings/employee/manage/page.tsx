@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -335,7 +334,7 @@ export default function ManageEmployeePage() {
   }
 
   return (
-    <div className="w-full px-4">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/settings/employee">
@@ -473,8 +472,8 @@ export default function ManageEmployeePage() {
       <Card>
         <CardContent className="p-0">
           <ScrollArea className="h-[calc(100vh-20rem)] w-full">
-            <div className="min-w-[1200px]">
-              <Table className="w-full">
+            <div className="relative">
+              <Table className="min-w-full" style={{ tableLayout: 'auto' }}>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="w-[50px]">
@@ -577,7 +576,7 @@ export default function ManageEmployeePage() {
                 </TableBody>
               </Table>
             </div>
-            <ScrollBar orientation="horizontal" />
+             <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </CardContent>
       </Card>
@@ -678,3 +677,5 @@ export default function ManageEmployeePage() {
     </div>
   );
 }
+
+    
