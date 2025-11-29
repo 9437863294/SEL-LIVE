@@ -503,6 +503,16 @@ export interface WorkOrderItem {
   subItems?: SubItem[];
 }
 
+export interface WorkOrder {
+  id: string;
+  workOrderNo: string;
+  subcontractorId: string;
+  projectId: string;
+  subcontractorName?: string;
+  totalAmount: number;
+  items: WorkOrderItem[];
+}
+
 export interface BillItem {
   jmcItemId: string;
   jmcEntryId: string;

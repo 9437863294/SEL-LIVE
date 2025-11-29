@@ -189,7 +189,7 @@ export default function CreateBillPage() {
 
         const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
-          getDocs(woQuery),
+          getDocs(woSnap),
           getDocs(jmcQuery),
           getDocs(billsQuery),
           getDocs(proformaBillsQuery),
@@ -311,10 +311,10 @@ export default function CreateBillPage() {
     const newItems = [...items];
     const mainItem = newItems[itemIndex];
     if (!mainItem.isBreakdown || !mainItem.subItems) return;
-
+  
     const subItem = mainItem.subItems[subIndex];
     const billedQtyNum = toNumber(value);
-
+  
     if (isNaN(billedQtyNum) || billedQtyNum < 0) {
       subItem.billedQty = '';
     } else if (billedQtyNum > subItem.availableQty) {
@@ -327,37 +327,23 @@ export default function CreateBillPage() {
     } else {
       subItem.billedQty = String(billedQtyNum);
     }
-
+  
     subItem.totalAmount = String(toNumber(subItem.billedQty) * toNumber(subItem.rate));
-
-    // Recalculate main item total from sub-items (amount)
+  
     const subItemsTotalValue = mainItem.subItems.reduce(
       (s, si) => s + toNumber(si.totalAmount || '0'),
       0
     );
     mainItem.totalAmount = String(subItemsTotalValue);
-
-    // === NEW LOGIC: main billedQty based on qty progress, not amount ===
-    let fractionSum = 0;
-    let validSubCount = 0;
-
-    for (const si of mainItem.subItems) {
-      const qtyPerSet = toNumber(si.quantity); // qty in one set (e.g. 5, 6, 5)
-      const billed = toNumber(si.billedQty); // how much user entered
-
-      if (qtyPerSet > 0) {
-        fractionSum += billed / qtyPerSet; // set-equivalent for this subitem
-        validSubCount += 1;
-      }
-    }
-
-    if (validSubCount > 0) {
-      const avgSetsDone = fractionSum / validSubCount; // average across all subitems
-      mainItem.billedQty = avgSetsDone.toFixed(3); // e.g. 0.333, 0.667
+  
+    // Correctly calculate parent billedQty based on sub-item value contribution
+    const parentRate = mainItem.subItems.reduce((sum, si) => sum + (toNumber(si.quantity) * toNumber(si.rate)), 0);
+    if (parentRate > 0) {
+      mainItem.billedQty = (subItemsTotalValue / parentRate).toFixed(3);
     } else {
       mainItem.billedQty = '0';
     }
-
+  
     newItems[itemIndex] = mainItem;
     setItems(newItems);
   };

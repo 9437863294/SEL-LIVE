@@ -1,9 +1,18 @@
-
 'use client';
 
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, ChevronDown, ChevronRight, Component } from 'lucide-react';
+import {
+  ArrowLeft,
+  Save,
+  Loader2,
+  Plus,
+  Trash2,
+  Library,
+  ChevronDown,
+  ChevronRight,
+  Component,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,7 +20,6 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import {
   collection,
-  addDoc,
   getDocs,
   doc,
   query,
@@ -19,8 +27,6 @@ import {
   serverTimestamp,
   getDoc,
   runTransaction,
-  collectionGroup,
-  writeBatch,
 } from 'firebase/firestore';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -36,18 +42,15 @@ import type {
 import { BoqItemSelector } from '@/components/billing-recon/BoqItemSelector';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { logUserActivity } from '@/lib/activity-logger';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BoqMultiSelectDialog } from '@/components/billing-recon/BoqMultiSelectDialog';
 import { Switch } from '@/components/ui/switch';
 import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { CustomAssemblyDialog } from '@/components/subcontractors-management/CustomAssemblyDialog';
 
-
-// Add isBreakdown to UI-level type
+// UI-level WorkOrderItem — extends backend type with UI-only fields
 type WorkOrderItem = Omit<OriginalWorkOrderItem, 'id' | 'subItems'> & {
   id: string;
   isBreakdown: boolean;
@@ -106,13 +109,14 @@ export default function CreateWorkOrderPage() {
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
       const projectData = projectsSnapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() } as Project))
+        .map(d => ({ id: d.id, ...d.data() } as Project))
         .find(p => slugify(p.projectName) === projectSlug);
 
       if (!projectData) {
         toast({ title: 'Project not found', variant: 'destructive' });
         return;
       }
+
       setCurrentProject(projectData);
 
       const subsSnap = await getDocs(
@@ -122,42 +126,41 @@ export default function CreateWorkOrderPage() {
         subsSnap.docs.map(d => ({ id: d.id, ...d.data() } as Subcontractor))
       );
 
-      const boqSnap = await getDocs(
-        collection(db, 'projects', projectData.id, 'boqItems')
-      );
+      const boqSnap = await getDocs(collection(db, 'projects', projectData.id, 'boqItems'));
       setBoqItems(boqSnap.docs.map(d => ({ id: d.id, ...d.data() } as BoqItem)));
     };
+
     fetchData();
   }, [projectSlug, toast]);
 
   useEffect(() => {
     const generatePreviewId = async () => {
-        try {
-            const configRef = doc(db, 'serialNumberConfigs', 'work-order');
-            const configDoc = await getDoc(configRef);
-            if (configDoc.exists()) {
-                const configData = configDoc.data() as SerialNumberConfig;
-                const newIndex = configData.startingIndex;
-                const datePart = configData.format
-                  ? format(
-                      new Date(),
-                      configData.format
-                        .replace(/y/g, 'y')
-                        .replace(/m/g, 'M')
-                        .replace(/d/g, 'd')
-                    )
-                  : '';
-                const formattedIndex = String(newIndex).padStart(4, '0');
-                const requestNo = `${configData.prefix || ''}${datePart}${formattedIndex}${
-                  configData.suffix || ''
-                }`;
-                setPreviewWoNo(requestNo);
-            } else {
-                setPreviewWoNo('Config not found');
-            }
-        } catch (error) {
-            setPreviewWoNo('Error generating ID');
+      try {
+        const configRef = doc(db, 'serialNumberConfigs', 'work-order');
+        const configDoc = await getDoc(configRef);
+        if (configDoc.exists()) {
+          const configData = configDoc.data() as SerialNumberConfig;
+          const newIndex = configData.startingIndex;
+          const datePart = configData.format
+            ? format(
+                new Date(),
+                configData.format
+                  .replace(/y/g, 'y')
+                  .replace(/m/g, 'M')
+                  .replace(/d/g, 'd')
+              )
+            : '';
+          const formattedIndex = String(newIndex).padStart(4, '0');
+          const requestNo = `${configData.prefix || ''}${datePart}${formattedIndex}${
+            configData.suffix || ''
+          }`;
+          setPreviewWoNo(requestNo);
+        } else {
+          setPreviewWoNo('Config not found');
         }
+      } catch (error) {
+        setPreviewWoNo('Error generating ID');
+      }
     };
 
     generatePreviewId();
@@ -173,10 +176,7 @@ export default function CreateWorkOrderPage() {
 
   const handleItemChange = (
     index: number,
-    field: keyof Omit<
-      WorkOrderItem,
-      'id' | 'boqItemId' | 'description' | 'unit' | 'subItems'
-    >,
+    field: keyof Omit<WorkOrderItem, 'id' | 'boqItemId' | 'description' | 'unit' | 'subItems'>,
     value: string | number | boolean
   ) => {
     const newItems = [...items];
@@ -200,7 +200,6 @@ export default function CreateWorkOrderPage() {
         (sum, si) => sum + (si.totalAmount || 0),
         0
       );
-      // For breakdown, main rate is derived from sub-items, multiplied by orderQty
       item.rate = subItemsTotal;
       item.totalAmount = subItemsTotal * (item.orderQty || 0);
     }
@@ -227,7 +226,6 @@ export default function CreateWorkOrderPage() {
 
     subItem.totalAmount = (subItem.quantity || 0) * (subItem.rate || 0);
 
-    // Recalculate main item rate and total from sub-items and main item's multiplier
     const subItemsTotal = mainItem.subItems.reduce(
       (sum, si) => sum + (si.totalAmount || 0),
       0
@@ -250,7 +248,7 @@ export default function CreateWorkOrderPage() {
       newItems[itemIndex].subItems = newItems[itemIndex].subItems.filter(
         si => si.id !== subItemId
       );
-      // Recalculate main item total
+
       const subItemsTotal = newItems[itemIndex].subItems.reduce(
         (sum, si) => sum + (si.totalAmount || 0),
         0
@@ -262,42 +260,46 @@ export default function CreateWorkOrderPage() {
     }
   };
 
-    const addItem = () => {
-      setItems([
-        ...items,
-        {
-          id: nanoid(),
-          boqItemId: '',
-          description: '',
-          unit: '',
-          orderQty: 0,
-          rate: 0,
-          totalAmount: 0,
-          isBreakdown: false,
-          subItems: [],
-          boqSlNo: '',        // ✅ required
-        },
-      ]);
-    };
-  
+  const addItem = () => {
+    setItems(prev => [
+      ...prev,
+      {
+        id: nanoid(),
+        boqItemId: '',
+        description: '',
+        unit: '',
+        orderQty: 0,
+        rate: 0,
+        totalAmount: 0,
+        isBreakdown: false,
+        subItems: [],
+        boqSlNo: '',
+      },
+    ]);
+  };
 
   const getItemDescription = (item: BoqItem | FabricationBomItem): string => {
-    const descriptionKeys = ['Description', 'DESCRIPTION OF ITEMS', 'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)'];
+    const descriptionKeys = [
+      'Description',
+      'DESCRIPTION OF ITEMS',
+      'DESCRIPTION OF ITEMS(SCHEDULE-VIIA-SS) SUPPLY OF FOLLOWING EQUIPMENT & MATERIALS (As per Technical Specification)',
+    ];
     for (const key of descriptionKeys) {
       if ((item as BoqItem)[key]) return String((item as BoqItem)[key]);
     }
     if ((item as FabricationBomItem).section) {
-        return `${(item as FabricationBomItem).section}`;
+      return `${(item as FabricationBomItem).section}`;
     }
-    const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+    const fallbackKey = Object.keys(item).find(k =>
+      k.toLowerCase().includes('description')
+    );
     return fallbackKey ? String((item as BoqItem)[fallbackKey]) : '';
   };
 
   const getSlNo = (item: BoqItem): string => {
     return String(item['Sl No'] || item['SL. No.'] || '');
-}
+  };
 
-  // 🔧 CHANGED: Treat BOQ selection as template only; breakdown is manual
   const handleBoqItemSelect = (index: number, boqItem: BoqItem | null) => {
     if (!boqItem) return;
     const rateKey =
@@ -312,9 +314,8 @@ export default function CreateWorkOrderPage() {
       unit: String(boqItem.UNIT || boqItem.Unit || ''),
       rate: Number((boqItem as any)[rateKey] || 0),
       boqSlNo: String(boqItem['BOQ SL No'] || ''),
-      // do NOT auto-breakdown; let user decide via switch
       isBreakdown: newItems[index].isBreakdown,
-      subItems: newItems[index].subItems, // keep whatever they have (usually [])
+      subItems: newItems[index].subItems,
     };
 
     setItems(newItems);
@@ -347,34 +348,46 @@ export default function CreateWorkOrderPage() {
     }
   };
 
-  const handleAddCustomAssembly = (assembly: { mainItem: Omit<WorkOrderItem, 'id'>, bom: BoqItem[] }) => {
+  // 🔧 FIXED: use OriginalWorkOrderItem here so it matches CustomAssemblyDialog's prop type
+  const handleAddCustomAssembly = (assembly: {
+    mainItem: Omit<OriginalWorkOrderItem, 'id'>;
+    bom: BoqItem[];
+  }) => {
     const newMainItem: WorkOrderItem = {
-        ...assembly.mainItem,
-        id: nanoid(),
-        isBreakdown: true,
-        subItems: assembly.bom.map(boqItem => {
-            const rateKey = Object.keys(boqItem).find(k => k.toLowerCase().includes('rate')) || 'rate';
-            return {
-                id: nanoid(),
-                slNo: String(boqItem['BOQ SL No'] || ''),
-                name: getItemDescription(boqItem),
-                unit: String(boqItem.UNIT || boqItem.Unit || ''),
-                quantity: 0, // This should be defined by the user in a future step, for now it's 1
-                rate: Number((boqItem as any)[rateKey] || 0),
-                totalAmount: Number((boqItem as any)[rateKey] || 0)
-            }
-        })
+      ...assembly.mainItem,
+      id: nanoid(),
+      isBreakdown: true,
+      subItems: assembly.bom.map(boqItem => {
+        const rateKey = Object.keys(boqItem).find(k =>
+          k.toLowerCase().includes('rate')
+        ) || 'rate';
+        const rate = Number((boqItem as any)[rateKey] || 0);
+        return {
+          id: nanoid(),
+          slNo: String(boqItem['BOQ SL No'] || ''),
+          name: getItemDescription(boqItem),
+          unit: String(boqItem.UNIT || boqItem.Unit || ''),
+          quantity: 0, // user can edit later
+          rate,
+          totalAmount: rate * 0,
+        };
+      }),
     };
-    newMainItem.rate = newMainItem.subItems.reduce((sum, si) => sum + si.totalAmount, 0);
-    newMainItem.totalAmount = newMainItem.rate * newMainItem.orderQty;
+
+    // derive rate & total from sub-items
+    newMainItem.rate = newMainItem.subItems.reduce(
+      (sum, si) => sum + (si.totalAmount || 0),
+      0
+    );
+    newMainItem.totalAmount = newMainItem.rate * (newMainItem.orderQty || 0);
 
     const isFirstItemEmpty = items.length === 1 && !items[0].boqItemId;
     if (isFirstItemEmpty) {
-        setItems([newMainItem]);
+      setItems([newMainItem]);
     } else {
-        setItems(prev => [...prev, newMainItem]);
+      setItems(prev => [...prev, newMainItem]);
     }
-};
+  };
 
   const removeItem = (id: string) => {
     setItems(items.filter(item => item.id !== id));
@@ -383,11 +396,8 @@ export default function CreateWorkOrderPage() {
   const toggleRowExpansion = (itemId: string) => {
     setExpandedRows(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(itemId)) {
-        newSet.delete(itemId);
-      } else {
-        newSet.add(itemId);
-      }
+      if (newSet.has(itemId)) newSet.delete(itemId);
+      else newSet.add(itemId);
       return newSet;
     });
   };
@@ -428,8 +438,8 @@ export default function CreateWorkOrderPage() {
         transaction.update(configDocRef, { startingIndex: newIndex + 1 });
 
         const subcontractorName =
-          subcontractors.find(s => s.id === details.subcontractorId)
-            ?.legalName || 'Unknown';
+          subcontractors.find(s => s.id === details.subcontractorId)?.legalName ||
+          'Unknown';
         const totalAmount = items.reduce(
           (sum, item) => sum + (item.totalAmount || 0),
           0
@@ -447,7 +457,7 @@ export default function CreateWorkOrderPage() {
           const { id, isBreakdown, subItems, ...rest } = item;
           return {
             ...rest,
-            id: nanoid(), // generate a new clean id for firestore
+            id: nanoid(),
             totalAmount: item.totalAmount,
             subItems: item.isBreakdown
               ? item.subItems.map(({ id: subId, ...subRest }) => ({
@@ -596,7 +606,7 @@ export default function CreateWorkOrderPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead className="w-12" />
                     <TableHead>BOQ Sl.No</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Unit</TableHead>
@@ -651,10 +661,7 @@ export default function CreateWorkOrderPage() {
                             />
                           </TableCell>
                           <TableCell>
-                            <p
-                              className="line-clamp-2"
-                              title={item.description}
-                            >
+                            <p className="line-clamp-2" title={item.description}>
                               {item.description}
                             </p>
                           </TableCell>
@@ -667,11 +674,7 @@ export default function CreateWorkOrderPage() {
                             <Switch
                               checked={item.isBreakdown}
                               onCheckedChange={checked =>
-                                handleItemChange(
-                                  index,
-                                  'isBreakdown',
-                                  checked
-                                )
+                                handleItemChange(index, 'isBreakdown', checked)
                               }
                             />
                           </TableCell>
@@ -694,11 +697,7 @@ export default function CreateWorkOrderPage() {
                               type="number"
                               value={item.rate}
                               onChange={e =>
-                                handleItemChange(
-                                  index,
-                                  'rate',
-                                  e.target.value
-                                )
+                                handleItemChange(index, 'rate', e.target.value)
                               }
                               className={cn(
                                 'min-w-[120px]',
@@ -741,7 +740,7 @@ export default function CreateWorkOrderPage() {
                                       <TableHead>Qty/Set</TableHead>
                                       <TableHead>Rate</TableHead>
                                       <TableHead>Total Amount</TableHead>
-                                      <TableHead></TableHead>
+                                      <TableHead />
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
@@ -824,7 +823,7 @@ export default function CreateWorkOrderPage() {
                                             value={formatCurrency(
                                               sub.totalAmount
                                             )}
-                                          readOnly
+                                            readOnly
                                             className="bg-background/50"
                                           />
                                         </TableCell>
@@ -871,6 +870,7 @@ export default function CreateWorkOrderPage() {
           </CardContent>
         </Card>
       </div>
+
       <BoqMultiSelectDialog
         isOpen={isBoqMultiSelectOpen}
         onOpenChange={setIsBoqMultiSelectOpen}
@@ -878,6 +878,7 @@ export default function CreateWorkOrderPage() {
         onConfirm={handleAddFromBoq}
         alreadyAddedItems={items as any}
       />
+
       <CustomAssemblyDialog
         isOpen={isCustomAssemblyOpen}
         onOpenChange={setIsCustomAssemblyOpen}
