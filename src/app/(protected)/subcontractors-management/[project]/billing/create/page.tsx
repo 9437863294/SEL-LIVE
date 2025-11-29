@@ -50,8 +50,9 @@ type WorkOrder = {
   id: string;
   workOrderNo: string;
   subcontractorId: string;
+  projectId: string;
   subcontractorName?: string;
-  totalAmount?: number;
+  totalAmount: number;
   items: WorkOrderItem[];
 };
 
@@ -81,30 +82,30 @@ const nanoid = () => {
 
 /** UI types (client-side enriched) **/
 type EnrichedSubItem = Omit<SubItem, 'quantity' | 'rate' | 'totalAmount'> & {
-  id: string;
-  billedQty: string;
-  totalAmount: string;
-  rate: string;
-  quantity: string;
-  jmcCertifiedQty: number;
-  alreadyBilledQty: number;
-  availableQty: number;
+    id: string;
+    billedQty: string;
+    totalAmount: string;
+    rate: string;
+    quantity: string;
+    jmcCertifiedQty: number;
+    alreadyBilledQty: number;
+    availableQty: number;
 };
 
 type EnrichedBillItem = Omit<BillItem, 'rate' | 'totalAmount' | 'billedQty' | 'subItems' | 'jmcItemId' | 'executedQty'> & {
-  id: string;
-  isBreakdown: boolean;
-  orderQty: number;
-  jmcCertifiedQty: number;
-  alreadyBilledQty: number;
-  availableQty: number;
-  billedQty: string;
-  totalAmount: string;
-  rate: string;
-  subItems: EnrichedSubItem[];
-  boqItemId?: string;
-  jmcItemId: string; // Ensure this is mandatory
-  executedQty: number;
+    id: string;
+    isBreakdown: boolean;
+    orderQty: number;
+    jmcCertifiedQty: number;
+    alreadyBilledQty: number;
+    availableQty: number;
+    billedQty: string; // The UI state is a string
+    totalAmount: string;
+    rate: string;
+    subItems: EnrichedSubItem[];
+    boqItemId?: string;
+    jmcItemId: string; // Ensure this is mandatory
+    executedQty: number;
 };
 
 type AdvanceDeductionItem = {
@@ -211,7 +212,7 @@ export default function CreateBillPage() {
   }, [projectSlug, toast]);
 
   const filteredWorkOrders = useMemo(() => {
-    if (!details.subcontractorId) return allWorkOrders;
+    if (!details.subcontractorId) return [];
     return allWorkOrders.filter(wo => wo.subcontractorId === details.subcontractorId);
   }, [allWorkOrders, details.subcontractorId]);
 
@@ -263,7 +264,6 @@ export default function CreateBillPage() {
 
     if (isNaN(billedQtyNum) || billedQtyNum < 0) {
       item.billedQty = '';
-      item.totalAmount = '';
     } else if (billedQtyNum > availableQty) {
       toast({ title: 'Quantity Exceeded', description: `Billed quantity cannot be more than available (${availableQty}).`, variant: 'destructive' });
       item.billedQty = String(availableQty);
@@ -293,12 +293,12 @@ export default function CreateBillPage() {
 
   const handleSubItemChange = (itemIndex: number, subIndex: number, value: string) => {
     const newItems = [...items];
-    const mainItem = { ...newItems[itemIndex] };
+    const mainItem = newItems[itemIndex];
     if (!mainItem.isBreakdown || !mainItem.subItems) return;
-
-    const subItem = { ...mainItem.subItems[subIndex] };
+  
+    const subItem = mainItem.subItems[subIndex];
     const billedQtyNum = toNumber(value);
-
+  
     if (isNaN(billedQtyNum) || billedQtyNum < 0) {
       subItem.billedQty = '';
       subItem.totalAmount = '';
@@ -310,27 +310,28 @@ export default function CreateBillPage() {
       } else {
         subItem.billedQty = String(billedQtyNum);
       }
-
+  
       const rateNum = toNumber(subItem.rate);
-      subItem.totalAmount = !isNaN(rateNum) && subItem.billedQty ? (toNumber(subItem.billedQty) * rateNum).toFixed(2) : '';
+      subItem.totalAmount = !isNaN(rateNum) ? (toNumber(subItem.billedQty) * rateNum).toFixed(2) : '';
     }
     
-    mainItem.subItems[subIndex] = subItem;
-
-    const qtyPerSet = toNumber(subItem.quantity);
-    if(qtyPerSet > 0) {
-        const newMainItemQty = Math.floor(toNumber(subItem.billedQty) / qtyPerSet);
-        if(String(newMainItemQty) !== mainItem.billedQty) {
-            mainItem.billedQty = String(newMainItemQty);
-        }
-    }
+    // Determine the number of complete sets possible from the billed sub-items
+    const setQuantities = mainItem.subItems.map(si => {
+      const qtyPerSet = toNumber(si.quantity);
+      if (qtyPerSet <= 0) return Infinity; // Avoid division by zero
+      return Math.floor(toNumber(si.billedQty) / qtyPerSet);
+    });
     
+    const possibleCompleteSets = Math.min(...setQuantities);
+    mainItem.billedQty = String(possibleCompleteSets);
+  
+    // Recalculate total amount from sub-items, NOT based on parent qty
     mainItem.totalAmount = mainItem.subItems.reduce((s, si) => s + toNumber(si.totalAmount || '0'), 0).toFixed(2);
-
+  
     newItems[itemIndex] = mainItem;
     setItems(newItems);
   };
-
+  
   const handleItemsAdd = (selectedWoItems: WorkOrderItem[]) => {
     const existingJmcIds = new Set(items.map(i => i.jmcItemId));
     const filteredAdd = selectedWoItems.filter(wo => !existingJmcIds.has(wo.id));
@@ -352,33 +353,35 @@ export default function CreateBillPage() {
       return {
         id: nanoid(),
         jmcItemId: woItem.id,
-        jmcEntryId: '',
+        jmcEntryId: '', // These are empty initially
         jmcNo: '',
-        boqItemId: (woItem as any).boqItemId || '',
-        boqSlNo: woItem.boqSlNo || '',
-        description: woItem.description || '',
-        unit: woItem.unit || '',
-        orderQty: toNumber(woItem.orderQty),
-        rate: String((woItem as any).rate || 0),
+        boqItemId: woItem.boqItemId,
+        boqSlNo: woItem.boqSlNo,
+        description: woItem.description,
+        unit: woItem.unit,
+        orderQty: woItem.orderQty,
+        rate: String(woItem.rate),
         jmcCertifiedQty: totalJmcCertifiedForBoqItem,
         alreadyBilledQty: alreadyBilledForWoItem,
         availableQty: availableForBilling,
         billedQty: '',
         totalAmount: '',
         isBreakdown: !!(woItem.subItems && woItem.subItems.length > 0),
-        executedQty: 0,
+        executedQty: availableForBilling,
         subItems: (woItem.subItems || []).map(si => {
-          const qtyPerSet = toNumber((si as any).quantity);
+          const qtyPerSet = toNumber(si.quantity);
+          // Sub-item availability should be based on its own JMC/Bill history if tracked, or derived
+          // For now, let's assume it's derived from the main item's availability
           const subItemAvailable = Math.max(0, availableForBilling * qtyPerSet);
           return {
             ...si,
             id: nanoid(),
             billedQty: '',
             totalAmount: '',
-            rate: String((si as any).rate || 0),
+            rate: String(si.rate),
             quantity: String(qtyPerSet),
             jmcCertifiedQty: 0,
-            alreadyBilledQty: 0,
+            alreadyBilledQty: 0, // This would need a more complex lookup
             availableQty: subItemAvailable,
           };
         }),
@@ -437,8 +440,7 @@ export default function CreateBillPage() {
 
   const addAdvanceField = () => setAdvanceDeductions(prev => [...prev, { id: nanoid(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
   const removeAdvanceField = (id: string) => {
-    if (advanceDeductions.length > 1) setAdvanceDeductions(prev => prev.filter(a => a.id !== id));
-    else setAdvanceDeductions([{ id: nanoid(), reference: '', deductionType: 'amount', deductionValue: 0, amount: 0 }]);
+    if (advanceDeductions.length > 0) setAdvanceDeductions(prev => prev.filter(a => a.id !== id));
   };
 
   const financials = useMemo(() => {
@@ -467,7 +469,7 @@ export default function CreateBillPage() {
       const steps = (workflowSnap.data().steps || []) as WorkflowStep[];
       if (!steps || steps.length === 0) throw new Error('Billing workflow has no steps.');
       const firstStep = steps[0];
-
+      
       const itemsToSave: BillItem[] = items.map(it => ({
         jmcItemId: it.jmcItemId,
         jmcEntryId: it.jmcEntryId,
@@ -477,7 +479,7 @@ export default function CreateBillPage() {
         description: it.description || '',
         unit: it.unit || '',
         rate: toNumber(it.rate),
-        executedQty: toNumber(it.executedQty),
+        executedQty: it.executedQty,
         billedQty: toNumber(it.billedQty),
         totalAmount: toNumber(it.totalAmount),
         subItems: (it.subItems || []).map(si => ({
@@ -506,7 +508,7 @@ export default function CreateBillPage() {
         otherDeduction: financials.otherDeduction,
         advanceDeductions: advanceDeductions
           .filter(adv => adv.reference && adv.amount > 0)
-          .map(adv => ({ id: adv.id || nanoid(), reference: adv.reference, amount: adv.amount, deductionType: adv.deductionType, deductionValue: adv.deductionValue })),
+          .map(adv => ({ id: adv.id, reference: adv.reference, amount: adv.amount, deductionType: adv.deductionType, deductionValue: adv.deductionValue })),
         totalDeductions: financials.totalDeductions,
         netPayable: financials.netPayable,
         totalAmount: financials.netPayable,
@@ -566,7 +568,7 @@ export default function CreateBillPage() {
       orderQty: it.orderQty,
       rate: toNumber(it.rate),
       totalAmount: toNumber(it.totalAmount),
-      boqSlNo: it.boqSlNo || '',
+      boqSlNo: it.boqSlNo,
       subItems: it.subItems.map(si => ({
         id: si.id,
         slNo: si.slNo,
@@ -633,7 +635,7 @@ export default function CreateBillPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="billDate">Bill Date</Label>
-                <Input id="billDate" name="billDate" type="date" value={details.billDate} onChange={handleDetailChange} />
+                <Input id="billDate" name="billDate" type="date" value={details.date} onChange={handleDetailChange} />
               </div>
             </div>
           </CardContent>
