@@ -17,7 +17,7 @@ import {
   LogIn,
   Package,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -37,7 +37,7 @@ interface SettingsCardProps {
 const settingsItemsBase = [
   { icon: Briefcase, text: 'Manage Department', description: 'Add, edit, or remove company departments.', href: '/settings/department', permission: 'View' },
   { icon: Construction, text: 'Manage Project', description: 'Set up and configure project details.', href: '/settings/project', permission: 'View' },
-  { icon: Users, text: 'Employee', description: 'Manage employee data and sync with HR systems.', href: '/settings/employee', permission: 'View' },
+  { icon: Users, text: 'Employee', description: 'Manage employee data and sync with HR systems.', href: '/employee', permission: 'View' },
   { icon: Users, text: 'User Management', description: 'Manage user accounts and their roles.', href: '/settings/user-management', permission: 'View' },
   { icon: ShieldCheck, text: 'Role Management', description: 'Define roles and their specific permissions.', href: '/settings/role-management', permission: 'View' },
   { icon: Hash, text: 'Serial No. Config', description: 'Configure document numbering sequences.', href: '/settings/serial-no-configuration', permission: 'View' },
@@ -89,7 +89,7 @@ export default function SettingsPage() {
     switch(item.href) {
       case '/settings/department': permissionModule = 'Settings.Manage Department'; break;
       case '/settings/project': permissionModule = 'Settings.Manage Project'; break;
-      case '/settings/employee': permissionModule = 'Settings.Employee Management'; break;
+      case '/employee': permissionModule = 'Settings.Employee Management'; break;
       case '/settings/user-management': permissionModule = 'Settings.User Management'; break;
       case '/settings/role-management': permissionModule = 'Settings.Role Management'; break;
       case '/settings/serial-no-configuration': permissionModule = 'Settings.Serial No. Config'; break;
