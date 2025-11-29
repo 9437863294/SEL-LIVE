@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -30,13 +29,21 @@ export default function EmployeeSalaryPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
 
   const currentYear = getYear(new Date());
   const currentMonth = new Date().getMonth();
 
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
+
+  const [filters, setFilters] = useState({
+    searchTerm: '',
+    projectName: 'all',
+    location: 'all',
+    employeeType: 'all',
+    designation: 'all',
+    department: 'all',
+  });
 
   const canView = can('View', 'Settings.Employee Management');
   const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
@@ -187,19 +194,51 @@ export default function EmployeeSalaryPage() {
       }));
   }, []);
 
-  const filteredEmployees = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    if (!term) return displayedEmployees;
-
-    return displayedEmployees.filter(emp => {
-        return emp.name.toLowerCase().includes(term) || (emp.employeeNo || emp.employeeId).toLowerCase().includes(term);
-    })
-  }, [displayedEmployees, searchTerm]);
-
   const dynamicColumns = useMemo(() => {
     return ['Project Name', 'Location', 'EMPLOYEE TYPE', 'Designation', 'Department'];
   }, []);
 
+  const filterOptions = useMemo(() => {
+    const options: Record<string, Set<string>> = {};
+    dynamicColumns.forEach(col => {
+      options[col] = new Set();
+    });
+
+    displayedEmployees.forEach(emp => {
+      dynamicColumns.forEach(col => {
+        if (emp.positions?.[col]) {
+          options[col].add(emp.positions[col]);
+        }
+      });
+    });
+
+    return {
+      'Project Name': Array.from(options['Project Name']).sort(),
+      'Location': Array.from(options['Location']).sort(),
+      'EMPLOYEE TYPE': Array.from(options['EMPLOYEE TYPE']).sort(),
+      'Designation': Array.from(options['Designation']).sort(),
+      'Department': Array.from(options['Department']).sort(),
+    };
+  }, [displayedEmployees, dynamicColumns]);
+
+  const filteredEmployees = useMemo(() => {
+    const term = filters.searchTerm.toLowerCase();
+    
+    return displayedEmployees.filter(emp => {
+        const searchMatch = !term || emp.name.toLowerCase().includes(term) || (emp.employeeNo || emp.employeeId).toLowerCase().includes(term);
+        const projectMatch = filters.projectName === 'all' || emp.positions?.['Project Name'] === filters.projectName;
+        const locationMatch = filters.location === 'all' || emp.positions?.['Location'] === filters.location;
+        const employeeTypeMatch = filters.employeeType === 'all' || emp.positions?.['EMPLOYEE TYPE'] === filters.employeeType;
+        const designationMatch = filters.designation === 'all' || emp.positions?.['Designation'] === filters.designation;
+        const departmentMatch = filters.department === 'all' || emp.positions?.['Department'] === filters.department;
+        
+        return searchMatch && projectMatch && locationMatch && employeeTypeMatch && designationMatch && departmentMatch;
+    })
+  }, [displayedEmployees, filters]);
+
+  const handleFilterChange = (filterName: string, value: string) => {
+    setFilters(prev => ({ ...prev, [filterName]: value }));
+  };
 
   return (
     <div className="w-full">
@@ -243,19 +282,37 @@ export default function EmployeeSalaryPage() {
         </div>
       </div>
        <Card className="mb-4">
-        <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-sm text-muted-foreground">
-            Last synced on: <span className="font-semibold">{lastSynced || 'Never'}</span>
-          </p>
-          <div className="relative w-full sm:w-1/3">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search by Employee ID or Name..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by ID or Name..."
+                value={filters.searchTerm}
+                onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
                 className="pl-9"
               />
-          </div>
+            </div>
+             <Select value={filters.projectName} onValueChange={(v) => handleFilterChange('projectName', v)}>
+              <SelectTrigger><SelectValue placeholder="All Projects"/></SelectTrigger>
+              <SelectContent>
+                  <SelectItem value="all">All Projects</SelectItem>
+                  {filterOptions['Project Name'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+              </SelectContent>
+            </Select>
+             <Select value={filters.department} onValueChange={(v) => handleFilterChange('department', v)}>
+              <SelectTrigger><SelectValue placeholder="All Departments"/></SelectTrigger>
+              <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {filterOptions['Department'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+              </SelectContent>
+            </Select>
+             <Select value={filters.designation} onValueChange={(v) => handleFilterChange('designation', v)}>
+              <SelectTrigger><SelectValue placeholder="All Designations"/></SelectTrigger>
+              <SelectContent>
+                  <SelectItem value="all">All Designations</SelectItem>
+                  {filterOptions['Designation'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+              </SelectContent>
+            </Select>
         </CardContent>
        </Card>
       
