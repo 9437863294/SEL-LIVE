@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -18,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { BoqItem, WorkOrderItem, SubItem } from '@/lib/types';
 import { Loader2, Plus, Search } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 
 interface CustomAssemblyDialogProps {
   isOpen: boolean;
