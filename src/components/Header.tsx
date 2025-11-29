@@ -39,8 +39,8 @@ function ImpersonationBanner() {
     }, []);
 
     const handleSwitchBack = () => {
-        sessionStorage.removeItem('impersonationUserId');
-        sessionStorage.removeItem('originalAdminUser');
+        localStorage.removeItem('impersonationUserId');
+        localStorage.removeItem('originalAdminUser');
         window.location.reload();
     };
     

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -55,7 +56,7 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
   // Check if currently locked out
   useEffect(() => {
     const checkLockout = () => {
-      const storedLockout = sessionStorage.getItem('switchUserLockout');
+      const storedLockout = localStorage.getItem('switchUserLockout');
       if (storedLockout) {
         const lockoutEnd = parseInt(storedLockout, 10);
         if (Date.now() < lockoutEnd) {
@@ -68,11 +69,11 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
             setIsLocked(false);
             setLockoutEndTime(null);
             setFailedAttempts(0);
-            sessionStorage.removeItem('switchUserLockout');
+            localStorage.removeItem('switchUserLockout');
           }, timeRemaining);
         } else {
           // Lockout expired
-          sessionStorage.removeItem('switchUserLockout');
+          localStorage.removeItem('switchUserLockout');
         }
       }
     };
@@ -136,7 +137,7 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
     const lockoutEnd = Date.now() + LOCKOUT_DURATION;
     setIsLocked(true);
     setLockoutEndTime(lockoutEnd);
-    sessionStorage.setItem('switchUserLockout', lockoutEnd.toString());
+    localStorage.setItem('switchUserLockout', lockoutEnd.toString());
 
     toast({
       title: 'Too Many Failed Attempts',
@@ -149,7 +150,7 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
       setIsLocked(false);
       setLockoutEndTime(null);
       setFailedAttempts(0);
-      sessionStorage.removeItem('switchUserLockout');
+      localStorage.removeItem('switchUserLockout');
     }, LOCKOUT_DURATION);
   }, [toast]);
 
@@ -185,8 +186,8 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
       await reauthenticateWithCredential(auth.currentUser, credential);
       
       // If re-authentication is successful, start the impersonation session
-      sessionStorage.setItem('impersonationUserId', selectedUser.id);
-      sessionStorage.setItem('originalAdminUser', JSON.stringify(currentUser));
+      localStorage.setItem('impersonationUserId', selectedUser.id);
+      localStorage.setItem('originalAdminUser', JSON.stringify(currentUser));
       
       toast({
         title: 'Switched User',
@@ -198,7 +199,7 @@ export function SwitchUserDialog({ isOpen, onOpenChange }: SwitchUserDialogProps
       
       // Reset failed attempts on success
       setFailedAttempts(0);
-      sessionStorage.removeItem('switchUserLockout');
+      localStorage.removeItem('switchUserLockout');
       
       // Use reload to ensure all states and contexts are reset correctly
       window.location.reload();

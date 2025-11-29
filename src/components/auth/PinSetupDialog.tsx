@@ -114,7 +114,7 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
     setIsSaving(true);
     setError('');
 
-    const tempPassword = sessionStorage.getItem('tempPassword');
+    const tempPassword = localStorage.getItem('tempPassword');
     const passwordToUse = tempPassword || (savedUser?.password ? atob(savedUser.password) : null);
     
     // We re-verify with password if it's a new pin setup without a temp password
@@ -149,7 +149,7 @@ export function PinSetupDialog({ user, isOpen, onOpenChange, onPinSet }: PinSetu
         }
 
         localStorage.setItem('savedUsers', JSON.stringify(currentSavedUsers));
-        if (tempPassword) sessionStorage.removeItem('tempPassword'); // Clean up temp password
+        if (tempPassword) localStorage.removeItem('tempPassword'); // Clean up temp password
         
         toast({ title: 'PIN Saved!', description: 'You can now use your PIN to sign in on this device.' });
         onPinSet(); // Refresh saved users in AuthProvider

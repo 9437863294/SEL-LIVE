@@ -94,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         await signOut(auth);
         
-        sessionStorage.clear();
+        localStorage.clear();
 
         if (isExpired) {
           toast({
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, handleSignOut]);
 
   const extendSession = useCallback(() => {
-    sessionStorage.setItem('lastActivity', Date.now().toString());
+    localStorage.setItem('lastActivity', Date.now().toString());
     setIsSessionExpired(false);
     resetTimeouts();
   }, [resetTimeouts]);
@@ -196,8 +196,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUsers(allUsers);
 
         // Impersonation
-        const impersonationUserId = sessionStorage.getItem('impersonationUserId');
-        const storedOriginalUser = sessionStorage.getItem('originalAdminUser');
+        const impersonationUserId = localStorage.getItem('impersonationUserId');
+        const storedOriginalUser = localStorage.getItem('originalAdminUser');
 
         let userToLoadId = firebaseUser.uid;
         let impersonating = false;
@@ -210,13 +210,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               setOriginalUser(original);
               impersonating = true;
             } else {
-              sessionStorage.removeItem('impersonationUserId');
-              sessionStorage.removeItem('originalAdminUser');
+              localStorage.removeItem('impersonationUserId');
+              localStorage.removeItem('originalAdminUser');
             }
           } catch (err) {
             console.error('Error parsing original user', err);
-            sessionStorage.removeItem('impersonationUserId');
-            sessionStorage.removeItem('originalAdminUser');
+            localStorage.removeItem('impersonationUserId');
+            localStorage.removeItem('originalAdminUser');
           }
         }
 
@@ -238,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(userData);
 
-        if (!sessionStorage.getItem('lastActivity')) {
+        if (!localStorage.getItem('lastActivity')) {
           extendSession();
         }
 
