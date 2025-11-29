@@ -319,53 +319,62 @@ export default function EmployeeSalaryPage() {
         </div>
       </div>
        <Card className="mb-4">
-        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-            <div className="relative col-span-full sm:col-span-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by ID or Name..."
-                value={filters.searchTerm}
-                onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
-                className="pl-9"
-              />
+        <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                    placeholder="Search by ID or Name..."
+                    value={filters.searchTerm}
+                    onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
+                    className="pl-9"
+                />
+                </div>
+                <Select value={filters.projectName} onValueChange={(v) => handleFilterChange('projectName', v)}>
+                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Projects"/></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {filterOptions['Project Name'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+                </Select>
+                <Select value={filters.location} onValueChange={(v) => handleFilterChange('location', v)} disabled={filters.projectName === 'all'}>
+                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Locations"/></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {filterOptions['Location'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+                </Select>
+                <Select value={filters.employeeType} onValueChange={(v) => handleFilterChange('employeeType', v)} disabled={filters.location === 'all'}>
+                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Employee Types"/></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Employee Types</SelectItem>
+                    {filterOptions['EMPLOYEE TYPE'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+                </Select>
+                <Select value={filters.designation} onValueChange={(v) => handleFilterChange('designation', v)} disabled={filters.employeeType === 'all'}>
+                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Designations"/></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Designations</SelectItem>
+                    {filterOptions['Designation'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+                </Select>
+                <Select value={filters.department} onValueChange={(v) => handleFilterChange('department', v)} disabled={filters.designation === 'all'}>
+                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Departments"/></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {filterOptions['Department'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+                </Select>
             </div>
-             <Select value={filters.projectName} onValueChange={(v) => handleFilterChange('projectName', v)}>
-              <SelectTrigger><SelectValue placeholder="All Projects"/></SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {filterOptions['Project Name'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-              </SelectContent>
-            </Select>
-             <Select value={filters.location} onValueChange={(v) => handleFilterChange('location', v)} disabled={filters.projectName === 'all'}>
-              <SelectTrigger><SelectValue placeholder="All Locations"/></SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="all">All Locations</SelectItem>
-                  {filterOptions['Location'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-              </SelectContent>
-            </Select>
-             <Select value={filters.employeeType} onValueChange={(v) => handleFilterChange('employeeType', v)} disabled={filters.location === 'all'}>
-              <SelectTrigger><SelectValue placeholder="All Employee Types"/></SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="all">All Employee Types</SelectItem>
-                  {filterOptions['EMPLOYEE TYPE'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-              </SelectContent>
-            </Select>
-             <Select value={filters.department} onValueChange={(v) => handleFilterChange('department', v)} disabled={filters.designation === 'all'}>
-              <SelectTrigger><SelectValue placeholder="All Departments"/></SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="all">All Departments</SelectItem>
-                  {filterOptions['Department'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-              </SelectContent>
-            </Select>
-             <Select value={filters.designation} onValueChange={(v) => handleFilterChange('designation', v)} disabled={filters.employeeType === 'all'}>
-              <SelectTrigger><SelectValue placeholder="All Designations"/></SelectTrigger>
-              <SelectContent>
-                  <SelectItem value="all">All Designations</SelectItem>
-                  {filterOptions['Designation'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button variant="secondary" onClick={clearFilters} className="self-end">Clear Filters</Button>
-        </CardContent>
+             <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={clearFilters}>Clear Filters</Button>
+                {lastSynced && (
+                <p className="text-sm text-muted-foreground whitespace-nowrap">
+                    Last synced on: {lastSynced}
+                </p>
+                )}
+            </div>
+       </CardContent>
        </Card>
       
       <Card>
@@ -394,7 +403,7 @@ export default function EmployeeSalaryPage() {
                     filteredEmployees.map(emp => (
                       <TableRow key={emp.employeeId}>
                         <TableCell>{emp.employeeNo || emp.employeeId}</TableCell>
-                        <TableCell className="font-medium">{emp.name}</TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">{emp.name}</TableCell>
                         {dynamicColumns.map(col => (
                             <TableCell key={col}>{emp.positions?.[col] || '-'}</TableCell>
                         ))}
