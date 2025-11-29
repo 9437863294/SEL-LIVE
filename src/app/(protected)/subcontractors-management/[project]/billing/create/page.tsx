@@ -1,3 +1,4 @@
+
 // /src/app/(protected)/billing-recon/[project]/billing/create/page.tsx
 'use client';
 
@@ -189,7 +190,7 @@ export default function CreateBillPage() {
 
         const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
           getDocs(subsQuery),
-          getDocs(woSnap),
+          getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
           getDocs(proformaBillsQuery),
@@ -336,7 +337,6 @@ export default function CreateBillPage() {
     );
     mainItem.totalAmount = String(subItemsTotalValue);
   
-    // Correctly calculate parent billedQty based on sub-item value contribution
     const parentRate = mainItem.subItems.reduce((sum, si) => sum + (toNumber(si.quantity) * toNumber(si.rate)), 0);
     if (parentRate > 0) {
       mainItem.billedQty = (subItemsTotalValue / parentRate).toFixed(3);
@@ -1214,3 +1214,5 @@ export default function CreateBillPage() {
     </>
   );
 }
+
+    
