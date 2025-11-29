@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Plus, Users, Search, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -93,7 +93,7 @@ export default function ManageEmployeePage() {
     fetchData();
   }, [isAuthLoading, canView]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [employeesSnap, deptsSnap, positionsSnap] = await Promise.all([
@@ -132,7 +132,7 @@ export default function ManageEmployeePage() {
       });
     }
     setIsLoading(false);
-  };
+  }, [toast]);
 
   const dynamicColumns = useMemo(() => {
     const columns = new Set<string>();
