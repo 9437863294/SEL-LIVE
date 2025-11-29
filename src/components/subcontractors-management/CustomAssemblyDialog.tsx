@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -16,15 +15,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
-import type { BoqItem, WorkOrderItem, SubItem } from '@/lib/types';
-import { Loader2, Plus, Search } from 'lucide-react';
+import type { BoqItem, WorkOrderItem } from '@/lib/types';
+import { Loader2, Plus, Search, ArrowUpDown } from 'lucide-react';
 import { ScrollArea } from '../ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import { Separator } from '../ui/separator';
+import { cn } from '@/lib/utils';
 
 interface CustomAssemblyDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
-  onConfirm: (assembly: { mainItem: Omit<WorkOrderItem, 'id'>, bom: BoqItem[] }) => void;
+  onConfirm: (assembly: { mainItem: Omit<WorkOrderItem, 'id'>; bom: BoqItem[] }) => void;
   boqItems: BoqItem[];
 }
 
@@ -33,12 +33,44 @@ const getItemDescription = (item: BoqItem): string => {
   for (const key of descriptionKeys) {
     if (item[key]) return String(item[key]);
   }
-  return 'No Description';
+  const fallbackKey = Object.keys(item).find(k => k.toLowerCase().includes('description'));
+  return fallbackKey ? String(item[fallbackKey]) : 'No Description';
 };
 
 const getSlNo = (item: BoqItem): string => {
-  return String(item['Sl No'] || item['SL. No.'] || '');
+  return String(item['BOQ SL No'] || item['SL. No.'] || '');
 };
+
+const getErpSlNo = (item: BoqItem): string => {
+    return String(item['ERP SL NO'] || '');
+};
+
+const getBoqQty = (item: BoqItem): string => {
+    return String(item['QTY'] || item['Total Qty'] || '0');
+};
+
+const getUnit = (item: BoqItem): string => {
+    return String(item['Unit'] || item['UNIT'] || 'N/A');
+};
+
+const findRateKey = (item: BoqItem): string | undefined => {
+    const keys = Object.keys(item);
+    if ('Unit Rate' in item) return 'Unit Rate';
+    if ('UNIT PRICE' in item) return 'UNIT PRICE';
+    return keys.find(key => key.toLowerCase().includes('rate') && !key.toLowerCase().includes('total'));
+};
+
+const getRateNumber = (rate: unknown) => {
+    if (typeof rate === 'number') return rate;
+    const n = Number(rate);
+    return Number.isFinite(n) ? n : 0;
+};
+
+const formatCurrency = (value: any) => {
+    const num = parseFloat(value);
+    if(isNaN(num)) return 'N/A';
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(num);
+}
 
 export function CustomAssemblyDialog({ isOpen, onOpenChange, onConfirm, boqItems }: CustomAssemblyDialogProps) {
   const { toast } = useToast();
@@ -48,15 +80,46 @@ export function CustomAssemblyDialog({ isOpen, onOpenChange, onConfirm, boqItems
   const [mainItemQty, setMainItemQty] = useState(1);
   const [selectedBoqIds, setSelectedBoqIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const [sortKey, setSortKey] = useState<'erpSlNo' | 'boqSlNo' | 'description' | 'qty' | 'rate'>('erpSlNo');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  const filteredBoqItems = useMemo(() => {
-    if (!searchTerm) return boqItems;
-    const lowercasedFilter = searchTerm.toLowerCase();
-    return boqItems.filter(item =>
-      getItemDescription(item).toLowerCase().includes(lowercasedFilter) ||
-      getSlNo(item).toLowerCase().includes(lowercasedFilter)
-    );
-  }, [boqItems, searchTerm]);
+  const filteredAndSortedBoqItems = useMemo(() => {
+    let items = boqItems.filter(item => {
+      const lowercasedFilter = searchTerm.toLowerCase();
+      return (
+        getItemDescription(item).toLowerCase().includes(lowercasedFilter) ||
+        getSlNo(item).toLowerCase().includes(lowercasedFilter) ||
+        getErpSlNo(item).toLowerCase().includes(lowercasedFilter)
+      );
+    });
+
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+    items.sort((a, b) => {
+        let cmp = 0;
+        switch (sortKey) {
+            case 'erpSlNo': cmp = collator.compare(getErpSlNo(a), getErpSlNo(b)); break;
+            case 'boqSlNo': cmp = collator.compare(getSlNo(a), getSlNo(b)); break;
+            case 'description': cmp = collator.compare(getItemDescription(a), getItemDescription(b)); break;
+            case 'qty': cmp = collator.compare(getBoqQty(a), getBoqQty(b)); break;
+            case 'rate':
+                const rateKeyA = findRateKey(a);
+                const rateKeyB = findRateKey(b);
+                const rateA = getRateNumber(rateKeyA ? a[rateKeyA] : 0);
+                const rateB = getRateNumber(rateKeyB ? b[rateKeyB] : 0);
+                cmp = rateA - rateB;
+                break;
+            default: break;
+        }
+        if (cmp === 0) return collator.compare(getErpSlNo(a), getErpSlNo(b));
+        return cmp * dir;
+    });
+    
+    return items;
+
+  }, [boqItems, searchTerm, sortKey, sortDirection]);
 
   const handleConfirm = () => {
     if (!mainItemName.trim() || !mainItemUnit.trim() || selectedBoqIds.size === 0) {
@@ -104,9 +167,18 @@ export function CustomAssemblyDialog({ isOpen, onOpenChange, onConfirm, boqItems
     });
   };
 
+   const toggleSort = (key: 'erpSlNo' | 'boqSlNo' | 'description' | 'qty' | 'rate') => {
+    if (sortKey === key) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Create Custom Assembly Item</DialogTitle>
           <DialogDescription>
@@ -142,21 +214,42 @@ export function CustomAssemblyDialog({ isOpen, onOpenChange, onConfirm, boqItems
                     <Input placeholder="Search BOQ items..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8"/>
                 </div>
                 <ScrollArea className="h-64 mt-2 border rounded-md">
-                    <div className="p-2 space-y-2">
-                        {filteredBoqItems.map(item => (
-                            <div key={item.id} className="flex items-center space-x-3 p-2 rounded-md hover:bg-muted">
-                                <Checkbox
-                                    id={`check-${item.id}`}
-                                    checked={selectedBoqIds.has(item.id)}
-                                    onCheckedChange={(checked) => handleSelect(item.id, !!checked)}
-                                />
-                                <Label htmlFor={`check-${item.id}`} className="flex-1 cursor-pointer">
-                                    <p className="font-medium text-sm">{getItemDescription(item)}</p>
-                                    <p className="text-xs text-muted-foreground">Sl. No: {getSlNo(item)}</p>
-                                </Label>
-                            </div>
-                        ))}
-                    </div>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead className="w-12"><Checkbox /></TableHead>
+                                <TableHead>
+                                  <Button variant="ghost" size="sm" onClick={() => toggleSort('erpSlNo')}>ERP Sl. No. <ArrowUpDown className="ml-2 h-4 w-4" /></Button>
+                                </TableHead>
+                                <TableHead>
+                                  <Button variant="ghost" size="sm" onClick={() => toggleSort('boqSlNo')}>BOQ Sl.No. <ArrowUpDown className="ml-2 h-4 w-4" /></Button>
+                                </TableHead>
+                                <TableHead>Description</TableHead>
+                                <TableHead className="text-right">
+                                  <Button variant="ghost" size="sm" onClick={() => toggleSort('qty')}>BOQ Qty / Unit <ArrowUpDown className="ml-2 h-4 w-4" /></Button>
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  <Button variant="ghost" size="sm" onClick={() => toggleSort('rate')}>Unit Rate <ArrowUpDown className="ml-2 h-4 w-4" /></Button>
+                                </TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {filteredAndSortedBoqItems.map(item => {
+                                const rateKey = findRateKey(item);
+                                const rate = rateKey ? (item as any)[rateKey] : '0';
+                                return (
+                                <TableRow key={item.id} onClick={() => handleSelect(item.id, !selectedBoqIds.has(item.id))} className="cursor-pointer">
+                                    <TableCell><Checkbox checked={selectedBoqIds.has(item.id)}/></TableCell>
+                                    <TableCell>{getErpSlNo(item)}</TableCell>
+                                    <TableCell>{getSlNo(item)}</TableCell>
+                                    <TableCell>{getItemDescription(item)}</TableCell>
+                                    <TableCell className="text-right">{getBoqQty(item)} {getUnit(item)}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(rate)}</TableCell>
+                                </TableRow>
+                                )
+                            })}
+                        </TableBody>
+                    </Table>
                 </ScrollArea>
             </div>
         </div>
