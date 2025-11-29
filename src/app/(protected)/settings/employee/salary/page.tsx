@@ -201,76 +201,72 @@ export default function EmployeeSalaryPage() {
 
   const handleFilterChange = (filterName: keyof typeof filters, value: string) => {
     setFilters(prev => {
-        const newFilters = { ...prev, [filterName]: value };
-        // Reset dependent filters if a parent filter changes
-        if (filterName === 'projectName') {
-            newFilters.location = 'all';
-            newFilters.employeeType = 'all';
-            newFilters.designation = 'all';
-            newFilters.department = 'all';
-        } else if (filterName === 'location') {
-            newFilters.employeeType = 'all';
-            newFilters.designation = 'all';
-            newFilters.department = 'all';
-        } else if (filterName === 'employeeType') {
-            newFilters.designation = 'all';
-            newFilters.department = 'all';
-        } else if (filterName === 'designation') {
-            newFilters.department = 'all';
+      const newFilters = { ...prev, [filterName]: value };
+      // Reset dependent filters if a parent filter changes
+      const filterOrder = ['projectName', 'location', 'employeeType', 'designation', 'department'];
+      const changedIndex = filterOrder.indexOf(filterName);
+
+      if(changedIndex > -1) {
+        for(let i = changedIndex + 1; i < filterOrder.length; i++) {
+            const filterToReset = filterOrder[i] as keyof typeof filters;
+            newFilters[filterToReset] = 'all';
         }
-        return newFilters;
+      }
+      
+      return newFilters;
+    });
+  };
+  
+  const clearFilters = () => {
+    setFilters({
+      searchTerm: '',
+      projectName: 'all',
+      location: 'all',
+      employeeType: 'all',
+      designation: 'all',
+      department: 'all',
     });
   };
 
   const { filteredEmployees, filterOptions } = useMemo(() => {
-      const term = filters.searchTerm.toLowerCase();
-      let tempFiltered = displayedEmployees;
-
-      // Apply cascading filters first to narrow down the set for options generation
-      if (filters.projectName !== 'all') {
-          tempFiltered = tempFiltered.filter(emp => emp.positions?.['Project Name'] === filters.projectName);
-      }
-      if (filters.location !== 'all') {
-          tempFiltered = tempFiltered.filter(emp => emp.positions?.['Location'] === filters.location);
-      }
-      if (filters.employeeType !== 'all') {
-          tempFiltered = tempFiltered.filter(emp => emp.positions?.['EMPLOYEE TYPE'] === filters.employeeType);
-      }
-      if (filters.designation !== 'all') {
-          tempFiltered = tempFiltered.filter(emp => emp.positions?.['Designation'] === filters.designation);
-      }
-      if (filters.department !== 'all') {
-          tempFiltered = tempFiltered.filter(emp => emp.positions?.['Department'] === filters.department);
-      }
-      
-      const finalFiltered = tempFiltered.filter(emp => {
-          return !term || emp.name.toLowerCase().includes(term) || (emp.employeeNo || emp.employeeId).toLowerCase().includes(term);
-      });
-
-      const options: Record<string, Set<string>> = {};
-      dynamicColumns.forEach(col => {
-        options[col] = new Set();
-      });
-
       let sourceForOptions = displayedEmployees;
-      if (filters.projectName !== 'all') sourceForOptions = sourceForOptions.filter(e => e.positions?.['Project Name'] === filters.projectName);
+      
+      const options: Record<string, Set<string>> = {};
+      dynamicColumns.forEach(col => { options[col] = new Set() });
+
+      // Generate project names from all displayed employees before any filtering
+      const projectNames = [...new Set(displayedEmployees.map(e => e.positions?.['Project Name']).filter(Boolean))] as string[];
+      options['Project Name'] = new Set(projectNames);
+
+      if (filters.projectName !== 'all') {
+        sourceForOptions = sourceForOptions.filter(e => e.positions?.['Project Name'] === filters.projectName);
+      }
       sourceForOptions.forEach(e => { if (e.positions?.['Location']) options['Location'].add(e.positions['Location']) });
       
-      if (filters.location !== 'all') sourceForOptions = sourceForOptions.filter(e => e.positions?.['Location'] === filters.location);
+      if (filters.location !== 'all') {
+        sourceForOptions = sourceForOptions.filter(e => e.positions?.['Location'] === filters.location);
+      }
       sourceForOptions.forEach(e => { if (e.positions?.['EMPLOYEE TYPE']) options['EMPLOYEE TYPE'].add(e.positions['EMPLOYEE TYPE']) });
       
-      if (filters.employeeType !== 'all') sourceForOptions = sourceForOptions.filter(e => e.positions?.['EMPLOYEE TYPE'] === filters.employeeType);
+      if (filters.employeeType !== 'all') {
+        sourceForOptions = sourceForOptions.filter(e => e.positions?.['EMPLOYEE TYPE'] === filters.employeeType);
+      }
       sourceForOptions.forEach(e => { if (e.positions?.['Designation']) options['Designation'].add(e.positions['Designation']) });
 
-      if (filters.designation !== 'all') sourceForOptions = sourceForOptions.filter(e => e.positions?.['Designation'] === filters.designation);
+      if (filters.designation !== 'all') {
+        sourceForOptions = sourceForOptions.filter(e => e.positions?.['Designation'] === filters.designation);
+      }
       sourceForOptions.forEach(e => { if (e.positions?.['Department']) options['Department'].add(e.positions['Department']) });
-      
-      const projectNames = [...new Set(displayedEmployees.map(e => e.positions?.['Project Name']).filter(Boolean))] as string[];
+
+      const finalFiltered = sourceForOptions.filter(emp => {
+        const term = filters.searchTerm.toLowerCase();
+        return !term || emp.name.toLowerCase().includes(term) || (emp.employeeNo || emp.employeeId).toLowerCase().includes(term);
+      });
 
       return {
           filteredEmployees: finalFiltered,
           filterOptions: {
-              'Project Name': projectNames.sort(),
+              'Project Name': Array.from(options['Project Name']).sort(),
               'Location': Array.from(options['Location']).sort(),
               'EMPLOYEE TYPE': Array.from(options['EMPLOYEE TYPE']).sort(),
               'Designation': Array.from(options['Designation']).sort(),
@@ -323,7 +319,7 @@ export default function EmployeeSalaryPage() {
         </div>
       </div>
        <Card className="mb-4">
-        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
             <div className="relative col-span-full sm:col-span-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -340,34 +336,35 @@ export default function EmployeeSalaryPage() {
                   {filterOptions['Project Name'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
               </SelectContent>
             </Select>
-             <Select value={filters.location} onValueChange={(v) => handleFilterChange('location', v)}>
+             <Select value={filters.location} onValueChange={(v) => handleFilterChange('location', v)} disabled={filters.projectName === 'all'}>
               <SelectTrigger><SelectValue placeholder="All Locations"/></SelectTrigger>
               <SelectContent>
                   <SelectItem value="all">All Locations</SelectItem>
                   {filterOptions['Location'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
               </SelectContent>
             </Select>
-             <Select value={filters.employeeType} onValueChange={(v) => handleFilterChange('employeeType', v)}>
+             <Select value={filters.employeeType} onValueChange={(v) => handleFilterChange('employeeType', v)} disabled={filters.location === 'all'}>
               <SelectTrigger><SelectValue placeholder="All Employee Types"/></SelectTrigger>
               <SelectContent>
                   <SelectItem value="all">All Employee Types</SelectItem>
                   {filterOptions['EMPLOYEE TYPE'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
               </SelectContent>
             </Select>
-             <Select value={filters.department} onValueChange={(v) => handleFilterChange('department', v)}>
+             <Select value={filters.department} onValueChange={(v) => handleFilterChange('department', v)} disabled={filters.designation === 'all'}>
               <SelectTrigger><SelectValue placeholder="All Departments"/></SelectTrigger>
               <SelectContent>
                   <SelectItem value="all">All Departments</SelectItem>
                   {filterOptions['Department'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
               </SelectContent>
             </Select>
-             <Select value={filters.designation} onValueChange={(v) => handleFilterChange('designation', v)}>
+             <Select value={filters.designation} onValueChange={(v) => handleFilterChange('designation', v)} disabled={filters.employeeType === 'all'}>
               <SelectTrigger><SelectValue placeholder="All Designations"/></SelectTrigger>
               <SelectContent>
                   <SelectItem value="all">All Designations</SelectItem>
                   {filterOptions['Designation'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Button variant="secondary" onClick={clearFilters} className="self-end">Clear Filters</Button>
         </CardContent>
        </Card>
       
@@ -422,5 +419,3 @@ export default function EmployeeSalaryPage() {
     </div>
   );
 }
-
-
