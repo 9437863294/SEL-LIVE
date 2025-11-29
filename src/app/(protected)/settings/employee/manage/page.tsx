@@ -18,7 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
 // A simple debounce hook
 function useDebounce(value: string, delay: number) {
@@ -59,22 +59,22 @@ export default function ManageEmployeePage() {
   const [employees, setEmployees] = useState<EnrichedEmployee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const [newEmployee, setNewEmployee] = useState(initialNewEmployeeState);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
 
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  
+
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
 
   const [filters, setFilters] = useState({
-      employeeId: '',
-      name: '',
-      department: 'all',
-      status: 'all',
+    employeeId: '',
+    name: '',
+    department: 'all',
+    status: 'all',
   });
-  
+
   const debouncedEmployeeId = useDebounce(filters.employeeId, 300);
   const debouncedName = useDebounce(filters.name, 300);
 
@@ -83,13 +83,12 @@ export default function ManageEmployeePage() {
   const canEdit = can('Edit', 'Settings.Employee Management');
   const canDelete = can('Delete', 'Settings.Employee Management');
 
-
   useEffect(() => {
     if (isAuthLoading) return;
     if (!canView) {
-        setIsLoading(false);
-        return;
-    };
+      setIsLoading(false);
+      return;
+    }
     fetchData();
   }, [isAuthLoading, canView]);
 
@@ -104,27 +103,26 @@ export default function ManageEmployeePage() {
 
       const employeesData: Employee[] = employeesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
       const positionsData = positionsSnap.docs.map(doc => doc.data() as EmployeePosition);
-      
+
       const positionsMap = new Map<string, Record<string, string>>();
       positionsData.forEach(pos => {
-          const posRecord: Record<string, string> = {};
-          pos.categoryList.forEach(cat => {
-              posRecord[cat.category] = cat.value;
-          });
-          positionsMap.set(pos.employeeId, posRecord);
+        const posRecord: Record<string, string> = {};
+        pos.categoryList.forEach(cat => {
+          posRecord[cat.category] = cat.value;
+        });
+        positionsMap.set(pos.employeeId, posRecord);
       });
 
       const enrichedEmployees: EnrichedEmployee[] = employeesData.map(emp => ({
-          ...emp,
-          positions: positionsMap.get(emp.employeeNo || emp.employeeId),
+        ...emp,
+        positions: positionsMap.get(emp.employeeNo || emp.employeeId),
       }));
       setEmployees(enrichedEmployees);
 
       const deptsData: Department[] = deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
       setDepartments(deptsData);
-      
     } catch (error) {
-      console.error("Error fetching data: ", error);
+      console.error('Error fetching data: ', error);
       toast({
         title: 'Error',
         description: 'Failed to fetch employees or departments.',
@@ -144,31 +142,36 @@ export default function ManageEmployeePage() {
     return Array.from(columns).sort();
   }, [employees]);
 
-
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
   };
-  
+
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
-      const departmentFilter = filters.department === 'unassigned' ? !emp.department : emp.department === filters.department;
+      const departmentFilter =
+        filters.department === 'unassigned'
+          ? !emp.department
+          : emp.department === filters.department;
       return (
-        (debouncedEmployeeId === '' || emp.employeeId?.toLowerCase().includes(debouncedEmployeeId.toLowerCase()) || emp.employeeNo?.toLowerCase().includes(debouncedEmployeeId.toLowerCase())) &&
-        (debouncedName === '' || emp.name.toLowerCase().includes(debouncedName.toLowerCase())) &&
+        (debouncedEmployeeId === '' ||
+          emp.employeeId?.toLowerCase().includes(debouncedEmployeeId.toLowerCase()) ||
+          emp.employeeNo?.toLowerCase().includes(debouncedEmployeeId.toLowerCase())) &&
+        (debouncedName === '' ||
+          emp.name.toLowerCase().includes(debouncedName.toLowerCase())) &&
         (filters.department === 'all' || departmentFilter) &&
         (filters.status === 'all' || emp.status === filters.status)
       );
     });
   }, [employees, debouncedEmployeeId, debouncedName, filters.department, filters.status]);
-  
+
   const openEditDialog = (employee: Employee) => {
     setEditingEmployee(employee);
     setIsEditDialogOpen(true);
   };
-  
+
   const handleUpdateEmployee = async () => {
     if (!editingEmployee) return;
-  
+
     try {
       const employeeRef = doc(db, 'employees', editingEmployee.id);
       const { id, ...dataToUpdate } = editingEmployee;
@@ -197,11 +200,11 @@ export default function ManageEmployeePage() {
   const handleSelectChange = (field: keyof typeof newEmployee, value: string) => {
     setNewEmployee(prev => ({ ...prev, [field]: value as any }));
   };
-  
+
   const resetAddDialog = () => {
     setNewEmployee(initialNewEmployeeState);
     setIsAddDialogOpen(false);
-  }
+  };
 
   const handleAddEmployee = async () => {
     if (!newEmployee.employeeNo.trim() || !newEmployee.name.trim()) {
@@ -221,7 +224,7 @@ export default function ManageEmployeePage() {
       resetAddDialog();
       fetchData();
     } catch (error) {
-      console.error("Error adding employee: ", error);
+      console.error('Error adding employee: ', error);
       toast({
         title: 'Error',
         description: 'Failed to add employee.',
@@ -232,22 +235,22 @@ export default function ManageEmployeePage() {
 
   const handleDeleteEmployee = async (id: string) => {
     try {
-      await deleteDoc(doc(db, "employees", id));
+      await deleteDoc(doc(db, 'employees', id));
       toast({
-        title: "Success",
-        description: "Employee deleted successfully.",
+        title: 'Success',
+        description: 'Employee deleted successfully.',
       });
-      fetchData(); // Refresh the list
+      fetchData();
     } catch (error) {
-      console.error("Error deleting employee: ", error);
+      console.error('Error deleting employee: ', error);
       toast({
-        title: "Error",
-        description: "Failed to delete employee.",
-        variant: "destructive",
+        title: 'Error',
+        description: 'Failed to delete employee.',
+        variant: 'destructive',
       });
     }
   };
-  
+
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedEmployeeIds(filteredEmployees.map(emp => emp.id));
@@ -255,7 +258,7 @@ export default function ManageEmployeePage() {
       setSelectedEmployeeIds([]);
     }
   };
-  
+
   const handleSelectEmployee = (id: string, checked: boolean) => {
     if (checked) {
       setSelectedEmployeeIds(prev => [...prev, id]);
@@ -287,38 +290,46 @@ export default function ManageEmployeePage() {
       });
     }
   };
-  
+
   if (isAuthLoading) {
     return (
-        <div className="w-full max-w-7xl mx-auto">
-            <div className="mb-6 flex items-center justify-between">
-                <Skeleton className="h-10 w-48" />
-                <Skeleton className="h-10 w-32" />
-            </div>
-            <Card><CardContent className="p-0"><Skeleton className="h-96 w-full" /></CardContent></Card>
+      <div className="w-full max-w-7xl mx-auto">
+        <div className="mb-6 flex items-center justify-between">
+          <Skeleton className="h-10 w-48" />
+          <Skeleton className="h-10 w-32" />
         </div>
-    )
+        <Card>
+          <CardContent className="p-0">
+            <Skeleton className="h-96 w-full" />
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   if (!canView) {
     return (
-        <div className="w-full max-w-4xl mx-auto">
-            <div className="mb-6 flex items-center gap-4">
-              <Link href="/settings/employee">
-                <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-              </Link>
-              <h1 className="text-2xl font-bold">Manage Employee</h1>
-            </div>
-            <Card>
-                <CardHeader>
-                    <CardTitle>Access Denied</CardTitle>
-                    <CardDescriptionShad>You do not have permission to view this page.</CardDescriptionShad>
-                </CardHeader>
-                <CardContent className="flex justify-center p-8">
-                    <ShieldAlert className="h-16 w-16 text-destructive" />
-                </CardContent>
-            </Card>
+      <div className="w-full max-w-4xl mx-auto">
+        <div className="mb-6 flex items-center gap-4">
+          <Link href="/settings/employee">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-6 w-6" />
+            </Button>
+          </Link>
+          <h1 className="text-2xl font-bold">Manage Employee</h1>
         </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescriptionShad>
+              You do not have permission to view this page.
+            </CardDescriptionShad>
+          </CardHeader>
+          <CardContent className="flex justify-center p-8">
+            <ShieldAlert className="h-16 w-16 text-destructive" />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -340,7 +351,10 @@ export default function ManageEmployeePage() {
               Add Employee
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogContent
+            className="sm:max-w-2xl"
+            onPointerDownOutside={e => e.preventDefault()}
+          >
             <DialogHeader>
               <DialogTitle>Add New Employee</DialogTitle>
               <DialogDescription>
@@ -348,132 +362,221 @@ export default function ManageEmployeePage() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                <div className="space-y-2">
-                    <Label htmlFor="addEmployeeNo">Employee No</Label>
-                    <Input id="addEmployeeNo" value={newEmployee.employeeNo} onChange={(e) => handleInputChange('employeeNo', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="addName">Name</Label>
-                    <Input id="addName" value={newEmployee.name} onChange={(e) => handleInputChange('name', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="addDateOfJoin">Date of Join</Label>
-                    <Input id="addDateOfJoin" type="date" value={newEmployee.dateOfJoin} onChange={(e) => handleInputChange('dateOfJoin', e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="addStatus">Status</Label>
-                    <Select value={newEmployee.status} onValueChange={(value: 'Active' | 'Inactive') => handleSelectChange('status', value)}>
-                        <SelectTrigger id="addStatus"><SelectValue/></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Active">Active</SelectItem>
-                            <SelectItem value="Inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="addEmployeeNo">Employee No</Label>
+                <Input
+                  id="addEmployeeNo"
+                  value={newEmployee.employeeNo}
+                  onChange={e => handleInputChange('employeeNo', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="addName">Name</Label>
+                <Input
+                  id="addName"
+                  value={newEmployee.name}
+                  onChange={e => handleInputChange('name', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="addDateOfJoin">Date of Join</Label>
+                <Input
+                  id="addDateOfJoin"
+                  type="date"
+                  value={newEmployee.dateOfJoin}
+                  onChange={e =>
+                    handleInputChange('dateOfJoin', e.target.value)
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="addStatus">Status</Label>
+                <Select
+                  value={newEmployee.status}
+                  onValueChange={(value: 'Active' | 'Inactive') =>
+                    handleSelectChange('status', value)
+                  }
+                >
+                  <SelectTrigger id="addStatus">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <DialogFooter>
-              <DialogClose asChild><Button variant="outline" onClick={resetAddDialog}>Cancel</Button></DialogClose>
+              <DialogClose asChild>
+                <Button variant="outline" onClick={resetAddDialog}>
+                  Cancel
+                </Button>
+              </DialogClose>
               <Button onClick={handleAddEmployee}>Add Employee</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-       <Card className="mb-6">
+      <Card className="mb-6">
         <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-4">
-            <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-4">
-              <div className="relative w-full sm:w-auto">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Search Employee No..." className="pl-8 w-full sm:w-48" value={filters.employeeId} onChange={e => handleFilterChange('employeeId', e.target.value)} />
-              </div>
-              <div className="relative w-full sm:w-auto">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Search Name..." className="pl-8 w-full sm:w-48" value={filters.name} onChange={e => handleFilterChange('name', e.target.value)} />
-              </div>
-              <Select value={filters.status} onValueChange={value => handleFilterChange('status', value)}>
-                  <SelectTrigger className="w-full sm:w-48">
-                      <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="Active">Active</SelectItem>
-                      <SelectItem value="Inactive">Inactive</SelectItem>
-                  </SelectContent>
-              </Select>
+          <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-4">
+            <div className="relative w-full sm:w-auto">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search Employee No..."
+                className="pl-8 w-full sm:w-48"
+                value={filters.employeeId}
+                onChange={e => handleFilterChange('employeeId', e.target.value)}
+              />
             </div>
-            {selectedEmployeeIds.length > 0 && (
-                <div className="sm:ml-auto mt-4 sm:mt-0">
-                    <Button variant="destructive" onClick={handleDeleteSelected} disabled={!canDelete}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete ({selectedEmployeeIds.length})
-                    </Button>
-                </div>
-            )}
+            <div className="relative w-full sm:w-auto">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search Name..."
+                className="pl-8 w-full sm:w-48"
+                value={filters.name}
+                onChange={e => handleFilterChange('name', e.target.value)}
+              />
+            </div>
+            <Select
+              value={filters.status}
+              onValueChange={value => handleFilterChange('status', value)}
+            >
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="Active">Active</SelectItem>
+                <SelectItem value="Inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedEmployeeIds.length > 0 && (
+            <div className="sm:ml-auto mt-4 sm:mt-0">
+              <Button
+                variant="destructive"
+                onClick={handleDeleteSelected}
+                disabled={!canDelete}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete ({selectedEmployeeIds.length})
+              </Button>
+            </div>
+          )}
         </CardContent>
-       </Card>
+      </Card>
 
       <Card>
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-20rem)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                <TableRow>
-                  <TableHead className="w-[50px]">
-                     <Checkbox
-                          checked={filteredEmployees.length > 0 && selectedEmployeeIds.length === filteredEmployees.length}
-                          onCheckedChange={(checked) => handleSelectAll(!!checked)}
-                          aria-label="Select all"
-                          disabled={!canDelete}
+          <ScrollArea className="h-[calc(100vh-20rem)] w-full">
+            <div className="min-w-[1200px]">
+              <Table className="w-full">
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    <TableHead className="w-[50px]">
+                      <Checkbox
+                        checked={
+                          filteredEmployees.length > 0 &&
+                          selectedEmployeeIds.length ===
+                            filteredEmployees.length
+                        }
+                        onCheckedChange={checked =>
+                          handleSelectAll(!!checked)
+                        }
+                        aria-label="Select all"
+                        disabled={!canDelete}
                       />
-                  </TableHead>
-                  <TableHead>Employee ID</TableHead>
-                  <TableHead>Employee No</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Date of Join</TableHead>
-                  <TableHead>Status</TableHead>
-                  {dynamicColumns.map(col => <TableHead key={col}>{col}</TableHead>)}
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 10 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell colSpan={7 + dynamicColumns.length}><Skeleton className="h-6 w-full" /></TableCell>
-                    </TableRow>
-                  ))
-                ) : filteredEmployees.length > 0 ? (
-                  filteredEmployees.map((emp) => (
-                    <TableRow key={emp.id} data-state={selectedEmployeeIds.includes(emp.id) && "selected"}>
-                      <TableCell>
-                        <Checkbox
+                    </TableHead>
+                    <TableHead>Employee ID</TableHead>
+                    <TableHead>Employee No</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Date of Join</TableHead>
+                    <TableHead>Status</TableHead>
+                    {dynamicColumns.map(col => (
+                      <TableHead key={col}>{col}</TableHead>
+                    ))}
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isLoading ? (
+                    Array.from({ length: 10 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell
+                          colSpan={7 + dynamicColumns.length}
+                        >
+                          <Skeleton className="h-6 w-full" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : filteredEmployees.length > 0 ? (
+                    filteredEmployees.map(emp => (
+                      <TableRow
+                        key={emp.id}
+                        data-state={
+                          selectedEmployeeIds.includes(emp.id) &&
+                          'selected'
+                        }
+                      >
+                        <TableCell>
+                          <Checkbox
                             checked={selectedEmployeeIds.includes(emp.id)}
-                            onCheckedChange={(checked) => handleSelectEmployee(emp.id, !!checked)}
+                            onCheckedChange={checked =>
+                              handleSelectEmployee(emp.id, !!checked)
+                            }
                             aria-label={`Select employee ${emp.name}`}
                             disabled={!canDelete}
-                        />
-                      </TableCell>
-                      <TableCell>{emp.employeeId}</TableCell>
-                      <TableCell>{emp.employeeNo}</TableCell>
-                      <TableCell className="font-medium">{emp.name}</TableCell>
-                      <TableCell>{emp.dateOfJoin}</TableCell>
-                      <TableCell>{emp.status}</TableCell>
-                      {dynamicColumns.map(col => <TableCell key={col}>{emp.positions?.[col] || '-'}</TableCell>)}
-                      <TableCell className="text-right space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => openEditDialog(emp)} disabled={!canEdit}>Edit</Button>
-                        <Button variant="destructive" size="sm" onClick={() => handleDeleteEmployee(emp.id)} disabled={!canDelete}><Trash2 className="h-4 w-4" /></Button>
+                          />
+                        </TableCell>
+                        <TableCell>{emp.employeeId}</TableCell>
+                        <TableCell>{emp.employeeNo}</TableCell>
+                        <TableCell className="font-medium">
+                          {emp.name}
+                        </TableCell>
+                        <TableCell>{emp.dateOfJoin}</TableCell>
+                        <TableCell>{emp.status}</TableCell>
+                        {dynamicColumns.map(col => (
+                          <TableCell key={col}>
+                            {emp.positions?.[col] || '-'}
+                          </TableCell>
+                        ))}
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditDialog(emp)}
+                            disabled={!canEdit}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleDeleteEmployee(emp.id)}
+                            disabled={!canDelete}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={7 + dynamicColumns.length}
+                        className="text-center h-24"
+                      >
+                        No employees found.
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7 + dynamicColumns.length} className="text-center h-24">
-                      No employees found.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </CardContent>
       </Card>
@@ -488,36 +591,85 @@ export default function ManageEmployeePage() {
           </DialogHeader>
           {editingEmployee && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-                 <div className="space-y-2">
-                    <Label htmlFor="editEmployeeId">Employee ID</Label>
-                    <Input id="editEmployeeId" value={editingEmployee.employeeId} onChange={(e) => setEditingEmployee({...editingEmployee, employeeId: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editEmployeeNo">Employee No</Label>
-                    <Input id="editEmployeeNo" value={editingEmployee.employeeNo} onChange={(e) => setEditingEmployee({...editingEmployee, employeeNo: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editName">Name</Label>
-                    <Input id="editName" value={editingEmployee.name} onChange={(e) => setEditingEmployee({...editingEmployee, name: e.target.value})} />
-                </div>
-                 <div className="space-y-2">
-                    <Label htmlFor="editDateOfJoin">Date of Join</Label>
-                    <Input id="editDateOfJoin" type="date" value={editingEmployee.dateOfJoin || ''} onChange={(e) => setEditingEmployee({...editingEmployee, dateOfJoin: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="editStatus">Status</Label>
-                    <Select value={editingEmployee.status} onValueChange={(value: 'Active' | 'Inactive') => setEditingEmployee({...editingEmployee, status: value})}>
-                        <SelectTrigger id="editStatus"><SelectValue/></SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="Active">Active</SelectItem>
-                            <SelectItem value="Inactive">Inactive</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="editEmployeeId">Employee ID</Label>
+                <Input
+                  id="editEmployeeId"
+                  value={editingEmployee.employeeId}
+                  onChange={e =>
+                    setEditingEmployee({
+                      ...editingEmployee,
+                      employeeId: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editEmployeeNo">Employee No</Label>
+                <Input
+                  id="editEmployeeNo"
+                  value={editingEmployee.employeeNo}
+                  onChange={e =>
+                    setEditingEmployee({
+                      ...editingEmployee,
+                      employeeNo: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editName">Name</Label>
+                <Input
+                  id="editName"
+                  value={editingEmployee.name}
+                  onChange={e =>
+                    setEditingEmployee({
+                      ...editingEmployee,
+                      name: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editDateOfJoin">Date of Join</Label>
+                <Input
+                  id="editDateOfJoin"
+                  type="date"
+                  value={editingEmployee.dateOfJoin || ''}
+                  onChange={e =>
+                    setEditingEmployee({
+                      ...editingEmployee,
+                      dateOfJoin: e.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editStatus">Status</Label>
+                <Select
+                  value={editingEmployee.status}
+                  onValueChange={(value: 'Active' | 'Inactive') =>
+                    setEditingEmployee({
+                      ...editingEmployee,
+                      status: value,
+                    })
+                  }
+                >
+                  <SelectTrigger id="editStatus">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
             <Button onClick={handleUpdateEmployee}>Update Employee</Button>
           </DialogFooter>
         </DialogContent>
