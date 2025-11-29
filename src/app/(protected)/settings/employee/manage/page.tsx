@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -293,7 +294,7 @@ export default function ManageEmployeePage() {
 
   if (isAuthLoading) {
     return (
-      <div className="w-full max-w-7xl mx-auto">
+      <div className="w-full px-4">
         <div className="mb-6 flex items-center justify-between">
           <Skeleton className="h-10 w-48" />
           <Skeleton className="h-10 w-32" />
@@ -309,7 +310,7 @@ export default function ManageEmployeePage() {
 
   if (!canView) {
     return (
-      <div className="w-full max-w-4xl mx-auto">
+      <div className="w-full max-w-4xl mx-auto px-4">
         <div className="mb-6 flex items-center gap-4">
           <Link href="/settings/employee">
             <Button variant="ghost" size="icon">
@@ -320,7 +321,7 @@ export default function ManageEmployeePage() {
         </div>
         <Card>
           <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
+            <CardTitleShad>Access Denied</CardTitleShad>
             <CardDescriptionShad>
               You do not have permission to view this page.
             </CardDescriptionShad>
@@ -334,7 +335,7 @@ export default function ManageEmployeePage() {
   }
 
   return (
-    <div className="w-full max-w-7xl mx-auto">
+    <div className="w-full px-4">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/settings/employee">
@@ -533,7 +534,7 @@ export default function ManageEmployeePage() {
                         </TableCell>
                         <TableCell>{emp.employeeId}</TableCell>
                         <TableCell>{emp.employeeNo}</TableCell>
-                        <TableCell className="font-medium">
+                        <TableCell className="font-medium whitespace-nowrap">
                           {emp.name}
                         </TableCell>
                         <TableCell>{emp.dateOfJoin}</TableCell>
