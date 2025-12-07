@@ -1,10 +1,9 @@
 
-
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Library } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Library, Plus, Trash2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -626,9 +625,10 @@ export default function CreateProformaPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items}
+        alreadyAddedItems={items as any}
       />
     </>
   );
 }
 
+    
