@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
@@ -37,7 +38,7 @@ import type {
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
+import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
@@ -515,7 +516,7 @@ export default function CreateProformaPage() {
                       <TableCell>{item.boqSlNo}</TableCell>
 
                       {/* Description – neatly clamped to 2 lines, full text on hover */}
-                      <TableCell className="max-w-[18rem] align-top py-2">
+                      <TableCell className="max-w-xs">
                         <div
                           className="line-clamp-2 text-sm leading-snug break-words"
                           title={item.description}
