@@ -392,8 +392,8 @@ export default function EmployeeSalaryPage() {
 
       <Card>
         <CardContent className="p-0">
-          <ScrollArea className="max-h-[calc(100vh-22rem)] w-full">
-              <Table className="w-full table-auto">
+          <ScrollArea>
+              <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="w-[120px]">Employee ID</TableHead>
