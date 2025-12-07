@@ -1,9 +1,10 @@
 
+
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Plus, Trash2, Library, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Library } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,6 +16,7 @@ import {
   getDocs,
   doc,
   query,
+  where,
   serverTimestamp,
   getDoc,
   Timestamp,
@@ -37,6 +39,7 @@ import type {
 } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
 import { Separator } from '@/components/ui/separator';
@@ -63,6 +66,7 @@ const slugify = (text: string) => {
 };
 
 type EnrichedBillItem = BillItem & {
+  id: string; // Add id to satisfy WorkOrderItem type for the dialog
   orderQty: number;
   boqQty: number;
   jmcCertifiedQty: number;
@@ -238,6 +242,7 @@ export default function CreateProformaPage() {
       const boqQty = boqItem ? Number((boqItem as any).QTY || 0) : 0;
 
       return {
+        id: `proforma-item-${Date.now()}-${Math.random()}`, // Added unique ID
         jmcItemId: woItem.id,
         jmcEntryId: '',
         jmcNo: '',
@@ -322,7 +327,7 @@ export default function CreateProformaPage() {
       }
 
       const itemsToSave: (Omit<BillItem, 'billedQty'> & { billedQty: number })[] = items.map(
-        ({ jmcCertifiedQty, alreadyBilledQty, boqQty, orderQty, ...rest }) => {
+        ({ jmcCertifiedQty, alreadyBilledQty, boqQty, orderQty, id, ...rest }) => {
           const billedQtyNumber = parseFloat((rest as any).billedQty || '0');
           return {
             ...(rest as Omit<BillItem, 'billedQty'>),
@@ -626,3 +631,4 @@ export default function CreateProformaPage() {
     </>
   );
 }
+
