@@ -391,51 +391,54 @@ export default function EmployeeSalaryPage() {
       </Card>
 
       <Card>
-        <CardContent className="p-0 overflow-x-auto">
-          <Table>
-            <TableHeader className="sticky top-0 bg-background z-10">
-              <TableRow>
-                <TableHead className="w-[120px]">Employee ID</TableHead>
-                <TableHead>Name</TableHead>
-                {dynamicColumns.map(col => (
-                  <TableHead key={col}>{col}</TableHead>
-                ))}
-                <TableHead>Gross Salary</TableHead>
-                <TableHead>TOTAL DEDUCTIONS</TableHead>
-                <TableHead>Net Salary</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading || isSyncing ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell colSpan={6 + dynamicColumns.length}><Skeleton className="h-6 w-full" /></TableCell>
-                  </TableRow>
-                ))
-              ) : filteredEmployees.length > 0 ? (
-                filteredEmployees.map(emp => (
-                  <TableRow key={emp.employeeId}>
-                    <TableCell className="whitespace-nowrap">{emp.employeeNo || emp.employeeId}</TableCell>
-                    <TableCell className="font-medium whitespace-nowrap">{emp.name}</TableCell>
-                    {dynamicColumns.map(col => (
-                      <TableCell key={col} className="whitespace-normal">
-                        {emp.positions?.[col] || '-'}
-                      </TableCell>
-                    ))}
-                    <TableCell className="whitespace-nowrap">{formatCurrency(emp.grossSalary)}</TableCell>
-                    <TableCell className="whitespace-nowrap">{formatCurrency(getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS'))}</TableCell>
-                    <TableCell className="whitespace-nowrap">{formatCurrency(emp.netSalary)}</TableCell>
-                  </TableRow>
-                ))
-              ) : (
+        <CardContent className="p-0">
+          <ScrollArea className="h-[calc(100vh-22rem)]">
+            <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
                 <TableRow>
-                  <TableCell colSpan={6 + dynamicColumns.length} className="h-24 text-center">
-                    No salary data to display. Please select a month and sync.
-                  </TableCell>
+                    <TableHead className="w-[120px]">Employee ID</TableHead>
+                    <TableHead>Name</TableHead>
+                    {dynamicColumns.map(col => (
+                    <TableHead key={col}>{col}</TableHead>
+                    ))}
+                    <TableHead>Gross Salary</TableHead>
+                    <TableHead>TOTAL DEDUCTIONS</TableHead>
+                    <TableHead>Net Salary</TableHead>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                </TableHeader>
+                <TableBody>
+                {isLoading || isSyncing ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                        <TableCell colSpan={6 + dynamicColumns.length}><Skeleton className="h-6 w-full" /></TableCell>
+                    </TableRow>
+                    ))
+                ) : filteredEmployees.length > 0 ? (
+                    filteredEmployees.map(emp => (
+                    <TableRow key={emp.employeeId}>
+                        <TableCell className="whitespace-nowrap">{emp.employeeNo || emp.employeeId}</TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">{emp.name}</TableCell>
+                        {dynamicColumns.map(col => (
+                        <TableCell key={col} className="whitespace-normal">
+                            {emp.positions?.[col] || '-'}
+                        </TableCell>
+                        ))}
+                        <TableCell className="whitespace-nowrap">{formatCurrency(emp.grossSalary)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatCurrency(getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS'))}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatCurrency(emp.netSalary)}</TableCell>
+                    </TableRow>
+                    ))
+                ) : (
+                    <TableRow>
+                    <TableCell colSpan={6 + dynamicColumns.length} className="h-24 text-center">
+                        No salary data to display. Please select a month and sync.
+                    </TableCell>
+                    </TableRow>
+                )}
+                </TableBody>
+            </Table>
+             <ScrollBar orientation="horizontal" />
+          </ScrollArea>
         </CardContent>
       </Card>
     </div>
