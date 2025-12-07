@@ -17,7 +17,7 @@ import { syncSalary } from '@/ai';
 import { format, getYear } from 'date-fns';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 
 interface EnrichedEmployee extends Employee {
   positions?: Record<string, string>;
@@ -34,8 +34,8 @@ export default function EmployeeSalaryPage() {
   const currentYear = getYear(new Date());
   const currentMonth = new Date().getMonth();
 
-  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState<number>(currentMonth);
+  const [selectedYear, setSelectedYear] = useState<string>(currentYear.toString());
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth.toString());
 
   const [filters, setFilters] = useState({
     searchTerm: '',
@@ -108,7 +108,7 @@ export default function EmployeeSalaryPage() {
 
   useEffect(() => {
     if (!isAuthLoading && canView) {
-      const monthStr = format(new Date(selectedYear, selectedMonth), 'yyyy-MM');
+      const monthStr = format(new Date(parseInt(selectedYear), parseInt(selectedMonth)), 'yyyy-MM');
       fetchSalariesAndPositions(monthStr);
     }
   }, [isAuthLoading, canView, selectedYear, selectedMonth, fetchSalariesAndPositions]);
@@ -121,7 +121,7 @@ export default function EmployeeSalaryPage() {
     setIsSyncing(true);
 
     try {
-      const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1);
+      const firstDayOfMonth = new Date(parseInt(selectedYear), parseInt(selectedMonth), 1);
       const monthString = format(firstDayOfMonth, 'yyyy-MM-dd');
 
       const result = await syncSalary({ month: monthString });
@@ -149,7 +149,7 @@ export default function EmployeeSalaryPage() {
         }));
 
         setDisplayedEmployees(enrichedEmployees as EnrichedEmployee[]);
-        await fetchLastSyncedTime(format(new Date(selectedYear, selectedMonth), 'yyyy-MM'));
+        await fetchLastSyncedTime(format(new Date(parseInt(selectedYear), parseInt(selectedMonth)), 'yyyy-MM'));
       } else {
         throw new Error(result.message);
       }
@@ -190,7 +190,7 @@ export default function EmployeeSalaryPage() {
 
   const monthOptions = useMemo(() => {
     return Array.from({ length: 12 }, (_, i) => ({
-      value: i,
+      value: i.toString(),
       label: format(new Date(2000, i), 'MMMM'),
     }));
   }, []);
@@ -308,7 +308,7 @@ export default function EmployeeSalaryPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={String(selectedYear)} onValueChange={(val) => setSelectedYear(Number(val))}>
+          <Select value={selectedYear} onValueChange={(val) => setSelectedYear(val)}>
             <SelectTrigger className="w-[120px]">
               <SelectValue />
             </SelectTrigger>
@@ -318,7 +318,7 @@ export default function EmployeeSalaryPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={String(selectedMonth)} onValueChange={(val) => setSelectedMonth(Number(val))}>
+          <Select value={selectedMonth} onValueChange={(val) => setSelectedMonth(val)}>
             <SelectTrigger className="w-[150px]">
               <SelectValue />
             </SelectTrigger>
@@ -393,7 +393,6 @@ export default function EmployeeSalaryPage() {
       <Card>
         <CardContent className="p-0">
           <ScrollArea className="max-h-[calc(100vh-22rem)] w-full">
-            <div className="w-full overflow-x-auto">
               <Table className="w-full table-auto">
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
@@ -438,7 +437,7 @@ export default function EmployeeSalaryPage() {
                   )}
                 </TableBody>
               </Table>
-            </div>
+            <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </CardContent>
       </Card>
