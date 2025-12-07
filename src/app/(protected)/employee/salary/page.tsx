@@ -200,7 +200,6 @@ export default function EmployeeSalaryPage() {
   }, []);
 
   const filterOptions = useMemo(() => {
-    let baseData = displayedEmployees;
     const opts: Record<string, string[]> = {
       'Project Name': [],
       'Location': [],
@@ -215,7 +214,9 @@ export default function EmployeeSalaryPage() {
       'Designation': new Set(),
       'Department': new Set(),
     };
-
+  
+    let baseData = displayedEmployees;
+  
     if (filters.projectName !== 'all') {
       baseData = baseData.filter(e => e.positions?.['Project Name'] === filters.projectName);
     }
@@ -226,27 +227,28 @@ export default function EmployeeSalaryPage() {
       baseData = baseData.filter(e => e.positions?.['EMPLOYEE TYPE'] === filters.employeeType);
     }
     if (filters.department !== 'all') {
-      baseData = baseData.filter(e => e.positions?.['Department'] === filters.department);
+        baseData = baseData.filter(e => e.positions?.['Department'] === filters.department);
     }
-    if (filters.designation !== 'all') {
-      baseData = baseData.filter(e => e.positions?.['Designation'] === filters.designation);
+     if (filters.designation !== 'all') {
+        baseData = baseData.filter(e => e.positions?.['Designation'] === filters.designation);
     }
 
-    displayedEmployees.forEach(e => {
-        if(e.positions) {
-            dynamicColumns.forEach(col => {
-                const val = e.positions?.[col];
-                if (val) sets[col].add(val);
-            });
-        }
+    baseData.forEach(e => {
+      if (e.positions) {
+        dynamicColumns.forEach(col => {
+          const val = e.positions?.[col];
+          if (val) sets[col].add(val);
+        });
+      }
     });
-    
+
     dynamicColumns.forEach(col => {
-        opts[col] = Array.from(sets[col]).sort();
+      opts[col] = Array.from(sets[col]).sort();
     });
 
     return opts;
   }, [displayedEmployees, dynamicColumns, filters]);
+  
 
   const filteredEmployees = useMemo(() => {
     const term = filters.searchTerm.trim().toLowerCase();
@@ -292,10 +294,10 @@ export default function EmployeeSalaryPage() {
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/settings/employee">
+          <Link href="/employee">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-6 w-6" />
             </Button>
@@ -334,9 +336,8 @@ export default function EmployeeSalaryPage() {
       </div>
 
       <Card className="mb-4">
-        <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
+        <CardContent className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4 items-end">
+            <div className="relative col-span-full xl:col-span-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search by ID or Name..."
@@ -345,16 +346,47 @@ export default function EmployeeSalaryPage() {
                 className="pl-9"
               />
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={clearFilters}>Clear Filters</Button>
+             <Select value={filters.projectName} onValueChange={(value) => handleFilterChange('projectName', value)}>
+                <SelectTrigger><SelectValue placeholder="All Projects" /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {filterOptions['Project Name'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+            </Select>
+             <Select value={filters.location} onValueChange={(value) => handleFilterChange('location', value)}>
+                <SelectTrigger><SelectValue placeholder="All Locations" /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {filterOptions['Location'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+            </Select>
+            <Select value={filters.employeeType} onValueChange={(value) => handleFilterChange('employeeType', value)}>
+                <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {filterOptions['EMPLOYEE TYPE'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+            </Select>
+            <Select value={filters.designation} onValueChange={(value) => handleFilterChange('designation', value)}>
+                <SelectTrigger><SelectValue placeholder="All Designations" /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Designations</SelectItem>
+                    {filterOptions['Designation'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+            </Select>
+             <Select value={filters.department} onValueChange={(value) => handleFilterChange('department', value)}>
+                <SelectTrigger><SelectValue placeholder="All Departments" /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Departments</SelectItem>
+                    {filterOptions['Department'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                </SelectContent>
+            </Select>
+            <Button variant="secondary" onClick={clearFilters} className="w-full xl:w-auto">Clear Filters</Button>
             {lastSynced && (
-              <p className="text-sm text-muted-foreground whitespace-nowrap">
+              <p className="text-sm text-muted-foreground whitespace-nowrap col-span-full text-right mt-2 sm:mt-0">
                 Last synced on: {lastSynced}
               </p>
             )}
-          </div>
         </CardContent>
       </Card>
 
@@ -413,5 +445,3 @@ export default function EmployeeSalaryPage() {
     </div>
   );
 }
-
-    
