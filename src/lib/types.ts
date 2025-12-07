@@ -1,5 +1,4 @@
 
-
 import { Timestamp } from 'firebase/firestore';
 import { z } from 'zod';
 
@@ -508,9 +507,11 @@ export interface WorkOrder {
   workOrderNo: string;
   subcontractorId: string;
   projectId: string;
-  subcontractorName?: string;
+  subcontractorName: string;
   totalAmount: number;
   items: WorkOrderItem[];
+  date: string;
+  status: 'Active' | 'Completed' | 'Cancelled';
 }
 
 export interface BillItem {
@@ -781,6 +782,10 @@ export type SalaryDetail = {
   type: 'INCOME' | 'DEDUCT' | 'Others';
 };
 
+export interface SalarySyncLog {
+  lastSynced: Timestamp;
+}
+
 export interface Employee {
   id: string;
   employeeId: string;
@@ -808,7 +813,7 @@ export interface EmployeePosition {
 export interface PositionDetail {
   id: number;
   category: string;
-  value: number;
+  value: string;
   effectiveFrom: string;
   effectiveTo: string | null;
 }
@@ -1056,3 +1061,5 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
+
+    

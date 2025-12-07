@@ -14,13 +14,13 @@ import type { Employee, SalaryDetail, SalarySyncLog, EmployeePosition } from '@/
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { syncSalary } from '@/ai';
-import { format, getYear, startOfMonth } from 'date-fns';
+import { format, getYear } from 'date-fns';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface EnrichedEmployee extends Employee {
-    positions?: Record<string, string>;
+  positions?: Record<string, string>;
 }
 
 export default function EmployeeSalaryPage() {
@@ -48,7 +48,7 @@ export default function EmployeeSalaryPage() {
 
   const canView = can('View', 'Settings.Employee Management');
   const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
-  
+
   const fetchLastSyncedTime = useCallback(async (monthStr: string) => {
     try {
       const syncLogRef = doc(db, 'salarySyncLogs', monthStr);
@@ -60,116 +60,116 @@ export default function EmployeeSalaryPage() {
         setLastSynced(null);
       }
     } catch (error) {
-        console.error("Could not fetch last sync time", error);
-        setLastSynced(null);
+      console.error("Could not fetch last sync time", error);
+      setLastSynced(null);
     }
   }, []);
 
   const fetchSalariesAndPositions = useCallback(async (monthStr: string) => {
     setIsLoading(true);
     try {
-        const salaryQuery = query(collection(db, 'employees'), where('salaryMonth', '==', monthStr));
-        const positionsQuery = query(collection(db, 'employeePositions'));
+      const salaryQuery = query(collection(db, 'employees'), where('salaryMonth', '==', monthStr));
+      const positionsQuery = query(collection(db, 'employeePositions'));
 
-        const [snapshot, positionsSnap] = await Promise.all([
-          getDocs(salaryQuery),
-          getDocs(positionsQuery)
-        ]);
-        
-        const positionsMap = new Map<string, Record<string, string>>();
-        positionsSnap.docs.forEach(doc => {
-            const pos = doc.data() as EmployeePosition;
-            const posRecord: Record<string, string> = {};
-            pos.categoryList.forEach(cat => {
-                posRecord[cat.category] = cat.value;
-            });
-            positionsMap.set(pos.employeeId, posRecord);
+      const [snapshot, positionsSnap] = await Promise.all([
+        getDocs(salaryQuery),
+        getDocs(positionsQuery)
+      ]);
+
+      const positionsMap = new Map<string, Record<string, string>>();
+      positionsSnap.docs.forEach(doc => {
+        const pos = doc.data() as EmployeePosition;
+        const posRecord: Record<string, string> = {};
+        pos.categoryList.forEach(cat => {
+          posRecord[cat.category] = cat.value;
         });
+        positionsMap.set(pos.employeeId, posRecord);
+      });
 
-        if(!snapshot.empty) {
-            const employeesFromDb = snapshot.docs.map(doc => {
-                const emp = doc.data() as Employee;
-                return {
-                    ...emp,
-                    positions: positionsMap.get(emp.employeeNo || emp.employeeId),
-                };
-            });
-            setDisplayedEmployees(employeesFromDb);
-        } else {
-            setDisplayedEmployees([]);
-        }
-        await fetchLastSyncedTime(monthStr);
-    } catch (e) {
-        console.error(e);
+      if (!snapshot.empty) {
+        const employeesFromDb = snapshot.docs.map(doc => {
+          const emp = doc.data() as Employee;
+          return {
+            ...emp,
+            positions: positionsMap.get(emp.employeeNo || emp.employeeId),
+          };
+        });
+        setDisplayedEmployees(employeesFromDb);
+      } else {
         setDisplayedEmployees([]);
+      }
+      await fetchLastSyncedTime(monthStr);
+    } catch (e) {
+      console.error(e);
+      setDisplayedEmployees([]);
     }
     setIsLoading(false);
   }, [fetchLastSyncedTime]);
 
   useEffect(() => {
     if (!isAuthLoading && canView) {
-        const monthStr = format(new Date(selectedYear, selectedMonth), 'yyyy-MM');
-        fetchSalariesAndPositions(monthStr);
+      const monthStr = format(new Date(selectedYear, selectedMonth), 'yyyy-MM');
+      fetchSalariesAndPositions(monthStr);
     }
   }, [isAuthLoading, canView, selectedYear, selectedMonth, fetchSalariesAndPositions]);
 
   const handleSync = async () => {
     if (!canSync) {
-        toast({ title: "Permission Denied", description: "You don't have permission to sync salaries.", variant: "destructive" });
-        return;
+      toast({ title: "Permission Denied", description: "You don't have permission to sync salaries.", variant: "destructive" });
+      return;
     }
     setIsSyncing(true);
-    
+
     try {
-        const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1);
-        const monthString = format(firstDayOfMonth, 'yyyy-MM-dd');
-        
-        const result = await syncSalary({ month: monthString });
-        if (result.success && result.employees) {
-            toast({
-                title: 'Sync Successful',
-                description: result.message,
-            });
+      const firstDayOfMonth = new Date(selectedYear, selectedMonth, 1);
+      const monthString = format(firstDayOfMonth, 'yyyy-MM-dd');
 
-            const positionsQuery = query(collection(db, 'employeePositions'));
-            const positionsSnap = await getDocs(positionsQuery);
-            const positionsMap = new Map<string, Record<string, string>>();
-            positionsSnap.docs.forEach(doc => {
-                const pos = doc.data() as EmployeePosition;
-                const posRecord: Record<string, string> = {};
-                pos.categoryList.forEach(cat => {
-                    posRecord[cat.category] = cat.value;
-                });
-                positionsMap.set(pos.employeeId, posRecord);
-            });
-
-            const enrichedEmployees = result.employees.map(emp => ({
-                ...emp,
-                positions: positionsMap.get(emp.employeeId),
-            }));
-
-            setDisplayedEmployees(enrichedEmployees as EnrichedEmployee[]);
-            await fetchLastSyncedTime(format(new Date(selectedYear, selectedMonth), 'yyyy-MM'));
-        } else {
-            throw new Error(result.message);
-        }
-    } catch (error: any) {
-         toast({
-            title: 'Sync Failed',
-            description: error.message || 'An unknown error occurred.',
-            variant: 'destructive',
+      const result = await syncSalary({ month: monthString });
+      if (result.success && result.employees) {
+        toast({
+          title: 'Sync Successful',
+          description: result.message,
         });
+
+        const positionsQuery = query(collection(db, 'employeePositions'));
+        const positionsSnap = await getDocs(positionsQuery);
+        const positionsMap = new Map<string, Record<string, string>>();
+        positionsSnap.docs.forEach(doc => {
+          const pos = doc.data() as EmployeePosition;
+          const posRecord: Record<string, string> = {};
+          pos.categoryList.forEach(cat => {
+            posRecord[cat.category] = cat.value;
+          });
+          positionsMap.set(pos.employeeId, posRecord);
+        });
+
+        const enrichedEmployees = result.employees.map(emp => ({
+          ...emp,
+          positions: positionsMap.get(emp.employeeId),
+        }));
+
+        setDisplayedEmployees(enrichedEmployees as EnrichedEmployee[]);
+        await fetchLastSyncedTime(format(new Date(selectedYear, selectedMonth), 'yyyy-MM'));
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Sync Failed',
+        description: error.message || 'An unknown error occurred.',
+        variant: 'destructive',
+      });
     } finally {
-        setIsSyncing(false);
+      setIsSyncing(false);
     }
   }
 
   const getSalaryComponentValue = (details: SalaryDetail[] | undefined, description: string): number => {
     if (!details) return 0;
     if (description === 'TOTAL DEDUCTIONS') {
-        return details
-            .filter(d => d.type === 'DEDUCT')
-            .reduce((sum, item) => sum + item.amount, 0);
+      return details
+        .filter(d => d.type === 'DEDUCT')
+        .reduce((sum, item) => sum + item.amount, 0);
     }
     const item = details.find(d => d.description === description);
     return item ? item.amount : 0;
@@ -182,41 +182,104 @@ export default function EmployeeSalaryPage() {
       currency: 'INR',
     }).format(amount);
   };
-  
+
   const yearOptions = useMemo(() => {
-      const startYear = currentYear - 5;
-      return Array.from({ length: 10 }, (_, i) => startYear + i).reverse();
+    const startYear = currentYear - 5;
+    return Array.from({ length: 10 }, (_, i) => startYear + i).reverse();
   }, [currentYear]);
 
   const monthOptions = useMemo(() => {
-      return Array.from({ length: 12 }, (_, i) => ({
-          value: i,
-          label: format(new Date(2000, i), 'MMMM'),
-      }));
+    return Array.from({ length: 12 }, (_, i) => ({
+      value: i,
+      label: format(new Date(2000, i), 'MMMM'),
+    }));
   }, []);
 
   const dynamicColumns = useMemo(() => {
     return ['Project Name', 'Location', 'EMPLOYEE TYPE', 'Designation', 'Department'];
   }, []);
 
-  const handleFilterChange = (filterName: keyof typeof filters, value: string) => {
-    setFilters(prev => {
-      const newFilters = { ...prev, [filterName]: value };
-      // Reset dependent filters if a parent filter changes
-      const filterOrder = ['projectName', 'location', 'employeeType', 'designation', 'department'];
-      const changedIndex = filterOrder.indexOf(filterName);
+  const filterOptions = useMemo(() => {
+    let baseData = displayedEmployees;
+    const opts: Record<string, string[]> = {
+      'Project Name': [],
+      'Location': [],
+      'EMPLOYEE TYPE': [],
+      'Designation': [],
+      'Department': [],
+    };
+    const sets: Record<string, Set<string>> = {
+      'Project Name': new Set(),
+      'Location': new Set(),
+      'EMPLOYEE TYPE': new Set(),
+      'Designation': new Set(),
+      'Department': new Set(),
+    };
 
-      if(changedIndex > -1) {
-        for(let i = changedIndex + 1; i < filterOrder.length; i++) {
-            const filterToReset = filterOrder[i] as keyof typeof filters;
-            newFilters[filterToReset] = 'all';
+    if (filters.projectName !== 'all') {
+      baseData = baseData.filter(e => e.positions?.['Project Name'] === filters.projectName);
+    }
+    if (filters.location !== 'all') {
+      baseData = baseData.filter(e => e.positions?.['Location'] === filters.location);
+    }
+    if (filters.employeeType !== 'all') {
+      baseData = baseData.filter(e => e.positions?.['EMPLOYEE TYPE'] === filters.employeeType);
+    }
+    if (filters.department !== 'all') {
+      baseData = baseData.filter(e => e.positions?.['Department'] === filters.department);
+    }
+    if (filters.designation !== 'all') {
+      baseData = baseData.filter(e => e.positions?.['Designation'] === filters.designation);
+    }
+
+    displayedEmployees.forEach(e => {
+        if(e.positions) {
+            dynamicColumns.forEach(col => {
+                const val = e.positions?.[col];
+                if (val) sets[col].add(val);
+            });
         }
-      }
-      
-      return newFilters;
     });
+    
+    dynamicColumns.forEach(col => {
+        opts[col] = Array.from(sets[col]).sort();
+    });
+
+    return opts;
+  }, [displayedEmployees, dynamicColumns, filters]);
+
+  const filteredEmployees = useMemo(() => {
+    const term = filters.searchTerm.trim().toLowerCase();
+
+    return displayedEmployees.filter(emp => {
+      const idOrNo = (emp.employeeNo || emp.employeeId || '').toLowerCase();
+      const name = (emp.name || '').toLowerCase();
+      if (term && !idOrNo.includes(term) && !name.includes(term)) {
+        return false;
+      }
+      if (filters.projectName !== 'all' && emp.positions?.['Project Name'] !== filters.projectName) {
+        return false;
+      }
+      if (filters.location !== 'all' && emp.positions?.['Location'] !== filters.location) {
+        return false;
+      }
+      if (filters.employeeType !== 'all' && emp.positions?.['EMPLOYEE TYPE'] !== filters.employeeType) {
+        return false;
+      }
+      if (filters.designation !== 'all' && emp.positions?.['Designation'] !== filters.designation) {
+        return false;
+      }
+      if (filters.department !== 'all' && emp.positions?.['Department'] !== filters.department) {
+        return false;
+      }
+      return true;
+    });
+  }, [displayedEmployees, filters]);
+
+  const handleFilterChange = (filterName: keyof typeof filters, value: string) => {
+    setFilters(prev => ({ ...prev, [filterName]: value }));
   };
-  
+
   const clearFilters = () => {
     setFilters({
       searchTerm: '',
@@ -227,55 +290,6 @@ export default function EmployeeSalaryPage() {
       department: 'all',
     });
   };
-
-  const { filteredEmployees, filterOptions } = useMemo(() => {
-      let sourceForOptions = displayedEmployees;
-      
-      const options: Record<string, Set<string>> = {};
-      dynamicColumns.forEach(col => { options[col] = new Set() });
-
-      // Generate project names from all displayed employees before any filtering
-      const projectNames = [...new Set(displayedEmployees.map(e => e.positions?.['Project Name']).filter(Boolean))] as string[];
-      options['Project Name'] = new Set(projectNames);
-
-      if (filters.projectName !== 'all') {
-        sourceForOptions = sourceForOptions.filter(e => e.positions?.['Project Name'] === filters.projectName);
-      }
-      sourceForOptions.forEach(e => { if (e.positions?.['Location']) options['Location'].add(e.positions['Location']) });
-      
-      if (filters.location !== 'all') {
-        sourceForOptions = sourceForOptions.filter(e => e.positions?.['Location'] === filters.location);
-      }
-      sourceForOptions.forEach(e => { if (e.positions?.['EMPLOYEE TYPE']) options['EMPLOYEE TYPE'].add(e.positions['EMPLOYEE TYPE']) });
-      
-      if (filters.employeeType !== 'all') {
-        sourceForOptions = sourceForOptions.filter(e => e.positions?.['EMPLOYEE TYPE'] === filters.employeeType);
-      }
-      sourceForOptions.forEach(e => { if (e.positions?.['Designation']) options['Designation'].add(e.positions['Designation']) });
-
-      if (filters.designation !== 'all') {
-        sourceForOptions = sourceForOptions.filter(e => e.positions?.['Designation'] === filters.designation);
-      }
-      sourceForOptions.forEach(e => { if (e.positions?.['Department']) options['Department'].add(e.positions['Department']) });
-
-      const finalFiltered = sourceForOptions.filter(emp => {
-        const term = filters.searchTerm.toLowerCase();
-        return !term || emp.name.toLowerCase().includes(term) || (emp.employeeNo || emp.employeeId).toLowerCase().includes(term);
-      });
-
-      return {
-          filteredEmployees: finalFiltered,
-          filterOptions: {
-              'Project Name': Array.from(options['Project Name']).sort(),
-              'Location': Array.from(options['Location']).sort(),
-              'EMPLOYEE TYPE': Array.from(options['EMPLOYEE TYPE']).sort(),
-              'Designation': Array.from(options['Designation']).sort(),
-              'Department': Array.from(options['Department']).sort(),
-          }
-      };
-
-  }, [displayedEmployees, filters, dynamicColumns]);
-
 
   return (
     <div className="w-full">
@@ -291,102 +305,71 @@ export default function EmployeeSalaryPage() {
             <p className="text-muted-foreground">View and manage salary details for all employees.</p>
           </div>
         </div>
-         <div className="flex items-center gap-2">
-            <Select value={String(selectedYear)} onValueChange={(val) => setSelectedYear(Number(val))}>
-                <SelectTrigger className="w-[120px]">
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    {yearOptions.map(year => (
-                        <SelectItem key={year} value={String(year)}>{year}</SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
-            <Select value={String(selectedMonth)} onValueChange={(val) => setSelectedMonth(Number(val))}>
-                <SelectTrigger className="w-[150px]">
-                    <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                    {monthOptions.map(month => (
-                        <SelectItem key={month.value} value={String(month.value)}>{month.label}</SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
-            <Button onClick={handleSync} disabled={isSyncing || !canSync}>
-                {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Sync Salary
-            </Button>
+        <div className="flex items-center gap-2">
+          <Select value={String(selectedYear)} onValueChange={(val) => setSelectedYear(Number(val))}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {yearOptions.map(year => (
+                <SelectItem key={year} value={String(year)}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={String(selectedMonth)} onValueChange={(val) => setSelectedMonth(Number(val))}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptions.map(month => (
+                <SelectItem key={month.value} value={String(month.value)}>{month.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={handleSync} disabled={isSyncing || !canSync}>
+            {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+            Sync Salary
+          </Button>
         </div>
       </div>
-       <Card className="mb-4">
+
+      <Card className="mb-4">
         <CardContent className="p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                    placeholder="Search by ID or Name..."
-                    value={filters.searchTerm}
-                    onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
-                    className="pl-9"
-                />
-                </div>
-                <Select value={filters.projectName} onValueChange={(v) => handleFilterChange('projectName', v)}>
-                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Projects"/></SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Projects</SelectItem>
-                    {filterOptions['Project Name'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-                </Select>
-                <Select value={filters.location} onValueChange={(v) => handleFilterChange('location', v)} disabled={filters.projectName === 'all'}>
-                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Locations"/></SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Locations</SelectItem>
-                    {filterOptions['Location'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-                </Select>
-                <Select value={filters.employeeType} onValueChange={(v) => handleFilterChange('employeeType', v)} disabled={filters.location === 'all'}>
-                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Employee Types"/></SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Employee Types</SelectItem>
-                    {filterOptions['EMPLOYEE TYPE'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-                </Select>
-                <Select value={filters.designation} onValueChange={(v) => handleFilterChange('designation', v)} disabled={filters.employeeType === 'all'}>
-                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Designations"/></SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Designations</SelectItem>
-                    {filterOptions['Designation'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-                </Select>
-                <Select value={filters.department} onValueChange={(v) => handleFilterChange('department', v)} disabled={filters.designation === 'all'}>
-                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue placeholder="All Departments"/></SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Departments</SelectItem>
-                    {filterOptions['Department'].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                </SelectContent>
-                </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by ID or Name..."
+                value={filters.searchTerm}
+                onChange={(e) => handleFilterChange('searchTerm', e.target.value)}
+                className="pl-9"
+              />
             </div>
-             <div className="flex items-center gap-2">
-                <Button variant="secondary" onClick={clearFilters}>Clear Filters</Button>
-                {lastSynced && (
-                <p className="text-sm text-muted-foreground whitespace-nowrap">
-                    Last synced on: {lastSynced}
-                </p>
-                )}
-            </div>
-       </CardContent>
-       </Card>
-      
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={clearFilters}>Clear Filters</Button>
+            {lastSynced && (
+              <p className="text-sm text-muted-foreground whitespace-nowrap">
+                Last synced on: {lastSynced}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-22rem)] w-full">
-            <div className="min-w-[1200px]">
-              <Table>
+          <ScrollArea className="max-h-[calc(100vh-22rem)] w-full">
+            <div className="w-full overflow-x-auto">
+              <Table className="w-full table-auto">
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
                     <TableHead className="w-[120px]">Employee ID</TableHead>
                     <TableHead>Name</TableHead>
-                    {dynamicColumns.map(col => <TableHead key={col}>{col}</TableHead>)}
+                    {dynamicColumns.map(col => (
+                      <TableHead key={col}>{col}</TableHead>
+                    ))}
                     <TableHead>Gross Salary</TableHead>
                     <TableHead>TOTAL DEDUCTIONS</TableHead>
                     <TableHead>Net Salary</TableHead>
@@ -394,27 +377,29 @@ export default function EmployeeSalaryPage() {
                 </TableHeader>
                 <TableBody>
                   {isLoading || isSyncing ? (
-                    Array.from({length: 5}).map((_, i) => (
-                        <TableRow key={i}>
-                            <TableCell colSpan={5 + dynamicColumns.length}><Skeleton className="h-6 w-full" /></TableCell>
-                        </TableRow>
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell colSpan={6 + dynamicColumns.length}><Skeleton className="h-6 w-full" /></TableCell>
+                      </TableRow>
                     ))
                   ) : filteredEmployees.length > 0 ? (
                     filteredEmployees.map(emp => (
                       <TableRow key={emp.employeeId}>
-                        <TableCell>{emp.employeeNo || emp.employeeId}</TableCell>
+                        <TableCell className="whitespace-nowrap">{emp.employeeNo || emp.employeeId}</TableCell>
                         <TableCell className="font-medium whitespace-nowrap">{emp.name}</TableCell>
                         {dynamicColumns.map(col => (
-                            <TableCell key={col}>{emp.positions?.[col] || '-'}</TableCell>
+                          <TableCell key={col} className="whitespace-normal">
+                            {emp.positions?.[col] || '-'}
+                          </TableCell>
                         ))}
-                        <TableCell>{formatCurrency(emp.grossSalary)}</TableCell>
-                        <TableCell>{formatCurrency(getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS'))}</TableCell>
-                        <TableCell>{formatCurrency(emp.netSalary)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatCurrency(emp.grossSalary)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatCurrency(getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS'))}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatCurrency(emp.netSalary)}</TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={5 + dynamicColumns.length} className="h-24 text-center">
+                      <TableCell colSpan={6 + dynamicColumns.length} className="h-24 text-center">
                         No salary data to display. Please select a month and sync.
                       </TableCell>
                     </TableRow>
@@ -428,3 +413,5 @@ export default function EmployeeSalaryPage() {
     </div>
   );
 }
+
+    
