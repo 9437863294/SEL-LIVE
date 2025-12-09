@@ -216,14 +216,14 @@ export default function StagePage() {
       const headsSnap = await getDocs(collection(db, 'accountHeads'));
       setAccountHeads(
         headsSnap.docs.map(
-          (d) => ({ id: d.id, ...d.data() } as AccountHead)
+          (d) => ({ id: d.id, ...(d.data() as any) } as AccountHead)
         )
       );
 
       const subHeadsSnap = await getDocs(collection(db, 'subAccountHeads'));
       setSubAccountHeads(
         subHeadsSnap.docs.map(
-          (d) => ({ id: d.id, ...d.data() } as SubAccountHead)
+          (d) => ({ id: d.id, ...(d.data() as any) } as SubAccountHead)
         )
       );
 
@@ -255,12 +255,14 @@ export default function StagePage() {
   const { pendingTasks, completedTasks } = useMemo(() => {
     if (!userId || !stage)
       return { pendingTasks: [], completedTasks: [] };
+
     const myPending = tasks.filter(
       (t) =>
         (t.assignees ?? []).includes(userId) &&
         t.status !== 'Completed' &&
         t.status !== 'Rejected'
     );
+
     const myCompleted = tasks.filter(
       (t) =>
         !myPending.some((pt) => pt.id === t.id) &&
@@ -268,7 +270,8 @@ export default function StagePage() {
           (h) => h.stepName === stage.name && h.userId === userId
         )
     );
-    return { pendingTasks, completedTasks };
+
+    return { pendingTasks: myPending, completedTasks: myCompleted };
   }, [tasks, userId, stage]);
 
   const handleAction = async (
@@ -304,11 +307,7 @@ export default function StagePage() {
       let previewRequestNo = 'Generating...';
 
       try {
-        const configRef = doc(
-          db,
-          'departmentSerialConfigs',
-          targetDepartmentId
-        );
+        const configRef = doc(db, 'departmentSerialConfigs', targetDepartmentId);
         const configDoc = await getDoc(configRef);
         if (configDoc.exists()) {
           const configData = configDoc.data() as any;
@@ -506,9 +505,7 @@ export default function StagePage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={(e) =>
-                                e.stopPropagation()
-                              }
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
@@ -617,4 +614,8 @@ export default function StagePage() {
       />
     </>
   );
+}
+
+const stepDisplay = (step: WorkflowStep): string => {
+    return step?.name || 'Unknown Step';
 }
