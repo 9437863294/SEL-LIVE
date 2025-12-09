@@ -993,10 +993,3 @@ export default function AllRequisitionsTab() {
     </div>
   );
 }
-
-```
-- src/lib/types.ts
-- src/app/(protected)/site-fund-requisition-2/page.tsx
-- src/app/(protected)/site-fund-requisition-2/settings/page.tsx
-- src/app/(protected)/site-fund-requisition-2/settings/workflow-configuration/page.tsx
-- src/app/(protected)/site-fund-requisition-2/stage/[stageId]/page.tsx
