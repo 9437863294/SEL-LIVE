@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import type { WorkflowStep } from '@/lib/types';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
@@ -56,7 +56,7 @@ function JmcCard({ item }: JmcCardProps) {
     <Card
       className={cn(
         'flex flex-col h-full transition-all duration-300 ease-in-out bg-background rounded-xl border-border/80',
-        !isDisabled && 'hover:shadow-lg hover:border-primary/50',
+        !isDisabled && 'hover:shadow-lg hover:border-primary/50 cursor-pointer',
         isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
       )}
       aria-disabled={isDisabled || undefined}
@@ -160,8 +160,8 @@ export default function JmcPage() {
 
   const canViewStages = useMemo(() => {
     if (authIsLoading) return false;
+    // Broad view permission for stages
     try {
-      // Broad view permission for stages
       return can('View', 'Billing Recon.JMC');
     } catch {
       return false;
@@ -184,9 +184,9 @@ export default function JmcPage() {
         // Defensive: ensure valid array of steps with id + name
         const steps: WorkflowStep[] = (Array.isArray(rawSteps) ? rawSteps : [])
           .filter((s) => s && (s as any).name)
-          .map((s) => ({
+          .map((s, index) => ({
             ...s,
-            id: (s as any).id || slugify((s as any).name),
+            id: String(s.id || index + 1), // Ensure every step has an ID
             name: (s as any).name,
           }));
 
@@ -284,21 +284,16 @@ export default function JmcPage() {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center gap-2">
-          <Link href={projectSlug ? `/billing-recon/${projectSlug}` : '#'}>
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">JMC Management</h1>
+            <Link href={projectSlug ? `/billing-recon/${projectSlug}` : '#'}>
+              <Button variant="ghost" size="icon" aria-label="Back">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">JMC Management</h1>
         </div>
         <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to access JMC management.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
+            <CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to access JMC management.</CardDescription></CardHeader>
+            <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
         </Card>
       </div>
     );
@@ -343,5 +338,3 @@ export default function JmcPage() {
     </div>
   );
 }
-
-    
