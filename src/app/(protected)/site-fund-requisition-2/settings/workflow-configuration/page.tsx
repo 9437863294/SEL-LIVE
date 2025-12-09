@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -31,7 +32,6 @@ import type {
   AssignedTo,
   UploadRequirement,
   ActionConfig,
-  AmountBasedCondition,
 } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
@@ -56,33 +56,33 @@ function isMapped(step: WorkflowStep): step is WorkflowStepMapped {
 
 /* ---------------- initial data ---------------- */
 const initialSteps: WorkflowStep[] = [
-    { 
-        id: '1', 
-        name: 'Request Receiving', 
-        tat: 2,
-        assignmentType: 'User-based',
-        assignedTo: [],
-        actions: ['Complete', 'Edit'],
-        upload: 'Optional',
-    },
-    { 
-        id: '2', 
-        name: 'Verification', 
-        tat: 16, // 2 days
-        assignmentType: 'User-based',
-        assignedTo: [],
-        actions: [],
-        upload: 'Optional',
-    },
-    { 
-        id: '3', 
-        name: 'Approval of Payment', 
-        tat: 8, // 1 day
-        assignmentType: 'User-based',
-        assignedTo: [],
-        actions: [],
-        upload: 'Optional',
-    },
+  {
+    id: '1',
+    name: 'Request Receiving',
+    tat: 2,
+    assignmentType: 'User-based',
+    assignedTo: [],
+    actions: ['Complete', 'Edit'],
+    upload: 'Optional',
+  },
+  {
+    id: '2',
+    name: 'Verification',
+    tat: 16, // 2 days
+    assignmentType: 'User-based',
+    assignedTo: [],
+    actions: [],
+    upload: 'Optional',
+  },
+  {
+    id: '3',
+    name: 'Approval of Payment',
+    tat: 8, // 1 day
+    assignmentType: 'User-based',
+    assignedTo: [],
+    actions: [],
+    upload: 'Optional',
+  },
 ];
 
 const allActions: (string | ActionConfig)[] = [
@@ -112,17 +112,22 @@ export default function WorkflowConfigurationPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  
-  const canViewPage = can('View Settings', 'Site Fund Requisition');
+
+  /* -------- permissions via safe 3-arg can() wrapper -------- */
+  const canViewPage = useMemo(
+    () => !isAuthLoading && safeCan3(can, 'View Settings', 'Site Fund Requisition 2'),
+    [isAuthLoading, can],
+  );
+  const canEditPage = useMemo(
+    () => !isAuthLoading && safeCan3(can, 'Edit Workflow', 'Site Fund Requisition 2.Settings'),
+    [isAuthLoading, can],
+  );
 
   useEffect(() => {
-    if (!isAuthLoading) {
-        if(canViewPage) {
-            fetchData();
-        } else {
-            setIsLoading(false);
-        }
-    }
+    if (isAuthLoading) return;
+    if (canViewPage) void fetchData();
+    else setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthLoading, canViewPage]);
 
   const fetchData = useCallback(async () => {
@@ -140,7 +145,7 @@ export default function WorkflowConfigurationPage() {
       setDepartments(deptsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Department)));
       setRoles(rolesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Role)));
 
-      const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+      const workflowRef = doc(db, 'workflows', 'site-fund-requisition-2-workflow');
       const workflowSnap = await getDoc(workflowRef);
 
       if (workflowSnap.exists()) {
@@ -150,7 +155,7 @@ export default function WorkflowConfigurationPage() {
         setSteps(initialSteps);
       }
     } catch (error) {
-      console.error("Error fetching data: ", error);
+      console.error('Error fetching data: ', error);
       toast({ title: 'Error', description: 'Failed to fetch configuration data.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
@@ -316,7 +321,7 @@ export default function WorkflowConfigurationPage() {
     if (!user) return;
     setIsSaving(true);
     try {
-        const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+        const workflowRef = doc(db, 'workflows', 'site-fund-requisition-2-workflow');
         await setDoc(workflowRef, { steps: steps });
         await logUserActivity({
             userId: user.id,
@@ -373,7 +378,7 @@ export default function WorkflowConfigurationPage() {
     <div className="w-full max-w-4xl mx-auto pr-14">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link href="/site-fund-requisition/settings">
+          <Link href="/site-fund-requisition-2/settings">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-6 w-6" />
             </Button>
@@ -386,7 +391,7 @@ export default function WorkflowConfigurationPage() {
               {pageInvalidMsg}
             </Badge>
           )}
-          <Button onClick={handleSave} disabled={isSaving || !!pageInvalidMsg}>
+          <Button onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Workflow
           </Button>
@@ -422,7 +427,7 @@ export default function WorkflowConfigurationPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => moveStep(step.id, 'up')}
-                        disabled={index === 0}
+                        disabled={!canEditPage || index === 0}
                         aria-label="Move up"
                       >
                         <ArrowUp className="h-4 w-4" />
@@ -431,7 +436,7 @@ export default function WorkflowConfigurationPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => moveStep(step.id, 'down')}
-                        disabled={index === steps.length - 1}
+                        disabled={!canEditPage || index === steps.length - 1}
                         aria-label="Move down"
                       >
                         <ArrowDown className="h-4 w-4" />
@@ -440,7 +445,7 @@ export default function WorkflowConfigurationPage() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDeleteStep(step.id)}
-                        disabled={steps.length <= 1}
+                        disabled={!canEditPage || steps.length <= 1}
                         aria-label={`Delete step ${step.name}`}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -458,6 +463,7 @@ export default function WorkflowConfigurationPage() {
                             id={`step-name-${step.id}`}
                             value={step.name}
                             onChange={(e) => handleStepChange(step.id, 'name', e.target.value)}
+                            disabled={!canEditPage}
                           />
                         </div>
                         <div className="space-y-2">
@@ -472,9 +478,10 @@ export default function WorkflowConfigurationPage() {
                               handleStepChange(
                                 step.id,
                                 'tat',
-                                Math.max(1, parseInt(e.target.value || '1', 10))
+                                Math.max(1, parseInt(e.target.value || '1', 10)) as unknown as WorkflowStep['tat'],
                               )
                             }
+                            disabled={!canEditPage}
                           />
                         </div>
                       </div>
@@ -491,7 +498,7 @@ export default function WorkflowConfigurationPage() {
                         >
                           {(['User-based', 'Project-based', 'Department-based', 'Amount-based'] as const).map((type) => (
                             <div key={type} className="flex items-center space-x-2">
-                              <RadioGroupItem value={type} id={`${step.id}-${type}`} />
+                              <RadioGroupItem value={type} id={`${step.id}-${type}`} disabled={!canEditPage} />
                               <Label htmlFor={`${step.id}-${type}`} className="font-normal">
                                 {type}
                               </Label>
@@ -508,10 +515,10 @@ export default function WorkflowConfigurationPage() {
                             <Select
                               value={step.assignedTo[0] ?? ''}
                               onValueChange={(value) => {
-                                const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
-                                newAssignedTo[0] = value;
-                                handleStepChange(step.id, 'assignedTo', newAssignedTo);
+                                const next: WorkflowStepUser['assignedTo'] = [value, step.assignedTo[1] ?? ''];
+                                handleStepChange(step.id, 'assignedTo', next);
                               }}
+                              disabled={!canEditPage}
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select a user" />
@@ -531,10 +538,10 @@ export default function WorkflowConfigurationPage() {
                               value={step.assignedTo[1] || 'none'}
                               onValueChange={(value) => {
                                 const alt = value === 'none' ? '' : value;
-                                const newAssignedTo = [...(Array.isArray(step.assignedTo) ? step.assignedTo : ['', ''])];
-                                newAssignedTo[1] = alt;
-                                handleStepChange(step.id, 'assignedTo', newAssignedTo);
+                                const next: WorkflowStepUser['assignedTo'] = [step.assignedTo[0] ?? '', alt];
+                                handleStepChange(step.id, 'assignedTo', next);
                               }}
+                              disabled={!canEditPage}
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select a user (optional)" />
@@ -583,6 +590,7 @@ export default function WorkflowConfigurationPage() {
                                             onValueChange={(value) =>
                                               handleAssignmentDetailChange(step.id, item.id, 'primary', value)
                                             }
+                                            disabled={!canEditPage}
                                           >
                                             <SelectTrigger>
                                               <SelectValue placeholder="Select primary user" />
@@ -602,6 +610,7 @@ export default function WorkflowConfigurationPage() {
                                             onValueChange={(value) =>
                                               handleAssignmentDetailChange(step.id, item.id, 'alternative', value)
                                             }
+                                            disabled={!canEditPage}
                                           >
                                             <SelectTrigger>
                                               <SelectValue placeholder="Select alternative user" />
@@ -645,6 +654,7 @@ export default function WorkflowConfigurationPage() {
                                     onCheckedChange={(checked) =>
                                       handleActionToggle(step.id, action, Boolean(checked))
                                     }
+                                    disabled={!canEditPage}
                                   />
                                   <Label htmlFor={id} className="font-normal">
                                     {actionName}
@@ -655,21 +665,23 @@ export default function WorkflowConfigurationPage() {
                           })}
                         </div>
                       </div>
-                      
+
                       {/* Upload requirement */}
                       <div className="space-y-2">
                         <Label>Upload</Label>
-                         <RadioGroup
-                            value={step.upload}
-                            onValueChange={(value) => handleStepChange(step.id, 'upload', value)}
-                            className="flex gap-4"
+                        <RadioGroup
+                          value={step.upload}
+                          onValueChange={(v) => handleStepChange(step.id, 'upload', v as UploadRequirement)}
+                          className="flex gap-4"
                         >
-                            {['Required', 'Not Required', 'Optional'].map(type => (
-                                <div key={type} className="flex items-center space-x-2">
-                                    <RadioGroupItem value={type} id={`${step.id}-upload-${type}`} />
-                                    <Label htmlFor={`${step.id}-upload-${type}`} className="font-normal">{type}</Label>
-                                </div>
-                            ))}
+                          {(['Required', 'Not Required', 'Optional'] as const).map((opt) => (
+                            <div key={opt} className="flex items-center space-x-2">
+                              <RadioGroupItem value={opt} id={`${step.id}-upload-${opt}`} disabled={!canEditPage} />
+                              <Label htmlFor={`${step.id}-upload-${opt}`} className="font-normal">
+                                {opt}
+                              </Label>
+                            </div>
+                          ))}
                         </RadioGroup>
                       </div>
                     </div>
@@ -679,7 +691,7 @@ export default function WorkflowConfigurationPage() {
             </Accordion>
           )}
 
-          <Button variant="outline" onClick={handleAddStep}>
+          <Button variant="outline" onClick={handleAddStep} disabled={!canEditPage}>
             <Plus className="mr-2 h-4 w-4" /> Add Step
           </Button>
         </CardContent>
@@ -716,5 +728,7 @@ function dedupeActionsByName(list: (string | ActionConfig)[]) {
   return out;
 }
 
+
+    
 
     
