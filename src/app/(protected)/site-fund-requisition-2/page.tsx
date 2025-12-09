@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
 export default function SiteFundRequisition2Page() {
   return (
@@ -10,9 +10,12 @@ export default function SiteFundRequisition2Page() {
       <Card>
         <CardHeader>
           <CardTitle>Manage Requests</CardTitle>
+          <CardDescription>
+            This is the area where you can manage all requests for this module.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <p>Here you can manage all the requests for this module.</p>
+          {/* Content for managing requests will go here */}
         </CardContent>
       </Card>
     </div>
