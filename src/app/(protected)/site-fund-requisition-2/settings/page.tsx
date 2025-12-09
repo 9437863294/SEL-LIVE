@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 
 export default function SiteFundRequisitionSettingsPage() {
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="p-4">
       <div className="mb-6 flex items-center gap-4">
         <Link href="/site-fund-requisition-2">
           <Button variant="ghost" size="icon">
