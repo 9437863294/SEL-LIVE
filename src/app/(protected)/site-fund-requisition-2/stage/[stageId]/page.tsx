@@ -62,7 +62,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import ViewRequisitionDialog from '@/components/ViewRequisitionDialog';
-import { useAuthorization } from '@/hooks/useAuthorization';
 import {
   Dialog,
   DialogContent,
@@ -149,7 +148,7 @@ export default function StagePage() {
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null); // <-- cache once
 
   const [isConfirmExpenseOpen, setIsConfirmExpenseOpen] = useState(false);
   const [expenseToCreate, setExpenseToCreate] = useState<any>(null);
@@ -229,7 +228,7 @@ export default function StagePage() {
 
   const handleAction = async (taskId: string, action: string | ActionConfig, comment: string = '') => {
     const currentRequisition = tasks.find(t => t.id === taskId);
-    if (!user || !userName || !currentRequisition || !workflow || !currentStep || !projectSlug || !projectId) return;
+    if (!user || !userName || !currentRequisition || !workflow || !stage || !projectSlug || !projectId) return;
 
     const actionName = typeof action === 'string' ? action : action.name;
 
@@ -283,7 +282,7 @@ export default function StagePage() {
         if (!reqDoc.exists()) throw new Error('Requisition document not found!');
         const currentRequisitionData = reqDoc.data() as Requisition;
         
-        const newActionLog: ActionLog = { action: actionName, comment, userId, userName, timestamp: Timestamp.now(), stepName: currentStep.name };
+        const newActionLog: ActionLog = { action: actionName, comment, userId, userName, timestamp: Timestamp.now(), stepName: stage.name };
         
         let nextStep: WorkflowStep | undefined;
         let newStatus: Requisition['status'] = currentRequisitionData.status;
@@ -295,8 +294,8 @@ export default function StagePage() {
         const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(actionName);
 
         if (isCompletionAction) {
-          const currentStepIndexTx = workflow.findIndex(s => s.id === currentStep.id);
-          nextStep = workflow?.[currentStepIndexTx + 1];
+          const currentStepIndexTx = (workflow || []).findIndex(s => s.id === stage.id);
+          nextStep = currentStepIndexTx >= 0 ? workflow?.[currentStepIndexTx + 1] : undefined;
           if (nextStep) {
             newStage = nextStep.name;
             newStatus = 'In Progress';
@@ -327,7 +326,7 @@ export default function StagePage() {
         transaction.update(requisitionRef, updateData);
       });
 
-      toast({ title: 'Success', description: `Task has been ${pastTense(actionName)}.` });
+      toast({ title: 'Success', description: `Task has been ${pastTense(typeof action === 'string' ? action : action.name)}.` });
       await fetchTasks();
     } catch (error: any) {
       toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
@@ -367,24 +366,29 @@ export default function StagePage() {
                     <TableCell className="text-right">
                        {isActionLoading === task.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
                         <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}>
-                                <MoreHorizontal className="h-4 w-4" />
-                               </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem onSelect={() => { setSelectedRequisition(task); setIsViewOpen(true); }}>
-                                    <Eye className="mr-2 h-4 w-4" /> View Details
-                                </DropdownMenuItem>
-                                {type === 'pending' && actions.map((action) => {
-                                    const actionName = typeof action === 'string' ? action : action.name;
-                                    return (
-                                        <DropdownMenuItem key={actionName} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action) }}>
-                                            {actionName}
-                                        </DropdownMenuItem>
-                                    );
-                                })}
-                            </DropdownMenuContent>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                             <DropdownMenuItem onSelect={() => { setSelectedRequisition(task); setIsViewOpen(true); }}>
+                               <Eye className="mr-2 h-4 w-4" /> View Details
+                             </DropdownMenuItem>
+                             {type === 'pending' && actions.map((action) => {
+                                const actionName = typeof action === 'string' ? action : action.name;
+                                return (
+                                 <DropdownMenuItem key={actionName} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action) }}>
+                                   {actionName}
+                                 </DropdownMenuItem>
+                               );
+                            })}
+                          </DropdownMenuContent>
                         </DropdownMenu>
                        )}
                     </TableCell>
@@ -433,294 +437,4 @@ export default function StagePage() {
         />
     </>
   );
-}
-
-```
-- src/app/api/print-auth/route.ts:
-```ts
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
-
-const PRINT_PASSCODE = process.env.PRINT_PASSCODE || '1234';
-const COOKIE_NAME = 'print_token';
-const MAX_AGE = 60 * 60 * 24 * 7; // 1 week in seconds
-
-export async function POST(req: NextRequest) {
-  try {
-    const { code } = await req.json();
-
-    if (code === PRINT_PASSCODE) {
-      const response = NextResponse.json({ success: true });
-      // Set a cookie to remember auth status
-      response.cookies.set(COOKIE_NAME, 'true', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: MAX_AGE,
-        path: '/',
-      });
-      return response;
-    } else {
-      return NextResponse.json(
-        { message: 'Invalid passcode.' },
-        { status: 401 }
-      );
-    }
-  } catch {
-    return NextResponse.json(
-      { message: 'Invalid request body.' },
-      { status: 400 }
-    );
-  }
-}
-
-```
-- src/app/print-auth/page.tsx:
-```tsx
-
-'use client';
-
-import { Suspense } from 'react';
-import { PrintAuthPageContent } from '@/components/auth/PrintAuthPageContent';
-
-export default function PrintAuthPage() {
-  return (
-    <Suspense>
-      <PrintAuthPageContent />
-    </Suspense>
-  );
-}
-
-```
-- tailwind.config.ts:
-```ts
-import type { Config } from 'tailwindcss';
-
-export default {
-  darkMode: ['class'],
-  content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
-  theme: {
-    extend: {
-      fontFamily: {
-        body: ['var(--font-body)', 'sans-serif'],
-        inter: ['var(--font-inter)', 'sans-serif'],
-        roboto: ['var(--font-roboto)', 'sans-serif'],
-        headline: ['var(--font-inter)', 'sans-serif'],
-        code: ['monospace'],
-      },
-      colors: {
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
-        },
-        popover: {
-          DEFAULT: 'hsl(var(--popover))',
-          foreground: 'hsl(var(--popover-foreground))',
-        },
-        primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
-        },
-        secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
-        },
-        muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
-        },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
-        },
-        destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
-        },
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        chart: {
-          '1': 'hsl(var(--chart-1))',
-          '2': 'hsl(var(--chart-2))',
-          '3': 'hsl(var(--chart-3))',
-          '4': 'hsl(var(--chart-4))',
-          '5': 'hsl(var(--chart-5))',
-        },
-        sidebar: {
-          DEFAULT: 'hsl(var(--sidebar-background))',
-          foreground: 'hsl(var(--sidebar-foreground))',
-          primary: 'hsl(var(--sidebar-primary))',
-          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-          accent: 'hsl(var(--sidebar-accent))',
-          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-          border: 'hsl(var(--sidebar-border))',
-          ring: 'hsl(var(--sidebar-ring))',
-        },
-      },
-      borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)',
-      },
-      keyframes: {
-        'accordion-down': {
-          from: {
-            height: '0',
-          },
-          to: {
-            height: 'var(--radix-accordion-content-height)',
-          },
-        },
-        'accordion-up': {
-          from: {
-            height: 'var(--radix-accordion-content-height)',
-          },
-          to: {
-            height: '0',
-          },
-        },
-      },
-      animation: {
-        'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out',
-      },
-    },
-  },
-  plugins: [
-    require('tailwindcss-animate'),
-  ],
-} satisfies Config;
-
-```
-- tsconfig.json:
-```json
-{
-  "compilerOptions": {
-    "target": "ES2017",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "react-jsx",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    }
-  },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
-}
-
-```
-- package.json:
-```json
-{
-  "name": "nextn",
-  "version": "0.1.0",
-  "private": "true",
-  "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@genkit-ai/google-genai": "1.18.0",
-    "@genkit-ai/next": "1.18.0",
-    "@hello-pangea/dnd": "^16.6.0",
-    "@hookform/resolvers": "^3.9.0",
-    "@radix-ui/react-accordion": "^1.2.0",
-    "@radix-ui/react-alert-dialog": "^1.1.1",
-    "@radix-ui/react-avatar": "^1.1.0",
-    "@radix-ui/react-checkbox": "^1.1.1",
-    "@radix-ui/react-collapsible": "^1.1.0",
-    "@radix-ui/react-dialog": "^1.1.1",
-    "@radix-ui/react-dropdown-menu": "^2.1.1",
-    "@radix-ui/react-icons": "^1.3.0",
-    "@radix-ui/react-label": "^2.1.0",
-    "@radix-ui/react-menubar": "^1.1.1",
-    "@radix-ui/react-popover": "^1.1.1",
-    "@radix-ui/react-progress": "^1.1.0",
-    "@radix-ui/react-radio-group": "^1.2.0",
-    "@radix-ui/react-scroll-area": "^1.2.0",
-    "@radix-ui/react-select": "^2.1.1",
-    "@radix-ui/react-separator": "^1.1.0",
-    "@radix-ui/react-slider": "^1.2.0",
-    "@radix-ui/react-slot": "^1.1.0",
-    "@radix-ui/react-switch": "^1.1.0",
-    "@radix-ui/react-tabs": "^1.1.0",
-    "@radix-ui/react-toast": "^1.2.1",
-    "@radix-ui/react-tooltip": "^1.1.2",
-    "class-variance-authority": "^0.7.0",
-    "clsx": "^2.1.1",
-    "cmdk": "^1.0.0",
-    "date-fns": "^3.6.0",
-    "embla-carousel-react": "^8.1.6",
-    "firebase": "^12.5.0",
-    "genkit": "1.18.0",
-    "lucide-react": "^0.417.0",
-
-    "next": "15.5.7",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-
-    "openai": "^6.9.1",
-    "patch-package": "^8.0.0",
-    "react-beautiful-dnd": "^13.1.1",
-    "react-day-picker": "^8.10.1",
-    "react-hook-form": "^7.52.1",
-    "react-resizable-panels": "^2.0.22",
-    "react-to-print": "^2.15.1",
-    "recharts": "^2.12.7",
-    "server-only": "^0.0.1",
-    "tailwind-merge": "^2.4.0",
-    "tailwindcss-animate": "^1.0.7",
-    "wav": "^1.0.2",
-    "xlsx": "^0.18.5",
-    "zod": "^3.23.8"
-  },
-  "devDependencies": {
-    "@types/dotenv": "^6.1.1",
-    "@types/node": "^20.14.12",
-
-
-    "@types/react": "^18.3.3",
-    "@types/react-beautiful-dnd": "^13.1.8",
-    "@types/react-dom": "^18.3.0",
-
-    "autoprefixer": "^10.4.21",
-    "dotenv": "^17.2.3",
-    "genkit-cli": "^1.18.0",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.18",
-    "typescript": "^5.5.4"
-  }
 }
