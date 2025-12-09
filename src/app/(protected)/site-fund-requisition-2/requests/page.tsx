@@ -115,8 +115,8 @@ export default function AllRequisitionsTab() {
   const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
   const [partySearch, setPartySearch] = useState("");
 
-  const canCreate = can('Create Requisition', 'Site Fund Requisition 2');
-  const canViewAll = can('View All', 'Site Fund Requisition 2');
+  const canCreate = can('New Request', 'Site Fund Requisition 2.Requests');
+  const canViewAll = can('View All', 'Site Fund Requisition 2.Requests');
 
   useEffect(() => {
     if (!user) return;
@@ -805,194 +805,198 @@ export default function AllRequisitionsTab() {
   );
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-        <h1 className="text-3xl font-bold mb-6">Manage Requests</h1>
-        <div className="flex flex-col h-full">
-            <div className="flex justify-end items-center gap-4 mb-4">
-                {canViewAll && (
-                  <div className="flex items-center space-x-2">
-                      <Switch 
-                          id="my-requests-switch" 
-                          checked={showMyRequests}
-                          onCheckedChange={setShowMyRequests}
-                      />
-                      <Label htmlFor="my-requests-switch">My Requests Only</Label>
-                  </div>
-                )}
-                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="w-[180px]">
-                        <SelectValue placeholder="All Statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">All Statuses</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="In Progress">In Progress</SelectItem>
-                        <SelectItem value="Completed">Completed</SelectItem>
-                        <SelectItem value="Rejected">Rejected</SelectItem>
-                    </SelectContent>
-                </Select>
-                <Dialog open={isNewRequestOpen} onOpenChange={setIsNewRequestOpen}>
-                    <DialogTrigger asChild>
-                        <Button disabled={!canCreate}>New Request</Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-4xl">
-                        <DialogHeader>
-                            <DialogTitle>New Site Fund Requisition</DialogTitle>
-                            <DialogDescription>
-                                Fill out the form to create a new fund request.
-                            </DialogDescription>
-                        </DialogHeader>
-                        {renderNewForm()}
-                    </DialogContent>
-                </Dialog>
-                <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
-                    <DialogTrigger asChild>
-                        <Button variant="outline">
-                            <Shuffle className="mr-2 h-4 w-4" /> Sequence
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Edit Column Sequence</DialogTitle>
-                            <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
-                        </DialogHeader>
-                        <div className="py-4 space-y-2">
-                            {columnOrder.map((header, index) => (
-                                <div key={header} className="flex items-center justify-between p-2 border rounded-md">
-                                    <span className="font-medium">{header}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </DialogContent>
-                </Dialog>
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline">
-                            <View className="mr-2 h-4 w-4" />
-                            Columns
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        {baseTableHeaders.map((header) => (
-                            <DropdownMenuCheckboxItem
-                                key={header}
-                                className="capitalize"
-                                checked={columnVisibility[header]}
-                                onCheckedChange={(value) =>
-                                    setColumnVisibility(prev => ({...prev, [header]: !!value}))
-                                }
-                            >
-                                {header}
-                            </DropdownMenuCheckboxItem>
+    <div className="flex flex-col h-full">
+        <div className="flex justify-end items-center gap-4 mb-4">
+            {canViewAll && (
+              <div className="flex items-center space-x-2">
+                  <Switch 
+                      id="my-requests-switch" 
+                      checked={showMyRequests}
+                      onCheckedChange={setShowMyRequests}
+                  />
+                  <Label htmlFor="my-requests-switch">My Requests Only</Label>
+              </div>
+            )}
+             <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="All Statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="Pending">Pending</SelectItem>
+                    <SelectItem value="In Progress">In Progress</SelectItem>
+                    <SelectItem value="Completed">Completed</SelectItem>
+                    <SelectItem value="Rejected">Rejected</SelectItem>
+                </SelectContent>
+            </Select>
+            <Dialog open={isNewRequestOpen} onOpenChange={setIsNewRequestOpen}>
+                <DialogTrigger asChild>
+                    <Button disabled={!canCreate}>New Request</Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-4xl">
+                    <DialogHeader>
+                        <DialogTitle>New Site Fund Requisition</DialogTitle>
+                        <DialogDescription>
+                            Fill out the form to create a new fund request.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {renderNewForm()}
+                </DialogContent>
+            </Dialog>
+            <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
+                <DialogTrigger asChild>
+                    <Button variant="outline">
+                        <Shuffle className="mr-2 h-4 w-4" /> Sequence
+                    </Button>
+                </DialogTrigger>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Column Sequence</DialogTitle>
+                        <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 space-y-2">
+                        {columnOrder.map((header, index) => (
+                            <div key={header} className="flex items-center justify-between p-2 border rounded-md">
+                                <span className="font-medium">{header}</span>
+                            </div>
                         ))}
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </div>
-            <div className="border rounded-lg flex-grow relative">
-              <ScrollArea className="absolute inset-0">
-                <TooltipProvider>
-                <Table>
-                  <TableHeader className="sticky top-0 bg-background z-10">
-                    <TableRow>
-                      {visibleHeaders.map(header => (
-                        <TableHead key={header}>{header}</TableHead>
-                      ))}
-                      <TableHead className="text-center">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {displayedRequisitions.length > 0 ? (
-                      displayedRequisitions.map((req) => {
-                          const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
-                          return (
-                            <TableRow key={req.id}>
-                              {visibleHeaders.map(header => {
-                                  let content: React.ReactNode = 'N/A';
-                                  switch(header) {
-                                      case 'Request ID': content = req.requisitionId; break;
-                                      case 'Date': content = format(new Date(req.date), 'dd MMM, yyyy'); break;
-                                      case 'Project': content = getProjectName(req.projectId); break;
-                                      case 'Department': content = getDepartmentName(req.departmentId); break;
-                                      case 'Entered By': content = req.raisedBy; break;
-                                      case 'Party Name': content = req.partyName; break;
-                                      case 'Description': 
-                                        content = (
-                                          <Tooltip>
-                                            <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
-                                            <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
-                                          </Tooltip>
-                                        ); 
-                                        break;
-                                      case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
-                                      case 'Stage': content = req.stage; break;
-                                      case 'Status': content = req.status; break;
-                                      case 'Attachments': content = req.attachments?.length || 0; break;
-                                      case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
-                                      case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
-                                      case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
-                                  }
-                                  return <TableCell key={header}>{content}</TableCell>
-                              })}
-                              <TableCell className="text-center">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                                        <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => openViewDialog(req)}>
-                                      <Eye className="mr-2 h-4 w-4" />
-                                      View Details
-                                    </DropdownMenuItem>
-                                    {req.stage === 'Request Receiving' && (
-                                      <DropdownMenuItem onClick={() => openEditDialog(req)}>
-                                        <Edit className="mr-2 h-4 w-4" />
-                                        Edit
-                                      </DropdownMenuItem>
-                                    )}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </TableCell>
-                            </TableRow>
-                          )
-                      })
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
-                          No requisitions found.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-                </TooltipProvider>
-              </ScrollArea>
-            </div>
-          {selectedRequisition && (
-            <ViewRequisitionDialog
-                isOpen={isViewDialogOpen}
-                onOpenChange={setIsViewDialogOpen}
-                requisition={selectedRequisition}
-                projects={projects}
-                departments={departments}
-                onRequisitionUpdate={fetchRequisitions}
-            />
-          )}
-          <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
-            <DialogContent className="sm:max-w-4xl">
-                <DialogHeader>
-                    <DialogTitle>Edit Site Fund Requisition</DialogTitle>
-                    <DialogDescription>
-                        Make changes to the fund request below.
-                    </DialogDescription>
-                </DialogHeader>
-                {renderEditForm()}
-            </DialogContent>
-          </Dialog>
+                    </div>
+                </DialogContent>
+            </Dialog>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                        <View className="mr-2 h-4 w-4" />
+                        Columns
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {baseTableHeaders.map((header) => (
+                        <DropdownMenuCheckboxItem
+                            key={header}
+                            className="capitalize"
+                            checked={columnVisibility[header]}
+                            onCheckedChange={(value) =>
+                                setColumnVisibility(prev => ({...prev, [header]: !!value}))
+                            }
+                        >
+                            {header}
+                        </DropdownMenuCheckboxItem>
+                    ))}
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
+        <div className="border rounded-lg flex-grow relative">
+          <ScrollArea className="absolute inset-0">
+            <TooltipProvider>
+            <Table>
+              <TableHeader className="sticky top-0 bg-background z-10">
+                <TableRow>
+                  {visibleHeaders.map(header => (
+                    <TableHead key={header}>{header}</TableHead>
+                  ))}
+                  <TableHead className="text-center">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayedRequisitions.length > 0 ? (
+                  displayedRequisitions.map((req) => {
+                      const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
+                      return (
+                        <TableRow key={req.id}>
+                          {visibleHeaders.map(header => {
+                              let content: React.ReactNode = 'N/A';
+                              switch(header) {
+                                  case 'Request ID': content = req.requisitionId; break;
+                                  case 'Date': content = format(new Date(req.date), 'dd MMM, yyyy'); break;
+                                  case 'Project': content = getProjectName(req.projectId); break;
+                                  case 'Department': content = getDepartmentName(req.departmentId); break;
+                                  case 'Entered By': content = req.raisedBy; break;
+                                  case 'Party Name': content = req.partyName; break;
+                                  case 'Description': 
+                                    content = (
+                                      <Tooltip>
+                                        <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
+                                        <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
+                                      </Tooltip>
+                                    ); 
+                                    break;
+                                  case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
+                                  case 'Stage': content = req.stage; break;
+                                  case 'Status': content = req.status; break;
+                                  case 'Attachments': content = req.attachments?.length || 0; break;
+                                  case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
+                                  case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
+                                  case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
+                              }
+                              return <TableCell key={header}>{content}</TableCell>
+                          })}
+                          <TableCell className="text-center">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openViewDialog(req)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View Details
+                                </DropdownMenuItem>
+                                {req.stage === 'Request Receiving' && (
+                                  <DropdownMenuItem onClick={() => openEditDialog(req)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      )
+                  })
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
+                      No requisitions found.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            </TooltipProvider>
+          </ScrollArea>
+        </div>
+      {selectedRequisition && (
+        <ViewRequisitionDialog
+            isOpen={isViewDialogOpen}
+            onOpenChange={setIsViewDialogOpen}
+            requisition={selectedRequisition}
+            projects={projects}
+            departments={departments}
+            onRequisitionUpdate={fetchRequisitions}
+        />
+      )}
+      <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
+        <DialogContent className="sm:max-w-4xl">
+            <DialogHeader>
+                <DialogTitle>Edit Site Fund Requisition</DialogTitle>
+                <DialogDescription>
+                    Make changes to the fund request below.
+                </DialogDescription>
+            </DialogHeader>
+            {renderEditForm()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+```
+- src/lib/types.ts
+- src/app/(protected)/site-fund-requisition-2/page.tsx
+- src/app/(protected)/site-fund-requisition-2/settings/page.tsx
+- src/app/(protected)/site-fund-requisition-2/settings/workflow-configuration/page.tsx
+- src/app/(protected)/site-fund-requisition-2/stage/[stageId]/page.tsx
