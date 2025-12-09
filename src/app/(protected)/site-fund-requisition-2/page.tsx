@@ -36,7 +36,7 @@ export default function SiteFundRequisition2Page() {
               </CardHeader>
             </Card>
         </Link>
-         <Link href="#" className="block hover:shadow-lg transition-shadow rounded-xl">
+         <Link href="/site-fund-requisition-2/settings" className="block hover:shadow-lg transition-shadow rounded-xl">
             <Card>
               <CardHeader className="flex flex-row items-start gap-4 space-y-0 p-4">
                   <div className="bg-primary/10 p-3 rounded-lg">
