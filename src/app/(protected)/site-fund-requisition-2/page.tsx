@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -23,14 +24,6 @@ export default function SiteFundRequisition2Page() {
             {/* Content for managing requests will go here */}
             <p className="text-sm text-muted-foreground">Request management content will appear here.</p>
           </CardContent>
-          <CardFooter className="flex justify-end gap-1 p-2 border-t">
-              <Button variant="ghost" size="icon" className="h-7 w-7">
-                  <Edit className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-              </Button>
-          </CardFooter>
         </Card>
       </div>
     </div>
