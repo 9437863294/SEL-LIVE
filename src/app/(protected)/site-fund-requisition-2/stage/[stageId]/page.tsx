@@ -74,7 +74,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 /* -------- helpers -------- */
 function toDateSafe(value: any): Date | null {
@@ -112,21 +118,29 @@ function pastTense(action: string) {
 }
 
 function formatINR(n?: number) {
-    const v = Number.isFinite(n as number) ? (n as number) : 0;
-    try {
-      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(v);
-    } catch {
-      return `₹${v.toFixed(2)}`;
-    }
+  const v = Number.isFinite(n as number) ? (n as number) : 0;
+  try {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2,
+    }).format(v);
+  } catch {
+    return `₹${v.toFixed(2)}`;
+  }
 }
 
 function hasDeptId(a: unknown): a is ActionConfig & { departmentId?: string } {
-    return typeof a === 'object' && a !== null && 'departmentId' in (a as any);
+  return typeof a === 'object' && a !== null && 'departmentId' in (a as any);
 }
 
 const slugify = (value: string): string =>
-    value.toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-
+  value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 /* -------- component -------- */
 export default function StagePage() {
@@ -146,7 +160,8 @@ export default function StagePage() {
   const [workflow, setWorkflow] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
-  const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null);
+  const [selectedRequisition, setSelectedRequisition] =
+    useState<Requisition | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null); // <-- cache once
 
@@ -158,14 +173,22 @@ export default function StagePage() {
   const [departments, setDepartments] = useState<Department[]>([]);
 
   const fetchTasks = useCallback(async () => {
-    if (!userId || !stageId || !projectSlug) return;
+    if (!userId || !stageId) return;
 
     setIsLoading(true);
     try {
-      const workflowRef = doc(db, 'workflows', 'site-fund-requisition-2-workflow');
+      const workflowRef = doc(
+        db,
+        'workflows',
+        'site-fund-requisition-2-workflow'
+      );
       const workflowSnap = await getDoc(workflowRef);
       if (!workflowSnap.exists()) {
-        toast({ title: 'Error', description: 'Workflow not found.', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: 'Workflow not found.',
+          variant: 'destructive',
+        });
         router.back();
         return;
       }
@@ -173,104 +196,149 @@ export default function StagePage() {
       setWorkflow(steps);
       const currentStage = steps.find((s) => s.id === stageId);
       if (!currentStage) {
-        toast({ title: 'Error', description: 'Workflow stage not found.', variant: 'destructive' });
+        toast({
+          title: 'Error',
+          description: 'Workflow stage not found.',
+          variant: 'destructive',
+        });
         router.back();
         return;
       }
       setStage(currentStage);
 
-      const projectsQueryRef = query(collection(db, 'projects'));
-      const projectsSnapshot = await getDocs(projectsQueryRef);
-      const projectData = projectsSnapshot.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Project))
-        .find((p) => slugify(p.projectName) === projectSlug);
-
-      if (!projectData) throw new Error('Project not found');
-      const pid = projectData.id;
-      setProjectId(pid);
-      
       const deptsSnap = await getDocs(collection(db, 'departments'));
-      setDepartments(deptsSnap.docs.map(d => ({id: d.id, ...d.data()} as Department)));
-      
+      setDepartments(
+        deptsSnap.docs.map(
+          (d) => ({ id: d.id, ...d.data() } as Department)
+        )
+      );
+
       const headsSnap = await getDocs(collection(db, 'accountHeads'));
-      setAccountHeads(headsSnap.docs.map(d => ({id: d.id, ...d.data()} as AccountHead)));
+      setAccountHeads(
+        headsSnap.docs.map(
+          (d) => ({ id: d.id, ...d.data() } as AccountHead)
+        )
+      );
 
       const subHeadsSnap = await getDocs(collection(db, 'subAccountHeads'));
-      setSubAccountHeads(subHeadsSnap.docs.map(d => ({id: d.id, ...d.data()} as SubAccountHead)));
+      setSubAccountHeads(
+        subHeadsSnap.docs.map(
+          (d) => ({ id: d.id, ...d.data() } as SubAccountHead)
+        )
+      );
 
       const reqsQuery = query(
         collection(db, 'requisitions'),
-        where('projectId', '==', pid),
         where('currentStepId', '==', stageId)
       );
       const reqsSnapshot = await getDocs(reqsQuery);
-      const tasksData = reqsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Requisition));
+      const tasksData = reqsSnapshot.docs.map(
+        (d) => ({ id: d.id, ...(d.data() as any) } as Requisition)
+      );
       setTasks(tasksData);
-      
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
       router.back();
     } finally {
       setIsLoading(false);
     }
-  }, [projectSlug, stageId, toast, router, userId]);
-  
+  }, [stageId, toast, router, userId]);
+
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
 
   const { pendingTasks, completedTasks } = useMemo(() => {
-    if (!userId || !stage) return { pendingTasks: [], completedTasks: [] };
-    const myPending = tasks.filter(t => (t.assignees ?? []).includes(userId) && t.status !== 'Completed' && t.status !== 'Rejected');
-    const myCompleted = tasks.filter(t => !myPending.some(pt => pt.id === t.id) && (t.history ?? []).some(h => h.stepName === stage.name && h.userId === userId));
-    return { pendingTasks: myPending, completedTasks: myCompleted };
+    if (!userId || !stage)
+      return { pendingTasks: [], completedTasks: [] };
+    const myPending = tasks.filter(
+      (t) =>
+        (t.assignees ?? []).includes(userId) &&
+        t.status !== 'Completed' &&
+        t.status !== 'Rejected'
+    );
+    const myCompleted = tasks.filter(
+      (t) =>
+        !myPending.some((pt) => pt.id === t.id) &&
+        (t.history ?? []).some(
+          (h) => h.stepName === stage.name && h.userId === userId
+        )
+    );
+    return { pendingTasks, completedTasks };
   }, [tasks, userId, stage]);
 
-  const handleAction = async (taskId: string, action: string | ActionConfig, comment: string = '') => {
-    const currentRequisition = tasks.find(t => t.id === taskId);
-    if (!user || !userName || !currentRequisition || !workflow || !stage || !projectSlug || !projectId) return;
+  const handleAction = async (
+    taskId: string,
+    action: string | ActionConfig,
+    comment: string = ''
+  ) => {
+    const currentRequisition = tasks.find((t) => t.id === taskId);
+    if (!user || !userName || !currentRequisition || !workflow || !stage) return;
 
     const actionName = typeof action === 'string' ? action : action.name;
 
     if (actionName === 'Create Expense Request') {
-        const targetDepartmentId = typeof action !== 'string' && hasDeptId(action) ? action.departmentId : undefined;
-        if (!targetDepartmentId) {
-            toast({ title: 'Config Error', description: 'Department not specified for expense request.', variant: 'destructive' });
-            return;
-        }
-
-        const unsecuredLoanSubHead = subAccountHeads.find(sh => sh.name.toLowerCase() === 'unsecured loan');
-        const defaultHead = unsecuredLoanSubHead ? accountHeads.find(h => h.id === unsecuredLoanSubHead.headId)?.name : 'Liability';
-        let previewRequestNo = 'Generating...';
-
-        try {
-            const configRef = doc(db, 'departmentSerialConfigs', targetDepartmentId);
-            const configDoc = await getDoc(configRef);
-            if (configDoc.exists()) {
-                const configData = configDoc.data() as any;
-                const newIndex = configData.startingIndex;
-                const formattedIndex = String(newIndex).padStart(4, '0');
-                previewRequestNo = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}${configData.suffix || ''}`;
-            } else {
-                previewRequestNo = 'Config not found';
-            }
-        } catch {
-            previewRequestNo = 'Error';
-        }
-
-        setExpenseToCreate({
-            departmentId: targetDepartmentId || '',
-            projectId: currentRequisition.projectId || '',
-            amount: currentRequisition.amount || 0,
-            partyName: currentRequisition.partyName || '',
-            description: currentRequisition.description || '',
-            headOfAccount: defaultHead || 'Liability',
-            subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
-            remarks: `Generated from Site Fund Requisition ${currentRequisition.requisitionId}` || '',
-            requestNo: previewRequestNo,
+      const targetDepartmentId =
+        typeof action !== 'string' && hasDeptId(action)
+          ? action.departmentId
+          : undefined;
+      if (!targetDepartmentId) {
+        toast({
+          title: 'Config Error',
+          description: 'Department not specified for expense request.',
+          variant: 'destructive',
         });
-        setIsConfirmExpenseOpen(true);
         return;
+      }
+
+      const unsecuredLoanSubHead = subAccountHeads.find(
+        (sh) => sh.name.toLowerCase() === 'unsecured loan'
+      );
+      const defaultHead = unsecuredLoanSubHead
+        ? accountHeads.find((h) => h.id === unsecuredLoanSubHead.headId)?.name
+        : 'Liability';
+      let previewRequestNo = 'Generating...';
+
+      try {
+        const configRef = doc(
+          db,
+          'departmentSerialConfigs',
+          targetDepartmentId
+        );
+        const configDoc = await getDoc(configRef);
+        if (configDoc.exists()) {
+          const configData = configDoc.data() as any;
+          const newIndex = configData.startingIndex;
+          const formattedIndex = String(newIndex).padStart(4, '0');
+          previewRequestNo = `${configData.prefix || ''}${
+            configData.format || ''
+          }${formattedIndex}${configData.suffix || ''}`;
+        } else {
+          previewRequestNo = 'Config not found';
+        }
+      } catch {
+        previewRequestNo = 'Error';
+      }
+
+      setExpenseToCreate({
+        departmentId: targetDepartmentId || '',
+        projectId: currentRequisition.projectId || '',
+        amount: currentRequisition.amount || 0,
+        partyName: currentRequisition.partyName || '',
+        description: currentRequisition.description || '',
+        headOfAccount: defaultHead || 'Liability',
+        subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
+        remarks:
+          `Generated from Site Fund Requisition ${currentRequisition.requisitionId}` ||
+          '',
+        requestNo: previewRequestNo,
+      });
+      setIsConfirmExpenseOpen(true);
+      return;
     }
 
     setIsActionLoading(taskId);
@@ -279,31 +347,61 @@ export default function StagePage() {
 
       await runTransaction(db, async (transaction) => {
         const reqDoc = await transaction.get(requisitionRef);
-        if (!reqDoc.exists()) throw new Error('Requisition document not found!');
-        const currentRequisitionData = reqDoc.data() as Requisition;
-        
-        const newActionLog: ActionLog = { action: actionName, comment, userId, userName, timestamp: Timestamp.now(), stepName: stage.name };
-        
+        if (!reqDoc.exists())
+          throw new Error('Requisition document not found!');
+        const currentRequisitionData = {
+          ...reqDoc.data(),
+          id: reqDoc.id,
+        } as Requisition;
+
+        const newActionLog: ActionLog = {
+          action: actionName,
+          comment,
+          userId,
+          userName,
+          timestamp: Timestamp.now(),
+          stepName: stage.name,
+        };
+
         let nextStep: WorkflowStep | undefined;
-        let newStatus: Requisition['status'] = currentRequisitionData.status;
+        let newStatus: Requisition['status'] =
+          currentRequisitionData.status;
         let newStage = currentRequisitionData.stage;
-        let newCurrentStepId: string | null = currentRequisitionData.currentStepId || null;
+        let newCurrentStepId: string | null =
+          currentRequisitionData.currentStepId || null;
         let newAssignees: string[] = [];
         let newDeadline: Timestamp | null = null;
-        
-        const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(actionName);
+
+        const isCompletionAction = [
+          'Approve',
+          'Complete',
+          'Verified',
+          'Update Approved Amount',
+          'Create Expense Request',
+        ].includes(actionName);
 
         if (isCompletionAction) {
-          const currentStepIndexTx = (workflow || []).findIndex(s => s.id === stage.id);
-          nextStep = currentStepIndexTx >= 0 ? workflow?.[currentStepIndexTx + 1] : undefined;
+          const currentStepIndexTx = (workflow || []).findIndex(
+            (s) => s.id === stage.id
+          );
+          nextStep =
+            currentStepIndexTx >= 0
+              ? workflow?.[currentStepIndexTx + 1]
+              : undefined;
           if (nextStep) {
-            newStage = nextStep.name;
+            newStage = stepDisplay(nextStep as any);
             newStatus = 'In Progress';
             newCurrentStepId = nextStep.id;
-            const assignees = await getAssigneeForStep(nextStep, currentRequisitionData as any);
-            if (!assignees || assignees.length === 0) throw new Error(`No assignee for step: ${nextStep.name}`);
+            const assignees = await getAssigneeForStep(
+              nextStep,
+              currentRequisitionData as any
+            );
+            if (!assignees || assignees.length === 0)
+              throw new Error(`No assignee for step: ${stepDisplay(nextStep as any)}`);
             newAssignees = assignees;
-            newDeadline = Timestamp.fromDate(await calculateDeadline(new Date(), nextStep.tat));
+            newDeadline = Timestamp.fromDate(
+              await calculateDeadline(new Date(), (nextStep as any).tat)
+            );
           } else {
             newStage = 'Completed';
             newStatus = 'Completed';
@@ -326,16 +424,27 @@ export default function StagePage() {
         transaction.update(requisitionRef, updateData);
       });
 
-      toast({ title: 'Success', description: `Task has been ${pastTense(typeof action === 'string' ? action : action.name)}.` });
+      toast({
+        title: 'Success',
+        description: `Task has been successfully ${actionName.toLowerCase()}ed.`,
+      });
       await fetchTasks();
+      setIsViewOpen(false);
     } catch (error: any) {
-      toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Action Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
     } finally {
       setIsActionLoading(null);
     }
   };
 
-  const renderTable = (data: Requisition[], type: 'pending' | 'completed') => (
+  const renderTable = (
+    data: Requisition[],
+    type: 'pending' | 'completed'
+  ) => (
     <Card>
       <CardContent className="p-0">
         <Table>
@@ -351,52 +460,111 @@ export default function StagePage() {
           <TableBody>
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
-                <TableRow key={i}><TableCell colSpan={5}><Skeleton className="h-8" /></TableCell></TableRow>
+                <TableRow key={i}>
+                  <TableCell colSpan={5}>
+                    <Skeleton className="h-8" />
+                  </TableCell>
+                </TableRow>
               ))
             ) : data.length > 0 ? (
               data.map((task) => {
-                const currentStep = workflow?.find((s) => s.id === task.currentStepId);
-                const actions = Array.isArray(currentStep?.actions) ? (currentStep.actions) : [];
+                const currentStep = workflow?.find(
+                  (s) => s.id === task.currentStepId
+                );
+                const actions = Array.isArray(
+                  currentStep?.actions
+                )
+                  ? (currentStep.actions as (
+                      | string
+                      | ActionConfig
+                    )[])
+                  : [];
                 return (
-                  <TableRow key={task.id} onClick={() => { setSelectedRequisition(task); setIsViewOpen(true); }} className="cursor-pointer">
-                    <TableCell>{task.requisitionId}</TableCell>
+                  <TableRow
+                    key={task.id}
+                    onClick={() => {
+                      setSelectedRequisition(task);
+                      setIsViewOpen(true);
+                    }}
+                    className="cursor-pointer"
+                  >
+                    <TableCell>
+                      {task.requisitionId ?? '-'}
+                    </TableCell>
                     <TableCell>{humanDate(task.date)}</TableCell>
                     <TableCell>{formatINR(task.amount)}</TableCell>
-                    <TableCell><Badge>{task.status}</Badge></TableCell>
+                    <TableCell>
+                      <Badge>{task.status}</Badge>
+                    </TableCell>
                     <TableCell className="text-right">
-                       {isActionLoading === task.id ? <Loader2 className="h-4 w-4 animate-spin ml-auto" /> : (
+                      {isActionLoading === task.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                      ) : (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={e => e.stopPropagation()}
+                              onClick={(e) =>
+                                e.stopPropagation()
+                              }
                             >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                             <DropdownMenuItem onSelect={() => { setSelectedRequisition(task); setIsViewOpen(true); }}>
-                               <Eye className="mr-2 h-4 w-4" /> View Details
-                             </DropdownMenuItem>
-                             {type === 'pending' && actions.map((action) => {
-                                const actionName = typeof action === 'string' ? action : action.name;
+                          <DropdownMenuContent
+                            align="end"
+                          >
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                setSelectedRequisition(
+                                  task
+                                );
+                                setIsViewOpen(true);
+                              }}
+                            >
+                              <Eye className="mr-2 h-4 w-4" />{' '}
+                              View Details
+                            </DropdownMenuItem>
+                            {type === 'pending' &&
+                              actions.map((action) => {
+                                const actionName =
+                                  typeof action ===
+                                  'string'
+                                    ? action
+                                    : action.name;
                                 return (
-                                 <DropdownMenuItem key={actionName} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action) }}>
-                                   {actionName}
-                                 </DropdownMenuItem>
-                               );
-                            })}
+                                  <DropdownMenuItem
+                                    key={actionName}
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      handleAction(
+                                        task.id,
+                                        action
+                                      );
+                                    }}
+                                  >
+                                    {actionName}
+                                  </DropdownMenuItem>
+                                );
+                              })}
                           </DropdownMenuContent>
                         </DropdownMenu>
-                       )}
+                      )}
                     </TableCell>
                   </TableRow>
                 );
               })
             ) : (
-              <TableRow><TableCell colSpan={5} className="text-center h-24">No {type} tasks.</TableCell></TableRow>
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="text-center h-24"
+                >
+                  No {type} tasks.
+                </TableCell>
+              </TableRow>
             )}
           </TableBody>
         </Table>
@@ -414,27 +582,39 @@ export default function StagePage() {
                 <ArrowLeft className="h-6 w-6" />
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold">{stage?.name || 'Stage'}</h1>
+            <h1 className="text-2xl font-bold">
+              {stage?.name || 'Stage'}
+            </h1>
           </div>
         </div>
         <Tabs defaultValue="pending">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="pending"><Clock className="mr-2 h-4 w-4" /> Pending ({pendingTasks.length})</TabsTrigger>
-            <TabsTrigger value="completed"><Check className="mr-2 h-4 w-4" /> Completed ({completedTasks.length})</TabsTrigger>
+            <TabsTrigger value="pending">
+              <Clock className="mr-2 h-4 w-4" /> Pending (
+              {pendingTasks.length})
+            </TabsTrigger>
+            <TabsTrigger value="completed">
+              <Check className="mr-2 h-4 w-4" /> Completed (
+              {completedTasks.length})
+            </TabsTrigger>
           </TabsList>
-          <TabsContent value="pending" className="mt-4">{renderTable(pendingTasks, 'pending')}</TabsContent>
-          <TabsContent value="completed" className="mt-4">{renderTable(completedTasks, 'completed')}</TabsContent>
+          <TabsContent value="pending" className="mt-4">
+            {renderTable(pendingTasks, 'pending')}
+          </TabsContent>
+          <TabsContent value="completed" className="mt-4">
+            {renderTable(completedTasks, 'completed')}
+          </TabsContent>
         </Tabs>
       </div>
 
-       <ViewRequisitionDialog
-          isOpen={isViewOpen}
-          onOpenChange={setIsViewOpen}
-          requisition={selectedRequisition}
-          projects={[]}
-          departments={departments}
-          onRequisitionUpdate={fetchTasks}
-        />
+      <ViewRequisitionDialog
+        isOpen={isViewOpen}
+        onOpenChange={setIsViewOpen}
+        requisition={selectedRequisition}
+        projects={[]}
+        departments={departments}
+        onRequisitionUpdate={fetchTasks}
+      />
     </>
   );
 }
