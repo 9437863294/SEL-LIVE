@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -21,6 +22,48 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
+const initializePermissions = (departments: Department[], projects: Project[]): Record<string, string[]> => {
+    const permissions: Record<string, string[]> = {};
+    Object.keys(permissionModules).forEach(moduleName => {
+        const moduleValue = permissionModules[moduleName as keyof typeof permissionModules];
+        if (Array.isArray(moduleValue)) {
+            permissions[moduleName] = [];
+        } else {
+            if ('View Module' in moduleValue) {
+                permissions[moduleName] = [];
+            }
+            Object.keys(moduleValue).forEach(subModuleKey => {
+                if (subModuleKey === 'View Module') return;
+                const fullKey = `${moduleName}.${subModuleKey}`;
+                
+                if (subModuleKey === 'Departments' && departments.length > 0) {
+                    departments.forEach(dept => {
+                        const deptKey = `Expenses.Departments.${dept.id}`;
+                        permissions[deptKey] = [];
+                    });
+                } else if (subModuleKey === 'Projects' && moduleName === 'Store & Stock Management' && projects.length > 0) {
+                    projects.forEach(proj => {
+                        const projectKey = `Store & Stock Management.Projects.${proj.id}`;
+                        permissions[projectKey] = [];
+                    });
+                } else {
+                    permissions[fullKey] = [];
+
+                    const subPermissions = moduleValue[subModuleKey as keyof typeof moduleValue];
+                     if (typeof subPermissions === 'object' && !Array.isArray(subPermissions)) {
+                        Object.keys(subPermissions).forEach(nestedKey => {
+                            const nestedFullKey = `${fullKey}.${nestedKey}`;
+                            permissions[nestedFullKey] = [];
+                        });
+                    }
+                }
+            });
+        }
+    });
+    return permissions;
+};
+
+
 export default function EditRolePage() {
     const { toast } = useToast();
     const router = useRouter();
@@ -39,46 +82,27 @@ export default function EditRolePage() {
         const fetchRoleAndDepartments = async () => {
             setIsLoading(true);
             try {
+                const deptsSnap = await getDocs(query(collection(db, 'departments'), where('status', '==', 'Active')));
+                const deptsData = deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
+                setDepartments(deptsData);
+
+                const projectsSnap = await getDocs(query(collection(db, 'projects'), where('stockManagementRequired', '==', true)));
+                const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+                setProjects(projectsData);
+                
                 const roleDocRef = doc(db, 'roles', roleId);
                 const roleDocSnap = await getDoc(roleDocRef);
 
                 if (roleDocSnap.exists()) {
                     const roleData = { id: roleDocSnap.id, ...roleDocSnap.data() } as Role;
-                    
-                    const completePermissions: Record<string, string[]> = {};
-                    Object.keys(permissionModules).forEach(moduleName => {
-                        const sub = permissionModules[moduleName as keyof typeof permissionModules];
-                        if (Array.isArray(sub)) {
-                            completePermissions[moduleName] = roleData.permissions?.[moduleName] || [];
-                        } else {
-                             if('View Module' in sub){
-                                completePermissions[moduleName] = (roleData.permissions?.[moduleName] || []).includes('View Module') ? ['View Module'] : [];
-                             }
-                            Object.keys(sub).forEach(subModule => {
-                                if (subModule === 'View Module') return;
-                                const key = `${moduleName}.${subModule}`;
-                                completePermissions[key] = roleData.permissions?.[key] || [];
-                            });
+                    const completePermissions = initializePermissions(deptsData, projectsData);
+
+                    // Merge saved permissions into the complete structure
+                    for (const key in roleData.permissions) {
+                        if (completePermissions.hasOwnProperty(key)) {
+                            completePermissions[key] = roleData.permissions[key];
                         }
-                    });
-
-                    const deptsSnap = await getDocs(query(collection(db, 'departments'), where('status', '==', 'Active')));
-                    const deptsData = deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
-                    setDepartments(deptsData);
-
-                    const projectsSnap = await getDocs(query(collection(db, 'projects'), where('stockManagementRequired', '==', true)));
-                    const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-                    setProjects(projectsData);
-
-                    deptsData.forEach(dept => {
-                        const deptKey = `Expenses.Departments.${dept.id}`;
-                        completePermissions[deptKey] = roleData.permissions?.[deptKey] || [];
-                    });
-                    
-                    projectsData.forEach(proj => {
-                        const projectKey = `Store & Stock Management.Projects.${proj.id}`;
-                        completePermissions[projectKey] = roleData.permissions?.[projectKey] || [];
-                    });
+                    }
 
                     setEditingRole({ ...roleData, permissions: completePermissions });
                 } else {
@@ -239,7 +263,7 @@ export default function EditRolePage() {
 
                                                             const fullKey = `${moduleName}.${subModuleKey}`;
                                                             
-                                                            if (subModuleKey === 'Departments') {
+                                                            if (subModuleKey === 'Departments' && departments.length > 0) {
                                                                 return (
                                                                     <div key={fullKey} className="p-3 border rounded-md mt-2">
                                                                         <h4 className="font-semibold text-sm mb-3">{subModuleKey}-specific Permissions</h4>
@@ -440,6 +464,5 @@ export default function EditRolePage() {
         </div>
     );
 }
-
 
     

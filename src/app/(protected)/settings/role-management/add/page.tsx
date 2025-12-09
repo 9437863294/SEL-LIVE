@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -20,51 +21,80 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
-const initialNewRoleState = {
-  name: '',
-  permissions: Object.keys(permissionModules).reduce((acc, module) => {
-    const sub = permissionModules[module as keyof typeof permissionModules];
-    if(Array.isArray(sub)){
-      const key = module;
-       if (!acc[key]) {
-        acc[key] = [];
-      }
-    } else {
-      if(sub['View Module'] !== undefined){
-        acc[module] = [];
-      }
-      Object.keys(sub).forEach(subModule => {
-        if (subModule === 'View Module') return;
-        const key = `${module}.${subModule}`;
-        if (!acc[key]) {
-          acc[key] = [];
+const initializePermissions = (departments: Department[], projects: Project[]): Record<string, string[]> => {
+    const permissions: Record<string, string[]> = {};
+    Object.keys(permissionModules).forEach(moduleName => {
+        const moduleValue = permissionModules[moduleName as keyof typeof permissionModules];
+        if (Array.isArray(moduleValue)) {
+            permissions[moduleName] = [];
+        } else {
+            if ('View Module' in moduleValue) {
+                permissions[moduleName] = [];
+            }
+            Object.keys(moduleValue).forEach(subModuleKey => {
+                if (subModuleKey === 'View Module') return;
+                const fullKey = `${moduleName}.${subModuleKey}`;
+                
+                if (subModuleKey === 'Departments' && departments.length > 0) {
+                    departments.forEach(dept => {
+                        const deptKey = `Expenses.Departments.${dept.id}`;
+                        permissions[deptKey] = [];
+                    });
+                } else if (subModuleKey === 'Projects' && moduleName === 'Store & Stock Management' && projects.length > 0) {
+                    projects.forEach(proj => {
+                        const projectKey = `Store & Stock Management.Projects.${proj.id}`;
+                        permissions[projectKey] = [];
+                    });
+                } else {
+                    permissions[fullKey] = [];
+
+                    const subPermissions = moduleValue[subModuleKey as keyof typeof moduleValue];
+                     if (typeof subPermissions === 'object' && !Array.isArray(subPermissions)) {
+                        Object.keys(subPermissions).forEach(nestedKey => {
+                            const nestedFullKey = `${fullKey}.${nestedKey}`;
+                            permissions[nestedFullKey] = [];
+                        });
+                    }
+                }
+            });
         }
-      });
-    }
-    return acc;
-  }, {} as Record<string, string[]>),
+    });
+    return permissions;
 };
+
 
 export default function AddRolePage() {
     const { toast } = useToast();
     const router = useRouter();
     const { user } = useAuth();
 
-    const [newRole, setNewRole] = useState<{name: string, permissions: Record<string, string[]>}>(JSON.parse(JSON.stringify(initialNewRoleState)));
+    const [newRole, setNewRole] = useState<{name: string, permissions: Record<string, string[]>}>({ name: '', permissions: {} });
     const [departments, setDepartments] = useState<Department[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [isSaving, setIsSaving] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         const fetchDeptsAndProjects = async () => {
-            const deptsSnap = await getDocs(query(collection(db, 'departments'), where('status', '==', 'Active')));
-            setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
+            setIsLoading(true);
+            try {
+                const deptsSnap = await getDocs(query(collection(db, 'departments'), where('status', '==', 'Active')));
+                const deptsData = deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
+                setDepartments(deptsData);
 
-            const projectsSnap = await getDocs(query(collection(db, 'projects'), where('stockManagementRequired', '==', true)));
-            setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+                const projectsSnap = await getDocs(query(collection(db, 'projects'), where('stockManagementRequired', '==', true)));
+                const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
+                setProjects(projectsData);
+                
+                setNewRole({ name: '', permissions: initializePermissions(deptsData, projectsData) });
+
+            } catch (error) {
+                toast({ title: "Error", description: "Failed to load initial data for roles.", variant: "destructive" });
+            }
+            setIsLoading(false);
         };
         fetchDeptsAndProjects();
-    }, []);
+    }, [toast]);
 
     const handlePermissionChange = (moduleKey: string, permission: string, isChecked: boolean) => {
         setNewRole((prevState) => {
@@ -124,6 +154,10 @@ export default function AddRolePage() {
             setIsSaving(false);
         }
     };
+
+    if (isLoading) {
+        return <div className="p-8"><Skeleton className="w-full h-96"/></div>
+    }
 
     return (
         <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -203,7 +237,7 @@ export default function AddRolePage() {
 
                                                         const fullKey = `${moduleName}.${subModuleKey}`;
                                                         
-                                                        if (subModuleKey === 'Departments') {
+                                                        if (subModuleKey === 'Departments' && departments.length > 0) {
                                                             return (
                                                                 <div key={fullKey} className="p-3 border rounded-md mt-2">
                                                                     <h4 className="font-semibold text-sm mb-3">{subModuleKey}-specific Permissions</h4>
