@@ -115,7 +115,7 @@ export default function WorkflowConfigurationPage() {
 
   /* -------- permissions via safe 3-arg can() wrapper -------- */
   const canViewPage = useMemo(
-    () => !isAuthLoading && safeCan3(can, 'View Settings', 'Site Fund Requisition 2'),
+    () => !isAuthLoading && safeCan3(can, 'View Workflow', 'Site Fund Requisition 2.Settings'),
     [isAuthLoading, can],
   );
   const canEditPage = useMemo(
@@ -357,7 +357,7 @@ export default function WorkflowConfigurationPage() {
       <div className="w-full max-w-4xl mx-auto pr-14">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/site-fund-requisition/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+            <Link href="/site-fund-requisition-2/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
             <h1 className="text-xl font-bold">Configure Workflow</h1>
           </div>
         </div>
@@ -496,7 +496,7 @@ export default function WorkflowConfigurationPage() {
                           }
                           className="flex flex-wrap gap-4"
                         >
-                          {(['User-based', 'Project-based', 'Department-based', 'Amount-based'] as const).map((type) => (
+                          {(['User-based', 'Project-based', 'Department-based'] as const).map((type) => (
                             <div key={type} className="flex items-center space-x-2">
                               <RadioGroupItem value={type} id={`${step.id}-${type}`} disabled={!canEditPage} />
                               <Label htmlFor={`${step.id}-${type}`} className="font-normal">

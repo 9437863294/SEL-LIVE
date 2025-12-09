@@ -109,7 +109,7 @@ export const permissionModules = {
     'View Module': [],
     'Requests': ['View', 'New Request', 'Edit', 'Delete'],
     'Reports': ['View'],
-    'Settings': ['View', 'Edit Workflow'],
+    'Settings': ['View', 'Edit Workflow','View Workflow'],
   },
   'Daily Requisition': {
     'View Module': [],
