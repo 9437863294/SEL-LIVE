@@ -14,7 +14,7 @@ import {
   FilePlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -35,6 +35,7 @@ import {
   Timestamp,
   runTransaction,
   arrayUnion,
+  collectionGroup,
 } from 'firebase/firestore';
 import type {
   Requisition,
@@ -227,11 +228,10 @@ export default function StagePage() {
   }, [tasks, userId, stage]);
 
   const handleAction = async (taskId: string, action: string | ActionConfig, comment: string = '') => {
-    if (!workflow || !user || !userName || !stage || !projectSlug || !projectId) return;
+    const currentRequisition = tasks.find(t => t.id === taskId);
+    if (!user || !userName || !currentRequisition || !workflow || !currentStep || !projectSlug || !projectId) return;
 
     const actionName = typeof action === 'string' ? action : action.name;
-    const currentTask = tasks.find(t => t.id === taskId);
-    if(!currentTask) return;
 
     if (actionName === 'Create Expense Request') {
         const targetDepartmentId = typeof action !== 'string' && hasDeptId(action) ? action.departmentId : undefined;
@@ -240,8 +240,8 @@ export default function StagePage() {
             return;
         }
 
-        const subHead = subAccountHeads.find(sh => sh.name.toLowerCase() === 'unsecured loan');
-        const parentHead = subHead ? accountHeads.find(h => h.id === subHead.headId) : undefined;
+        const unsecuredLoanSubHead = subAccountHeads.find(sh => sh.name.toLowerCase() === 'unsecured loan');
+        const defaultHead = unsecuredLoanSubHead ? accountHeads.find(h => h.id === unsecuredLoanSubHead.headId)?.name : 'Liability';
         let previewRequestNo = 'Generating...';
 
         try {
@@ -260,14 +260,14 @@ export default function StagePage() {
         }
 
         setExpenseToCreate({
-            departmentId: targetDepartmentId,
-            projectId: currentTask.projectId,
-            amount: currentTask.amount,
-            partyName: currentTask.partyName,
-            description: currentTask.description,
-            headOfAccount: parentHead?.name || 'Liability',
-            subHeadOfAccount: subHead?.name || 'Unsecured Loan',
-            remarks: `From Site Fund Requisition ${currentTask.requisitionId}`,
+            departmentId: targetDepartmentId || '',
+            projectId: currentRequisition.projectId || '',
+            amount: currentRequisition.amount || 0,
+            partyName: currentRequisition.partyName || '',
+            description: currentRequisition.description || '',
+            headOfAccount: defaultHead || 'Liability',
+            subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
+            remarks: `Generated from Site Fund Requisition ${currentRequisition.requisitionId}` || '',
             requestNo: previewRequestNo,
         });
         setIsConfirmExpenseOpen(true);
@@ -283,7 +283,7 @@ export default function StagePage() {
         if (!reqDoc.exists()) throw new Error('Requisition document not found!');
         const currentRequisitionData = reqDoc.data() as Requisition;
         
-        const newActionLog: ActionLog = { action: actionName, comment, userId, userName, timestamp: Timestamp.now(), stepName: stage.name };
+        const newActionLog: ActionLog = { action: actionName, comment, userId, userName, timestamp: Timestamp.now(), stepName: currentStep.name };
         
         let nextStep: WorkflowStep | undefined;
         let newStatus: Requisition['status'] = currentRequisitionData.status;
@@ -292,16 +292,16 @@ export default function StagePage() {
         let newAssignees: string[] = [];
         let newDeadline: Timestamp | null = null;
         
-        const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Update Approved Amount'].includes(actionName);
+        const isCompletionAction = ['Approve', 'Complete', 'Verified', 'Update Approved Amount', 'Create Expense Request'].includes(actionName);
 
         if (isCompletionAction) {
-          const currentStepIndexTx = workflow.findIndex(s => s.id === stage.id);
+          const currentStepIndexTx = workflow.findIndex(s => s.id === currentStep.id);
           nextStep = workflow?.[currentStepIndexTx + 1];
           if (nextStep) {
             newStage = nextStep.name;
             newStatus = 'In Progress';
             newCurrentStepId = nextStep.id;
-            const assignees = await getAssigneeForStep(nextStep, currentRequisitionData);
+            const assignees = await getAssigneeForStep(nextStep, currentRequisitionData as any);
             if (!assignees || assignees.length === 0) throw new Error(`No assignee for step: ${nextStep.name}`);
             newAssignees = assignees;
             newDeadline = Timestamp.fromDate(await calculateDeadline(new Date(), nextStep.tat));
@@ -392,9 +392,7 @@ export default function StagePage() {
                 );
               })
             ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center h-24">No {type} tasks.</TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={5} className="text-center h-24">No {type} tasks.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
@@ -407,7 +405,7 @@ export default function StagePage() {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Link href="/site-fund-requisition-2">
+            <Link href={`/site-fund-requisition-2`}>
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
               </Button>
@@ -429,7 +427,7 @@ export default function StagePage() {
           isOpen={isViewOpen}
           onOpenChange={setIsViewOpen}
           requisition={selectedRequisition}
-          projects={projects}
+          projects={[]}
           departments={departments}
           onRequisitionUpdate={fetchTasks}
         />
@@ -438,167 +436,291 @@ export default function StagePage() {
 }
 
 ```
-- src/hooks/use-local-storage.ts:
+- src/app/api/print-auth/route.ts:
 ```ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+const PRINT_PASSCODE = process.env.PRINT_PASSCODE || '1234';
+const COOKIE_NAME = 'print_token';
+const MAX_AGE = 60 * 60 * 24 * 7; // 1 week in seconds
+
+export async function POST(req: NextRequest) {
+  try {
+    const { code } = await req.json();
+
+    if (code === PRINT_PASSCODE) {
+      const response = NextResponse.json({ success: true });
+      // Set a cookie to remember auth status
+      response.cookies.set(COOKIE_NAME, 'true', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: MAX_AGE,
+        path: '/',
+      });
+      return response;
+    } else {
+      return NextResponse.json(
+        { message: 'Invalid passcode.' },
+        { status: 401 }
+      );
+    }
+  } catch {
+    return NextResponse.json(
+      { message: 'Invalid request body.' },
+      { status: 400 }
+    );
+  }
+}
+
+```
+- src/app/print-auth/page.tsx:
+```tsx
+
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense } from 'react';
+import { PrintAuthPageContent } from '@/components/auth/PrintAuthPageContent';
 
-export function useLocalStorage<T>(key: string, initialValue: T) {
-  const [storedValue, setStoredValue] = useState<T>(initialValue);
-
-  // We need to use a useEffect to read from local storage only on the client side.
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    try {
-      const item = window.localStorage.getItem(key);
-      setStoredValue(item ? JSON.parse(item) : initialValue);
-    } catch (error) {
-      console.error(error);
-      setStoredValue(initialValue);
-    }
-  }, [key, initialValue]);
-
-  const setValue = useCallback((value: T | ((val: T) => T)) => {
-    if (typeof window === 'undefined') {
-        console.warn(`Tried setting localStorage key “${key}” even though environment is not a client`);
-        return;
-    }
-    try {
-      // Allow value to be a function so we have same API as useState
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-    } catch (error) {
-      console.error(error);
-    }
-  }, [key, storedValue]);
-
-  return [storedValue, setValue] as const;
+export default function PrintAuthPage() {
+  return (
+    <Suspense>
+      <PrintAuthPageContent />
+    </Suspense>
+  );
 }
 
 ```
-- src/hooks/use-media-query.ts:
+- tailwind.config.ts:
 ```ts
-"use client"
+import type { Config } from 'tailwindcss';
 
-import * as React from "react"
-
-export function useMediaQuery(query: string) {
-  const [value, setValue] = React.useState(false)
-
-  React.useEffect(() => {
-    function onChange(event: MediaQueryListEvent) {
-      setValue(event.matches)
-    }
-
-    const result = matchMedia(query)
-    result.addEventListener("change", onChange)
-    setValue(result.matches)
-
-    return () => result.removeEventListener("change", onChange)
-  }, [query])
-
-  return value
-}
-
-```
-- tailwind.config.js:
-```js
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  darkMode: ["class"],
-  content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
-	],
+export default {
+  darkMode: ['class'],
+  content: ['./src/**/*.{js,ts,jsx,tsx,mdx}'],
   theme: {
-    container: {
-      center: true,
-      padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
-    },
     extend: {
+      fontFamily: {
+        body: ['var(--font-body)', 'sans-serif'],
+        inter: ['var(--font-inter)', 'sans-serif'],
+        roboto: ['var(--font-roboto)', 'sans-serif'],
+        headline: ['var(--font-inter)', 'sans-serif'],
+        code: ['monospace'],
+      },
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
         },
         popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
         },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+        primary: {
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
+        },
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        chart: {
+          '1': 'hsl(var(--chart-1))',
+          '2': 'hsl(var(--chart-2))',
+          '3': 'hsl(var(--chart-3))',
+          '4': 'hsl(var(--chart-4))',
+          '5': 'hsl(var(--chart-5))',
+        },
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar-background))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          primary: 'hsl(var(--sidebar-primary))',
+          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+          accent: 'hsl(var(--sidebar-accent))',
+          'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
+          border: 'hsl(var(--sidebar-border))',
+          ring: 'hsl(var(--sidebar-ring))',
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: 'var(--radius)',
+        md: 'calc(var(--radius) - 2px)',
+        sm: 'calc(var(--radius) - 4px)',
       },
       keyframes: {
-        "accordion-down": {
-          from: { height: 0 },
-          to: { height: "var(--radix-accordion-content-height)" },
+        'accordion-down': {
+          from: {
+            height: '0',
+          },
+          to: {
+            height: 'var(--radix-accordion-content-height)',
+          },
         },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: 0 },
+        'accordion-up': {
+          from: {
+            height: 'var(--radix-accordion-content-height)',
+          },
+          to: {
+            height: '0',
+          },
         },
       },
       animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up': 'accordion-up 0.2s ease-out',
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
-}
-```
-- next-env.d.ts:
-```ts
-/// <reference types="next" />
-/// <reference types="next/image-types/global" />
-
-// NOTE: This file should not be edited
-// see https://nextjs.org/docs/basic-features/typescript for more information.
+  plugins: [
+    require('tailwindcss-animate'),
+  ],
+} satisfies Config;
 
 ```
-- postcss.config.js:
-```js
-module.exports = {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
+- tsconfig.json:
+```json
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
   },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
+
 ```
+- package.json:
+```json
+{
+  "name": "nextn",
+  "version": "0.1.0",
+  "private": "true",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@genkit-ai/google-genai": "1.18.0",
+    "@genkit-ai/next": "1.18.0",
+    "@hello-pangea/dnd": "^16.6.0",
+    "@hookform/resolvers": "^3.9.0",
+    "@radix-ui/react-accordion": "^1.2.0",
+    "@radix-ui/react-alert-dialog": "^1.1.1",
+    "@radix-ui/react-avatar": "^1.1.0",
+    "@radix-ui/react-checkbox": "^1.1.1",
+    "@radix-ui/react-collapsible": "^1.1.0",
+    "@radix-ui/react-dialog": "^1.1.1",
+    "@radix-ui/react-dropdown-menu": "^2.1.1",
+    "@radix-ui/react-icons": "^1.3.0",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-menubar": "^1.1.1",
+    "@radix-ui/react-popover": "^1.1.1",
+    "@radix-ui/react-progress": "^1.1.0",
+    "@radix-ui/react-radio-group": "^1.2.0",
+    "@radix-ui/react-scroll-area": "^1.2.0",
+    "@radix-ui/react-select": "^2.1.1",
+    "@radix-ui/react-separator": "^1.1.0",
+    "@radix-ui/react-slider": "^1.2.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-switch": "^1.1.0",
+    "@radix-ui/react-tabs": "^1.1.0",
+    "@radix-ui/react-toast": "^1.2.1",
+    "@radix-ui/react-tooltip": "^1.1.2",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.0.0",
+    "date-fns": "^3.6.0",
+    "embla-carousel-react": "^8.1.6",
+    "firebase": "^12.5.0",
+    "genkit": "1.18.0",
+    "lucide-react": "^0.417.0",
+
+    "next": "15.5.7",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+
+    "openai": "^6.9.1",
+    "patch-package": "^8.0.0",
+    "react-beautiful-dnd": "^13.1.1",
+    "react-day-picker": "^8.10.1",
+    "react-hook-form": "^7.52.1",
+    "react-resizable-panels": "^2.0.22",
+    "react-to-print": "^2.15.1",
+    "recharts": "^2.12.7",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^2.4.0",
+    "tailwindcss-animate": "^1.0.7",
+    "wav": "^1.0.2",
+    "xlsx": "^0.18.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/dotenv": "^6.1.1",
+    "@types/node": "^20.14.12",
+
+
+    "@types/react": "^18.3.3",
+    "@types/react-beautiful-dnd": "^13.1.8",
+    "@types/react-dom": "^18.3.0",
+
+    "autoprefixer": "^10.4.21",
+    "dotenv": "^17.2.3",
+    "genkit-cli": "^1.18.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.18",
+    "typescript": "^5.5.4"
+  }
+}
