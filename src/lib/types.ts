@@ -107,7 +107,7 @@ export const permissionModules = {
   ],
   'Site Fund Requisition 2': {
     'View Module': [],
-    'Requests': ['View', 'New Request', 'Edit', 'Delete'],
+    'Requests': ['View', 'New Request', 'Edit', 'Delete','View All'],
     'Reports': ['View'],
     'Settings': ['View', 'Edit Workflow','View Workflow'],
   },
