@@ -1,24 +1,43 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, Users, Search, Trash2, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Plus, Users, Search, Trash2, ShieldAlert, View } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription as CardDescriptionShad } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose, DialogDescription } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import type { Employee, Department, EmployeePosition } from '@/lib/types';
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, writeBatch, setDoc, getDoc } from 'firebase/firestore';
+import type { Employee, Department, EmployeePosition, UserSettings } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useAuth } from '@/components/auth/AuthProvider';
+
 
 // A simple debounce hook
 function useDebounce(value: string, delay: number) {
@@ -52,9 +71,14 @@ type EnrichedEmployee = Employee & {
   positions?: Record<string, string>;
 };
 
+const baseTableHeaders = ['Employee ID', 'Employee No', 'Name', 'Date of Join', 'Status'];
+
 export default function ManageEmployeePage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { user } = useAuth();
+  const settingsKey = 'manage_employees_columns';
+  const isInitialMount = useRef(true);
 
   const [employees, setEmployees] = useState<EnrichedEmployee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -74,6 +98,58 @@ export default function ManageEmployeePage() {
     department: 'all',
     status: 'all',
   });
+  
+  const allTableHeaders = useMemo(() => {
+    const dynamicColumns = new Set<string>();
+    employees.forEach(emp => {
+      if (emp.positions) {
+        Object.keys(emp.positions).forEach(key => dynamicColumns.add(key));
+      }
+    });
+    return [...baseTableHeaders, ...Array.from(dynamicColumns).sort()];
+  }, [employees]);
+  
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
+    allTableHeaders.reduce((acc, header) => ({ ...acc, [header]: baseTableHeaders.includes(header) }), {})
+  );
+
+  useEffect(() => {
+    if (user) {
+        const fetchSettings = async () => {
+            const settingsRef = doc(db, 'userSettings', user.id);
+            const settingsSnap = await getDoc(settingsRef);
+            if (settingsSnap.exists()) {
+                const settings = settingsSnap.data() as UserSettings;
+                const pageSettings = settings.columnPreferences?.[settingsKey];
+                if (pageSettings?.visibility) {
+                    setColumnVisibility(prev => ({...prev, ...pageSettings.visibility}));
+                }
+            }
+        };
+        fetchSettings();
+    }
+  }, [user, settingsKey]);
+  
+  useEffect(() => {
+      if (isInitialMount.current) {
+          isInitialMount.current = false;
+          return;
+      }
+      if (user) {
+          const saveColumnSettings = async () => {
+              const settingsRef = doc(db, 'userSettings', user.id);
+              try {
+                  await setDoc(settingsRef, {
+                      columnPreferences: { [settingsKey]: { visibility: columnVisibility } }
+                  }, { merge: true });
+              } catch (e) {
+                  console.error("Failed to save column settings:", e);
+              }
+          };
+          saveColumnSettings();
+      }
+  }, [columnVisibility, user, settingsKey]);
+
 
   const debouncedEmployeeId = useDebounce(filters.employeeId, 300);
   const debouncedName = useDebounce(filters.name, 300);
@@ -141,6 +217,9 @@ export default function ManageEmployeePage() {
     });
     return Array.from(columns).sort();
   }, [employees]);
+  
+  const visibleColumns = useMemo(() => allTableHeaders.filter(h => columnVisibility[h]), [allTableHeaders, columnVisibility]);
+
 
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -344,77 +423,100 @@ export default function ManageEmployeePage() {
           </Link>
           <h1 className="text-2xl font-bold">Manage Employee</h1>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button disabled={!canAdd}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Employee
-            </Button>
-          </DialogTrigger>
-          <DialogContent
-            className="sm:max-w-2xl"
-            onPointerDownOutside={e => e.preventDefault()}
-          >
-            <DialogHeader>
-              <DialogTitle>Add New Employee</DialogTitle>
-              <DialogDescription>
-                Fill in the details to add a new employee.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="addEmployeeNo">Employee No</Label>
-                <Input
-                  id="addEmployeeNo"
-                  value={newEmployee.employeeNo}
-                  onChange={e => handleInputChange('employeeNo', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="addName">Name</Label>
-                <Input
-                  id="addName"
-                  value={newEmployee.name}
-                  onChange={e => handleInputChange('name', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="addDateOfJoin">Date of Join</Label>
-                <Input
-                  id="addDateOfJoin"
-                  type="date"
-                  value={newEmployee.dateOfJoin}
-                  onChange={e =>
-                    handleInputChange('dateOfJoin', e.target.value)
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="addStatus">Status</Label>
-                <Select
-                  value={newEmployee.status}
-                  onValueChange={(value: 'Active' | 'Inactive') =>
-                    handleSelectChange('status', value)
-                  }
-                >
-                  <SelectTrigger id="addStatus">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleAddEmployee}>Add Employee</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                  <Button variant="outline"><View className="mr-2 h-4 w-4"/> Columns</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {allTableHeaders.map(header => (
+                      <DropdownMenuCheckboxItem
+                          key={header}
+                          className="capitalize"
+                          checked={columnVisibility[header]}
+                          onCheckedChange={value =>
+                              setColumnVisibility(prev => ({ ...prev, [header]: !!value }))
+                          }
+                      >
+                          {header}
+                      </DropdownMenuCheckboxItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+                <Button disabled={!canAdd}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Employee
+                </Button>
+            </DialogTrigger>
+            <DialogContent
+                className="sm:max-w-2xl"
+                onPointerDownOutside={e => e.preventDefault()}
+            >
+                <DialogHeader>
+                <DialogTitle>Add New Employee</DialogTitle>
+                <DialogDescription>
+                    Fill in the details to add a new employee.
+                </DialogDescription>
+                </DialogHeader>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+                <div className="space-y-2">
+                    <Label htmlFor="addEmployeeNo">Employee No</Label>
+                    <Input
+                    id="addEmployeeNo"
+                    value={newEmployee.employeeNo}
+                    onChange={e => handleInputChange('employeeNo', e.target.value)}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="addName">Name</Label>
+                    <Input
+                    id="addName"
+                    value={newEmployee.name}
+                    onChange={e => handleInputChange('name', e.target.value)}
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="addDateOfJoin">Date of Join</Label>
+                    <Input
+                    id="addDateOfJoin"
+                    type="date"
+                    value={newEmployee.dateOfJoin}
+                    onChange={e =>
+                        handleInputChange('dateOfJoin', e.target.value)
+                    }
+                    />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="addStatus">Status</Label>
+                    <Select
+                    value={newEmployee.status}
+                    onValueChange={(value: 'Active' | 'Inactive') =>
+                        handleSelectChange('status', value)
+                    }
+                    >
+                    <SelectTrigger id="addStatus">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Inactive">Inactive</SelectItem>
+                    </SelectContent>
+                    </Select>
+                </div>
+                </div>
+                <DialogFooter>
+                <DialogClose asChild>
+                    <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleAddEmployee}>Add Employee</Button>
+                </DialogFooter>
+            </DialogContent>
+            </Dialog>
+        </div>
       </div>
 
       <Card className="mb-6">
@@ -488,12 +590,7 @@ export default function ManageEmployeePage() {
                         disabled={!canDelete}
                       />
                     </TableHead>
-                    <TableHead>Employee ID</TableHead>
-                    <TableHead>Employee No</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Date of Join</TableHead>
-                    <TableHead>Status</TableHead>
-                    {dynamicColumns.map(col => (
+                    {visibleColumns.map(col => (
                       <TableHead key={col}>{col}</TableHead>
                     ))}
                     <TableHead className="text-right">Actions</TableHead>
@@ -504,7 +601,7 @@ export default function ManageEmployeePage() {
                     Array.from({ length: 10 }).map((_, i) => (
                       <TableRow key={i}>
                         <TableCell
-                          colSpan={7 + dynamicColumns.length}
+                          colSpan={visibleColumns.length + 2}
                         >
                           <Skeleton className="h-6 w-full" />
                         </TableCell>
@@ -529,18 +626,15 @@ export default function ManageEmployeePage() {
                             disabled={!canDelete}
                           />
                         </TableCell>
-                        <TableCell>{emp.employeeId}</TableCell>
-                        <TableCell>{emp.employeeNo}</TableCell>
-                        <TableCell className="font-medium whitespace-nowrap">
-                          {emp.name}
-                        </TableCell>
-                        <TableCell>{emp.dateOfJoin}</TableCell>
-                        <TableCell>{emp.status}</TableCell>
-                        {dynamicColumns.map(col => (
-                          <TableCell key={col}>
-                            {emp.positions?.[col] || '-'}
-                          </TableCell>
-                        ))}
+                        {visibleColumns.map(col => {
+                          let cellContent: React.ReactNode;
+                          if (baseTableHeaders.includes(col)) {
+                              cellContent = emp[col.replace(/\s+/g, '') as keyof Employee] || '-';
+                          } else {
+                              cellContent = emp.positions?.[col] || '-';
+                          }
+                          return <TableCell key={col}>{cellContent as any}</TableCell>
+                        })}
                         <TableCell className="text-right space-x-2">
                           <Button
                             variant="outline"
@@ -564,7 +658,7 @@ export default function ManageEmployeePage() {
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={7 + dynamicColumns.length}
+                        colSpan={visibleColumns.length + 2}
                         className="text-center h-24"
                       >
                         No employees found.
@@ -675,3 +769,4 @@ export default function ManageEmployeePage() {
     </div>
   );
 }
+
