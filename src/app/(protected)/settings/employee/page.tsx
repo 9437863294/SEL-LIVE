@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import Link from 'next/link';
@@ -15,6 +16,7 @@ import {
   Briefcase,
   IndianRupee,
   BarChart3,
+  History,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -45,31 +47,37 @@ const employeeSettingsItemsBase = [
     icon: Users, 
     text: 'Manage Employee', 
     description: 'View, filter, and edit employee details.',
-    href: '/employee/manage' 
+    href: '/settings/employee/manage' 
   },
   { 
     icon: DownloadCloud, 
     text: 'Sync with GreytHR',
     description: 'Fetch and import employee data from GreytHR.',
-    href: '/employee/sync' 
+    href: '/settings/employee/sync' 
   },
   { 
     icon: Tags, 
     text: 'Manage Category', 
     description: 'View synced departments and designations.',
-    href: '/employee/category' 
+    href: '/settings/employee/category' 
   },
   { 
     icon: Briefcase,
     text: 'Employee Position Details',
     description: 'Get position details for an employee.',
-    href: '/employee/position-details'
+    href: '/settings/employee/position-details'
   },
   { 
     icon: IndianRupee,
     text: 'Employee Salary',
     description: 'View and manage employee salary details.',
-    href: '/employee/salary'
+    href: '/settings/employee/salary'
+  },
+  { 
+    icon: History,
+    text: 'Salary Log',
+    description: 'View and manage employee salary logs.',
+    href: '#'
   },
   { 
     icon: BarChart3,
