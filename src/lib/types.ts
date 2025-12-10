@@ -108,7 +108,10 @@ export const permissionModules = {
   'Site Fund Requisition 2': {
     'View Module': [],
     'Requests': ['View', 'New Request', 'Edit', 'Delete','View All'],
-    'Reports': ['View'],
+    'Reports': {
+        'View': [],
+        'Site Fund Summary': ['View'],
+    },
     'Settings': ['View', 'Edit Workflow','View Workflow'],
   },
   'Daily Requisition': {
@@ -1067,5 +1070,3 @@ export interface EnrichedLogItem extends InventoryLog {
   issuedQuantity: number;
   balanceQuantity: number;
 }
-
-    

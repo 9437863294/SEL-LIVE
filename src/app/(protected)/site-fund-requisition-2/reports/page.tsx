@@ -1,24 +1,26 @@
 
 'use client';
+export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
 import {
   ArrowLeft,
   ShieldAlert,
+  type LucideIcon,
   BarChart4,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ReactNode } from 'react';
 
 interface ReportCardProps {
   item: {
     icon: LucideIcon;
-    title: string;
+    title: ReactNode;
     description: string;
     href: string;
     disabled?: boolean;
@@ -28,10 +30,11 @@ interface ReportCardProps {
 const reportItemsBase = [
   { 
     icon: BarChart4, 
-    title: 'Site Fund Summary', 
+    text: 'Site Fund Summary', 
     description: 'View a summary of all requisitions, including totals and step-wise reports.', 
     href: 'reports/site-fund-summary',
-    permission: 'View Reports',
+    permission: 'View',
+    permissionResource: 'Site Fund Requisition 2.Reports.Site Fund Summary',
   },
 ];
 
@@ -74,7 +77,8 @@ export default function ReportsPage() {
 
     const reportItems = reportItemsBase.map(item => ({
         ...item,
-        disabled: !can(item.permission, 'Site Fund Requisition 2.Reports'),
+        title: item.text,
+        disabled: !can(item.permission, item.permissionResource),
     }));
     
     if (isLoading) {
@@ -120,7 +124,7 @@ export default function ReportsPage() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {reportItems.map((item) => (
-          <ReportCard key={item.title} item={item} />
+          <ReportCard key={item.text} item={item} />
         ))}
       </div>
     </div>
