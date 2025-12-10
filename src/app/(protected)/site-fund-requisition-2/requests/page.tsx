@@ -1,7 +1,7 @@
 
 'use client';
 
-import AllRequisitionsTab from '@/components/AllRequisitionsTab';
+import AllRequisitionsTab from '@/components/AllRequisitionsTab2';
 
 export default function RequisitionsPage() {
     return (

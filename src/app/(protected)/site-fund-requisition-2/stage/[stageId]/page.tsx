@@ -61,7 +61,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import ViewRequisitionDialog from '@/components/ViewRequisitionDialog';
+import ViewRequisitionDialog from '@/components/ViewRequisitionDialog2';
 import {
   Dialog,
   DialogContent,
