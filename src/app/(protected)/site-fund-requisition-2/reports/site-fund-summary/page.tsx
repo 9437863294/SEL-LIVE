@@ -32,6 +32,7 @@ import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import type { Requisition, Project, User, WorkflowStep, ActionLog } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { format, getYear } from 'date-fns';
 
 interface SummaryStats {
     totalRequisitions: number;
@@ -104,6 +105,7 @@ export default function SiteFundSummaryPage() {
 
       } catch (error) {
           console.error("Error fetching summary data: ", error);
+          // Handle error, e.g., show a toast notification
       }
       setIsLoading(false);
   };
@@ -175,28 +177,97 @@ export default function SiteFundSummaryPage() {
         const history: ActionLog[] = req.history || [];
         const processedStepsForTotal = new Set<string>();
 
-        history.forEach(log => {
-            if (!log.stepName || log.action === 'Created') return;
+        // Pass 1: Determine who was assigned what and when
+        const stepAssignments: Record<string, { userId: string, timestamp: Date }> = {};
+        let previousStepCompletionTime = req.createdAt.toDate();
 
-            const userName = userMap.get(log.userId) || 'Unknown User';
-            initializeUserInStep(log.stepName, userName);
-
-            if (!processedStepsForTotal.has(log.stepName)) {
-                report[log.stepName][userName].total++;
-                processedStepsForTotal.add(log.stepName);
+        workflow.steps.forEach((step, index) => {
+             const stepReached = history.some(h => h.stepName === step.name) || req.currentStepId === step.id;
+             if (stepReached) {
+                const assigneeId = req.history.find(h => h.stepName === step.name)?.userId || (req.assignees ? req.assignees[0] : undefined);
+                if(assigneeId) {
+                   stepAssignments[step.name] = { userId: assigneeId, timestamp: previousStepCompletionTime };
+                   const completionLog = history.find(h => h.stepName === step.name && isCompletionAction(h.action));
+                   if(completionLog) {
+                       previousStepCompletionTime = completionLog.timestamp.toDate();
+                   }
+                }
+             }
+        });
+        
+         // Add current assignment if not completed
+        if (req.currentStepId && req.status !== 'Completed' && req.status !== 'Rejected') {
+            const currentStep = workflow.steps.find(s => s.id === req.currentStepId);
+            if(currentStep && req.assignees && req.assignees.length > 0) {
+                 stepAssignments[currentStep.name] = { userId: req.assignees[0], timestamp: previousStepCompletionTime };
             }
+        }
+        
+        // Pass 2: Calculate stats based on assignments and history
+        Object.keys(stepAssignments).forEach(stepName => {
+            const { userId } = stepAssignments[stepName];
+            const userName = userMap.get(userId) || 'Unknown User';
+            
+            initializeUserInStep(stepName, userName);
+            
+            // Increment total for the user assigned to this step
+            if(!processedStepsForTotal.has(stepName)){
+                report[stepName][userName].total++;
+                processedStepsForTotal.add(stepName);
+            }
+            
+            const completionLog = history.find(h => h.stepName === stepName && h.userId === userId && isCompletionAction(h.action));
+            const rejectionLog = history.find(h => h.stepName === stepName && h.userId === userId && h.action.toLowerCase() === 'reject');
 
-            if (isCompletionAction(log.action)) {
-                report[log.stepName][userName].completed++;
-            } else if (log.action.toLowerCase() === 'reject') {
-                report[log.stepName][userName].rejected++;
+            if (completionLog) {
+                report[stepName][userName].completed++;
+                
+                const stepConfig = stepMap.get(stepName);
+                if (stepConfig) {
+                    const stepStartTime = stepAssignments[stepName].timestamp;
+                    const deadline = new Date(stepStartTime.getTime() + stepConfig.tat * 60 * 60 * 1000);
+                    const completionTime = completionLog.timestamp.toDate();
+                    
+                    if(completionTime <= deadline) {
+                        report[stepName][userName].onTime++;
+                    }
+                }
+            }
+            
+            if (rejectionLog) {
+                report[stepName][userName].rejected++;
+                 // In some workflows, a rejection might also count as "completed" from the user's queue.
+                if(!completionLog) {
+                   report[stepName][userName].completed++;
+                }
             }
         });
     });
 
     return report;
 }, [filteredRequisitions, workflow, users]);
-  
+
+
+  const getFilterOptions = (key: 'year' | 'month' | 'project' | 'applicant') => {
+      const unique = (arr: any[]) => [...new Set(arr)];
+      switch (key) {
+          case 'year':
+              return unique(allRequisitions.map(r => new Date(r.date).getFullYear().toString())).sort((a,b) => Number(b) - Number(a));
+          case 'month':
+              return Array.from({ length: 12 }, (_, i) => ({ value: (i + 1).toString(), label: new Date(0, i).toLocaleString('default', { month: 'long' }) }));
+          case 'project':
+              return projects.filter(p => allRequisitions.some(r => r.projectId === p.id));
+          case 'applicant':
+              return users.filter(u => allRequisitions.some(r => r.raisedById === u.id));
+          default:
+              return [];
+      }
+  }
+
+  const handleFilterChange = (filterName: string, value: string) => {
+      setFilters(prev => ({ ...prev, [filterName]: value }));
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(amount);
   }
@@ -211,7 +282,7 @@ export default function SiteFundSummaryPage() {
   
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
-        <div className="w-full pr-14">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
@@ -229,10 +300,10 @@ export default function SiteFundSummaryPage() {
 
   if(!canViewPage) {
     return (
-        <div className="w-full pr-14">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/site-fund-requisition-2/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
+                    <Link href="/site-fund-requisition/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
                     <h1 className="text-2xl font-bold">Site Fund Summary</h1>
                 </div>
             </div>
@@ -249,6 +320,7 @@ export default function SiteFundSummaryPage() {
     )
   }
 
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8">
       <div className="mb-6 flex items-center justify-between">
@@ -260,6 +332,140 @@ export default function SiteFundSummaryPage() {
           </Link>
           <h1 className="text-2xl font-bold">Site Fund Summary</h1>
         </div>
+        <Link href="/">
+          <Button variant="ghost" size="icon">
+            <Home className="h-5 w-5" />
+          </Button>
+        </Link>
+      </div>
+
+      <Card className="mb-6">
+        <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Year</p>
+              <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Years" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                   {getFilterOptions('year').map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Month</p>
+              <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Months" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Months</SelectItem>
+                  {getFilterOptions('month').map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Project</p>
+              <Select value={filters.project} onValueChange={(val) => handleFilterChange('project', val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Projects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Projects</SelectItem>
+                  {getFilterOptions('project').map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-muted-foreground">Applicant</p>
+              <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Applicants" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Applicants</SelectItem>
+                  {getFilterOptions('applicant').map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+        {isLoading ? (
+            Array.from({ length: 5 }).map((_, index) => (
+                <Card key={index}>
+                    <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
+                    <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
+                </Card>
+            ))
+        ) : (
+            statsToDisplay.map((stat) => (
+              <Card key={stat.title}>
+                <CardHeader className="p-4">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    {stat.title}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 pt-0">
+                  <p className="text-2xl font-bold">{stat.value}</p>
+                </CardContent>
+              </Card>
+            ))
+        )}
+      </div>
+
+      <div className="mb-6">
+        <h2 className="text-xl font-bold">Step-wise Report</h2>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {isLoading ? (
+          Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)
+        ) : (
+          workflow?.steps.map((step) => {
+              const stepData = stepWiseReport[step.name];
+              if (!stepData || Object.keys(stepData).every(userName => stepData[userName].total === 0)) {
+                return null; 
+              }
+              return (
+              <Card key={step.name}>
+                <CardHeader className="p-4 bg-muted/50">
+                  <CardTitle className="text-base text-center">{step.name}</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>User</TableHead>
+                        <TableHead>Total</TableHead>
+                        <TableHead>Done</TableHead>
+                        <TableHead>On Time</TableHead>
+                        <TableHead>Rejected</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                     {Object.entries(stepData).map(([userName, data]) => {
+                         if (data.total === 0 && data.completed === 0) return null;
+                         return (
+                             <TableRow key={userName}>
+                                 <TableCell>{userName}</TableCell>
+                                 <TableCell>{data.total}</TableCell>
+                                 <TableCell>{data.completed}</TableCell>
+                                 <TableCell>{data.onTime}</TableCell>
+                                 <TableCell>{data.rejected}</TableCell>
+                             </TableRow>
+                         )
+                     })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )})
+        )}
       </div>
     </div>
   );
