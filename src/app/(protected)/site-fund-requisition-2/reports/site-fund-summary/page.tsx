@@ -69,7 +69,7 @@ export default function SiteFundSummaryPage() {
       applicant: 'all',
   });
   
-  const canViewPage = can('View Reports', 'Site Fund Requisition 2');
+  const canViewPage = can('View', 'Site Fund Requisition 2.Reports.Site Fund Summary');
 
   useEffect(() => {
     if (!isAuthLoading) {
@@ -154,6 +154,8 @@ export default function SiteFundSummaryPage() {
     const userMap = new Map(users.map(u => [u.id, u.name]));
     const stepMap = new Map(workflow.steps.map(s => [s.name, s]));
 
+
+    // Initialize report structure
     workflow.steps.forEach(step => {
         report[step.name] = {};
     });
