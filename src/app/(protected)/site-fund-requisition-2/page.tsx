@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { FileText, BarChart3, Settings, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -61,6 +61,7 @@ export default function SiteFundRequisition2Page() {
   const { can, isLoading: authIsLoading } = useAuthorization();
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
 
   const canViewModule = useMemo(() => can('View Module', 'Site Fund Requisition 2'), [can]);
 
@@ -83,6 +84,7 @@ export default function SiteFundRequisition2Page() {
         }
       } catch (error) {
         console.error("Failed to fetch workflow:", error);
+        setWorkflowError('Failed to load workflow configuration.');
         toast({ title: 'Error', description: 'Could not load workflow configuration.', variant: 'destructive' });
       } finally {
         setIsLoading(false);
@@ -103,9 +105,9 @@ export default function SiteFundRequisition2Page() {
       {
         icon: BarChart3,
         text: 'Reports',
-        href: '#',
+        href: '/site-fund-requisition-2/reports',
         description: 'View reports for this module.',
-        disabled: true, // Assuming no reports permission yet
+        disabled: !can('View', 'Site Fund Requisition 2.Reports'),
       },
       {
         icon: Settings,
