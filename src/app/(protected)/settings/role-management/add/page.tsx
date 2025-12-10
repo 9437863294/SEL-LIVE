@@ -20,6 +20,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const initializePermissions = (departments: Department[], projects: Project[]): Record<string, string[]> => {
     const permissions: Record<string, string[]> = {};
@@ -438,6 +439,3 @@ export default function AddRolePage() {
         </div>
     );
 }
-
-
-    

@@ -40,7 +40,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 // IMPORTANT: If your real selector component lives elsewhere, update this import path accordingly.
-import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
+import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
 
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
@@ -677,7 +677,7 @@ export default function CreateBillPage() {
                                     <Plus className="mr-2 h-4 w-4" /> Add Advance
                                 </Button>
                             </div>
-                             <div className="space-y-2">
+                             <div className="space-y-2 mt-4">
                                 <Label htmlFor="otherDeduction">Other Deductions</Label>
                                 <Input
                                     id="otherDeduction"
@@ -691,36 +691,15 @@ export default function CreateBillPage() {
                     </div>
                 </div>
                 <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground">Subtotal</span>
-                        <span className="font-medium">{formatCurrency(financials.subtotal)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground">GST</span>
-                        <span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span>
-                    </div>
+                    <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-medium">{formatCurrency(financials.subtotal)}</span></div>
+                    <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">GST</span><span className="font-medium">{formatCurrency(financials.finalGstAmount)}</span></div>
                     <Separator />
-                    <div className="flex justify-between font-semibold">
-                        <span>Gross Amount</span>
-                        <span>{formatCurrency(financials.grossAmount)}</span>
-                    </div>
-                     <div className="flex justify-between items-center text-sm text-destructive">
-                        <span className="text-muted-foreground">Retention</span>
-                        <span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span>
-                    </div>
-                     <div className="flex justify-between items-center text-sm text-destructive">
-                        <span className="text-muted-foreground">Advance Deductions</span>
-                        <span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span>
-                    </div>
-                     <div className="flex justify-between items-center text-sm text-destructive">
-                        <span className="text-muted-foreground">Other Deductions</span>
-                        <span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span>
-                    </div>
+                    <div className="flex justify-between font-semibold"><span>Gross Amount</span><span>{formatCurrency(financials.grossAmount)}</span></div>
+                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Retention</span><span className="font-medium">-{formatCurrency(financials.finalRetentionAmount)}</span></div>
+                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Advance Deductions</span><span className="font-medium">-{formatCurrency(financials.totalAdvanceDeduction)}</span></div>
+                     <div className="flex justify-between items-center text-sm text-destructive"><span className="text-muted-foreground">Other Deductions</span><span className="font-medium">-{formatCurrency(financials.otherDeduction)}</span></div>
                      <Separator />
-                     <div className="flex justify-between items-center font-bold text-lg">
-                        <span>Net Payable Amount</span>
-                        <span>{formatCurrency(financials.netPayable)}</span>
-                    </div>
+                     <div className="flex justify-between items-center font-bold text-lg"><span>Net Payable Amount</span><span>{formatCurrency(financials.netPayable)}</span></div>
                 </div>
             </CardContent>
         </Card>
