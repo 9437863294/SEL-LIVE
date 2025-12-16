@@ -53,6 +53,35 @@ type EnrichedEmployee = Employee & {
   positions?: Record<string, string>;
 };
 
+const filterHierarchy: (keyof typeof initialFilters)[] = [
+    'Project Name',
+    'Project Division',
+    'Department',
+    'Location',
+    'Cost Center',
+    'Designation',
+    'EMPLOYEE TYPE',
+    'Grade',
+    'Shift',
+    'COST CENTER CODE',
+];
+
+const initialFilters = {
+    employeeId: '',
+    name: '',
+    status: 'all',
+    'Project Name': 'all',
+    'Project Division': 'all',
+    'Department': 'all',
+    'Location': 'all',
+    'Cost Center': 'all',
+    'Designation': 'all',
+    'EMPLOYEE TYPE': 'all',
+    'Grade': 'all',
+    'Shift': 'all',
+    'COST CENTER CODE': 'all',
+  };
+
 export default function ManageEmployeePage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -68,22 +97,7 @@ export default function ManageEmployeePage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
-
-  const [filters, setFilters] = useState({
-    employeeId: '',
-    name: '',
-    status: 'all',
-    'COST CENTER CODE': 'all',
-    'Cost Center': 'all',
-    'Department': 'all',
-    'Designation': 'all',
-    'EMPLOYEE TYPE': 'all',
-    'Grade': 'all',
-    'Location': 'all',
-    'Project Division': 'all',
-    'Project Name': 'all',
-    'Shift': 'all',
-  });
+  const [filters, setFilters] = useState(initialFilters);
 
   const debouncedEmployeeId = useDebounce(filters.employeeId, 300);
   const debouncedName = useDebounce(filters.name, 300);
@@ -152,49 +166,26 @@ export default function ManageEmployeePage() {
     return Array.from(columns).sort();
   }, [employees]);
 
-  const filterOptions = useMemo(() => {
-      const options: Record<string, Set<string>> = {};
-      dynamicColumns.forEach(col => options[col] = new Set());
-
-      employees.forEach(emp => {
-          if (emp.positions) {
-              dynamicColumns.forEach(col => {
-                  if(emp.positions?.[col]) {
-                      options[col].add(emp.positions[col]);
-                  }
-              })
-          }
-      });
-      
-      const sortedOptions: Record<string, string[]> = {};
-      for (const key in options) {
-          sortedOptions[key] = Array.from(options[key]).sort();
-      }
-      return sortedOptions;
-  }, [employees, dynamicColumns]);
-
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
+    setFilters(prev => {
+      const newState = { ...prev, [field]: value };
+      const fieldIndex = filterHierarchy.indexOf(field as any);
+      
+      if (fieldIndex > -1) {
+        // Reset all subsequent (child) filters in the hierarchy
+        for (let i = fieldIndex + 1; i < filterHierarchy.length; i++) {
+          const childField = filterHierarchy[i];
+          newState[childField] = 'all';
+        }
+      }
+      return newState;
+    });
   };
   
   const clearFilters = () => {
-    setFilters({
-      employeeId: '',
-      name: '',
-      status: 'all',
-      'COST CENTER CODE': 'all',
-      'Cost Center': 'all',
-      'Department': 'all',
-      'Designation': 'all',
-      'EMPLOYEE TYPE': 'all',
-      'Grade': 'all',
-      'Location': 'all',
-      'Project Division': 'all',
-      'Project Name': 'all',
-      'Shift': 'all',
-    });
+    setFilters(initialFilters);
   };
-
+  
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
       const idMatch = (debouncedEmployeeId === '' ||
@@ -204,15 +195,40 @@ export default function ManageEmployeePage() {
           emp.name.toLowerCase().includes(debouncedName.toLowerCase()));
       const statusMatch = (filters.status === 'all' || emp.status === filters.status);
       
-      const positionFilters = dynamicColumns.every(col => {
+      const positionFiltersMatch = filterHierarchy.every(col => {
           const filterValue = filters[col as keyof typeof filters];
           if(filterValue === 'all') return true;
           return emp.positions?.[col] === filterValue;
       });
 
-      return idMatch && nameMatch && statusMatch && positionFilters;
+      return idMatch && nameMatch && statusMatch && positionFiltersMatch;
     });
-  }, [employees, debouncedEmployeeId, debouncedName, filters, dynamicColumns]);
+  }, [employees, debouncedEmployeeId, debouncedName, filters]);
+  
+  const filterOptions = useMemo(() => {
+      let dataForOptions = employees;
+      const options: Record<string, string[]> = {};
+
+      for (const field of filterHierarchy) {
+          const filterValue = filters[field as keyof typeof filters];
+          const uniqueValues = new Set<string>();
+          
+          dataForOptions.forEach(emp => {
+              if (emp.positions?.[field]) {
+                  uniqueValues.add(emp.positions[field]);
+              }
+          });
+          
+          options[field] = Array.from(uniqueValues).sort();
+
+          if(filterValue !== 'all') {
+              dataForOptions = dataForOptions.filter(emp => emp.positions?.[field] === filterValue);
+          }
+      }
+
+      return options;
+
+  }, [employees, filters]);
 
   const openEditDialog = (employee: Employee) => {
     setEditingEmployee(employee);
@@ -340,7 +356,7 @@ export default function ManageEmployeePage() {
       });
     }
   };
-
+  
   if (isAuthLoading) {
     return (
       <div className="w-full px-4">
@@ -372,7 +388,7 @@ export default function ManageEmployeePage() {
           <CardHeader>
             <CardTitleShad>Access Denied</CardTitleShad>
             <CardDescriptionShad>
-              You do not have permission to view this page.
+              You do not have permission to view this page. Please contact an administrator.
             </CardDescriptionShad>
           </CardHeader>
           <CardContent className="flex justify-center p-8">
@@ -499,15 +515,20 @@ export default function ManageEmployeePage() {
               </SelectContent>
             </Select>
 
-            {dynamicColumns.filter(col => filterOptions[col]?.length > 0).map(col => (
-              <Select key={col} value={filters[col as keyof typeof filters]} onValueChange={(value) => handleFilterChange(col as keyof typeof filters, value)}>
-                  <SelectTrigger><SelectValue placeholder={`All ${col}s`} /></SelectTrigger>
-                  <SelectContent>
-                      <SelectItem value="all">All {col}s</SelectItem>
-                      {filterOptions[col].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-                  </SelectContent>
-              </Select>
-            ))}
+            {filterHierarchy.map(col => {
+                if (!dynamicColumns.includes(col)) return null;
+                const options = filterOptions[col];
+                if (!options || options.length === 0) return null;
+                return (
+                    <Select key={col} value={filters[col as keyof typeof filters]} onValueChange={(value) => handleFilterChange(col as keyof typeof filters, value)}>
+                        <SelectTrigger><SelectValue placeholder={`All ${col}s`} /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All {col}s</SelectItem>
+                            {options.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                );
+            })}
             <Button variant="secondary" onClick={clearFilters} className="w-full xl:w-auto">Clear Filters</Button>
 
           {selectedEmployeeIds.length > 0 && (
