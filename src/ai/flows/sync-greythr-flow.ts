@@ -8,7 +8,7 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, doc, setDoc } from 'firebase/firestore';
+import { collection, writeBatch, doc, setDoc, getDocs } from 'firebase/firestore';
 
 const EmployeeDataSchema = z.object({
     employeeId: z.string(),
@@ -124,19 +124,29 @@ const syncAllGreytHRFlow = ai.defineFlow(
     const batch = writeBatch(db);
     const employeesRef = collection(db, 'employees');
 
+    // Fetch existing employee IDs to avoid duplicates
+    const existingEmployeesSnap = await getDocs(employeesRef);
+    const existingEmployeeIds = new Set(existingEmployeesSnap.docs.map(doc => doc.id));
+
+    let newEmployeesCount = 0;
     employeesToSave.forEach(emp => {
-      // Use employeeId as the document ID for easy upserting
-      const docRef = doc(employeesRef, emp.employeeId);
-      batch.set(docRef, emp);
+      // Only add employee if their ID doesn't already exist
+      if (!existingEmployeeIds.has(emp.employeeId)) {
+        const docRef = doc(employeesRef, emp.employeeId);
+        batch.set(docRef, emp);
+        newEmployeesCount++;
+      }
     });
 
-    await batch.commit();
+    if (newEmployeesCount > 0) {
+      await batch.commit();
+    }
 
     await setDoc(doc(db, 'settings', 'employeeSync'), { lastSynced: new Date().toISOString() });
     
     return {
         success: true,
-        message: `Successfully synced ${employeesToSave.length} employees from all pages.`
+        message: `Successfully synced from GreytHR. Added ${newEmployeesCount} new employees. ${employeesToSave.length - newEmployeesCount} employees were already up-to-date.`
     }
   }
 );
