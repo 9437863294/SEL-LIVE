@@ -164,7 +164,7 @@ const syncSalaryFlow = ai.defineFlow(
     });
     
     const employeesRef = collection(db, 'employees');
-    let updatedCount = 0;
+    let addedCount = 0;
     const batch = writeBatch(db);
 
     const employeesToReturn: z.infer<typeof EmployeeSalaryDataSchema>[] = [];
@@ -186,16 +186,11 @@ const syncSalaryFlow = ai.defineFlow(
             salaryDetails: empData.details,
             salaryMonth: monthStr,
         };
-        employeesToReturn.push(salaryPayload);
         
         const q = query(employeesRef, where('employeeId', '==', empNo), where('salaryMonth', '==', monthStr));
         const querySnapshot = await getDocs(q);
 
-        if (!querySnapshot.empty) {
-            const docToUpdate = querySnapshot.docs[0];
-            batch.update(docToUpdate.ref, salaryPayload);
-            updatedCount++;
-        } else {
+        if (querySnapshot.empty) {
             const newDocRef = doc(employeesRef);
             batch.set(newDocRef, {
                 department: '',
@@ -205,18 +200,21 @@ const syncSalaryFlow = ai.defineFlow(
                 status: 'Active',
                 ...salaryPayload,
             });
-            updatedCount++;
+            addedCount++;
         }
+        employeesToReturn.push(salaryPayload);
     }
 
-    await batch.commit();
+    if (addedCount > 0) {
+        await batch.commit();
+    }
 
     await setDoc(syncLogRef, { lastSynced: new Date() });
 
     return { 
         success: true, 
-        message: `Successfully synced salaries. ${updatedCount} employee records created/updated.`,
-        updatedCount: updatedCount,
+        message: `Successfully synced salaries. ${addedCount} new employee records added.`,
+        updatedCount: addedCount,
         employees: employeesToReturn,
     };
   }
