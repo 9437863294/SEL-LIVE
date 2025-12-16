@@ -46,31 +46,31 @@ const employeeSettingsItemsBase = [
     icon: Users, 
     text: 'Manage Employee', 
     description: 'View, filter, and edit employee details.',
-    href: '/settings/employee/manage' 
+    href: '/employee/manage' 
   },
   { 
     icon: DownloadCloud, 
     text: 'Sync with GreytHR',
     description: 'Fetch and import employee data from GreytHR.',
-    href: '/settings/employee/sync' 
+    href: '/employee/sync' 
   },
   { 
     icon: Tags, 
     text: 'Manage Category', 
     description: 'View synced departments and designations.',
-    href: '/settings/employee/category' 
+    href: '/employee/category' 
   },
   { 
     icon: Briefcase,
     text: 'Employee Position Details',
     description: 'Get position details for an employee.',
-    href: '/settings/employee/position-details'
+    href: 'employee/position-details'
   },
   { 
     icon: IndianRupee,
     text: 'Employee Salary',
     description: 'View and manage employee salary details.',
-    href: '/settings/employee/salary'
+    href: '/employee/salary'
   },
   { 
     icon: BarChart3,

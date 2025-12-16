@@ -93,7 +93,7 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
       case 'Manage Project':
         return '/settings/project';
       case 'Employee':
-        return '/settings/employee';
+        return '/employee';
       // Nested Expenses Settings
       case 'Manage Accounts':
         return '/settings/expenses/accounts';

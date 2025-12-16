@@ -34,7 +34,6 @@ const moduleDescriptions: Record<string, string> = {
     'Bank Balance': 'View and manage bank balance information.',
     'Expenses': 'Track and manage project expenses.',
     'Settings': 'Manage application-wide settings.',
-    'Chat System': 'A real-time messaging system for your team.',
     'Loan': 'Manage and track loan activities.',
     'LC Module': 'Manage Letters of Credit for trade finance.',
     'Insurance': 'Manage insurance policies and claims.',

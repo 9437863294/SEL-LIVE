@@ -1,4 +1,5 @@
 
+
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -71,8 +72,17 @@ export default function ManageEmployeePage() {
   const [filters, setFilters] = useState({
     employeeId: '',
     name: '',
-    department: 'all',
     status: 'all',
+    'COST CENTER CODE': 'all',
+    'Cost Center': 'all',
+    'Department': 'all',
+    'Designation': 'all',
+    'EMPLOYEE TYPE': 'all',
+    'Grade': 'all',
+    'Location': 'all',
+    'Project Division': 'all',
+    'Project Name': 'all',
+    'Shift': 'all',
   });
 
   const debouncedEmployeeId = useDebounce(filters.employeeId, 300);
@@ -142,27 +152,67 @@ export default function ManageEmployeePage() {
     return Array.from(columns).sort();
   }, [employees]);
 
+  const filterOptions = useMemo(() => {
+      const options: Record<string, Set<string>> = {};
+      dynamicColumns.forEach(col => options[col] = new Set());
+
+      employees.forEach(emp => {
+          if (emp.positions) {
+              dynamicColumns.forEach(col => {
+                  if(emp.positions?.[col]) {
+                      options[col].add(emp.positions[col]);
+                  }
+              })
+          }
+      });
+      
+      const sortedOptions: Record<string, string[]> = {};
+      for (const key in options) {
+          sortedOptions[key] = Array.from(options[key]).sort();
+      }
+      return sortedOptions;
+  }, [employees, dynamicColumns]);
+
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [field]: value }));
+  };
+  
+  const clearFilters = () => {
+    setFilters({
+      employeeId: '',
+      name: '',
+      status: 'all',
+      'COST CENTER CODE': 'all',
+      'Cost Center': 'all',
+      'Department': 'all',
+      'Designation': 'all',
+      'EMPLOYEE TYPE': 'all',
+      'Grade': 'all',
+      'Location': 'all',
+      'Project Division': 'all',
+      'Project Name': 'all',
+      'Shift': 'all',
+    });
   };
 
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
-      const departmentFilter =
-        filters.department === 'unassigned'
-          ? !emp.department
-          : emp.department === filters.department;
-      return (
-        (debouncedEmployeeId === '' ||
+      const idMatch = (debouncedEmployeeId === '' ||
           emp.employeeId?.toLowerCase().includes(debouncedEmployeeId.toLowerCase()) ||
-          emp.employeeNo?.toLowerCase().includes(debouncedEmployeeId.toLowerCase())) &&
-        (debouncedName === '' ||
-          emp.name.toLowerCase().includes(debouncedName.toLowerCase())) &&
-        (filters.department === 'all' || departmentFilter) &&
-        (filters.status === 'all' || emp.status === filters.status)
-      );
+          emp.employeeNo?.toLowerCase().includes(debouncedEmployeeId.toLowerCase()));
+      const nameMatch = (debouncedName === '' ||
+          emp.name.toLowerCase().includes(debouncedName.toLowerCase()));
+      const statusMatch = (filters.status === 'all' || emp.status === filters.status);
+      
+      const positionFilters = dynamicColumns.every(col => {
+          const filterValue = filters[col as keyof typeof filters];
+          if(filterValue === 'all') return true;
+          return emp.positions?.[col] === filterValue;
+      });
+
+      return idMatch && nameMatch && statusMatch && positionFilters;
     });
-  }, [employees, debouncedEmployeeId, debouncedName, filters.department, filters.status]);
+  }, [employees, debouncedEmployeeId, debouncedName, filters, dynamicColumns]);
 
   const openEditDialog = (employee: Employee) => {
     setEditingEmployee(employee);
@@ -418,22 +468,21 @@ export default function ManageEmployeePage() {
       </div>
 
       <Card className="mb-6">
-        <CardContent className="p-4 flex flex-col sm:flex-row items-center gap-4">
-          <div className="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-4">
-            <div className="relative w-full sm:w-auto">
+        <CardContent className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 items-end">
+            <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search Employee No..."
-                className="pl-8 w-full sm:w-48"
+                className="pl-8"
                 value={filters.employeeId}
                 onChange={e => handleFilterChange('employeeId', e.target.value)}
               />
             </div>
-            <div className="relative w-full sm:w-auto">
+            <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search Name..."
-                className="pl-8 w-full sm:w-48"
+                className="pl-8"
                 value={filters.name}
                 onChange={e => handleFilterChange('name', e.target.value)}
               />
@@ -442,18 +491,27 @@ export default function ManageEmployeePage() {
               value={filters.status}
               onValueChange={value => handleFilterChange('status', value)}
             >
-              <SelectTrigger className="w-full sm:w-48">
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="Active">Active</SelectItem>
                 <SelectItem value="Inactive">Inactive</SelectItem>
               </SelectContent>
             </Select>
-          </div>
+
+            {dynamicColumns.filter(col => filterOptions[col]?.length > 0).map(col => (
+              <Select key={col} value={filters[col as keyof typeof filters]} onValueChange={(value) => handleFilterChange(col as keyof typeof filters, value)}>
+                  <SelectTrigger><SelectValue placeholder={`All ${col}s`} /></SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="all">All {col}s</SelectItem>
+                      {filterOptions[col].map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
+                  </SelectContent>
+              </Select>
+            ))}
+            <Button variant="secondary" onClick={clearFilters} className="w-full xl:w-auto">Clear Filters</Button>
+
           {selectedEmployeeIds.length > 0 && (
-            <div className="sm:ml-auto mt-4 sm:mt-0">
+            <div className="sm:ml-auto mt-4 sm:mt-0 xl:col-start-7">
               <Button
                 variant="destructive"
                 onClick={handleDeleteSelected}
