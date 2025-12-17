@@ -52,7 +52,7 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
       case 'Subcontractors Management':
         return '/subcontractors-management/all';
       case 'Site Fund Requisition':
-        return '/site-fund-requisition';
+        return '/site-fund-requisition-2';
       case 'Daily Requisition':
         return '/daily-requisition';
       case 'Billing Recon':
@@ -63,8 +63,6 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/expenses';
       case 'Settings':
         return '/settings';
-      case 'Chat System':
-        return '/chat';
       case 'Loan':
         return '/loan';
       case 'LC Module':

@@ -1,5 +1,4 @@
 
-
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -8,7 +7,7 @@ import ModuleCard from './ModuleCard';
 import { Skeleton } from './ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import type { Module } from '@/lib/types';
-import { permissionModules } from '@/lib/types';
+import { permissionModules } from '@/lib/permissions';
 import { useAuth } from './auth/AuthProvider';
 
 const moduleIcons: Record<string, string> = {
@@ -130,4 +129,3 @@ export default function ModuleDashboard() {
     </div>
   );
 }
-

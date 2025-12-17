@@ -9,15 +9,6 @@ export const permissionModules = {
     'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual',
     'View All'
   ],
-  'Site Fund Requisition 2': {
-    'View Module': [],
-    'Requests': ['View', 'New Request', 'Edit', 'Delete','View All'],
-    'Reports': {
-        'View': [],
-        'Site Fund Summary': ['View'],
-    },
-    'Settings': ['View', 'Edit Workflow','View Workflow'],
-  },
   'Daily Requisition': {
     'View Module': [],
     'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
