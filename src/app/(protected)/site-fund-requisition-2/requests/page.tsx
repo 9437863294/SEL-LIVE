@@ -5,7 +5,7 @@ import AllRequisitionsTab from '@/components/AllRequisitionsTab2';
 
 export default function RequisitionsPage() {
     return (
-        <div className="flex h-full w-full flex-col px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
+        <div className="flex min-h-[calc(100dvh-4rem)] w-full flex-col overflow-hidden px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
             <div className="mb-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                     Site Fund Requisition 2
@@ -17,7 +17,9 @@ export default function RequisitionsPage() {
                     Create, review, and track requests with stage and status visibility.
                 </p>
             </div>
-            <AllRequisitionsTab />
+            <div className="flex-1 min-h-0">
+              <AllRequisitionsTab />
+            </div>
         </div>
     );
 }

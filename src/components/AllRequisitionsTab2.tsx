@@ -82,6 +82,52 @@ const baseTableHeaders = [
     'Reception No', 'Reception Date'
 ];
 
+function toDateSafe(value: any): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (value?.toDate && typeof value.toDate === 'function') {
+    try {
+      return value.toDate();
+    } catch {
+      // ignore
+    }
+  }
+  if (typeof value === 'number') return new Date(value);
+  if (typeof value === 'string') {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (value?.seconds) return new Date(value.seconds * 1000);
+  return null;
+}
+
+function fyLabelForDate(d: Date) {
+  const year = d.getFullYear();
+  const month = d.getMonth(); // 0-based
+  const startYear = month >= 3 ? year : year - 1; // FY starts Apr (3)
+  const endYear = startYear + 1;
+  return `${startYear}-${String(endYear).slice(-2)}`;
+}
+
+function currentFyLabel(now = new Date()) {
+  return fyLabelForDate(now);
+}
+
+const FY_MONTHS = [
+  { value: '4', label: 'Apr' },
+  { value: '5', label: 'May' },
+  { value: '6', label: 'Jun' },
+  { value: '7', label: 'Jul' },
+  { value: '8', label: 'Aug' },
+  { value: '9', label: 'Sep' },
+  { value: '10', label: 'Oct' },
+  { value: '11', label: 'Nov' },
+  { value: '12', label: 'Dec' },
+  { value: '1', label: 'Jan' },
+  { value: '2', label: 'Feb' },
+  { value: '3', label: 'Mar' },
+];
+
 function statusBadgeClass(status?: string) {
   switch (status) {
     case 'Completed':
@@ -118,6 +164,10 @@ export default function AllRequisitionsTab() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [showMyRequests, setShowMyRequests] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [fyFilter, setFyFilter] = useState<string>(() => currentFyLabel());
+  const [monthFilter, setMonthFilter] = useState<string>('all');
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
   const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
   
   const settingsKey = 'requisitions_all';
@@ -243,8 +293,72 @@ export default function AllRequisitionsTab() {
     if (statusFilter !== 'all') {
       filtered = filtered.filter(req => req.status === statusFilter);
     }
+    if (fyFilter !== 'all') {
+      filtered = filtered.filter((req) => {
+        const d = toDateSafe(req.date);
+        return d ? fyLabelForDate(d) === fyFilter : false;
+      });
+    }
+    if (monthFilter !== 'all') {
+      const m = Number(monthFilter);
+      filtered = filtered.filter((req) => {
+        const d = toDateSafe(req.date);
+        return d ? d.getMonth() + 1 === m : false;
+      });
+    }
+    if (fromDate || toDate) {
+      const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+      const to = toDate ? new Date(`${toDate}T23:59:59`) : null;
+      filtered = filtered.filter((req) => {
+        const d = toDateSafe(req.date);
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+    }
     return filtered;
-  }, [requisitions, showMyRequests, statusFilter, user]);
+  }, [requisitions, showMyRequests, statusFilter, fyFilter, monthFilter, fromDate, toDate, user]);
+
+  const fyOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of requisitions) {
+      const d = toDateSafe(r.date);
+      if (d) set.add(fyLabelForDate(d));
+    }
+    set.add(currentFyLabel());
+    return Array.from(set).sort().reverse();
+  }, [requisitions]);
+
+  const availableMonths = useMemo(() => {
+    // Months present after applying "other" filters (my requests, status, FY, date range)
+    let base = requisitions;
+    if (showMyRequests) base = base.filter((r) => r.raisedById === user?.id);
+    if (statusFilter !== 'all') base = base.filter((r) => r.status === statusFilter);
+    if (fyFilter !== 'all') {
+      base = base.filter((r) => {
+        const d = toDateSafe(r.date);
+        return d ? fyLabelForDate(d) === fyFilter : false;
+      });
+    }
+    if (fromDate || toDate) {
+      const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+      const to = toDate ? new Date(`${toDate}T23:59:59`) : null;
+      base = base.filter((r) => {
+        const d = toDateSafe(r.date);
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+    }
+    const months = new Set<number>();
+    for (const r of base) {
+      const d = toDateSafe(r.date);
+      if (d) months.add(d.getMonth() + 1);
+    }
+    return months;
+  }, [requisitions, showMyRequests, statusFilter, fyFilter, fromDate, toDate, user]);
   
   const generatePreviewId = async () => {
     try {
@@ -821,7 +935,7 @@ export default function AllRequisitionsTab() {
   );
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
         <div className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <div className="mb-3 h-1.5 w-full rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -848,6 +962,76 @@ export default function AllRequisitionsTab() {
                     <SelectItem value="Rejected">Rejected</SelectItem>
                 </SelectContent>
             </Select>
+
+            <Select
+              value={fyFilter}
+              onValueChange={(v) => {
+                setFyFilter(v);
+                setMonthFilter('all');
+                setFromDate('');
+                setToDate('');
+              }}
+            >
+              <SelectTrigger className="w-[140px] bg-white/80 border-white/70">
+                <SelectValue placeholder="FY" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All FY</SelectItem>
+                {fyOptions.map((fy) => (
+                  <SelectItem key={fy} value={fy}>
+                    FY {fy}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={monthFilter} onValueChange={setMonthFilter}>
+              <SelectTrigger className="w-[120px] bg-white/80 border-white/70">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {FY_MONTHS.filter((m) => availableMonths.size === 0 || availableMonths.has(Number(m.value))).map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-2">
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium text-slate-600">From</p>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="h-9 w-[150px] bg-white/80 border-white/70"
+                />
+              </div>
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium text-slate-600">To</p>
+                <Input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="h-9 w-[150px] bg-white/80 border-white/70"
+                />
+              </div>
+              <Button
+                variant="outline"
+                className="mt-5 h-9 bg-white/70 border-white/70"
+                onClick={() => {
+                  setFyFilter(currentFyLabel());
+                  setMonthFilter('all');
+                  setFromDate('');
+                  setToDate('');
+                }}
+                type="button"
+              >
+                Reset
+              </Button>
+            </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -921,100 +1105,103 @@ export default function AllRequisitionsTab() {
           </div>
         </div>
 
-        <div className="relative flex-grow overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-          <ScrollArea className="absolute inset-0" showHorizontalScrollbar>
-            <TooltipProvider>
-            <div className="min-w-full w-max">
-              <Table className="min-w-[1200px]">
-                <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
-                  <TableRow>
-                    {visibleHeaders.map(header => (
-                      <TableHead key={header} className="whitespace-nowrap text-slate-700">{header}</TableHead>
-                    ))}
-                    <TableHead className="text-center text-slate-700">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayedRequisitions.length > 0 ? (
-                    displayedRequisitions.map((req) => {
-                        const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
-                        return (
-                          <TableRow key={req.id} className="hover:bg-slate-50/70">
-                            {visibleHeaders.map(header => {
-                                let content: React.ReactNode = 'N/A';
-                                switch(header) {
-                                    case 'Request ID': content = req.requisitionId; break;
-                                    case 'Date': content = format(new Date(req.date), 'dd MMM, yyyy'); break;
-                                    case 'Project': content = getProjectName(req.projectId); break;
-                                    case 'Department': content = getDepartmentName(req.departmentId); break;
-                                    case 'Entered By': content = req.raisedBy; break;
-                                    case 'Party Name': content = req.partyName; break;
-                                    case 'Description': 
-                                      content = (
-                                        <Tooltip>
-                                          <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
-                                          <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
-                                        </Tooltip>
-                                      ); 
-                                      break;
-                                    case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
-                                    case 'Stage': content = req.stage; break;
-                                    case 'Status': 
-                                      content = (
-                                        <Badge variant="outline" className={cn("whitespace-nowrap", statusBadgeClass(req.status))}>
-                                          {req.status || '—'}
-                                        </Badge>
-                                      );
-                                      break;
-                                    case 'Attachments': 
-                                      content = (
-                                        <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-700">
-                                          {req.attachments?.length || 0}
-                                        </Badge>
-                                      );
-                                      break;
-                                    case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
-                                    case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
-                                    case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
-                                }
-                                return <TableCell key={header}>{content}</TableCell>
-                            })}
-                            <TableCell className="text-center">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => openViewDialog(req)}>
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    View Details
+        <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+          <TooltipProvider>
+            <Table
+              containerClassName="h-full"
+              className="min-w-[1200px]"
+            >
+              <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
+                <TableRow>
+                  {visibleHeaders.map(header => (
+                    <TableHead key={header} className="whitespace-nowrap text-slate-700">{header}</TableHead>
+                  ))}
+                  <TableHead className="text-center text-slate-700">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayedRequisitions.length > 0 ? (
+                  displayedRequisitions.map((req) => {
+                      const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
+                      return (
+                        <TableRow key={req.id} className="hover:bg-slate-50/70">
+                          {visibleHeaders.map(header => {
+                              let content: React.ReactNode = 'N/A';
+                              switch(header) {
+                                  case 'Request ID': content = req.requisitionId; break;
+                                  case 'Date': {
+                                    const d = toDateSafe(req.date);
+                                    content = d ? format(d, 'dd MMM, yyyy') : '—';
+                                    break;
+                                  }
+                                  case 'Project': content = getProjectName(req.projectId); break;
+                                  case 'Department': content = getDepartmentName(req.departmentId); break;
+                                  case 'Entered By': content = req.raisedBy; break;
+                                  case 'Party Name': content = req.partyName; break;
+                                  case 'Description': 
+                                    content = (
+                                      <Tooltip>
+                                        <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
+                                        <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
+                                      </Tooltip>
+                                    ); 
+                                    break;
+                                  case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
+                                  case 'Stage': content = req.stage; break;
+                                  case 'Status': 
+                                    content = (
+                                      <Badge variant="outline" className={cn("whitespace-nowrap", statusBadgeClass(req.status))}>
+                                        {req.status || '—'}
+                                      </Badge>
+                                    );
+                                    break;
+                                  case 'Attachments': 
+                                    content = (
+                                      <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-700">
+                                        {req.attachments?.length || 0}
+                                      </Badge>
+                                    );
+                                    break;
+                                  case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
+                                  case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
+                                  case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
+                              }
+                              return <TableCell key={header}>{content}</TableCell>
+                          })}
+                          <TableCell className="text-center">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openViewDialog(req)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View Details
+                                </DropdownMenuItem>
+                                {req.stage === 'Request Receiving' && (
+                                  <DropdownMenuItem onClick={() => openEditDialog(req)}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    Edit
                                   </DropdownMenuItem>
-                                  {req.stage === 'Request Receiving' && (
-                                    <DropdownMenuItem onClick={() => openEditDialog(req)}>
-                                      <Edit className="mr-2 h-4 w-4" />
-                                      Edit
-                                    </DropdownMenuItem>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        )
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
-                        No requisitions found.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-            </TooltipProvider>
-          </ScrollArea>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      )
+                  })
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
+                      No requisitions found.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TooltipProvider>
         </div>
       {selectedRequisition && (
         <ViewRequisitionDialog
