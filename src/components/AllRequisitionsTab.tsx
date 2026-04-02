@@ -46,7 +46,7 @@ import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment, UserSettings, ExpenseRequest } from '@/lib/types';
+import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment, UserSettings, ColumnPref, ExpenseRequest } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format, parseISO } from 'date-fns';
@@ -81,6 +81,37 @@ const baseTableHeaders = [
     'Reception No', 'Reception Date'
 ];
 
+function normalizeColumnPrefs(
+  input: Partial<Pick<ColumnPref, 'order' | 'visibility'>> | undefined
+) {
+  const incomingOrder = Array.isArray(input?.order) ? input!.order! : [];
+  const incomingVisibility =
+    input?.visibility && typeof input.visibility === 'object' ? input.visibility : {};
+
+  const seen = new Set<string>();
+  const normalizedOrder: string[] = [];
+
+  for (const h of incomingOrder) {
+    if (!baseTableHeaders.includes(h)) continue;
+    if (seen.has(h)) continue;
+    seen.add(h);
+    normalizedOrder.push(h);
+  }
+  for (const h of baseTableHeaders) {
+    if (seen.has(h)) continue;
+    seen.add(h);
+    normalizedOrder.push(h);
+  }
+
+  const normalizedVisibility: Record<string, boolean> = {};
+  for (const h of baseTableHeaders) {
+    const v = (incomingVisibility as Record<string, unknown>)[h];
+    normalizedVisibility[h] = typeof v === 'boolean' ? v : true;
+  }
+
+  return { order: normalizedOrder, visibility: normalizedVisibility };
+}
+
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
   const [isEditRequestOpen, setIsEditRequestOpen] = useState(false);
@@ -106,6 +137,10 @@ export default function AllRequisitionsTab() {
   
   const settingsKey = 'requisitions_all';
   const isInitialMount = useRef(true);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedPrefsRef = useRef<string>('');
+  const loadedPrefRef = useRef<Partial<ColumnPref> | null>(null);
+  const latestPrefsRef = useRef<{ order: string[]; visibility: Record<string, boolean> } | null>(null);
 
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
@@ -128,8 +163,11 @@ export default function AllRequisitionsTab() {
           const settings = settingsSnap.data() as UserSettings;
           const pageSettings = settings.columnPreferences?.[settingsKey];
           if (pageSettings) {
-            setColumnVisibility(pageSettings.visibility);
-            setColumnOrder(pageSettings.order);
+            loadedPrefRef.current = pageSettings;
+            const normalized = normalizeColumnPrefs(pageSettings);
+            lastSavedPrefsRef.current = JSON.stringify(normalized);
+            setColumnVisibility(normalized.visibility);
+            setColumnOrder(normalized.order);
           }
         }
       } catch (e) {
@@ -143,29 +181,62 @@ export default function AllRequisitionsTab() {
     if (!user) return;
     const settingsRef = doc(db, 'userSettings', user.id);
     try {
-        const settingsSnap = await getDoc(settingsRef);
-        const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { columnPreferences: {} };
-
-        const newPreferences = {
-            ...currentSettings.columnPreferences,
-            [settingsKey]: { order, visibility }
-        };
-        await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+        const existing = loadedPrefRef.current ?? {};
+        const payload = { ...existing, order, visibility };
+        await setDoc(
+          settingsRef,
+          { columnPreferences: { [settingsKey]: payload } },
+          { mergeFields: [`columnPreferences.${settingsKey}`] }
+        );
     } catch(e) {
         console.error("Failed to save settings", e);
         toast({ title: 'Error', description: 'Could not save column preferences.', variant: 'destructive'});
     }
   };
+
+  useEffect(() => {
+    latestPrefsRef.current = { order: columnOrder, visibility: columnVisibility };
+  }, [columnOrder, columnVisibility]);
   
   useEffect(() => {
       if (isInitialMount.current) {
           isInitialMount.current = false;
           return;
       }
-      if (user) {
-          saveColumnSettings(columnOrder, columnVisibility);
-      }
+      if (!user) return;
+
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        const prefs = { order: columnOrder, visibility: columnVisibility };
+        const key = JSON.stringify(prefs);
+        saveTimerRef.current = null;
+        if (key === lastSavedPrefsRef.current) return;
+        lastSavedPrefsRef.current = key;
+        void saveColumnSettings(columnOrder, columnVisibility);
+      }, 700);
+
+      return () => {
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      };
   }, [columnOrder, columnVisibility, user]);
+
+  useEffect(() => {
+    return () => {
+      if (!user) return;
+      if (!saveTimerRef.current) return;
+
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+
+      const prefs = latestPrefsRef.current;
+      if (!prefs) return;
+
+      const key = JSON.stringify(prefs);
+      if (key === lastSavedPrefsRef.current) return;
+      lastSavedPrefsRef.current = key;
+      void saveColumnSettings(prefs.order, prefs.visibility);
+    };
+  }, [user]);
 
   
   useEffect(() => {
@@ -877,7 +948,7 @@ export default function AllRequisitionsTab() {
                         <DropdownMenuCheckboxItem
                             key={header}
                             className="capitalize"
-                            checked={columnVisibility[header]}
+                            checked={columnVisibility[header] !== false}
                             onCheckedChange={(value) =>
                                 setColumnVisibility(prev => ({...prev, [header]: !!value}))
                             }

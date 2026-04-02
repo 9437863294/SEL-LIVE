@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, ShieldAlert, Edit } from 'lucide-react';
+import { ArrowLeft, Plus, ShieldAlert, Search, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -47,6 +47,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 
 
 const initialNewUserState = {
@@ -73,6 +74,10 @@ export default function ManageUserPage() {
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive'>('all');
 
   const canView = can('View', 'Settings.User Management');
   const canAdd = can('Add', 'Settings.User Management');
@@ -224,74 +229,106 @@ export default function ManageUserPage() {
   const handleRowClick = (userId: string) => {
     router.push(`/settings/user-management/${userId}/logs`);
   };
+
+  const displayedUsers = users.filter((u) => {
+    const term = searchTerm.trim().toLowerCase();
+    if (term) {
+      const hay = `${u.name || ''} ${u.email || ''} ${u.mobile || ''} ${u.role || ''}`.toLowerCase();
+      if (!hay.includes(term)) return false;
+    }
+    if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+    if (statusFilter !== 'all' && u.status !== statusFilter) return false;
+    return true;
+  });
   
   if (isAuthLoading || (isLoading && canView)) {
       return (
-        <div className="w-full max-w-6xl mx-auto">
-            <div className="mb-6 flex items-center justify-between">
-                <Skeleton className="h-10 w-48" />
-                <Skeleton className="h-10 w-32" />
+        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+            <AuroraBackdrop />
+            <div className="mx-auto w-full max-w-6xl">
+              <div className="mb-6 flex items-center justify-between">
+                  <Skeleton className="h-10 w-48" />
+                  <Skeleton className="h-10 w-32" />
+              </div>
+              <Card>
+                  <CardContent className="p-0">
+                      <Skeleton className="h-96 w-full" />
+                  </CardContent>
+              </Card>
             </div>
-            <Card>
-                <CardContent className="p-0">
-                    <Skeleton className="h-96 w-full" />
-                </CardContent>
-            </Card>
         </div>
       );
   }
   
   if (!canView) {
     return (
-        <div className="w-full max-w-4xl mx-auto">
-            <div className="mb-6 flex items-center gap-4">
-              <Link href="/settings">
-                <Button variant="ghost" size="icon">
-                  <ArrowLeft className="h-6 w-6" />
-                </Button>
-              </Link>
-              <h1 className="text-2xl font-bold">User Management</h1>
+        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+            <AuroraBackdrop />
+            <div className="mx-auto w-full max-w-4xl">
+              <div className="mb-6 flex items-center gap-4">
+                <Link href="/settings">
+                  <Button variant="ghost" size="icon">
+                    <ArrowLeft className="h-6 w-6" />
+                  </Button>
+                </Link>
+                <h1 className="text-2xl font-bold">User Management</h1>
+              </div>
+              <Card>
+                  <CardHeader>
+                      <CardTitleShad>Access Denied</CardTitleShad>
+                      <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
+                  </CardHeader>
+                  <CardContentShad className="flex justify-center p-8">
+                      <ShieldAlert className="h-16 w-16 text-destructive" />
+                  </CardContentShad>
+              </Card>
             </div>
-            <Card>
-                <CardHeader>
-                    <CardTitleShad>Access Denied</CardTitleShad>
-                    <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
-                </CardHeader>
-                <CardContentShad className="flex justify-center p-8">
-                    <ShieldAlert className="h-16 w-16 text-destructive" />
-                </CardContentShad>
-            </Card>
         </div>
     );
   }
 
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">User Management</h1>
-        </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button disabled={!canAdd}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add User
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
-            <DialogHeader>
-              <DialogTitle>Add New User</DialogTitle>
-              <DialogDescription>
-                Fill in the details to add a new user. A password is required for authentication.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+      <AuroraBackdrop />
+
+      <div className="mx-auto w-full max-w-6xl">
+        <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex items-start gap-4">
+            <Link href="/settings">
+              <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90">
+                <ArrowLeft className="h-6 w-6" />
+              </Button>
+            </Link>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">User Management</h1>
+                <Badge variant="outline" className="border-white/70 bg-white/70 text-slate-700 backdrop-blur">
+                  {users.length} users
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm text-slate-600">
+                Create accounts, assign roles, and review activity logs with one click.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button disabled={!canAdd} className="shadow-[0_18px_60px_-45px_rgba(2,6,23,0.55)]">
+                <Plus className="mr-2 h-4 w-4" />
+                Add User
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
+              <DialogHeader>
+                <DialogTitle>Add New User</DialogTitle>
+                <DialogDescription>
+                  Fill in the details to add a new user. A password is required for authentication.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                 <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>
                     <Input id="name" placeholder="e.g. John Doe" value={newUser.name} onChange={(e) => handleInputChange('name', e.target.value)} />
@@ -329,65 +366,133 @@ export default function ManageUserPage() {
                         </SelectContent>
                     </Select>
                 </div>
-            </div>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleAddUser}>Add User</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleAddUser}>Add User</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Badge className="hidden sm:inline-flex bg-gradient-to-r from-cyan-500 to-fuchsia-500 text-white shadow-sm">
+            <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+            Refined UI
+          </Badge>
+        </div>
       </div>
 
-      <Card>
+      <Card className="mb-4 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+              <Input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search name, email, role..."
+                className="pl-9 bg-white/80 border-white/70"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:col-span-2">
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectTrigger className="bg-white/80 border-white/70">
+                  <SelectValue placeholder="All Roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={r.name}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+                <SelectTrigger className="bg-white/80 border-white/70">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-15rem)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
+          <ScrollArea className="h-[calc(100vh-22rem)]" showHorizontalScrollbar>
+            <Table className="min-w-[980px]">
+              <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Mobile No</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="text-slate-700">Name</TableHead>
+                  <TableHead className="text-slate-700">Email</TableHead>
+                  <TableHead className="text-slate-700">Mobile No</TableHead>
+                  <TableHead className="text-slate-700">Role</TableHead>
+                  <TableHead className="text-slate-700">Status</TableHead>
+                  <TableHead className="text-right text-slate-700">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  Array.from({ length: 2 }).map((_, i) => (
+                  Array.from({ length: 6 }).map((_, i) => (
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-48" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-20" /></TableCell>
-                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-7 w-20 rounded-full" /></TableCell>
                       <TableCell className="text-right">
-                         <Skeleton className="h-8 w-16 inline-block" />
+                        <Skeleton className="h-8 w-16 inline-block" />
                       </TableCell>
                     </TableRow>
                   ))
-                ) : users.length > 0 ? (
-                  users.map((user) => (
-                    <TableRow key={user.id} onClick={() => handleRowClick(user.id)} className="cursor-pointer">
-                      <TableCell className="font-medium">{user.name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
-                      <TableCell>{user.mobile}</TableCell>
-                      <TableCell>{user.role}</TableCell>
+                ) : displayedUsers.length > 0 ? (
+                  displayedUsers.map((user) => (
+                    <TableRow
+                      key={user.id}
+                      onClick={() => handleRowClick(user.id)}
+                      className="cursor-pointer hover:bg-slate-50/70"
+                    >
+                      <TableCell className="font-semibold text-slate-900">{user.name}</TableCell>
+                      <TableCell className="text-slate-700">{user.email}</TableCell>
+                      <TableCell className="text-slate-700">{user.mobile}</TableCell>
+                      <TableCell className="text-slate-700">{user.role}</TableCell>
                       <TableCell>
-                        <Badge variant={user.status === 'Active' ? 'default' : 'secondary'} className={user.status === 'Active' ? 'bg-blue-500 hover:bg-blue-600' : ''}>
+                        <Badge
+                          variant="outline"
+                          className={
+                            user.status === 'Active'
+                              ? 'border-emerald-200/80 bg-emerald-50 text-emerald-700'
+                              : 'border-slate-200/80 bg-white/70 text-slate-700'
+                          }
+                        >
                           {user.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); openEditDialog(user);}} disabled={!canEdit}>Edit</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="bg-white/70 border-white/70"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditDialog(user);
+                          }}
+                          disabled={!canEdit}
+                        >
+                          Edit
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center h-24">
+                    <TableCell colSpan={6} className="text-center h-24 text-slate-600">
                       No users found.
                     </TableCell>
                   </TableRow>
@@ -449,6 +554,7 @@ export default function ManageUserPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }

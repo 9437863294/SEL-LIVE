@@ -46,7 +46,7 @@ import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment, UserSettings, ExpenseRequest } from '@/lib/types';
+import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment, UserSettings, ColumnPref, ExpenseRequest } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './auth/AuthProvider';
 import { format, parseISO } from 'date-fns';
@@ -81,6 +81,37 @@ const baseTableHeaders = [
     'Description', 'Amount', 'Stage', 'Status', 'Attachments', 'Expense Request No',
     'Reception No', 'Reception Date'
 ];
+
+function normalizeColumnPrefs(
+  input: Partial<Pick<ColumnPref, 'order' | 'visibility'>> | undefined
+) {
+  const incomingOrder = Array.isArray(input?.order) ? input!.order! : [];
+  const incomingVisibility =
+    input?.visibility && typeof input.visibility === 'object' ? input.visibility : {};
+
+  const seen = new Set<string>();
+  const normalizedOrder: string[] = [];
+
+  for (const h of incomingOrder) {
+    if (!baseTableHeaders.includes(h)) continue;
+    if (seen.has(h)) continue;
+    seen.add(h);
+    normalizedOrder.push(h);
+  }
+  for (const h of baseTableHeaders) {
+    if (seen.has(h)) continue;
+    seen.add(h);
+    normalizedOrder.push(h);
+  }
+
+  const normalizedVisibility: Record<string, boolean> = {};
+  for (const h of baseTableHeaders) {
+    const v = (incomingVisibility as Record<string, unknown>)[h];
+    normalizedVisibility[h] = typeof v === 'boolean' ? v : true;
+  }
+
+  return { order: normalizedOrder, visibility: normalizedVisibility };
+}
 
 function toDateSafe(value: any): Date | null {
   if (!value) return null;
@@ -172,6 +203,10 @@ export default function AllRequisitionsTab() {
   
   const settingsKey = 'requisitions_all';
   const isInitialMount = useRef(true);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedPrefsRef = useRef<string>('');
+  const loadedPrefRef = useRef<Partial<ColumnPref> | null>(null);
+  const latestPrefsRef = useRef<{ order: string[]; visibility: Record<string, boolean> } | null>(null);
 
   const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
@@ -194,8 +229,12 @@ export default function AllRequisitionsTab() {
           const settings = settingsSnap.data() as UserSettings;
           const pageSettings = settings.columnPreferences?.[settingsKey];
           if (pageSettings) {
-            setColumnVisibility(pageSettings.visibility);
-            setColumnOrder(pageSettings.order);
+            loadedPrefRef.current = pageSettings;
+            const normalized = normalizeColumnPrefs(pageSettings);
+            // Seed the "last saved" cache so we don't immediately write back on load.
+            lastSavedPrefsRef.current = JSON.stringify(normalized);
+            setColumnVisibility(normalized.visibility);
+            setColumnOrder(normalized.order);
           }
         }
       } catch (e) {
@@ -209,29 +248,68 @@ export default function AllRequisitionsTab() {
     if (!user) return;
     const settingsRef = doc(db, 'userSettings', user.id);
     try {
-        const settingsSnap = await getDoc(settingsRef);
-        const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { columnPreferences: {} };
+        // Debounced caller ensures this doesn't fire too frequently.
+        // Also preserve any extra fields previously stored for this page key (names/sort/etc).
+        const existing = loadedPrefRef.current ?? {};
+        const payload = { ...existing, order, visibility };
 
-        const newPreferences = {
-            ...currentSettings.columnPreferences,
-            [settingsKey]: { order, visibility }
-        };
-        await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+        await setDoc(
+          settingsRef,
+          { columnPreferences: { [settingsKey]: payload } },
+          // Only update this page key without overwriting other columnPreferences entries.
+          { mergeFields: [`columnPreferences.${settingsKey}`] }
+        );
     } catch(e) {
         console.error("Failed to save settings", e);
         toast({ title: 'Error', description: 'Could not save column preferences.', variant: 'destructive'});
     }
   };
+
+  useEffect(() => {
+    latestPrefsRef.current = { order: columnOrder, visibility: columnVisibility };
+  }, [columnOrder, columnVisibility]);
   
   useEffect(() => {
       if (isInitialMount.current) {
           isInitialMount.current = false;
           return;
       }
-      if (user) {
-          saveColumnSettings(columnOrder, columnVisibility);
-      }
+      if (!user) return;
+
+      // Debounce writes to avoid Firestore queued-writes exhaustion in dev/slow networks.
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        const prefs = { order: columnOrder, visibility: columnVisibility };
+        const key = JSON.stringify(prefs);
+        saveTimerRef.current = null;
+        if (key === lastSavedPrefsRef.current) return;
+        lastSavedPrefsRef.current = key;
+        void saveColumnSettings(columnOrder, columnVisibility);
+      }, 700);
+
+      return () => {
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      };
   }, [columnOrder, columnVisibility, user]);
+
+  useEffect(() => {
+    // If the user navigates away before the debounce fires, flush the last pending change.
+    return () => {
+      if (!user) return;
+      if (!saveTimerRef.current) return;
+
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+
+      const prefs = latestPrefsRef.current;
+      if (!prefs) return;
+
+      const key = JSON.stringify(prefs);
+      if (key === lastSavedPrefsRef.current) return;
+      lastSavedPrefsRef.current = key;
+      void saveColumnSettings(prefs.order, prefs.visibility);
+    };
+  }, [user]);
 
   
   useEffect(() => {
@@ -321,14 +399,37 @@ export default function AllRequisitionsTab() {
   }, [requisitions, showMyRequests, statusFilter, fyFilter, monthFilter, fromDate, toDate, user]);
 
   const fyOptions = useMemo(() => {
+    // Dynamic based on other filters (so FY list stays relevant).
+    let base = requisitions;
+    if (showMyRequests) base = base.filter((r) => r.raisedById === user?.id);
+    if (statusFilter !== 'all') base = base.filter((r) => r.status === statusFilter);
+    if (monthFilter !== 'all') {
+      const m = Number(monthFilter);
+      base = base.filter((r) => {
+        const d = toDateSafe(r.date);
+        return d ? d.getMonth() + 1 === m : false;
+      });
+    }
+    if (fromDate || toDate) {
+      const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+      const to = toDate ? new Date(`${toDate}T23:59:59`) : null;
+      base = base.filter((r) => {
+        const d = toDateSafe(r.date);
+        if (!d) return false;
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+    }
+
     const set = new Set<string>();
-    for (const r of requisitions) {
+    for (const r of base) {
       const d = toDateSafe(r.date);
       if (d) set.add(fyLabelForDate(d));
     }
     set.add(currentFyLabel());
     return Array.from(set).sort().reverse();
-  }, [requisitions]);
+  }, [requisitions, showMyRequests, statusFilter, monthFilter, fromDate, toDate, user]);
 
   const availableMonths = useMemo(() => {
     // Months present after applying "other" filters (my requests, status, FY, date range)
@@ -561,7 +662,10 @@ export default function AllRequisitionsTab() {
     setIsViewDialogOpen(true);
   };
 
-  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
+  const visibleHeaders = useMemo(
+    () => columnOrder.filter((header) => columnVisibility[header] !== false),
+    [columnOrder, columnVisibility]
+  );
   
   const moveColumn = (index: number, direction: 'up' | 'down') => {
       const newOrder = [...columnOrder];
@@ -935,7 +1039,7 @@ export default function AllRequisitionsTab() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4">
         <div className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <div className="mb-3 h-1.5 w-full rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1072,6 +1176,30 @@ export default function AllRequisitionsTab() {
                         {columnOrder.map((header, index) => (
                             <div key={header} className="flex items-center justify-between rounded-xl border border-white/70 bg-white/70 p-2">
                                 <span className="font-medium">{header}</span>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => moveColumn(index, 'up')}
+                                    disabled={index === 0}
+                                    aria-label={`Move ${header} up`}
+                                  >
+                                    <ChevronsUpDown className="h-4 w-4 rotate-180 text-slate-600" />
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => moveColumn(index, 'down')}
+                                    disabled={index === columnOrder.length - 1}
+                                    aria-label={`Move ${header} down`}
+                                  >
+                                    <ChevronsUpDown className="h-4 w-4 text-slate-600" />
+                                  </Button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -1091,7 +1219,7 @@ export default function AllRequisitionsTab() {
                         <DropdownMenuCheckboxItem
                             key={header}
                             className="capitalize"
-                            checked={columnVisibility[header]}
+                            checked={columnVisibility[header] !== false}
                             onCheckedChange={(value) =>
                                 setColumnVisibility(prev => ({...prev, [header]: !!value}))
                             }
@@ -1105,102 +1233,104 @@ export default function AllRequisitionsTab() {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+        <div className="min-w-0 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <TooltipProvider>
-            <Table
-              containerClassName="h-full"
-              className="min-w-[1200px]"
-            >
-              <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
-                <TableRow>
-                  {visibleHeaders.map(header => (
-                    <TableHead key={header} className="whitespace-nowrap text-slate-700">{header}</TableHead>
-                  ))}
-                  <TableHead className="text-center text-slate-700">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {displayedRequisitions.length > 0 ? (
-                  displayedRequisitions.map((req) => {
-                      const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
-                      return (
-                        <TableRow key={req.id} className="hover:bg-slate-50/70">
-                          {visibleHeaders.map(header => {
-                              let content: React.ReactNode = 'N/A';
-                              switch(header) {
-                                  case 'Request ID': content = req.requisitionId; break;
-                                  case 'Date': {
-                                    const d = toDateSafe(req.date);
-                                    content = d ? format(d, 'dd MMM, yyyy') : '—';
-                                    break;
-                                  }
-                                  case 'Project': content = getProjectName(req.projectId); break;
-                                  case 'Department': content = getDepartmentName(req.departmentId); break;
-                                  case 'Entered By': content = req.raisedBy; break;
-                                  case 'Party Name': content = req.partyName; break;
-                                  case 'Description': 
-                                    content = (
-                                      <Tooltip>
-                                        <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
-                                        <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
-                                      </Tooltip>
-                                    ); 
-                                    break;
-                                  case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
-                                  case 'Stage': content = req.stage; break;
-                                  case 'Status': 
-                                    content = (
-                                      <Badge variant="outline" className={cn("whitespace-nowrap", statusBadgeClass(req.status))}>
-                                        {req.status || '—'}
-                                      </Badge>
-                                    );
-                                    break;
-                                  case 'Attachments': 
-                                    content = (
-                                      <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-700">
-                                        {req.attachments?.length || 0}
-                                      </Badge>
-                                    );
-                                    break;
-                                  case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
-                                  case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
-                                  case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
-                              }
-                              return <TableCell key={header}>{content}</TableCell>
-                          })}
-                          <TableCell className="text-center">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openViewDialog(req)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  View Details
-                                </DropdownMenuItem>
-                                {req.stage === 'Request Receiving' && (
-                                  <DropdownMenuItem onClick={() => openEditDialog(req)}>
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      )
-                  })
-                ) : (
+            <ScrollArea className="h-[calc(100vh-22rem)]" showHorizontalScrollbar>
+              <Table
+                containerClassName="w-max overflow-visible"
+                className="w-max min-w-[1200px]"
+              >
+                <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
                   <TableRow>
-                    <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
-                      No requisitions found.
-                    </TableCell>
+                    {visibleHeaders.map(header => (
+                      <TableHead key={header} className="whitespace-nowrap text-slate-700">{header}</TableHead>
+                    ))}
+                    <TableHead className="text-center text-slate-700">Actions</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {displayedRequisitions.length > 0 ? (
+                    displayedRequisitions.map((req) => {
+                        const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
+                        return (
+                          <TableRow key={req.id} className="hover:bg-slate-50/70">
+                            {visibleHeaders.map(header => {
+                                let content: React.ReactNode = 'N/A';
+                                switch(header) {
+                                    case 'Request ID': content = req.requisitionId; break;
+                                    case 'Date': {
+                                      const d = toDateSafe(req.date);
+                                      content = d ? format(d, 'dd MMM, yyyy') : '—';
+                                      break;
+                                    }
+                                    case 'Project': content = getProjectName(req.projectId); break;
+                                    case 'Department': content = getDepartmentName(req.departmentId); break;
+                                    case 'Entered By': content = req.raisedBy; break;
+                                    case 'Party Name': content = req.partyName; break;
+                                    case 'Description': 
+                                      content = (
+                                        <Tooltip>
+                                          <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
+                                          <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
+                                        </Tooltip>
+                                      ); 
+                                      break;
+                                    case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
+                                    case 'Stage': content = req.stage; break;
+                                    case 'Status': 
+                                      content = (
+                                        <Badge variant="outline" className={cn("whitespace-nowrap", statusBadgeClass(req.status))}>
+                                          {req.status || '—'}
+                                        </Badge>
+                                      );
+                                      break;
+                                    case 'Attachments': 
+                                      content = (
+                                        <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-700">
+                                          {req.attachments?.length || 0}
+                                        </Badge>
+                                      );
+                                      break;
+                                    case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
+                                    case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
+                                    case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
+                                }
+                                return <TableCell key={header}>{content}</TableCell>
+                            })}
+                            <TableCell className="text-center">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => openViewDialog(req)}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View Details
+                                  </DropdownMenuItem>
+                                  {req.stage === 'Request Receiving' && (
+                                    <DropdownMenuItem onClick={() => openEditDialog(req)}>
+                                      <Edit className="mr-2 h-4 w-4" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        )
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
+                        No requisitions found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
           </TooltipProvider>
         </div>
       {selectedRequisition && (

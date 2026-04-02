@@ -61,6 +61,10 @@ export default function AllExpensesPage() {
   const settingsKey = `expenses_all`;
   
   const isInitialMount = useRef(true);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedPrefsRef = useRef<string>('');
+  const loadedPrefRef = useRef<any>(null);
+  const latestPrefsRef = useRef<{ order: string[]; visibility: Record<string, boolean> } | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -109,6 +113,7 @@ export default function AllExpensesPage() {
         const settings = settingsSnap.data() as UserSettings;
         const pageSettings = settings.columnPreferences?.[settingsKey];
         if (pageSettings) {
+          loadedPrefRef.current = pageSettings;
           const mergedVisibility = {
             ...baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {}),
             ...pageSettings.visibility
@@ -117,6 +122,7 @@ export default function AllExpensesPage() {
             ...pageSettings.order,
             ...baseTableHeaders.filter(h => !pageSettings.order.includes(h))
           ];
+          lastSavedPrefsRef.current = JSON.stringify({ order: mergedOrder, visibility: mergedVisibility });
           setColumnVisibility(mergedVisibility);
           setColumnOrder(mergedOrder);
         }
@@ -129,32 +135,64 @@ export default function AllExpensesPage() {
     if (!user) return;
     try {
         const settingsRef = doc(db, 'userSettings', user.id);
-        const settingsSnap = await getDoc(settingsRef);
-        const currentSettings = settingsSnap.exists() ? settingsSnap.data() : { columnPreferences: {} };
+        const existing = loadedPrefRef.current ?? {};
+        const payload = { ...existing, order, visibility };
 
-        const newPreferences = {
-            ...currentSettings.columnPreferences,
-            [settingsKey]: {
-                order: order,
-                visibility: visibility,
-            }
-        };
-        await setDoc(settingsRef, { ...currentSettings, columnPreferences: newPreferences }, { merge: true });
+        await setDoc(
+          settingsRef,
+          { columnPreferences: { [settingsKey]: payload } },
+          { mergeFields: [`columnPreferences.${settingsKey}`] }
+        );
+        loadedPrefRef.current = payload;
     } catch (e) {
         console.error("Failed to save column settings to Firestore", e);
         toast({ title: "Error", description: "Could not save your column preferences.", variant: "destructive" });
     }
   };
+
+  useEffect(() => {
+    latestPrefsRef.current = { order: columnOrder, visibility: columnVisibility };
+  }, [columnOrder, columnVisibility]);
   
   useEffect(() => {
       if (isInitialMount.current) {
           isInitialMount.current = false;
-      } else {
-          if (user) {
-              saveColumnSettings(columnOrder, columnVisibility);
-          }
+          return;
       }
+      if (!user) return;
+
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        const prefs = { order: columnOrder, visibility: columnVisibility };
+        const key = JSON.stringify(prefs);
+        saveTimerRef.current = null;
+        if (key === lastSavedPrefsRef.current) return;
+        lastSavedPrefsRef.current = key;
+        void saveColumnSettings(columnOrder, columnVisibility);
+      }, 700);
+
+      return () => {
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      };
   }, [columnOrder, columnVisibility, user]);
+
+  useEffect(() => {
+    return () => {
+      if (!user) return;
+      if (!saveTimerRef.current) return;
+
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+
+      const prefs = latestPrefsRef.current;
+      if (!prefs) return;
+
+      const key = JSON.stringify(prefs);
+      if (key === lastSavedPrefsRef.current) return;
+      lastSavedPrefsRef.current = key;
+      void saveColumnSettings(prefs.order, prefs.visibility);
+    };
+  }, [user]);
   
 
   useEffect(() => {
@@ -350,7 +388,7 @@ export default function AllExpensesPage() {
                             <DropdownMenuCheckboxItem
                                 key={header}
                                 className="capitalize"
-                                checked={columnVisibility[header]}
+                                checked={columnVisibility[header] !== false}
                                 onCheckedChange={(value) =>
                                     setColumnVisibility(prev => ({...prev, [header]: !!value}))
                                 }

@@ -2,10 +2,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Save, Loader2, Plus, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Search, ShieldAlert, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle as CardTitleShad, CardDescription as CardDescriptionShad } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,10 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { Badge } from '@/components/ui/badge';
+import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
+import { cn } from '@/lib/utils';
 
 const initializePermissions = (departments: Department[], projects: Project[]): Record<string, string[]> => {
     const permissions: Record<string, string[]> = {};
@@ -63,18 +67,53 @@ const initializePermissions = (departments: Department[], projects: Project[]): 
     return permissions;
 };
 
+function moduleMatchesQuery(
+  moduleName: string,
+  moduleValue: any,
+  q: string,
+  departments: Department[],
+  projects: Project[]
+) {
+  const query = q.trim().toLowerCase();
+  if (!query) return true;
+  if (moduleName.toLowerCase().includes(query)) return true;
+
+  const walk = (key: string, value: any): boolean => {
+    if (String(key).toLowerCase().includes(query)) return true;
+    if (Array.isArray(value)) return value.some((p) => String(p).toLowerCase().includes(query));
+    if (value && typeof value === 'object') return Object.entries(value).some(([k, v]) => walk(k, v));
+    return false;
+  };
+
+  if (walk(moduleName, moduleValue)) return true;
+  if (moduleName === 'Expenses' && departments.some((d) => d.name.toLowerCase().includes(query))) return true;
+  if (
+    moduleName === 'Store & Stock Management' &&
+    projects.some((p) => (p.projectName || '').toLowerCase().includes(query))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 
 export default function EditRolePage() {
     const { toast } = useToast();
     const router = useRouter();
     const { roleId } = useParams() as { roleId: string };
     const { user } = useAuth();
+    const { can, isLoading: isAuthLoading } = useAuthorization();
+
+    const canEdit = can('Edit', 'Settings.Role Management');
 
     const [editingRole, setEditingRole] = useState<Role | null>(null);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+
+    const [permissionQuery, setPermissionQuery] = useState('');
+    const [openModules, setOpenModules] = useState<string[]>([]);
 
     useEffect(() => {
         if (!roleId) return;
@@ -170,63 +209,209 @@ export default function EditRolePage() {
         }
     };
     
-    if (isLoading) {
+    const filteredModules = useMemo(() => {
+      return Object.entries(permissionModules).filter(([moduleName, moduleValue]) =>
+        moduleMatchesQuery(moduleName, moduleValue, permissionQuery, departments, projects)
+      );
+    }, [permissionQuery, departments, projects]);
+
+    useEffect(() => {
+      const q = permissionQuery.trim();
+      if (!q) return;
+      setOpenModules(filteredModules.map(([m]) => m));
+    }, [permissionQuery, filteredModules]);
+
+    if (isAuthLoading || isLoading) {
         return (
-            <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                <div className="mb-6"><Skeleton className="h-10 w-64" /></div>
-                <div className="space-y-4">
-                    <Skeleton className="h-12 w-1/2" />
-                    <Skeleton className="h-96 w-full" />
-                </div>
+          <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+            <AuroraBackdrop />
+            <div className="mx-auto w-full max-w-6xl">
+              <div className="mb-6 flex items-center justify-between">
+                <Skeleton className="h-10 w-56" />
+                <Skeleton className="h-10 w-32" />
+              </div>
+              <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+                <CardContent className="p-0">
+                  <Skeleton className="h-[520px] w-full" />
+                </CardContent>
+              </Card>
             </div>
+          </div>
         );
     }
 
+    if (!canEdit) {
+      return (
+        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+          <AuroraBackdrop />
+          <div className="mx-auto w-full max-w-4xl">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings/role-management">
+                <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90">
+                  <ArrowLeft className="h-6 w-6" />
+                </Button>
+              </Link>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">Edit Role</h1>
+            </div>
+            <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+              <CardHeader>
+                <CardTitleShad>Access Denied</CardTitleShad>
+                <CardDescriptionShad>
+                  You do not have permission to edit roles. Please contact an administrator.
+                </CardDescriptionShad>
+              </CardHeader>
+              <CardContent className="flex justify-center p-8">
+                <ShieldAlert className="h-16 w-16 text-destructive" />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      );
+    }
+
     if (!editingRole) {
-        return <div className="p-8">Role not found.</div>;
+      return (
+        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+          <AuroraBackdrop />
+          <div className="mx-auto w-full max-w-4xl">
+            <div className="mb-6 flex items-center gap-4">
+              <Link href="/settings/role-management">
+                <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90">
+                  <ArrowLeft className="h-6 w-6" />
+                </Button>
+              </Link>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">Edit Role</h1>
+            </div>
+            <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+              <CardHeader>
+                <CardTitleShad>Role Not Found</CardTitleShad>
+                <CardDescriptionShad>
+                  The requested role does not exist or you no longer have access.
+                </CardDescriptionShad>
+              </CardHeader>
+            </Card>
+          </div>
+        </div>
+      );
     }
 
     return (
-        <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            <div className="mb-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link href="/settings/role-management">
-                        <Button variant="ghost" size="icon">
-                            <ArrowLeft className="h-6 w-6" />
-                        </Button>
-                    </Link>
-                    <h1 className="text-xl font-bold">Edit Role</h1>
+        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+          <AuroraBackdrop />
+          <div className="mx-auto w-full max-w-6xl">
+            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="flex items-start gap-4">
+                <Link href="/settings/role-management">
+                  <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90">
+                    <ArrowLeft className="h-6 w-6" />
+                  </Button>
+                </Link>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold tracking-tight text-slate-900">Edit Role</h1>
+                    <Badge variant="outline" className="border-white/70 bg-white/70 text-slate-700 backdrop-blur">
+                      {editingRole.name || 'Role'}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Update the role name and fine-tune permissions across modules.
+                  </p>
                 </div>
-                <Button onClick={handleUpdateRole} disabled={isSaving}>
-                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                    Save Role
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Badge className="hidden sm:inline-flex bg-gradient-to-r from-cyan-500 to-fuchsia-500 text-white shadow-sm">
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  Refined UI
+                </Badge>
+                <Button onClick={handleUpdateRole} disabled={isSaving} className="shadow-[0_18px_60px_-45px_rgba(2,6,23,0.55)]">
+                  {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                  Save Changes
                 </Button>
+              </div>
             </div>
-            
-            <div className="space-y-4">
-                <div className="flex items-center gap-4">
-                    <Label htmlFor="roleName" className="text-base min-w-[100px]">Role Name</Label>
+
+            <Card className="mb-4 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+              <CardContent className="p-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3 md:items-end">
+                  <div className="md:col-span-1">
+                    <Label htmlFor="roleName" className="text-sm font-semibold text-slate-700">Role Name</Label>
                     <Input 
                         id="roleName" 
                         value={editingRole.name} 
                         onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })} 
-                        className="max-w-sm"
+                        className="mt-2 bg-white/80 border-white/70"
                     />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label className="text-sm font-semibold text-slate-700">Search Permissions</Label>
+                    <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="relative w-full sm:max-w-md">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                        <Input
+                          value={permissionQuery}
+                          onChange={(e) => setPermissionQuery(e.target.value)}
+                          placeholder="Search modules, actions, departments..."
+                          className="pl-9 bg-white/80 border-white/70"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="bg-white/70 border-white/70"
+                          onClick={() => setOpenModules(filteredModules.map(([m]) => m))}
+                          disabled={filteredModules.length === 0}
+                        >
+                          Expand All
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="bg-white/70 border-white/70"
+                          onClick={() => setOpenModules([])}
+                          disabled={openModules.length === 0}
+                        >
+                          Collapse
+                        </Button>
+                        <Badge variant="outline" className="border-white/70 bg-white/70 text-slate-700 backdrop-blur">
+                          {filteredModules.length} modules
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                    <Label className="text-base">Permissions</Label>
-                    <p className="text-sm text-muted-foreground">Select the actions this role can perform for each module.</p>
-                    <ScrollArea className="mt-2 h-[calc(100vh-19rem)]">
-                        <Accordion type="single" collapsible className="w-full pr-4">
-                            {Object.entries(permissionModules).map(([moduleName, moduleValue]) => {
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+              <CardHeader className="pb-3">
+                <CardTitleShad>Permissions</CardTitleShad>
+                <CardDescriptionShad>
+                  Select the actions this role can perform for each module.
+                </CardDescriptionShad>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <ScrollArea className="h-[calc(100vh-26rem)]">
+                  <Accordion
+                    type="multiple"
+                    value={openModules}
+                    onValueChange={(v) => setOpenModules(v as string[])}
+                    className="w-full pr-4"
+                  >
+                            {filteredModules.map(([moduleName, moduleValue]) => {
                                 const isViewModulePermission = (editingRole.permissions?.[moduleName] || []).includes('View Module') || (moduleValue as any)['View Module'] === true;
 
                                 return (
-                                <AccordionItem value={moduleName} key={moduleName}>
-                                    <AccordionTrigger>{moduleName}</AccordionTrigger>
+                                  <AccordionItem value={moduleName} key={moduleName}>
+                                    <AccordionTrigger className="text-left">
+                                      <div className="flex w-full items-center justify-between gap-3 pr-2">
+                                        <span className="font-semibold text-slate-900">{moduleName}</span>
+                                      </div>
+                                    </AccordionTrigger>
                                     <AccordionContent>
-                                        <Card>
-                                            <CardContent className="p-3 space-y-3">
+                                        <Card className="overflow-hidden rounded-xl border border-white/70 bg-white/70 backdrop-blur">
+                                            <CardContent className="p-4 space-y-3">
                                             {Array.isArray(moduleValue) ? (
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                     {moduleValue.map(permission => (
@@ -255,9 +440,9 @@ export default function EditRolePage() {
                                                                     <Label htmlFor={`select-all-group-edit-${moduleName}-view`} className="text-xs font-medium">Allow</Label>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    )}
-                                                    <div className={!isViewModulePermission ? 'opacity-50 pointer-events-none' : ''}>
+                                                    </div>
+                                                )}
+                                                    <div className={cn(!isViewModulePermission && 'opacity-50 pointer-events-none')}>
                                                         {Object.entries(moduleValue).map(([subModuleKey, permissions]) => {
                                                             if (subModuleKey === 'View Module') return null;
 
@@ -454,13 +639,14 @@ export default function EditRolePage() {
                                             </CardContent>
                                         </Card>
                                     </AccordionContent>
-                                </AccordionItem>
-                                )
+                                  </AccordionItem>
+                                );
                             })}
-                        </Accordion>
-                    </ScrollArea>
-                </div>
-            </div>
+                  </Accordion>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
         </div>
     );
 }

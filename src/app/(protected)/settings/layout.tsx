@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Settings, ChevronLeft, ChevronRight, Briefcase, Construction, Users, ShieldCheck, Hash, Palette, MailCheck, Clock, User as UserIcon, LogIn } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Briefcase, Construction, Users, ShieldCheck, Hash, Palette, MailCheck, Clock, User as UserIcon, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,7 @@ export default function SettingsLayout({
     { href: '/settings/profile', icon: UserIcon, label: 'Profile', permission: can('View', 'Settings.Profile') },
     { href: '/settings/department', icon: Briefcase, label: 'Manage Department', permission: can('View', 'Settings.Manage Department') },
     { href: '/settings/project', icon: Construction, label: 'Manage Project', permission: can('View', 'Settings.Manage Project') },
-    { href: '/settings/employee', icon: Users, label: 'Employee', permission: can('View', 'Settings.Employee Management') },
+    { href: '/employee', icon: Users, label: 'Employee', permission: can('View', 'Settings.Employee Management') },
     { href: '/settings/user-management', icon: Users, label: 'User Management', permission: can('View', 'Settings.User Management') },
     { href: '/settings/role-management', icon: ShieldCheck, label: 'Role Management', permission: can('View', 'Settings.Role Management') },
     { href: '/settings/serial-no-configuration', icon: Hash, label: 'Serial No. Config', permission: can('View', 'Settings.Serial No. Config') },
