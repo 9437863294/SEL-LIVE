@@ -28,7 +28,8 @@ function PremiumScheduleDialog({ policy, isOpen, onOpenChange }: { policy: Insur
             return [];
         }
         
-        const startDate = policy.date_of_comm.toDate ? policy.date_of_comm.toDate() : new Date(policy.date_of_comm);
+        const startDate = policy.date_of_comm?.toDate?.();
+        if (!startDate) return [];
         const dates: Date[] = [];
         
         for (let i = 0; i < policy.tenure; i++) {
@@ -107,7 +108,10 @@ export default function PremiumDuePage() {
 
   const yearOptions = useMemo(() => {
     if (policies.length === 0) return [getYear(new Date()).toString()];
-    const years = new Set(policies.map(p => p.due_date ? getYear(p.due_date) : 0).filter(y => y > 0));
+    const years = new Set(policies.map(p => {
+        const date = p.due_date?.toDate?.();
+        return date ? getYear(date) : 0;
+    }).filter(y => y > 0));
     return Array.from(years).sort((a,b) => b - a).map(String);
   }, [policies]);
   
@@ -126,8 +130,6 @@ export default function PremiumDuePage() {
           return {
               id: doc.id,
               ...data,
-              due_date: data.due_date ? data.due_date.toDate() : null,
-              date_of_comm: data.date_of_comm ? data.date_of_comm.toDate() : null,
           } as InsurancePolicy
       });
       setPolicies(policiesData);
@@ -145,9 +147,10 @@ export default function PremiumDuePage() {
   
   const filteredPolicies = useMemo(() => {
       return policies.filter(policy => {
-          if (!policy.due_date) return false;
-          const yearMatch = selectedYear === 'all' || getYear(policy.due_date).toString() === selectedYear;
-          const monthMatch = selectedMonth === 'all' || policy.due_date.getMonth().toString() === selectedMonth;
+          const dueDate = policy.due_date?.toDate?.();
+          if (!dueDate) return false;
+          const yearMatch = selectedYear === 'all' || getYear(dueDate).toString() === selectedYear;
+          const monthMatch = selectedMonth === 'all' || dueDate.getMonth().toString() === selectedMonth;
           return yearMatch && monthMatch;
       });
   }, [policies, selectedYear, selectedMonth]);
@@ -228,14 +231,15 @@ export default function PremiumDuePage() {
                         ))
                     ) : filteredPolicies.length > 0 ? (
                         filteredPolicies.map(policy => {
-                        const status = getStatus(policy.due_date);
+                        const dueDate = policy.due_date?.toDate?.() ?? null;
+                        const status = getStatus(dueDate);
                         return (
                             <TableRow key={policy.id} onClick={() => handleRowClick(policy.id)} className="cursor-pointer">
                             <TableCell className="font-medium">{policy.insured_person}</TableCell>
                             <TableCell>{policy.policy_no}</TableCell>
                             <TableCell>{policy.insurance_company}</TableCell>
                             <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                            <TableCell>{policy.due_date ? format(policy.due_date, 'dd MMM, yyyy') : 'N/A'}</TableCell>
+                            <TableCell>{dueDate ? format(dueDate, 'dd MMM, yyyy') : 'N/A'}</TableCell>
                             <TableCell><Badge variant={status.variant}>{status.text}</Badge></TableCell>
                             <TableCell className="text-right">
                                 <Button size="sm" disabled={!status.isDue} onClick={(e) => openRenewDialog(e, policy)}>

@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import type { WorkflowStep, Role, User, Project, Department, AmountBasedCondition, AssignedTo } from '@/lib/types';
+import type { WorkflowStep, User, Project, Department, AmountBasedCondition } from '@/lib/types';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -64,6 +64,8 @@ export default function InsuranceWorkflowConfigurationPage() {
     
     const [steps, setSteps] = useState<WorkflowStep[]>([]);
     const [users, setUsers] = useState<User[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [departments, setDepartments] = useState<Department[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     
@@ -82,11 +84,15 @@ export default function InsuranceWorkflowConfigurationPage() {
     const fetchData = async () => {
         setIsLoading(true);
         try {
-            const usersSnap = await getDocs(collection(db, 'users'));
+            const [usersSnap, projectsSnap, departmentsSnap, workflowSnap] = await Promise.all([
+                getDocs(collection(db, 'users')),
+                getDocs(collection(db, 'projects')),
+                getDocs(collection(db, 'departments')),
+                getDoc(doc(db, 'workflows', 'insurance-workflow')),
+            ]);
             setUsers(usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as User)));
-            
-            const workflowRef = doc(db, 'workflows', 'insurance-workflow');
-            const workflowSnap = await getDoc(workflowRef);
+            setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
+            setDepartments(departmentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
 
             if (workflowSnap.exists() && workflowSnap.data().steps.length > 0) {
                 setSteps(workflowSnap.data().steps);
@@ -120,20 +126,32 @@ export default function InsuranceWorkflowConfigurationPage() {
     const handleStepChange = (id: string, field: keyof WorkflowStep, value: any) => {
         setSteps(steps.map(step => {
             if (step.id === id) {
-                const updatedStep = { ...step, [field]: value };
+                const updatedStep = { ...step, [field]: value } as WorkflowStep;
                 if (field === 'assignmentType') {
                     if (value === 'Amount-based') {
-                        updatedStep.assignedTo = [{id: crypto.randomUUID(), type: 'Below', amount1: 0, userId: '' }];
+                        return {
+                            ...updatedStep,
+                            assignmentType: 'Amount-based',
+                            assignedTo: [{ id: crypto.randomUUID(), type: 'Below', amount1: 0, userId: '' }],
+                        } as WorkflowStep;
                     } else if (value === 'User-based') {
-                        updatedStep.assignedTo = [];
+                        return {
+                            ...updatedStep,
+                            assignmentType: 'User-based',
+                            assignedTo: [],
+                        } as WorkflowStep;
                     } else {
-                        updatedStep.assignedTo = {};
+                        return {
+                            ...updatedStep,
+                            assignmentType: value as 'Role-based' | 'Project-based' | 'Department-based',
+                            assignedTo: {},
+                        } as WorkflowStep;
                     }
                 }
-                return updatedStep;
+                return updatedStep as WorkflowStep;
             }
             return step;
-        }));
+        }) as WorkflowStep[]);
     };
     
     const handleAssignmentDetailChange = (stepId: string, detailKey: string, userType: 'primary' | 'alternative', userId: string) => {
@@ -147,10 +165,10 @@ export default function InsuranceWorkflowConfigurationPage() {
                         [userType]: userId,
                     }
                 };
-                return { ...step, assignedTo: newAssignedTo };
+                return { ...step, assignedTo: newAssignedTo } as WorkflowStep;
             }
             return step;
-        }));
+        }) as WorkflowStep[]);
     };
 
     const handleActionChange = (stepId: string, action: string, checked: boolean) => {
@@ -174,10 +192,10 @@ export default function InsuranceWorkflowConfigurationPage() {
                     }
                     return cond;
                 });
-                return { ...step, assignedTo: updatedAssignedTo };
+                return { ...step, assignedTo: updatedAssignedTo } as WorkflowStep;
             }
             return step;
-        }));
+        }) as WorkflowStep[]);
     };
 
     const handleAddAmountCondition = (stepId: string) => {
@@ -190,20 +208,20 @@ export default function InsuranceWorkflowConfigurationPage() {
                     amount2: 10000,
                     userId: ''
                 };
-                return { ...step, assignedTo: [...(step.assignedTo as AmountBasedCondition[]), newCondition] };
+                return { ...step, assignedTo: [...(step.assignedTo as AmountBasedCondition[]), newCondition] } as WorkflowStep;
             }
             return step;
-        }));
+        }) as WorkflowStep[]);
     };
 
     const handleDeleteAmountCondition = (stepId: string, conditionId: string) => {
         setSteps(steps.map(step => {
             if (step.id === stepId) {
                 const newAssignedTo = (step.assignedTo as AmountBasedCondition[]).filter(cond => cond.id !== conditionId);
-                return { ...step, assignedTo: newAssignedTo };
+                return { ...step, assignedTo: newAssignedTo } as WorkflowStep;
             }
             return step;
-        }));
+        }) as WorkflowStep[]);
     };
 
     const handleSave = async () => {
@@ -388,9 +406,12 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                                 </TableRow>
                                                             </TableHeader>
                                                             <TableBody>
-                                                                {(step.assignmentType === 'Project-based' ? projects : departments).map(item => (
+                                                                {(step.assignmentType === 'Project-based'
+                                                                    ? projects.map(project => ({ id: project.id, label: project.projectName }))
+                                                                    : departments.map(department => ({ id: department.id, label: department.name }))
+                                                                ).map(item => (
                                                                     <TableRow key={item.id}>
-                                                                        <TableCell>{item.name || (item as Project).projectName}</TableCell>
+                                                                        <TableCell>{item.label}</TableCell>
                                                                         <TableCell>
                                                                              <Select
                                                                                 value={(step.assignedTo as Record<string, { primary: string }>)[item.id]?.primary || ''}

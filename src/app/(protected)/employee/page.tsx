@@ -23,7 +23,6 @@ import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { syncGreytHR } from '@/ai';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { formatDistanceToNow } from 'date-fns';

@@ -386,7 +386,7 @@ export default function ManageEmployeePage() {
         </div>
         <Card>
           <CardHeader>
-            <CardTitleShad>Access Denied</CardTitleShad>
+            <CardTitle>Access Denied</CardTitle>
             <CardDescriptionShad>
               You do not have permission to view this page. Please contact an administrator.
             </CardDescriptionShad>

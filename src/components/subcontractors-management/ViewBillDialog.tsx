@@ -30,9 +30,9 @@ interface ViewBillDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   bill: Bill | null;
-  workflow: WorkflowStep[];
-  onAction: (taskId: string, action: string, comment: string) => Promise<void>;
-  isActionLoading: boolean;
+  workflow?: WorkflowStep[];
+  onAction?: (taskId: string, action: string, comment: string) => Promise<void>;
+  isActionLoading?: boolean;
 }
 
 const formatDateSafe = (dateInput: any) => {
@@ -78,7 +78,7 @@ export default function ViewBillDialog({
     );
   };
   
-  const currentStep = workflow.find(s => s.id === bill.currentStepId);
+  const currentStep = workflow?.find(s => s.id === bill.currentStepId);
   const availableActions = currentStep?.actions || [];
 
   return (
@@ -153,7 +153,7 @@ export default function ViewBillDialog({
               </div>
             </div>
 
-             {bill.status !== 'Completed' && bill.status !== 'Rejected' && (
+             {workflow && onAction && bill.status !== 'Completed' && bill.status !== 'Rejected' && (
               <div className="pt-4 space-y-4 border-t">
                   <h3 className="text-lg font-semibold">Workflow Actions</h3>
                   <Textarea 
@@ -167,7 +167,11 @@ export default function ViewBillDialog({
                           return (
                             <Button 
                               key={actionName}
-                              onClick={() => onAction(bill.id, actionName, actionComment)}
+                              onClick={() => {
+                                if (onAction) {
+                                  onAction(bill.id, actionName, actionComment)
+                                }
+                              }}
                               disabled={isActionLoading}
                             >
                                 {isActionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}

@@ -14,6 +14,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { Loader2, User as UserIcon } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -49,6 +50,11 @@ export function LoginPageContent() {
 
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
   const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
+
+  // Forgot Password state
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
 
   // If no saved users, default to password form.
   useEffect(() => {
@@ -115,6 +121,36 @@ export function LoginPageContent() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail) {
+      toast({
+        title: "Error",
+        description: "Please enter your email address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsForgotLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, forgotEmail);
+      toast({
+        title: "Success",
+        description: "Password reset link sent to your email.",
+      });
+      setIsForgotPassword(false);
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: mapFirebaseError(err?.code),
+        variant: "destructive",
+      });
+    } finally {
+      setIsForgotLoading(false);
     }
   };
 
@@ -277,31 +313,45 @@ export function LoginPageContent() {
           />
         </div>
 
-        {!activeUser && (
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="remember-me"
-              checked={rememberMe}
-              onCheckedChange={(checked) => setRememberMe(!!checked)}
-            />
-            <label
-              htmlFor="remember-me"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-            >
-              Remember me on this device
-            </label>
-          </div>
-        )}
+        <div className="flex items-center justify-between !mt-2">
+          {!activeUser && (
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="remember-me"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(!!checked)}
+              />
+              <label
+                htmlFor="remember-me"
+                className="text-sm font-medium leading-none cursor-pointer"
+              >
+                Remember me
+              </label>
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="link"
+            className="text-xs p-0 h-auto text-primary/80 hover:text-primary"
+            onClick={() => {
+              setIsForgotPassword(true);
+              setForgotEmail(activeUser ? activeUser.email : email);
+            }}
+          >
+            Forgot password?
+          </Button>
+        </div>
 
-        <Button type="submit" className="w-full !mt-8" disabled={isLoading}>
+        <Button type="submit" className="w-full !mt-6 bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20" disabled={isLoading}>
           {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Sign In
         </Button>
 
         {savedUsers.length > 0 && (
           <Button
-            variant="link"
-            className="w-full"
+            variant="ghost"
+            type="button"
+            className="w-full text-muted-foreground hover:text-foreground"
             onClick={() => {
               setShowPasswordForm(false);
               setActiveUser(null);
@@ -310,6 +360,55 @@ export function LoginPageContent() {
             <UserIcon className="mr-2 h-4 w-4" /> Sign in with a saved profile
           </Button>
         )}
+      </form>
+    </div>
+  );
+
+  const renderForgotPasswordForm = () => (
+    <div className="w-full text-center space-y-6">
+      <div className="relative h-32 w-full max-w-[60%] mx-auto">
+        <Image
+          src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fnew%20logo.png?alt=media&token=c5f1dbc2-10c5-4f36-9454-2b2a4b43b6dd"
+          alt="Company Logo"
+          fill
+          style={{ objectFit: "contain" }}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <h2 className="text-2xl font-bold tracking-tight">Reset Password</h2>
+        <p className="text-muted-foreground text-sm">
+          Enter your email and we'll send you a link to reset your password.
+        </p>
+      </div>
+
+      <form onSubmit={handleForgotPassword} className="space-y-4 w-full max-w-sm mx-auto">
+        <div className="space-y-2 text-left">
+          <Label htmlFor="forgot-email">Email</Label>
+          <Input
+            id="forgot-email"
+            type="email"
+            placeholder="name@example.com"
+            required
+            value={forgotEmail}
+            onChange={(e) => setForgotEmail(e.target.value)}
+            className="bg-background/50 border-white/10"
+          />
+        </div>
+
+        <Button type="submit" className="w-full" disabled={isForgotLoading}>
+          {isForgotLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Send Reset Link
+        </Button>
+
+        <Button
+          variant="link"
+          type="button"
+          className="w-full text-xs"
+          onClick={() => setIsForgotPassword(false)}
+        >
+          Back to Login
+        </Button>
       </form>
     </div>
   );
@@ -384,39 +483,86 @@ export function LoginPageContent() {
   };
 
   const renderContent = () => {
+    if (isForgotPassword) return renderForgotPasswordForm();
     if (showPasswordForm || savedUsers.length === 0) return renderPasswordForm();
     if (activeUser) return renderPinForm();
     return renderProfileSelection();
   };
 
   return (
-    <>
-      <div
-        className="relative flex min-h-screen items-center justify-center bg-cover bg-center p-4"
-        style={{
-          backgroundImage:
-            "url('https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2F1744115358081.jpg?alt=media&token=3352f270-d899-4d18-bd83-b40a052e3061')",
-        }}
-      >
-        <div className="absolute inset-0 bg-black/30" />
-        <div className="relative grid grid-cols-1 md:grid-cols-2 max-w-4xl w-full rounded-2xl shadow-2xl overflow-hidden bg-background/90">
-          <div className="hidden md:flex items-center justify-center bg-primary/10 p-12 relative">
-            <div className="absolute -top-16 -left-16 w-48 h-48 bg-primary/30 rounded-full blur-2xl" />
-            <div className="absolute -bottom-16 -right-16 w-48 h-48 bg-primary/30 rounded-full blur-2xl" />
-            <Image
-              src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Frm378-062.jpg?alt=media&token=91cf2e4f-e362-4a09-a283-a6ae2d64b55f"
-              alt="Hot air balloon"
-              width={800}
-              height={1200}
-              className="rounded-2xl object-cover"
-              priority={false}
-            />
+    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-[#020617]">
+      {/* Dynamic Electrical Background */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 bg-electric-grid opacity-20" />
+        
+        {/* Animated Orbs */}
+        <div className="absolute top-[10%] left-[10%] w-[400px] h-[400px] bg-primary/20 rounded-full blur-[120px] animate-pulse-glow" />
+        <div className="absolute bottom-[10%] right-[10%] w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[150px] animate-pulse-glow" style={{ animationDelay: '-2s' }} />
+        <div className="absolute top-[40%] right-[20%] w-[300px] h-[300px] bg-purple-500/10 rounded-full blur-[100px] animate-float" />
+        
+        {/* Vignette */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-[#020617] opacity-80" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#020617] via-transparent to-[#020617] opacity-80" />
+      </div>
+
+      <main className="relative z-10 w-full max-w-5xl px-4 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 glass-dark rounded-3xl overflow-hidden border-white/5 shadow-2xl">
+          {/* Left Decorative Side */}
+          <div className="hidden md:flex flex-col justify-between p-12 bg-gradient-to-br from-primary/20 to-blue-500/10 relative overflow-hidden group">
+            <div className="absolute inset-0 bg-electric-grid opacity-10 group-hover:opacity-20 transition-opacity" />
+            
+            <div className="relative z-10">
+              <div className="flex items-center gap-2 mb-8">
+                <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
+                  <div className="w-5 h-5 border-2 border-white rounded-full border-t-transparent animate-spin" />
+                </div>
+                <span className="text-xl font-bold tracking-tight text-white">SEL Live</span>
+              </div>
+              
+              <h1 className="text-4xl lg:text-5xl font-bold text-white leading-tight mb-6">
+                Engineering the <br />
+                <span className="text-primary italic">Future</span> of Power.
+              </h1>
+              <p className="text-blue-100/60 text-lg max-w-md">
+                Streamlining electrical project management with state-of-the-art automation and real-time analytics.
+              </p>
+            </div>
+
+            <div className="relative z-10 mt-auto pt-10">
+              <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm">
+                <div className="flex -space-x-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="w-8 h-8 rounded-full border-2 border-[#1e293b] bg-muted flex items-center justify-center text-[10px] overflow-hidden">
+                      <img 
+                        src={`https://i.pravatar.cc/100?u=${i}`} 
+                        alt="User" 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-sm text-blue-100/80">
+                  Trusted by <span className="text-white font-semibold">500+</span> engineers nationwide.
+                </p>
+              </div>
+            </div>
+
+            {/* Decorative Element */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] bg-gradient-radial from-primary/5 to-transparent pointer-events-none" />
           </div>
-          <div className="p-8 md:p-12 flex flex-col justify-center items-center">
-            {renderContent()}
+
+          {/* Right Form Side */}
+          <div className="relative p-8 md:p-16 flex flex-col items-center justify-center min-h-[600px] bg-[#020617]/40 backdrop-blur-md">
+            <div className="w-full max-w-sm shrink-0">
+              {renderContent()}
+            </div>
+            
+            <div className="mt-12 text-center text-xs text-muted-foreground/60">
+              &copy; {new Date().getFullYear()} Siddhartha Engineering Limited. All rights reserved.
+            </div>
           </div>
         </div>
-      </div>
+      </main>
 
       {userForPinSetup && (
         <PinSetupDialog
@@ -426,6 +572,6 @@ export function LoginPageContent() {
           onPinSet={loadSavedUsers}
         />
       )}
-    </>
+    </div>
   );
 }

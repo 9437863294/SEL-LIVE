@@ -54,7 +54,10 @@ export default function MaturityDuePage() {
   const yearOptions = useMemo(() => {
     if (policies.length === 0) return [getYear(new Date()).toString()];
     const years = new Set(
-      policies.map((p) => (p.date_of_maturity ? getYear(p.date_of_maturity) : 0)).filter((y) => y > 0)
+      policies.map((p) => {
+        const date = p.date_of_maturity?.toDate?.();
+        return date ? getYear(date) : 0;
+      }).filter((y) => y > 0)
     );
     return Array.from(years)
       .sort((a, b) => b - a)
@@ -80,9 +83,6 @@ export default function MaturityDuePage() {
         return {
           id: doc.id,
           ...data,
-          date_of_maturity: data.date_of_maturity
-            ? data.date_of_maturity.toDate()
-            : null,
         } as InsurancePolicy;
       });
       setPolicies(policiesData);
@@ -103,13 +103,14 @@ export default function MaturityDuePage() {
 
   const filteredPolicies = useMemo(() => {
     return policies.filter((policy) => {
-      if (!policy.date_of_maturity) return false;
+      const maturityDate = policy.date_of_maturity?.toDate?.();
+      if (!maturityDate) return false;
       const yearMatch =
         selectedYear === 'all' ||
-        getYear(policy.date_of_maturity).toString() === selectedYear;
+        getYear(maturityDate).toString() === selectedYear;
       const monthMatch =
         selectedMonth === 'all' ||
-        policy.date_of_maturity.getMonth().toString() === selectedMonth;
+        maturityDate.getMonth().toString() === selectedMonth;
       return yearMatch && monthMatch;
     });
   }, [policies, selectedYear, selectedMonth]);
@@ -210,7 +211,8 @@ export default function MaturityDuePage() {
                 ))
               ) : filteredPolicies.length > 0 ? (
                 filteredPolicies.map((policy) => {
-                  const status = getStatus(policy.date_of_maturity);
+                  const maturityDate = policy.date_of_maturity?.toDate?.() ?? null;
+                  const status = getStatus(maturityDate);
                   return (
                     <TableRow
                       key={policy.id}
@@ -226,8 +228,8 @@ export default function MaturityDuePage() {
                         {formatCurrency(policy.sum_insured)}
                       </TableCell>
                       <TableCell>
-                        {policy.date_of_maturity
-                          ? format(policy.date_of_maturity, 'dd MMM, yyyy')
+                        {maturityDate
+                          ? format(maturityDate, 'dd MMM, yyyy')
                           : 'N/A'}
                       </TableCell>
                       <TableCell>

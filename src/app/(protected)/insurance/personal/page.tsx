@@ -37,10 +37,6 @@ export default function PersonalInsurancePage() {
           return {
               id: doc.id,
               ...data,
-              due_date: data.due_date ? data.due_date.toDate() : null,
-              date_of_comm: data.date_of_comm ? data.date_of_comm.toDate() : null,
-              date_of_maturity: data.date_of_maturity ? data.date_of_maturity.toDate() : null,
-              last_premium_date: data.last_premium_date ? data.last_premium_date.toDate() : null,
           } as InsurancePolicy
       });
       setPolicies(policiesData);
@@ -145,8 +141,8 @@ export default function PersonalInsurancePage() {
                     <TableCell>{policy.insurance_company}</TableCell>
                     <TableCell>{policy.policy_name}</TableCell>
                     <TableCell>{formatCurrency(policy.premium)}</TableCell>
-                    <TableCell>{formatDate(policy.due_date)}</TableCell>
-                    <TableCell>{formatDate(policy.date_of_maturity)}</TableCell>
+                    <TableCell>{formatDate(policy.due_date?.toDate() ?? null)}</TableCell>
+                    <TableCell>{formatDate(policy.date_of_maturity?.toDate() ?? null)}</TableCell>
                     <TableCell>{formatCurrency(policy.sum_insured)}</TableCell>
                     <TableCell className="text-right">
                       <Link href={`/insurance/personal/edit/${policy.id}`} onClick={(e) => e.stopPropagation()}>

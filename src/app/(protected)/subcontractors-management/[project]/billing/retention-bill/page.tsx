@@ -159,6 +159,7 @@ export default function CreateRetentionBillPage() {
           gstAmount: 0,
           grossAmount: totalRetentionAmount,
           retentionType: 'manual',
+          retentionPercentage: null,
           retentionAmount: 0,
           otherDeduction: 0,
           advanceDeductions: [],

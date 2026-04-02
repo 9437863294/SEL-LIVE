@@ -82,7 +82,7 @@ export default function EmployeePositionDetailsPage() {
   const handleSync = async () => {
     setIsSyncing(true);
     try {
-      const result = await getAllEmployeePositions({});
+      const result = await getAllEmployeePositions({ page: 1 });
       if (result.success) {
         toast({ title: 'Sync Successful', description: result.message });
         await fetchPositionsFromDb(); // Refresh data from Firestore

@@ -26,18 +26,18 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'i.pravatar.cc',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
   devIndicators: {
     buildActivity: false,
   },
-  experimental: {
-    // This allows the Next.js dev server to accept requests from the
-    // Firebase Studio environment.
-    allowedDevOrigins: [
-        'https://*.cluster-ys234awlzbhwoxmkkse6qo3fz6.cloudworkstations.dev'
-    ],
-  },
+  experimental: {},
   env: {
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'module-hub-uc7tw.appspot.com',
   },

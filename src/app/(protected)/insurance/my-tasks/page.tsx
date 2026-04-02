@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db, storage } from '@/lib/firebase';
 import { collection, query, getDocs, doc, updateDoc, Timestamp, runTransaction, arrayUnion, where, getDoc } from 'firebase/firestore';
-import type { InsuranceTask, WorkflowStep, ActionLog, User } from '@/lib/types';
+import type { InsuranceTask, WorkflowStep, ActionLog, User, ActionConfig } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -219,6 +219,9 @@ export default function MyTasksPage() {
         setIsViewDialogOpen(true);
     };
 
+    const getActionName = (action: string | ActionConfig): string =>
+      typeof action === 'string' ? action : action.name;
+
 
     const renderTable = (data: InsuranceTask[], isPending: boolean) => {
         if (isLoading) {
@@ -265,11 +268,13 @@ export default function MyTasksPage() {
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
                                                             {isPending && actions.length > 0 ? (
-                                                                actions.map(action => (
-                                                                    <DropdownMenuItem key={action} onSelect={(e) => { e.preventDefault(); handleAction(task.id, action, '')}}>
-                                                                        {action}
+                                                                actions.map(action => {
+                                                                    const actionName = getActionName(action);
+                                                                    return (
+                                                                    <DropdownMenuItem key={`${task.id}-${actionName}`} onSelect={(e) => { e.preventDefault(); handleAction(task.id, actionName, '')}}>
+                                                                        {actionName}
                                                                     </DropdownMenuItem>
-                                                                ))
+                                                                )})
                                                             ) : (
                                                                 <DropdownMenuItem onSelect={() => handleRowClick(task)}>
                                                                     <Eye className="mr-2 h-4 w-4" /> View

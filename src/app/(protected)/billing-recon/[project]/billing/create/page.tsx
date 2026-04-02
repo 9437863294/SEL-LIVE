@@ -69,10 +69,13 @@ const makeUUID = () => {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 };
 
-type EnrichedBillItem = BillItem & {
+type EnrichedBillItem = Omit<BillItem, 'billedQty' | 'totalAmount' | 'executedQty'> & {
   orderQty: number;
   jmcCertifiedQty: number;
   alreadyBilledQty: number;
+  billedQty: string;
+  totalAmount: string;
+  executedQty: string;
 };
 
 type AdvanceDeductionItem = {
@@ -147,7 +150,7 @@ export default function CreateBillPage() {
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
-          getDocs(billsSnap),
+          getDocs(billsQuery),
           getDocs(proformaBillsQuery)
         ]);
         
@@ -243,7 +246,7 @@ export default function CreateBillPage() {
           item.billedQty = value;
       }
       
-      const rate = parseFloat(item.rate);
+      const rate = item.rate;
       if(!isNaN(rate) && item.billedQty) {
           item.totalAmount = (parseFloat(item.billedQty) * rate).toFixed(2);
       } else {
@@ -266,7 +269,7 @@ export default function CreateBillPage() {
             .filter(bill => bill.workOrderId === details.workOrderId)
             .flatMap(bill => bill.items)
             .filter(billItem => billItem.jmcItemId === woItem.id)
-            .reduce((sum, item) => sum + parseFloat(item.billedQty || '0'), 0);
+            .reduce((sum, item) => sum + (item.billedQty || 0), 0);
 
         const availableForBilling = totalJmcCertifiedForBoqItem - alreadyBilledForWoItem;
 
@@ -274,10 +277,11 @@ export default function CreateBillPage() {
             jmcItemId: woItem.id,
             jmcEntryId: '',
             jmcNo: '',
+            boqItemId: woItem.boqItemId || '',
             boqSlNo: woItem.boqSlNo || '',
             description: woItem.description,
             unit: woItem.unit,
-            rate: String(woItem.rate),
+            rate: woItem.rate,
             orderQty: woItem.orderQty,
             jmcCertifiedQty: totalJmcCertifiedForBoqItem,
             alreadyBilledQty: alreadyBilledForWoItem,
@@ -370,13 +374,14 @@ export default function CreateBillPage() {
             jmcItemId: it.jmcItemId,
             jmcEntryId: it.jmcEntryId,
             jmcNo: it.jmcNo,
+            boqItemId: it.boqItemId,
             boqSlNo: it.boqSlNo,
             description: it.description,
             unit: it.unit,
             rate: it.rate,
-            executedQty: it.executedQty,
-            billedQty: String(it.billedQty || '0'),
-            totalAmount: String(it.totalAmount || '0'),
+            executedQty: parseFloat(it.executedQty) || 0,
+            billedQty: parseFloat(it.billedQty) || 0,
+            totalAmount: parseFloat(it.totalAmount) || 0,
         }));
 
         const billData: Omit<Bill, 'id'> = {
@@ -709,7 +714,7 @@ export default function CreateBillPage() {
         onOpenChange={setIsSelectorOpen}
         onConfirm={handleItemsAdd}
         workOrder={selectedWorkOrder}
-        alreadyAddedItems={items}
+        alreadyAddedItems={items as any}
       />
     </>
   );

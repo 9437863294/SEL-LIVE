@@ -194,12 +194,13 @@ export default function ManageAccountsPage() {
     }
   };
 
-  const dialogTitle = {
+  const dialogTitleByMode: Record<NonNullable<typeof dialogMode>, string> = {
     addHead: 'Add New Head of A/c',
     addSubHead: `Add Sub-Head to ${currentHead?.name || ''}`,
     editHead: `Edit Head: ${currentHead?.name || ''}`,
-    editSubHead: `Edit Sub-Head: ${currentSubHead?.name || ''}`
-  }[dialogMode || ''] || '';
+    editSubHead: `Edit Sub-Head: ${currentSubHead?.name || ''}`,
+  };
+  const dialogTitle = dialogMode ? dialogTitleByMode[dialogMode] : '';
 
   if(isAuthLoading || (isLoading && canViewPage)) {
     return (

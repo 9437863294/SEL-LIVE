@@ -28,6 +28,7 @@ import { format, addMonths, addYears, addQuarters } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { PolicyHolder, Attachment, InsuranceCompany } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import Link from 'next/link';

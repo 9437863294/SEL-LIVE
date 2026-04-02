@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import type { InsuranceTask, WorkflowStep, ActionLog } from '@/lib/types';
+import type { InsuranceTask, WorkflowStep, ActionLog, ActionConfig } from '@/lib/types';
 import { format } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { ScrollArea } from './ui/scroll-area';
@@ -33,12 +33,12 @@ interface ViewInsuranceTaskDialogProps {
   isActionLoading?: boolean;
 }
 
-interface EnrichedStep extends WorkflowStep {
+type EnrichedStep = WorkflowStep & {
     assignedUserName?: string;
     completionDate?: string;
     deadline?: string;
     status: 'Pending' | 'Completed' | 'Current';
-}
+};
 
 export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, workflow, onAction, isActionLoading }: ViewInsuranceTaskDialogProps) {
   const { user, users } = useAuth();
@@ -51,6 +51,8 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
   }, [task, workflow]);
 
   const isActionAllowed = user && task?.assignees?.includes(user.id) && task.status !== 'Completed' && task.status !== 'Rejected';
+  const getActionName = (action: string | ActionConfig): string =>
+    typeof action === 'string' ? action : action.name;
 
   if (!task || !workflow) return null;
 
@@ -178,12 +180,14 @@ export default function ViewInsuranceTaskDialog({ isOpen, onOpenChange, task, wo
         <DialogFooter className="mt-4 pr-4">
            {isActionAllowed && (
             <div className="flex flex-wrap gap-2">
-                {currentStep?.actions.map(action => (
-                    <Button key={action} onClick={() => onAction?.(task.id, action, actionComment, file || undefined)} disabled={isActionLoading || (isUploadRequired && !file)}>
+                {currentStep?.actions.map(action => {
+                    const actionName = getActionName(action);
+                    return (
+                    <Button key={actionName} onClick={() => onAction?.(task.id, actionName, actionComment, file || undefined)} disabled={isActionLoading || (isUploadRequired && !file)}>
                         {isActionLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        {action}
+                        {actionName}
                     </Button>
-                ))}
+                )})}
             </div>
            )}
           <DialogClose asChild>

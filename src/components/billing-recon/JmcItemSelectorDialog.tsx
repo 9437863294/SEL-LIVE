@@ -325,13 +325,14 @@ export function JmcItemSelectorDialog({
       jmcItemId: item.id,
       jmcEntryId: item.jmcEntryId,
       jmcNo: item.jmcNo,
+      boqItemId: String((item as any).boqItemId ?? (item as any).id ?? ''),
       boqSlNo: String((item as any).boqSlNo ?? ''),
       description: String((item as any).description ?? ''),
-      unit: (item as any).unit ?? '', // keep type compatible with BillItem
-      rate: String((item as any).rate ?? 0),
-      executedQty: String(item.availableQty ?? 0), // default to available
-      billedQty: '', // user will fill
-      totalAmount: '',
+      unit: String((item as any).unit ?? ''),
+      rate: Number((item as any).rate ?? 0),
+      executedQty: Number(item.availableQty ?? 0),
+      billedQty: 0,
+      totalAmount: 0,
     }));
     onConfirm(billItems);
     onOpenChange(false);
@@ -483,4 +484,3 @@ export function JmcItemSelectorDialog({
     </Dialog>
   );
 }
-

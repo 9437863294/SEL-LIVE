@@ -10,7 +10,6 @@ import {
   ToastTitle,
   ToastViewport,
 } from "@/components/ui/toast"
-import { ChatToast } from "../ChatToast"
 
 export function Toaster() {
   const { toasts } = useToast()

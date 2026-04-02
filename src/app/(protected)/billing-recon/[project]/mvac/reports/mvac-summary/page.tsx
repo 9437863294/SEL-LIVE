@@ -192,7 +192,7 @@ export default function MvacSummaryPage() {
     const initializeUserInStep = (stepName: string, userName: string) => {
       if (!report[stepName]) report[stepName] = {};
       if (!report[stepName][userName]) {
-        report[stepName][userName] = { total: 0, completed: 0, rejected: 0, onTime: 0 };
+        report[stepName][userName] = { total: 0, completed: 0, rejected: 0 };
       }
     };
     

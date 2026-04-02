@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ShieldAlert, Calendar as CalendarIcon, Table as TableIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -308,7 +308,7 @@ export default function ExpenseReportsPage() {
         );
     }
     
-    const renderRows = (rows: PivotRow[]): JSX.Element[] => {
+    const renderRows = (rows: PivotRow[]): ReactNode[] => {
         return rows.flatMap((row) => {
             const uniqueKey = row.path.join('-');
             const rowElement = (
@@ -345,7 +345,7 @@ export default function ExpenseReportsPage() {
         }
         
         const maxDepth = pivotConfig.columns.length;
-        const headerRows: JSX.Element[] = [];
+        const headerRows: ReactNode[] = [];
 
         for (let i = 0; i < maxDepth; i++) {
             let cells: { key: string; label: string; colspan: number }[] = [];

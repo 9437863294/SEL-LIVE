@@ -59,9 +59,9 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
 
   useEffect(() => {
     if (isOpen) {
-      const existingConversions = item.conversions?.map(c => ({ id: crypto.randomUUID(), ...c })) || [];
+      const existingConversions = item.conversions?.map(c => ({ ...c, id: c.id || crypto.randomUUID() })) || [];
       if (existingConversions.length === 0) {
-        setConversions([{ id: crypto.randomUUID(), ...initialConversionState }]);
+        setConversions([{ ...initialConversionState, id: crypto.randomUUID() }]);
       } else {
         setConversions(existingConversions);
       }
@@ -75,14 +75,14 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
   };
   
   const handleAddItem = () => {
-    setConversions(prev => [...prev, { id: crypto.randomUUID(), ...initialConversionState }]);
+    setConversions(prev => [...prev, { ...initialConversionState, id: crypto.randomUUID() }]);
   };
 
   const handleRemoveItem = (id: string) => {
     if (conversions.length > 1) {
       setConversions(prev => prev.filter(item => item.id !== id));
     } else {
-      setConversions([{ id: crypto.randomUUID(), ...initialConversionState }]);
+      setConversions([{ ...initialConversionState, id: crypto.randomUUID() }]);
     }
   };
 

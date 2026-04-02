@@ -39,7 +39,7 @@ export default function AllProjectsDashboard() {
             if (req.status === 'Pending' || req.status === 'In Progress' || req.status === 'Needs Review') {
                 acc.pendingRequisitions += 1;
             }
-            if (req.status === 'Completed' || req.status === 'Approved') {
+            if (req.status === 'Completed') {
                 acc.completedRequisitions += 1;
             }
             return acc;

@@ -4,6 +4,7 @@
 import { DragHandleDots2Icon } from "@radix-ui/react-icons"
 import * as React from "react"
 import {
+  ImperativePanelGroupHandle,
   PanelGroup as PanelGroupPrimitive,
   type PanelGroupProps,
   Panel as ResizablePanelPrimitive,
@@ -15,7 +16,7 @@ import {
 import { cn } from "@/lib/utils"
 
 const ResizablePanelGroup = React.forwardRef<
-  React.ElementRef<typeof PanelGroupPrimitive>,
+  ImperativePanelGroupHandle,
   React.ComponentProps<typeof PanelGroupPrimitive>
 >(({ className, ...props }, ref) => (
   <PanelGroupPrimitive
@@ -31,14 +32,14 @@ ResizablePanelGroup.displayName = "ResizablePanelGroup"
 
 const ResizablePanel = ResizablePanelPrimitive
 
-const ResizableHandle = React.forwardRef<
-  React.ElementRef<typeof ResizablePanelHandlePrimitive>,
-  React.ComponentProps<typeof ResizablePanelHandlePrimitive> & {
-    withHandle?: boolean
-  }
->(({ className, withHandle, ...props }, ref) => (
+const ResizableHandle = ({
+  className,
+  withHandle,
+  ...props
+}: React.ComponentProps<typeof ResizablePanelHandlePrimitive> & {
+  withHandle?: boolean
+}) => (
   <ResizablePanelHandlePrimitive
-    ref={ref}
     className={cn(
       "relative flex w-px items-center justify-center bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 [&[data-panel-group-direction=vertical]>div]:rotate-90",
       className
@@ -51,7 +52,7 @@ const ResizableHandle = React.forwardRef<
       </div>
     )}
   </ResizablePanelHandlePrimitive>
-))
+)
 ResizableHandle.displayName = "ResizableHandle"
 
 export { ResizablePanelGroup, ResizablePanel, ResizableHandle }

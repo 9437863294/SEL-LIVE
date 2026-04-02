@@ -1,0 +1,103 @@
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(146,43): error TS7022: 'billsSnap' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(150,19): error TS2448: Block-scoped variable 'billsSnap' used before its declaration.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(164,37): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(164,84): error TS7006: Parameter 'b' implicitly has an 'any' type.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(230,39): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(233,9): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(234,9): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(241,11): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(243,11): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(246,31): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(248,11): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(248,42): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(250,11): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(258,13): error TS2322: Type '{ jmcItemId: string; jmcEntryId: string; jmcNo: string; boqSlNo: string; description: string; unit: string; rate: string; orderQty: number; jmcCertifiedQty: number; alreadyBilledQty: number; executedQty: string; billedQty: string; totalAmount: string; }[]' is not assignable to type 'EnrichedBillItem[]'.
+  Type '{ jmcItemId: string; jmcEntryId: string; jmcNo: string; boqSlNo: string; description: string; unit: string; rate: string; orderQty: number; jmcCertifiedQty: number; alreadyBilledQty: number; executedQty: string; billedQty: string; totalAmount: string; }' is not assignable to type 'EnrichedBillItem'.
+    Property 'boqItemId' is missing in type '{ jmcItemId: string; jmcEntryId: string; jmcNo: string; boqSlNo: string; description: string; unit: string; rate: string; orderQty: number; jmcCertifiedQty: number; alreadyBilledQty: number; executedQty: string; billedQty: string; totalAmount: string; }' but required in type 'BillItem'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(269,53): error TS2345: Argument of type 'number | "0"' is not assignable to parameter of type 'string'.
+  Type 'number' is not assignable to type 'string'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(342,67): error TS2345: Argument of type 'number | "0"' is not assignable to parameter of type 'string'.
+  Type 'number' is not assignable to type 'string'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(369,15): error TS2322: Type '{ jmcItemId: string; jmcEntryId: string; jmcNo: string; boqSlNo: string; description: string; unit: string; rate: number; executedQty: number; billedQty: string; totalAmount: string; }[]' is not assignable to type 'BillItem[]'.
+  Property 'boqItemId' is missing in type '{ jmcItemId: string; jmcEntryId: string; jmcNo: string; boqSlNo: string; description: string; unit: string; rate: number; executedQty: number; billedQty: string; totalAmount: string; }' but required in type 'BillItem'.
+src/app/(protected)/billing-recon/[project]/billing/create/page.tsx(712,9): error TS2322: Type 'EnrichedBillItem[]' is not assignable to type 'WorkOrderItem[]'.
+  Property 'id' is missing in type 'EnrichedBillItem' but required in type 'WorkOrderItem'.
+src/app/(protected)/billing-recon/[project]/billing/log/page.tsx(130,8): error TS2739: Type '{ isOpen: boolean; onOpenChange: Dispatch<SetStateAction<boolean>>; bill: Bill | null; }' is missing the following properties from type 'ViewBillDialogProps': workflow, onAction, isActionLoading
+src/app/(protected)/billing-recon/[project]/mvac/reports/mvac-summary/page.tsx(195,77): error TS2353: Object literal may only specify known properties, and 'onTime' does not exist in type '{ total: number; completed: number; rejected: number; }'.
+src/app/(protected)/employee/page.tsx(26,10): error TS2724: '"@/ai"' has no exported member named 'syncGreytHR'. Did you mean 'syncAllGreytHR'?
+src/app/(protected)/employee/position-details/page.tsx(85,52): error TS2345: Argument of type '{}' is not assignable to parameter of type '{ page: number; }'.
+  Property 'page' is missing in type '{}' but required in type '{ page: number; }'.
+src/app/(protected)/expenses/reports/page.tsx(311,44): error TS2503: Cannot find namespace 'JSX'.
+src/app/(protected)/expenses/reports/page.tsx(348,27): error TS2503: Cannot find namespace 'JSX'.
+src/app/(protected)/expenses/settings/accounts/page.tsx(197,23): error TS2339: Property '' does not exist on type '{ addHead: string; addSubHead: string; editHead: string; editSubHead: string; }'.
+src/app/(protected)/insurance/my-tasks/page.tsx(269,87): error TS2322: Type 'string | ActionConfig' is not assignable to type 'Key | null | undefined'.
+  Type 'ActionConfig' is not assignable to type 'Key | null | undefined'.
+src/app/(protected)/insurance/my-tasks/page.tsx(269,161): error TS2345: Argument of type 'string | ActionConfig' is not assignable to parameter of type 'string'.
+  Type 'ActionConfig' is not assignable to type 'string'.
+src/app/(protected)/insurance/my-tasks/page.tsx(270,73): error TS2322: Type 'string | ActionConfig' is not assignable to type 'ReactNode'.
+  Type 'ActionConfig' is not assignable to type 'ReactNode'.
+src/app/(protected)/insurance/settings/workflow/page.tsx(140,18): error TS2345: Argument of type '(WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; })[]' is not assignable to parameter of type 'SetStateAction<WorkflowStep[]>'.
+  Type '(WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; })[]' is not assignable to type 'WorkflowStep[]'.
+    Type 'WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; }' is not assignable to type 'WorkflowStep'.
+      Type '{ assignedTo: { [x: string]: { primary: string; alternative?: string; } | { primary: string; alternative?: string; }; }; assignmentType: "User-based"; id: string; name: string; tat: number; actions: (string | ActionConfig)[]; upload: UploadRequirement; }' is not assignable to type 'WorkflowStep'.
+        Type '{ assignedTo: { [x: string]: { primary: string; alternative?: string; } | { primary: string; alternative?: string; }; }; assignmentType: "User-based"; id: string; name: string; tat: number; actions: (string | ActionConfig)[]; upload: UploadRequirement; }' is not assignable to type 'WorkflowStepUser'.
+          Types of property 'assignedTo' are incompatible.
+            Type '{ [x: string]: { primary: string; alternative?: string | undefined; } | { primary: string; alternative?: string | undefined; }; }' is missing the following properties from type 'string[]': length, pop, push, concat, and 35 more.
+src/app/(protected)/insurance/settings/workflow/page.tsx(169,18): error TS2345: Argument of type '(WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; })[]' is not assignable to parameter of type 'SetStateAction<WorkflowStep[]>'.
+  Type '(WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; })[]' is not assignable to type 'WorkflowStep[]'.
+    Type 'WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; }' is not assignable to type 'WorkflowStep'.
+      Type '{ assignedTo: AmountBasedCondition[]; assignmentType: "User-based"; id: string; name: string; tat: number; actions: (string | ActionConfig)[]; upload: UploadRequirement; }' is not assignable to type 'WorkflowStep'.
+        Type '{ assignedTo: AmountBasedCondition[]; assignmentType: "User-based"; id: string; name: string; tat: number; actions: (string | ActionConfig)[]; upload: UploadRequirement; }' is not assignable to type 'WorkflowStepUser'.
+          Types of property 'assignedTo' are incompatible.
+            Type 'AmountBasedCondition[]' is not assignable to type 'string[]'.
+              Type 'AmountBasedCondition' is not assignable to type 'string'.
+src/app/(protected)/insurance/settings/workflow/page.tsx(184,18): error TS2345: Argument of type '(WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; })[]' is not assignable to parameter of type 'SetStateAction<WorkflowStep[]>'.
+  Type '(WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; })[]' is not assignable to type 'WorkflowStep[]'.
+    Type 'WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; }' is not assignable to type 'WorkflowStep'.
+      Type '{ assignedTo: AmountBasedCondition[]; assignmentType: "User-based"; id: string; name: string; tat: number; actions: (string | ActionConfig)[]; upload: UploadRequirement; }' is not assignable to type 'WorkflowStep'.
+        Type '{ assignedTo: AmountBasedCondition[]; assignmentType: "User-based"; id: string; name: string; tat: number; actions: (string | ActionConfig)[]; upload: UploadRequirement; }' is not assignable to type 'WorkflowStepUser'.
+          Types of property 'assignedTo' are incompatible.
+            Type 'AmountBasedCondition[]' is not assignable to type 'string[]'.
+              Type 'AmountBasedCondition' is not assignable to type 'string'.
+src/app/(protected)/insurance/settings/workflow/page.tsx(200,18): error TS2345: Argument of type '(WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; })[]' is not assignable to parameter of type 'SetStateAction<WorkflowStep[]>'.
+  Type '(WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; })[]' is not assignable to type 'WorkflowStep[]'.
+    Type 'WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: "Amount-based"; assignedTo: AmountBasedCondition[]; }) | { ...; } | { ...; }' is not assignable to type 'WorkflowStep'.
+      Type '{ assignedTo: AmountBasedCondition[]; assignmentType: "User-based"; id: string; name: string; tat: number; actions: (string | ActionConfig)[]; upload: UploadRequirement; }' is not assignable to type 'WorkflowStep'.
+        Type '{ assignedTo: AmountBasedCondition[]; assignmentType: "User-based"; id: string; name: string; tat: number; actions: (string | ActionConfig)[]; upload: UploadRequirement; }' is not assignable to type 'WorkflowStepUser'.
+          Types of property 'assignedTo' are incompatible.
+            Type 'AmountBasedCondition[]' is not assignable to type 'string[]'.
+              Type 'AmountBasedCondition' is not assignable to type 'string'.
+src/app/(protected)/insurance/settings/workflow/page.tsx(391,109): error TS2304: Cannot find name 'projects'.
+src/app/(protected)/insurance/settings/workflow/page.tsx(391,120): error TS2304: Cannot find name 'departments'.
+src/app/(protected)/insurance/settings/workflow/page.tsx(391,137): error TS7006: Parameter 'item' implicitly has an 'any' type.
+src/app/(protected)/settings/expenses/accounts/page.tsx(197,23): error TS2339: Property '' does not exist on type '{ addHead: string; addSubHead: string; editHead: string; editSubHead: string; }'.
+src/app/(protected)/store-stock-management/[project]/transactions/stock-in/page.tsx(744,9): error TS2322: Type '{ id: string; itemName: string; quantity: number; itemId: string; itemUnit: string; receiveUnit: string; isBomGrn: boolean; boqSlNo?: string | undefined; bomItems?: any[] | undefined; unitCost?: number | undefined; }[]' is not assignable to type 'BillItem[]'.
+  Type '{ id: string; itemName: string; quantity: number; itemId: string; itemUnit: string; receiveUnit: string; isBomGrn: boolean; boqSlNo?: string | undefined; bomItems?: any[] | undefined; unitCost?: number | undefined; }' is missing the following properties from type 'BillItem': jmcItemId, jmcEntryId, jmcNo, boqItemId, and 6 more.
+src/app/(protected)/subcontractors-management/[project]/billing/edit/[billId]/page.tsx(31,10): error TS2614: Module '"@/components/subcontractors-management/WorkOrderItemSelectorDialog"' has no exported member 'WorkOrderItemSelectorDialog'. Did you mean to use 'import WorkOrderItemSelectorDialog from "@/components/subcontractors-management/WorkOrderItemSelectorDialog"' instead?
+src/app/(protected)/subcontractors-management/[project]/billing/edit/[billId]/page.tsx(144,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/subcontractors-management/[project]/billing/edit/[billId]/page.tsx(145,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/subcontractors-management/[project]/billing/edit/[billId]/page.tsx(147,7): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/subcontractors-management/[project]/billing/edit/[billId]/page.tsx(148,31): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/app/(protected)/subcontractors-management/[project]/billing/edit/[billId]/page.tsx(150,9): error TS2322: Type 'string' is not assignable to type 'number'.
+src/app/(protected)/subcontractors-management/[project]/billing/edit/[billId]/page.tsx(166,72): error TS2345: Argument of type 'number | "0"' is not assignable to parameter of type 'string'.
+  Type 'number' is not assignable to type 'string'.
+src/app/(protected)/subcontractors-management/[project]/billing/log/page.tsx(275,30): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/app/(protected)/subcontractors-management/[project]/billing/log/page.tsx(276,35): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/app/(protected)/subcontractors-management/[project]/billing/log/page.tsx(277,37): error TS2345: Argument of type 'number' is not assignable to parameter of type 'string'.
+src/app/(protected)/subcontractors-management/[project]/billing/log/page.tsx(448,64): error TS2304: Cannot find name 'ActionConfig'.
+src/app/(protected)/subcontractors-management/[project]/billing/retention-bill/page.tsx(148,15): error TS2741: Property 'retentionPercentage' is missing in type '{ billNo: string; billDate: string; workOrderId: string; workOrderNo: string; subcontractorId: string; subcontractorName: string; items: never[]; subtotal: number; gstType: "manual"; gstPercentage: number; ... 17 more ...; claimedBillIds: string[]; }' but required in type 'Omit<Bill, "id">'.
+src/app/(protected)/subcontractors-management/[project]/work-order/page.tsx(69,20): error TS2352: Conversion of type '{ projectName: string; projectSlug: string; id: string; }' to type 'WorkOrder' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ projectName: string; projectSlug: string; id: string; }' is missing the following properties from type 'WorkOrder': workOrderNo, subcontractorId, projectId, subcontractorName, and 4 more.
+src/app/(protected)/subcontractors-management/[project]/work-order/page.tsx(113,28): error TS2339: Property 'projectSlug' does not exist on type 'WorkOrder'.
+src/app/(protected)/subcontractors-management/[project]/work-order/page.tsx(186,62): error TS2339: Property 'projectName' does not exist on type 'WorkOrder'.
+src/components/AllProjectsDashboard.tsx(42,47): error TS2367: This comparison appears to be unintentional because the types '"Pending" | "In Progress" | "Rejected" | "Needs Review"' and '"Approved"' have no overlap.
+src/components/billing-recon/JmcItemSelectorDialog.tsx(324,11): error TS2322: Type '{ jmcItemId: string; jmcEntryId: string; jmcNo: string; boqSlNo: string; description: string; unit: any; rate: string; executedQty: string; billedQty: string; totalAmount: string; }[]' is not assignable to type 'BillItem[]'.
+  Property 'boqItemId' is missing in type '{ jmcItemId: string; jmcEntryId: string; jmcNo: string; boqSlNo: string; description: string; unit: any; rate: string; executedQty: string; billedQty: string; totalAmount: string; }' but required in type 'BillItem'.
+src/components/ViewInsuranceTaskDialog.tsx(36,32): error TS2312: An interface can only extend an object type or intersection of object types with statically known members.
+src/components/ViewInsuranceTaskDialog.tsx(130,78): error TS2339: Property 'name' does not exist on type 'EnrichedStep'.
+src/components/ViewInsuranceTaskDialog.tsx(182,29): error TS2322: Type 'string | ActionConfig' is not assignable to type 'Key | null | undefined'.
+  Type 'ActionConfig' is not assignable to type 'Key | null | undefined'.
+src/components/ViewInsuranceTaskDialog.tsx(182,77): error TS2345: Argument of type 'string | ActionConfig' is not assignable to parameter of type 'string'.
+  Type 'ActionConfig' is not assignable to type 'string'.
+src/components/ViewInsuranceTaskDialog.tsx(184,25): error TS2322: Type 'string | ActionConfig' is not assignable to type 'ReactNode'.
+  Type 'ActionConfig' is not assignable to type 'ReactNode'.

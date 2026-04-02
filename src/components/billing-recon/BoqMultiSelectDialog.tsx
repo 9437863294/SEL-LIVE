@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { JmcEntry, JmcItem, Bill, BillItem, BoqItem, Project } from '@/lib/types';
+import type { BoqItem } from '@/lib/types';
 import { Search, Loader2, ArrowUpDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -31,7 +31,12 @@ interface BoqMultiSelectDialogProps {
   onOpenChange: (isOpen: boolean) => void;
   onConfirm: (selectedItems: BoqItem[]) => void;
   boqItems: BoqItem[];
-  alreadyAddedItems?: BillItem[];
+  alreadyAddedItems?: Array<{
+    id?: string;
+    itemId?: string;
+    boqItemId?: string;
+    jmcItemId?: string;
+  }>;
   projectId?: string;
 }
 
@@ -165,10 +170,12 @@ export function BoqMultiSelectDialog({
     setSelectedIds(new Set());
   };
 
-  const addedItemIds = useMemo(
-    () => new Set(alreadyAddedItems.map((it: BillItem) => (it as any).jmcItemId)),
-    [alreadyAddedItems],
-  );
+  const addedItemIds = useMemo(() => {
+    const ids = alreadyAddedItems
+      .map((item) => item.jmcItemId || item.boqItemId || item.itemId || item.id)
+      .filter((id): id is string => !!id);
+    return new Set(ids);
+  }, [alreadyAddedItems]);
 
   const filteredItems = useMemo(() => {
     const q = searchTerm.toLowerCase();

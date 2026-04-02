@@ -28,6 +28,7 @@ import { format, addMonths, addYears, addQuarters, parseISO } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { db, storage } from '@/lib/firebase';
 import { collection, doc, getDoc, updateDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { PolicyHolder, Attachment, InsuranceCompany, InsurancePolicy } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import Link from 'next/link';
@@ -92,8 +93,9 @@ export default function EditPolicyPage() {
                 const policyDocSnap = await getDoc(policyDocRef);
                 if (policyDocSnap.exists()) {
                     const policyData = policyDocSnap.data() as InsurancePolicy;
+                    const { attachments, ...restPolicyData } = policyData;
                     form.reset({
-                        ...policyData,
+                        ...restPolicyData,
                         date_of_comm: policyData.date_of_comm?.toDate(),
                         policy_issue_date: policyData.policy_issue_date?.toDate(),
                         date_of_maturity: policyData.date_of_maturity?.toDate(),

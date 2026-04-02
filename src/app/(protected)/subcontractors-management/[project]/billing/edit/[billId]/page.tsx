@@ -28,7 +28,6 @@ import { useParams, useRouter, notFound } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { WorkOrderItemSelectorDialog } from '@/components/subcontractors-management/WorkOrderItemSelectorDialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -141,13 +140,13 @@ export default function EditBillPage() {
     const billedQty = parseFloat(value);
     
     if (isNaN(billedQty) || billedQty < 0) {
-      item.billedQty = '';
-      item.totalAmount = '';
+      item.billedQty = 0;
+      item.totalAmount = 0;
     } else {
-      item.billedQty = value;
-      const rate = parseFloat(item.rate);
+      item.billedQty = billedQty;
+      const rate = Number(item.rate);
       if (!isNaN(rate)) {
-        item.totalAmount = (billedQty * rate).toFixed(2);
+        item.totalAmount = Number((billedQty * rate).toFixed(2));
       }
     }
     newItems[index] = item;
@@ -163,7 +162,7 @@ export default function EditBillPage() {
    const financials = useMemo(() => {
     if (!bill) return { subtotal: 0, finalGstAmount: 0, grossAmount: 0, finalRetentionAmount: 0, totalDeductions: 0, netPayable: 0, totalAdvanceDeduction: 0, otherDeduction: 0 };
     
-    const subtotal = bill.items.reduce((sum, item) => sum + parseFloat(item.totalAmount || '0'), 0);
+    const subtotal = bill.items.reduce((sum, item) => sum + Number(item.totalAmount || 0), 0);
     const finalGstAmount = gstType === 'percentage' ? (subtotal * (gstPercentage / 100)) : gstAmount;
     const finalRetentionAmount = retentionType === 'percentage' ? (subtotal * (retentionPercentage / 100)) : manualRetentionAmount;
     const totalAdvanceDeduction = advanceDeductions.reduce((sum, adv) => sum + (adv.amount || 0), 0);

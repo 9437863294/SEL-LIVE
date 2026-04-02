@@ -26,6 +26,11 @@ const slugify = (text: string) => {
     .replace(/-+$/, '');
 }
 
+type WorkOrderListItem = WorkOrder & {
+  projectName?: string;
+  projectSlug?: string;
+};
+
 export default function WorkOrderLogPage() {
   const { toast } = useToast();
   const params = useParams();
@@ -33,7 +38,7 @@ export default function WorkOrderLogPage() {
   const projectSlug = params.project as string;
   const { can, isLoading: authLoading } = useAuthorization();
   
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrderListItem[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -71,7 +76,7 @@ export default function WorkOrderLogPage() {
                 ...data,
                 projectName: projectForWo?.projectName || 'Unknown',
                 projectSlug: projectForWo ? slugify(projectForWo.projectName) : '',
-            } as WorkOrder
+            } as WorkOrderListItem
         });
 
         // If not viewing all, filter to the current project
@@ -109,7 +114,7 @@ export default function WorkOrderLogPage() {
     return format(d, 'dd MMM, yyyy');
   };
   
-  const handleRowClick = (workOrder: WorkOrder) => {
+  const handleRowClick = (workOrder: WorkOrderListItem) => {
     const slug = workOrder.projectSlug || projectSlug;
     router.push(`/subcontractors-management/${slug}/work-order/${workOrder.id}`);
   };

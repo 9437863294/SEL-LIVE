@@ -7,7 +7,8 @@ import { validateModuleContent as validateModuleContentFlow, type ValidateModule
 import { syncAllGreytHR as syncAllGreytHRFlow, type SyncGreytHROutput } from './flows/sync-greythr-flow';
 import { syncGreytHRCategories as syncGreytHRCategoriesFlow, type SyncCategoriesOutput } from './flows/sync-categories-flow';
 import { getAllEmployeePositions as getAllEmployeePositionsFlow, type GetAllEmployeePositionsInput, type GetAllEmployeePositionsOutput } from './flows/get-all-employee-positions-flow';
-import { createExpenseRequest as createExpenseRequestFlow, type CreateExpenseRequestInput, type CreateExpenseRequestOutput } from './flows/create-expense-request-flow';
+import { createExpenseRequest as createExpenseRequestFlow } from './flows/create-expense-request-flow';
+import type { CreateExpenseRequestInput, CreateExpenseRequestOutput } from '@/lib/types';
 import { syncSalary as syncSalaryFlow, type SyncSalaryInput, type SyncSalaryOutput } from './flows/sync-salary-flow';
 
 export async function suggestModuleTags(input: SuggestModuleTagsInput): Promise<SuggestModuleTagsOutput> {

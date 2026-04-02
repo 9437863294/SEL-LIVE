@@ -173,8 +173,8 @@ export default function PolicyDetailsPage() {
                 <div><Label>Premium</Label><p className="font-semibold">{formatCurrency(policy.premium)}</p></div>
                 <div><Label>Sum Insured</Label><p className="font-semibold">{formatCurrency(policy.sum_insured)}</p></div>
                 <div><Label>Payment Type</Label><p className="font-semibold">{policy.payment_type}</p></div>
-                <div><Label>Start Date</Label><p className="font-semibold">{formatDate(policy.date_of_comm?.toDate())}</p></div>
-                <div><Label>Maturity Date</Label><p className="font-semibold">{formatDate(policy.date_of_maturity?.toDate())}</p></div>
+                <div><Label>Start Date</Label><p className="font-semibold">{formatDate(policy.date_of_comm?.toDate() ?? null)}</p></div>
+                <div><Label>Maturity Date</Label><p className="font-semibold">{formatDate(policy.date_of_maturity?.toDate() ?? null)}</p></div>
                 <div><Label>Tenure</Label><p className="font-semibold">{policy.tenure} years</p></div>
             </CardContent>
         </Card>

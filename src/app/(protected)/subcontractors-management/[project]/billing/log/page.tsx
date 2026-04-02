@@ -272,9 +272,9 @@ export default function BillLogPage() {
             jmcItemId: i.jmcItemId,
             description: i.description,
             unit: i.unit,
-            rate: parseFloat(i.rate) || 0,
-            billedQty: parseFloat(i.billedQty) || 0,
-            totalAmount: parseFloat(i.totalAmount) || 0,
+            rate: Number(i.rate) || 0,
+            billedQty: Number(i.billedQty) || 0,
+            totalAmount: Number(i.totalAmount) || 0,
         })),
       };
     });
@@ -445,7 +445,7 @@ export default function BillLogPage() {
     return map[action] ?? `${action.toLowerCase()}ed`;
   };
 
-  const handleAction = async (taskId: string, action: string | ActionConfig, comment: string = '') => {
+  const handleAction = async (taskId: string, action: string, comment: string = '') => {
     const currentBill = selectedBill || selectedProformaBill;
     if (!workflow || !user || !projectSlug || !currentBill) return;
 
@@ -466,8 +466,7 @@ export default function BillLogPage() {
         if (!taskDoc.exists()) throw new Error('Task document not found!');
         const currentTaskData = taskDoc.data() as Bill | ProformaBill;
         
-        const actionName = typeof action === 'string' ? action : action.name;
-        const newActionLog: ActionLog = { action: actionName, comment, userId: user.id, userName: user.name, timestamp: Timestamp.now(), stepName: currentTaskData.stage || '' };
+        const newActionLog: ActionLog = { action, comment, userId: user.id, userName: user.name, timestamp: Timestamp.now(), stepName: currentTaskData.stage || '' };
         
         const nextStep =
           workflow[workflow.findIndex((s) => s.id === currentTaskData.currentStepId) + 1];
@@ -508,7 +507,7 @@ export default function BillLogPage() {
 
         tx.update(docRef, updateData);
       });
-      toast({ title: 'Success', description: `Task has been ${pastTense(typeof action === 'string' ? action : action.name)}.` });
+      toast({ title: 'Success', description: `Task has been ${pastTense(action)}.` });
       await fetchBills();
       setIsViewOpen(false);
     } catch (error: any) {
