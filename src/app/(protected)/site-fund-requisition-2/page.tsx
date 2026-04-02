@@ -29,17 +29,18 @@ function DashboardCard({ item }: DashboardCardProps) {
     const cardContent = (
          <Card
             className={cn(
-                "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
+                "group flex flex-col h-full overflow-hidden rounded-2xl border border-white/70 bg-white/65 shadow-[0_18px_60px_-45px_rgba(2,6,23,0.35)] backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_28px_80px_-55px_rgba(2,6,23,0.55)]",
                 item.href === '#' || item.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
             )}
             >
-            <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
-                <div className="bg-primary/10 p-3 rounded-lg">
-                <item.icon className="w-6 h-6 text-primary" />
+            <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
+            <CardHeader className="flex-row items-center gap-4 space-y-0 p-5">
+                <div className="rounded-2xl border border-white/70 bg-white/70 p-3 shadow-sm transition-colors group-hover:bg-white">
+                  <item.icon className="h-6 w-6 text-slate-900/80" />
                 </div>
                 <div className="flex-1">
-                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-                    <CardDescription className="text-xs">{item.description}</CardDescription>
+                    <CardTitle className="text-base font-semibold text-slate-900">{item.text}</CardTitle>
+                    <CardDescription className="mt-1 text-xs text-slate-600">{item.description}</CardDescription>
                 </div>
             </CardHeader>
         </Card>
@@ -141,9 +142,28 @@ export default function SiteFundRequisition2Page() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <h1 className="text-3xl font-bold mb-6">Site Fund Requisition</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+    <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+            Site Fund Requisition 2
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            Module Dashboard
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Jump into requests, reports, settings, or stage-wise tasks.
+          </p>
+        </div>
+        <div className="hidden sm:flex items-center gap-2">
+          <div className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+            Live workflow stages
+          </div>
+          <div className="h-2 w-2 rounded-full bg-emerald-400" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {dashboardItems.map((item) => (
           <DashboardCard key={item.text} item={item} />
         ))}

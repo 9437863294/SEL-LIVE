@@ -61,6 +61,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { ScrollArea } from './ui/scroll-area';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
+import { Badge } from '@/components/ui/badge';
 
 
 const formSchema = z.object({
@@ -80,6 +81,21 @@ const baseTableHeaders = [
     'Description', 'Amount', 'Stage', 'Status', 'Attachments', 'Expense Request No',
     'Reception No', 'Reception Date'
 ];
+
+function statusBadgeClass(status?: string) {
+  switch (status) {
+    case 'Completed':
+      return 'border-emerald-200/80 bg-emerald-50 text-emerald-700';
+    case 'Rejected':
+      return 'border-rose-200/80 bg-rose-50 text-rose-700';
+    case 'In Progress':
+      return 'border-sky-200/80 bg-sky-50 text-sky-700';
+    case 'Pending':
+      return 'border-amber-200/80 bg-amber-50 text-amber-700';
+    default:
+      return 'border-slate-200/80 bg-slate-50 text-slate-700';
+  }
+}
 
 export default function AllRequisitionsTab() {
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
@@ -805,8 +821,11 @@ export default function AllRequisitionsTab() {
   );
 
   return (
-    <div className="flex flex-col h-full">
-        <div className="flex justify-end items-center gap-4 mb-4">
+    <div className="flex h-full flex-col gap-4">
+        <div className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+          <div className="mb-3 h-1.5 w-full rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
             {canViewAll && (
               <div className="flex items-center space-x-2">
                   <Switch 
@@ -814,11 +833,11 @@ export default function AllRequisitionsTab() {
                       checked={showMyRequests}
                       onCheckedChange={setShowMyRequests}
                   />
-                  <Label htmlFor="my-requests-switch">My Requests Only</Label>
+                  <Label htmlFor="my-requests-switch" className="text-sm text-slate-700">My Requests Only</Label>
               </div>
             )}
              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-[200px] bg-white/80 border-white/70">
                     <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
@@ -829,11 +848,21 @@ export default function AllRequisitionsTab() {
                     <SelectItem value="Rejected">Rejected</SelectItem>
                 </SelectContent>
             </Select>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
             <Dialog open={isNewRequestOpen} onOpenChange={setIsNewRequestOpen}>
                 <DialogTrigger asChild>
-                    <Button disabled={!canCreate}>New Request</Button>
+                    <Button
+                      disabled={!canCreate}
+                      className="bg-slate-900 text-white shadow hover:bg-slate-900/90"
+                    >
+                      New Request
+                    </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-4xl">
+                <DialogContent className="sm:max-w-4xl overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
+                    <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
+                    <div className="p-6">
                     <DialogHeader>
                         <DialogTitle>New Site Fund Requisition</DialogTitle>
                         <DialogDescription>
@@ -841,6 +870,7 @@ export default function AllRequisitionsTab() {
                         </DialogDescription>
                     </DialogHeader>
                     {renderNewForm()}
+                    </div>
                 </DialogContent>
             </Dialog>
             <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
@@ -849,14 +879,14 @@ export default function AllRequisitionsTab() {
                         <Shuffle className="mr-2 h-4 w-4" /> Sequence
                     </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
                     <DialogHeader>
                         <DialogTitle>Edit Column Sequence</DialogTitle>
                         <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
                     </DialogHeader>
                     <div className="py-4 space-y-2">
                         {columnOrder.map((header, index) => (
-                            <div key={header} className="flex items-center justify-between p-2 border rounded-md">
+                            <div key={header} className="flex items-center justify-between rounded-xl border border-white/70 bg-white/70 p-2">
                                 <span className="font-medium">{header}</span>
                             </div>
                         ))}
@@ -887,85 +917,102 @@ export default function AllRequisitionsTab() {
                     ))}
                 </DropdownMenuContent>
             </DropdownMenu>
+            </div>
+          </div>
         </div>
-        <div className="border rounded-lg flex-grow relative">
-          <ScrollArea className="absolute inset-0">
+
+        <div className="relative flex-grow overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+          <ScrollArea className="absolute inset-0" showHorizontalScrollbar>
             <TooltipProvider>
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                <TableRow>
-                  {visibleHeaders.map(header => (
-                    <TableHead key={header}>{header}</TableHead>
-                  ))}
-                  <TableHead className="text-center">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {displayedRequisitions.length > 0 ? (
-                  displayedRequisitions.map((req) => {
-                      const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
-                      return (
-                        <TableRow key={req.id}>
-                          {visibleHeaders.map(header => {
-                              let content: React.ReactNode = 'N/A';
-                              switch(header) {
-                                  case 'Request ID': content = req.requisitionId; break;
-                                  case 'Date': content = format(new Date(req.date), 'dd MMM, yyyy'); break;
-                                  case 'Project': content = getProjectName(req.projectId); break;
-                                  case 'Department': content = getDepartmentName(req.departmentId); break;
-                                  case 'Entered By': content = req.raisedBy; break;
-                                  case 'Party Name': content = req.partyName; break;
-                                  case 'Description': 
-                                    content = (
-                                      <Tooltip>
-                                        <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
-                                        <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
-                                      </Tooltip>
-                                    ); 
-                                    break;
-                                  case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
-                                  case 'Stage': content = req.stage; break;
-                                  case 'Status': content = req.status; break;
-                                  case 'Attachments': content = req.attachments?.length || 0; break;
-                                  case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
-                                  case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
-                                  case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
-                              }
-                              return <TableCell key={header}>{content}</TableCell>
-                          })}
-                          <TableCell className="text-center">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => openViewDialog(req)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  View Details
-                                </DropdownMenuItem>
-                                {req.stage === 'Request Receiving' && (
-                                  <DropdownMenuItem onClick={() => openEditDialog(req)}>
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    Edit
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      )
-                  })
-                ) : (
+            <div className="min-w-full w-max">
+              <Table className="min-w-[1200px]">
+                <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
                   <TableRow>
-                    <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
-                      No requisitions found.
-                    </TableCell>
+                    {visibleHeaders.map(header => (
+                      <TableHead key={header} className="whitespace-nowrap text-slate-700">{header}</TableHead>
+                    ))}
+                    <TableHead className="text-center text-slate-700">Actions</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {displayedRequisitions.length > 0 ? (
+                    displayedRequisitions.map((req) => {
+                        const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
+                        return (
+                          <TableRow key={req.id} className="hover:bg-slate-50/70">
+                            {visibleHeaders.map(header => {
+                                let content: React.ReactNode = 'N/A';
+                                switch(header) {
+                                    case 'Request ID': content = req.requisitionId; break;
+                                    case 'Date': content = format(new Date(req.date), 'dd MMM, yyyy'); break;
+                                    case 'Project': content = getProjectName(req.projectId); break;
+                                    case 'Department': content = getDepartmentName(req.departmentId); break;
+                                    case 'Entered By': content = req.raisedBy; break;
+                                    case 'Party Name': content = req.partyName; break;
+                                    case 'Description': 
+                                      content = (
+                                        <Tooltip>
+                                          <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
+                                          <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
+                                        </Tooltip>
+                                      ); 
+                                      break;
+                                    case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
+                                    case 'Stage': content = req.stage; break;
+                                    case 'Status': 
+                                      content = (
+                                        <Badge variant="outline" className={cn("whitespace-nowrap", statusBadgeClass(req.status))}>
+                                          {req.status || '—'}
+                                        </Badge>
+                                      );
+                                      break;
+                                    case 'Attachments': 
+                                      content = (
+                                        <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-700">
+                                          {req.attachments?.length || 0}
+                                        </Badge>
+                                      );
+                                      break;
+                                    case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
+                                    case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
+                                    case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
+                                }
+                                return <TableCell key={header}>{content}</TableCell>
+                            })}
+                            <TableCell className="text-center">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => openViewDialog(req)}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View Details
+                                  </DropdownMenuItem>
+                                  {req.stage === 'Request Receiving' && (
+                                    <DropdownMenuItem onClick={() => openEditDialog(req)}>
+                                      <Edit className="mr-2 h-4 w-4" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        )
+                    })
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
+                        No requisitions found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
             </TooltipProvider>
           </ScrollArea>
         </div>
@@ -980,14 +1027,17 @@ export default function AllRequisitionsTab() {
         />
       )}
       <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
-        <DialogContent className="sm:max-w-4xl">
-            <DialogHeader>
-                <DialogTitle>Edit Site Fund Requisition</DialogTitle>
-                <DialogDescription>
-                    Make changes to the fund request below.
-                </DialogDescription>
-            </DialogHeader>
-            {renderEditForm()}
+        <DialogContent className="sm:max-w-4xl overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
+            <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
+            <div className="p-6">
+                <DialogHeader>
+                    <DialogTitle>Edit Site Fund Requisition</DialogTitle>
+                    <DialogDescription>
+                        Make changes to the fund request below.
+                    </DialogDescription>
+                </DialogHeader>
+                {renderEditForm()}
+            </div>
         </DialogContent>
       </Dialog>
     </div>

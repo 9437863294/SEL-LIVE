@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,16 +19,13 @@ import { Loader2, User as UserIcon } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { PinSetupDialog } from "@/components/auth/PinSetupDialog";
-import type { SavedUser, User } from "@/lib/types";
+import type { SavedUser } from "@/lib/types";
+import { ElectricBackdrop } from "@/components/effects/ElectricBackdrop";
 
 export function LoginPageContent() {
-  const router = useRouter();
   const { toast } = useToast();
-  const searchParams = useSearchParams();
 
   const {
-    user: authenticatedUser,
     setShouldRemember, 
     savedUsers,
     loadSavedUsers,
@@ -48,13 +44,15 @@ export function LoginPageContent() {
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
 
-  const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
-  const [userForPinSetup, setUserForPinSetup] = useState<User | null>(null);
-
   // Forgot Password state
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [isForgotLoading, setIsForgotLoading] = useState(false);
+
+  // Load saved profiles once when login page mounts.
+  useEffect(() => {
+    loadSavedUsers();
+  }, [loadSavedUsers]);
 
   // If no saved users, default to password form.
   useEffect(() => {
@@ -68,8 +66,12 @@ export function LoginPageContent() {
       case "auth/invalid-credential":
       case "auth/wrong-password":
         return "Incorrect email or password.";
+      case "auth/invalid-email":
+        return "Please enter a valid email address.";
       case "auth/user-not-found":
         return "No account found with that email.";
+      case "auth/user-disabled":
+        return "This account has been disabled.";
       case "auth/too-many-requests":
         return "Too many attempts. Please try again later.";
       case "auth/network-request-failed":
@@ -82,7 +84,7 @@ export function LoginPageContent() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const finalEmail = activeUser ? activeUser.email : email;
+    const finalEmail = (activeUser ? activeUser.email : email).trim().toLowerCase();
     if (!finalEmail || !password) {
       toast({
         title: "Error",
@@ -126,7 +128,9 @@ export function LoginPageContent() {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!forgotEmail) {
+    const normalizedEmail = forgotEmail.trim().toLowerCase();
+
+    if (!normalizedEmail) {
       toast({
         title: "Error",
         description: "Please enter your email address.",
@@ -137,16 +141,26 @@ export function LoginPageContent() {
 
     setIsForgotLoading(true);
     try {
-      await sendPasswordResetEmail(auth, forgotEmail);
+      await sendPasswordResetEmail(auth, normalizedEmail);
       toast({
-        title: "Success",
-        description: "Password reset link sent to your email.",
+        title: "Reset Link Sent",
+        description: "If this email is registered, a reset link has been sent.",
       });
+      setForgotEmail(normalizedEmail);
       setIsForgotPassword(false);
     } catch (err: any) {
+      const code = err?.code as string | undefined;
+      if (code === "auth/user-not-found") {
+        toast({
+          title: "Reset Link Sent",
+          description: "If this email is registered, a reset link has been sent.",
+        });
+        setIsForgotPassword(false);
+        return;
+      }
       toast({
         title: "Error",
-        description: mapFirebaseError(err?.code),
+        description: mapFirebaseError(code || ""),
         variant: "destructive",
       });
     } finally {
@@ -156,6 +170,8 @@ export function LoginPageContent() {
 
   const handleProfileClick = (user: SavedUser) => {
     setActiveUser(user);
+    setEmail(user.email || "");
+    setForgotEmail(user.email || "");
     setShowPasswordForm(false);
   };
 
@@ -208,7 +224,7 @@ export function LoginPageContent() {
 
   const renderProfileSelection = () => (
     <div className="text-center w-full">
-      <div className="relative h-40 w-full max-w-[70%] mx-auto">
+      <div className="relative h-24 w-full max-w-[70%] mx-auto">
         <Image
           src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fnew%20logo.png?alt=media&token=c5f1dbc2-10c5-4f36-9454-2b2a4b43b6dd"
           alt="Company Logo"
@@ -218,14 +234,14 @@ export function LoginPageContent() {
           priority
         />
       </div>
-      <h2 className="text-2xl font-semibold mb-2">Who's signing in?</h2>
-      <p className="text-muted-foreground mb-8">Select a profile to continue.</p>
+      <h2 className="text-2xl font-semibold mb-2 text-white">Who's signing in?</h2>
+      <p className="text-slate-300/70 mb-8">Select a profile to continue.</p>
       <div className="flex justify-center flex-wrap gap-6">
         {savedUsers.map((user) => (
           <div
             key={user.id}
             onClick={() => handleProfileClick(user)}
-            className="flex flex-col items-center gap-2 cursor-pointer p-4 rounded-lg hover:bg-muted transition-colors w-32"
+            className="flex flex-col items-center gap-2 cursor-pointer p-4 rounded-xl border border-white/10 bg-slate-900/20 hover:bg-slate-800/40 transition-colors w-32"
           >
             <Avatar className="h-20 w-20">
               <AvatarImage src={user.photoURL} alt={user.name} />
@@ -233,7 +249,7 @@ export function LoginPageContent() {
                 {getInitials(user.name)}
               </AvatarFallback>
             </Avatar>
-            <p className="font-medium text-center whitespace-nowrap">
+            <p className="font-medium text-center whitespace-nowrap text-slate-100">
               {user.name}
             </p>
           </div>
@@ -254,10 +270,9 @@ export function LoginPageContent() {
 
   const renderPasswordForm = () => (
     <div className="w-full text-center">
-      <div className="relative h-40 w-full max-w-[70%] mx-auto">
+      <div className="relative h-24 w-full max-w-[70%] mx-auto">
         <Image
           src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fnew%20logo.png?alt=media&token=c5f1dbc2-10c5-4f36-9454-2b2a4b43b6dd"
-          
           alt="Company Logo"
           fill
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
@@ -278,7 +293,7 @@ export function LoginPageContent() {
         </>
       )}
 
-      <p className="text-muted-foreground mt-2 mb-8">
+      <p className="text-slate-300/70 mt-2 mb-8">
         Welcome! Please sign in to continue.
       </p>
 
@@ -292,8 +307,8 @@ export function LoginPageContent() {
               placeholder="abc@example.com"
               required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="bg-muted/50 border-0 focus:bg-background"
+              onChange={(e) => setEmail(e.target.value.toLowerCase())}
+              className="bg-slate-900/40 border-white/10 focus-visible:ring-primary/60"
               autoComplete="email"
             />
           </div>
@@ -307,7 +322,7 @@ export function LoginPageContent() {
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="bg-muted/50 border-0 focus:bg-background"
+            className="bg-slate-900/40 border-white/10 focus-visible:ring-primary/60"
             autoComplete="current-password"
             aria-invalid={false}
           />
@@ -335,14 +350,18 @@ export function LoginPageContent() {
             className="text-xs p-0 h-auto text-primary/80 hover:text-primary"
             onClick={() => {
               setIsForgotPassword(true);
-              setForgotEmail(activeUser ? activeUser.email : email);
+              setForgotEmail((activeUser ? activeUser.email : email).trim().toLowerCase());
             }}
           >
             Forgot password?
           </Button>
         </div>
 
-        <Button type="submit" className="w-full !mt-6 bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20" disabled={isLoading}>
+        <Button
+          type="submit"
+          className="w-full !mt-6 bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20"
+          disabled={isLoading}
+        >
           {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Sign In
         </Button>
@@ -351,7 +370,7 @@ export function LoginPageContent() {
           <Button
             variant="ghost"
             type="button"
-            className="w-full text-muted-foreground hover:text-foreground"
+            className="w-full text-slate-300 hover:text-slate-100 hover:bg-white/5"
             onClick={() => {
               setShowPasswordForm(false);
               setActiveUser(null);
@@ -366,7 +385,7 @@ export function LoginPageContent() {
 
   const renderForgotPasswordForm = () => (
     <div className="w-full text-center space-y-6">
-      <div className="relative h-32 w-full max-w-[60%] mx-auto">
+      <div className="relative h-24 w-full max-w-[60%] mx-auto">
         <Image
           src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fnew%20logo.png?alt=media&token=c5f1dbc2-10c5-4f36-9454-2b2a4b43b6dd"
           alt="Company Logo"
@@ -377,7 +396,7 @@ export function LoginPageContent() {
 
       <div className="space-y-2">
         <h2 className="text-2xl font-bold tracking-tight">Reset Password</h2>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-slate-300/70 text-sm">
           Enter your email and we'll send you a link to reset your password.
         </p>
       </div>
@@ -391,8 +410,8 @@ export function LoginPageContent() {
             placeholder="name@example.com"
             required
             value={forgotEmail}
-            onChange={(e) => setForgotEmail(e.target.value)}
-            className="bg-background/50 border-white/10"
+            onChange={(e) => setForgotEmail(e.target.value.toLowerCase())}
+            className="bg-slate-900/40 border-white/10 focus-visible:ring-primary/60"
           />
         </div>
 
@@ -405,7 +424,10 @@ export function LoginPageContent() {
           variant="link"
           type="button"
           className="w-full text-xs"
-          onClick={() => setIsForgotPassword(false)}
+          onClick={() => {
+            setIsForgotPassword(false);
+            setForgotEmail("");
+          }}
         >
           Back to Login
         </Button>
@@ -417,7 +439,7 @@ export function LoginPageContent() {
     if (!activeUser) return null;
     return (
       <div className="w-full text-center">
-        <div className="relative h-40 w-full max-w-[70%] mx-auto">
+        <div className="relative h-24 w-full max-w-[70%] mx-auto">
           <Image
             src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FUntitled-1.png?alt=media&token=02963da9-54c3-4aaa-91e0-ac5d38bd6412"
             alt="Company Logo"
@@ -444,7 +466,7 @@ export function LoginPageContent() {
             onChange={handlePinChange}
             onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
             placeholder="PIN"
-            className="text-center text-2xl tracking-[1rem] h-14"
+            className="text-center text-2xl tracking-[1rem] h-14 bg-slate-900/40 border-white/10 focus-visible:ring-primary/60"
             autoComplete="one-time-code"
             inputMode="numeric"
             aria-invalid={!!pinError}
@@ -490,88 +512,59 @@ export function LoginPageContent() {
   };
 
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden bg-[#020617]">
-      {/* Dynamic Electrical Background */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute inset-0 bg-electric-grid opacity-20" />
-        
-        {/* Animated Orbs */}
-        <div className="absolute top-[10%] left-[10%] w-[400px] h-[400px] bg-primary/20 rounded-full blur-[120px] animate-pulse-glow" />
-        <div className="absolute bottom-[10%] right-[10%] w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[150px] animate-pulse-glow" style={{ animationDelay: '-2s' }} />
-        <div className="absolute top-[40%] right-[20%] w-[300px] h-[300px] bg-purple-500/10 rounded-full blur-[100px] animate-float" />
-        
-        {/* Vignette */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-[#020617] opacity-80" />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#020617] via-transparent to-[#020617] opacity-80" />
-      </div>
+    <div className="relative min-h-screen w-full overflow-hidden bg-[#020617] text-slate-100">
+      <ElectricBackdrop />
 
-      <main className="relative z-10 w-full max-w-5xl px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 glass-dark rounded-3xl overflow-hidden border-white/5 shadow-2xl">
-          {/* Left Decorative Side */}
-          <div className="hidden md:flex flex-col justify-between p-12 bg-gradient-to-br from-primary/20 to-blue-500/10 relative overflow-hidden group">
-            <div className="absolute inset-0 bg-electric-grid opacity-10 group-hover:opacity-20 transition-opacity" />
-            
+      <main className="relative z-10 flex min-h-screen items-center justify-center px-4 py-8">
+        <div className="grid w-full max-w-6xl grid-cols-1 overflow-hidden rounded-3xl border border-cyan-300/15 bg-slate-950/45 shadow-[0_30px_120px_-40px_rgba(14,116,255,0.8)] backdrop-blur-xl md:grid-cols-2">
+          <div className="relative hidden flex-col justify-between overflow-hidden border-r border-white/10 bg-gradient-to-br from-cyan-500/15 via-slate-900/85 to-blue-900/20 p-12 md:flex">
+            <div className="absolute inset-0 bg-electric-grid opacity-15" />
+            <div className="absolute left-[-9rem] top-[-6rem] h-72 w-72 rounded-full bg-cyan-300/15 blur-[90px]" />
+            <div className="absolute bottom-[-9rem] right-[-8rem] h-80 w-80 rounded-full bg-blue-500/20 blur-[120px]" />
             <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-8">
-                <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
-                  <div className="w-5 h-5 border-2 border-white rounded-full border-t-transparent animate-spin" />
+              <div className="mb-8 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/40 bg-cyan-400/20 shadow-lg shadow-cyan-500/30">
+                  <div className="h-2.5 w-2.5 rounded-full bg-cyan-200 animate-electric-flicker" />
                 </div>
-                <span className="text-xl font-bold tracking-tight text-white">SEL Live</span>
+                <span className="text-xl font-semibold tracking-[0.2em] text-cyan-100">SEL LIVE</span>
               </div>
-              
-              <h1 className="text-4xl lg:text-5xl font-bold text-white leading-tight mb-6">
-                Engineering the <br />
-                <span className="text-primary italic">Future</span> of Power.
+
+              <h1 className="mb-6 text-4xl font-bold leading-tight text-white lg:text-5xl">
+                Powering every
+                <br />
+                project through
+                <br />
+                <span className="text-cyan-300">live electrical intelligence.</span>
               </h1>
-              <p className="text-blue-100/60 text-lg max-w-md">
-                Streamlining electrical project management with state-of-the-art automation and real-time analytics.
+              <p className="max-w-md text-base text-cyan-100/70">
+                Monitor execution, approvals, and field operations from one control layer built for electrical engineering teams.
               </p>
             </div>
 
-            <div className="relative z-10 mt-auto pt-10">
-              <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-sm">
-                <div className="flex -space-x-3">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="w-8 h-8 rounded-full border-2 border-[#1e293b] bg-muted flex items-center justify-center text-[10px] overflow-hidden">
-                      <img 
-                        src={`https://i.pravatar.cc/100?u=${i}`} 
-                        alt="User" 
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  ))}
-                </div>
-                <p className="text-sm text-blue-100/80">
-                  Trusted by <span className="text-white font-semibold">500+</span> engineers nationwide.
-                </p>
+            <div className="relative z-10 mt-8 rounded-2xl border border-cyan-300/20 bg-cyan-500/10 p-4">
+              <div className="mb-2 h-1 w-24 rounded-full bg-cyan-300/60" />
+              <p className="text-sm text-cyan-100/85">
+                Voltage-safe workflows, faster approvals, and complete traceability across departments.
+              </p>
+              <div className="mt-3 flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-cyan-200/70">
+                <span className="h-2 w-2 rounded-full bg-cyan-300 animate-electric-flicker" />
+                Live status synchronized
               </div>
             </div>
-
-            {/* Decorative Element */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] bg-gradient-radial from-primary/5 to-transparent pointer-events-none" />
           </div>
 
-          {/* Right Form Side */}
-          <div className="relative p-8 md:p-16 flex flex-col items-center justify-center min-h-[600px] bg-[#020617]/40 backdrop-blur-md">
+          <div className="relative flex min-h-[620px] flex-col items-center justify-center bg-[#020617]/65 p-8 md:p-16">
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/8 via-transparent to-blue-500/8" />
             <div className="w-full max-w-sm shrink-0">
               {renderContent()}
             </div>
             
-            <div className="mt-12 text-center text-xs text-muted-foreground/60">
+            <div className="mt-12 text-center text-xs text-slate-400/70">
               &copy; {new Date().getFullYear()} Siddhartha Engineering Limited. All rights reserved.
             </div>
           </div>
         </div>
       </main>
-
-      {userForPinSetup && (
-        <PinSetupDialog
-          user={userForPinSetup}
-          isOpen={isPinSetupOpen}
-          onOpenChange={setIsPinSetupOpen}
-          onPinSet={loadSavedUsers}
-        />
-      )}
     </div>
   );
 }

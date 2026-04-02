@@ -81,6 +81,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 
 /* -------- helpers -------- */
 function toDateSafe(value: any): Date | null {
@@ -127,6 +128,21 @@ function formatINR(n?: number) {
     }).format(v);
   } catch {
     return `₹${v.toFixed(2)}`;
+  }
+}
+
+function statusBadgeClass(status?: string) {
+  switch (status) {
+    case 'Completed':
+      return 'border-emerald-200/80 bg-emerald-50 text-emerald-700';
+    case 'Rejected':
+      return 'border-rose-200/80 bg-rose-50 text-rose-700';
+    case 'In Progress':
+      return 'border-sky-200/80 bg-sky-50 text-sky-700';
+    case 'Pending':
+      return 'border-amber-200/80 bg-amber-50 text-amber-700';
+    default:
+      return 'border-slate-200/80 bg-slate-50 text-slate-700';
   }
 }
 
@@ -444,16 +460,17 @@ export default function StagePage() {
     data: Requisition[],
     type: 'pending' | 'completed'
   ) => (
-    <Card>
+    <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+      <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
       <CardContent className="p-0">
         <Table>
-          <TableHeader>
+          <TableHeader className="bg-white/80 border-b border-white/70">
             <TableRow>
-              <TableHead>Request ID</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="text-slate-700">Request ID</TableHead>
+              <TableHead className="text-slate-700">Date</TableHead>
+              <TableHead className="text-slate-700">Amount</TableHead>
+              <TableHead className="text-slate-700">Status</TableHead>
+              <TableHead className="text-right text-slate-700">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -485,7 +502,7 @@ export default function StagePage() {
                       setSelectedRequisition(task);
                       setIsViewOpen(true);
                     }}
-                    className="cursor-pointer"
+                    className="cursor-pointer hover:bg-slate-50/70"
                   >
                     <TableCell>
                       {task.requisitionId ?? '-'}
@@ -493,7 +510,12 @@ export default function StagePage() {
                     <TableCell>{humanDate(task.date)}</TableCell>
                     <TableCell>{formatINR(task.amount)}</TableCell>
                     <TableCell>
-                      <Badge>{task.status}</Badge>
+                      <Badge
+                        variant="outline"
+                        className={cn('whitespace-nowrap', statusBadgeClass(task.status))}
+                      >
+                        {task.status || '—'}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       {isActionLoading === task.id ? (
@@ -571,21 +593,29 @@ export default function StagePage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex items-center gap-3">
             <Link href={`/site-fund-requisition-2`}>
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-6 w-6" />
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold">
-              {stage?.name || 'Stage'}
-            </h1>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Site Fund Requisition 2
+              </p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                {stage?.name || 'Stage'}
+              </h1>
+              <p className="mt-1 text-sm text-slate-600">
+                Pending: {pendingTasks.length} , Completed: {completedTasks.length}
+              </p>
+            </div>
           </div>
         </div>
         <Tabs defaultValue="pending">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-2 rounded-2xl border border-white/70 bg-white/70 p-1 backdrop-blur">
             <TabsTrigger value="pending">
               <Clock className="mr-2 h-4 w-4" /> Pending (
               {pendingTasks.length})

@@ -5,6 +5,10 @@
 
 @layer base {
   :root {
+    --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+    --font-inter: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+    --font-roboto: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+
     --background: 220 20% 98%;
     --foreground: 222.2 84% 4.9%;
     --card: 220 20% 100%;
@@ -87,6 +91,54 @@
       linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
       linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
   }
+
+  .bg-aurora-grid {
+    background-size: 44px 44px;
+    background-image:
+      linear-gradient(to right, rgba(15, 118, 110, 0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(219, 39, 119, 0.07) 1px, transparent 1px);
+  }
+
+  .aurora-noise {
+    background-image:
+      radial-gradient(circle at 10% 18%, rgba(34, 211, 238, 0.18) 0, transparent 36%),
+      radial-gradient(circle at 86% 22%, rgba(236, 72, 153, 0.14) 0, transparent 42%),
+      radial-gradient(circle at 55% 92%, rgba(250, 204, 21, 0.12) 0, transparent 44%),
+      radial-gradient(circle at 92% 82%, rgba(16, 185, 129, 0.10) 0, transparent 50%);
+  }
+
+  .electric-noise {
+    background-image:
+      radial-gradient(circle at 8% 18%, rgba(56, 189, 248, 0.12) 0, transparent 28%),
+      radial-gradient(circle at 82% 12%, rgba(59, 130, 246, 0.14) 0, transparent 34%),
+      radial-gradient(circle at 74% 74%, rgba(99, 102, 241, 0.12) 0, transparent 38%);
+  }
+
+  .electric-scan-line {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, rgba(34, 211, 238, 0.75) 35%, rgba(125, 211, 252, 0.95) 50%, rgba(34, 211, 238, 0.75) 65%, transparent 100%);
+    filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.6));
+    animation: electric-scan 3.6s linear infinite;
+    opacity: 0;
+  }
+
+  .electric-arc {
+    position: absolute;
+    width: 140px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(186, 230, 253, 0.95), transparent);
+    transform-origin: left center;
+    animation: electric-arc 2.8s ease-in-out infinite;
+    opacity: 0;
+    filter: blur(0.2px) drop-shadow(0 0 6px rgba(14, 165, 233, 0.9));
+  }
+
+  .animate-electric-flicker {
+    animation: electric-flicker 1.9s steps(2, end) infinite;
+  }
 }
 
 @keyframes float {
@@ -97,6 +149,37 @@
 @keyframes pulse-glow {
   0%, 100% { opacity: 0.3; transform: scale(1); }
   50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+@keyframes electric-scan {
+  0% { transform: translateX(-28%); opacity: 0; }
+  12% { opacity: 0.95; }
+  62% { opacity: 0.65; }
+  100% { transform: translateX(28%); opacity: 0; }
+}
+
+@keyframes electric-arc {
+  0%, 100% {
+    transform: rotate(-10deg) scaleX(0.25);
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+    transform: rotate(-6deg) scaleX(0.8);
+  }
+  48% {
+    opacity: 0.8;
+    transform: rotate(4deg) scaleX(1);
+  }
+  70% {
+    opacity: 0;
+    transform: rotate(9deg) scaleX(0.35);
+  }
+}
+
+@keyframes electric-flicker {
+  0%, 13%, 18%, 22%, 37%, 100% { opacity: 1; }
+  14%, 17%, 21%, 32%, 35% { opacity: 0.35; }
 }
 
 .animate-float {

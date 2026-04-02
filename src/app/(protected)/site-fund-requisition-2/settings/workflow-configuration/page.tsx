@@ -345,7 +345,7 @@ export default function WorkflowConfigurationPage() {
   /* ---------------- render ---------------- */
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
-      <div className="w-full max-w-4xl mx-auto pr-14">
+      <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
         <Skeleton className="h-10 w-96 mb-6" />
         <Skeleton className="h-96 w-full" />
       </div>
@@ -354,14 +354,18 @@ export default function WorkflowConfigurationPage() {
 
   if (!canViewPage) {
     return (
-      <div className="w-full max-w-4xl mx-auto pr-14">
+      <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/site-fund-requisition-2/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-xl font-bold">Configure Workflow</h1>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Configure Workflow</h1>
+            </div>
           </div>
         </div>
-        <Card>
+        <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+          <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-300 to-cyan-400 opacity-70" />
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>You do not have permission to view or edit this page.</CardDescription>
@@ -375,15 +379,19 @@ export default function WorkflowConfigurationPage() {
   }
 
   return (
-    <div className="w-full max-w-4xl mx-auto pr-14">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex items-center gap-3">
           <Link href="/site-fund-requisition-2/settings">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
-          <h1 className="text-xl font-bold">Configure Workflow</h1>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Configure Workflow</h1>
+            <p className="mt-1 text-sm text-slate-600">Steps, assignments, actions, and turnaround time.</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {pageInvalidMsg && (
@@ -391,14 +399,19 @@ export default function WorkflowConfigurationPage() {
               {pageInvalidMsg}
             </Badge>
           )}
-          <Button onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
+          <Button
+            onClick={handleSave}
+            disabled={isSaving || !canEditPage || !!pageInvalidMsg}
+            className="bg-slate-900 text-white shadow hover:bg-slate-900/90"
+          >
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Save Workflow
           </Button>
         </div>
       </div>
 
-      <Card>
+      <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+        <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
         <CardHeader>
           <CardTitle>Workflow Steps</CardTitle>
           <CardDescription>
@@ -415,7 +428,11 @@ export default function WorkflowConfigurationPage() {
           ) : (
             <Accordion type="multiple" className="w-full" defaultValue={steps.map((s) => s.id)}>
               {steps.map((step, index) => (
-                <AccordionItem value={step.id} key={step.id} className="border rounded-md px-4 mb-2 bg-background">
+                <AccordionItem
+                  value={step.id}
+                  key={step.id}
+                  className="mb-3 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-sm"
+                >
                   <div className="flex items-center gap-2 py-2">
                     <GripVertical className="h-5 w-5 text-muted-foreground" />
                     <AccordionTrigger className="flex-1 text-base hover:no-underline">
@@ -454,7 +471,7 @@ export default function WorkflowConfigurationPage() {
                   </div>
 
                   <AccordionContent>
-                    <div className="space-y-6 p-4 border-t">
+                    <div className="space-y-6 border-t border-white/70 p-4">
                       {/* Step name + TAT */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
@@ -563,10 +580,11 @@ export default function WorkflowConfigurationPage() {
                       {isMapped(step) && (
                         <div className="space-y-2">
                           <Label>Assign Users</Label>
-                          <Card className="mt-2">
+                          <Card className="mt-2 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-sm backdrop-blur">
+                            <div className="h-1 w-full bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 opacity-70" />
                             <div className="overflow-x-auto">
                               <Table className="min-w-[720px]">
-                                <TableHeader>
+                                <TableHeader className="bg-white/80 border-b border-white/70">
                                   <TableRow>
                                     <TableHead className="whitespace-nowrap">
                                       {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
@@ -592,7 +610,7 @@ export default function WorkflowConfigurationPage() {
                                             }
                                             disabled={!canEditPage}
                                           >
-                                            <SelectTrigger>
+                                            <SelectTrigger className="bg-white/80 border-white/70">
                                               <SelectValue placeholder="Select primary user" />
                                             </SelectTrigger>
                                             <SelectContent>
@@ -612,7 +630,7 @@ export default function WorkflowConfigurationPage() {
                                             }
                                             disabled={!canEditPage}
                                           >
-                                            <SelectTrigger>
+                                            <SelectTrigger className="bg-white/80 border-white/70">
                                               <SelectValue placeholder="Select alternative user" />
                                             </SelectTrigger>
                                             <SelectContent>

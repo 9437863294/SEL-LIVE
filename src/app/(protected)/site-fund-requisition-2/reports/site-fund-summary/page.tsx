@@ -282,7 +282,7 @@ export default function SiteFundSummaryPage() {
   
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
@@ -300,14 +300,22 @@ export default function SiteFundSummaryPage() {
 
   if(!canViewPage) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href="/site-fund-requisition/reports"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-2xl font-bold">Site Fund Summary</h1>
+                    <Link href="/site-fund-requisition-2/reports">
+                      <Button variant="ghost" size="icon">
+                        <ArrowLeft className="h-6 w-6" />
+                      </Button>
+                    </Link>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
+                      <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Site Fund Summary</h1>
+                    </div>
                 </div>
             </div>
-            <Card>
+            <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+                <div className="h-1.5 w-full bg-gradient-to-r from-rose-400 via-amber-300 to-cyan-400 opacity-70" />
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>
                     <CardDescription>You do not have permission to view this page.</CardDescription>
@@ -322,30 +330,38 @@ export default function SiteFundSummaryPage() {
 
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <div className="w-full px-3 py-4 sm:px-4 lg:px-6 xl:px-8">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex items-center gap-3">
           <Link href="/site-fund-requisition-2/reports">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Site Fund Summary</h1>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Site Fund Requisition 2</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Site Fund Summary</h1>
+            <p className="mt-1 text-sm text-slate-600">Totals, approvals, and step-wise performance.</p>
+          </div>
         </div>
-        <Link href="/">
-          <Button variant="ghost" size="icon">
-            <Home className="h-5 w-5" />
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/">
+            <Button variant="outline" className="bg-white/70 border-white/70">
+              <Home className="mr-2 h-4 w-4" />
+              Home
+            </Button>
+          </Link>
+        </div>
       </div>
 
-      <Card className="mb-6">
+      <Card className="mb-6 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+        <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
         <CardContent className="p-4 flex flex-col md:flex-row items-center gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 w-full">
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Year</p>
               <Select value={filters.year} onValueChange={(val) => handleFilterChange('year', val)}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-white/80 border-white/70">
                   <SelectValue placeholder="All Years" />
                 </SelectTrigger>
                 <SelectContent>
@@ -357,7 +373,7 @@ export default function SiteFundSummaryPage() {
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Month</p>
               <Select value={filters.month} onValueChange={(val) => handleFilterChange('month', val)}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-white/80 border-white/70">
                   <SelectValue placeholder="All Months" />
                 </SelectTrigger>
                 <SelectContent>
@@ -369,7 +385,7 @@ export default function SiteFundSummaryPage() {
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Project</p>
               <Select value={filters.project} onValueChange={(val) => handleFilterChange('project', val)}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-white/80 border-white/70">
                   <SelectValue placeholder="All Projects" />
                 </SelectTrigger>
                 <SelectContent>
@@ -381,7 +397,7 @@ export default function SiteFundSummaryPage() {
             <div className="space-y-1">
               <p className="text-sm font-medium text-muted-foreground">Applicant</p>
               <Select value={filters.applicant} onValueChange={(val) => handleFilterChange('applicant', val)}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-white/80 border-white/70">
                   <SelectValue placeholder="All Applicants" />
                 </SelectTrigger>
                 <SelectContent>
@@ -397,14 +413,27 @@ export default function SiteFundSummaryPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
         {isLoading ? (
             Array.from({ length: 5 }).map((_, index) => (
-                <Card key={index}>
+                <Card key={index} className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 backdrop-blur">
                     <CardHeader className="p-4"><Skeleton className="h-4 w-3/4" /></CardHeader>
                     <CardContent className="p-4 pt-0"><Skeleton className="h-8 w-1/2" /></CardContent>
                 </Card>
             ))
         ) : (
-            statsToDisplay.map((stat) => (
-              <Card key={stat.title}>
+            statsToDisplay.map((stat, idx) => (
+              <Card key={stat.title} className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_18px_60px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+                <div
+                  className={
+                    idx % 5 === 0
+                      ? 'h-1.5 w-full bg-gradient-to-r from-cyan-400 to-sky-300 opacity-70'
+                      : idx % 5 === 1
+                      ? 'h-1.5 w-full bg-gradient-to-r from-fuchsia-400 to-rose-300 opacity-70'
+                      : idx % 5 === 2
+                      ? 'h-1.5 w-full bg-gradient-to-r from-amber-300 to-orange-300 opacity-70'
+                      : idx % 5 === 3
+                      ? 'h-1.5 w-full bg-gradient-to-r from-emerald-400 to-lime-300 opacity-70'
+                      : 'h-1.5 w-full bg-gradient-to-r from-indigo-400 to-cyan-300 opacity-70'
+                  }
+                />
                 <CardHeader className="p-4">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
                     {stat.title}
@@ -419,7 +448,8 @@ export default function SiteFundSummaryPage() {
       </div>
 
       <div className="mb-6">
-        <h2 className="text-xl font-bold">Step-wise Report</h2>
+        <h2 className="text-xl font-bold text-slate-900">Step-wise Report</h2>
+        <p className="mt-1 text-sm text-slate-600">Workload and outcomes by workflow step and user.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -432,26 +462,27 @@ export default function SiteFundSummaryPage() {
                 return null; 
               }
               return (
-              <Card key={step.name}>
-                <CardHeader className="p-4 bg-muted/50">
-                  <CardTitle className="text-base text-center">{step.name}</CardTitle>
+              <Card key={step.name} className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_18px_60px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+                <div className="h-1.5 w-full bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-amber-200 opacity-70" />
+                <CardHeader className="p-4">
+                  <CardTitle className="text-base text-center text-slate-900">{step.name}</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="bg-white/80 border-y border-white/70">
                       <TableRow>
-                        <TableHead>User</TableHead>
-                        <TableHead>Total</TableHead>
-                        <TableHead>Done</TableHead>
-                        <TableHead>On Time</TableHead>
-                        <TableHead>Rejected</TableHead>
+                        <TableHead className="text-slate-700">User</TableHead>
+                        <TableHead className="text-slate-700">Total</TableHead>
+                        <TableHead className="text-slate-700">Done</TableHead>
+                        <TableHead className="text-slate-700">On Time</TableHead>
+                        <TableHead className="text-slate-700">Rejected</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                      {Object.entries(stepData).map(([userName, data]) => {
                          if (data.total === 0 && data.completed === 0) return null;
                          return (
-                             <TableRow key={userName}>
+                             <TableRow key={userName} className="hover:bg-slate-50/70">
                                  <TableCell>{userName}</TableCell>
                                  <TableCell>{data.total}</TableCell>
                                  <TableCell>{data.completed}</TableCell>
