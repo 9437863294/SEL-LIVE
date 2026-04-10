@@ -157,43 +157,47 @@ export default function WorkingHoursPage() {
   }
 
   if (!canView) {
-      return (
-         <div className="w-full max-w-4xl mx-auto">
-            <div className="mb-6 flex items-center gap-4">
-              <Link href="/settings">
-                <Button variant="ghost" size="icon">
-                  <ArrowLeft className="h-6 w-6" />
-                </Button>
-              </Link>
-              <h1 className="text-2xl font-bold">Working Hours</h1>
-            </div>
-            <Card>
-                <CardHeader>
-                    <CardTitle>Access Denied</CardTitle>
-                    <CardDescription>You do not have permission to view this page. Please contact an administrator.</CardDescription>
-                </CardHeader>
-                <CardContent className="flex justify-center p-8">
-                    <ShieldAlert className="h-16 w-16 text-destructive" />
-                </CardContent>
-            </Card>
+    return (
+      <div className="w-full max-w-5xl mx-auto">
+        <div className="mb-5 flex items-center gap-3">
+          <Link href="/settings"><Button variant="ghost" size="icon" className="rounded-full"><ArrowLeft className="h-5 w-5" /></Button></Link>
+          <h1 className="text-xl font-bold">Working Hours</h1>
         </div>
-      );
+        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
+          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
-      <div className="mb-6 flex items-center gap-4">
+    <>
+      {/* ── Background ── */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-teal-50/60 via-background to-cyan-50/40 dark:from-teal-950/20 dark:via-background dark:to-cyan-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[35vw] h-[35vw] rounded-full bg-teal-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[35vw] h-[35vw] rounded-full bg-cyan-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(20,184,166,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="w-full max-w-5xl mx-auto">
+      <div className="mb-5 flex items-center gap-3">
         <Link href="/settings">
-          <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
+          <Button variant="ghost" size="icon" className="rounded-full hover:bg-teal-50 dark:hover:bg-teal-950/30"><ArrowLeft className="h-5 w-5" /></Button>
         </Link>
-        <h1 className="text-2xl font-bold">Working Hours</h1>
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Working Hours</h1>
+          <p className="text-xs text-muted-foreground">Configure work schedule and holidays</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Weekly Working Hours</CardTitle>
-            <CardDescription>Set the standard working hours for each day of the week.</CardDescription>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
+        <Card className="lg:col-span-3 border-teal-200/60 dark:border-teal-800/30 overflow-hidden">
+          <div className="h-0.5 w-full bg-gradient-to-r from-teal-400 to-cyan-400" />
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Weekly Schedule</CardTitle>
+            <CardDescription>Set working hours for each day of the week.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             {isLoading ? (
@@ -322,5 +326,6 @@ export default function WorkingHoursPage() {
         </Card>
       </div>
     </div>
+    </>
   );
 }

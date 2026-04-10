@@ -16,21 +16,29 @@ export function ClientSessionHandler() {
   useEffect(() => {
     if (loading) return;
 
-    const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
-    const redirectParam = searchParams.get('redirect') || '/';
+    const currentPath = pathname || '/';
+    const isPublicRoute = PUBLIC_ROUTES.includes(currentPath);
+    const redirectParam = searchParams?.get('redirect');
+    const safeRedirect =
+      redirectParam &&
+      redirectParam.startsWith('/') &&
+      !redirectParam.startsWith('//') &&
+      redirectParam !== '/login'
+        ? redirectParam
+        : '/';
 
     // If user is logged in...
     if (user) {
       // ...and they are on a public page like /login, redirect them away.
-      if (isPublicRoute) {
-        router.replace(redirectParam);
+      if (isPublicRoute && currentPath !== safeRedirect) {
+        router.replace(safeRedirect);
       }
     } 
     // If user is not logged in...
     else {
       // ...and they are on a protected page, redirect them to login.
       if (!isPublicRoute) {
-        router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+        router.replace(`/login?redirect=${encodeURIComponent(currentPath)}`);
       }
     }
   }, [user, loading, pathname, router, searchParams]);

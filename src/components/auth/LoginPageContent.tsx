@@ -172,7 +172,10 @@ export function LoginPageContent() {
     setActiveUser(user);
     setEmail(user.email || "");
     setForgotEmail(user.email || "");
-    setShowPasswordForm(false);
+    // Go straight to password sign-in for the selected profile.
+    setShowPasswordForm(true);
+    setPin("");
+    setPinError("");
   };
 
   const getInitials = (name: string) =>

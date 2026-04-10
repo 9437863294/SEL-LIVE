@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import { Toaster } from '@/components/ui/toaster';
 import { ModuleProvider } from '@/context/ModuleContext';
-import AppShell from '@/components/AppShell';
 import { Suspense } from 'react';
 import { ClientSessionHandler } from '@/components/auth/ClientSessionHandler';
 
@@ -22,7 +21,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <ClientSessionHandler />
           </Suspense>
           <ModuleProvider>
-            <AppShell>{children}</AppShell>
+            {children}
             <Toaster />
           </ModuleProvider>
         </AuthProvider>

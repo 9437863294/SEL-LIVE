@@ -42,13 +42,36 @@ export const useAuthorization = () => {
       
       return false;
     };
+
+    // Backward-compatible permission aliases for legacy role documents.
+    const resourceAliasMap: Record<string, string[]> = {
+      'Bank Balance.Expenses': ['Bank Balance.Expenses Log'],
+      'Bank Balance.Receipts': ['Bank Balance.Receipts Log'],
+      'Bank Balance.Internal Transaction': ['Bank Balance.Internal Transaction Log'],
+    };
+
+    const candidateResources = (() => {
+      const reverseAliases = Object.entries(resourceAliasMap)
+        .filter(([, aliases]) => aliases.includes(resource))
+        .map(([canonical]) => canonical);
+
+      return Array.from(
+        new Set([
+          resource,
+          ...(resourceAliasMap[resource] || []),
+          ...reverseAliases,
+        ])
+      );
+    })();
     
     // Check for direct scoped permission first, e.g., 'Expenses.Departments.dept_id_123'
     if (scope) {
-        const scopedResourceKey = `${resource}.${scope}`;
+      for (const candidateResource of candidateResources) {
+        const scopedResourceKey = `${candidateResource}.${scope}`;
         if (permissions[scopedResourceKey]?.includes(action)) {
             return true;
         }
+      }
     }
     
     // Check for 'View All' which grants 'View' on all scopes.
@@ -60,14 +83,18 @@ export const useAuthorization = () => {
     }
 
     // New recursive check for nested permissions
-    const resourceParts = resource.split('.');
-    if (checkPermissions(permissions, resourceParts)) {
+    for (const candidateResource of candidateResources) {
+      const resourceParts = candidateResource.split('.');
+      if (checkPermissions(permissions, resourceParts)) {
         return true;
+      }
     }
 
     // Original direct check for simple top-level permissions
-    if (permissions[resource]?.includes(action)) {
+    for (const candidateResource of candidateResources) {
+      if (permissions[candidateResource]?.includes(action)) {
         return true;
+      }
     }
 
     return false;

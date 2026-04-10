@@ -5,10 +5,9 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  Home, Banknote, Plus, Settings, Scale, ArrowDown, ArrowUp,
+  Home, Plus, Settings, Scale, ArrowDown, ArrowUp,
   ArrowRightLeft, BarChart3, ShieldAlert, Activity, TrendingUp,
-  TrendingDown, RefreshCw, CreditCard, Building2, Wallet,
-  ChevronRight, BookOpen, Percent, Calendar,
+  RefreshCw, CreditCard, Building2, Percent, Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -25,8 +24,8 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 
 export default function BankBalanceDashboard() {
   const { toast } = useToast();
@@ -39,6 +38,12 @@ export default function BankBalanceDashboard() {
   const [refreshing, setRefreshing] = useState(false);
 
   const canView = can('View Module', 'Bank Balance');
+  const canViewReports = can('View', 'Bank Balance.Reports');
+  const canViewSettings = can('View Module', 'Bank Balance');
+  const canViewAccounts = can('View', 'Bank Balance.Accounts');
+  const canAddExpense = can('Add', 'Bank Balance.Expenses');
+  const canAddReceipt = can('Add', 'Bank Balance.Receipts');
+  const canAddTransfer = can('Add', 'Bank Balance.Internal Transaction');
 
   const fetchData = async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -71,8 +76,7 @@ export default function BankBalanceDashboard() {
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount || 0);
 
   const getLatestDp = (account: BankAccount) => {
-    if (!account.drawingPower || account.drawingPower.length === 0) return 0;
-    return account.drawingPower[0].amount || 0;
+    return getApplicableCcLimit(account, new Date());
   };
 
   const calculatedBalances = useMemo(() => {
@@ -80,26 +84,87 @@ export default function BankBalanceDashboard() {
     accounts.forEach(account => {
       const isCC = account.accountType === 'Cash Credit';
       let current = isCC ? (account.openingUtilization || 0) : (account.openingBalance || 0);
-      if (account.openingDate) {
-        const start = startOfDay(new Date(account.openingDate));
-        const end = endOfDay(new Date());
-        allTransactions
-          .filter(t => t.accountId === account.id && t.date.toDate() >= start && t.date.toDate() <= end)
-          .sort((a, b) => a.date.toMillis() - b.date.toMillis())
-          .forEach(t => {
-            current += isCC
-              ? (t.type === 'Debit' ? t.amount : -t.amount)
-              : (t.type === 'Credit' ? t.amount : -t.amount);
-          });
-      }
+      const start = account.openingDate
+        ? startOfDay(new Date(account.openingDate))
+        : new Date(0);
+      const end = endOfDay(new Date());
+
+      allTransactions
+        .filter(t => t.accountId === account.id && t.date.toDate() >= start && t.date.toDate() <= end)
+        .sort((a, b) => a.date.toMillis() - b.date.toMillis())
+        .forEach(t => {
+          current += isCC
+            ? (t.type === 'Debit' ? t.amount : -t.amount)
+            : (t.type === 'Credit' ? t.amount : -t.amount);
+        });
+
       balances[account.id] = current;
     });
     return balances;
   }, [accounts, allTransactions]);
 
+  const activeAccounts = accounts.filter(a => a.status === 'Active');
+  const ccAccounts = activeAccounts.filter(a => a.accountType === 'Cash Credit');
+  const currentAccounts = activeAccounts.filter(a => a.accountType === 'Current Account');
+  const displayAccounts = useMemo(
+    () => [...activeAccounts, ...accounts.filter(a => a.status !== 'Active')],
+    [accounts, activeAccounts]
+  );
+  const canOpenDailyEntry = activeAccounts.length > 0 && (canAddExpense || canAddReceipt || canAddTransfer);
+  const quickLinks = [
+    {
+      href: '/bank-balance/daily-log',
+      icon: Calendar,
+      label: 'Daily Log',
+      color: 'text-blue-600',
+      bg: 'bg-blue-50 dark:bg-blue-950/20 border-blue-200/60 dark:border-blue-800/30 hover:bg-blue-100/70',
+      enabled: can('View', 'Bank Balance.Daily Log'),
+    },
+    {
+      href: '/bank-balance/expenses',
+      icon: ArrowDown,
+      label: 'Payments',
+      color: 'text-red-600',
+      bg: 'bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-800/30 hover:bg-red-100/70',
+      enabled: can('View', 'Bank Balance.Expenses'),
+    },
+    {
+      href: '/bank-balance/receipts',
+      icon: ArrowUp,
+      label: 'Receipts',
+      color: 'text-green-600',
+      bg: 'bg-green-50 dark:bg-green-950/20 border-green-200/60 dark:border-green-800/30 hover:bg-green-100/70',
+      enabled: can('View', 'Bank Balance.Receipts'),
+    },
+    {
+      href: '/bank-balance/internal-transaction',
+      icon: ArrowRightLeft,
+      label: 'Transfers',
+      color: 'text-violet-600',
+      bg: 'bg-violet-50 dark:bg-violet-950/20 border-violet-200/60 dark:border-violet-800/30 hover:bg-violet-100/70',
+      enabled: can('View', 'Bank Balance.Internal Transaction'),
+    },
+    {
+      href: '/bank-balance/interest-rate',
+      icon: Percent,
+      label: 'Interest',
+      color: 'text-amber-600',
+      bg: 'bg-amber-50 dark:bg-amber-950/20 border-amber-200/60 dark:border-amber-800/30 hover:bg-amber-100/70',
+      enabled: can('View', 'Bank Balance.Interest Rate'),
+    },
+    {
+      href: '/bank-balance/monthly-interest',
+      icon: TrendingUp,
+      label: 'Monthly',
+      color: 'text-indigo-600',
+      bg: 'bg-indigo-50 dark:bg-indigo-950/20 border-indigo-200/60 dark:border-indigo-800/30 hover:bg-indigo-100/70',
+      enabled: can('View', 'Bank Balance.Monthly Interest'),
+    },
+  ] as const;
+
   const totalConsolidatedBalance = useMemo(() => {
     let total = 0;
-    accounts.forEach(account => {
+    activeAccounts.forEach(account => {
       const balance = calculatedBalances[account.id] || 0;
       total += account.accountType === 'Cash Credit'
         ? getLatestDp(account) - balance
@@ -107,7 +172,7 @@ export default function BankBalanceDashboard() {
     });
     return total;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calculatedBalances, accounts]);
+  }, [activeAccounts, calculatedBalances]);
 
   // Today's totals
   const todayStats = useMemo(() => {
@@ -120,10 +185,6 @@ export default function BankBalanceDashboard() {
       count: today.filter(t => !t.isContra).length,
     };
   }, [allTransactions]);
-
-  const activeAccounts = accounts.filter(a => a.status === 'Active');
-  const ccAccounts = activeAccounts.filter(a => a.accountType === 'Cash Credit');
-  const currentAccounts = activeAccounts.filter(a => a.accountType === 'Current Account');
 
   if (authLoading || (isLoading && canView)) {
     return (
@@ -215,21 +276,40 @@ export default function BankBalanceDashboard() {
             >
               <RefreshCw className="h-4 w-4" />
             </Button>
-            <Link href="/bank-balance/reports">
-              <Button variant="outline" size="sm" className="rounded-full border-border/60" disabled={!can('View', 'Bank Balance.Reports')}>
+            {canViewReports ? (
+              <Link href="/bank-balance/reports">
+                <Button variant="outline" size="sm" className="rounded-full border-border/60">
+                  <BarChart3 className="mr-2 h-4 w-4" />
+                  Reports
+                </Button>
+              </Link>
+            ) : (
+              <Button variant="outline" size="sm" className="rounded-full border-border/60" disabled>
                 <BarChart3 className="mr-2 h-4 w-4" />
                 Reports
               </Button>
-            </Link>
-            <Button size="sm" className="rounded-full shadow-md shadow-primary/20" onClick={() => setIsDailyEntryOpen(true)}>
+            )}
+            <Button
+              size="sm"
+              className="rounded-full shadow-md shadow-primary/20"
+              onClick={() => setIsDailyEntryOpen(true)}
+              disabled={!canOpenDailyEntry}
+              title={!activeAccounts.length ? 'Add and activate a bank account first.' : undefined}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Daily Entry
             </Button>
-            <Link href="/bank-balance/settings">
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+            {canViewSettings ? (
+              <Link href="/bank-balance/settings">
+                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </Link>
+            ) : (
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" disabled>
                 <Settings className="h-4 w-4" />
               </Button>
-            </Link>
+            )}
           </div>
         </div>
 
@@ -298,7 +378,7 @@ export default function BankBalanceDashboard() {
         {/* ── Account Cards ── */}
         <ScrollArea className="flex-grow">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-4">
-            {accounts.map((account, idx) => {
+            {displayAccounts.map((account, idx) => {
               const isCC = account.accountType === 'Cash Credit';
               const currentBalance = calculatedBalances[account.id] || 0;
               const latestDp = getLatestDp(account);
@@ -395,7 +475,7 @@ export default function BankBalanceDashboard() {
                           />
                         </div>
                         <div className="flex justify-between text-[10px] text-muted-foreground">
-                          <span>Drawing Power: <span className="font-medium text-foreground">{formatCurrency(latestDp)}</span></span>
+                          <span>Total Limit: <span className="font-medium text-foreground">{formatCurrency(latestDp)}</span></span>
                           <span>Limit Left: <span className={cn('font-medium', utilizationColor)}>{formatCurrency(Math.max(0, displayBalance))}</span></span>
                         </div>
                       </>
@@ -411,37 +491,62 @@ export default function BankBalanceDashboard() {
               );
             })}
 
+            {displayAccounts.length === 0 && (
+              <Card className="col-span-full border-dashed">
+                <CardContent className="flex min-h-[200px] flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+                  <Building2 className="h-8 w-8 opacity-40" />
+                  <div>
+                    <p className="font-medium text-foreground">No bank accounts configured</p>
+                    <p className="text-sm">Add your first account to start tracking balances and daily entries.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Add Account card */}
-            <Link href="/bank-balance/accounts">
-              <Card className="h-full min-h-[200px] border-2 border-dashed border-border/50 flex flex-col items-center justify-center text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all duration-300 cursor-pointer group rounded-xl">
+            {canViewAccounts ? (
+              <Link href="/bank-balance/accounts">
+                <Card className="h-full min-h-[200px] border-2 border-dashed border-border/50 flex flex-col items-center justify-center text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all duration-300 cursor-pointer group rounded-xl">
+                  <div className="rounded-full border-2 border-dashed border-current p-3 mb-2 group-hover:scale-110 transition-transform duration-300">
+                    <Plus className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-medium">Add New Account</p>
+                  <p className="text-xs opacity-70 mt-1">Configure a bank account</p>
+                </Card>
+              </Link>
+            ) : (
+              <Card className="h-full min-h-[200px] border-2 border-dashed border-border/50 flex flex-col items-center justify-center text-muted-foreground/70 rounded-xl">
                 <div className="rounded-full border-2 border-dashed border-current p-3 mb-2 group-hover:scale-110 transition-transform duration-300">
                   <Plus className="h-5 w-5" />
                 </div>
                 <p className="text-sm font-medium">Add New Account</p>
-                <p className="text-xs opacity-70 mt-1">Configure a bank account</p>
+                <p className="text-xs opacity-70 mt-1">Account access required</p>
               </Card>
-            </Link>
+            )}
           </div>
 
           {/* ── Quick Navigation Row ── */}
           <div className="mt-2 mb-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Quick Navigation</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-              {[
-                { href: '/bank-balance/daily-log', icon: Calendar, label: 'Daily Log', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/20 border-blue-200/60 dark:border-blue-800/30 hover:bg-blue-100/70' },
-                { href: '/bank-balance/expenses', icon: ArrowDown, label: 'Payments', color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-800/30 hover:bg-red-100/70' },
-                { href: '/bank-balance/receipts', icon: ArrowUp, label: 'Receipts', color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-950/20 border-green-200/60 dark:border-green-800/30 hover:bg-green-100/70' },
-                { href: '/bank-balance/internal-transaction', icon: ArrowRightLeft, label: 'Transfers', color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-950/20 border-violet-200/60 dark:border-violet-800/30 hover:bg-violet-100/70' },
-                { href: '/bank-balance/interest-rate', icon: Percent, label: 'Interest', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/20 border-amber-200/60 dark:border-amber-800/30 hover:bg-amber-100/70' },
-                { href: '/bank-balance/monthly-interest', icon: TrendingUp, label: 'Monthly', color: 'text-indigo-600', bg: 'bg-indigo-50 dark:bg-indigo-950/20 border-indigo-200/60 dark:border-indigo-800/30 hover:bg-indigo-100/70' },
-              ].map(item => (
-                <Link key={item.href} href={item.href}>
-                  <div className={cn('flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200 cursor-pointer group', item.bg)}>
+              {quickLinks.map(item => {
+                const content = (
+                  <div
+                    className={cn(
+                      'flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all duration-200 group',
+                      item.bg,
+                      item.enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-50 saturate-50'
+                    )}
+                  >
                     <item.icon className={cn('h-5 w-5', item.color)} />
                     <span className="text-xs font-medium text-foreground/80">{item.label}</span>
                   </div>
-                </Link>
-              ))}
+                );
+
+                return item.enabled
+                  ? <Link key={item.href} href={item.href}>{content}</Link>
+                  : <div key={item.href}>{content}</div>;
+              })}
             </div>
           </div>
         </ScrollArea>
@@ -455,33 +560,61 @@ export default function BankBalanceDashboard() {
             <DialogDescription>Select the type of transaction to record.</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-3 gap-4 pt-2">
-            <Link href="/bank-balance/expenses/new" onClick={() => setIsDailyEntryOpen(false)}>
-              <div className="group relative overflow-hidden rounded-2xl border border-red-200 bg-gradient-to-b from-red-50 to-red-100/50 dark:from-red-950/30 dark:to-red-900/20 dark:border-red-800/40 p-6 cursor-pointer hover:shadow-lg hover:shadow-red-100/50 transition-all duration-300 hover:-translate-y-1 flex flex-col items-center text-center">
-                <div className="rounded-full bg-red-100 dark:bg-red-900/50 p-3 mb-3 group-hover:scale-110 transition-transform">
-                  <ArrowDown className="h-7 w-7 text-red-600 dark:text-red-400" />
+            {[
+              {
+                href: '/bank-balance/expenses/new',
+                enabled: canAddExpense,
+                icon: ArrowDown,
+                title: 'Payment',
+                subtitle: 'Record a debit',
+                className: 'border-red-200 bg-gradient-to-b from-red-50 to-red-100/50 dark:from-red-950/30 dark:to-red-900/20 dark:border-red-800/40',
+                iconClassName: 'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',
+                textClassName: 'text-red-800 dark:text-red-300',
+                subtextClassName: 'text-red-600/70 dark:text-red-400/70',
+              },
+              {
+                href: '/bank-balance/receipts/new',
+                enabled: canAddReceipt,
+                icon: ArrowUp,
+                title: 'Receipt',
+                subtitle: 'Record a credit',
+                className: 'border-green-200 bg-gradient-to-b from-green-50 to-green-100/50 dark:from-green-950/30 dark:to-green-900/20 dark:border-green-800/40',
+                iconClassName: 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400',
+                textClassName: 'text-green-800 dark:text-green-300',
+                subtextClassName: 'text-green-600/70 dark:text-green-400/70',
+              },
+              {
+                href: '/bank-balance/internal-transaction/new',
+                enabled: canAddTransfer,
+                icon: ArrowRightLeft,
+                title: 'Transfer',
+                subtitle: 'Move between accounts',
+                className: 'border-blue-200 bg-gradient-to-b from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 dark:border-blue-800/40',
+                iconClassName: 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400',
+                textClassName: 'text-blue-800 dark:text-blue-300',
+                subtextClassName: 'text-blue-600/70 dark:text-blue-400/70',
+              },
+            ].map(item => {
+              const card = (
+                <div
+                  className={cn(
+                    'group relative overflow-hidden rounded-2xl border p-6 transition-all duration-300 flex flex-col items-center text-center',
+                    item.className,
+                    item.enabled ? 'cursor-pointer hover:-translate-y-1 hover:shadow-lg' : 'cursor-not-allowed opacity-45 saturate-50'
+                  )}
+                >
+                  <div className={cn('rounded-full p-3 mb-3 transition-transform', item.iconClassName, item.enabled && 'group-hover:scale-110')}>
+                    <item.icon className="h-7 w-7" />
+                  </div>
+                  <p className={cn('font-semibold', item.textClassName)}>{item.title}</p>
+                  <p className={cn('text-xs mt-0.5', item.subtextClassName)}>{item.subtitle}</p>
                 </div>
-                <p className="font-semibold text-red-800 dark:text-red-300">Payment</p>
-                <p className="text-xs text-red-600/70 dark:text-red-400/70 mt-0.5">Record a debit</p>
-              </div>
-            </Link>
-            <Link href="/bank-balance/receipts/new" onClick={() => setIsDailyEntryOpen(false)}>
-              <div className="group relative overflow-hidden rounded-2xl border border-green-200 bg-gradient-to-b from-green-50 to-green-100/50 dark:from-green-950/30 dark:to-green-900/20 dark:border-green-800/40 p-6 cursor-pointer hover:shadow-lg hover:shadow-green-100/50 transition-all duration-300 hover:-translate-y-1 flex flex-col items-center text-center">
-                <div className="rounded-full bg-green-100 dark:bg-green-900/50 p-3 mb-3 group-hover:scale-110 transition-transform">
-                  <ArrowUp className="h-7 w-7 text-green-600 dark:text-green-400" />
-                </div>
-                <p className="font-semibold text-green-800 dark:text-green-300">Receipt</p>
-                <p className="text-xs text-green-600/70 dark:text-green-400/70 mt-0.5">Record a credit</p>
-              </div>
-            </Link>
-            <Link href="/bank-balance/internal-transaction/new" onClick={() => setIsDailyEntryOpen(false)}>
-              <div className="group relative overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-b from-blue-50 to-blue-100/50 dark:from-blue-950/30 dark:to-blue-900/20 dark:border-blue-800/40 p-6 cursor-pointer hover:shadow-lg hover:shadow-blue-100/50 transition-all duration-300 hover:-translate-y-1 flex flex-col items-center text-center">
-                <div className="rounded-full bg-blue-100 dark:bg-blue-900/50 p-3 mb-3 group-hover:scale-110 transition-transform">
-                  <ArrowRightLeft className="h-7 w-7 text-blue-600 dark:text-blue-400" />
-                </div>
-                <p className="font-semibold text-blue-800 dark:text-blue-300">Transfer</p>
-                <p className="text-xs text-blue-600/70 dark:text-blue-400/70 mt-0.5">Move between accounts</p>
-              </div>
-            </Link>
+              );
+
+              return item.enabled
+                ? <Link key={item.href} href={item.href} onClick={() => setIsDailyEntryOpen(false)}>{card}</Link>
+                : <div key={item.href}>{card}</div>;
+            })}
           </div>
           <DialogFooter className="mt-2">
             <DialogClose asChild>

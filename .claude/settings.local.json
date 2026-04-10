@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find \"d:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\bank-balance\\\\\" -type f -name \"*.tsx\" -o -name \"*.ts\" | head -50)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}

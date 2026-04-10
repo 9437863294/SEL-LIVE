@@ -57,6 +57,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 
 type ExpenseItem = {
   id: number;
@@ -117,6 +118,10 @@ export default function NewPaymentPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   const canAdd = !authLoading && can('Add', 'Bank Balance.Expenses');
+  const activeBankAccounts = useMemo(
+    () => bankAccounts.filter((account) => account.status === 'Active'),
+    [bankAccounts]
+  );
 
   const fetchBankAccountsAndSettings = useCallback(async () => {
     setIsSettingsLoading(true);
@@ -184,18 +189,7 @@ export default function NewPaymentPage() {
   );
 
   const getLatestDp = (account: BankAccount, onDate: Date): number => {
-    if (!Array.isArray(account.drawingPower) || account.drawingPower.length === 0)
-      return 0;
-
-    const sortedDp = [...account.drawingPower].sort(
-      (a, b) =>
-        new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime()
-    );
-
-    const applicableDp = sortedDp.find(
-      (dp) => new Date(dp.fromDate) <= startOfDay(onDate)
-    );
-    return applicableDp?.amount || 0;
+    return getApplicableCcLimit(account, onDate);
   };
 
   const availableBalance = useMemo(() => {
@@ -237,7 +231,7 @@ export default function NewPaymentPage() {
 
     if (account.accountType === 'Cash Credit') {
       const currentDp = getLatestDp(account, date);
-      return currentDp - balance; // available DP
+      return currentDp - balance; // available sanctioned limit
     }
 
     return balance;
@@ -376,7 +370,7 @@ export default function NewPaymentPage() {
         title: 'Insufficient Funds',
         description: `Total payment amount (${formatCurrency(
           totalAmount
-        )}) exceeds the available balance (${formatCurrency(
+        )}) exceeds the available balance / limit (${formatCurrency(
           availableBalance
         )}).`,
         variant: 'destructive',
@@ -511,18 +505,30 @@ export default function NewPaymentPage() {
 
   // Main UI
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <>
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-red-50/60 via-background to-rose-50/40 dark:from-red-950/20 dark:via-background dark:to-rose-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-red-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-rose-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(239,68,68,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
           <Link href="/bank-balance/expenses">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-red-50 dark:hover:bg-red-950/30">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-xl font-bold">New Payment Entry</h1>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">New Payment Entry</h1>
+            <p className="text-xs text-muted-foreground">Record a new payment transaction</p>
+          </div>
         </div>
         <Link href="/bank-balance/expenses">
-          <Button variant="outline">
+          <Button variant="outline" className="rounded-full border-border/60">
             <History className="mr-2 h-4 w-4" />
             Payments Log
           </Button>
@@ -582,7 +588,7 @@ export default function NewPaymentPage() {
                     <SelectValue placeholder="Select a bank account" />
                   </SelectTrigger>
                   <SelectContent>
-                    {bankAccounts.map((acc) => (
+                    {activeBankAccounts.map((acc) => (
                       <SelectItem
                         key={acc.id}
                         value={acc.id}
@@ -955,7 +961,10 @@ export default function NewPaymentPage() {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={
+                isSaving ||
+                activeBankAccounts.length === 0
+              }
             >
               {isSaving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -968,5 +977,6 @@ export default function NewPaymentPage() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

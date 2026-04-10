@@ -196,58 +196,62 @@ export default function ManageDepartmentPage() {
 
   if (isAuthLoading || (isLoading && canView)) {
     return (
-        <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="mb-6 flex items-center justify-between">
-                <Skeleton className="h-10 w-48" />
-                <Skeleton className="h-10 w-32" />
-            </div>
-            <Card>
-                <CardContent className="p-0">
-                    <Skeleton className="h-96 w-full" />
-                </CardContent>
-            </Card>
+      <>
+        <div className="fixed inset-0 -z-10 pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-br from-sky-50/60 via-background to-blue-50/40 dark:from-sky-950/20 dark:via-background dark:to-blue-950/15" />
         </div>
+        <div className="w-full max-w-5xl mx-auto space-y-4">
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-9 w-48 rounded-xl" />
+            <Skeleton className="h-9 w-36 rounded-full" />
+          </div>
+          <Skeleton className="h-80 w-full rounded-xl" />
+        </div>
+      </>
     );
   }
 
   if (!canView) {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="mb-6 flex items-center gap-4">
-            <Link href="/settings">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">Manage Department</h1>
-          </div>
-          <Card>
-              <CardHeader>
-                  <CardTitleShad>Access Denied</CardTitleShad>
-                  <CardDescriptionShad>You do not have permission to view this page. Please contact an administrator.</CardDescriptionShad>
-              </CardHeader>
-              <CardContent className="flex justify-center p-8">
-                  <ShieldAlert className="h-16 w-16 text-destructive" />
-              </CardContent>
-          </Card>
+      <div className="w-full max-w-5xl mx-auto">
+        <div className="mb-5 flex items-center gap-3">
+          <Link href="/settings"><Button variant="ghost" size="icon" className="rounded-full"><ArrowLeft className="h-5 w-5" /></Button></Link>
+          <h1 className="text-xl font-bold">Manage Department</h1>
+        </div>
+        <Card><CardHeader><CardTitleShad>Access Denied</CardTitleShad><CardDescriptionShad>You do not have permission to view this page.</CardDescriptionShad></CardHeader>
+          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <>
+      {/* ── Background ── */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-50/60 via-background to-blue-50/40 dark:from-sky-950/20 dark:via-background dark:to-blue-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-sky-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[40vw] h-[40vw] rounded-full bg-blue-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(14,165,233,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="w-full max-w-5xl mx-auto">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
           <Link href="/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-sky-50 dark:hover:bg-sky-950/30">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-xl font-bold">Manage Department</h1>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Manage Departments</h1>
+            <p className="text-xs text-muted-foreground">{departments.length} department{departments.length !== 1 ? 's' : ''} configured</p>
+          </div>
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button disabled={!canAdd}>
+            <Button disabled={!canAdd} className="rounded-full shadow-md">
               <Plus className="mr-2 h-4 w-4" />
               Add Department
             </Button>
@@ -316,15 +320,16 @@ export default function ManageDepartmentPage() {
         </Dialog>
       </div>
 
-      <Card>
+      <Card className="overflow-hidden border-border/60">
+        <div className="h-0.5 w-full bg-gradient-to-r from-sky-400 to-blue-400" />
         <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Department Name</TableHead>
-                <TableHead>Head of Department</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+              <TableRow className="bg-muted/30 hover:bg-muted/30">
+                <TableHead className="font-semibold">Department Name</TableHead>
+                <TableHead className="font-semibold">Head of Department</TableHead>
+                <TableHead className="font-semibold">Status</TableHead>
+                <TableHead className="text-right font-semibold">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -342,20 +347,28 @@ export default function ManageDepartmentPage() {
                 ))
               ) : departments.length > 0 ? (
                 departments.map((dept) => (
-                  <TableRow key={dept.id}>
+                  <TableRow key={dept.id} className="hover:bg-muted/20 transition-colors">
                     <TableCell className="font-medium">{dept.name}</TableCell>
-                    <TableCell>{dept.head}</TableCell>
-                    <TableCell>{dept.status}</TableCell>
+                    <TableCell className="text-muted-foreground">{dept.head}</TableCell>
+                    <TableCell>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        dept.status === 'Active'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {dept.status}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Button variant="outline" size="sm" onClick={() => openEditDialog(dept)} disabled={!canEdit}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => handleDeleteDepartment(dept.id)} disabled={!canDelete}>Delete</Button>
+                      <Button variant="outline" size="sm" onClick={() => openEditDialog(dept)} disabled={!canEdit} className="rounded-lg">Edit</Button>
+                      <Button variant="destructive" size="sm" onClick={() => handleDeleteDepartment(dept.id)} disabled={!canDelete} className="rounded-lg">Delete</Button>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center h-24">
-                    No departments found.
+                  <TableCell colSpan={4} className="text-center h-24 text-muted-foreground">
+                    No departments found. Add your first department.
                   </TableCell>
                 </TableRow>
               )}
@@ -432,5 +445,6 @@ export default function ManageDepartmentPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }

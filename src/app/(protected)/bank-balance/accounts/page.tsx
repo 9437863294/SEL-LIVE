@@ -181,7 +181,16 @@ export default function ManageBanksPage() {
   const ccCount = accounts.filter(a => a.accountType === 'Cash Credit').length;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <>
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-50/60 via-background to-sky-50/40 dark:from-violet-950/20 dark:via-background dark:to-sky-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-sky-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
       {/* Header */}
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -383,5 +392,6 @@ export default function ManageBanksPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }

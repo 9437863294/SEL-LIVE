@@ -47,6 +47,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { getEffectiveCcLimitFromEntry } from '@/lib/bank-balance-limit';
 
 export default function DpManagementPage() {
   const { toast } = useToast();
@@ -59,7 +60,11 @@ export default function DpManagementPage() {
     useState<
       Record<
         string,
-        { fromDate: string; amount: string }
+        {
+          fromDate: string;
+          amount: string;
+          todAmount: string;
+        }
       >
     >({});
   const [isLoading, setIsLoading] =
@@ -156,7 +161,10 @@ export default function DpManagementPage() {
 
   const handleNewDpChange = (
     accountId: string,
-    field: 'fromDate' | 'amount',
+    field:
+      | 'fromDate'
+      | 'amount'
+      | 'todAmount',
     value: string
   ) => {
     setNewDpEntries((prev) => ({
@@ -165,6 +173,7 @@ export default function DpManagementPage() {
         ...(prev[accountId] ?? {
           fromDate: '',
           amount: '',
+          todAmount: '',
         }),
         [field]: value,
       },
@@ -234,6 +243,10 @@ export default function DpManagementPage() {
       amount: parseFloat(
         newEntry.amount
       ),
+      odAmount: 0,
+      todAmount: parseFloat(
+        newEntry.todAmount || '0'
+      ),
     });
 
     updatedDpLog.sort(
@@ -259,7 +272,7 @@ export default function DpManagementPage() {
       toast({
         title: 'Success',
         description:
-          'Drawing Power log updated successfully.',
+          'Limit log updated successfully.',
       });
 
       setAccounts((prev) =>
@@ -279,6 +292,7 @@ export default function DpManagementPage() {
         [accountId]: {
           fromDate: '',
           amount: '',
+          todAmount: '',
         },
       }));
 
@@ -390,11 +404,11 @@ export default function DpManagementPage() {
   // Loading state
   if (authLoading || (isLoading && canView)) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Skeleton className="h-96" />
-          <Skeleton className="h-96" />
+      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+        <Skeleton className="h-10 w-64 rounded-xl" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="h-96 rounded-xl" />
         </div>
       </div>
     );
@@ -403,34 +417,17 @@ export default function DpManagementPage() {
   // No permission
   if (!canView) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
+      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mb-6 flex items-center gap-3">
           <Link href="/bank-balance/settings">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Back"
-            >
-              <ArrowLeft className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="rounded-full" aria-label="Back">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-xl font-bold">
-            DP Management
-          </h1>
+          <h1 className="text-xl font-bold">DP Management</h1>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              Access Denied
-            </CardTitle>
-            <CardDescription>
-              You do not have permission to
-              view this page.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
+        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
+          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
       </div>
     );
@@ -438,26 +435,27 @@ export default function DpManagementPage() {
 
   // Page
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex justify-between items-center">
-        <div className="flex items-center gap-2">
+    <>
+      {/* ── Animated Background (Purple theme for DP Management) ── */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-50/60 via-background to-violet-50/40 dark:from-purple-950/20 dark:via-background dark:to-violet-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-purple-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-violet-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(168,85,247,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="mb-5 flex justify-between items-center">
+        <div className="flex items-center gap-3">
           <Link href="/bank-balance/settings">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Back"
-            >
-              <ArrowLeft className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-purple-50 dark:hover:bg-purple-950/30" aria-label="Back">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-xl font-bold">
-              DP Management
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Manage Drawing Power history
-              for Cash Credit accounts.
-            </p>
+            <h1 className="text-xl font-bold tracking-tight">DP Management</h1>
+            <p className="text-xs text-muted-foreground">Manage dated limits for Cash Credit accounts using DP and temporary overdrawn amount.</p>
           </div>
         </div>
       </div>
@@ -511,14 +509,14 @@ export default function DpManagementPage() {
                         disabled={!canAdd}
                       >
                         <Plus className="mr-2 h-4 w-4" />
-                        Add New DP Entry
+                        Add New Limit Entry
                       </Button>
                     </CollapsibleTrigger>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <CollapsibleContent className="mb-4">
-                    <div className="flex items-end gap-2 p-4 border rounded-lg">
+                    <div className="grid gap-3 rounded-lg border p-4 md:grid-cols-[1.2fr_1fr_1fr_auto] md:items-end">
                       <div className="flex-1 space-y-1">
                         <label
                           htmlFor={`date-${acc.id}`}
@@ -555,12 +553,12 @@ export default function DpManagementPage() {
                           htmlFor={`amount-${acc.id}`}
                           className="text-xs text-muted-foreground"
                         >
-                          Amount
+                          DP
                         </label>
                         <Input
                           id={`amount-${acc.id}`}
                           type="number"
-                          placeholder="Enter new DP amount"
+                          placeholder="DP"
                           value={
                             newDpEntries[
                               acc.id
@@ -574,6 +572,37 @@ export default function DpManagementPage() {
                             handleNewDpChange(
                               acc.id,
                               'amount',
+                              e
+                                .target
+                                .value
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <label
+                          htmlFor={`tod-${acc.id}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          TOD
+                        </label>
+                        <Input
+                          id={`tod-${acc.id}`}
+                          type="number"
+                          placeholder="Temporary Overdrawn"
+                          value={
+                            newDpEntries[
+                              acc.id
+                            ]
+                              ?.todAmount ||
+                            ''
+                          }
+                          onChange={(
+                            e
+                          ) =>
+                            handleNewDpChange(
+                              acc.id,
+                              'todAmount',
                               e
                                 .target
                                 .value
@@ -606,7 +635,7 @@ export default function DpManagementPage() {
                   </CollapsibleContent>
 
                   <h4 className="font-semibold mb-2">
-                    DP History
+                    Limit History
                   </h4>
                   <div className="border rounded-md max-h-60 overflow-y-auto">
                     <Table>
@@ -621,7 +650,13 @@ export default function DpManagementPage() {
                             To
                           </TableHead>
                           <TableHead>
-                            Amount
+                            DP
+                          </TableHead>
+                          <TableHead>
+                            TOD
+                          </TableHead>
+                          <TableHead>
+                            Total Limit
                           </TableHead>
                           <TableHead className="text-right">
                             Action
@@ -673,7 +708,39 @@ export default function DpManagementPage() {
                                         'INR',
                                     }
                                   ).format(
-                                    dp.amount
+                                    (dp.amount ||
+                                      0) +
+                                      (dp.odAmount ||
+                                        0)
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {new Intl.NumberFormat(
+                                    'en-IN',
+                                    {
+                                      style:
+                                        'currency',
+                                      currency:
+                                        'INR',
+                                    }
+                                  ).format(
+                                    dp.todAmount ||
+                                      0
+                                  )}
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  {new Intl.NumberFormat(
+                                    'en-IN',
+                                    {
+                                      style:
+                                        'currency',
+                                      currency:
+                                        'INR',
+                                    }
+                                  ).format(
+                                    getEffectiveCcLimitFromEntry(
+                                      dp
+                                    )
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right">
@@ -704,12 +771,12 @@ export default function DpManagementPage() {
                           <TableRow>
                             <TableCell
                               colSpan={
-                                4
+                                6
                               }
                               className="text-center h-24"
                             >
                               No
-                              DP
+                              limit
                               history.
                             </TableCell>
                           </TableRow>
@@ -731,5 +798,6 @@ export default function DpManagementPage() {
         )}
       </div>
     </div>
+    </>
   );
 }

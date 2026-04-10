@@ -227,19 +227,32 @@ export default function ManageProjectPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <>
+      {/* ── Background ── */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-50/60 via-background to-yellow-50/40 dark:from-amber-950/20 dark:via-background dark:to-yellow-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[35vw] h-[35vw] rounded-full bg-amber-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[35vw] h-[35vw] rounded-full bg-yellow-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(245,158,11,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="w-full">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
           <Link href="/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-amber-50 dark:hover:bg-amber-950/30">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Manage Project</h1>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Manage Projects</h1>
+            <p className="text-xs text-muted-foreground">{/* project count injected below */}</p>
+          </div>
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button disabled={!canAdd}>
+            <Button disabled={!canAdd} className="rounded-full shadow-md">
               <Plus className="mr-2 h-4 w-4" />
               Add Project
             </Button>
@@ -436,5 +449,6 @@ export default function ManageProjectPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }

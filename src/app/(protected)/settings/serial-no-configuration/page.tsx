@@ -152,19 +152,33 @@ export default function SerialNoConfigurationPage() {
 
 
     return (
-        <div className="w-full max-w-4xl mx-auto">
-            <div className="mb-6 flex items-center gap-4">
+      <>
+        {/* ── Background ── */}
+        <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/60 via-background to-violet-50/40 dark:from-indigo-950/20 dark:via-background dark:to-violet-950/15" />
+          <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[35vw] h-[35vw] rounded-full bg-indigo-300/15 blur-3xl" />
+          <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[35vw] h-[35vw] rounded-full bg-violet-300/12 blur-3xl" />
+          <div className="absolute inset-0 opacity-20 dark:opacity-12"
+            style={{ backgroundImage: 'radial-gradient(circle, rgba(99,102,241,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+          />
+        </div>
+        <div className="w-full max-w-3xl mx-auto">
+            <div className="mb-5 flex items-center gap-3">
                 <Link href="/settings">
-                    <Button variant="ghost" size="icon">
-                        <ArrowLeft className="h-6 w-6" />
+                    <Button variant="ghost" size="icon" className="rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-950/30">
+                        <ArrowLeft className="h-5 w-5" />
                     </Button>
                 </Link>
-                <h1 className="text-xl font-bold">Serial No. Configuration</h1>
+                <div>
+                  <h1 className="text-xl font-bold tracking-tight">Serial No. Configuration</h1>
+                  <p className="text-xs text-muted-foreground">Configure document numbering sequences</p>
+                </div>
             </div>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Sequence Number Format</CardTitle>
+            <Card className="border-indigo-200/60 dark:border-indigo-800/30 overflow-hidden">
+                <div className="h-0.5 w-full bg-gradient-to-r from-indigo-400 to-violet-400" />
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Sequence Number Format</CardTitle>
                     <CardDescription>
                         Select a module and configure the prefix, format, suffix, and starting index for its serial numbers.
                     </CardDescription>
@@ -252,5 +266,6 @@ export default function SerialNoConfigurationPage() {
                 </CardContent>
             </Card>
         </div>
+      </>
     );
 }

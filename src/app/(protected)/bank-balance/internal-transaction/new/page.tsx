@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -50,6 +50,7 @@ import {
 import type { BankAccount, BankExpense } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { getApplicableCcLimit } from '@/lib/bank-balance-limit';
 
 type TransactionItem = {
   id: number;
@@ -79,6 +80,10 @@ export default function NewInternalTransactionPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const canAdd = can('Add', 'Bank Balance.Internal Transaction');
+  const activeBankAccounts = useMemo(
+    () => bankAccounts.filter((account) => account.status === 'Active'),
+    [bankAccounts]
+  );
 
   useEffect(() => {
     const fetchData = async () => {
@@ -141,15 +146,7 @@ export default function NewInternalTransactionPage() {
   };
 
   const getLatestDp = (account: BankAccount, onDate: Date): number => {
-    if (!account.drawingPower || account.drawingPower.length === 0) return 0;
-    const sortedDp = [...account.drawingPower].sort(
-      (a, b) =>
-        new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime()
-    );
-    const applicableDp = sortedDp.find(
-      (dp) => new Date(dp.fromDate) <= startOfDay(onDate)
-    );
-    return applicableDp?.amount || 0;
+    return getApplicableCcLimit(account, onDate);
   };
 
   const handleSave = async () => {
@@ -231,7 +228,7 @@ export default function NewInternalTransactionPage() {
         if (item.amount > availableDp) {
           toast({
             title: 'Insufficient Funds',
-            description: `Transfer from ${fromAccount.shortName} exceeds available drawing power of ${availableDp.toLocaleString(
+            description: `Transfer from ${fromAccount.shortName} exceeds available limit of ${availableDp.toLocaleString(
               'en-IN'
             )}.`,
             variant: 'destructive',
@@ -271,12 +268,6 @@ export default function NewInternalTransactionPage() {
 
           const from = fromSnap.data() as BankAccount;
           const to = toSnap.data() as BankAccount;
-
-          const newFromBalance = (from.currentBalance || 0) - item.amount;
-          const newToBalance = (to.currentBalance || 0) + item.amount;
-
-          tx.update(fromRef, { currentBalance: newFromBalance });
-          tx.update(toRef, { currentBalance: newToBalance });
 
           // Generate a shared contraId
           const contraId = doc(collection(db, 'contraIds')).id;
@@ -363,18 +354,30 @@ export default function NewInternalTransactionPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <>
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-50/60 via-background to-blue-50/40 dark:from-violet-950/20 dark:via-background dark:to-blue-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-blue-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
           <Link href="/bank-balance/internal-transaction">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-violet-50 dark:hover:bg-violet-950/30">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">New Contra Entry</h1>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">New Internal Transfer</h1>
+            <p className="text-xs text-muted-foreground">Record a transfer between bank accounts</p>
+          </div>
         </div>
         <Link href="/bank-balance/internal-transaction">
-          <Button variant="outline">
+          <Button variant="outline" className="rounded-full border-border/60">
             <History className="mr-2 h-4 w-4" />
             Transaction Log
           </Button>
@@ -435,7 +438,7 @@ export default function NewInternalTransactionPage() {
                         <SelectValue placeholder="Select Account" />
                       </SelectTrigger>
                       <SelectContent>
-                        {bankAccounts.map((acc) => (
+                        {activeBankAccounts.map((acc) => (
                           <SelectItem
                             key={acc.id}
                             value={acc.id}
@@ -466,7 +469,7 @@ export default function NewInternalTransactionPage() {
                         <SelectValue placeholder="Select Account" />
                       </SelectTrigger>
                       <SelectContent>
-                        {bankAccounts.map((acc) => (
+                        {activeBankAccounts.map((acc) => (
                           <SelectItem
                             key={acc.id}
                             value={acc.id}
@@ -521,7 +524,10 @@ export default function NewInternalTransactionPage() {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={
+                isSaving ||
+                activeBankAccounts.length < 2
+              }
             >
               {isSaving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -534,5 +540,6 @@ export default function NewInternalTransactionPage() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

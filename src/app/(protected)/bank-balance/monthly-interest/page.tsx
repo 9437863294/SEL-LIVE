@@ -1,9 +1,9 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Fragment, useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Edit, ShieldAlert } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, ShieldAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -45,6 +45,8 @@ import {
   compareDesc,
   parse,
   subMonths as dfSubMonths,
+  min,
+  endOfDay,
 } from 'date-fns';
 import {
   Tabs,
@@ -61,6 +63,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
 
 interface MonthlyLogEntry {
   month: string; // "yyyy-MM"
@@ -95,7 +99,7 @@ export default function MonthlyInterestPage() {
     month: 'all',
     bank: 'all',
   });
-  const [activeTab, setActiveTab] = useState<'entry' | 'log'>('entry');
+  const [activeTab, setActiveTab] = useState<'entry' | 'log'>('log');
 
   const canView = can('View', 'Bank Balance.Monthly Interest');
   const canEdit = can('Edit', 'Bank Balance.Monthly Interest');
@@ -209,7 +213,11 @@ export default function MonthlyInterestPage() {
       .split('-')
       .map((n) => Number(n));
     const monthStart = startOfMonth(new Date(year, month - 1));
-    const monthEnd = endOfMonth(new Date(year, month - 1));
+    const naturalMonthEnd = endOfMonth(new Date(year, month - 1));
+    const monthEnd = min([
+      naturalMonthEnd,
+      endOfDay(new Date()),
+    ]);
 
     ccAccounts.forEach((account) => {
       if (!account.openingDate) {
@@ -225,6 +233,47 @@ export default function MonthlyInterestPage() {
 
       let runningBalance =
         account.openingUtilization || 0;
+
+      const getDayMovementForAccount = (day: Date) => {
+        const key = format(day, 'yyyy-MM-dd');
+        const txToday = allTransactions.filter(
+          (t) =>
+            t.accountId === account.id &&
+            format(t.date.toDate(), 'yyyy-MM-dd') === key
+        );
+
+        const expenses = txToday
+          .filter(
+            (t) => t.type === 'Debit' && !t.isContra
+          )
+          .reduce(
+            (sum, t) => sum + t.amount,
+            0
+          );
+
+        const receipts = txToday
+          .filter(
+            (t) => t.type === 'Credit' && !t.isContra
+          )
+          .reduce(
+            (sum, t) => sum + t.amount,
+            0
+          );
+
+        // Keep the same CC contra behavior as daily-log page
+        const contra = txToday
+          .filter((t) => t.isContra)
+          .reduce(
+            (sum, t) =>
+              sum +
+              (t.type === 'Debit'
+                ? t.amount
+                : -t.amount),
+            0
+          );
+
+        return { expenses, receipts, contra };
+      };
 
       const getRateForDate = (date: Date): number => {
         const sortedLog = [...(account.interestRateLog || [])].sort(
@@ -253,43 +302,16 @@ export default function MonthlyInterestPage() {
         });
 
         preDays.forEach((day) => {
-          const key = format(day, 'yyyy-MM-dd');
-          const txToday = allTransactions.filter(
-            (t) =>
-              t.accountId === account.id &&
-              format(t.date.toDate(), 'yyyy-MM-dd') === key
-          );
+          const {
+            expenses,
+            receipts,
+            contra,
+          } = getDayMovementForAccount(day);
 
-          const receipts = txToday
-            .filter(
-              (t) => t.type === 'Credit' && !t.isContra
-            )
-            .reduce(
-              (sum, t) => sum + t.amount,
-              0
-            );
-          const expenses = txToday
-            .filter(
-              (t) => t.type === 'Debit' && !t.isContra
-            )
-            .reduce(
-              (sum, t) => sum + t.amount,
-              0
-            );
-          const contra = txToday
-            .filter((t) => t.isContra)
-            .reduce(
-              (sum, t) =>
-                sum +
-                (t.type === 'Debit'
-                  ? -t.amount
-                  : t.amount),
-              0
-            );
-
-          const closing = runningBalance +
-            receipts -
-            expenses +
+          const closing =
+            runningBalance +
+            expenses -
+            receipts +
             contra;
           runningBalance = closing;
         });
@@ -305,44 +327,16 @@ export default function MonthlyInterestPage() {
       days.forEach((day) => {
         if (day < openingDate) return;
 
-        const key = format(day, 'yyyy-MM-dd');
-        const txToday = allTransactions.filter(
-          (t) =>
-            t.accountId === account.id &&
-            format(t.date.toDate(), 'yyyy-MM-dd') === key
-        );
-
-        const receipts = txToday
-          .filter(
-            (t) => t.type === 'Credit' && !t.isContra
-          )
-          .reduce(
-            (sum, t) => sum + t.amount,
-            0
-          );
-        const expenses = txToday
-          .filter(
-            (t) => t.type === 'Debit' && !t.isContra
-          )
-          .reduce(
-            (sum, t) => sum + t.amount,
-            0
-          );
-        const contra = txToday
-          .filter((t) => t.isContra)
-          .reduce(
-            (sum, t) =>
-              sum +
-              (t.type === 'Debit'
-                ? -t.amount
-                : t.amount),
-            0
-          );
+        const {
+          expenses,
+          receipts,
+          contra,
+        } = getDayMovementForAccount(day);
 
         const closing =
           runningBalance +
-          receipts -
-          expenses +
+          expenses -
+          receipts +
           contra;
         const rate = getRateForDate(day);
         const dailyInterest =
@@ -488,8 +482,8 @@ export default function MonthlyInterestPage() {
     }
   };
 
-  const handleEditFromLog = (logItem: MonthlyLogEntry) => {
-    setSelectedMonth(logItem.month);
+  const handleEditFromLog = (monthKey: string) => {
+    setSelectedMonth(monthKey);
     setActiveTab('entry');
   };
 
@@ -573,26 +567,70 @@ export default function MonthlyInterestPage() {
     [logData, logFilters]
   );
 
+  const visibleLogAccounts = useMemo(() => {
+    if (logFilters.bank !== 'all') {
+      return ccAccounts.filter((acc) => acc.id === logFilters.bank);
+    }
+    return [...ccAccounts].sort((a, b) => (a.shortName || '').localeCompare(b.shortName || ''));
+  }, [ccAccounts, logFilters.bank]);
+
+  const monthlyLogMatrix = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        month: string;
+        byBank: Record<string, { projected: number; actual: number; diff: number }>;
+        totalProjected: number;
+        totalActual: number;
+        totalDiff: number;
+      }
+    >();
+
+    filteredLogData.forEach((log) => {
+      const existing = grouped.get(log.month) ?? {
+        month: log.month,
+        byBank: {},
+        totalProjected: 0,
+        totalActual: 0,
+        totalDiff: 0,
+      };
+
+      existing.byBank[log.accountId] = {
+        projected: log.projected,
+        actual: log.actual,
+        diff: log.difference,
+      };
+      existing.totalProjected += log.projected;
+      existing.totalActual += log.actual;
+      existing.totalDiff += log.difference;
+      grouped.set(log.month, existing);
+    });
+
+    return Array.from(grouped.values()).sort((a, b) =>
+      compareDesc(parse(a.month, 'yyyy-MM', new Date()), parse(b.month, 'yyyy-MM', new Date()))
+    );
+  }, [filteredLogData]);
+
   if (authLoading || (isLoading && canView)) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <Skeleton className="h-10 w-80 mb-6" />
-        <Skeleton className="h-96 w-full" />
+      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+        <Skeleton className="h-10 w-80 rounded-xl" />
+        <Skeleton className="h-96 w-full rounded-xl" />
       </div>
     );
   }
 
   if (!canView) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-4">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mb-6 flex items-center gap-3">
+          <Link href="/bank-balance">
+            <Button variant="ghost" size="icon" className="rounded-full">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">
+            <h1 className="text-xl font-bold">
               Monthly Interest
             </h1>
           </div>
@@ -617,23 +655,27 @@ export default function MonthlyInterestPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+    <>
+      {/* ── Animated Background (Amber theme for Monthly Interest) ── */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-50/60 via-background to-yellow-50/40 dark:from-amber-950/20 dark:via-background dark:to-yellow-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-amber-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-yellow-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(245,158,11,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link href="/bank-balance">
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-amber-50 dark:hover:bg-amber-950/30">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">
-              Monthly Interest
-            </h1>
-            <p className="text-muted-foreground">
-              Enter projected vs.
-              actual interest for each
-              Cash Credit account.
-            </p>
+            <h1 className="text-xl font-bold tracking-tight">Monthly Interest</h1>
+            <p className="text-xs text-muted-foreground">Enter projected vs. actual interest for each Cash Credit account.</p>
           </div>
         </div>
       </div>
@@ -986,142 +1028,250 @@ export default function MonthlyInterestPage() {
                 </Select>
               </div>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      Month
-                    </TableHead>
-                    <TableHead>
-                      Bank
-                    </TableHead>
-                    <TableHead>
-                      Projected
-                    </TableHead>
-                    <TableHead>
-                      Actual
-                    </TableHead>
-                    <TableHead>
-                      Difference
-                    </TableHead>
-                    <TableHead className="text-right">
-                      Action
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLogLoading ? (
-                    Array.from(
-                      {
-                        length: 5,
-                      }
-                    ).map(
-                      (
-                        _,
-                        i
-                      ) => (
-                        <TableRow
-                          key={
-                            i
-                          }
-                        >
-                          <TableCell colSpan={6}>
-                            <Skeleton className="h-6" />
-                          </TableCell>
-                        </TableRow>
-                      )
-                    )
-                  ) : filteredLogData.length >
-                    0 ? (
-                    filteredLogData.map(
-                      (
-                        log
-                      ) => (
-                        <TableRow
-                          key={`${log.month}-${log.accountId}`}
-                        >
-                          <TableCell>
-                            {format(
-                              parse(
-                                log.month,
-                                'yyyy-MM',
-                                new Date()
-                              ),
-                              'MMMM yyyy'
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {
-                              log.accountName
-                            }
-                          </TableCell>
-                          <TableCell>
-                            {formatCurrency(
-                              log.projected
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {formatCurrency(
-                              log.actual
-                            )}
-                          </TableCell>
-                          <TableCell
-                            className={
-                              log.difference >
-                              0
-                                ? 'text-red-600'
-                                : 'text-green-600'
-                            }
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-end">
+                <Badge
+                  variant="secondary"
+                  className="font-medium"
+                >
+                  {monthlyLogMatrix.length}{' '}
+                  {monthlyLogMatrix.length === 1
+                    ? 'month'
+                    : 'months'}
+                </Badge>
+              </div>
+
+              <div className="rounded-md border bg-card">
+                <ScrollArea className="h-[62vh] w-full">
+                  <div className="min-w-[1200px]">
+                    <Table>
+                      <TableHeader className="sticky top-0 z-20 bg-muted/95 backdrop-blur supports-[backdrop-filter]:bg-muted/75">
+                        <TableRow>
+                          <TableHead
+                            rowSpan={2}
+                            className="align-middle min-w-[140px] border-r bg-muted/95"
                           >
-                            {formatCurrency(
-                              log.difference
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                handleEditFromLog(
-                                  log
-                                )
-                              }
-                              disabled={
-                                !canEdit
-                              }
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Edit
-                            </Button>
-                          </TableCell>
+                            Month
+                          </TableHead>
+                          {visibleLogAccounts.map(
+                            (acc) => (
+                              <TableHead
+                                key={`${acc.id}-group`}
+                                colSpan={3}
+                                className="text-center border-r"
+                              >
+                                {acc.shortName}
+                              </TableHead>
+                            )
+                          )}
+                          <TableHead
+                            colSpan={3}
+                            className="text-center border-r"
+                          >
+                            Total
+                          </TableHead>
+                          <TableHead
+                            rowSpan={2}
+                            className="text-right align-middle min-w-[120px]"
+                          >
+                            Action
+                          </TableHead>
                         </TableRow>
-                      )
-                    )
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={
-                          6
-                        }
-                        className="text-center h-24"
-                      >
-                        No log
-                        data
-                        found
-                        for
-                        the
-                        selected
-                        filters.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                        <TableRow>
+                          {visibleLogAccounts.map(
+                            (acc) => (
+                              <Fragment
+                                key={`${acc.id}-cols`}
+                              >
+                                <TableHead className="text-right whitespace-nowrap">
+                                  Projected
+                                </TableHead>
+                                <TableHead className="text-right whitespace-nowrap">
+                                  Actual
+                                </TableHead>
+                                <TableHead className="text-right whitespace-nowrap border-r">
+                                  Diff
+                                </TableHead>
+                              </Fragment>
+                            )
+                          )}
+                          <TableHead className="text-right whitespace-nowrap">
+                            Projected
+                          </TableHead>
+                          <TableHead className="text-right whitespace-nowrap">
+                            Actual
+                          </TableHead>
+                          <TableHead className="text-right whitespace-nowrap border-r">
+                            Diff
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+
+                      <TableBody>
+                        {isLogLoading ? (
+                          Array.from(
+                            {
+                              length: 5,
+                            }
+                          ).map(
+                            (
+                              _,
+                              i
+                            ) => (
+                              <TableRow
+                                key={
+                                  i
+                                }
+                              >
+                                <TableCell
+                                  colSpan={
+                                    visibleLogAccounts.length *
+                                      3 +
+                                    5
+                                  }
+                                >
+                                  <Skeleton className="h-6" />
+                                </TableCell>
+                              </TableRow>
+                            )
+                          )
+                        ) : monthlyLogMatrix.length >
+                          0 ? (
+                          monthlyLogMatrix.map(
+                            (row) => (
+                              <TableRow
+                                key={
+                                  row.month
+                                }
+                              >
+                                <TableCell className="font-medium border-r">
+                                  {format(
+                                    parse(
+                                      row.month,
+                                      'yyyy-MM',
+                                      new Date()
+                                    ),
+                                    'MMMM yyyy'
+                                  )}
+                                </TableCell>
+                                {visibleLogAccounts.map(
+                                  (acc) => {
+                                    const item =
+                                      row.byBank[
+                                        acc.id
+                                      ] ||
+                                      {
+                                        projected: 0,
+                                        actual: 0,
+                                        diff: 0,
+                                      };
+                                    return (
+                                      <Fragment
+                                        key={`${row.month}-${acc.id}`}
+                                      >
+                                        <TableCell className="text-right whitespace-nowrap">
+                                          {formatCurrency(
+                                            item.projected
+                                          )}
+                                        </TableCell>
+                                        <TableCell className="text-right whitespace-nowrap">
+                                          {formatCurrency(
+                                            item.actual
+                                          )}
+                                        </TableCell>
+                                        <TableCell
+                                          className={`text-right whitespace-nowrap border-r ${
+                                            item.diff >
+                                            0
+                                              ? 'text-red-600'
+                                              : item.diff <
+                                                  0
+                                                ? 'text-green-600'
+                                                : 'text-muted-foreground'
+                                          }`}
+                                        >
+                                          {formatCurrency(
+                                            item.diff
+                                          )}
+                                        </TableCell>
+                                      </Fragment>
+                                    );
+                                  }
+                                )}
+                                <TableCell className="text-right whitespace-nowrap font-medium">
+                                  {formatCurrency(
+                                    row.totalProjected
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right whitespace-nowrap font-medium">
+                                  {formatCurrency(
+                                    row.totalActual
+                                  )}
+                                </TableCell>
+                                <TableCell
+                                  className={`text-right whitespace-nowrap border-r font-medium ${
+                                    row.totalDiff >
+                                    0
+                                      ? 'text-red-600'
+                                      : row.totalDiff <
+                                          0
+                                        ? 'text-green-600'
+                                        : 'text-muted-foreground'
+                                  }`}
+                                >
+                                  {formatCurrency(
+                                    row.totalDiff
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleEditFromLog(
+                                        row.month
+                                      )
+                                    }
+                                    disabled={
+                                      !canEdit
+                                    }
+                                  >
+                                    Edit
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          )
+                        ) : (
+                          <TableRow>
+                            <TableCell
+                              colSpan={
+                                visibleLogAccounts.length *
+                                  3 +
+                                5
+                              }
+                              className="text-center h-24"
+                            >
+                              No log
+                              data
+                              found
+                              for
+                              the
+                              selected
+                              filters.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </ScrollArea>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
     </div>
+    </>
   );
 }

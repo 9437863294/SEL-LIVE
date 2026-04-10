@@ -85,6 +85,9 @@ export default function NewReceiptPage() {
 
   const canView = can('View', 'Bank Balance.Receipts');
   const canAdd = can('Add', 'Bank Balance.Receipts');
+  const activeBankAccounts = bankAccounts.filter(
+    (account) => account.status === 'Active'
+  );
 
   useEffect(() => {
     const fetchBankAccounts = async () => {
@@ -246,18 +249,30 @@ export default function NewReceiptPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+    <>
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-green-50/60 via-background to-emerald-50/40 dark:from-green-950/20 dark:via-background dark:to-emerald-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-green-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-emerald-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(34,197,94,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
           <Link href="/bank-balance/receipts">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-green-50 dark:hover:bg-green-950/30">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-xl font-bold">New Receipt Entry</h1>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">New Receipt Entry</h1>
+            <p className="text-xs text-muted-foreground">Record a new receipt transaction</p>
+          </div>
         </div>
         <Link href="/bank-balance/receipts">
-          <Button variant="outline">
+          <Button variant="outline" className="rounded-full border-border/60">
             <History className="mr-2 h-4 w-4" />
             Receipts Log
           </Button>
@@ -312,7 +327,7 @@ export default function NewReceiptPage() {
                     <SelectValue placeholder="Select a bank account" />
                   </SelectTrigger>
                   <SelectContent>
-                    {bankAccounts.map((acc) => (
+                    {activeBankAccounts.map((acc) => (
                       <SelectItem
                         key={acc.id}
                         value={acc.id}
@@ -405,7 +420,11 @@ export default function NewReceiptPage() {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={isSaving || !canAdd}
+              disabled={
+                isSaving ||
+                !canAdd ||
+                activeBankAccounts.length === 0
+              }
             >
               {isSaving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -418,5 +437,6 @@ export default function NewReceiptPage() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

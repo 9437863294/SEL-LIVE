@@ -61,8 +61,12 @@ export default function PaymentEntrySettingsPage() {
   const [isSavingFields, setIsSavingFields] = useState(false);
   const [isAddingMethod, setIsAddingMethod] = useState(false);
 
-  const canView = can('View', 'Bank Balance.Payment Entry Settings');
-  const canEdit = can('Edit', 'Bank Balance.Payment Entry Settings');
+  const canView =
+    can('View', 'Bank Balance.Payment Entry Settings') ||
+    can('Add', 'Bank Balance.Expenses');
+  const canEdit =
+    can('Edit', 'Bank Balance.Payment Entry Settings') ||
+    can('Add', 'Bank Balance.Expenses');
 
   const fetchSettings = useCallback(async () => {
     if (!canView) {
@@ -226,19 +230,26 @@ export default function PaymentEntrySettingsPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+    <>
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-50/60 via-background to-violet-50/40 dark:from-slate-950/20 dark:via-background dark:to-violet-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/12 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-slate-300/10 blur-3xl" />
+        <div className="absolute inset-0 opacity-15 dark:opacity-10"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="flex items-center gap-3">
           <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-xl font-bold">Payment Entry Settings</h1>
-            <p className="text-sm text-muted-foreground">
-              Customize your payment entry form.
-            </p>
+            <h1 className="text-xl font-bold tracking-tight">Payment Entry Settings</h1>
+            <p className="text-xs text-muted-foreground">Customize your payment entry form.</p>
           </div>
         </div>
       </div>
@@ -367,5 +378,6 @@ export default function PaymentEntrySettingsPage() {
         </Card>
       </div>
     </div>
+    </>
   );
 }

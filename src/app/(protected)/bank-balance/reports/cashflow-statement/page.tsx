@@ -32,6 +32,8 @@ import {
 } from 'date-fns';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { ShieldAlert } from 'lucide-react';
 
 interface MonthlyData {
   month: string;
@@ -45,11 +47,22 @@ interface MonthlyData {
 
 export default function CashflowStatementPage() {
   const { toast } = useToast();
+  const { can, isLoading: authLoading } = useAuthorization();
   const [data, setData] = useState<MonthlyData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const canView = can('View', 'Bank Balance.Reports');
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     const fetchData = async () => {
+      if (!canView) {
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       try {
         const [expensesSnap, accountsSnap] = await Promise.all([
@@ -89,10 +102,6 @@ export default function CashflowStatementPage() {
           end: endOfMonth(lastDate),
         };
         const monthsInInterval = eachMonthOfInterval(interval);
-
-        // Map for quick account lookup
-        const accountMap = new Map<string, BankAccount>();
-        accounts.forEach((acc) => accountMap.set(acc.id, acc));
 
         // Initial opening balance across all accounts:
         // - Current / others: +openingBalance
@@ -180,7 +189,7 @@ export default function CashflowStatementPage() {
     };
 
     void fetchData();
-  }, [toast]);
+  }, [authLoading, canView, toast]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-IN', {
@@ -194,19 +203,61 @@ export default function CashflowStatementPage() {
   const totalOutflow = data.reduce((s, m) => s + m.outflow, 0);
   const totalNet = data.reduce((s, m) => s + m.net, 0);
 
+  if (authLoading || (isLoading && canView)) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <Skeleton className="h-10 w-80 mb-6" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center gap-4">
+          <Link href="/bank-balance/reports">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-6 w-6" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-xl font-bold">Cashflow Statement</h1>
+          </div>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>You do not have permission to view this report.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center p-8">
+            <ShieldAlert className="h-16 w-16 text-destructive" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center gap-4">
+    <>
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/60 via-background to-teal-50/40 dark:from-emerald-950/20 dark:via-background dark:to-teal-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-emerald-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-teal-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(16,185,129,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="mb-5 flex items-center gap-3">
         <Link href="/bank-balance/reports">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
+          <Button variant="ghost" size="icon" className="rounded-full hover:bg-emerald-50 dark:hover:bg-emerald-950/30">
+            <ArrowLeft className="h-5 w-5" />
           </Button>
         </Link>
         <div>
-          <h1 className="text-xl font-bold">Cashflow Statement</h1>
-          <p className="text-sm text-muted-foreground">
-            Monthly inflow vs outflow across all non-contra transactions.
-          </p>
+          <h1 className="text-xl font-bold tracking-tight">Cashflow Statement</h1>
+          <p className="text-xs text-muted-foreground">Monthly inflow vs outflow across all non-contra transactions.</p>
         </div>
       </div>
 
@@ -297,5 +348,6 @@ export default function CashflowStatementPage() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

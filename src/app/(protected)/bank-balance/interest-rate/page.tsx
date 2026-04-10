@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { useState, useEffect, useMemo } from 'react';
+import { Fragment, useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -41,6 +41,7 @@ import type {
   BankAccount,
   BankExpense,
   InterestRateLogEntry,
+  MonthlyInterestData,
 } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -78,6 +79,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import {
+  DATE_RANGE_PRESET_OPTIONS,
+  type DateRangePreset,
+  getDateRangeFromPreset,
+} from '@/lib/date-range-presets';
 
 interface DailyInterestLog {
   id: string;
@@ -90,12 +98,18 @@ interface DailyInterestLog {
 }
 
 interface MonthlySummary {
-  month: string; // "August 2025"
+  monthKey: string; // "yyyy-MM"
+  monthLabel: string; // "August 2025"
   banks: {
     accountId: string;
     accountName: string;
-    totalInterest: number;
+    projected: number;
+    actual: number;
+    diff: number;
   }[];
+  totalProjected: number;
+  totalActual: number;
+  totalDiff: number;
 }
 
 const makeId = () =>
@@ -117,10 +131,12 @@ export default function InterestRatePage() {
   const [openAddForm, setOpenAddForm] = useState<string | null>(null);
 
   const [allTransactions, setAllTransactions] = useState<BankExpense[]>([]);
+  const [monthlyInterestDocs, setMonthlyInterestDocs] = useState<Record<string, MonthlyInterestData>>({});
   const [dailyLogs, setDailyLogs] = useState<DailyInterestLog[]>([]);
   const [monthlySummary, setMonthlySummary] = useState<MonthlySummary[]>([]);
   const [isLogLoading, setIsLogLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [datePreset, setDatePreset] = useState<DateRangePreset>('custom');
   const [bankFilter, setBankFilter] = useState('all');
 
   const canView = can('View', 'Bank Balance.Interest Rate');
@@ -131,9 +147,10 @@ export default function InterestRatePage() {
     setIsLoading(true);
     setIsLogLoading(true);
     try {
-      const [accountsSnap, expensesSnap] = await Promise.all([
+      const [accountsSnap, expensesSnap, monthlyInterestSnap] = await Promise.all([
         getDocs(collection(db, 'bankAccounts')),
         getDocs(collection(db, 'bankExpenses')),
+        getDocs(collection(db, 'monthlyInterest')),
       ]);
 
       const allAccounts = accountsSnap.docs.map(
@@ -159,6 +176,12 @@ export default function InterestRatePage() {
         (d) => ({ id: d.id, ...d.data() } as BankExpense)
       );
       setAllTransactions(transactions);
+
+      const monthlyInterestMap: Record<string, MonthlyInterestData> = {};
+      monthlyInterestSnap.forEach((docSnap) => {
+        monthlyInterestMap[docSnap.id] = docSnap.data() as MonthlyInterestData;
+      });
+      setMonthlyInterestDocs(monthlyInterestMap);
     } catch (error) {
       console.error('Error fetching data: ', error);
       toast({
@@ -243,7 +266,7 @@ export default function InterestRatePage() {
           .filter((t) => t.isContra)
           .reduce(
             (sum, t) =>
-              sum + (t.type === 'Debit' ? -t.amount : t.amount),
+              sum + (t.type === 'Debit' ? t.amount : -t.amount),
             0
           );
 
@@ -274,49 +297,74 @@ export default function InterestRatePage() {
     setDailyLogs(logs);
 
     // Monthly Summary
-    const monthlyData: Record<
+    const monthlyProjected: Record<
       string,
-      Record<string, { accountName: string; totalInterest: number }>
+      Record<string, { accountName: string; projected: number }>
     > = {};
 
     logs.forEach((log) => {
-      const monthKey = format(new Date(log.date), 'MMMM yyyy');
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = {};
+      const monthKey = format(new Date(log.date), 'yyyy-MM');
+      if (!monthlyProjected[monthKey]) {
+        monthlyProjected[monthKey] = {};
       }
-      if (!monthlyData[monthKey][log.accountId]) {
-        monthlyData[monthKey][log.accountId] = {
+      if (!monthlyProjected[monthKey][log.accountId]) {
+        monthlyProjected[monthKey][log.accountId] = {
           accountName: log.accountName,
-          totalInterest: 0,
+          projected: 0,
         };
       }
-      monthlyData[monthKey][log.accountId].totalInterest +=
+      monthlyProjected[monthKey][log.accountId].projected +=
         log.dailyInterest;
     });
 
-    const summary: MonthlySummary[] = Object.entries(monthlyData)
-      .map(([month, banks]) => ({
-        month,
-        banks: Object.entries(banks)
-          .map(([accountId, data]) => ({
-            accountId,
-            accountName: data.accountName,
-            totalInterest: data.totalInterest,
-          }))
-          .sort((a, b) =>
-            a.accountName.localeCompare(b.accountName)
-          ),
-      }))
+    const monthKeys = Array.from(
+      new Set([
+        ...Object.keys(monthlyProjected),
+        ...Object.keys(monthlyInterestDocs),
+      ])
+    );
+
+    const summary: MonthlySummary[] = monthKeys
+      .map((monthKey) => {
+        const projectedByAccount = monthlyProjected[monthKey] || {};
+        const actualByAccount = monthlyInterestDocs[monthKey] || {};
+
+        const banks = accounts
+          .map((acc) => {
+            const projected = projectedByAccount[acc.id]?.projected || 0;
+            const actual = actualByAccount[acc.id]?.actual || 0;
+            return {
+              accountId: acc.id,
+              accountName: acc.shortName,
+              projected,
+              actual,
+              diff: actual - projected,
+            };
+          });
+
+        const totalProjected = banks.reduce((sum, b) => sum + b.projected, 0);
+        const totalActual = banks.reduce((sum, b) => sum + b.actual, 0);
+        const totalDiff = totalActual - totalProjected;
+
+        return {
+          monthKey,
+          monthLabel: format(new Date(`${monthKey}-01`), 'MMMM yyyy'),
+          banks,
+          totalProjected,
+          totalActual,
+          totalDiff,
+        };
+      })
       // Sort by actual date (1st of that month) desc
       .sort((a, b) =>
         compareDesc(
-          new Date(`${a.month} 01`),
-          new Date(`${b.month} 01`)
+          new Date(`${a.monthKey}-01`),
+          new Date(`${b.monthKey}-01`)
         )
       );
 
     setMonthlySummary(summary);
-  }, [accounts, allTransactions, isLoading, isLogLoading, canView]);
+  }, [accounts, allTransactions, monthlyInterestDocs, isLoading, isLogLoading, canView]);
 
   const filteredLogs = useMemo(() => {
     return dailyLogs.filter((log) => {
@@ -333,6 +381,76 @@ export default function InterestRatePage() {
       return inDateRange && bankMatch;
     });
   }, [dailyLogs, dateRange, bankFilter]);
+
+  const dailyLogStats = useMemo(() => {
+    const totalInterest = filteredLogs.reduce((sum, row) => sum + row.dailyInterest, 0);
+    return {
+      entries: filteredLogs.length,
+      totalInterest,
+    };
+  }, [filteredLogs]);
+
+  const visibleLogAccounts = useMemo(() => {
+    if (bankFilter !== 'all') {
+      return accounts.filter((acc) => acc.id === bankFilter);
+    }
+    return [...accounts].sort((a, b) =>
+      (a.shortName || '').localeCompare(b.shortName || '')
+    );
+  }, [accounts, bankFilter]);
+
+  const dailyLogMatrix = useMemo(() => {
+    const grouped = new Map<
+      string,
+      {
+        date: string;
+        byBank: Record<
+          string,
+          {
+            closingUtilization: number;
+            rate: number;
+            dailyInterest: number;
+          }
+        >;
+        totalDailyInterest: number;
+      }
+    >();
+
+    filteredLogs.forEach((log) => {
+      const existing = grouped.get(log.date) ?? {
+        date: log.date,
+        byBank: {},
+        totalDailyInterest: 0,
+      };
+
+      existing.byBank[log.accountId] = {
+        closingUtilization: log.closingUtilization,
+        rate: log.rate,
+        dailyInterest: log.dailyInterest,
+      };
+      existing.totalDailyInterest += log.dailyInterest;
+
+      grouped.set(log.date, existing);
+    });
+
+    return Array.from(grouped.values()).sort((a, b) =>
+      compareDesc(new Date(a.date), new Date(b.date))
+    );
+  }, [filteredLogs]);
+
+  const monthlySummaryStats = useMemo(() => {
+    const totalMonths = monthlySummary.length;
+    const totalRows = monthlySummary.length;
+    const totalProjected = monthlySummary.reduce(
+      (sum, m) => sum + m.totalProjected,
+      0
+    );
+    const totalActual = monthlySummary.reduce(
+      (sum, m) => sum + m.totalActual,
+      0
+    );
+    return { totalMonths, totalRows, totalProjected, totalActual };
+  }, [monthlySummary]);
 
   const handleNewRateChange = (
     accountId: string,
@@ -502,68 +620,71 @@ export default function InterestRatePage() {
 
   const clearLogFilters = () => {
     setDateRange(undefined);
+    setDatePreset('custom');
     setBankFilter('all');
+  };
+
+  const handleDatePresetChange = (value: string) => {
+    const preset = value as DateRangePreset;
+    setDatePreset(preset);
+    if (preset === 'custom') return;
+    setDateRange(getDateRangeFromPreset(preset));
   };
 
   if (authLoading || (isLoading && canView)) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-6">
-        <Skeleton className="h-10 w-80" />
-        <Skeleton className="h-96 w-full" />
+      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6 space-y-4">
+        <Skeleton className="h-10 w-80 rounded-xl" />
+        <Skeleton className="h-96 w-full rounded-xl" />
       </div>
     );
   }
 
   if (!canView) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+      <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mb-6 flex items-center gap-3">
+          <Link href="/bank-balance">
+            <Button variant="ghost" size="icon" className="rounded-full">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">
-            Interest Rate Management
-          </h1>
+          <h1 className="text-xl font-bold">Interest Rate Management</h1>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>
-              You do not have permission to view this page.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
+        <Card><CardHeader><CardTitle>Access Denied</CardTitle><CardDescription>You do not have permission to view this page.</CardDescription></CardHeader>
+          <CardContent className="flex justify-center p-8"><ShieldAlert className="h-14 w-14 text-destructive" /></CardContent>
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Link href="/bank-balance/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+    <>
+      {/* ── Animated Background (Indigo theme for Interest Rate) ── */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
+        <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/60 via-background to-violet-50/40 dark:from-indigo-950/20 dark:via-background dark:to-violet-950/15" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-indigo-300/15 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-violet-300/12 blur-3xl" />
+        <div className="absolute inset-0 opacity-20 dark:opacity-12"
+          style={{ backgroundImage: 'radial-gradient(circle, rgba(99,102,241,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
+        />
+      </div>
+    <div className="relative w-full px-4 sm:px-6 lg:px-8 py-4">
+      <div className="mb-5 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <Link href="/bank-balance">
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-950/30">
+              <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">
-              Interest Rate Management
-            </h1>
-            <p className="text-muted-foreground">
-              Manage interest rate history and view daily interest
-              logs.
-            </p>
+            <h1 className="text-xl font-bold tracking-tight">Interest Rate Management</h1>
+            <p className="text-xs text-muted-foreground">Manage interest rate history and view daily interest logs.</p>
           </div>
         </div>
       </div>
 
-      <Tabs defaultValue="manage-rates">
+      <Tabs defaultValue="daily-log">
         <TabsList className="mb-4">
           <TabsTrigger value="manage-rates">
             Manage Rates
@@ -784,6 +905,19 @@ export default function InterestRatePage() {
           <Card>
             <CardHeader>
               <div className="flex flex-wrap items-center gap-4">
+                <Select value={datePreset} onValueChange={handleDatePresetChange}>
+                  <SelectTrigger className="w-[190px]">
+                    <SelectValue placeholder="Quick filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DATE_RANGE_PRESET_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -829,7 +963,10 @@ export default function InterestRatePage() {
                       mode="range"
                       defaultMonth={dateRange?.from}
                       selected={dateRange}
-                      onSelect={setDateRange}
+                      onSelect={(range) => {
+                        setDateRange(range);
+                        setDatePreset('custom');
+                      }}
                       numberOfMonths={2}
                     />
                   </PopoverContent>
@@ -863,72 +1000,105 @@ export default function InterestRatePage() {
                 >
                   Clear Filters
                 </Button>
+                <Badge variant="outline" className="ml-auto">
+                  {dailyLogMatrix.length} day{dailyLogMatrix.length !== 1 ? 's' : ''}
+                </Badge>
               </div>
+              <CardDescription>
+                Total projected daily interest for selection:{' '}
+                <span className="font-semibold text-foreground">{formatCurrency(dailyLogStats.totalInterest)}</span>
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Bank Name</TableHead>
-                    <TableHead>
-                      Closing Utilization
-                    </TableHead>
-                    <TableHead>
-                      Interest Rate (%)
-                    </TableHead>
-                    <TableHead>Daily Interest</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {isLogLoading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <TableRow key={i}>
-                        <TableCell colSpan={5}>
-                          <Skeleton className="h-6" />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : filteredLogs.length > 0 ? (
-                    filteredLogs.map((log) => (
-                      <TableRow key={log.id}>
-                        <TableCell>
-                          {format(
-                            new Date(log.date),
-                            'dd MMM, yyyy'
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {log.accountName}
-                        </TableCell>
-                        <TableCell>
-                          {formatCurrency(
-                            log.closingUtilization
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {log.rate.toFixed(2)}%
-                        </TableCell>
-                        <TableCell>
-                          {formatCurrency(
-                            log.dailyInterest
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={5}
-                        className="text-center h-24"
-                      >
-                        No logs found for the selected
-                        criteria.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+            <CardContent className="p-0 overflow-hidden">
+              <div className="min-w-0 overflow-hidden rounded-2xl border border-border/60 bg-background">
+                <ScrollArea className="h-[calc(100vh-24rem)]" showHorizontalScrollbar>
+                  <div className="min-w-[1100px]">
+                    <Table containerClassName="w-full overflow-visible" className="w-full">
+                      <TableHeader className="sticky top-0 z-10 bg-background border-b border-border/60">
+                        <TableRow>
+                          <TableHead rowSpan={2} className="min-w-[130px] border-r bg-background align-middle">
+                            Date
+                          </TableHead>
+                          {visibleLogAccounts.map((acc) => (
+                            <TableHead
+                              key={`${acc.id}-group`}
+                              colSpan={3}
+                              className="border-r text-center"
+                            >
+                              {acc.shortName}
+                            </TableHead>
+                          ))}
+                          <TableHead rowSpan={2} className="min-w-[140px] text-right align-middle">
+                            Total Interest
+                          </TableHead>
+                        </TableRow>
+                        <TableRow>
+                          {visibleLogAccounts.map((acc) => (
+                            <Fragment key={`${acc.id}-cols`}>
+                              <TableHead className="text-right whitespace-nowrap">
+                                Utilised
+                              </TableHead>
+                              <TableHead className="text-right whitespace-nowrap">
+                                Rate
+                              </TableHead>
+                              <TableHead className="text-right whitespace-nowrap border-r">
+                                Interest
+                              </TableHead>
+                            </Fragment>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {isLogLoading ? (
+                          Array.from({ length: 5 }).map((_, i) => (
+                            <TableRow key={i}>
+                              <TableCell colSpan={visibleLogAccounts.length * 3 + 2}>
+                                <Skeleton className="h-6" />
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : dailyLogMatrix.length > 0 ? (
+                          dailyLogMatrix.map((row) => (
+                            <TableRow key={row.date}>
+                              <TableCell className="font-medium border-r">
+                                {format(new Date(row.date), 'dd MMM, yyyy')}
+                              </TableCell>
+                              {visibleLogAccounts.map((acc) => {
+                                const item = row.byBank[acc.id];
+                                return (
+                                  <Fragment key={`${row.date}-${acc.id}`}>
+                                    <TableCell className="text-right whitespace-nowrap">
+                                      {item ? formatCurrency(item.closingUtilization) : '—'}
+                                    </TableCell>
+                                    <TableCell className="text-right whitespace-nowrap">
+                                      {item ? `${item.rate.toFixed(2)}%` : '—'}
+                                    </TableCell>
+                                    <TableCell className="text-right whitespace-nowrap border-r font-medium">
+                                      {item ? formatCurrency(item.dailyInterest) : '—'}
+                                    </TableCell>
+                                  </Fragment>
+                                );
+                              })}
+                              <TableCell className="text-right font-semibold whitespace-nowrap">
+                                {formatCurrency(row.totalDailyInterest)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell
+                              colSpan={visibleLogAccounts.length * 3 + 2}
+                              className="text-center h-24"
+                            >
+                              No logs found for the selected criteria.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </ScrollArea>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -937,66 +1107,96 @@ export default function InterestRatePage() {
         <TabsContent value="monthly-summary">
           <Card>
             <CardHeader>
-              <CardTitle>
-                Monthly Interest Summary
-              </CardTitle>
-              <CardDescription>
-                Total interest accrued per bank for each
-                month.
-              </CardDescription>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle>
+                    Monthly Interest Summary
+                  </CardTitle>
+                  <CardDescription>
+                    Total interest accrued per bank for each month.
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline">Months: {monthlySummaryStats.totalMonths}</Badge>
+                  <Badge variant="outline">Rows: {monthlySummaryStats.totalRows}</Badge>
+                  <Badge variant="outline">Projected: {formatCurrency(monthlySummaryStats.totalProjected)}</Badge>
+                  <Badge variant="outline">Actual: {formatCurrency(monthlySummaryStats.totalActual)}</Badge>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
+            <CardContent className="p-0 overflow-hidden">
+              <div className="min-w-0 overflow-hidden rounded-2xl border border-border/60 bg-background">
+                <ScrollArea className="h-[calc(100vh-24rem)]" showHorizontalScrollbar>
+              <Table containerClassName="w-max overflow-visible" className="w-max min-w-[980px]">
+                <TableHeader className="sticky top-0 z-10 bg-background border-b border-border/60">
                   <TableRow>
-                    <TableHead>Month</TableHead>
-                    <TableHead>Bank Name</TableHead>
-                    <TableHead className="text-right">
-                      Total Interest
-                    </TableHead>
+                    <TableHead rowSpan={2} className="min-w-[140px]">Month</TableHead>
+                    {accounts.map((acc) => (
+                      <TableHead key={`group-${acc.id}`} colSpan={3} className="text-center">
+                        {acc.shortName}
+                      </TableHead>
+                    ))}
+                    <TableHead colSpan={3} className="text-center">Total</TableHead>
+                  </TableRow>
+                  <TableRow>
+                    {accounts.map((acc) => (
+                      <Fragment key={`cols-${acc.id}`}>
+                        <TableHead key={`proj-${acc.id}`} className="text-right">Projected</TableHead>
+                        <TableHead key={`act-${acc.id}`} className="text-right">Actual</TableHead>
+                        <TableHead key={`diff-${acc.id}`} className="text-right">Diff</TableHead>
+                      </Fragment>
+                    ))}
+                    <TableHead className="text-right">Projected</TableHead>
+                    <TableHead className="text-right">Actual</TableHead>
+                    <TableHead className="text-right">Diff</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLogLoading ? (
                     <TableRow>
-                      <TableCell colSpan={3}>
+                      <TableCell colSpan={Math.max(4, 1 + (accounts.length * 3) + 3)}>
                         <Skeleton className="h-20" />
                       </TableCell>
                     </TableRow>
                   ) : monthlySummary.length > 0 ? (
-                    monthlySummary.flatMap(
-                      (summary) =>
-                        summary.banks.map(
-                          (bank, bankIndex) => (
-                            <TableRow
-                              key={`${summary.month}-${bank.accountId}-${bankIndex}`}
-                            >
-                              {bankIndex === 0 && (
-                                <TableCell
-                                  rowSpan={
-                                    summary.banks.length
-                                  }
-                                  className="font-medium align-top"
-                                >
-                                  {summary.month}
-                                </TableCell>
+                    monthlySummary.map((summary) => (
+                      <TableRow key={summary.monthKey}>
+                        <TableCell className="font-medium">{summary.monthLabel}</TableCell>
+                        {summary.banks.map((bank) => (
+                          <Fragment key={`${summary.monthKey}-${bank.accountId}`}>
+                            <TableCell key={`${summary.monthKey}-${bank.accountId}-p`} className="text-right">
+                              {formatCurrency(bank.projected)}
+                            </TableCell>
+                            <TableCell key={`${summary.monthKey}-${bank.accountId}-a`} className="text-right">
+                              {formatCurrency(bank.actual)}
+                            </TableCell>
+                            <TableCell
+                              key={`${summary.monthKey}-${bank.accountId}-d`}
+                              className={cn(
+                                'text-right',
+                                bank.diff > 0 ? 'text-red-600 dark:text-red-400' : bank.diff < 0 ? 'text-green-600 dark:text-green-400' : ''
                               )}
-                              <TableCell>
-                                {bank.accountName}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {formatCurrency(
-                                  bank.totalInterest
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          )
-                        )
-                    )
+                            >
+                              {formatCurrency(bank.diff)}
+                            </TableCell>
+                          </Fragment>
+                        ))}
+                        <TableCell className="text-right font-semibold">{formatCurrency(summary.totalProjected)}</TableCell>
+                        <TableCell className="text-right font-semibold">{formatCurrency(summary.totalActual)}</TableCell>
+                        <TableCell
+                          className={cn(
+                            'text-right font-semibold',
+                            summary.totalDiff > 0 ? 'text-red-600 dark:text-red-400' : summary.totalDiff < 0 ? 'text-green-600 dark:text-green-400' : ''
+                          )}
+                        >
+                          {formatCurrency(summary.totalDiff)}
+                        </TableCell>
+                      </TableRow>
+                    ))
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={3}
+                        colSpan={Math.max(4, 1 + (accounts.length * 3) + 3)}
                         className="text-center h-24"
                       >
                         No data to summarize.
@@ -1005,10 +1205,13 @@ export default function InterestRatePage() {
                   )}
                 </TableBody>
               </Table>
+                </ScrollArea>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
     </div>
+    </>
   );
 }
