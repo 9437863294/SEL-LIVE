@@ -283,7 +283,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Header ── */}
-      <div className="mb-6 flex items-center gap-3">
+      <div className="px-4 sm:px-6 lg:px-8 pt-5 mb-6 flex items-center gap-3">
         <Link href="/">
           <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
             <Home className="h-5 w-5" />
@@ -299,7 +299,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Settings Grid ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div className="px-4 sm:px-6 lg:px-8 pb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {settingsItems.map((item, i) => (
           <SettingsCard key={item.text} item={item} index={i} />
         ))}

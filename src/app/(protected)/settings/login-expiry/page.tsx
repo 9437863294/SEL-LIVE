@@ -59,7 +59,7 @@ export default function LoginExpiryPage() {
 
   if (!canViewPage) {
     return (
-      <div className="max-w-xl mx-auto">
+      <div className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
         <div className="mb-5 flex items-center gap-3">
           <Link href="/settings"><Button variant="ghost" size="icon" className="rounded-full"><ArrowLeft className="h-5 w-5" /></Button></Link>
           <h1 className="text-xl font-bold">Login Expiry</h1>
@@ -83,7 +83,7 @@ export default function LoginExpiryPage() {
         />
       </div>
 
-      <div className="max-w-xl mx-auto">
+      <div className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
         {/* Header */}
         <div className="mb-5 flex items-center gap-3">
           <Link href="/settings">

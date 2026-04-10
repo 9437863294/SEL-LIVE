@@ -200,7 +200,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         'flex-1 flex flex-col min-h-screen transition-all duration-300',
         isExpanded ? 'ml-56' : 'ml-14',
       )}>
-        <main className="flex-grow p-4 sm:p-6 lg:p-8">
+        <main className="flex-grow">
           {children}
         </main>
         <footer className="flex-shrink-0 flex justify-between items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">

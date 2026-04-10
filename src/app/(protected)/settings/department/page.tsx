@@ -236,7 +236,7 @@ export default function ManageDepartmentPage() {
           style={{ backgroundImage: 'radial-gradient(circle, rgba(14,165,233,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
         />
       </div>
-    <div className="w-full max-w-5xl mx-auto">
+    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/settings">

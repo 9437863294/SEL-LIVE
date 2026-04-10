@@ -181,7 +181,7 @@ export default function WorkingHoursPage() {
           style={{ backgroundImage: 'radial-gradient(circle, rgba(20,184,166,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
         />
       </div>
-    <div className="w-full max-w-5xl mx-auto">
+    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
       <div className="mb-5 flex items-center gap-3">
         <Link href="/settings">
           <Button variant="ghost" size="icon" className="rounded-full hover:bg-teal-50 dark:hover:bg-teal-950/30"><ArrowLeft className="h-5 w-5" /></Button>
