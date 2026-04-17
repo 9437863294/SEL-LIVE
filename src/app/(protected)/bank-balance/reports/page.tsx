@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
-import { ArrowLeft, LineChart, Banknote, ShieldAlert, BarChart3 } from 'lucide-react';
+import { ArrowLeft, LineChart, Banknote, ShieldAlert, BarChart3, FileText, Percent, Gauge, LayoutGrid } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -68,6 +68,66 @@ const reportItemsBase: ReportItemConfig[] = [
       tag: 'Position',
     },
   },
+  {
+    icon: FileText,
+    title: 'Account Statement',
+    description: 'Full transaction ledger for any account with running balance and date range filter.',
+    href: '/bank-balance/reports/account-statement',
+    permissionAction: 'View',
+    permissionResource: 'Bank Balance.Reports',
+    colorScheme: {
+      bg: 'from-amber-500/10 to-orange-500/5',
+      iconBg: 'bg-amber-100 dark:bg-amber-900/40',
+      iconColor: 'text-amber-600 dark:text-amber-400',
+      border: 'border-amber-200/60 dark:border-amber-800/30 hover:border-amber-400/60',
+      tag: 'Statement',
+    },
+  },
+  {
+    icon: Percent,
+    title: 'Interest Accrual',
+    description: 'Estimated monthly interest for Cash Credit accounts based on utilization and applicable rates.',
+    href: '/bank-balance/reports/interest-accrual',
+    permissionAction: 'View',
+    permissionResource: 'Bank Balance.Reports',
+    colorScheme: {
+      bg: 'from-violet-500/10 to-purple-500/5',
+      iconBg: 'bg-violet-100 dark:bg-violet-900/40',
+      iconColor: 'text-violet-600 dark:text-violet-400',
+      border: 'border-violet-200/60 dark:border-violet-800/30 hover:border-violet-400/60',
+      tag: 'Interest',
+    },
+  },
+  {
+    icon: Gauge,
+    title: 'DP Utilization',
+    description: 'Monitor drawing power limits, current utilization, and available headroom for CC accounts.',
+    href: '/bank-balance/reports/dp-utilization',
+    permissionAction: 'View',
+    permissionResource: 'Bank Balance.Reports',
+    colorScheme: {
+      bg: 'from-rose-500/10 to-pink-500/5',
+      iconBg: 'bg-rose-100 dark:bg-rose-900/40',
+      iconColor: 'text-rose-600 dark:text-rose-400',
+      border: 'border-rose-200/60 dark:border-rose-800/30 hover:border-rose-400/60',
+      tag: 'Utilization',
+    },
+  },
+  {
+    icon: LayoutGrid,
+    title: 'Transaction Summary',
+    description: 'Account-wise monthly breakdown of receipts, payments, and net cashflow.',
+    href: '/bank-balance/reports/transaction-summary',
+    permissionAction: 'View',
+    permissionResource: 'Bank Balance.Reports',
+    colorScheme: {
+      bg: 'from-sky-500/10 to-cyan-500/5',
+      iconBg: 'bg-sky-100 dark:bg-sky-900/40',
+      iconColor: 'text-sky-600 dark:text-sky-400',
+      border: 'border-sky-200/60 dark:border-sky-800/30 hover:border-sky-400/60',
+      tag: 'Summary',
+    },
+  },
 ];
 
 function ReportCard({ item }: ReportCardProps) {
@@ -83,7 +143,6 @@ function ReportCard({ item }: ReportCardProps) {
         isDisabled && 'cursor-not-allowed opacity-55 saturate-50',
       )}
     >
-      {/* Gradient background */}
       <div className={cn('absolute inset-0 bg-gradient-to-br opacity-60', colorScheme.bg)} />
 
       <CardHeader className="relative items-center text-center gap-4 pb-3">
@@ -130,9 +189,10 @@ export default function BankReportsPage() {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
         <Skeleton className="h-10 w-48 mb-6" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-xl">
-          <Skeleton className="h-56 rounded-xl" />
-          <Skeleton className="h-56 rounded-xl" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-56 rounded-xl" />
+          ))}
         </div>
       </div>
     );
@@ -164,7 +224,6 @@ export default function BankReportsPage() {
 
   return (
     <>
-      {/* ── Animated Background ── */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/60 via-background to-blue-50/50 dark:from-emerald-950/20 dark:via-background dark:to-blue-950/20" />
         <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-emerald-400/15 blur-3xl" />
@@ -178,7 +237,6 @@ export default function BankReportsPage() {
       </div>
 
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-5">
-        {/* ── Header ── */}
         <div className="mb-8 flex items-center gap-3">
           <Link href="/bank-balance">
             <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
@@ -194,8 +252,7 @@ export default function BankReportsPage() {
           </div>
         </div>
 
-        {/* ── Report Cards ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-4xl">
           {reportItems.map((item, idx) => (
             <div
               key={item.title}
