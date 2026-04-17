@@ -44,7 +44,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Badge } from '@/components/ui/badge';
 
 /* ---------- helpers ---------- */
@@ -251,7 +251,7 @@ export default function MvacLogPage() {
     setIsViewOpen(true);
   };
 
-  const handleExportAll = () => {
+  const handleExportAll = async () => {
     if (!mvacEntries.length) return;
 
     const rows = mvacEntries.map((e) => {
@@ -270,18 +270,30 @@ export default function MvacLogPage() {
       return row;
     });
 
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'MVAC Workflow Log');
-
-    // Autosize columns
-    const keys = Object.keys(rows[0] || {});
-    const colWidths = keys.map((k) => ({
-      wch: Math.max(12, k.length, ...rows.map((r) => String(r[k] ?? '').length)),
-    }));
-    (ws as any)['!cols'] = colWidths;
-
-    XLSX.writeFile(wb, `mvac_workflow_log_${projectSlug}.xlsx`);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('MVAC Workflow Log');
+      const keys = Object.keys(rows[0] || {});
+      ws.columns = keys.map((k) => ({
+        header: k,
+        key: k,
+        width: Math.max(12, k.length, ...rows.map((r) => String(r[k] ?? '').length)),
+      }));
+      rows.forEach((row) => ws.addRow(row));
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mvac_workflow_log_${projectSlug}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      toast({ title: 'Export Failed', description: 'Could not generate the Excel file.', variant: 'destructive' });
+    }
   };
 
   const handleDelete = async (entry: EnrichedMvacEntry) => {

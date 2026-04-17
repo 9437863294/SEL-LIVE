@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -57,6 +57,31 @@ function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
+}
+
+function worksheetToJson(worksheet: ExcelJS.Worksheet): Record<string, any>[] {
+  const headers: string[] = [];
+  const result: Record<string, any>[] = [];
+
+  worksheet.eachRow((row, rowNumber) => {
+    const vals = (row.values as any[]).slice(1);
+    if (rowNumber === 1) {
+      headers.push(
+        ...vals.map((v: any, i: number) => (v != null ? String(v) : `Column${i + 1}`))
+      );
+    } else {
+      const rowData: Record<string, any> = {};
+      for (let i = 0; i < headers.length; i++) {
+        let v = vals[i] ?? '';
+        if (v && typeof v === 'object' && 'richText' in v) v = v.richText.map((r: any) => r.text).join('');
+        if (v && typeof v === 'object' && 'result' in v) v = v.result ?? '';
+        rowData[headers[i]] = v;
+      }
+      result.push(rowData);
+    }
+  });
+
+  return result;
 }
 
 export default function ImportBoqPage() {
@@ -123,13 +148,12 @@ export default function ImportBoqPage() {
     const valid =
       selectedFile.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
       selectedFile.type === 'application/vnd.ms-excel' ||
-      selectedFile.name.endsWith('.xlsx') ||
-      selectedFile.name.endsWith('.xls');
+      selectedFile.name.endsWith('.xlsx');
 
     if (!valid) {
       toast({
         title: 'Invalid File Type',
-        description: 'Please upload a valid Excel file (.xlsx, .xls).',
+        description: 'Please upload a valid Excel file (.xlsx).',
         variant: 'destructive',
       });
       return;
@@ -148,9 +172,10 @@ export default function ImportBoqPage() {
 
     try {
       const buffer = await fileToParse.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true, raw: false });
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
 
-      const names = workbook.SheetNames || [];
+      const names = workbook.worksheets.map((ws) => ws.name);
       setSheetNames(names);
 
       const sheetName = names[0];
@@ -165,11 +190,8 @@ export default function ImportBoqPage() {
         return;
       }
 
-      const ws = workbook.Sheets[sheetName];
-      const rawJson = XLSX.utils.sheet_to_json<BoqItem>(ws, {
-        defval: '',
-        blankrows: false,
-      });
+      const ws = workbook.getWorksheet(sheetName)!;
+      const rawJson = worksheetToJson(ws);
 
       if (rawJson.length === 0) {
         toast({
@@ -333,7 +355,7 @@ export default function ImportBoqPage() {
         <Card className="flex flex-col shrink-0">
           <CardHeader>
             <CardTitle>Upload File</CardTitle>
-            <CardDescription>Select an Excel file (.xlsx or .xls). The data will be previewed before import.</CardDescription>
+            <CardDescription>Select an Excel file (.xlsx). The data will be previewed before import.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="grid w-full max-w-sm items-center gap-1.5">
@@ -341,7 +363,7 @@ export default function ImportBoqPage() {
                 id="excel-file"
                 type="file"
                 onChange={handleFileChange}
-                accept=".xlsx, .xls"
+                accept=".xlsx"
                 disabled={isParsing || isImporting}
                 className="cursor-pointer file:cursor-pointer file:text-primary file:font-semibold"
               />

@@ -121,7 +121,7 @@ export const permissionModules = {
     'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
     'Processed for Payment': ['View', 'Mark as Received for Payment'],
     'Manage Documents': ['View', 'Upload', 'Download', 'Mark as Missing', 'Not Required', 'Move to Pending'],
-    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
+    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights', 'View Workflow', 'Edit Workflow'],
   },
   'Billing Recon': {
     'View Module': [],

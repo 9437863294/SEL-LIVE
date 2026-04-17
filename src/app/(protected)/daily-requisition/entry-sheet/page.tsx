@@ -2,11 +2,8 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React, { Fragment, Suspense } from 'react';
-import Link from 'next/link';
+import React, { Suspense } from 'react';
 import {
-  ArrowLeft,
-  Upload,
   Plus,
   ArrowUpDown,
   MoreHorizontal,
@@ -57,14 +54,12 @@ import {
   getDocs,
   doc,
   getDoc,
-  addDoc,
   updateDoc,
   runTransaction,
   Timestamp,
   query,
   where,
   orderBy,
-  deleteDoc,
   writeBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -86,8 +81,14 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/auth/AuthProvider';
+import {
+  DailyMetricCard,
+  DailyPageHeader,
+  dailyPageContainerClass,
+  dailySurfaceCardClass,
+  dailyTableHeaderClass,
+} from '@/components/daily-requisition/module-shell';
 import { logUserActivity } from '@/lib/activity-logger';
-import { Separator } from '@/components/ui/separator';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -576,38 +577,26 @@ function EntrySheetPageComponent() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-10 w-10" />
-            <Skeleton className="h-8 w-48" />
-          </div>
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-10 w-36" />
-            <Skeleton className="h-10 w-36" />
-          </div>
+      <div className={dailyPageContainerClass}>
+        <Skeleton className="mb-6 h-10 w-72" />
+        <div className="grid gap-4 md:grid-cols-3">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
         </div>
-        <Card>
-          <CardContent>
-            <Skeleton className="h-96 w-full" />
-          </CardContent>
-        </Card>
+        <Skeleton className="mt-6 h-96 w-full rounded-2xl" />
       </div>
     );
   }
 
   if (!canViewPage) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/daily-requisition">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Entry Sheet</h1>
-        </div>
-        <Card>
+      <div className={dailyPageContainerClass}>
+        <DailyPageHeader
+          title="Entry Sheet"
+          description="Create, review, print, and manage daily requisition entries from one place."
+        />
+        <Card className={dailySurfaceCardClass}>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>You do not have permission to view this page.</CardDescription>
@@ -622,18 +611,22 @@ function EntrySheetPageComponent() {
   
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8 no-print">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href="/daily-requisition">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">Entry Sheet</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            {isSelectionMode ? (
+      <div className={`${dailyPageContainerClass} no-print`}>
+        <DailyPageHeader
+          title="Entry Sheet"
+          description="Create new entries, bulk-print checklists, and keep the front door of the workflow organized."
+          meta={
+            <>
+              <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+                Stage 1 of 4
+              </span>
+              <span className="rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
+                {filteredEntries.length} visible entries
+              </span>
+            </>
+          }
+          actions={
+            isSelectionMode ? (
               <>
                 <Button variant="outline" onClick={() => setIsSelectionMode(false)}>
                   Cancel Selection
@@ -652,41 +645,53 @@ function EntrySheetPageComponent() {
                   <Plus className="mr-2 h-4 w-4" /> Add Entry
                 </Button>
               </>
-            )}
-          </div>
+            )
+          }
+        />
+
+        <div className="mb-6 grid gap-4 md:grid-cols-3">
+          <DailyMetricCard label="Visible Entries" value={filteredEntries.length} hint="Filtered result set" />
+          <DailyMetricCard label="Selected" value={selectedIds.size} hint={isSelectionMode ? 'Checklist print mode' : 'No bulk action active'} />
+          <DailyMetricCard label="Unassigned DEP" value={unassignedExpenseRequests.length} hint="Expense requests available to link" />
         </div>
 
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Total Entries: {filteredEntries.length}</h2>
-          <div className="flex items-center gap-2">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant={'outline'}
-                  className={cn('w-[240px] justify-start text-left font-normal', !dateFilter && 'text-muted-foreground')}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {dateFilter ? format(dateFilter, 'PPP') : 'Filter by date'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={dateFilter} onSelect={setDateFilter} initialFocus />
-              </PopoverContent>
-            </Popover>
-            <Input
-              placeholder="Filter entries..."
-              className="w-64"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-            />
-          </div>
-        </div>
+        <Card className="mb-6 rounded-2xl border border-white/70 bg-white/70 shadow-sm backdrop-blur">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <h2 className="text-lg font-semibold text-slate-900">Entries workspace</h2>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={'outline'}
+                    className={cn('w-full justify-start border-white/70 bg-white/80 text-left font-normal sm:w-[240px]', !dateFilter && 'text-muted-foreground')}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFilter ? format(dateFilter, 'PPP') : 'Filter by date'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={dateFilter} onSelect={setDateFilter} initialFocus />
+                </PopoverContent>
+              </Popover>
+              <div className="relative">
+                <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Filter entries..."
+                  className="w-full border-white/70 bg-white/80 pl-9 sm:w-64"
+                  value={filterText}
+                  onChange={(e) => setFilterText(e.target.value)}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        <Card>
+        <Card className={dailySurfaceCardClass}>
+          <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
+                <TableHeader className={dailyTableHeaderClass}>
                   <TableRow>
                     {isSelectionMode && (
                       <TableHead>

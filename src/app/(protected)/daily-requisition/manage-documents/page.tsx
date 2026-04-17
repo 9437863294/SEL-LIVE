@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Upload, Files, ShieldAlert, MoreHorizontal } from 'lucide-react';
+import { Upload, Files, ShieldAlert, MoreHorizontal } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -17,8 +17,15 @@ import { RequisitionDocumentDialog } from '@/components/RequisitionDocumentDialo
 import { format } from 'date-fns';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/auth/AuthProvider';
+import {
+  DailyMetricCard,
+  DailyPageHeader,
+  dailyPageContainerClass,
+  dailySurfaceCardClass,
+  dailyTableHeaderClass,
+  dailyTabsListClass,
+} from '@/components/daily-requisition/module-shell';
 
-/** Keep Firestore field types intact and add display-only fields */
 type EnrichedDailyRequisitionEntry = DailyRequisitionEntry & {
   id: string;
   dateText?: string;
@@ -59,7 +66,6 @@ export default function ManageDocumentsPage() {
           documentStatusUpdatedAt?: any;
         };
 
-        // derive documentStatus if missing
         let documentStatus = data.documentStatus;
         if (!documentStatus) {
           documentStatus = data.attachments && data.attachments.length > 0 ? 'Uploaded' : 'Pending';
@@ -75,8 +81,8 @@ export default function ManageDocumentsPage() {
           ...(data as DailyRequisitionEntry),
           id: d.id,
           documentStatus,
-          dateText: dateObj ? format(dateObj, 'dd MMM, yyyy') : (data.date ? String(data.date) : ''),
-          createdAtText: createdAtObj ? format(createdAtObj, 'dd MMM, yyyy HH:mm') : (data.createdAt ? String(data.createdAt) : ''),
+          dateText: dateObj ? format(dateObj, 'dd MMM, yyyy') : data.date ? String(data.date) : '',
+          createdAtText: createdAtObj ? format(createdAtObj, 'dd MMM, yyyy HH:mm') : data.createdAt ? String(data.createdAt) : '',
           documentStatusUpdatedAtText: docUpdatedAtObj ? format(docUpdatedAtObj, 'dd MMM, yy HH:mm') : undefined,
         };
       });
@@ -138,7 +144,7 @@ export default function ManageDocumentsPage() {
       await updateDoc(reqRef, {
         documentStatus: status,
         documentStatusUpdatedById: user.id,
-        documentStatusUpdatedAt: Timestamp.now(), // keep Firestore type
+        documentStatusUpdatedAt: Timestamp.now(),
       });
       toast({ title: 'Status Updated', description: `Entry marked as ${status}.` });
       fetchRequisitions();
@@ -152,10 +158,11 @@ export default function ManageDocumentsPage() {
     const usersMap = new Map(users.map((u) => [u.id, u.name]));
 
     return (
-      <Card>
+      <Card className={dailySurfaceCardClass}>
+        <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
         <CardContent className="p-0">
           <Table>
-            <TableHeader>
+            <TableHeader className={dailyTableHeaderClass}>
               <TableRow>
                 <TableHead>Reception No.</TableHead>
                 <TableHead>Party Name</TableHead>
@@ -178,23 +185,17 @@ export default function ManageDocumentsPage() {
                 ))
               ) : data.length > 0 ? (
                 data.map((req) => (
-                  <TableRow key={req.id}>
+                  <TableRow key={req.id} className="hover:bg-slate-50/70">
                     <TableCell className="font-medium" onClick={() => openDialog(req)}>
                       {req.receptionNo}
                     </TableCell>
                     <TableCell onClick={() => openDialog(req)}>{req.partyName}</TableCell>
                     <TableCell onClick={() => openDialog(req)}>{req.dateText}</TableCell>
-                    {type === 'uploaded' && (
-                      <TableCell onClick={() => openDialog(req)}>{req.attachments?.length || 0}</TableCell>
-                    )}
+                    {type === 'uploaded' && <TableCell onClick={() => openDialog(req)}>{req.attachments?.length || 0}</TableCell>}
                     {(type === 'missing' || type === 'uploaded') && (
-                      <TableCell onClick={() => openDialog(req)}>
-                        {req.documentStatusUpdatedAtText ?? 'N/A'}
-                      </TableCell>
+                      <TableCell onClick={() => openDialog(req)}>{req.documentStatusUpdatedAtText ?? 'N/A'}</TableCell>
                     )}
-                    {type === 'missing' && (
-                      <TableCell onClick={() => openDialog(req)}>{req.documentStatus}</TableCell>
-                    )}
+                    {type === 'missing' && <TableCell onClick={() => openDialog(req)}>{req.documentStatus}</TableCell>}
                     {type === 'missing' && (
                       <TableCell onClick={() => openDialog(req)}>
                         {req.documentStatusUpdatedById ? usersMap.get(req.documentStatusUpdatedById) : 'N/A'}
@@ -283,25 +284,26 @@ export default function ManageDocumentsPage() {
 
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <Skeleton className="h-10 w-80 mb-6" />
-        <Skeleton className="h-96 w-full" />
+      <div className={dailyPageContainerClass}>
+        <Skeleton className="mb-6 h-10 w-80" />
+        <div className="grid gap-4 md:grid-cols-3">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+        <Skeleton className="mt-6 h-96 w-full rounded-2xl" />
       </div>
     );
   }
 
   if (!canViewPage) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-2">
-          <Link href="/daily-requisition">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Manage Documents</h1>
-        </div>
-        <Card>
+      <div className={dailyPageContainerClass}>
+        <DailyPageHeader
+          title="Manage Documents"
+          description="Track uploads, document exceptions, and recovery steps."
+        />
+        <Card className={dailySurfaceCardClass}>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>You do not have permission to manage documents.</CardDescription>
@@ -316,23 +318,33 @@ export default function ManageDocumentsPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href="/daily-requisition">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">Manage Documents</h1>
-          </div>
+      <div className={dailyPageContainerClass}>
+        <DailyPageHeader
+          title="Manage Documents"
+          description="Keep attachments organized, highlight missing paperwork, and move resolved items back into the normal flow."
+          meta={
+            <>
+              <span className="rounded-full border border-white/70 bg-white/70 px-3 py-1 text-xs text-slate-600 backdrop-blur">
+                Support workflow
+              </span>
+              <span className="rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
+                {uploadedList.length} uploaded entries
+              </span>
+            </>
+          }
+        />
+
+        <div className="mb-6 grid gap-4 md:grid-cols-3">
+          <DailyMetricCard label="Pending Uploads" value={pendingUploads.length} hint="Need attachment action" />
+          <DailyMetricCard label="Uploaded" value={uploadedList.length} hint="Documents already attached" />
+          <DailyMetricCard label="Missing / N.R." value={missingList.length} hint="Exceptions and follow-up" />
         </div>
 
         <Tabs defaultValue="pending">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="pending">Pending for Upload ({pendingUploads.length})</TabsTrigger>
-            <TabsTrigger value="uploaded">Uploaded List ({uploadedList.length})</TabsTrigger>
-            <TabsTrigger value="missing">Missing / Not Required ({missingList.length})</TabsTrigger>
+          <TabsList className={`${dailyTabsListClass} grid-cols-3`}>
+            <TabsTrigger value="pending">Pending ({pendingUploads.length})</TabsTrigger>
+            <TabsTrigger value="uploaded">Uploaded ({uploadedList.length})</TabsTrigger>
+            <TabsTrigger value="missing">Missing / N.R. ({missingList.length})</TabsTrigger>
           </TabsList>
           <TabsContent value="pending" className="mt-4">
             {renderTable(pendingUploads, 'pending')}
