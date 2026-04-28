@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,8 @@ import { ElectricBackdrop } from "@/components/effects/ElectricBackdrop";
 
 export function LoginPageContent() {
   const { toast } = useToast();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const {
     setShouldRemember, 
@@ -48,6 +51,20 @@ export function LoginPageContent() {
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [isForgotLoading, setIsForgotLoading] = useState(false);
+
+  const resolvePostLoginPath = () => {
+    const redirectParam = searchParams?.get("redirect");
+    if (
+      typeof redirectParam === "string" &&
+      redirectParam.startsWith("/") &&
+      !redirectParam.startsWith("//") &&
+      redirectParam !== "/login" &&
+      redirectParam !== "/login/"
+    ) {
+      return redirectParam;
+    }
+    return "/driver-management/mobile-hub";
+  };
 
   // Load saved profiles once when login page mounts.
   useEffect(() => {
@@ -108,6 +125,15 @@ export function LoginPageContent() {
 
       // Tell AuthProvider whether to remember non-sensitive profile prefs
       setShouldRemember(rememberMe);
+
+      const nextPath = resolvePostLoginPath();
+      router.replace(nextPath);
+      window.setTimeout(() => {
+        const livePath = window.location.pathname || "";
+        if (livePath === "/login" || livePath === "/login/") {
+          window.location.replace(nextPath);
+        }
+      }, 350);
 
       toast({
         title: "Success",
