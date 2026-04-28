@@ -82,7 +82,7 @@ export function LoginPageContent() {
         return /Android/i.test(ua) && /\bwv\b/i.test(ua);
       })();
 
-    return isDriverContext ? "/driver-management/mobile-hub" : "/";
+    return isDriverContext ? "/driver-management" : "/";
   };
 
   // Load saved profiles once when login page mounts.

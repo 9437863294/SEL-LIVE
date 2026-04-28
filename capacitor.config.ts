@@ -5,7 +5,7 @@ loadEnv();
 
 const appId = (process.env.CAPACITOR_APP_ID || 'com.sel.driver').trim();
 const appName = (process.env.CAPACITOR_APP_NAME || 'SEL Driver').trim();
-const startPath = (process.env.CAPACITOR_DRIVER_START_PATH || '/driver-management/mobile-hub').trim();
+const startPath = (process.env.CAPACITOR_DRIVER_START_PATH || '/driver-management').trim();
 const liveBaseUrl = (process.env.CAPACITOR_LIVE_URL || '').trim();
 
 const resolveMobileUrl = (baseUrl: string, path: string) => {

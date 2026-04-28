@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence } from 'firebase/auth';
 import { CarFront, Loader2 } from 'lucide-react';
@@ -24,7 +24,7 @@ const resolveDriverLoginRedirect = (redirectParam: string | null | undefined) =>
   ) {
     return redirectParam;
   }
-  return '/driver-management/mobile-hub';
+  return '/driver-management';
 };
 
 const mapFirebaseError = (code?: string) => {
@@ -58,6 +58,12 @@ export default function DriverLoginPageContent() {
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem('driver_app_mode', '1');
+    window.localStorage.setItem('driver_app_mode', '1');
+  }, []);
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const finalEmail = email.trim().toLowerCase();
@@ -75,6 +81,8 @@ export default function DriverLoginPageContent() {
       await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       await signInWithEmailAndPassword(auth, finalEmail, password);
       setShouldRemember(rememberMe);
+      window.sessionStorage.setItem('driver_app_mode', '1');
+      window.localStorage.setItem('driver_app_mode', '1');
 
       const nextPath = resolveDriverLoginRedirect(searchParams?.get('redirect'));
       router.replace(nextPath);

@@ -55,6 +55,10 @@ export interface CrudFieldConfig {
   options?: Array<{ value: string; label: string }>;
   step?: string;
   accept?: string;
+  showWhen?: (context: {
+    formState: Record<string, string>;
+    editingRow: Record<string, any> | null;
+  }) => boolean;
 }
 
 export interface CrudColumnConfig {
@@ -151,6 +155,15 @@ const buildInitialForm = (fields: CrudFieldConfig[], row: Record<string, any> | 
     next[field.key] = '';
   });
   return next;
+};
+
+const isFieldVisible = (
+  field: CrudFieldConfig,
+  formState: Record<string, string>,
+  editingRow: Record<string, any> | null
+) => {
+  if (!field.showWhen) return true;
+  return field.showWhen({ formState, editingRow });
 };
 
 export default function GenericCrudPage({
@@ -484,6 +497,18 @@ export default function GenericCrudPage({
     const payload: Record<string, any> = {};
     const fileFields = fields.filter((field) => field.type === 'file');
     for (const field of fields) {
+      const visible = isFieldVisible(field, formState, editingRow);
+      if (!visible) {
+        if (field.type === 'file') {
+          payload[field.key] = '';
+        } else if (field.type === 'number') {
+          payload[field.key] = '';
+        } else {
+          payload[field.key] = '';
+        }
+        continue;
+      }
+
       const raw = (formState[field.key] ?? '').trim();
       if (field.required && raw === '') {
         if (field.type !== 'file' || !fileState[field.key]) {
@@ -790,7 +815,9 @@ export default function GenericCrudPage({
           </DialogHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-1">
-            {fields.map((field) => (
+            {fields.map((field) => {
+              if (!isFieldVisible(field, formState, editingRow)) return null;
+              return (
               <div
                 key={field.key}
                 className={`space-y-2 ${field.type === 'textarea' ? 'md:col-span-2' : ''}`}
@@ -859,7 +886,8 @@ export default function GenericCrudPage({
                   />
                 )}
               </div>
-            ))}
+            );
+            })}
           </div>
 
           <DialogFooter>

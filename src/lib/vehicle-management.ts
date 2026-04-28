@@ -8,6 +8,7 @@ export const VEHICLE_COLLECTIONS = {
   maintenance: 'vehicleManagementMaintenanceLogs',
   fuel: 'vehicleManagementFuelLogs',
   trips: 'vehicleManagementTrips',
+  employeeTrips: 'vehicleManagementEmployeeTrips',
   tripLocations: 'vehicleManagementTripLocations',
   settings: 'vehicleManagementSettings',
   driverDailyStatus: 'vehicleManagementDriverDailyStatus',

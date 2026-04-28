@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { CarFront, Fuel, Gauge, ListFilter, LocateFixed, User } from 'lucide-react';
+import { CarFront, Fuel, Gauge, ListFilter, LocateFixed, ReceiptText, User } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,7 +23,13 @@ export default function DriverManagementOverviewPage() {
 
   const canViewModule =
     can('View Module', 'Driver Management') ||
+    can('View', 'Driver Management.Employee Trip Log') ||
+    can('Add', 'Driver Management.Employee Trip Log') ||
+    can('Edit', 'Driver Management.Employee Trip Log') ||
     can('View', 'Vehicle Management.Driver Mobile') ||
+    can('View', 'Vehicle Management.Employee Trip Reimbursement') ||
+    can('Add', 'Vehicle Management.Employee Trip Reimbursement') ||
+    can('Edit', 'Vehicle Management.Employee Trip Reimbursement') ||
     can('View', 'Vehicle Management.Driver Management') ||
     isAssignedDriver;
 
@@ -89,6 +95,19 @@ export default function DriverManagementOverviewPage() {
         isAssignedDriver,
     },
     {
+      title: 'Employee Trip Reimbursement',
+      description: 'Personal vehicle office trips and reimbursement records.',
+      href: '/driver-management/employee-trips',
+      icon: ReceiptText,
+      canView:
+        can('View', 'Driver Management.Employee Trip Log') ||
+        can('Add', 'Driver Management.Employee Trip Log') ||
+        can('View', 'Vehicle Management.Employee Trip Reimbursement') ||
+        can('Add', 'Vehicle Management.Employee Trip Reimbursement') ||
+        can('View', 'Vehicle Management.Driver Management') ||
+        Boolean(driver?.id),
+    },
+    {
       title: 'Trip Management',
       description: 'Monitor all trips and route history.',
       href: '/driver-management/trip-management',
@@ -125,11 +144,11 @@ export default function DriverManagementOverviewPage() {
     <div className="space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-600 animate-bb-gradient" />
-        <CardHeader>
-          <CardTitle className="tracking-tight">Driver Management</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="tracking-tight text-xl sm:text-2xl">Driver Management</CardTitle>
           <CardDescription>Dedicated module for driver operations and trip execution.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
+        <CardContent className="flex flex-wrap items-center gap-2 pt-0">
           <Badge className="bg-cyan-600 text-white">
             {driver?.driverName || 'User'}
           </Badge>
@@ -142,20 +161,26 @@ export default function DriverManagementOverviewPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-4">
         {visibleCards.map((item) => {
           const Icon = item.icon;
           return (
             <Link key={item.href} href={item.href} className="block h-full" aria-label={`Open ${item.title}`}>
-              <Card className="vm-panel h-full overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(14,116,205,0.55)]">
-                <CardHeader>
-                  <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 shadow-sm ring-1 ring-cyan-100">
-                    <Icon className="h-5 w-5 text-cyan-700" />
+              <Card className="vm-panel h-full min-h-[132px] overflow-hidden cursor-pointer border-white/70 transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(14,116,205,0.55)] focus-within:ring-2 focus-within:ring-cyan-400/60">
+                <CardHeader className="space-y-2 p-3 sm:p-4">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/85 shadow-sm ring-1 ring-cyan-100 sm:h-10 sm:w-10">
+                    <Icon className="h-4 w-4 text-cyan-700 sm:h-5 sm:w-5" />
                   </div>
-                  <CardTitle className="text-lg">{item.title}</CardTitle>
-                  <CardDescription>{item.description}</CardDescription>
+                  <CardTitle className="line-clamp-2 text-sm font-semibold leading-snug sm:text-base">
+                    {item.title}
+                  </CardTitle>
+                  <CardDescription className="hidden text-xs leading-relaxed text-slate-600 sm:line-clamp-2 sm:block">
+                    {item.description}
+                  </CardDescription>
                 </CardHeader>
-                <CardContent />
+                <CardContent className="px-3 pb-3 pt-0 sm:px-4 sm:pb-4">
+                  <p className="text-[11px] font-medium text-cyan-700/90 sm:text-xs">Tap to open</p>
+                </CardContent>
               </Card>
             </Link>
           );

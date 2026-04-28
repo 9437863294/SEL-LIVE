@@ -17,6 +17,7 @@ import {
   ScrollText,
   Shield,
   ShieldAlert,
+  User,
   Wrench,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -35,6 +36,7 @@ const sections = [
   { href: '/vehicle-management/permit', label: 'Permit', resource: 'Permit Management', icon: ScrollText },
   { href: '/vehicle-management/maintenance', label: 'Maintenance', resource: 'Maintenance Management', icon: Wrench },
   { href: '/vehicle-management/fuel', label: 'Fuel', resource: 'Fuel Management', icon: Fuel },
+  { href: '/vehicle-management/driver', label: 'Driver Master', resource: 'Driver Management', icon: User },
   { href: '/vehicle-management/trips', label: 'Trip Management', resource: 'Trip Management', icon: LocateFixed },
   { href: '/vehicle-management/documents', label: 'Documents', resource: 'Document Management', icon: FileArchive },
   { href: '/vehicle-management/settings', label: 'Settings', resource: 'Settings', icon: Settings },
@@ -47,11 +49,21 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
   const { can } = useAuthorization();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const canViewModule = can('View Module', 'Vehicle Management');
+  const canViewModule =
+    can('View Module', 'Vehicle Management') ||
+    sections.some(
+      (item) =>
+        Boolean(item.resource) &&
+        (can('View', `Vehicle Management.${item.resource}`) ||
+          can('Add', `Vehicle Management.${item.resource}`) ||
+          can('Edit', `Vehicle Management.${item.resource}`))
+    );
 
   const availableSections = sections.filter((item) => {
     if (!item.resource) return canViewModule;
     if (can('View', `Vehicle Management.${item.resource}`)) return true;
+    if (can('Add', `Vehicle Management.${item.resource}`)) return true;
+    if (can('Edit', `Vehicle Management.${item.resource}`)) return true;
 
     return false;
   });

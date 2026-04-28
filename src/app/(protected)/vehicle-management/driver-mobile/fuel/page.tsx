@@ -43,6 +43,8 @@ const initialForm: FuelFormState = {
   remarks: '',
 };
 
+const OWN_VEHICLE_OPTION = '__OWN_VEHICLE__';
+
 export default function DriverMobileFuelPage() {
   const { can } = useAuthorization();
   const { user } = useAuth();
@@ -67,11 +69,40 @@ export default function DriverMobileFuelPage() {
     can('Add', 'Vehicle Management.Fuel Management') ||
     isAssignedDriver;
 
+  const driverAssignedVehicleId = String(driver?.assignedVehicleId || '');
+  const isOwnAssignedVehicle =
+    driverAssignedVehicleId === OWN_VEHICLE_OPTION ||
+    (!driverAssignedVehicleId && Boolean(driver?.assignedVehicleNumber));
+
   const vehicleOptions = useMemo(() => {
-    if (!driver?.assignedVehicleId) return allVehicleOptions;
-    const assigned = allVehicleOptions.find((option) => option.value === String(driver.assignedVehicleId));
+    if (driverAssignedVehicleId && driverAssignedVehicleId !== OWN_VEHICLE_OPTION) {
+      const assigned = allVehicleOptions.find((option) => option.value === driverAssignedVehicleId);
+      return assigned ? [assigned] : allVehicleOptions;
+    }
+    if (isOwnAssignedVehicle && driver?.assignedVehicleNumber) {
+      return [
+        {
+          value: OWN_VEHICLE_OPTION,
+          label: `${String(driver.assignedVehicleNumber)} (Own Vehicle)`,
+        },
+      ];
+    }
+    if (!driverAssignedVehicleId) return allVehicleOptions;
+    const assigned = allVehicleOptions.find((option) => option.value === driverAssignedVehicleId);
     return assigned ? [assigned] : allVehicleOptions;
-  }, [allVehicleOptions, driver?.assignedVehicleId]);
+  }, [allVehicleOptions, driver?.assignedVehicleNumber, driverAssignedVehicleId, isOwnAssignedVehicle]);
+
+  const selectedVehicle = useMemo(() => {
+    if (form.vehicleId === OWN_VEHICLE_OPTION) {
+      return {
+        vehicleNumber: String(driver?.assignedVehicleNumber || ''),
+        registrationNo: String(driver?.assignedVehicleNumber || ''),
+        fuelType: String(driver?.assignedFuelType || driver?.ownFuelType || 'Other'),
+        vehicleType: String(driver?.assignedVehicleType || driver?.ownVehicleType || 'Personal Vehicle'),
+      };
+    }
+    return vehicleMap[String(form.vehicleId)];
+  }, [driver?.assignedFuelType, driver?.assignedVehicleNumber, driver?.assignedVehicleType, driver?.ownFuelType, driver?.ownVehicleType, form.vehicleId, vehicleMap]);
 
   const loadLogs = async () => {
     if (!driver?.id) {
@@ -106,9 +137,11 @@ export default function DriverMobileFuelPage() {
     if (!driver?.id) return;
     setForm((prev) => ({
       ...prev,
-      vehicleId: prev.vehicleId || String(driver.assignedVehicleId || ''),
+      vehicleId:
+        prev.vehicleId ||
+        String(driver.assignedVehicleId || (driver.assignedVehicleNumber ? OWN_VEHICLE_OPTION : '')),
     }));
-  }, [driver?.assignedVehicleId, driver?.id]);
+  }, [driver?.assignedVehicleId, driver?.assignedVehicleNumber, driver?.id]);
 
   useEffect(() => {
     loadLogs();
@@ -166,9 +199,11 @@ export default function DriverMobileFuelPage() {
         billUploadUrl = await getDownloadURL(storageRef);
       }
 
-      const vehicle = vehicleMap[String(form.vehicleId)];
+      const isOwnVehicle = form.vehicleId === OWN_VEHICLE_OPTION;
+      const vehicleId = isOwnVehicle ? '' : String(form.vehicleId);
+      const vehicle = selectedVehicle;
       await addDoc(collection(db, VEHICLE_COLLECTIONS.fuel), {
-        vehicleId: form.vehicleId,
+        vehicleId,
         vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
         fuelDate: form.fuelDate,
         fuelType: String(vehicle?.fuelType || 'Other'),
@@ -190,14 +225,17 @@ export default function DriverMobileFuelPage() {
         enteredByName: user?.name || '',
         fuelStatus: 'Submitted',
         sourceApp: 'Driver Mobile',
+        vehicleOwnershipType: isOwnVehicle ? 'Own Vehicle' : 'Company Vehicle',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
-      await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, String(form.vehicleId)), {
-        currentOdometerKm: currentOdometer,
-        updatedAt: serverTimestamp(),
-      });
+      if (vehicleId) {
+        await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, vehicleId), {
+          currentOdometerKm: currentOdometer,
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       toast({
         title: 'Fuel Submitted',
@@ -206,7 +244,7 @@ export default function DriverMobileFuelPage() {
 
       setForm({
         ...initialForm,
-        vehicleId: String(driver.assignedVehicleId || ''),
+        vehicleId: String(driver.assignedVehicleId || (driver.assignedVehicleNumber ? OWN_VEHICLE_OPTION : '')),
       });
       setBillFile(null);
       await loadLogs();
@@ -288,7 +326,7 @@ export default function DriverMobileFuelPage() {
           <div className="space-y-2">
             <Label>Fuel Type (from Vehicle Master)</Label>
             <Input
-              value={String(vehicleMap[String(form.vehicleId)]?.fuelType || 'Not set in master')}
+              value={String(selectedVehicle?.fuelType || 'Not set')}
               readOnly
               className="bg-slate-100/90"
             />

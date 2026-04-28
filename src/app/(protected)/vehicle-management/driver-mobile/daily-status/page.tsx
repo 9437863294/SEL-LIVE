@@ -49,6 +49,8 @@ const initialForm: DailyStatusForm = {
   remarks: '',
 };
 
+const OWN_VEHICLE_OPTION = '__OWN_VEHICLE__';
+
 export default function DriverDailyStatusPage() {
   const { can } = useAuthorization();
   const { toast } = useToast();
@@ -71,11 +73,38 @@ export default function DriverDailyStatusPage() {
     can('Add', 'Vehicle Management.Driver Management') ||
     isAssignedDriver;
 
+  const driverAssignedVehicleId = String(driver?.assignedVehicleId || '');
+  const isOwnAssignedVehicle =
+    driverAssignedVehicleId === OWN_VEHICLE_OPTION ||
+    (!driverAssignedVehicleId && Boolean(driver?.assignedVehicleNumber));
+
   const vehicleOptions = useMemo(() => {
-    if (!driver?.assignedVehicleId) return allVehicleOptions;
-    const assigned = allVehicleOptions.find((option) => option.value === String(driver.assignedVehicleId));
+    if (driverAssignedVehicleId && driverAssignedVehicleId !== OWN_VEHICLE_OPTION) {
+      const assigned = allVehicleOptions.find((option) => option.value === driverAssignedVehicleId);
+      return assigned ? [assigned] : allVehicleOptions;
+    }
+    if (isOwnAssignedVehicle && driver?.assignedVehicleNumber) {
+      return [
+        {
+          value: OWN_VEHICLE_OPTION,
+          label: `${String(driver.assignedVehicleNumber)} (Own Vehicle)`,
+        },
+      ];
+    }
+    if (!driverAssignedVehicleId) return allVehicleOptions;
+    const assigned = allVehicleOptions.find((option) => option.value === driverAssignedVehicleId);
     return assigned ? [assigned] : allVehicleOptions;
-  }, [allVehicleOptions, driver?.assignedVehicleId]);
+  }, [allVehicleOptions, driver?.assignedVehicleNumber, driverAssignedVehicleId, isOwnAssignedVehicle]);
+
+  const selectedVehicle = useMemo(() => {
+    if (form.vehicleId === OWN_VEHICLE_OPTION) {
+      return {
+        vehicleNumber: String(driver?.assignedVehicleNumber || ''),
+        registrationNo: String(driver?.assignedVehicleNumber || ''),
+      };
+    }
+    return vehicleMap[String(form.vehicleId)];
+  }, [driver?.assignedVehicleNumber, form.vehicleId, vehicleMap]);
 
   const loadLogs = async () => {
     if (!driver?.id) {
@@ -109,9 +138,11 @@ export default function DriverDailyStatusPage() {
     if (!driver?.id) return;
     setForm((prev) => ({
       ...prev,
-      vehicleId: prev.vehicleId || String(driver.assignedVehicleId || ''),
+      vehicleId:
+        prev.vehicleId ||
+        String(driver.assignedVehicleId || (driver.assignedVehicleNumber ? OWN_VEHICLE_OPTION : '')),
     }));
-  }, [driver?.assignedVehicleId, driver?.id]);
+  }, [driver?.assignedVehicleId, driver?.assignedVehicleNumber, driver?.id]);
 
   useEffect(() => {
     loadLogs();
@@ -158,11 +189,13 @@ export default function DriverDailyStatusPage() {
 
     setIsSubmitting(true);
     try {
-      const vehicle = vehicleMap[String(form.vehicleId)];
+      const isOwnVehicle = form.vehicleId === OWN_VEHICLE_OPTION;
+      const vehicleId = isOwnVehicle ? '' : String(form.vehicleId);
+      const vehicle = selectedVehicle;
       await addDoc(collection(db, VEHICLE_COLLECTIONS.driverDailyStatus), {
         driverId: String(driver.id),
         driverName: String(driver.driverName || ''),
-        vehicleId: String(form.vehicleId),
+        vehicleId,
         vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
         statusDate: form.statusDate,
         shiftStartTime: form.shiftStartTime || '',
@@ -180,15 +213,18 @@ export default function DriverDailyStatusPage() {
         issuesReported: form.issuesReported.trim(),
         remarks: form.remarks.trim(),
         sourceApp: 'Driver Mobile',
+        vehicleOwnershipType: isOwnVehicle ? 'Own Vehicle' : 'Company Vehicle',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
-      await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, String(form.vehicleId)), {
-        currentOdometerKm: closingOdo || openingOdo || '',
-        vehicleStatus: form.runningStatus === 'Breakdown' ? 'Under Maintenance' : 'Active',
-        updatedAt: serverTimestamp(),
-      });
+      if (vehicleId) {
+        await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, vehicleId), {
+          currentOdometerKm: closingOdo || openingOdo || '',
+          vehicleStatus: form.runningStatus === 'Breakdown' ? 'Under Maintenance' : 'Active',
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       toast({
         title: 'Daily Status Submitted',
@@ -197,7 +233,7 @@ export default function DriverDailyStatusPage() {
 
       setForm({
         ...initialForm,
-        vehicleId: String(driver.assignedVehicleId || ''),
+        vehicleId: String(driver.assignedVehicleId || (driver.assignedVehicleNumber ? OWN_VEHICLE_OPTION : '')),
       });
       await loadLogs();
     } catch (error) {

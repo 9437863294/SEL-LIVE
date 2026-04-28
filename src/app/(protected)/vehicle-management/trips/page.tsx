@@ -13,6 +13,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 type StatusFilter = 'All' | 'In Progress' | 'Completed' | 'Cancelled';
 
@@ -49,9 +57,6 @@ export default function TripManagementPage() {
           String(b.startTimeIso || '').localeCompare(String(a.startTimeIso || ''))
         );
       setTrips(rows);
-      if (!selectedTripId && rows.length > 0) {
-        setSelectedTripId(String(rows[0].id));
-      }
     } catch (error) {
       console.error('Failed to load trip management data', error);
     } finally {
@@ -291,77 +296,98 @@ export default function TripManagementPage() {
           {filteredTrips.length === 0 ? (
             <p className="text-sm text-muted-foreground">No trips found for selected filter.</p>
           ) : (
-            filteredTrips.map((trip) => (
-              <button
-                key={String(trip.id)}
-                type="button"
-                onClick={() => setSelectedTripId(String(trip.id))}
-                className={`w-full rounded-xl border p-3 text-left text-sm shadow-sm transition ${
-                  selectedTripId === String(trip.id)
-                    ? 'border-cyan-400 bg-cyan-50/70'
-                    : 'border-white/70 bg-white/85 hover:border-cyan-300'
-                }`}
-              >
-                <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="font-semibold">{trip.vehicleNumber || '-'}</span>
-                  <Badge
-                    variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
-                    className={String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}
-                  >
-                    {trip.tripStatus || '-'}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                  <div>Driver: {trip.driverName || '-'}</div>
-                  <div>Start: {formatDateTime(String(trip.startTimeIso || ''))}</div>
-                  <div>End: {formatDateTime(String(trip.endTimeIso || ''))}</div>
-                  <div>Distance: {Number(trip.totalDistanceKm || 0).toFixed(2)} km</div>
-                  <div className="sm:col-span-2">Start Address: {String(trip.startAddress || '-')}</div>
-                  <div className="sm:col-span-2">End Address: {String(trip.endAddress || '-')}</div>
-                </div>
-              </button>
-            ))
+            <div className="overflow-x-auto rounded-xl border border-white/70 bg-white/85">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50/80">
+                    <TableHead>Trip ID</TableHead>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead>Driver</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Start</TableHead>
+                    <TableHead>End</TableHead>
+                    <TableHead>Distance</TableHead>
+                    <TableHead>Points</TableHead>
+                    <TableHead>Start Address</TableHead>
+                    <TableHead>End Address</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTrips.map((trip) => {
+                    const isSelected = selectedTripId === String(trip.id);
+                    return (
+                      [
+                        <TableRow
+                          key={String(trip.id)}
+                          onClick={() =>
+                            setSelectedTripId((current) =>
+                              current === String(trip.id) ? '' : String(trip.id)
+                            )
+                          }
+                          className={`cursor-pointer transition-colors ${
+                            isSelected ? 'bg-cyan-50/80 hover:bg-cyan-100/70' : 'hover:bg-cyan-50/70'
+                          }`}
+                        >
+                          <TableCell className="font-medium">{String(trip.id || '-')}</TableCell>
+                          <TableCell>{trip.vehicleNumber || '-'}</TableCell>
+                          <TableCell>{trip.driverName || '-'}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
+                              className={String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}
+                            >
+                              {trip.tripStatus || '-'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{formatDateTime(String(trip.startTimeIso || ''))}</TableCell>
+                          <TableCell>{formatDateTime(String(trip.endTimeIso || ''))}</TableCell>
+                          <TableCell>{Number(trip.totalDistanceKm || 0).toFixed(2)} km</TableCell>
+                          <TableCell>{Number(trip.totalPoints || 0)}</TableCell>
+                          <TableCell className="max-w-[280px] truncate">{String(trip.startAddress || '-')}</TableCell>
+                          <TableCell className="max-w-[280px] truncate">{String(trip.endAddress || '-')}</TableCell>
+                        </TableRow>,
+                        isSelected ? (
+                          <TableRow key={`${String(trip.id)}-details`} className="bg-cyan-50/50 hover:bg-cyan-50/50">
+                            <TableCell colSpan={10} className="space-y-3">
+                              <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                  Driver: <span className="font-medium">{trip.driverName || '-'}</span>
+                                </div>
+                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                  Vehicle: <span className="font-medium">{trip.vehicleNumber || '-'}</span>
+                                </div>
+                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                  Start: <span className="font-medium">{formatDateTime(String(trip.startTimeIso || ''))}</span>
+                                </div>
+                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                  End: <span className="font-medium">{formatDateTime(String(trip.endTimeIso || ''))}</span>
+                                </div>
+                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2 sm:col-span-2">
+                                  Start Address: <span className="font-medium">{String(trip.startAddress || '-')}</span>
+                                </div>
+                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2 sm:col-span-2">
+                                  End Address: <span className="font-medium">{String(trip.endAddress || '-')}</span>
+                                </div>
+                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                  Points: <span className="font-medium">{selectedTripPoints.length}</span>
+                                </div>
+                                <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
+                                  Last GPS: <span className="font-medium">{Number(trip.lastLocationLat || 0).toFixed(6)}, {Number(trip.lastLocationLng || 0).toFixed(6)}</span>
+                                </div>
+                              </div>
+                              <TripMapView points={selectedTripPoints} title="Trip Route Map" heightClassName="h-[320px]" />
+                            </TableCell>
+                          </TableRow>
+                        ) : null,
+                      ]
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
-
-      {selectedTrip && (
-        <>
-          <Card className="vm-panel">
-            <CardHeader>
-              <CardTitle className="text-lg">Selected Trip Details</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-              <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
-                Driver: <span className="font-medium">{selectedTrip.driverName || '-'}</span>
-              </div>
-              <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
-                Vehicle: <span className="font-medium">{selectedTrip.vehicleNumber || '-'}</span>
-              </div>
-              <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
-                Start: <span className="font-medium">{formatDateTime(String(selectedTrip.startTimeIso || ''))}</span>
-              </div>
-              <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
-                End: <span className="font-medium">{formatDateTime(String(selectedTrip.endTimeIso || ''))}</span>
-              </div>
-              <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2 sm:col-span-2">
-                Start Address: <span className="font-medium">{String(selectedTrip.startAddress || '-')}</span>
-              </div>
-              <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2 sm:col-span-2">
-                End Address: <span className="font-medium">{String(selectedTrip.endAddress || '-')}</span>
-              </div>
-              <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
-                Points: <span className="font-medium">{selectedTripPoints.length}</span>
-              </div>
-              <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
-                Last GPS: <span className="font-medium">{Number(selectedTrip.lastLocationLat || 0).toFixed(6)}, {Number(selectedTrip.lastLocationLng || 0).toFixed(6)}</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          <TripMapView points={selectedTripPoints} title="Trip Route Map" heightClassName="h-[380px]" />
-        </>
-      )}
     </div>
   );
 }

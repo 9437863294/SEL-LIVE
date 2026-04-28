@@ -64,7 +64,13 @@ export default function ModuleDashboard() {
           return (
             can('View Module', moduleName) ||
             can('View', 'Driver Management.Driver Mobile Hub') ||
+            can('View', 'Driver Management.Employee Trip Log') ||
+            can('Add', 'Driver Management.Employee Trip Log') ||
+            can('Edit', 'Driver Management.Employee Trip Log') ||
             can('View', 'Vehicle Management.Driver Mobile') ||
+            can('View', 'Vehicle Management.Employee Trip Reimbursement') ||
+            can('Add', 'Vehicle Management.Employee Trip Reimbursement') ||
+            can('Edit', 'Vehicle Management.Employee Trip Reimbursement') ||
             can('View', 'Vehicle Management.Driver Management') ||
             isAssignedDriverWithVehicle
           );

@@ -19,6 +19,7 @@ import {
   ScrollText,
   Settings,
   Shield,
+  User,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
@@ -109,6 +110,15 @@ const cards: CountCard[] = [
     gradient: 'from-sky-500/15 via-cyan-500/10 to-teal-500/15',
   },
   {
+    label: 'Driver Master',
+    description: 'Driver records, license validity and vehicle assignment.',
+    href: '/vehicle-management/driver',
+    collection: VEHICLE_COLLECTIONS.driver,
+    permission: 'Driver Management',
+    icon: User,
+    gradient: 'from-blue-500/15 via-indigo-500/10 to-cyan-500/15',
+  },
+  {
     label: 'Trips',
     description: 'Live trip tracking, route logs, and trip lifecycle monitoring.',
     href: '/vehicle-management/trips',
@@ -167,6 +177,8 @@ export default function VehicleManagementOverviewPage() {
 
   const canViewSection = (permission: string) => {
     if (can('View', `Vehicle Management.${permission}`)) return true;
+    if (can('Add', `Vehicle Management.${permission}`)) return true;
+    if (can('Edit', `Vehicle Management.${permission}`)) return true;
     return false;
   };
 

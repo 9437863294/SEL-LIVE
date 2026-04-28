@@ -36,6 +36,8 @@ const formatCurrency = (amount: number) =>
     amount || 0
   );
 
+const OWN_VEHICLE_OPTION = '__OWN_VEHICLE__';
+
 export default function DriverVehicleDetailsPage() {
   const { can } = useAuthorization();
   const { driver, isLoading: isDriverLoading } = useCurrentDriverProfile();
@@ -60,9 +62,35 @@ export default function DriverVehicleDetailsPage() {
 
   useEffect(() => {
     const load = async () => {
-      const vehicleId = String(driver?.assignedVehicleId || '');
-      if (!vehicleId) {
+      const vehicleIdRaw = String(driver?.assignedVehicleId || '');
+      const isOwnAssignedVehicle =
+        vehicleIdRaw === OWN_VEHICLE_OPTION ||
+        (!vehicleIdRaw && Boolean(driver?.assignedVehicleNumber));
+      const vehicleId = isOwnAssignedVehicle ? '' : vehicleIdRaw;
+      const vehicleNumber = String(driver?.assignedVehicleNumber || '');
+      if (!vehicleId && !vehicleNumber) {
         setVehicle(null);
+        setInsuranceRows([]);
+        setPucRows([]);
+        setFitnessRows([]);
+        setRoadTaxRows([]);
+        setPermitRows([]);
+        setMaintenanceRows([]);
+        setFuelRows([]);
+        setDocumentRows([]);
+        setIsLoading(false);
+        return;
+      }
+
+      if (isOwnAssignedVehicle && vehicleNumber) {
+        setVehicle({
+          id: '',
+          vehicleNumber,
+          vehicleType: String(driver?.assignedVehicleType || driver?.ownVehicleType || 'Personal Vehicle'),
+          fuelType: String(driver?.assignedFuelType || driver?.ownFuelType || '-'),
+          vehicleStatus: 'Own Vehicle',
+          documentHealthStatus: 'Self Managed',
+        });
         setInsuranceRows([]);
         setPucRows([]);
         setFitnessRows([]);
@@ -128,7 +156,14 @@ export default function DriverVehicleDetailsPage() {
     };
 
     load();
-  }, [driver?.assignedVehicleId]);
+  }, [
+    driver?.assignedFuelType,
+    driver?.assignedVehicleId,
+    driver?.assignedVehicleNumber,
+    driver?.assignedVehicleType,
+    driver?.ownFuelType,
+    driver?.ownVehicleType,
+  ]);
 
   const insurance = useMemo(() => pickLatestByDate(insuranceRows, 'expiryDate'), [insuranceRows]);
   const puc = useMemo(() => pickLatestByDate(pucRows, 'expiryDate'), [pucRows]);
@@ -170,7 +205,10 @@ export default function DriverVehicleDetailsPage() {
     );
   }
 
-  if (!driver.assignedVehicleId) {
+      if (
+        !driver.assignedVehicleId &&
+        !driver.assignedVehicleNumber
+      ) {
     return (
       <Card className="vm-panel-strong">
         <CardHeader>
@@ -264,6 +302,11 @@ export default function DriverVehicleDetailsPage() {
           <CardDescription>Latest compliance details</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {!driver.assignedVehicleId && (
+            <div className="rounded-xl border border-white/70 bg-white/85 p-3 text-sm text-muted-foreground md:col-span-2 xl:col-span-3">
+              Own vehicle assignment detected. Compliance docs are managed as self records and not linked to Vehicle Master.
+            </div>
+          )}
           {complianceItems.map((item) => {
             const meta = computeRenewalMeta(item.expiry);
             const alert = item.record?.alertStage || meta.alertStage;

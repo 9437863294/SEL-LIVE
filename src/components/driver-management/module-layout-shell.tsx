@@ -10,6 +10,7 @@ import {
   ListFilter,
   LocateFixed,
   Menu,
+  ReceiptText,
   ShieldAlert,
   User,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ const sections = [
   { href: '/driver-management/daily-status', label: 'Daily Status', resource: 'Driver Daily Status', icon: Gauge },
   { href: '/driver-management/trips', label: 'Driver Trips', resource: 'Driver Trips', icon: LocateFixed },
   { href: '/driver-management/trip-log', label: 'Trip Log', resource: 'Driver Trips', icon: ListFilter },
+  { href: '/driver-management/employee-trips', label: 'Employee Trips', resource: 'Employee Trip Log', icon: ReceiptText },
   { href: '/driver-management/trip-management', label: 'Trip Management', resource: 'Trip Management', icon: LocateFixed },
 ];
 
@@ -38,6 +40,7 @@ const legacyResourceMap: Record<string, string[]> = {
   'Driver Fuel': ['Vehicle Management.Driver Mobile Fuel'],
   'Driver Daily Status': ['Vehicle Management.Driver Daily Status'],
   'Driver Trips': ['Vehicle Management.Driver Mobile Trip'],
+  'Employee Trip Log': ['Vehicle Management.Employee Trip Reimbursement'],
   'Trip Management': ['Vehicle Management.Trip Management'],
 };
 
@@ -47,6 +50,7 @@ const driverSelfResources = new Set([
   'Driver Fuel',
   'Driver Daily Status',
   'Driver Trips',
+  'Employee Trip Log',
 ]);
 
 export default function DriverManagementLayoutShell({ children }: { children: React.ReactNode }) {
@@ -61,15 +65,23 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
   const canViewModule =
     can('View Module', 'Driver Management') ||
     can('View', 'Driver Management.Driver Mobile Hub') ||
+    can('View', 'Driver Management.Employee Trip Log') ||
+    can('Add', 'Driver Management.Employee Trip Log') ||
+    can('Edit', 'Driver Management.Employee Trip Log') ||
     can('View', 'Vehicle Management.Driver Mobile') ||
+    can('View', 'Vehicle Management.Employee Trip Reimbursement') ||
+    can('Add', 'Vehicle Management.Employee Trip Reimbursement') ||
+    can('Edit', 'Vehicle Management.Employee Trip Reimbursement') ||
     can('View', 'Vehicle Management.Driver Management') ||
     isAssignedDriver;
 
   const canViewSection = (resource: string) => {
     if (!resource) return canViewModule;
     if (can('View', `Driver Management.${resource}`)) return true;
+    if (can('Add', `Driver Management.${resource}`)) return true;
+    if (can('Edit', `Driver Management.${resource}`)) return true;
     const legacy = legacyResourceMap[resource] || [];
-    if (legacy.some((entry) => can('View', entry))) return true;
+    if (legacy.some((entry) => can('View', entry) || can('Add', entry) || can('Edit', entry))) return true;
     if (isAssignedDriver && driverSelfResources.has(resource)) return true;
     return false;
   };

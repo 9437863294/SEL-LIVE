@@ -15,7 +15,7 @@ Add these values in `.env`:
 ```env
 CAPACITOR_APP_ID=com.sel.driver
 CAPACITOR_APP_NAME=SEL Driver
-CAPACITOR_DRIVER_START_PATH=/driver-management/mobile-hub
+CAPACITOR_DRIVER_START_PATH=/driver-management
 CAPACITOR_LIVE_URL=https://your-live-domain.com
 ```
 

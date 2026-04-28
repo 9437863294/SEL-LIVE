@@ -28,6 +28,7 @@ import {
 } from '@/lib/vehicle-management';
 import {
   clearDriverPositionWatch,
+  ensureAndroidAlwaysLocationSetup,
   ensureDriverGeolocation,
   getCurrentDriverPosition,
   type DriverGeoPosition,
@@ -75,6 +76,8 @@ const emptyAddress: TripAddress = {
   country: '',
 };
 
+const OWN_VEHICLE_OPTION = '__OWN_VEHICLE__';
+
 export default function DriverMobileTripsPage() {
   const { can } = useAuthorization();
   const { user } = useAuth();
@@ -112,10 +115,20 @@ export default function DriverMobileTripsPage() {
   const lastSentPointRef = useRef<{ lat: number; lng: number } | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
 
-  const assignedVehicleId = String(driver?.assignedVehicleId || '');
+  const assignedVehicleIdRaw = String(driver?.assignedVehicleId || '');
+  const isOwnAssignedVehicle =
+    assignedVehicleIdRaw === OWN_VEHICLE_OPTION ||
+    (!assignedVehicleIdRaw && Boolean(driver?.assignedVehicleNumber));
+  const assignedVehicleId = isOwnAssignedVehicle ? '' : assignedVehicleIdRaw;
   const assignedVehicle = vehicleMap[assignedVehicleId];
   const assignedVehicleNumber = String(
     assignedVehicle?.vehicleNumber || assignedVehicle?.registrationNo || driver?.assignedVehicleNumber || ''
+  );
+  const assignedFuelType = String(
+    assignedVehicle?.fuelType || driver?.assignedFuelType || driver?.ownFuelType || ''
+  );
+  const assignedVehicleType = String(
+    assignedVehicle?.vehicleType || driver?.assignedVehicleType || driver?.ownVehicleType || ''
   );
 
   const resolveAddress = async (lat: number, lng: number): Promise<TripAddress> => {
@@ -274,10 +287,10 @@ export default function DriverMobileTripsPage() {
       updatedAt: serverTimestamp(),
     });
 
-    if (assignedVehicleId) {
-      await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, assignedVehicleId), {
-        currentLatitude: lat,
-        currentLongitude: lng,
+      if (assignedVehicleId && !isOwnAssignedVehicle) {
+        await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, assignedVehicleId), {
+          currentLatitude: lat,
+          currentLongitude: lng,
         currentLocationAtIso: nowIso,
         currentStatus: 'On Trip',
         updatedAt: serverTimestamp(),
@@ -301,10 +314,10 @@ export default function DriverMobileTripsPage() {
       });
       return;
     }
-    if (!assignedVehicleId) {
+    if (!assignedVehicleNumber) {
       toast({
         title: 'No Vehicle Assigned',
-        description: 'Assign a vehicle in Driver Management before starting a trip.',
+        description: 'Assign a company vehicle or own vehicle in Driver Management before starting a trip.',
         variant: 'destructive',
       });
       return;
@@ -312,6 +325,7 @@ export default function DriverMobileTripsPage() {
 
     try {
       await ensureDriverGeolocation();
+      await ensureAndroidAlwaysLocationSetup();
     } catch (error: any) {
       toast({
         title: 'Location Not Available',
@@ -344,6 +358,9 @@ export default function DriverMobileTripsPage() {
         linkedUserName: String(user?.name || ''),
         vehicleId: assignedVehicleId,
         vehicleNumber: assignedVehicleNumber,
+        vehicleType: assignedVehicleType,
+        fuelType: assignedFuelType,
+        vehicleOwnershipType: assignedVehicleId ? 'Company Vehicle' : 'Own Vehicle',
         startTimeIso: nowIso,
         startDate: nowIso.slice(0, 10),
         startLat,
@@ -380,6 +397,9 @@ export default function DriverMobileTripsPage() {
         driverName: String(driver.driverName || ''),
         vehicleId: assignedVehicleId,
         vehicleNumber: assignedVehicleNumber,
+        vehicleType: assignedVehicleType,
+        fuelType: assignedFuelType,
+        vehicleOwnershipType: assignedVehicleId ? 'Company Vehicle' : 'Own Vehicle',
         startTimeIso: nowIso,
         trackingIntervalSec: intervalSec,
         totalPoints: 1,
@@ -461,7 +481,7 @@ export default function DriverMobileTripsPage() {
 
       await updateDoc(doc(db, VEHICLE_COLLECTIONS.trips, String(activeTrip.id)), statusPayload);
 
-      if (assignedVehicleId) {
+      if (assignedVehicleId && !isOwnAssignedVehicle) {
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, assignedVehicleId), {
           currentStatus: 'In Operation',
           updatedAt: serverTimestamp(),

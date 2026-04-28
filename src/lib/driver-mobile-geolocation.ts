@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 import { Geolocation, type Position, type PositionOptions } from '@capacitor/geolocation';
 
 export type DriverGeoPosition = {
@@ -21,6 +22,8 @@ export type DriverGeoError = {
 
 export type DriverGeoWatchId = string | number;
 
+const ALWAYS_LOCATION_PROMPT_KEY = 'driver_location_always_prompt_completed_v1';
+
 const toNumberOrNull = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
@@ -41,6 +44,7 @@ const hasGrantedPermission = (permissionStatus: Record<string, unknown>) =>
   permissionStatus.location === 'granted' || permissionStatus.coarseLocation === 'granted';
 
 export const isNativeDriverApp = () => Capacitor.isNativePlatform();
+export const isNativeAndroidDriverApp = () => isNativeDriverApp() && Capacitor.getPlatform() === 'android';
 
 export const ensureDriverGeolocation = async () => {
   if (!isNativeDriverApp()) {
@@ -57,6 +61,26 @@ export const ensureDriverGeolocation = async () => {
   if (!hasGrantedPermission(requested)) {
     throw new Error('Location permission is required to start trip tracking.');
   }
+};
+
+export const ensureAndroidAlwaysLocationSetup = async () => {
+  if (!isNativeAndroidDriverApp()) return;
+  if (typeof window === 'undefined') return;
+
+  const alreadyPrompted = window.localStorage.getItem(ALWAYS_LOCATION_PROMPT_KEY) === '1';
+  if (alreadyPrompted) return;
+
+  const shouldOpenSettings = window.confirm(
+    'For continuous trip tracking, set Location permission to "Allow all the time". Tap OK to open App Settings.'
+  );
+
+  if (!shouldOpenSettings) {
+    throw new Error('Please enable "Allow all the time" location permission to continue.');
+  }
+
+  await App.openSettings();
+  window.localStorage.setItem(ALWAYS_LOCATION_PROMPT_KEY, '1');
+  throw new Error('App settings opened. After enabling "Allow all the time", return and tap Start Trip again.');
 };
 
 export const getCurrentDriverPosition = async (options: PositionOptions = {}) => {

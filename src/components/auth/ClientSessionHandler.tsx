@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from './AuthProvider';
 
 const PUBLIC_ROUTES = ['/login', '/driver-login', '/print-auth'];
-const DRIVER_APP_DEFAULT_REDIRECT = '/driver-management/mobile-hub';
+const DRIVER_APP_DEFAULT_REDIRECT = '/driver-management';
 const WEB_DEFAULT_REDIRECT = '/';
 
 const normalizePath = (path: string) => {
@@ -25,6 +25,10 @@ const isDriverAppClient = (currentPath: string, searchParams: SearchParamGetter)
   if (appParam === 'driver') return true;
 
   if (typeof window === 'undefined') return false;
+  const hasDriverModeFlag =
+    window.sessionStorage.getItem('driver_app_mode') === '1' ||
+    window.localStorage.getItem('driver_app_mode') === '1';
+  if (hasDriverModeFlag) return true;
 
   const maybeCapacitor = (window as any).Capacitor;
   const isNativeCapacitor =
@@ -33,7 +37,9 @@ const isDriverAppClient = (currentPath: string, searchParams: SearchParamGetter)
 
   const ua = navigator.userAgent || '';
   const isAndroidWebView = /Android/i.test(ua) && /\bwv\b/i.test(ua);
-  return isAndroidWebView && currentPath.startsWith('/driver-management');
+  const isDriverRoute =
+    currentPath.startsWith('/driver-management') || currentPath.startsWith('/vehicle-management/driver-mobile');
+  return isAndroidWebView && isDriverRoute;
 };
 
 export function ClientSessionHandler() {

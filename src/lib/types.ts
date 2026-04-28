@@ -213,6 +213,7 @@ export const permissionModules = {
     'Fuel Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
     'Trip Management': ['View', 'Add', 'Edit', 'Delete', 'Export'],
     'Driver Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
+    'Employee Trip Reimbursement': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Approve'],
     'Document Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
     'Driver Mobile': ['View'],
     'Driver Mobile Trip': ['View', 'Add', 'Edit'],
@@ -228,6 +229,7 @@ export const permissionModules = {
     'Driver Fuel': ['View', 'Add', 'Edit', 'Delete'],
     'Driver Daily Status': ['View', 'Add', 'Edit', 'Delete'],
     'Driver Trips': ['View', 'Add', 'Edit'],
+    'Employee Trip Log': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Approve'],
     'Trip Management': ['View', 'Add', 'Edit', 'Delete', 'Export'],
   },
   'Settings': {
