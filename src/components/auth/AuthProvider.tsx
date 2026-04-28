@@ -223,10 +223,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsImpersonating(impersonating);
 
         // User doc
-        const userDocRef = doc(db, 'users', userToLoadId);
-        const snap = await getDoc(userDocRef);
+        let snap = await getDoc(doc(db, 'users', userToLoadId));
+
+        if (!snap.exists() && firebaseUser.email) {
+          const emailToMatch = String(firebaseUser.email).trim().toLowerCase();
+          const byEmailQuery = query(collection(db, 'users'), where('email', '==', emailToMatch));
+          const byEmailSnap = await getDocs(byEmailQuery);
+          if (!byEmailSnap.empty) {
+            snap = byEmailSnap.docs[0];
+          }
+        }
+
         if (!snap.exists()) {
-          console.error('User doc not found for UID:', userToLoadId);
+          console.error('User doc not found for UID/email:', userToLoadId, firebaseUser.email);
           await handleSignOut();
           return null;
         }

@@ -129,6 +129,11 @@ export function LoginPageContent() {
       const nextPath = resolvePostLoginPath();
       router.replace(nextPath);
       window.setTimeout(() => {
+        if ((window.location.pathname || "") !== nextPath) {
+          window.location.replace(nextPath);
+        }
+      }, 80);
+      window.setTimeout(() => {
         const livePath = window.location.pathname || "";
         if (livePath === "/login" || livePath === "/login/") {
           window.location.replace(nextPath);
