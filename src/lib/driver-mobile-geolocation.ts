@@ -1,5 +1,4 @@
 import { Capacitor } from '@capacitor/core';
-import { App } from '@capacitor/app';
 import { Geolocation, type Position, type PositionOptions } from '@capacitor/geolocation';
 
 export type DriverGeoPosition = {
@@ -71,16 +70,26 @@ export const ensureAndroidAlwaysLocationSetup = async () => {
   if (alreadyPrompted) return;
 
   const shouldOpenSettings = window.confirm(
-    'For continuous trip tracking, set Location permission to "Allow all the time". Tap OK to open App Settings.'
+    'For continuous trip tracking, set Location permission to "Allow all the time". Tap OK to continue with setup steps.'
   );
 
   if (!shouldOpenSettings) {
     throw new Error('Please enable "Allow all the time" location permission to continue.');
   }
 
-  await App.openSettings();
   window.localStorage.setItem(ALWAYS_LOCATION_PROMPT_KEY, '1');
-  throw new Error('App settings opened. After enabling "Allow all the time", return and tap Start Trip again.');
+  window.alert(
+    [
+      'Android setup required:',
+      '1. Open Settings',
+      '2. Apps',
+      '3. Select this app',
+      '4. Permissions > Location',
+      '5. Choose "Allow all the time"',
+      'Then return and tap Start Trip again.',
+    ].join('\n')
+  );
+  throw new Error('Enable "Allow all the time" location in Android settings, then tap Start Trip again.');
 };
 
 export const getCurrentDriverPosition = async (options: PositionOptions = {}) => {
