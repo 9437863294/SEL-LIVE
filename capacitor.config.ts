@@ -24,8 +24,6 @@ const config: CapacitorConfig = {
         server: {
           url: resolveMobileUrl(liveBaseUrl, startPath),
           cleartext: /^http:\/\//i.test(liveBaseUrl),
-          androidScheme: 'https',
-          allowNavigation: [new URL(resolveMobileUrl(liveBaseUrl, '/')).host],
         },
       }
     : {}),
