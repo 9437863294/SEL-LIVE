@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ export function LoginPageContent() {
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
 
   const {
     setShouldRemember, 
@@ -59,11 +60,29 @@ export function LoginPageContent() {
       redirectParam.startsWith("/") &&
       !redirectParam.startsWith("//") &&
       redirectParam !== "/login" &&
-      redirectParam !== "/login/"
+      redirectParam !== "/login/" &&
+      redirectParam !== "/driver-login" &&
+      redirectParam !== "/driver-login/"
     ) {
       return redirectParam;
     }
-    return "/driver-management/mobile-hub";
+
+    const appParam = searchParams?.get("app");
+    const isDriverContext =
+      appParam === "driver" ||
+      pathname === "/driver-login" ||
+      pathname === "/driver-login/" ||
+      (() => {
+        if (typeof window === "undefined") return false;
+        const maybeCapacitor = (window as any).Capacitor;
+        if (typeof maybeCapacitor?.isNativePlatform === "function" && maybeCapacitor.isNativePlatform()) {
+          return true;
+        }
+        const ua = navigator.userAgent || "";
+        return /Android/i.test(ua) && /\bwv\b/i.test(ua);
+      })();
+
+    return isDriverContext ? "/driver-management/mobile-hub" : "/";
   };
 
   // Load saved profiles once when login page mounts.

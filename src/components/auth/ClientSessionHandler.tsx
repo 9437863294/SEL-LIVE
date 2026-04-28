@@ -5,8 +5,9 @@ import { useEffect } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from './AuthProvider';
 
-const PUBLIC_ROUTES = ['/login', '/print-auth'];
-const FALLBACK_AFTER_LOGIN = '/driver-management/mobile-hub';
+const PUBLIC_ROUTES = ['/login', '/driver-login', '/print-auth'];
+const DRIVER_APP_DEFAULT_REDIRECT = '/driver-management/mobile-hub';
+const WEB_DEFAULT_REDIRECT = '/';
 
 const normalizePath = (path: string) => {
   if (!path) return '/';
@@ -16,6 +17,24 @@ const normalizePath = (path: string) => {
 
 const isSafeInternalPath = (value: string | null | undefined): value is string =>
   typeof value === 'string' && value.startsWith('/') && !value.startsWith('//');
+
+type SearchParamGetter = { get: (key: string) => string | null } | null;
+
+const isDriverAppClient = (currentPath: string, searchParams: SearchParamGetter) => {
+  const appParam = searchParams?.get('app');
+  if (appParam === 'driver') return true;
+
+  if (typeof window === 'undefined') return false;
+
+  const maybeCapacitor = (window as any).Capacitor;
+  const isNativeCapacitor =
+    typeof maybeCapacitor?.isNativePlatform === 'function' && Boolean(maybeCapacitor.isNativePlatform());
+  if (isNativeCapacitor) return true;
+
+  const ua = navigator.userAgent || '';
+  const isAndroidWebView = /Android/i.test(ua) && /\bwv\b/i.test(ua);
+  return isAndroidWebView && currentPath.startsWith('/driver-management');
+};
 
 export function ClientSessionHandler() {
   const { user, loading } = useAuth();
@@ -28,11 +47,15 @@ export function ClientSessionHandler() {
 
     const currentPath = normalizePath(pathname || '/');
     const isPublicRoute = PUBLIC_ROUTES.some((route) => normalizePath(route) === currentPath);
+    const isDriverContext = isDriverAppClient(currentPath, searchParams);
     const redirectParam = searchParams?.get('redirect');
+    const requestedLoginFallback =
+      isDriverContext || currentPath === '/driver-login' ? DRIVER_APP_DEFAULT_REDIRECT : WEB_DEFAULT_REDIRECT;
     const safeRedirect =
-      isSafeInternalPath(redirectParam) && normalizePath(redirectParam) !== '/login'
+      isSafeInternalPath(redirectParam) &&
+      !['/login', '/login/', '/driver-login', '/driver-login/'].includes(normalizePath(redirectParam))
         ? normalizePath(redirectParam)
-        : FALLBACK_AFTER_LOGIN;
+        : requestedLoginFallback;
 
     // If user is logged in...
     if (user) {
@@ -53,7 +76,9 @@ export function ClientSessionHandler() {
       // ...and they are on a protected page, redirect them to login.
       if (!isPublicRoute) {
         const redirectTarget = isSafeInternalPath(currentPath) ? currentPath : '/';
-        router.replace(`/login?redirect=${encodeURIComponent(redirectTarget)}`);
+        const loginPath = isDriverContext ? '/driver-login' : '/login';
+        const appQuery = isDriverContext ? '&app=driver' : '';
+        router.replace(`${loginPath}?redirect=${encodeURIComponent(redirectTarget)}${appQuery}`);
       }
     }
   }, [user, loading, pathname, router, searchParams]);
