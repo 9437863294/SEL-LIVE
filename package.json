@@ -7,9 +7,21 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "mobile:doctor": "npx cap doctor",
+    "mobile:sync": "npx cap sync",
+    "mobile:copy": "npx cap copy",
+    "mobile:add:android": "npx cap add android",
+    "mobile:add:ios": "npx cap add ios",
+    "mobile:open:android": "npx cap open android",
+    "mobile:open:ios": "npx cap open ios",
+    "mobile:run:android": "npx cap run android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/geolocation": "^8.2.0",
+    "@capacitor/ios": "^8.3.1",
     "@genkit-ai/google-genai": "1.18.0",
     "@genkit-ai/next": "1.18.0",
     "@hello-pangea/dnd": "^16.6.0",
@@ -64,6 +76,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.3.1",
     "@eslint/eslintrc": "^3.3.5",
     "@types/dotenv": "^6.1.1",
     "@types/node": "^20.14.12",

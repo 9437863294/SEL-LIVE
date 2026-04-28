@@ -71,6 +71,10 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/insurance';
       case 'Store & Stock Management':
         return '/store-stock-management';
+      case 'Vehicle Management':
+        return '/vehicle-management';
+      case 'Driver Management':
+        return '/driver-management';
       // Nested Settings Pages
       case 'User Management':
         return '/settings/user-management';

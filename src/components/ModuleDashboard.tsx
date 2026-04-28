@@ -9,6 +9,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import type { Module } from '@/lib/types';
 import { permissionModules } from '@/lib/permissions';
 import { useAuth } from './auth/AuthProvider';
+import { useCurrentDriverProfile } from './vehicle-management/hooks';
 
 const moduleIcons: Record<string, string> = {
   'Site Fund Requisition': 'Landmark',
@@ -24,6 +25,8 @@ const moduleIcons: Record<string, string> = {
   'Store & Stock Management': 'Package',
   'Subcontractors Management': 'Users',
   'Employee': 'User',
+  'Vehicle Management': 'Truck',
+  'Driver Management': 'User',
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -39,19 +42,33 @@ const moduleDescriptions: Record<string, string> = {
     'Store & Stock Management': 'Manage inventory and stock levels.',
     'Subcontractors Management': 'Manage subcontractors, work orders, and billing.',
     'Employee': 'Manage employee information and records.',
+    'Vehicle Management': 'Manage fleet, trips, fuel usage, and maintenance.',
+    'Driver Management': 'Driver mobile workflows, trip actions, and assignment execution.',
 }
 
 export default function ModuleDashboard() {
   const { modules, addModule, updateModule, updateModuleOrder, isLoading } = useModules();
   const { can, isLoading: authLoading } = useAuthorization();
+  const { driver, isLoading: driverProfileLoading } = useCurrentDriverProfile();
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
   const allModules = useMemo(() => {
-    if (isLoading || authLoading) {
+    if (isLoading || authLoading || driverProfileLoading) {
       return [];
     }
 
+    const isAssignedDriverWithVehicle = Boolean(driver?.id && (driver?.assignedVehicleId || driver?.assignedVehicleNumber));
+
     const availableModuleNames = Object.keys(permissionModules).filter(moduleName => {
+        if (moduleName === 'Driver Management') {
+          return (
+            can('View Module', moduleName) ||
+            can('View', 'Driver Management.Driver Mobile Hub') ||
+            can('View', 'Vehicle Management.Driver Mobile') ||
+            can('View', 'Vehicle Management.Driver Management') ||
+            isAssignedDriverWithVehicle
+          );
+        }
         return can('View Module', moduleName);
     });
 
@@ -73,7 +90,7 @@ export default function ModuleDashboard() {
 
     return [...visibleSavedModules, ...newModules];
 
-  }, [modules, isLoading, can, authLoading]);
+  }, [modules, isLoading, can, authLoading, driverProfileLoading, driver?.id, driver?.assignedVehicleId, driver?.assignedVehicleNumber]);
 
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
@@ -108,7 +125,7 @@ export default function ModuleDashboard() {
   return (
     <div className="flex flex-col gap-8 h-full m-4">
        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" onDragOver={handleDragOver}>
-        {isLoading || authLoading ? (
+        {isLoading || authLoading || driverProfileLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-28 rounded-xl" />
             ))

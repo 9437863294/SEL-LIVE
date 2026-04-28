@@ -254,3 +254,68 @@
 .animate-bb-card-in {
   animation: bb-card-in 0.4s ease-out forwards;
 }
+
+/* ── Vehicle Management theme animations ── */
+@keyframes vm-gradient-pan {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes vm-float-a {
+  0% { transform: translate(0px, 0px) scale(1); }
+  50% { transform: translate(28px, -18px) scale(1.06); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+@keyframes vm-float-b {
+  0% { transform: translate(0px, 0px) scale(1); }
+  45% { transform: translate(-22px, 24px) scale(1.08); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+@keyframes vm-nav-glow {
+  0%, 100% { box-shadow: 0 0 0 rgba(14, 165, 233, 0); }
+  50% { box-shadow: 0 0 22px rgba(14, 165, 233, 0.28); }
+}
+
+@keyframes vm-reveal-up {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@layer utilities {
+  .vm-gradient-atmosphere {
+    background-image:
+      radial-gradient(circle at 10% 12%, rgba(34, 211, 238, 0.22) 0, transparent 36%),
+      radial-gradient(circle at 88% 14%, rgba(59, 130, 246, 0.2) 0, transparent 38%),
+      radial-gradient(circle at 52% 92%, rgba(251, 191, 36, 0.13) 0, transparent 44%),
+      linear-gradient(140deg, rgba(239, 246, 255, 0.86), rgba(240, 249, 255, 0.78), rgba(245, 250, 255, 0.9));
+    background-size: 140% 140%;
+    animation: vm-gradient-pan 16s ease infinite;
+  }
+
+  .vm-panel {
+    @apply border border-white/70 bg-white/70 backdrop-blur-xl shadow-[0_20px_65px_-40px_rgba(2,6,23,0.5)];
+  }
+
+  .vm-panel-strong {
+    @apply border border-white/70 bg-white/80 backdrop-blur-xl shadow-[0_24px_80px_-45px_rgba(2,6,23,0.55)];
+  }
+
+  .vm-orb-a {
+    animation: vm-float-a 18s ease-in-out infinite;
+  }
+
+  .vm-orb-b {
+    animation: vm-float-b 22s ease-in-out infinite;
+  }
+
+  .vm-nav-active {
+    animation: vm-nav-glow 2.8s ease-in-out infinite;
+  }
+
+  .vm-reveal {
+    animation: vm-reveal-up 0.4s ease-out both;
+  }
+}

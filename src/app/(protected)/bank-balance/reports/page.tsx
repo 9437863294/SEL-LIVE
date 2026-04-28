@@ -2,7 +2,7 @@
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
-import { ArrowLeft, LineChart, Banknote, ShieldAlert, BarChart3, FileText, Percent, Gauge, LayoutGrid } from 'lucide-react';
+import { ArrowLeft, LineChart, Banknote, ShieldAlert, BarChart3, FileText, Percent, Gauge, LayoutGrid, CalendarDays, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -128,6 +128,36 @@ const reportItemsBase: ReportItemConfig[] = [
       tag: 'Summary',
     },
   },
+  {
+    icon: CalendarDays,
+    title: 'Daily Balance Report',
+    description: 'Day-by-day opening and closing balances for any account over a selected date range.',
+    href: '/bank-balance/reports/daily-balance',
+    permissionAction: 'View',
+    permissionResource: 'Bank Balance.Reports',
+    colorScheme: {
+      bg: 'from-teal-500/10 to-emerald-500/5',
+      iconBg: 'bg-teal-100 dark:bg-teal-900/40',
+      iconColor: 'text-teal-600 dark:text-teal-400',
+      border: 'border-teal-200/60 dark:border-teal-800/30 hover:border-teal-400/60',
+      tag: 'Daily',
+    },
+  },
+  {
+    icon: ArrowRightLeft,
+    title: 'Inter-bank Transfers',
+    description: 'All internal fund transfers between accounts with from/to account details and amounts.',
+    href: '/bank-balance/reports/internal-transfers',
+    permissionAction: 'View',
+    permissionResource: 'Bank Balance.Reports',
+    colorScheme: {
+      bg: 'from-indigo-500/10 to-blue-500/5',
+      iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
+      iconColor: 'text-indigo-600 dark:text-indigo-400',
+      border: 'border-indigo-200/60 dark:border-indigo-800/30 hover:border-indigo-400/60',
+      tag: 'Transfers',
+    },
+  },
 ];
 
 function ReportCard({ item }: ReportCardProps) {
@@ -189,8 +219,8 @@ export default function BankReportsPage() {
     return (
       <div className="relative w-full px-4 sm:px-6 lg:px-8 py-6">
         <Skeleton className="h-10 w-48 mb-6" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-5xl">
+          {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-56 rounded-xl" />
           ))}
         </div>
@@ -252,7 +282,7 @@ export default function BankReportsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 max-w-4xl">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 max-w-5xl">
           {reportItems.map((item, idx) => (
             <div
               key={item.title}
