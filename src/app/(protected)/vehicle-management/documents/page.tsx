@@ -11,8 +11,11 @@ const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
   { key: 'documentType', label: 'Document Type' },
   { key: 'documentNumber', label: 'Document Number' },
+  { key: 'issuingAuthority', label: 'Issued By' },
+  { key: 'issueDate', label: 'Issue Date' },
   { key: 'expiryDate', label: 'Expiry Date' },
   { key: 'alertStage', label: 'Alert' },
+  { key: 'complianceStatus', label: 'Compliance' },
   { key: 'status', label: 'Status' },
 ];
 
@@ -35,19 +38,23 @@ export default function DocumentManagementPage() {
         type: 'select',
         required: true,
         options: [
-          { value: 'RC Book', label: 'RC Book' },
-          { value: 'Insurance', label: 'Insurance' },
-          { value: 'PUC', label: 'PUC' },
-          { value: 'Fitness', label: 'Fitness' },
-          { value: 'Road Tax', label: 'Road Tax' },
+          { value: 'RC Book', label: 'RC Book (Registration Certificate)' },
+          { value: 'Insurance', label: 'Insurance Policy' },
+          { value: 'PUC', label: 'PUC Certificate' },
+          { value: 'Fitness', label: 'Fitness Certificate' },
+          { value: 'Road Tax', label: 'Road Tax Receipt' },
           { value: 'Permit', label: 'Permit' },
+          { value: 'Hypothecation NOC', label: 'Hypothecation NOC' },
           { value: 'Service Invoice', label: 'Service Invoice' },
-          { value: 'Fuel Bills', label: 'Fuel Bills' },
-          { value: 'Accident Reports', label: 'Accident Reports' },
+          { value: 'Fuel Bill', label: 'Fuel Bill' },
+          { value: 'Accident Report', label: 'Accident Report' },
+          { value: 'Delivery Challan', label: 'Delivery Challan' },
+          { value: 'Load Permission', label: 'Load Permission' },
           { value: 'Other', label: 'Other' },
         ],
       },
       { key: 'documentNumber', label: 'Document Number', type: 'text', required: true },
+      { key: 'issuingAuthority', label: 'Issuing Authority', type: 'text' },
       { key: 'issueDate', label: 'Issue Date', type: 'date' },
       { key: 'expiryDate', label: 'Expiry Date', type: 'date' },
       { key: 'fileUrl', label: 'Document Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
@@ -60,6 +67,7 @@ export default function DocumentManagementPage() {
           { value: 'Due Soon', label: 'Due Soon' },
           { value: 'Expired', label: 'Expired' },
           { value: 'Missing', label: 'Missing' },
+          { value: 'Not Applicable', label: 'Not Applicable' },
         ],
       },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
@@ -70,7 +78,7 @@ export default function DocumentManagementPage() {
   return (
     <GenericCrudPage
       title="Document Management"
-      description="Vehicle-wise document folder records and validity tracking."
+      description="Vehicle-wise document folder, validity tracking, and compliance status."
       itemName="Document"
       collectionName={VEHICLE_COLLECTIONS.documents}
       fields={fields}
@@ -86,12 +94,14 @@ export default function DocumentManagementPage() {
       onBeforeSave={(payload) => {
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const meta = computeRenewalMeta(String(payload.expiryDate || ''));
+        const hasExpiry = Boolean(payload.expiryDate);
         return {
           ...payload,
           vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
           folderPath: `${payload.vehicleId}/${payload.documentType}`,
-          status: payload.status || meta.complianceStatus,
-          alertStage: meta.alertStage,
+          status: payload.status || (hasExpiry ? meta.complianceStatus : 'Valid'),
+          alertStage: hasExpiry ? meta.alertStage : 'Not Applicable',
+          complianceStatus: hasExpiry ? meta.complianceStatus : 'Not Applicable',
         };
       }}
       onAfterSave={async ({ payload }) => {

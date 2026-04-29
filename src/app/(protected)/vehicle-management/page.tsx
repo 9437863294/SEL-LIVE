@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, getCountFromServer, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
@@ -13,9 +13,11 @@ import {
   CarFront,
   FileArchive,
   Fuel,
+  History,
   Landmark,
   Leaf,
   LocateFixed,
+  RefreshCw,
   ScrollText,
   Settings,
   Shield,
@@ -174,17 +176,22 @@ export default function VehicleManagementOverviewPage() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [alertSummary, setAlertSummary] = useState({ expired: 0, dueSoon: 0, valid: 0 });
+  const isMountedRef = useRef(true);
+  const isSyncingRef = useRef(false);
+  const firstLoadDoneRef = useRef(false);
 
-  const canViewSection = (permission: string) => {
+  const canViewSection = useCallback((permission: string) => {
     if (can('View', `Vehicle Management.${permission}`)) return true;
     if (can('Add', `Vehicle Management.${permission}`)) return true;
     if (can('Edit', `Vehicle Management.${permission}`)) return true;
     return false;
-  };
+  }, [can]);
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
+  const load = useCallback(async () => {
+      if (isSyncingRef.current) return;
+      isSyncingRef.current = true;
+      if (!firstLoadDoneRef.current) setIsLoading(true);
+      try {
       const nextCounts: Record<string, number> = {};
       const nextAlerts = { expired: 0, dueSoon: 0, valid: 0 };
       await Promise.all(
@@ -215,16 +222,44 @@ export default function VehicleManagementOverviewPage() {
           }
         })
       );
+      if (!isMountedRef.current) return;
       setCounts(nextCounts);
       setAlertSummary(nextAlerts);
+      firstLoadDoneRef.current = true;
       setIsLoading(false);
-    };
+      } finally {
+        isSyncingRef.current = false;
+      }
+  }, [canViewSection]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
     load();
-  }, [can]);
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void load();
+      }
+    }, 1000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void load();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      isMountedRef.current = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [load]);
 
   const visibleCards = useMemo(
     () => cards.filter((item) => canViewSection(item.permission)),
-    [can]
+    [canViewSection]
   );
   const canViewReports = can('View', 'Vehicle Management.Reports');
   const totalVisibleRecords = useMemo(
@@ -267,6 +302,15 @@ export default function VehicleManagementOverviewPage() {
                 Valid: {alertSummary.valid}
               </Badge>
             </div>
+            {totalAlerts > 0 && (
+              <Link
+                href="/vehicle-management/renewals"
+                className="mt-2 flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-700 transition-colors"
+              >
+                <RefreshCw className="h-3 w-3" />
+                View Renewals Hub
+              </Link>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -326,6 +370,38 @@ export default function VehicleManagementOverviewPage() {
           </Card>
         </Link>
       )}
+
+      {/* Renewals Hub quick-access banner */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Link href="/vehicle-management/renewals" className="block" aria-label="Open Renewals Hub">
+          <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(239,68,68,0.45)]">
+            <div className="h-1 w-full bg-gradient-to-r from-rose-500 via-orange-400 to-amber-500" />
+            <CardHeader className="flex flex-row items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 shadow-sm ring-1 ring-rose-100">
+                <RefreshCw className="h-5 w-5 text-rose-600" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Renewals Hub</CardTitle>
+                <CardDescription>All expired &amp; due-soon compliance items in one place. Take renewal action instantly.</CardDescription>
+              </div>
+            </CardHeader>
+          </Card>
+        </Link>
+        <Link href="/vehicle-management/renewals/history" className="block" aria-label="Open Renewal History">
+          <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(100,116,139,0.45)]">
+            <div className="h-1 w-full bg-gradient-to-r from-slate-400 via-zinc-400 to-gray-400" />
+            <CardHeader className="flex flex-row items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 shadow-sm ring-1 ring-slate-100">
+                <History className="h-5 w-5 text-slate-600" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">Renewal History</CardTitle>
+                <CardDescription>Archive of all expired PUC, Insurance, DL, Fitness, Road Tax &amp; Permit records.</CardDescription>
+              </div>
+            </CardHeader>
+          </Card>
+        </Link>
+      </div>
     </div>
   );
 }

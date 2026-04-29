@@ -10,7 +10,11 @@ import {
 } from '@/components/vehicle-management/hooks';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
-import { VEHICLE_COLLECTIONS, toVehicleCode } from '@/lib/vehicle-management';
+import {
+  getVehicleComplianceRequirements,
+  VEHICLE_COLLECTIONS,
+  toVehicleCode,
+} from '@/lib/vehicle-management';
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleId', label: 'Vehicle ID' },
@@ -138,6 +142,67 @@ export default function VehicleMasterPage() {
       },
       { key: 'currentOdometerKm', label: 'Current Odometer (KM)', type: 'number', required: true, step: '1' },
       {
+        key: 'complianceRuleMode',
+        label: 'Compliance Rule Mode',
+        type: 'select',
+        required: true,
+        defaultValue: 'Auto',
+        options: [
+          { value: 'Auto', label: 'Auto (By Vehicle Type/Fuel)' },
+          { value: 'Manual', label: 'Manual (Set Required Docs)' },
+        ],
+      },
+      {
+        key: 'requireInsurance',
+        label: 'Insurance Required',
+        type: 'select',
+        options: [
+          { value: 'Yes', label: 'Yes' },
+          { value: 'No', label: 'No' },
+        ],
+        showWhen: ({ formState }) => String(formState.complianceRuleMode || 'Auto') === 'Manual',
+      },
+      {
+        key: 'requirePuc',
+        label: 'PUC Required',
+        type: 'select',
+        options: [
+          { value: 'Yes', label: 'Yes' },
+          { value: 'No', label: 'No' },
+        ],
+        showWhen: ({ formState }) => String(formState.complianceRuleMode || 'Auto') === 'Manual',
+      },
+      {
+        key: 'requireFitness',
+        label: 'Fitness Required',
+        type: 'select',
+        options: [
+          { value: 'Yes', label: 'Yes' },
+          { value: 'No', label: 'No' },
+        ],
+        showWhen: ({ formState }) => String(formState.complianceRuleMode || 'Auto') === 'Manual',
+      },
+      {
+        key: 'requireRoadTax',
+        label: 'Road Tax Required',
+        type: 'select',
+        options: [
+          { value: 'Yes', label: 'Yes' },
+          { value: 'No', label: 'No' },
+        ],
+        showWhen: ({ formState }) => String(formState.complianceRuleMode || 'Auto') === 'Manual',
+      },
+      {
+        key: 'requirePermit',
+        label: 'Permit Required',
+        type: 'select',
+        options: [
+          { value: 'Yes', label: 'Yes' },
+          { value: 'No', label: 'No' },
+        ],
+        showWhen: ({ formState }) => String(formState.complianceRuleMode || 'Auto') === 'Manual',
+      },
+      {
         key: 'vehicleStatus',
         label: 'Vehicle Status',
         type: 'select',
@@ -182,6 +247,16 @@ export default function VehicleMasterPage() {
         next.assignedProjectName = projectMap[String(next.assignedProjectId)]?.projectName || '';
         next.assignedDriverName = driverMap[String(next.assignedDriverId)]?.driverName || '';
         next.currentStatus = String(next.currentStatus || 'In Operation');
+
+        const mode = String(next.complianceRuleMode || 'Auto');
+        next.complianceRuleMode = mode;
+        const requirements = getVehicleComplianceRequirements(next);
+        next.requireInsurance = requirements.insurance ? 'Yes' : 'No';
+        next.requirePuc = requirements.puc ? 'Yes' : 'No';
+        next.requireFitness = requirements.fitness ? 'Yes' : 'No';
+        next.requireRoadTax = requirements.roadTax ? 'Yes' : 'No';
+        next.requirePermit = requirements.permit ? 'Yes' : 'No';
+
         if (!currentRow) {
           const seed = Date.now() % 1000000;
           next.vehicleId = toVehicleCode(seed);

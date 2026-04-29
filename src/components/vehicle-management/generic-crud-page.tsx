@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import ExcelJS from 'exceljs';
-import { Download, Upload } from 'lucide-react';
+import { Download, Upload, History, List } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -83,6 +85,10 @@ interface GenericCrudPageProps {
   exportFileName?: string;
   defaultSort?: { key: string; direction: 'asc' | 'desc' };
   emptyMessage?: string;
+  /** Pre-fill values when opening Add dialog (used by Renewals Hub "Renew Now" flow) */
+  initialPrefill?: Record<string, string>;
+  /** Firestore doc ID of the expired record being renewed — will be marked Archived after save */
+  renewingFromId?: string;
   onBeforeSave?: (payload: Record<string, any>, currentRow: Record<string, any> | null) => Record<string, any>;
   onAfterFetch?: (rows: Record<string, any>[]) => Record<string, any>[];
   onAfterSave?: (args: {
@@ -182,12 +188,18 @@ export default function GenericCrudPage({
   exportFileName,
   defaultSort,
   emptyMessage = 'No records found.',
+  initialPrefill,
+  renewingFromId,
   onBeforeSave,
   onAfterFetch,
   onAfterSave,
 }: GenericCrudPageProps) {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams?.get('tab') === 'history' ? 'history' : 'active';
+
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'active' | 'history'>(initialTab);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -198,7 +210,9 @@ export default function GenericCrudPage({
   const [deleteRow, setDeleteRow] = useState<Record<string, any> | null>(null);
   const [formState, setFormState] = useState<Record<string, string>>(buildInitialForm(fields, null));
   const [fileState, setFileState] = useState<Record<string, File | null>>({});
+  const [isRenewalMode, setIsRenewalMode] = useState(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const prefillApplied = useRef(false);
 
   const allowImport = canImport ?? canAdd;
   const allowExport = canExport ?? canView;
@@ -240,13 +254,36 @@ export default function GenericCrudPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-open Add dialog when initialPrefill is provided (Renew Now flow)
+  useEffect(() => {
+    if (!initialPrefill || prefillApplied.current || !canAdd) return;
+    prefillApplied.current = true;
+    const merged = buildInitialForm(fields, null);
+    Object.entries(initialPrefill).forEach(([k, v]) => {
+      if (v !== undefined && v !== '') merged[k] = v;
+    });
+    setEditingRow(null);
+    setFormState(merged);
+    setFileState({});
+    setIsRenewalMode(true);
+    setDialogOpen(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPrefill, canAdd]);
+
   const filteredRows = useMemo(() => {
+    let base = rows;
+    if (activeTab === 'history') {
+      base = base.filter((r) => r.isArchived === true);
+    } else {
+      base = base.filter((r) => r.isArchived !== true);
+    }
+
     const term = query.trim().toLowerCase();
-    if (!term) return rows;
-    return rows.filter((row) =>
+    if (!term) return base;
+    return base.filter((row) =>
       columns.some((column) => toDisplay(row[column.key]).toLowerCase().includes(term))
     );
-  }, [rows, columns, query]);
+  }, [rows, columns, query, activeTab]);
 
   const triggerImport = () => {
     if (!allowImport || isImporting) return;
@@ -611,8 +648,23 @@ export default function GenericCrudPage({
         }
       }
 
+      // Renewal flow: archive the old expired record
+      if (mode === 'create' && isRenewalMode && renewingFromId) {
+        try {
+          await updateDoc(doc(db, collectionName, renewingFromId), {
+            renewalStatus: 'Renewed',
+            renewedById: savedId,
+            renewedAt: serverTimestamp(),
+            isArchived: true,
+          });
+        } catch (err) {
+          console.error('Failed to archive old record', err);
+        }
+      }
+
       setDialogOpen(false);
       setEditingRow(null);
+      setIsRenewalMode(false);
       setFormState(buildInitialForm(fields, null));
       setFileState({});
       loadRows();
@@ -703,12 +755,36 @@ export default function GenericCrudPage({
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Input
-            placeholder={`Search ${itemName.toLowerCase()}...`}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="bg-white/80 border-white/70 focus-visible:ring-cyan-400/40"
-          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Input
+              placeholder={`Search ${itemName.toLowerCase()}...`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="bg-white/80 border-white/70 focus-visible:ring-cyan-400/40 w-full sm:max-w-xs"
+            />
+            <div className="flex items-center gap-1 rounded-lg bg-white/50 p-1 border border-white/70 shadow-sm w-fit">
+              <button
+                onClick={() => setActiveTab('active')}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
+                  activeTab === 'active' ? 'bg-white shadow-sm text-cyan-700' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                )}
+              >
+                <List className="h-3.5 w-3.5" />
+                Active
+              </button>
+              <button
+                onClick={() => setActiveTab('history')}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
+                  activeTab === 'history' ? 'bg-white shadow-sm text-cyan-700' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                )}
+              >
+                <History className="h-3.5 w-3.5" />
+                History
+              </button>
+            </div>
+          </div>
           <div className="space-y-3 sm:hidden">
             {isLoading ? (
               Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-32 w-full rounded-xl" />)
@@ -810,8 +886,20 @@ export default function GenericCrudPage({
       >
         <DialogContent className="max-h-[92vh] w-[calc(100vw-1rem)] max-w-3xl overflow-y-auto vm-panel-strong">
           <DialogHeader>
-            <DialogTitle>{editingRow ? `Edit ${itemName}` : `Add ${itemName}`}</DialogTitle>
-            <DialogDescription>Fill all required fields and save.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">
+              {isRenewalMode && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  Renewing Expired Record
+                </span>
+              )}
+              {editingRow ? `Edit ${itemName}` : isRenewalMode ? `Renew ${itemName}` : `Add ${itemName}`}
+            </DialogTitle>
+            <DialogDescription>
+              {isRenewalMode
+                ? 'Vehicle and details are pre-filled from the expired record. Update dates and upload new documents.'
+                : 'Fill all required fields and save.'}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-1">

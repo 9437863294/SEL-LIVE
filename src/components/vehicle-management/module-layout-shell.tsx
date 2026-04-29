@@ -4,14 +4,18 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
+  Activity,
   BadgeCheck,
+  BarChart3,
   CarFront,
   FileArchive,
   Fuel,
   Gauge,
+  History,
   LocateFixed,
   Landmark,
   Leaf,
+  RefreshCw,
   Settings,
   Menu,
   ScrollText,
@@ -28,6 +32,9 @@ import { cn } from '@/lib/utils';
 
 const sections = [
   { href: '/vehicle-management', label: 'Overview', resource: '', icon: Gauge },
+  { href: '/vehicle-management/renewals', label: 'Renewals Hub', resource: '', icon: RefreshCw },
+  { href: '/vehicle-management/renewals/history', label: 'Renewal History', resource: '', icon: History },
+  { href: '/vehicle-management/vehicle-health', label: 'Vehicle Health', resource: '', icon: Activity },
   { href: '/vehicle-management/vehicle-master', label: 'Vehicle Master', resource: 'Vehicle Master', icon: CarFront },
   { href: '/vehicle-management/insurance', label: 'Insurance', resource: 'Insurance Management', icon: Shield },
   { href: '/vehicle-management/puc', label: 'PUC', resource: 'PUC Management', icon: Leaf },
@@ -40,7 +47,7 @@ const sections = [
   { href: '/vehicle-management/trips', label: 'Trip Management', resource: 'Trip Management', icon: LocateFixed },
   { href: '/vehicle-management/documents', label: 'Documents', resource: 'Document Management', icon: FileArchive },
   { href: '/vehicle-management/settings', label: 'Settings', resource: 'Settings', icon: Settings },
-  { href: '/vehicle-management/reports', label: 'Reports', resource: 'Reports', icon: Gauge },
+  { href: '/vehicle-management/reports', label: 'Reports', resource: 'Reports', icon: BarChart3 },
 ];
 
 export default function VehicleManagementLayoutShell({ children }: { children: React.ReactNode }) {

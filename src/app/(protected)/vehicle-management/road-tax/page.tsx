@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components/vehicle-management/generic-crud-page';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
+import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
@@ -21,6 +22,7 @@ const columns: CrudColumnConfig[] = [
 export default function RoadTaxManagementPage() {
   const { can } = useAuthorization();
   const { options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
+  const { prefill, renewingFromId } = useRenewalPrefill();
   const canView = can('View', 'Vehicle Management.Road Tax Management');
   const canAdd = can('Add', 'Vehicle Management.Road Tax Management');
   const canEdit = can('Edit', 'Vehicle Management.Road Tax Management');
@@ -98,6 +100,8 @@ export default function RoadTaxManagementPage() {
       canExport={canExport}
       exportFileName="road-tax-management"
       defaultSort={{ key: 'validTill', direction: 'asc' }}
+      initialPrefill={prefill}
+      renewingFromId={renewingFromId}
       onBeforeSave={(payload) => {
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const meta = computeRenewalMeta(String(payload.validTill || ''));

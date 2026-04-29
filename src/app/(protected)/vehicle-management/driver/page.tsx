@@ -16,9 +16,12 @@ const columns: CrudColumnConfig[] = [
   { key: 'linkedUserName', label: 'Linked User' },
   { key: 'licenseNumber', label: 'License Number' },
   { key: 'licenseExpiryDate', label: 'License Expiry' },
+  { key: 'licenseAlertStage', label: 'License Alert' },
+  { key: 'licenseComplianceStatus', label: 'License Status' },
   { key: 'vehicleAssignmentMode', label: 'Vehicle Mode' },
-  { key: 'licenseAlertStage', label: 'Alert' },
   { key: 'assignedVehicleNumber', label: 'Assigned Vehicle' },
+  { key: 'bloodGroup', label: 'Blood Group' },
+  { key: 'experienceYears', label: 'Experience (Yrs)' },
   { key: 'status', label: 'Status' },
 ];
 
@@ -62,7 +65,41 @@ export default function DriverManagementPage() {
         placeholder: 'Select app user (optional)',
       },
       { key: 'mobileNumber', label: 'Mobile Number', type: 'text', required: true },
+      { key: 'alternateNumber', label: 'Alternate Number', type: 'text' },
+      { key: 'emergencyContactName', label: 'Emergency Contact Name', type: 'text' },
+      { key: 'emergencyContactNumber', label: 'Emergency Contact Number', type: 'text' },
+      {
+        key: 'bloodGroup',
+        label: 'Blood Group',
+        type: 'select',
+        options: [
+          { value: 'A+', label: 'A+' },
+          { value: 'A-', label: 'A-' },
+          { value: 'B+', label: 'B+' },
+          { value: 'B-', label: 'B-' },
+          { value: 'AB+', label: 'AB+' },
+          { value: 'AB-', label: 'AB-' },
+          { value: 'O+', label: 'O+' },
+          { value: 'O-', label: 'O-' },
+          { value: 'Unknown', label: 'Unknown' },
+        ],
+      },
+      { key: 'experienceYears', label: 'Experience (Years)', type: 'number', step: '1' },
       { key: 'licenseNumber', label: 'License Number', type: 'text', required: true },
+      {
+        key: 'licenseClass',
+        label: 'License Class',
+        type: 'select',
+        options: [
+          { value: 'LMV', label: 'LMV (Light Motor Vehicle)' },
+          { value: 'HMV', label: 'HMV (Heavy Motor Vehicle)' },
+          { value: 'HGMV', label: 'HGMV (Heavy Goods Motor Vehicle)' },
+          { value: 'HPMV', label: 'HPMV (Heavy Passenger Motor Vehicle)' },
+          { value: 'MGV', label: 'MGV (Medium Goods Vehicle)' },
+          { value: 'MC', label: 'MC (Motorcycle)' },
+          { value: 'Other', label: 'Other' },
+        ],
+      },
       { key: 'licenseExpiryDate', label: 'License Expiry Date', type: 'date', required: true },
       { key: 'address', label: 'Address', type: 'textarea', required: true },
       { key: 'assignedVehicleId', label: 'Assigned Vehicle', type: 'select', options: vehicleOptions },
@@ -117,9 +154,11 @@ export default function DriverManagementPage() {
           { value: 'On Leave', label: 'On Leave' },
           { value: 'Inactive', label: 'Inactive' },
           { value: 'Blacklisted', label: 'Blacklisted' },
+          { value: 'Suspended', label: 'Suspended' },
         ],
       },
       { key: 'licenseDocumentUrl', label: 'License Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
+      { key: 'driverPhotoUrl', label: 'Driver Photo', type: 'file', accept: '.jpg,.jpeg,.png,.webp' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
     [userOptions, vehicleOptions]
@@ -128,7 +167,7 @@ export default function DriverManagementPage() {
   return (
     <GenericCrudPage
       title="Driver Management"
-      description="Driver records, license tracking, and vehicle assignment."
+      description="Driver records, license tracking, emergency contacts, and vehicle assignment."
       itemName="Driver"
       collectionName={VEHICLE_COLLECTIONS.driver}
       fields={fields}

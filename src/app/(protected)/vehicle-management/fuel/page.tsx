@@ -10,10 +10,16 @@ import { useAuth } from '@/components/auth/AuthProvider';
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
   { key: 'fuelDate', label: 'Date' },
+  { key: 'fuelType', label: 'Fuel Type' },
+  { key: 'fillType', label: 'Fill Type' },
   { key: 'quantityLiters', label: 'Quantity (L)' },
-  { key: 'totalAmount', label: 'Total Amount' },
+  { key: 'ratePerUnit', label: 'Rate/L (₹)' },
+  { key: 'totalAmount', label: 'Total (₹)' },
   { key: 'mileageKmPerLiter', label: 'Mileage (KM/L)' },
-  { key: 'costPerKm', label: 'Cost / KM' },
+  { key: 'costPerKm', label: 'Cost/KM' },
+  { key: 'fuelStationName', label: 'Fuel Station' },
+  { key: 'paymentMode', label: 'Payment' },
+  { key: 'fuelStatus', label: 'Status' },
 ];
 
 export default function FuelManagementPage() {
@@ -31,12 +37,25 @@ export default function FuelManagementPage() {
     () => [
       { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, options: vehicleOptions },
       { key: 'fuelDate', label: 'Date', type: 'date', required: true },
-      { key: 'quantityLiters', label: 'Quantity', type: 'number', required: true },
-      { key: 'ratePerUnit', label: 'Rate Per Unit', type: 'number', required: true },
-      { key: 'odometerReadingKm', label: 'Odometer Reading', type: 'number', required: true, step: '1' },
-      { key: 'previousOdometerReadingKm', label: 'Previous Odometer', type: 'number', step: '1' },
+      {
+        key: 'fillType',
+        label: 'Fill Type',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'Full Tank', label: 'Full Tank' },
+          { value: 'Partial Fill', label: 'Partial Fill' },
+          { value: 'Top-Up', label: 'Top-Up' },
+        ],
+        defaultValue: 'Full Tank',
+      },
+      { key: 'quantityLiters', label: 'Quantity (Liters)', type: 'number', required: true },
+      { key: 'ratePerUnit', label: 'Rate Per Liter (₹)', type: 'number', required: true },
+      { key: 'odometerReadingKm', label: 'Current Odometer (KM)', type: 'number', required: true, step: '1' },
+      { key: 'previousOdometerReadingKm', label: 'Previous Odometer (KM)', type: 'number', step: '1' },
       { key: 'fuelStationName', label: 'Fuel Station Name', type: 'text', required: true },
-      { key: 'billNumber', label: 'Bill Number', type: 'text' },
+      { key: 'fuelStationCity', label: 'City / Location', type: 'text' },
+      { key: 'billNumber', label: 'Bill / Receipt Number', type: 'text' },
       { key: 'billUploadUrl', label: 'Bill Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
       {
         key: 'paymentMode',
@@ -48,9 +67,23 @@ export default function FuelManagementPage() {
           { value: 'Bank Transfer', label: 'Bank Transfer' },
           { value: 'Card', label: 'Card' },
           { value: 'Cheque', label: 'Cheque' },
+          { value: 'Fuel Card', label: 'Fuel Card' },
+          { value: 'Company Account', label: 'Company Account' },
         ],
       },
       { key: 'transactionReference', label: 'Transaction Reference', type: 'text' },
+      {
+        key: 'fuelStatus',
+        label: 'Status',
+        type: 'select',
+        options: [
+          { value: 'Submitted', label: 'Submitted' },
+          { value: 'Verified', label: 'Verified' },
+          { value: 'Approved', label: 'Approved' },
+          { value: 'Rejected', label: 'Rejected' },
+        ],
+        defaultValue: 'Submitted',
+      },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
     [vehicleOptions]
@@ -59,7 +92,7 @@ export default function FuelManagementPage() {
   return (
     <GenericCrudPage
       title="Fuel Management"
-      description="Fuel expenses, mileage, and bill tracking."
+      description="Fuel expenses, fill type, mileage efficiency, and bill tracking."
       itemName="Fuel Record"
       collectionName={VEHICLE_COLLECTIONS.fuel}
       fields={fields}
@@ -80,7 +113,13 @@ export default function FuelManagementPage() {
         const previousOdometer = Number(payload.previousOdometerReadingKm || 0);
         const distance = currentOdometer > previousOdometer ? currentOdometer - previousOdometer : 0;
         const totalAmount = quantity * rate;
-        const mileage = quantity > 0 && distance > 0 ? Number((distance / quantity).toFixed(2)) : '';
+
+        // Only compute mileage for full-tank fills (most accurate)
+        const fillType = String(payload.fillType || 'Full Tank');
+        const mileage =
+          fillType === 'Full Tank' && quantity > 0 && distance > 0
+            ? Number((distance / quantity).toFixed(2))
+            : '';
         const costPerKm = distance > 0 ? Number((totalAmount / distance).toFixed(2)) : '';
 
         return {
@@ -93,7 +132,7 @@ export default function FuelManagementPage() {
           costPerKm,
           enteredByUserId: user?.id || '',
           enteredByName: user?.name || '',
-          fuelStatus: 'Submitted',
+          fuelStatus: payload.fuelStatus || 'Submitted',
         };
       }}
     />

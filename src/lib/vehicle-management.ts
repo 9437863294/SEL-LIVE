@@ -112,6 +112,89 @@ export const getAlertPriority = (alertStage?: string) => {
   }
 };
 
+export type VehicleComplianceRequirements = {
+  insurance: boolean;
+  puc: boolean;
+  fitness: boolean;
+  roadTax: boolean;
+  permit: boolean;
+};
+
+const parseRequirementValue = (value: unknown): boolean | undefined => {
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (['yes', 'y', 'true', '1', 'required', 'mandatory'].includes(normalized)) return true;
+  if (['no', 'n', 'false', '0', 'not required', 'optional'].includes(normalized)) return false;
+  return undefined;
+};
+
+const isTransportOrCommercialVehicle = (vehicle: Record<string, any>) => {
+  const type = String(vehicle.vehicleType || '').toLowerCase();
+  const category = String(vehicle.vehicleCategory || '').toLowerCase();
+  const typeHits = ['truck', 'bus', 'van', 'pickup', 'tanker', 'trailer', 'carrier', 'tempo'];
+  return typeHits.some((token) => type.includes(token)) || category.includes('commercial');
+};
+
+const isTwoWheeler = (vehicle: Record<string, any>) => {
+  const type = String(vehicle.vehicleType || '').toLowerCase();
+  const category = String(vehicle.vehicleCategory || '').toLowerCase();
+  return type.includes('two') || type.includes('bike') || type.includes('scooter') || category.includes('two');
+};
+
+export const getVehicleComplianceRequirements = (
+  vehicle: Record<string, any>
+): VehicleComplianceRequirements => {
+  const status = String(vehicle.vehicleStatus || '').toLowerCase();
+  if (status === 'sold' || status === 'scrapped') {
+    return {
+      insurance: false,
+      puc: false,
+      fitness: false,
+      roadTax: false,
+      permit: false,
+    };
+  }
+
+  const fuelType = String(vehicle.fuelType || '').toLowerCase();
+  const twoWheeler = isTwoWheeler(vehicle);
+  const transportOrCommercial = isTransportOrCommercialVehicle(vehicle);
+
+  const autoDefaults: VehicleComplianceRequirements = {
+    insurance: true,
+    puc: !fuelType.includes('electric'),
+    fitness: !twoWheeler && transportOrCommercial,
+    roadTax: true,
+    permit: !twoWheeler && transportOrCommercial,
+  };
+
+  const manualValues: VehicleComplianceRequirements = {
+    insurance: parseRequirementValue(vehicle.requireInsurance) ?? autoDefaults.insurance,
+    puc: parseRequirementValue(vehicle.requirePuc) ?? autoDefaults.puc,
+    fitness: parseRequirementValue(vehicle.requireFitness) ?? autoDefaults.fitness,
+    roadTax: parseRequirementValue(vehicle.requireRoadTax) ?? autoDefaults.roadTax,
+    permit: parseRequirementValue(vehicle.requirePermit) ?? autoDefaults.permit,
+  };
+
+  const mode = String(vehicle.complianceRuleMode || '').trim().toLowerCase();
+  if (mode === 'manual') {
+    return manualValues;
+  }
+  if (mode === 'auto') {
+    return autoDefaults;
+  }
+
+  // Backward compatibility for older records: if any manual flag exists, honor it.
+  const hasAnyManualFlag =
+    parseRequirementValue(vehicle.requireInsurance) !== undefined ||
+    parseRequirementValue(vehicle.requirePuc) !== undefined ||
+    parseRequirementValue(vehicle.requireFitness) !== undefined ||
+    parseRequirementValue(vehicle.requireRoadTax) !== undefined ||
+    parseRequirementValue(vehicle.requirePermit) !== undefined;
+
+  return hasAnyManualFlag ? manualValues : autoDefaults;
+};
+
 export type DriverTripStatus = 'In Progress' | 'Completed' | 'Cancelled';
 
 export type TripLocationPoint = {

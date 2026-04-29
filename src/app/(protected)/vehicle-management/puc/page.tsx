@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components/vehicle-management/generic-crud-page';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
+import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
@@ -20,6 +21,7 @@ const columns: CrudColumnConfig[] = [
 export default function PucManagementPage() {
   const { can } = useAuthorization();
   const { options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
+  const { prefill, renewingFromId } = useRenewalPrefill();
   const canView = can('View', 'Vehicle Management.PUC Management');
   const canAdd = can('Add', 'Vehicle Management.PUC Management');
   const canEdit = can('Edit', 'Vehicle Management.PUC Management');
@@ -68,6 +70,8 @@ export default function PucManagementPage() {
       canExport={canExport}
       exportFileName="puc-management"
       defaultSort={{ key: 'expiryDate', direction: 'asc' }}
+      initialPrefill={prefill}
+      renewingFromId={renewingFromId}
       onBeforeSave={(payload) => {
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const meta = computeRenewalMeta(String(payload.expiryDate || ''));

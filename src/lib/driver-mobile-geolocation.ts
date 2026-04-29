@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Geolocation, type Position, type PositionOptions } from '@capacitor/geolocation';
+import { openAndroidAppSettings, openAndroidLocationSettings } from '@/lib/native-android-settings';
 
 export type DriverGeoPosition = {
   coords: {
@@ -20,8 +21,6 @@ export type DriverGeoError = {
 };
 
 export type DriverGeoWatchId = string | number;
-
-const ALWAYS_LOCATION_PROMPT_KEY = 'driver_location_always_prompt_completed_v1';
 
 const toNumberOrNull = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -66,27 +65,36 @@ export const ensureAndroidAlwaysLocationSetup = async () => {
   if (!isNativeAndroidDriverApp()) return;
   if (typeof window === 'undefined') return;
 
-  const alreadyPrompted = window.localStorage.getItem(ALWAYS_LOCATION_PROMPT_KEY) === '1';
-  if (alreadyPrompted) return;
-
   const shouldOpenSettings = window.confirm(
-    'For continuous trip tracking, set Location permission to "Allow all the time". Tap OK to continue with setup steps.'
+    'For continuous trip tracking, set Location permission to "Allow all the time". Tap OK to open phone settings now.'
   );
 
   if (!shouldOpenSettings) {
     throw new Error('Please enable "Allow all the time" location permission to continue.');
   }
 
-  window.localStorage.setItem(ALWAYS_LOCATION_PROMPT_KEY, '1');
+  const openedAppSettings = await openAndroidAppSettings();
+  const openedLocationSettings = openedAppSettings ? false : await openAndroidLocationSettings();
+
+  if (!openedLocationSettings && !openedAppSettings) {
+    window.alert(
+      [
+        'Unable to open settings automatically.',
+        'Please open phone Settings manually:',
+        '1. Apps',
+        '2. Select this app',
+        '3. Permissions > Location',
+        '4. Choose "Allow all the time"',
+        'Then return and tap Start Trip again.',
+      ].join('\n')
+    );
+    throw new Error('Open Android settings manually and enable "Allow all the time" location.');
+  }
+
   window.alert(
     [
-      'Android setup required:',
-      '1. Open Settings',
-      '2. Apps',
-      '3. Select this app',
-      '4. Permissions > Location',
-      '5. Choose "Allow all the time"',
-      'Then return and tap Start Trip again.',
+      'Phone settings opened.',
+      'Set Location permission to "Allow all the time", then return and tap Start Trip again.',
     ].join('\n')
   );
   throw new Error('Enable "Allow all the time" location in Android settings, then tap Start Trip again.');

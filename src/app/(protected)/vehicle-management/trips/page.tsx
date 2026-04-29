@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { Download } from 'lucide-react';
+import { Download, Search, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { TripLocationPoint, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -43,6 +44,9 @@ export default function TripManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [trips, setTrips] = useState<Record<string, any>[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<string>('');
   const [selectedTripPoints, setSelectedTripPoints] = useState<TripLocationPoint[]>([]);
@@ -93,9 +97,22 @@ export default function TripManagementPage() {
   };
 
   const filteredTrips = useMemo(() => {
-    if (statusFilter === 'All') return trips;
-    return trips.filter((trip) => String(trip.tripStatus || '') === statusFilter);
-  }, [statusFilter, trips]);
+    let rows = trips;
+    if (statusFilter !== 'All') rows = rows.filter((t) => String(t.tripStatus || '') === statusFilter);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      rows = rows.filter(
+        (t) =>
+          String(t.driverName || '').toLowerCase().includes(q) ||
+          String(t.vehicleNumber || '').toLowerCase().includes(q) ||
+          String(t.startAddress || '').toLowerCase().includes(q) ||
+          String(t.endAddress || '').toLowerCase().includes(q)
+      );
+    }
+    if (dateFrom) rows = rows.filter((t) => String(t.startTimeIso || '') >= dateFrom);
+    if (dateTo) rows = rows.filter((t) => String(t.startTimeIso || '') <= `${dateTo}T23:59:59`);
+    return rows;
+  }, [statusFilter, searchQuery, dateFrom, dateTo, trips]);
 
   const selectedTrip = useMemo(
     () => trips.find((trip) => String(trip.id) === selectedTripId) || null,
@@ -228,8 +245,9 @@ export default function TripManagementPage() {
             </CardDescription>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+            {/* Status filter */}
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-              <SelectTrigger className="w-full bg-white/85 sm:w-44">
+              <SelectTrigger className="w-full bg-white/85 sm:w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -239,6 +257,46 @@ export default function TripManagementPage() {
                 <SelectItem value="Cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
+            {/* Search */}
+            <div className="relative w-full sm:w-52">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search driver, vehicle…"
+                className="pl-8 bg-white/85"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2">
+                  <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                </button>
+              )}
+            </div>
+            {/* Date range */}
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full bg-white/85 sm:w-40"
+              title="From date"
+            />
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full bg-white/85 sm:w-40"
+              title="To date"
+            />
+            {(dateFrom || dateTo || searchQuery || statusFilter !== 'All') && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setStatusFilter('All'); setSearchQuery(''); setDateFrom(''); setDateTo(''); }}
+                className="text-xs"
+              >
+                <X className="mr-1 h-3 w-3" /> Clear
+              </Button>
+            )}
             {canExport && (
               <Button
                 variant="outline"
