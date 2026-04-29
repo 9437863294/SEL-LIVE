@@ -2,6 +2,8 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Geolocation, type Position, type PositionOptions } from '@capacitor/geolocation';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { Network } from '@capacitor/network';
+import { Camera } from '@capacitor/camera';
+import { Filesystem } from '@capacitor/filesystem';
 import type {
   BackgroundGeolocationPlugin,
   CallbackError as BackgroundGeolocationError,
@@ -156,20 +158,19 @@ export const ensureAndroidBackgroundTrackingSetup = async () => {
   if (!isNativeAndroidDriverApp()) return;
 
   await ensureAndroidNotificationPermission();
+  await Camera.requestPermissions({ permissions: ['camera', 'photos'] });
+  try {
+    await Filesystem.requestPermissions();
+  } catch (error) {
+    // Some Android versions do not require explicit FS runtime permission.
+  }
 
-  if (typeof window === 'undefined') return;
-  const shouldOpen = window.confirm(
-    [
-      'For reliable background trip tracking:',
-      '1. Allow location all the time',
-      '2. Disable battery optimization for this app',
-      '',
-      'Tap OK to open settings now.',
-    ].join('\n')
-  );
+  if (typeof window !== 'undefined' && window.localStorage?.getItem('driver_bg_setup_done') === '1') {
+    return;
+  }
 
-  if (!shouldOpen) return;
-
+  // Open settings directly (without custom confirmation popup) so user can finish
+  // required one-time device setup for background tracking reliability.
   const openedAppSettings = await openAndroidAppSettings();
   const openedLocationSettings = openedAppSettings ? false : await openAndroidLocationSettings();
   const openedBatterySettings = await openAndroidBatteryOptimizationSettings();
@@ -178,6 +179,9 @@ export const ensureAndroidBackgroundTrackingSetup = async () => {
     throw new Error(
       'Unable to open Android settings automatically. Enable always-location and disable battery optimization manually.'
     );
+  }
+  if (typeof window !== 'undefined') {
+    window.localStorage?.setItem('driver_bg_setup_done', '1');
   }
 };
 

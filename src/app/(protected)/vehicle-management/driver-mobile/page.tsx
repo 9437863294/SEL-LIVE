@@ -2,6 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Device } from '@capacitor/device';
+import { Network } from '@capacitor/network';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
@@ -14,6 +17,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 const thisMonthPrefix = () => new Date().toISOString().slice(0, 7);
 
+type DriverDeviceInfo = {
+  deviceName: string;
+  model: string;
+  manufacturer: string;
+  platform: string;
+  osVersion: string;
+  batteryPercent: string;
+  isCharging: string;
+  networkType: string;
+  isConnected: string;
+};
+
 export default function DriverMobileHubPage() {
   const { can } = useAuthorization();
   const { driver, isLoading: isDriverLoading } = useCurrentDriverProfile();
@@ -23,6 +38,8 @@ export default function DriverMobileHubPage() {
   const [tripCount, setTripCount] = useState(0);
   const [activeTrip, setActiveTrip] = useState<Record<string, any> | null>(null);
   const [latestStatus, setLatestStatus] = useState<Record<string, any> | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DriverDeviceInfo | null>(null);
+  const [isDeviceLoading, setIsDeviceLoading] = useState(false);
   const isAssignedDriver = Boolean(driver?.id && (driver?.assignedVehicleId || driver?.assignedVehicleNumber));
 
   const canViewFuel =
@@ -91,6 +108,68 @@ export default function DriverMobileHubPage() {
 
     load();
   }, [driver?.id]);
+
+  useEffect(() => {
+    const loadDeviceInfo = async () => {
+      if (!Capacitor.isNativePlatform()) {
+        setDeviceInfo({
+          deviceName: 'Web Browser',
+          model: 'N/A',
+          manufacturer: 'N/A',
+          platform: 'Web',
+          osVersion: navigator.userAgent,
+          batteryPercent: 'N/A',
+          isCharging: 'N/A',
+          networkType: 'Browser',
+          isConnected: 'Unknown',
+        });
+        return;
+      }
+
+      setIsDeviceLoading(true);
+      try {
+        const [info, battery, network] = await Promise.all([
+          Device.getInfo(),
+          Device.getBatteryInfo(),
+          Network.getStatus(),
+        ]);
+
+        const batteryPercent =
+          typeof battery.batteryLevel === 'number'
+            ? `${Math.round(Math.max(0, Math.min(1, battery.batteryLevel)) * 100)}%`
+            : 'Unknown';
+
+        setDeviceInfo({
+          deviceName: String(info.name || info.model || '-'),
+          model: String(info.model || '-'),
+          manufacturer: String(info.manufacturer || '-'),
+          platform: String(info.platform || '-'),
+          osVersion: String(info.operatingSystem || '-') + ' ' + String(info.osVersion || ''),
+          batteryPercent,
+          isCharging: battery.isCharging ? 'Yes' : 'No',
+          networkType: String(network.connectionType || 'unknown'),
+          isConnected: network.connected ? 'Yes' : 'No',
+        });
+      } catch (error) {
+        console.error('Failed to load device diagnostics', error);
+        setDeviceInfo({
+          deviceName: '-',
+          model: '-',
+          manufacturer: '-',
+          platform: '-',
+          osVersion: '-',
+          batteryPercent: '-',
+          isCharging: '-',
+          networkType: '-',
+          isConnected: '-',
+        });
+      } finally {
+        setIsDeviceLoading(false);
+      }
+    };
+
+    loadDeviceInfo();
+  }, []);
 
   const driverName = useMemo(
     () => String(driver?.driverName || driver?.name || 'Driver'),
@@ -228,6 +307,73 @@ export default function DriverMobileHubPage() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No daily status logs submitted yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="vm-panel">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-lg">Device Diagnostics</CardTitle>
+            <CardDescription>Runtime device and battery information from this phone.</CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              if (!Capacitor.isNativePlatform()) return;
+              setIsDeviceLoading(true);
+              try {
+                const [info, battery, network] = await Promise.all([
+                  Device.getInfo(),
+                  Device.getBatteryInfo(),
+                  Network.getStatus(),
+                ]);
+                const batteryPercent =
+                  typeof battery.batteryLevel === 'number'
+                    ? `${Math.round(Math.max(0, Math.min(1, battery.batteryLevel)) * 100)}%`
+                    : 'Unknown';
+                setDeviceInfo({
+                  deviceName: String(info.name || info.model || '-'),
+                  model: String(info.model || '-'),
+                  manufacturer: String(info.manufacturer || '-'),
+                  platform: String(info.platform || '-'),
+                  osVersion: String(info.operatingSystem || '-') + ' ' + String(info.osVersion || ''),
+                  batteryPercent,
+                  isCharging: battery.isCharging ? 'Yes' : 'No',
+                  networkType: String(network.connectionType || 'unknown'),
+                  isConnected: network.connected ? 'Yes' : 'No',
+                });
+              } finally {
+                setIsDeviceLoading(false);
+              }
+            }}
+          >
+            Refresh
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isDeviceLoading ? (
+            <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+          ) : deviceInfo ? (
+            <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2">Device Name: <span className="font-medium">{deviceInfo.deviceName}</span></div>
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2">Model: <span className="font-medium">{deviceInfo.model}</span></div>
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2">Manufacturer: <span className="font-medium">{deviceInfo.manufacturer}</span></div>
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2">Platform: <span className="font-medium">{deviceInfo.platform}</span></div>
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2">OS Version: <span className="font-medium">{deviceInfo.osVersion}</span></div>
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2">Battery: <span className="font-medium">{deviceInfo.batteryPercent}</span></div>
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2">Charging: <span className="font-medium">{deviceInfo.isCharging}</span></div>
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2">Network Type: <span className="font-medium">{deviceInfo.networkType}</span></div>
+              <div className="rounded-lg border border-white/60 bg-white/80 px-3 py-2 sm:col-span-2">Connected: <span className="font-medium">{deviceInfo.isConnected}</span></div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Device information unavailable.</p>
           )}
         </CardContent>
       </Card>

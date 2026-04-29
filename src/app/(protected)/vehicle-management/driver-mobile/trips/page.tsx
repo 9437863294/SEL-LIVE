@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import {
   addDoc,
   collection,
@@ -600,6 +602,25 @@ export default function DriverMobileTripsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTrip?.id]);
+
+  useEffect(() => {
+    if (!activeTrip?.id) return;
+    if (!Capacitor.isNativePlatform()) return;
+
+    let handle: { remove: () => Promise<void> } | null = null;
+    void CapacitorApp.addListener('backButton', () => {
+      toast({
+        title: 'Trip Running',
+        description: 'Trip is in progress. Stop trip before closing or exiting the app.',
+      });
+    }).then((listener) => {
+      handle = listener;
+    });
+
+    return () => {
+      if (handle) void handle.remove();
+    };
+  }, [activeTrip?.id, toast]);
 
   const latestPositionText = useMemo(() => {
     if (latestPosition) {
