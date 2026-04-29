@@ -1,6 +1,19 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Geolocation, type Position, type PositionOptions } from '@capacitor/geolocation';
-import { openAndroidAppSettings, openAndroidLocationSettings } from '@/lib/native-android-settings';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import { Network } from '@capacitor/network';
+import type {
+  BackgroundGeolocationPlugin,
+  CallbackError as BackgroundGeolocationError,
+  Location as BackgroundLocation,
+} from '@capacitor-community/background-geolocation';
+import {
+  openAndroidAppSettings,
+  openAndroidBatteryOptimizationSettings,
+  openAndroidLocationSettings,
+} from '@/lib/native-android-settings';
+
+const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 
 export type DriverGeoPosition = {
   coords: {
@@ -22,6 +35,13 @@ export type DriverGeoError = {
 
 export type DriverGeoWatchId = string | number;
 
+export type DriverGeoWatchOptions = PositionOptions & {
+  backgroundMessage?: string;
+  backgroundTitle?: string;
+  distanceFilterMeters?: number;
+  forceForegroundWatcher?: boolean;
+};
+
 const toNumberOrNull = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
@@ -38,11 +58,43 @@ const normalizePosition = (position: Position | GeolocationPosition): DriverGeoP
   timestamp: Number(position.timestamp || Date.now()),
 });
 
+const normalizeBackgroundPosition = (position: BackgroundLocation): DriverGeoPosition => ({
+  coords: {
+    latitude: Number(position.latitude),
+    longitude: Number(position.longitude),
+    accuracy: Number(position.accuracy || 0),
+    altitude: toNumberOrNull(position.altitude),
+    altitudeAccuracy: toNumberOrNull(position.altitudeAccuracy),
+    heading: toNumberOrNull(position.bearing),
+    speed: toNumberOrNull(position.speed),
+  },
+  timestamp: Number(position.time || Date.now()),
+});
+
 const hasGrantedPermission = (permissionStatus: Record<string, unknown>) =>
   permissionStatus.location === 'granted' || permissionStatus.coarseLocation === 'granted';
 
 export const isNativeDriverApp = () => Capacitor.isNativePlatform();
 export const isNativeAndroidDriverApp = () => isNativeDriverApp() && Capacitor.getPlatform() === 'android';
+
+export const ensureDriverConnectivity = async () => {
+  if (!isNativeDriverApp()) return;
+  const status = await Network.getStatus();
+  if (!status.connected) {
+    throw new Error('No internet connection detected. Please enable Wi-Fi or mobile data.');
+  }
+};
+
+const ensureAndroidNotificationPermission = async () => {
+  if (!isNativeAndroidDriverApp()) return;
+  const checked = await LocalNotifications.checkPermissions();
+  if (checked.display === 'granted') return;
+
+  const requested = await LocalNotifications.requestPermissions();
+  if (requested.display !== 'granted') {
+    throw new Error('Notification permission is required for background trip tracking.');
+  }
+};
 
 export const ensureDriverGeolocation = async () => {
   if (!isNativeDriverApp()) {
@@ -100,6 +152,35 @@ export const ensureAndroidAlwaysLocationSetup = async () => {
   throw new Error('Enable "Allow all the time" location in Android settings, then tap Start Trip again.');
 };
 
+export const ensureAndroidBackgroundTrackingSetup = async () => {
+  if (!isNativeAndroidDriverApp()) return;
+
+  await ensureAndroidNotificationPermission();
+
+  if (typeof window === 'undefined') return;
+  const shouldOpen = window.confirm(
+    [
+      'For reliable background trip tracking:',
+      '1. Allow location all the time',
+      '2. Disable battery optimization for this app',
+      '',
+      'Tap OK to open settings now.',
+    ].join('\n')
+  );
+
+  if (!shouldOpen) return;
+
+  const openedAppSettings = await openAndroidAppSettings();
+  const openedLocationSettings = openedAppSettings ? false : await openAndroidLocationSettings();
+  const openedBatterySettings = await openAndroidBatteryOptimizationSettings();
+
+  if (!openedAppSettings && !openedLocationSettings && !openedBatterySettings) {
+    throw new Error(
+      'Unable to open Android settings automatically. Enable always-location and disable battery optimization manually.'
+    );
+  }
+};
+
 export const getCurrentDriverPosition = async (options: PositionOptions = {}) => {
   await ensureDriverGeolocation();
 
@@ -118,25 +199,51 @@ export const getCurrentDriverPosition = async (options: PositionOptions = {}) =>
 };
 
 export const watchDriverPosition = async (
-  options: PositionOptions,
+  options: DriverGeoWatchOptions,
   onSuccess: (position: DriverGeoPosition) => void,
   onError?: (error: DriverGeoError) => void
 ): Promise<DriverGeoWatchId> => {
   await ensureDriverGeolocation();
 
   if (isNativeDriverApp()) {
-    const watchId = await Geolocation.watchPosition(options, (position, error) => {
-      if (error) {
-        onError?.({
-          code: String(error.code || ''),
-          message: String(error.message || 'Unable to fetch live location.'),
-        });
-        return;
+    if (options.forceForegroundWatcher) {
+      const watchId = await Geolocation.watchPosition(options, (position, error) => {
+        if (error) {
+          onError?.({
+            code: String(error.code || ''),
+            message: String(error.message || 'Unable to fetch live location.'),
+          });
+          return;
+        }
+        if (!position) return;
+        onSuccess(normalizePosition(position));
+      });
+      return watchId;
+    }
+
+    const watcherId = await BackgroundGeolocation.addWatcher(
+      {
+        requestPermissions: false,
+        stale: false,
+        distanceFilter: Math.max(0, Number(options.distanceFilterMeters ?? 0)),
+        backgroundMessage:
+          String(options.backgroundMessage || '').trim() ||
+          'Trip tracking is running in background for live driver location.',
+        backgroundTitle: String(options.backgroundTitle || '').trim() || 'SEL Driver Trip Tracking',
+      },
+      (position?: BackgroundLocation, error?: BackgroundGeolocationError) => {
+        if (error) {
+          onError?.({
+            code: String(error.code || ''),
+            message: String(error.message || 'Unable to fetch background location.'),
+          });
+          return;
+        }
+        if (!position) return;
+        onSuccess(normalizeBackgroundPosition(position));
       }
-      if (!position) return;
-      onSuccess(normalizePosition(position));
-    });
-    return watchId;
+    );
+    return watcherId;
   }
 
   return navigator.geolocation.watchPosition(
@@ -152,10 +259,21 @@ export const watchDriverPosition = async (
 
 export const clearDriverPositionWatch = async (watchId: DriverGeoWatchId | null) => {
   if (watchId === null || watchId === undefined) return;
+
+  if (isNativeDriverApp() && typeof watchId === 'string') {
+    try {
+      await BackgroundGeolocation.removeWatcher({ id: watchId });
+      return;
+    } catch (error) {
+      console.error('Failed removing background watcher, falling back to Geolocation.clearWatch', error);
+    }
+  }
+
   if (typeof watchId === 'string') {
     await Geolocation.clearWatch({ id: watchId });
     return;
   }
+
   if (typeof navigator !== 'undefined' && navigator.geolocation) {
     navigator.geolocation.clearWatch(watchId);
   }

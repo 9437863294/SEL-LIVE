@@ -28,7 +28,8 @@ import {
 } from '@/lib/vehicle-management';
 import {
   clearDriverPositionWatch,
-  ensureAndroidAlwaysLocationSetup,
+  ensureAndroidBackgroundTrackingSetup,
+  ensureDriverConnectivity,
   ensureDriverGeolocation,
   getCurrentDriverPosition,
   type DriverGeoPosition,
@@ -324,12 +325,13 @@ export default function DriverMobileTripsPage() {
     }
 
     try {
+      await ensureDriverConnectivity();
       await ensureDriverGeolocation();
-      await ensureAndroidAlwaysLocationSetup();
+      await ensureAndroidBackgroundTrackingSetup();
     } catch (error: any) {
       toast({
-        title: 'Location Not Available',
-        description: error?.message || 'Unable to access location.',
+        title: 'Trip Tracking Setup Required',
+        description: error?.message || 'Unable to prepare location tracking on this device.',
         variant: 'destructive',
       });
       return;
@@ -544,6 +546,9 @@ export default function DriverMobileTripsPage() {
           enableHighAccuracy: true,
           timeout: 12000,
           maximumAge: 0,
+          backgroundTitle: 'SEL Driver Trip Tracking',
+          backgroundMessage: 'Live trip tracking is active. Do not force-close the app during trip.',
+          distanceFilterMeters: 0,
         },
         async (position) => {
           setLatestPosition(position);

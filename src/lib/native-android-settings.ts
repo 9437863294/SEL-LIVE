@@ -3,6 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 type NativeSettingsPlugin = {
   openAppSettings: () => Promise<void>;
   openLocationSettings: () => Promise<void>;
+  openBatteryOptimizationSettings: () => Promise<void>;
 };
 
 const NativeSettings = registerPlugin<NativeSettingsPlugin>('NativeSettings');
@@ -28,6 +29,17 @@ export const openAndroidLocationSettings = async () => {
     return true;
   } catch (error) {
     console.error('Failed to open Android location settings', error);
+    return false;
+  }
+};
+
+export const openAndroidBatteryOptimizationSettings = async () => {
+  if (!isNativeAndroid()) return false;
+  try {
+    await NativeSettings.openBatteryOptimizationSettings();
+    return true;
+  } catch (error) {
+    console.error('Failed to open Android battery optimization settings', error);
     return false;
   }
 };

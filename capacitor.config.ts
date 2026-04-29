@@ -19,6 +19,9 @@ const config: CapacitorConfig = {
   appId,
   appName,
   webDir: 'public/mobile-shell',
+  android: {
+    useLegacyBridge: true,
+  },
   ...(liveBaseUrl
     ? {
         server: {
