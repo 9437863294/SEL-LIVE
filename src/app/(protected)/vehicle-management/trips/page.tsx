@@ -2,11 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { Download, Search, X } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { TripLocationPoint, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import {
+  computeTripDistanceKmFromPoints,
+  TripLocationPoint,
+  VEHICLE_COLLECTIONS,
+} from '@/lib/vehicle-management';
 import TripMapView from '@/components/vehicle-management/trip-map-view';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -90,6 +94,22 @@ export default function TripManagementPage() {
         }))
         .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
       setSelectedTripPoints(points);
+
+      const correctedDistanceKm = computeTripDistanceKmFromPoints(points);
+      setTrips((prev) =>
+        prev.map((trip) =>
+          String(trip.id) === tripId ? { ...trip, totalDistanceKm: correctedDistanceKm, totalPoints: points.length } : trip
+        )
+      );
+      const selectedRow = trips.find((trip) => String(trip.id) === tripId);
+      const currentDistanceKm = Number(selectedRow?.totalDistanceKm || 0);
+      if (Math.abs(correctedDistanceKm - currentDistanceKm) >= 0.05) {
+        await updateDoc(doc(db, VEHICLE_COLLECTIONS.trips, tripId), {
+          totalDistanceKm: correctedDistanceKm,
+          totalPoints: points.length,
+          updatedAt: serverTimestamp(),
+        });
+      }
     } catch (error) {
       console.error('Failed to load trip points', error);
       setSelectedTripPoints([]);

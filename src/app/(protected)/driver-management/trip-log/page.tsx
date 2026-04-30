@@ -1,11 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
-import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import {
+  computeTripDistanceKmFromPoints,
+  TripLocationPoint,
+  VEHICLE_COLLECTIONS,
+} from '@/lib/vehicle-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -57,6 +61,49 @@ export default function DriverTripLogPage() {
   const [statusFilter, setStatusFilter] = useState<TripStatusFilter>('All');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  const hydrateTripDistance = async (trip: Record<string, any>) => {
+    const tripId = String(trip.id || '');
+    if (!tripId) return;
+    try {
+      const pointsSnap = await getDocs(
+        query(collection(db, VEHICLE_COLLECTIONS.tripLocations), where('tripId', '==', tripId))
+      );
+      const points = pointsSnap.docs
+        .map((d) => d.data() as Record<string, any>)
+        .sort((a, b) => String(a.recordedAtIso || '').localeCompare(String(b.recordedAtIso || '')))
+        .map<TripLocationPoint>((row) => ({
+          lat: Number(row.lat),
+          lng: Number(row.lng),
+          accuracyMeters: Number(row.accuracyMeters || 0),
+          speedKmph: Number(row.speedKmph || 0),
+          headingDeg: Number(row.headingDeg || 0),
+          recordedAtIso: String(row.recordedAtIso || ''),
+        }))
+        .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+      const correctedDistanceKm = computeTripDistanceKmFromPoints(points);
+      const currentDistanceKm = Number(trip.totalDistanceKm || 0);
+      if (Math.abs(correctedDistanceKm - currentDistanceKm) >= 0.05) {
+        await updateDoc(doc(db, VEHICLE_COLLECTIONS.trips, tripId), {
+          totalDistanceKm: correctedDistanceKm,
+          totalPoints: points.length,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      setTrips((prev) =>
+        prev.map((row) =>
+          String(row.id) === tripId ? { ...row, totalDistanceKm: correctedDistanceKm, totalPoints: points.length } : row
+        )
+      );
+      setSelectedTrip((prev) =>
+        prev && String(prev.id) === tripId
+          ? { ...prev, totalDistanceKm: correctedDistanceKm, totalPoints: points.length }
+          : prev
+      );
+    } catch (error) {
+      console.error('Failed to hydrate trip distance from route points', error);
+    }
+  };
 
   const loadTrips = async () => {
     if (!driver?.id) {
@@ -268,6 +315,7 @@ export default function DriverTripLogPage() {
                       onClick={() => {
                         setSelectedTrip(trip);
                         setTripDialogOpen(true);
+                        void hydrateTripDistance(trip);
                       }}
                     >
                       <TableCell className="font-medium">{trip.vehicleNumber || '-'}</TableCell>

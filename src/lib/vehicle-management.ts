@@ -229,3 +229,81 @@ export const haversineDistanceKm = (
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Number((earthRadiusKm * c).toFixed(4));
 };
+
+type TripDistancePoint = {
+  lat: number;
+  lng: number;
+  accuracyMeters?: number;
+  recordedAtIso?: string;
+};
+
+type TripDistanceOptions = {
+  minMovementMeters?: number;
+  maxAcceptedAccuracyMeters?: number;
+  maxPlausibleSpeedKmph?: number;
+  speedOutlierBufferKm?: number;
+};
+
+const toEpochMs = (iso?: string) => {
+  const parsed = Date.parse(String(iso || ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isValidCoordinate = (lat: number, lng: number) =>
+  Number.isFinite(lat) &&
+  Number.isFinite(lng) &&
+  Math.abs(lat) <= 90 &&
+  Math.abs(lng) <= 180;
+
+export const computeTripDistanceDeltaKm = (
+  previous: TripDistancePoint,
+  current: TripDistancePoint,
+  options: TripDistanceOptions = {}
+) => {
+  const minMovementMeters = Math.max(0, Number(options.minMovementMeters ?? 15));
+  const maxAcceptedAccuracyMeters = Math.max(1, Number(options.maxAcceptedAccuracyMeters ?? 120));
+  const maxPlausibleSpeedKmph = Math.max(1, Number(options.maxPlausibleSpeedKmph ?? 180));
+  const speedOutlierBufferKm = Math.max(0, Number(options.speedOutlierBufferKm ?? 0.1));
+
+  if (!isValidCoordinate(previous.lat, previous.lng)) return 0;
+  if (!isValidCoordinate(current.lat, current.lng)) return 0;
+
+  const previousAccuracy = Math.max(0, Number(previous.accuracyMeters || 0));
+  const currentAccuracy = Math.max(0, Number(current.accuracyMeters || 0));
+  if (previousAccuracy > maxAcceptedAccuracyMeters || currentAccuracy > maxAcceptedAccuracyMeters) {
+    return 0;
+  }
+
+  const rawDeltaKm = haversineDistanceKm(previous, current);
+  if (!Number.isFinite(rawDeltaKm) || rawDeltaKm <= 0) return 0;
+
+  // Ignore movement that is within GPS jitter/uncertainty radius.
+  const jitterThresholdKm = Math.max(
+    minMovementMeters / 1000,
+    (previousAccuracy + currentAccuracy) / 2000
+  );
+  if (rawDeltaKm < jitterThresholdKm) return 0;
+
+  // Reject impossible jumps using elapsed time and a realistic max speed.
+  const previousMs = toEpochMs(previous.recordedAtIso);
+  const currentMs = toEpochMs(current.recordedAtIso);
+  if (previousMs > 0 && currentMs > previousMs) {
+    const elapsedHours = (currentMs - previousMs) / (1000 * 60 * 60);
+    const maxAllowedKm = elapsedHours * maxPlausibleSpeedKmph + speedOutlierBufferKm;
+    if (rawDeltaKm > maxAllowedKm) return 0;
+  }
+
+  return Number(rawDeltaKm.toFixed(4));
+};
+
+export const computeTripDistanceKmFromPoints = (
+  points: TripDistancePoint[],
+  options: TripDistanceOptions = {}
+) => {
+  if (!Array.isArray(points) || points.length < 2) return 0;
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    total += computeTripDistanceDeltaKm(points[index - 1], points[index], options);
+  }
+  return Number(total.toFixed(4));
+};

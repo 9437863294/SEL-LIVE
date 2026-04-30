@@ -21,8 +21,9 @@ import { useCurrentDriverProfile, useVehicleOptions } from '@/components/vehicle
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
 import {
+  computeTripDistanceDeltaKm,
+  computeTripDistanceKmFromPoints,
   DEFAULT_TRACKING_SETTINGS,
-  haversineDistanceKm,
   toKmph,
   TripLocationPoint,
   VEHICLE_COLLECTIONS,
@@ -115,7 +116,7 @@ export default function DriverMobileTripsPage() {
 
   const watchIdRef = useRef<DriverGeoWatchId | null>(null);
   const lastSentMsRef = useRef(0);
-  const lastSentPointRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastSentPointRef = useRef<TripLocationPoint | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
 
   const assignedVehicleIdRaw = String(driver?.assignedVehicleId || '');
@@ -235,7 +236,24 @@ export default function DriverMobileTripsPage() {
       setActiveTripPoints(points);
       if (points.length > 0) {
         const last = points[points.length - 1];
-        lastSentPointRef.current = { lat: last.lat, lng: last.lng };
+        lastSentPointRef.current = last;
+      } else {
+        lastSentPointRef.current = null;
+      }
+
+      const correctedDistanceKm = computeTripDistanceKmFromPoints(points);
+      const currentDistanceKm = Number(activeTrip?.totalDistanceKm || 0);
+      if (Math.abs(correctedDistanceKm - currentDistanceKm) >= 0.05) {
+        await updateDoc(doc(db, VEHICLE_COLLECTIONS.trips, tripId), {
+          totalDistanceKm: correctedDistanceKm,
+          totalPoints: points.length,
+          updatedAt: serverTimestamp(),
+        });
+        setActiveTrip((prev) =>
+          prev && String(prev.id) === tripId
+            ? { ...prev, totalDistanceKm: correctedDistanceKm, totalPoints: points.length }
+            : prev
+        );
       }
     } catch (error) {
       console.error('Failed to load active trip points', error);
@@ -259,11 +277,23 @@ export default function DriverMobileTripsPage() {
     const headingDeg = Number(position.coords.heading || 0);
     const nowIso = toIsoNow();
 
+    const currentPoint: TripLocationPoint = {
+      lat,
+      lng,
+      accuracyMeters,
+      speedKmph,
+      headingDeg,
+      recordedAtIso: nowIso,
+    };
     const previous = lastSentPointRef.current;
-    const deltaDistanceKm =
-      previous && Number.isFinite(previous.lat) && Number.isFinite(previous.lng)
-        ? haversineDistanceKm(previous, { lat, lng })
-        : 0;
+    const deltaDistanceKm = previous
+      ? computeTripDistanceDeltaKm(previous, currentPoint, {
+          minMovementMeters: 15,
+          maxAcceptedAccuracyMeters: 120,
+          maxPlausibleSpeedKmph: 180,
+          speedOutlierBufferKm: 0.1,
+        })
+      : 0;
 
     await addDoc(collection(db, VEHICLE_COLLECTIONS.tripLocations), {
       tripId,
@@ -300,10 +330,10 @@ export default function DriverMobileTripsPage() {
       });
     }
 
-    lastSentPointRef.current = { lat, lng };
+    lastSentPointRef.current = currentPoint;
     setActiveTripPoints((prev) => [
       ...prev,
-      { lat, lng, accuracyMeters, speedKmph, headingDeg, recordedAtIso: nowIso },
+      currentPoint,
     ]);
   };
 
