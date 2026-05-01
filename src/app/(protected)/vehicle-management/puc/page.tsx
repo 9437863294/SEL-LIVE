@@ -38,17 +38,6 @@ export default function PucManagementPage() {
       { key: 'testingCenterName', label: 'Testing Center Name', type: 'text', required: true },
       { key: 'amountPaid', label: 'Amount Paid', type: 'number', required: true },
       { key: 'certificateDocumentUrl', label: 'Certificate Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
-      {
-        key: 'pucStatus',
-        label: 'Status',
-        type: 'select',
-        options: [
-          { value: 'Valid', label: 'Valid' },
-          { value: 'Due Soon', label: 'Due Soon' },
-          { value: 'Expired', label: 'Expired' },
-          { value: 'Renewed', label: 'Renewed' },
-        ],
-      },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
     [vehicleOptions]
@@ -75,10 +64,11 @@ export default function PucManagementPage() {
       onBeforeSave={(payload) => {
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const meta = computeRenewalMeta(String(payload.expiryDate || ''));
+        const pucStatus = meta.complianceStatus === 'Missing' ? 'Expired' : meta.complianceStatus;
         return {
           ...payload,
           vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
-          pucStatus: payload.pucStatus || (meta.complianceStatus === 'Valid' ? 'Valid' : 'Due Soon'),
+          pucStatus,
           alertStage: meta.alertStage,
           complianceStatus: meta.complianceStatus,
         };

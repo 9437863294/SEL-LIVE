@@ -195,6 +195,64 @@ export default function VehicleReportsPage() {
     () => maintenanceCostPerVehicle.reduce((max, item) => Math.max(max, item.totalCost), 0),
     [maintenanceCostPerVehicle]
   );
+
+  const monthlyTrends = useMemo(() => {
+    const months: string[] = [];
+    const base = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(base.getFullYear(), base.getMonth() - i, 1);
+      months.push(d.toISOString().slice(0, 7));
+    }
+    return months.map((m) => {
+      const fuelTotal = fuelRows
+        .filter((r) => String(r.fuelDate || '').startsWith(m))
+        .reduce((s, r) => s + Number(r.totalAmount || 0), 0);
+      const maintTotal = maintenanceRows
+        .filter((r) => String(r.serviceDate || '').startsWith(m))
+        .reduce((s, r) => s + Number(r.totalCost || 0), 0);
+      return { month: m, fuelTotal, maintTotal, total: fuelTotal + maintTotal };
+    });
+  }, [fuelRows, maintenanceRows]);
+
+  const maxTrendTotal = useMemo(
+    () => monthlyTrends.reduce((max, r) => Math.max(max, r.total), 0),
+    [monthlyTrends]
+  );
+
+  const combinedTopVehicles = useMemo(() => {
+    const table: Record<string, { vehicleNumber: string; fuelCost: number; maintCost: number }> = {};
+    fuelThisMonth.forEach((row) => {
+      const key = String(row.vehicleId || row.vehicleNumber || 'unknown');
+      if (!table[key]) {
+        table[key] = {
+          vehicleNumber: String(row.vehicleNumber || vehicleMap[key]?.vehicleNumber || 'Unknown'),
+          fuelCost: 0,
+          maintCost: 0,
+        };
+      }
+      table[key].fuelCost += Number(row.totalAmount || 0);
+    });
+    maintenanceThisMonth.forEach((row) => {
+      const key = String(row.vehicleId || row.vehicleNumber || 'unknown');
+      if (!table[key]) {
+        table[key] = {
+          vehicleNumber: String(row.vehicleNumber || vehicleMap[key]?.vehicleNumber || 'Unknown'),
+          fuelCost: 0,
+          maintCost: 0,
+        };
+      }
+      table[key].maintCost += Number(row.totalCost || 0);
+    });
+    return Object.values(table)
+      .map((r) => ({ ...r, total: r.fuelCost + r.maintCost }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [fuelThisMonth, maintenanceThisMonth, vehicleMap]);
+
+  const maxCombinedCost = useMemo(
+    () => combinedTopVehicles.reduce((max, r) => Math.max(max, r.total), 0),
+    [combinedTopVehicles]
+  );
   const expiryAlerts = useMemo(() => {
     const rows: Array<{
       module: string;
@@ -387,7 +445,7 @@ export default function VehicleReportsPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Card className="vm-panel overflow-hidden">
           <div className="h-1 w-full bg-gradient-to-r from-cyan-500/80 to-sky-500/80" />
           <CardHeader className="pb-2">
@@ -405,6 +463,14 @@ export default function VehicleReportsPage() {
           <CardContent className="text-xs text-muted-foreground">{maintenanceThisMonth.length} maintenance entries</CardContent>
         </Card>
         <Card className="vm-panel overflow-hidden">
+          <div className="h-1 w-full bg-gradient-to-r from-violet-500/80 to-purple-500/80" />
+          <CardHeader className="pb-2">
+            <CardDescription>Total Fleet Cost</CardDescription>
+            <CardTitle className="text-xl">{formatCurrency(monthlyFuelExpense + monthlyMaintenanceExpense)}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">Fuel + maintenance combined</CardContent>
+        </Card>
+        <Card className="vm-panel overflow-hidden">
           <div className="h-1 w-full bg-gradient-to-r from-emerald-500/80 to-teal-500/80" />
           <CardHeader className="pb-2">
             <CardDescription>Total Distance</CardDescription>
@@ -420,9 +486,84 @@ export default function VehicleReportsPage() {
               {totalDistance > 0 ? formatCurrency(monthlyFuelExpense / totalDistance) : 'N/A'}
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Fuel expense divided by total distance</CardContent>
+          <CardContent className="text-xs text-muted-foreground">Fuel expense ÷ total distance</CardContent>
         </Card>
       </div>
+
+      {/* 6-Month Trend */}
+      <Card className="vm-panel-strong">
+        <CardHeader>
+          <CardTitle className="text-lg">6-Month Cost Trend</CardTitle>
+          <CardDescription>Monthly fuel and maintenance spend for the last 6 months.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {monthlyTrends.map((row) => (
+            <div key={row.month} className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="w-16 font-medium text-slate-600">{row.month}</span>
+                <span>{formatCurrency(row.total)}</span>
+              </div>
+              <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-500 to-sky-500 transition-all duration-500"
+                  style={{ width: `${maxTrendTotal > 0 ? (row.fuelTotal / maxTrendTotal) * 100 : 0}%` }}
+                />
+                <div
+                  className="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-500"
+                  style={{ width: `${maxTrendTotal > 0 ? (row.maintTotal / maxTrendTotal) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-4 pt-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-cyan-500" /> Fuel
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" /> Maintenance
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Top 5 Vehicles by Combined Cost */}
+      {combinedTopVehicles.length > 0 && (
+        <Card className="vm-panel-strong">
+          <CardHeader>
+            <CardTitle className="text-lg">Top Vehicles by Total Cost</CardTitle>
+            <CardDescription>Highest combined fuel + maintenance spend this month.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {combinedTopVehicles.map((row, idx) => (
+              <div key={row.vehicleNumber} className="space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-600">
+                      {idx + 1}
+                    </span>
+                    <span className="font-medium">{row.vehicleNumber}</span>
+                  </span>
+                  <span className="font-semibold">{formatCurrency(row.total)}</span>
+                </div>
+                <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full bg-gradient-to-r from-cyan-500 to-sky-500 transition-all duration-500"
+                    style={{ width: `${maxCombinedCost > 0 ? (row.fuelCost / maxCombinedCost) * 100 : 0}%` }}
+                  />
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-500"
+                    style={{ width: `${maxCombinedCost > 0 ? (row.maintCost / maxCombinedCost) * 100 : 0}%` }}
+                  />
+                </div>
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  <span>Fuel: {formatCurrency(row.fuelCost)}</span>
+                  <span>Maintenance: {formatCurrency(row.maintCost)}</span>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="vm-panel-strong">
         <CardHeader>

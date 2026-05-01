@@ -15,7 +15,13 @@
     "mobile:add:ios": "npx cap add ios",
     "mobile:open:android": "npx cap open android",
     "mobile:open:ios": "npx cap open ios",
-    "mobile:run:android": "npx cap run android"
+    "mobile:run:android": "npx cap run android",
+    "mobile:target:driver:sync:android": "node scripts/mobile-target.mjs driver sync android",
+    "mobile:target:driver:open:android": "node scripts/mobile-target.mjs driver open android",
+    "mobile:target:driver:run:android": "node scripts/mobile-target.mjs driver run android",
+    "mobile:target:full:sync:android": "node scripts/mobile-target.mjs full sync android",
+    "mobile:target:full:open:android": "node scripts/mobile-target.mjs full open android",
+    "mobile:target:full:run:android": "node scripts/mobile-target.mjs full run android"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

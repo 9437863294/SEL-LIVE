@@ -171,9 +171,6 @@ export default function DriverTripLogPage() {
     const endLat = selectedTrip.endLat ?? '';
     const endLng = selectedTrip.endLng ?? '';
     return [
-      { label: 'Trip ID', value: String(selectedTrip.id || '-') },
-      { label: 'Vehicle Number', value: String(selectedTrip.vehicleNumber || '-') },
-      { label: 'Status', value: String(selectedTrip.tripStatus || '-') },
       { label: 'Start Time', value: formatDateTime(String(selectedTrip.startTimeIso || '')) },
       { label: 'End Time', value: formatDateTime(String(selectedTrip.endTimeIso || '')) },
       { label: 'Distance (KM)', value: Number(selectedTrip.totalDistanceKm || 0).toFixed(2) },
@@ -298,7 +295,6 @@ export default function DriverTripLogPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50/80">
-                    <TableHead>Vehicle</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Start</TableHead>
                     <TableHead>End</TableHead>
@@ -318,7 +314,6 @@ export default function DriverTripLogPage() {
                         void hydrateTripDistance(trip);
                       }}
                     >
-                      <TableCell className="font-medium">{trip.vehicleNumber || '-'}</TableCell>
                       <TableCell>
                         <Badge
                           variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}

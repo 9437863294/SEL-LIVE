@@ -58,18 +58,6 @@ export default function DocumentManagementPage() {
       { key: 'issueDate', label: 'Issue Date', type: 'date' },
       { key: 'expiryDate', label: 'Expiry Date', type: 'date' },
       { key: 'fileUrl', label: 'Document Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
-      {
-        key: 'status',
-        label: 'Status',
-        type: 'select',
-        options: [
-          { value: 'Valid', label: 'Valid' },
-          { value: 'Due Soon', label: 'Due Soon' },
-          { value: 'Expired', label: 'Expired' },
-          { value: 'Missing', label: 'Missing' },
-          { value: 'Not Applicable', label: 'Not Applicable' },
-        ],
-      },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
     [vehicleOptions]
@@ -93,13 +81,14 @@ export default function DocumentManagementPage() {
       defaultSort={{ key: 'expiryDate', direction: 'asc' }}
       onBeforeSave={(payload) => {
         const vehicle = vehicleMap[String(payload.vehicleId)];
-        const meta = computeRenewalMeta(String(payload.expiryDate || ''));
         const hasExpiry = Boolean(payload.expiryDate);
+        const meta = computeRenewalMeta(String(payload.expiryDate || ''));
+        const status = !hasExpiry ? 'Not Applicable' : meta.complianceStatus;
         return {
           ...payload,
           vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
           folderPath: `${payload.vehicleId}/${payload.documentType}`,
-          status: payload.status || (hasExpiry ? meta.complianceStatus : 'Valid'),
+          status,
           alertStage: hasExpiry ? meta.alertStage : 'Not Applicable',
           complianceStatus: hasExpiry ? meta.complianceStatus : 'Not Applicable',
         };

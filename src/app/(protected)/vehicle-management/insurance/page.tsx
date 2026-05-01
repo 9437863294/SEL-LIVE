@@ -54,18 +54,6 @@ export default function InsuranceManagementPage() {
       { key: 'agentName', label: 'Agent Name', type: 'text' },
       { key: 'agentContact', label: 'Agent Contact', type: 'text' },
       { key: 'policyDocumentUrl', label: 'Document Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
-      {
-        key: 'renewalStatus',
-        label: 'Renewal Status',
-        type: 'select',
-        options: [
-          { value: 'Not Due', label: 'Not Due' },
-          { value: 'Due Soon', label: 'Due Soon' },
-          { value: 'Overdue', label: 'Overdue' },
-          { value: 'In Process', label: 'In Process' },
-          { value: 'Renewed', label: 'Renewed' },
-        ],
-      },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
     [vehicleOptions]
@@ -92,9 +80,16 @@ export default function InsuranceManagementPage() {
       onBeforeSave={(payload) => {
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const meta = computeRenewalMeta(String(payload.expiryDate || ''));
+        const renewalStatus =
+          meta.alertStage === 'Expired'
+            ? 'Overdue'
+            : ['Due Today', '7d', '15d', '30d'].includes(meta.alertStage)
+            ? 'Due Soon'
+            : 'Not Due';
         return {
           ...payload,
           vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
+          renewalStatus,
           alertStage: meta.alertStage,
           complianceStatus: meta.complianceStatus,
         };

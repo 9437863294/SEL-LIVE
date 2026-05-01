@@ -141,6 +141,7 @@ export default function VehicleHealthPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<'score' | 'vehicleNumber' | 'expired'>('score');
+  const [gradeFilter, setGradeFilter] = useState<'All' | 'A' | 'B' | 'C' | 'D' | 'F'>('All');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -294,6 +295,7 @@ export default function VehicleHealthPage() {
 
   const filteredList = useMemo(() => {
     let rows = vehicleHealthList;
+    if (gradeFilter !== 'All') rows = rows.filter((v) => v.grade === gradeFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
       rows = rows.filter(
@@ -309,7 +311,13 @@ export default function VehicleHealthPage() {
       if (sortKey === 'expired') return b.expired - a.expired;
       return a.vehicleNumber.localeCompare(b.vehicleNumber);
     });
-  }, [vehicleHealthList, search, sortKey]);
+  }, [vehicleHealthList, search, sortKey, gradeFilter]);
+
+  const gradeCounts = useMemo(() => {
+    const counts: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
+    vehicleHealthList.forEach((v) => { counts[v.grade] = (counts[v.grade] ?? 0) + 1; });
+    return counts;
+  }, [vehicleHealthList]);
 
   const summary = useMemo(() => {
     const total = vehicleHealthList.length;
@@ -388,6 +396,37 @@ export default function VehicleHealthPage() {
           />
           <Activity className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         </div>
+
+        {/* Grade filter pills */}
+        <div className="flex gap-1">
+          {(['All', 'A', 'B', 'C', 'D', 'F'] as const).map((g) => {
+            const active = gradeFilter === g;
+            const colorMap: Record<string, string> = {
+              All: 'border-cyan-400 bg-cyan-50 text-cyan-700',
+              A: 'border-emerald-400 bg-emerald-50 text-emerald-700',
+              B: 'border-cyan-400 bg-cyan-50 text-cyan-700',
+              C: 'border-yellow-400 bg-yellow-50 text-yellow-700',
+              D: 'border-orange-400 bg-orange-50 text-orange-700',
+              F: 'border-red-400 bg-red-50 text-red-700',
+            };
+            return (
+              <button
+                key={g}
+                onClick={() => setGradeFilter(g)}
+                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                  active
+                    ? colorMap[g]
+                    : 'border-white/20 bg-white/10 text-muted-foreground hover:bg-white/20'
+                }`}
+                title={g === 'All' ? 'All grades' : `Grade ${g}${gradeCounts[g] ? ` (${gradeCounts[g]})` : ''}`}
+              >
+                {g === 'All' ? 'All' : `${g}${!isLoading && gradeCounts[g] ? ` ·${gradeCounts[g]}` : ''}`}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Sort pills */}
         <div className="flex gap-1">
           {(['score', 'vehicleNumber', 'expired'] as const).map((key) => (
             <button
@@ -403,6 +442,7 @@ export default function VehicleHealthPage() {
             </button>
           ))}
         </div>
+
         <Link
           href="/vehicle-management/renewals"
           className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90 transition-opacity"

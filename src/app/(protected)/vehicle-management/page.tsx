@@ -9,10 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
+  Activity,
   BadgeCheck,
   CarFront,
   FileArchive,
   Fuel,
+  Gauge,
   History,
   Landmark,
   Leaf,
@@ -240,7 +242,7 @@ export default function VehicleManagementOverviewPage() {
       if (document.visibilityState === 'visible') {
         void load();
       }
-    }, 1000);
+    }, 120_000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -262,6 +264,9 @@ export default function VehicleManagementOverviewPage() {
     [canViewSection]
   );
   const canViewReports = can('View', 'Vehicle Management.Reports');
+  const canViewHealth =
+    can('View', 'Vehicle Management.Vehicle Master') ||
+    can('View', 'Vehicle Management.Overview');
   const totalVisibleRecords = useMemo(
     () => visibleCards.reduce((sum, item) => sum + (counts[item.collection] ?? 0), 0),
     [visibleCards, counts]
@@ -371,8 +376,8 @@ export default function VehicleManagementOverviewPage() {
         </Link>
       )}
 
-      {/* Renewals Hub quick-access banner */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* Quick-access banner row */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Link href="/vehicle-management/renewals" className="block" aria-label="Open Renewals Hub">
           <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(239,68,68,0.45)]">
             <div className="h-1 w-full bg-gradient-to-r from-rose-500 via-orange-400 to-amber-500" />
@@ -401,6 +406,32 @@ export default function VehicleManagementOverviewPage() {
             </CardHeader>
           </Card>
         </Link>
+        {canViewHealth && (
+          <Link href="/vehicle-management/vehicle-health" className="block" aria-label="Open Vehicle Health Dashboard">
+            <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(6,182,212,0.45)]">
+              <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-cyan-500 to-blue-600" />
+              <CardHeader className="flex flex-row items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 shadow-sm ring-1 ring-cyan-100">
+                  <Activity className="h-5 w-5 text-cyan-600" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-lg">Vehicle Health</CardTitle>
+                    {!isLoading && alertSummary.expired > 0 && (
+                      <Badge variant="destructive" className="text-[10px] shadow-sm">
+                        {alertSummary.expired} expired
+                      </Badge>
+                    )}
+                  </div>
+                  <CardDescription className="flex items-center gap-1">
+                    <Gauge className="h-3 w-3 shrink-0" />
+                    Compliance scores &amp; grade per vehicle.
+                  </CardDescription>
+                </div>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
       </div>
     </div>
   );

@@ -100,6 +100,16 @@ const SOURCES = [
     href: '/vehicle-management/permit',
     permission: 'Permit Management',
   },
+  {
+    category: 'Documents',
+    icon: FileArchive,
+    collection: VEHICLE_COLLECTIONS.documents,
+    dateKeys: ['expiryDate'],
+    nameKeys: ['vehicleNumber', 'registrationNo'],
+    detailKeys: ['documentType', 'documentNumber'],
+    href: '/vehicle-management/documents',
+    permission: 'Document Management',
+  },
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -170,6 +180,7 @@ const categoryGradients: Record<string, string> = {
   Fitness: 'from-violet-500/20 to-indigo-500/20',
   'Road Tax': 'from-amber-500/20 to-orange-500/20',
   Permits: 'from-indigo-500/20 to-blue-500/20',
+  Documents: 'from-slate-500/20 to-zinc-400/20',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

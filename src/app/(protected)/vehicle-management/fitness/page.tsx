@@ -48,18 +48,6 @@ export default function FitnessManagementPage() {
       { key: 'rtoName', label: 'RTO Name', type: 'text', required: true },
       { key: 'amountPaid', label: 'Amount Paid', type: 'number', required: true },
       { key: 'certificateDocumentUrl', label: 'Document Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
-      {
-        key: 'fitnessStatus',
-        label: 'Status',
-        type: 'select',
-        options: [
-          { value: 'Valid', label: 'Valid' },
-          { value: 'Due Soon', label: 'Due Soon' },
-          { value: 'Expired', label: 'Expired' },
-          { value: 'Renewed', label: 'Renewed' },
-          { value: 'Not Applicable', label: 'Not Applicable' },
-        ],
-      },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
     [vehicleOptions]
@@ -86,11 +74,18 @@ export default function FitnessManagementPage() {
       onBeforeSave={(payload) => {
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const mandatory = String(payload.isMandatory || 'Yes') === 'Yes';
-        const meta = mandatory ? computeRenewalMeta(String(payload.expiryDate || '')) : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' };
+        const meta = mandatory
+          ? computeRenewalMeta(String(payload.expiryDate || ''))
+          : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' };
+        const fitnessStatus = !mandatory
+          ? 'Not Applicable'
+          : meta.complianceStatus === 'Missing'
+          ? 'Expired'
+          : meta.complianceStatus;
         return {
           ...payload,
           vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
-          fitnessStatus: mandatory ? payload.fitnessStatus || (meta.complianceStatus === 'Valid' ? 'Valid' : 'Due Soon') : 'Not Applicable',
+          fitnessStatus,
           alertStage: meta.alertStage,
           complianceStatus: meta.complianceStatus,
         };

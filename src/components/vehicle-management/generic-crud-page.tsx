@@ -7,7 +7,7 @@ import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import ExcelJS from 'exceljs';
-import { Download, Upload, History, List } from 'lucide-react';
+import { AlertTriangle, Download, ExternalLink, Loader2, Upload, History, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -884,127 +884,195 @@ export default function GenericCrudPage({
           setDialogOpen(true);
         }}
       >
-        <DialogContent className="max-h-[92vh] w-[calc(100vw-1rem)] max-w-3xl overflow-y-auto vm-panel-strong">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {isRenewalMode && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                  Renewing Expired Record
-                </span>
-              )}
+        <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
+
+          {/* ── Sticky header ─────────────────────────────────── */}
+          <div className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-cyan-500/5 to-sky-500/5 px-6 pb-4 pt-5 pr-12">
+            {isRenewalMode && (
+              <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Renewing Expired Record
+              </div>
+            )}
+            <DialogTitle className="text-base font-semibold leading-snug">
               {editingRow ? `Edit ${itemName}` : isRenewalMode ? `Renew ${itemName}` : `Add ${itemName}`}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="mt-0.5 text-sm text-muted-foreground">
               {isRenewalMode
-                ? 'Vehicle and details are pre-filled from the expired record. Update dates and upload new documents.'
-                : 'Fill all required fields and save.'}
+                ? 'Pre-filled from the expired record — update the dates and upload the new document.'
+                : 'Fill in the required fields below and save.'}
             </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-1">
-            {fields.map((field) => {
-              if (!isFieldVisible(field, formState, editingRow)) return null;
-              return (
-              <div
-                key={field.key}
-                className={`space-y-2 ${field.type === 'textarea' ? 'md:col-span-2' : ''}`}
-              >
-                <Label>
-                  {field.label}
-                  {field.required ? ' *' : ''}
-                </Label>
-
-                {field.type === 'textarea' ? (
-                  <Textarea
-                    value={formState[field.key] ?? ''}
-                    onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                    placeholder={field.placeholder}
-                  />
-                ) : field.type === 'file' ? (
-                  <div className="space-y-2">
-                    <Input
-                      type="file"
-                      accept={field.accept}
-                      onChange={(e) => {
-                        const selectedFile = e.target.files?.[0] || null;
-                        setFileState((prev) => ({ ...prev, [field.key]: selectedFile }));
-                      }}
-                      className="bg-white/80 border-white/70 file:mr-3 file:rounded-md file:border-0 file:bg-cyan-600 file:px-3 file:py-1 file:text-white"
-                    />
-                    {fileState[field.key] ? (
-                      <p className="text-xs text-muted-foreground">Selected: {fileState[field.key]?.name}</p>
-                    ) : formState[field.key] ? (
-                      <a
-                        href={formState[field.key]}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-medium text-cyan-700 underline underline-offset-2"
-                      >
-                        View current file
-                      </a>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">No file uploaded yet.</p>
-                    )}
-                  </div>
-                ) : field.type === 'select' ? (
-                  <Select
-                    value={formState[field.key] || undefined}
-                    onValueChange={(value) => setFormState((prev) => ({ ...prev, [field.key]: value }))}
-                  >
-                    <SelectTrigger className="bg-white/80 border-white/70">
-                      <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(field.options || []).map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    type={field.type === 'number' ? 'number' : field.type}
-                    step={field.type === 'number' ? field.step || '0.01' : undefined}
-                    value={formState[field.key] ?? ''}
-                    onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
-                    placeholder={field.placeholder}
-                    className="bg-white/80 border-white/70"
-                  />
-                )}
-              </div>
-            );
-            })}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submitForm} disabled={isSaving}>
-              {isSaving ? 'Saving...' : editingRow ? 'Update' : 'Create'}
-            </Button>
-          </DialogFooter>
+          {/* ── Scrollable form body ───────────────────────────── */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <div className="grid grid-cols-1 gap-y-4">
+              {fields.map((field) => {
+                if (!isFieldVisible(field, formState, editingRow)) return null;
+                return (
+                  <div
+                    key={field.key}
+                    className="space-y-1.5"
+                  >
+                    <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      {field.label}
+                      {field.required && <span className="ml-1 text-rose-500">*</span>}
+                    </Label>
+
+                    {field.type === 'textarea' ? (
+                      <Textarea
+                        value={formState[field.key] ?? ''}
+                        onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                        placeholder={field.placeholder}
+                        className="min-h-[80px] resize-none border-slate-200 bg-white transition-colors focus-visible:border-cyan-400 focus-visible:ring-1 focus-visible:ring-cyan-400/50"
+                      />
+                    ) : field.type === 'file' ? (
+                      <div className="space-y-1.5">
+                        <label
+                          htmlFor={`file-field-${field.key}`}
+                          className={cn(
+                            'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-3 text-sm transition-colors',
+                            fileState[field.key]
+                              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                              : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-cyan-400 hover:bg-cyan-50/60'
+                          )}
+                        >
+                          <Upload className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate text-xs">
+                            {fileState[field.key]?.name ?? (field.placeholder || 'Choose or drop a file…')}
+                          </span>
+                        </label>
+                        <input
+                          id={`file-field-${field.key}`}
+                          type="file"
+                          accept={field.accept}
+                          onChange={(e) => {
+                            const selectedFile = e.target.files?.[0] || null;
+                            setFileState((prev) => ({ ...prev, [field.key]: selectedFile }));
+                          }}
+                          className="sr-only"
+                        />
+                        {!fileState[field.key] && formState[field.key] && (
+                          <a
+                            href={formState[field.key]}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-cyan-700 underline underline-offset-2 hover:text-cyan-800"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            View current file
+                          </a>
+                        )}
+                      </div>
+                    ) : field.type === 'select' ? (
+                      <Select
+                        value={formState[field.key] || undefined}
+                        onValueChange={(value) => setFormState((prev) => ({ ...prev, [field.key]: value }))}
+                      >
+                        <SelectTrigger className="h-9 border-slate-200 bg-white transition-colors focus:ring-1 focus:ring-cyan-400/50 data-[state=open]:border-cyan-400">
+                          <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(field.options || []).map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        type={field.type === 'number' ? 'number' : field.type}
+                        step={field.type === 'number' ? field.step || '0.01' : undefined}
+                        value={formState[field.key] ?? ''}
+                        onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                        placeholder={field.placeholder}
+                        className="h-9 border-slate-200 bg-white transition-colors focus-visible:border-cyan-400 focus-visible:ring-1 focus-visible:ring-cyan-400/50"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Sticky footer ─────────────────────────────────── */}
+          <div className="shrink-0 border-t border-slate-100 bg-slate-50/70 px-6 py-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                <span className="text-rose-500">*</span> Required fields
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDialogOpen(false)}
+                  className="bg-white hover:bg-slate-50"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={submitForm}
+                  disabled={isSaving}
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-sm hover:from-cyan-600 hover:to-blue-700 disabled:opacity-60"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      Saving…
+                    </>
+                  ) : editingRow ? (
+                    'Update'
+                  ) : (
+                    'Save'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
       <AlertDialog
         open={!!deleteRow}
         onOpenChange={(open) => {
-          if (!open) {
-            setDeleteRow(null);
-          }
+          if (!open) setDeleteRow(null);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {itemName}</AlertDialogTitle>
-            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+        <AlertDialogContent className="max-w-sm overflow-hidden p-0 vm-panel-strong">
+          <div className="h-1 w-full bg-gradient-to-r from-rose-500 to-red-600" />
+          <div className="px-6 pb-2 pt-5">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-base">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-100">
+                  <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
+                </div>
+                Delete {itemName}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="mt-2 space-y-2 text-sm">
+                <span>This will permanently delete the record and cannot be undone.</span>
+                {deleteRow && columns.length > 0 && (
+                  <span className="mt-2 block rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 font-mono text-xs font-medium text-rose-700">
+                    {columns
+                      .slice(0, 2)
+                      .map((col) => `${col.label}: ${toDisplay(deleteRow[col.key])}`)
+                      .join(' · ')}
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+          </div>
+          <AlertDialogFooter className="px-6 pb-5">
+            <AlertDialogCancel className="bg-white hover:bg-slate-50">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-rose-600 text-white hover:bg-rose-700 focus-visible:ring-rose-500"
+            >
+              Delete Permanently
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
