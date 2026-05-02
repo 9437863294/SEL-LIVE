@@ -5,7 +5,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   ChevronLeft, ChevronRight, Briefcase, Construction, Users, ShieldCheck,
-  Hash, Palette, MailCheck, Clock, User as UserIcon, LogIn, Settings2,
+  Hash, Palette, MailCheck, Clock, User as UserIcon, LogIn, Settings2, MonitorSmartphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -95,6 +95,13 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       color: 'text-orange-600 dark:text-orange-400',
       activeBg: 'bg-orange-50 dark:bg-orange-950/40',
       activeAccent: 'border-orange-400',
+    },
+    {
+      href: '/settings/session-management', icon: MonitorSmartphone, label: 'Sessions',
+      permission: true, // everyone can see their own sessions
+      color: 'text-indigo-600 dark:text-indigo-400',
+      activeBg: 'bg-indigo-50 dark:bg-indigo-950/40',
+      activeAccent: 'border-indigo-400',
     },
   ];
 

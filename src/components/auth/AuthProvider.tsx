@@ -24,6 +24,13 @@ import {
 import type { User, Role, SavedUser } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
+import {
+  createOrResumeSession,
+  getOrCreateSessionId,
+  listenToSession,
+  terminateSession,
+  updateSessionActivity,
+} from '@/lib/session-manager';
 
 /* ---------------- types ---------------- */
 
@@ -81,6 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionUnsubscribeRef = useRef<(() => void) | null>(null);
+  const lastSessionUpdateRef = useRef<number>(0);
 
   const { toast } = useToast();
 
@@ -92,8 +101,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
         if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
 
+        // Unsubscribe listener before terminating to prevent re-entry
+        if (sessionUnsubscribeRef.current) {
+          sessionUnsubscribeRef.current();
+          sessionUnsubscribeRef.current = null;
+        }
+
+        // Terminate session record in Firestore
+        const sessionId = typeof window !== 'undefined' ? localStorage.getItem('sessionId') : null;
+        if (sessionId) {
+          await terminateSession(sessionId, isExpired ? 'timeout' : 'user').catch(() => {});
+        }
+
         await signOut(auth);
-        
         localStorage.clear();
 
         if (isExpired) {
@@ -103,11 +123,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             variant: 'destructive',
           });
         }
-        
-        // Let ClientSessionHandler component handle redirect
+
         setUser(null);
         setPermissions({});
-
       } catch (error) {
         console.error('Error signing out:', error);
         toast({
@@ -143,6 +161,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('lastActivity', Date.now().toString());
     setIsSessionExpired(false);
     resetTimeouts();
+
+    // Throttle Firestore heartbeat to once every 2 minutes
+    const now = Date.now();
+    if (now - lastSessionUpdateRef.current > 2 * 60 * 1000) {
+      lastSessionUpdateRef.current = now;
+      const sessionId = typeof window !== 'undefined' ? localStorage.getItem('sessionId') : null;
+      if (sessionId) updateSessionActivity(sessionId).catch(() => {});
+    }
   }, [resetTimeouts]);
 
   /* ---------- saved users helpers ---------- */
@@ -247,6 +273,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(userData);
 
+        // Session tracking — skip during impersonation
+        if (!impersonating) {
+          try {
+            const sessionId = getOrCreateSessionId();
+            await createOrResumeSession(sessionId, {
+              id: userData.id,
+              name: userData.name || '',
+              email: userData.email || '',
+              role: userData.role || '',
+            });
+
+            // Replace any existing listener
+            if (sessionUnsubscribeRef.current) sessionUnsubscribeRef.current();
+            sessionUnsubscribeRef.current = listenToSession(sessionId, async () => {
+              // Unsubscribe before acting to prevent re-entry
+              if (sessionUnsubscribeRef.current) {
+                sessionUnsubscribeRef.current();
+                sessionUnsubscribeRef.current = null;
+              }
+              toast({
+                title: 'Session Terminated',
+                description: 'An administrator has signed you out from this device.',
+                variant: 'destructive',
+              });
+              await handleSignOut(false);
+            });
+          } catch (err) {
+            console.error('Session setup failed', err);
+          }
+        }
+
         if (!localStorage.getItem('lastActivity')) {
           extendSession();
         }
@@ -317,6 +374,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return () => unsubscribe();
   }, [fetchUserData]);
+
+  /* ---------- clean up session listener on unmount ---------- */
+
+  useEffect(() => {
+    return () => {
+      if (sessionUnsubscribeRef.current) {
+        sessionUnsubscribeRef.current();
+        sessionUnsubscribeRef.current = null;
+      }
+    };
+  }, []);
 
   /* ---------- session activity ---------- */
 

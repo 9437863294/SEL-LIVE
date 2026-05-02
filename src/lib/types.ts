@@ -244,6 +244,7 @@ export const permissionModules = {
     'Appearance': ['View', 'Edit'],
     'Email Authorization': ['View', 'Send Request', 'Revoke'],
     'Login Expiry': ['View', 'Edit'],
+    'Session Management': ['View', 'Delete'],
   },
 };
 
