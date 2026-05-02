@@ -390,12 +390,16 @@ export default function SessionManagementPage() {
   const currentSessionId = typeof window !== 'undefined' ? (localStorage.getItem('sessionId') ?? '') : '';
   const activeUnsubRef = useRef<(() => void) | null>(null);
   const historyUnsubRef = useRef<(() => void) | null>(null);
+  const initialLoadDoneRef = useRef(false);
 
   // ─── realtime listeners ────────────────────────────────────────────────────
 
   const setupListeners = useCallback(() => {
     if (!user) return;
-    setIsLoading(true);
+    // Only show the full-page skeleton on the very first load;
+    // subsequent calls (Refresh button, Firestore-triggered re-runs) update
+    // the data in place without flashing a loading state.
+    if (!initialLoadDoneRef.current) setIsLoading(true);
 
     activeUnsubRef.current?.();
     const activeQ = isAdmin
@@ -409,9 +413,10 @@ export default function SessionManagementPage() {
           .map((d) => ({ id: d.id, ...d.data() } as UserSession))
           .sort((a, b) => (b.lastActiveAt?.seconds ?? 0) - (a.lastActiveAt?.seconds ?? 0));
         setActiveSessions(rows);
+        initialLoadDoneRef.current = true;
         setIsLoading(false);
       },
-      (err) => { console.error('Active sessions error', err); setIsLoading(false); }
+      (err) => { console.error('Active sessions error', err); initialLoadDoneRef.current = true; setIsLoading(false); }
     );
 
     historyUnsubRef.current?.();

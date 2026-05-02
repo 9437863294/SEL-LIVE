@@ -90,6 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const sessionUnsubscribeRef = useRef<(() => void) | null>(null);
   const lastSessionUpdateRef = useRef<number>(0);
+  // Holds the configured session duration so resetTimeouts doesn't depend on `user`
+  // directly (which would create an infinite render loop via onAuthStateChanged).
+  const sessionDurationMinutesRef = useRef<number>(60);
 
   const { toast } = useToast();
 
@@ -144,8 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
 
-    const sessionDurationMinutes = user?.theme?.sessionDuration || 60;
-    const SESSION_TIMEOUT = sessionDurationMinutes * 60 * 1000;
+    const SESSION_TIMEOUT = sessionDurationMinutesRef.current * 60 * 1000;
     const WARNING_TIME = 1 * 60 * 1000;
 
     warningTimeoutRef.current = setTimeout(() => {
@@ -155,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     timeoutRef.current = setTimeout(() => {
       handleSignOut(true);
     }, SESSION_TIMEOUT);
-  }, [user, handleSignOut]);
+  }, [handleSignOut]); // no longer depends on `user` — reads via ref instead
 
   const extendSession = useCallback(() => {
     localStorage.setItem('lastActivity', Date.now().toString());
@@ -364,6 +366,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const firebaseUser = auth.currentUser;
     await fetchUserData(firebaseUser);
   }, [fetchUserData]);
+
+  /* ---------- keep session-duration ref in sync ---------- */
+
+  useEffect(() => {
+    sessionDurationMinutesRef.current = user?.theme?.sessionDuration || 60;
+  }, [user?.theme?.sessionDuration]);
 
   /* ---------- subscribe to Firebase auth ---------- */
 
