@@ -68,7 +68,7 @@ export function RenewalDialog({ isOpen, onOpenChange, policy, onSuccess, default
     setIsSaving(true);
     
     try {
-        let renewalCopyUrl: string | undefined = undefined;
+        let renewalCopyUrl: string | null = null;
         if (renewalCopy) {
             const storageRef = ref(storage, `insurance-renewals/${policy.id}/${renewalCopy.name}`);
             await uploadBytes(storageRef, renewalCopy);

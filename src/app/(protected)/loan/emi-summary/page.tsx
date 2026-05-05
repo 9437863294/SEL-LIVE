@@ -4,9 +4,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Loader2, CheckCircle, Clock, Edit, Save, X, RefreshCw, Eye, FilePlus, RotateCcw, MoreHorizontal } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarCheck, CheckCircle, CheckCircle2, Clock, Edit, Eye, FilePlus, Loader2, MoreHorizontal, RefreshCw, RotateCcw, Save, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -14,7 +14,7 @@ import { db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, runTransaction, Timestamp, getDoc } from 'firebase/firestore';
 import type { Loan, EMI, AccountHead, SubAccountHead, Department, ExpenseRequest, User } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { format, getYear, getMonth, eachYearOfInterval, startOfYear, endOfYear } from 'date-fns';
+import { eachYearOfInterval, endOfYear, format, getMonth, getYear, isPast, startOfDay, startOfYear } from 'date-fns';
 import {
   Dialog,
   DialogContent,
@@ -329,122 +329,146 @@ export default function EmiSummaryPage() {
     return Number(value.replace(/[^0-9.-]+/g, ''));
   };
 
+  const overdueInMonth = filteredEmis.filter(e => e.status !== 'Paid' && isPast(startOfDay(e.dueDate.toDate()))).length;
+  const paidInMonth    = filteredEmis.filter(e => e.status === 'Paid').length;
+  const pendingInMonth = filteredEmis.filter(e => e.status !== 'Paid' && !isPast(startOfDay(e.dueDate.toDate()))).length;
+
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/loan">
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-            </Link>
-            <h1 className="text-2xl font-bold">Monthly EMI</h1>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Today</CardTitle></CardHeader>
-              <CardContent><p className="text-xl font-bold">{format(new Date(), 'dd/MM/yyyy')}</p></CardContent>
-          </Card>
-          <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">This Month Due</CardTitle></CardHeader>
-              <CardContent><p className="text-xl font-bold">{formatCurrency(summary.thisMonthDue)}</p></CardContent>
-          </Card>
-           <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Total Paid</CardTitle></CardHeader>
-              <CardContent><p className="text-xl font-bold">{formatCurrency(summary.totalPaid)}</p></CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-              <div className="flex items-center gap-4">
-                  <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                      <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                          {monthOptions.map(month => <SelectItem key={month} value={month}>{month}</SelectItem>)}
-                      </SelectContent>
-                  </Select>
-                  <Select value={selectedYear} onValueChange={setSelectedYear}>
-                      <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                          {yearOptions.map(year => <SelectItem key={year} value={year}>{year}</SelectItem>)}
-                      </SelectContent>
-                  </Select>
+      <div className="space-y-4">
+        {/* Header */}
+        <Card className="overflow-hidden border-border/60">
+          <div className="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 ring-1 ring-violet-100">
+                <CalendarCheck className="h-5 w-5 text-violet-600" />
               </div>
+              <div>
+                <CardTitle className="tracking-tight">EMI Tracker</CardTitle>
+                <CardDescription>Monthly EMI due and payment status</CardDescription>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger className="h-9 w-36 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="h-9 w-24 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {yearOptions.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={fetchAllData} className="gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="grid grid-cols-2 gap-2 border-t sm:grid-cols-4 pt-4">
+            {[
+              { label: 'Month Due',   value: formatCurrency(summary.thisMonthDue), color: 'text-slate-700' },
+              { label: 'Paid',        value: formatCurrency(summary.totalPaid),    color: 'text-emerald-600' },
+              { label: 'Overdue',     value: overdueInMonth,                       color: 'text-red-600' },
+              { label: 'Pending',     value: pendingInMonth,                       color: 'text-amber-600' },
+            ].map((s) => (
+              <div key={s.label} className="flex flex-col items-center rounded-lg py-2">
+                <span className={`font-bold leading-tight ${typeof s.value === 'number' ? 'text-2xl' : 'text-base'} ${s.color}`}>{s.value}</span>
+                <span className="text-[11px] text-muted-foreground">{s.label}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Table */}
+        <Card className="overflow-hidden border-border/60">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Start Date</TableHead>
-                  <TableHead>A/C No</TableHead>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="w-6" />
                   <TableHead>Lender</TableHead>
+                  <TableHead>A/C No</TableHead>
                   <TableHead>Due Date</TableHead>
-                  <TableHead>EMI Amount</TableHead>
-                  <TableHead>Principal</TableHead>
-                  <TableHead>Interest</TableHead>
-                  <TableHead>Paid Amount</TableHead>
-                  <TableHead>EMI No</TableHead>
+                  <TableHead className="text-right">EMI</TableHead>
+                  <TableHead className="text-right">Principal</TableHead>
+                  <TableHead className="text-right">Interest</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-center">#</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell colSpan={10}><Skeleton className="h-8" /></TableCell>
-                    </TableRow>
+                    <TableRow key={i}><TableCell colSpan={10}><Skeleton className="h-8" /></TableCell></TableRow>
                   ))
-                ) : filteredEmis.length > 0 ? (
-                  filteredEmis.map(emi => (
-                    <TableRow key={emi.id}>
-                      <TableCell>{formatDate(emi.loan.startDate)}</TableCell>
-                      <TableCell>{emi.loan.accountNo}</TableCell>
-                      <TableCell>{emi.loan.lenderName}</TableCell>
-                      <TableCell>{formatDate(emi.dueDate)}</TableCell>
-                      <TableCell>{formatCurrency(emi.emiAmount)}</TableCell>
-                      <TableCell>{formatCurrency(emi.principal)}</TableCell>
-                      <TableCell>{formatCurrency(emi.interest)}</TableCell>
-                      <TableCell>{formatCurrency(emi.paidAmount)}</TableCell>
-                      <TableCell>{emi.emiNo}</TableCell>
-                      <TableCell className="text-right">
-                          {emi.status === 'Pending' ? (
-                            <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)}>Mark as Paid</Button>
-                          ) : (
-                             <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onSelect={() => { setSelectedEmi(emi); setIsViewDetailsOpen(true); }}>
-                                        <Eye className="mr-2 h-4 w-4" /> View
-                                    </DropdownMenuItem>
-                                     <DropdownMenuItem onSelect={() => handleMarkAsPaidClick(emi)}>
-                                        <Edit className="mr-2 h-4 w-4" /> Edit Payment
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => openCreateExpenseDialog(emi)} disabled={!!emi.expenseRequestNo}>
-                                        <FilePlus className="mr-2 h-4 w-4" /> Create Expense
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={() => handleMarkAsUnpaid(emi)} disabled={isUpdatingEmi === emi.id} className="text-destructive">
-                                        <RotateCcw className="mr-2 h-4 w-4" /> Mark as Unpaid
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                             </DropdownMenu>
-                          )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
+                ) : filteredEmis.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center h-24">
-                      No EMIs due for {selectedMonth}, {selectedYear}.
+                    <TableCell colSpan={10} className="h-32 text-center">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <CalendarCheck className="h-8 w-8 opacity-30" />
+                        <span className="text-sm">No EMIs due for {selectedMonth}, {selectedYear}.</span>
+                      </div>
                     </TableCell>
                   </TableRow>
-                )}
+                ) : filteredEmis.map(emi => {
+                  const isOverdue = emi.status !== 'Paid' && isPast(startOfDay(emi.dueDate.toDate()));
+                  const isPaid    = emi.status === 'Paid';
+                  return (
+                    <TableRow key={emi.id} className={`transition-colors ${isOverdue ? 'hover:bg-red-50/30 bg-red-50/10' : 'hover:bg-muted/20'}`}>
+                      <TableCell className="pr-0">
+                        <div className={`h-2 w-2 rounded-full mx-auto ${isPaid ? 'bg-emerald-500' : isOverdue ? 'bg-red-500' : 'bg-amber-400'}`} />
+                      </TableCell>
+                      <TableCell className="font-medium">{emi.loan.lenderName}</TableCell>
+                      <TableCell className="font-mono text-xs">{emi.loan.accountNo}</TableCell>
+                      <TableCell>
+                        <span className={`text-sm ${isOverdue ? 'text-red-600 font-medium' : ''}`}>{formatDate(emi.dueDate)}</span>
+                        {isOverdue && <span className="ml-1 text-[10px] text-red-500">(overdue)</span>}
+                      </TableCell>
+                      <TableCell className="text-right">{formatCurrency(emi.emiAmount)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(emi.principal)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(emi.interest)}</TableCell>
+                      <TableCell className={`text-right font-medium ${isPaid ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                        {isPaid ? formatCurrency(emi.paidAmount) : '—'}
+                      </TableCell>
+                      <TableCell className="text-center text-sm text-muted-foreground">{emi.emiNo}</TableCell>
+                      <TableCell className="text-right">
+                        {emi.status === 'Pending' || isOverdue ? (
+                          <Button size="sm" onClick={() => handleMarkAsPaidClick(emi)} className={`h-7 text-xs gap-1 ${isOverdue ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}>
+                            {isOverdue && <AlertTriangle className="h-3 w-3" />}
+                            Mark as Paid
+                          </Button>
+                        ) : (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => { setSelectedEmi(emi); setIsViewDetailsOpen(true); }}>
+                                <Eye className="mr-2 h-4 w-4" /> View Details
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => handleMarkAsPaidClick(emi)}>
+                                <Edit className="mr-2 h-4 w-4" /> Edit Payment
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => openCreateExpenseDialog(emi)} disabled={!!emi.expenseRequestNo}>
+                                <FilePlus className="mr-2 h-4 w-4" /> Create Expense
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => handleMarkAsUnpaid(emi)} disabled={isUpdatingEmi === emi.id} className="text-destructive">
+                                <RotateCcw className="mr-2 h-4 w-4" /> Mark as Unpaid
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
-          </CardContent>
+          </div>
         </Card>
       </div>
 
