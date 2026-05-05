@@ -1,123 +1,118 @@
 
-
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, BarChart3, PieChart, ShieldAlert, ClipboardCheck } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
+import { BarChart3, ChevronRight, ClipboardCheck, ShieldAlert } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
-interface ReportCardProps {
-  item: {
-    icon: LucideIcon;
-    title: string;
-    description: string;
-    href: string;
-    disabled?: boolean;
-  };
-}
-
-const reportItemsBase = [
-  { 
-    icon: ClipboardCheck, 
-    title: 'My Tasks Summary', 
-    description: 'View a step-wise summary of your assigned tasks.', 
+const REPORTS = [
+  {
+    icon: ClipboardCheck,
+    title: 'My Tasks Summary',
+    description: 'Step-wise breakdown of insurance task assignments — total, done, on-time, and rejected.',
     href: '/insurance/reports/my-tasks-summary',
+    gradient: 'from-cyan-500 to-sky-600',
+    bg: 'bg-cyan-50',
+    iconColor: 'text-cyan-600',
     permission: 'View Reports',
+  },
+  {
+    icon: BarChart3,
+    title: 'Premium Analytics',
+    description: 'Monthly premium payment trends and overdue analysis across all policy holders.',
+    href: '#',
+    gradient: 'from-violet-500 to-purple-600',
+    bg: 'bg-violet-50',
+    iconColor: 'text-violet-600',
+    permission: 'View Reports',
+    disabled: true,
+    soon: true,
   },
 ];
 
-function ReportCard({ item }: ReportCardProps) {
-    const cardContent = (
-         <Card
-            className={cn(
-                "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-            )}
-            >
-            <CardHeader className="items-center text-center">
-                <div className="bg-primary/10 p-4 rounded-full mb-4">
-                  <item.icon className="w-8 h-8 text-primary" />
-                </div>
-                <CardTitle className="text-lg font-semibold">{item.title}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-center">
-                <CardDescription>{item.description}</CardDescription>
-            </CardContent>
-        </Card>
-    )
-
-    if (item.href === '#' || item.disabled) {
-        return <div className="h-full">{cardContent}</div>;
-    }
-    
-    return (
-       <Link href={item.href} className="no-underline h-full">
-            {cardContent}
-        </Link>
-    )
-}
-
 export default function InsuranceReportsPage() {
-    const { can, isLoading } = useAuthorization();
-    const canViewPage = can('View Reports', 'Insurance.Reports'); 
+  const { can, isLoading } = useAuthorization();
+  const canViewPage = can('View Reports', 'Insurance.Reports');
 
-    const reportItems = reportItemsBase.map(item => ({
-        ...item,
-        disabled: !can(item.permission, 'Insurance.Reports'),
-    }));
-    
-    if (isLoading) {
-        return (
-             <div className="w-full max-w-lg pr-4">
-                <Skeleton className="h-10 w-48 mb-6" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <Skeleton className="h-56" />
-                    <Skeleton className="h-56" />
-                </div>
-            </div>
-        )
-    }
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2].map((i) => <Skeleton key={i} className="h-44 rounded-xl" />)}
+        </div>
+      </div>
+    );
+  }
 
-    if (!canViewPage) {
-        return (
-            <div className="w-full max-w-lg px-4 sm:px-6 lg:px-8">
-                <div className="mb-6 flex items-center gap-4">
-                    <Link href="/insurance"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-                    <h1 className="text-xl font-bold">Insurance Reports</h1>
-                </div>
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Access Denied</CardTitle>
-                        <CardDescription>You do not have permission to view reports.</CardDescription>
-                    </CardHeader>
-                     <CardContent className="flex justify-center p-8">
-                        <ShieldAlert className="h-16 w-16 text-destructive" />
-                    </CardContent>
-                </Card>
-            </div>
-        );
-    }
+  if (!canViewPage) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-destructive" /> Access Denied</CardTitle>
+          <CardDescription>You do not have permission to view reports.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   return (
-    <div className="w-full max-w-4xl pr-4">
-      <div className="mb-6 flex items-center gap-4">
-        <Link href="/insurance">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-xl font-bold">Insurance Reports</h1>
+    <div className="space-y-5">
+
+      {/* ── Header ────────────────────────────────────────────────────────── */}
+      <Card className="overflow-hidden border-border/60">
+        <div className="h-1 w-full bg-gradient-to-r from-indigo-500 via-blue-500 to-cyan-500" />
+        <CardHeader className="flex items-center gap-3 flex-row">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 ring-1 ring-indigo-100">
+            <BarChart3 className="h-5 w-5 text-indigo-600" />
+          </div>
+          <div>
+            <CardTitle className="tracking-tight">Insurance Reports</CardTitle>
+            <CardDescription>Analytics and summaries for insurance policies and tasks</CardDescription>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* ── Report cards ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {REPORTS.map((item) => {
+          const isDisabled = item.disabled || !can(item.permission, 'Insurance.Reports');
+          const content = (
+            <div className={cn(
+              'group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200',
+              isDisabled
+                ? 'cursor-not-allowed opacity-60 border-border/40 bg-muted/30'
+                : 'cursor-pointer border-border/60 bg-background hover:-translate-y-1 hover:shadow-md hover:border-border'
+            )}>
+              <div className={cn('h-1 w-full bg-gradient-to-r', item.gradient)} />
+              <div className="p-5 flex flex-col gap-4 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', item.bg)}>
+                    <item.icon className={cn('h-5 w-5', item.iconColor)} />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {item.soon && (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">Coming Soon</span>
+                    )}
+                    {!isDisabled && <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm leading-tight">{item.title}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{item.description}</p>
+                </div>
+              </div>
+            </div>
+          );
+
+          if (isDisabled) return <div key={item.title}>{content}</div>;
+          return <Link key={item.title} href={item.href} className="no-underline">{content}</Link>;
+        })}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {reportItems.map((item) => (
-          <ReportCard key={item.title} item={item} />
-        ))}
-      </div>
+
     </div>
   );
 }

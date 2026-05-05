@@ -1,165 +1,156 @@
 
-
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Users, Building, ShieldAlert, Tags, HelpCircle, Construction, GitMerge } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import type { LucideIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import {
+  Building2,
+  ChevronRight,
+  Construction,
+  GitMerge,
+  HelpCircle,
+  Settings2,
+  ShieldAlert,
+  Tags,
+  Users,
+} from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
-interface SettingsCardProps {
-  item: {
-    icon: LucideIcon;
-    text: string;
-    href: string;
-    description: string;
-    disabled?: boolean;
-  };
-}
-
-const settingsItemsBase = [
+const SETTINGS_ITEMS = [
   {
     icon: Users,
     text: 'Policy Holders',
     href: '/insurance/policy-holders',
-    description: 'Manage details of all policy holders.',
-    permission: 'View'
+    description: 'Manage personal insurance policy holders, contacts and DOB.',
+    gradient: 'from-violet-500 to-purple-600',
+    bg: 'bg-violet-50',
+    iconColor: 'text-violet-600',
+    scope: 'Insurance.Settings.Holders',
   },
-  { 
-    icon: Building, 
-    text: 'Insurance Companies', 
-    href: '/insurance/companies', 
-    description: 'Manage the list of insurance companies.',
-    permission: 'View'
+  {
+    icon: Building2,
+    text: 'Insurance Companies',
+    href: '/insurance/companies',
+    description: 'Maintain the master list of insurance providers.',
+    gradient: 'from-blue-500 to-indigo-600',
+    bg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    scope: 'Insurance.Settings.Companies',
   },
-  { 
-    icon: Tags, 
-    text: 'Policy Category', 
-    href: '/insurance/settings/policy-category', 
-    description: 'Define categories for project insurance.',
-    permission: 'View'
+  {
+    icon: Tags,
+    text: 'Policy Category',
+    href: '/insurance/settings/policy-category',
+    description: 'Define and manage categories for project insurance policies.',
+    gradient: 'from-amber-500 to-orange-500',
+    bg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
+    scope: 'Insurance.Settings.Categories',
   },
   {
     icon: Construction,
-    text: 'Projects and Properties',
+    text: 'Projects & Properties',
     href: '/insurance/settings/assets',
-    description: 'Manage insurable assets like projects and properties.',
-    permission: 'View'
+    description: 'Manage insurable assets — projects and property entries.',
+    gradient: 'from-emerald-500 to-teal-600',
+    bg: 'bg-emerald-50',
+    iconColor: 'text-emerald-600',
+    scope: 'Insurance.Settings.Assets',
   },
   {
     icon: GitMerge,
     text: 'Workflow',
     href: '/insurance/settings/workflow',
-    description: 'Configure insurance approval workflows.',
-    permission: 'View'
+    description: 'Configure multi-step approval workflows with TAT and assignments.',
+    gradient: 'from-cyan-500 to-sky-600',
+    bg: 'bg-cyan-50',
+    iconColor: 'text-cyan-600',
+    scope: 'Insurance.Settings',
   },
   {
     icon: HelpCircle,
     text: 'Help',
     href: '/insurance/settings/help',
-    description: 'View help documentation for insurance types.',
-    permission: 'View'
+    description: 'View documentation for property and workmen compensation insurance.',
+    gradient: 'from-slate-400 to-slate-600',
+    bg: 'bg-slate-50',
+    iconColor: 'text-slate-600',
+    scope: 'Insurance.Settings',
   },
-];
-
-function SettingsCard({ item }: SettingsCardProps) {
-    const cardContent = (
-         <Card
-            className={cn(
-                "flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50",
-                (item.href === '#' || item.disabled) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-            )}
-            >
-            <CardHeader className="flex-col items-center text-center gap-4 p-6">
-                <div className="bg-primary/10 p-3 rounded-full">
-                  <item.icon className="w-8 h-8 text-primary" />
-                </div>
-                <div className="space-y-1">
-                    <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-                    <CardDescription className="text-xs">{item.description}</CardDescription>
-                </div>
-            </CardHeader>
-        </Card>
-    )
-
-    if (item.href === '#' || item.disabled) {
-        return <div className="h-full">{cardContent}</div>;
-    }
-    
-    return (
-       <Link href={item.href} className="no-underline h-full">
-            {cardContent}
-        </Link>
-    )
-}
+] as const;
 
 export default function InsuranceSettingsPage() {
   const { can, isLoading } = useAuthorization();
   const canViewPage = can('View', 'Insurance.Settings');
-  
-  const settingsItems = settingsItemsBase.map(item => {
-      let moduleScope: string;
-      switch(item.text) {
-          case 'Policy Holders': moduleScope = 'Insurance.Settings.Holders'; break;
-          case 'Insurance Companies': moduleScope = 'Insurance.Settings.Companies'; break;
-          case 'Policy Category': moduleScope = 'Insurance.Settings.Categories'; break;
-          case 'Projects and Properties': moduleScope = 'Insurance.Settings.Assets'; break;
-          case 'Workflow': moduleScope = 'Insurance.Settings'; break; // Simplified permission for now
-          case 'Help': moduleScope = 'Insurance.Settings'; break;
-          default: moduleScope = 'Insurance.Settings';
-      }
-      return {
-          ...item,
-          disabled: !can(item.permission, moduleScope)
-      }
-  });
 
   if (isLoading) {
-      return (
-        <div className="w-full">
-            <div className="mb-6"><Skeleton className="h-10 w-64" /></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                <Skeleton className="h-40" />
-                <Skeleton className="h-40" />
-                <Skeleton className="h-40" />
-            </div>
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
         </div>
-      );
+      </div>
+    );
   }
 
   if (!canViewPage) {
-      return (
-         <div className="w-full">
-            <div className="mb-6 flex items-center gap-2">
-                <h1 className="text-xl font-bold">Insurance Settings</h1>
-            </div>
-            <Card>
-                <CardHeader>
-                    <CardTitle>Access Denied</CardTitle>
-                    <CardDescription>You do not have permission to view settings.</CardDescription>
-                </CardHeader>
-                <CardContent className="flex justify-center p-8">
-                    <ShieldAlert className="h-16 w-16 text-destructive" />
-                </CardContent>
-            </Card>
-         </div>
-      );
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><ShieldAlert className="h-5 w-5 text-destructive" /> Access Denied</CardTitle>
+          <CardDescription>You do not have permission to view settings.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
   }
-  
+
   return (
-    <div className="w-full">
-        <div className="mb-6 flex items-center gap-2">
-            <h1 className="text-xl font-bold">Insurance Settings</h1>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {settingsItems.map((item) => (
-                <SettingsCard key={item.text} item={item} />
-            ))}
-        </div>
+    <div className="space-y-5">
+      {/* Header */}
+      <Card className="overflow-hidden border-border/60">
+        <div className="h-1 w-full bg-gradient-to-r from-slate-400 via-slate-500 to-slate-600" />
+        <CardHeader className="flex items-center gap-3 flex-row">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
+            <Settings2 className="h-5 w-5 text-slate-600" />
+          </div>
+          <div>
+            <CardTitle className="tracking-tight">Insurance Settings</CardTitle>
+            <CardDescription>Configure masters, workflows and documentation</CardDescription>
+          </div>
+        </CardHeader>
+      </Card>
+
+      {/* Settings cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {SETTINGS_ITEMS.map((item) => {
+          const isDisabled = !can('View', item.scope);
+          const content = (
+            <div className={cn(
+              'group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200',
+              isDisabled
+                ? 'cursor-not-allowed opacity-60 border-border/40 bg-muted/30'
+                : 'cursor-pointer border-border/60 bg-background hover:-translate-y-1 hover:shadow-md'
+            )}>
+              <div className={cn('h-1 w-full bg-gradient-to-r', item.gradient)} />
+              <div className="flex items-center gap-3 p-4">
+                <div className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-xl', item.bg)}>
+                  <item.icon className={cn('h-5 w-5', item.iconColor)} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm leading-tight">{item.text}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{item.description}</p>
+                </div>
+                {!isDisabled && <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />}
+              </div>
+            </div>
+          );
+          if (isDisabled) return <div key={item.text}>{content}</div>;
+          return <Link key={item.text} href={item.href} className="no-underline">{content}</Link>;
+        })}
+      </div>
     </div>
   );
 }
