@@ -17,6 +17,8 @@ export const VEHICLE_COLLECTIONS = {
 } as const;
 
 export const VEHICLE_SETTINGS_DOC_ID = 'trackingConfig';
+export const VEHICLE_TYPES_DOC_ID = 'vehicleTypes';
+export const DEFAULT_VEHICLE_TYPES = ['Truck', 'Car', 'Bus', 'Van', 'Pickup', 'Tanker', 'Trailer', 'Two Wheeler', 'Other'];
 
 export const DEFAULT_TRACKING_SETTINGS = {
   driverLocationUpdateIntervalSec: 10,

@@ -89,7 +89,10 @@ interface GenericCrudPageProps {
   initialPrefill?: Record<string, string>;
   /** Firestore doc ID of the expired record being renewed — will be marked Archived after save */
   renewingFromId?: string;
-  onBeforeSave?: (payload: Record<string, any>, currentRow: Record<string, any> | null) => Record<string, any>;
+  onBeforeSave?: (
+    payload: Record<string, any>,
+    currentRow: Record<string, any> | null
+  ) => Record<string, any> | Promise<Record<string, any>>;
   onAfterFetch?: (rows: Record<string, any>[]) => Record<string, any>[];
   onAfterSave?: (args: {
     id: string;
@@ -464,7 +467,17 @@ export default function GenericCrudPage({
           continue;
         }
 
-        const finalPayload = onBeforeSave ? onBeforeSave(payload, null) : payload;
+        let finalPayload: Record<string, any>;
+        try {
+          finalPayload = onBeforeSave ? await onBeforeSave(payload, null) : payload;
+        } catch (error: any) {
+          skipped += 1;
+          if (skippedReasons.length < 5) {
+            skippedReasons.push(`Row ${rowIndex}: ${error?.message || 'Validation failed'}`);
+          }
+          continue;
+        }
+
         const createdRef = await addDoc(collection(db, collectionName), {
           ...finalPayload,
           createdAt: serverTimestamp(),
@@ -592,10 +605,9 @@ export default function GenericCrudPage({
       }
     }
 
-    const finalPayload = onBeforeSave ? onBeforeSave(payload, editingRow) : payload;
-
     try {
       setIsSaving(true);
+      const finalPayload = onBeforeSave ? await onBeforeSave(payload, editingRow) : payload;
       const payloadWithUploads = { ...finalPayload };
 
       for (const field of fileFields) {

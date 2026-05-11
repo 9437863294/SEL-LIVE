@@ -7,6 +7,7 @@ import {
   useDepartmentOptions,
   useDriverOptions,
   useProjectOptions,
+  useVehicleTypeOptions,
 } from '@/components/vehicle-management/hooks';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
@@ -34,7 +35,12 @@ export default function VehicleMasterPage() {
   const { can } = useAuthorization();
   const { options: departmentOptions, map: departmentMap } = useDepartmentOptions();
   const { options: projectOptions, map: projectMap } = useProjectOptions();
-  const { options: driverOptions, map: driverMap } = useDriverOptions();
+  const { options: rawDriverOptions, map: driverMap } = useDriverOptions();
+  const driverOptions = useMemo(
+    () => [{ value: '__unassigned__', label: '— Unassigned —' }, ...rawDriverOptions],
+    [rawDriverOptions]
+  );
+  const { options: vehicleTypeOptions } = useVehicleTypeOptions();
   const canView = can('View', 'Vehicle Management.Vehicle Master');
   const canAdd = can('Add', 'Vehicle Management.Vehicle Master');
   const canEdit = can('Edit', 'Vehicle Management.Vehicle Master');
@@ -50,17 +56,7 @@ export default function VehicleMasterPage() {
         label: 'Vehicle Type',
         type: 'select',
         required: true,
-        options: [
-          { value: 'Truck', label: 'Truck' },
-          { value: 'Car', label: 'Car' },
-          { value: 'Bus', label: 'Bus' },
-          { value: 'Van', label: 'Van' },
-          { value: 'Pickup', label: 'Pickup' },
-          { value: 'Tanker', label: 'Tanker' },
-          { value: 'Trailer', label: 'Trailer' },
-          { value: 'Two Wheeler', label: 'Two Wheeler' },
-          { value: 'Other', label: 'Other' },
-        ],
+        options: vehicleTypeOptions,
       },
       {
         key: 'vehicleCategory',
@@ -138,6 +134,7 @@ export default function VehicleMasterPage() {
         key: 'assignedDriverId',
         label: 'Assigned Driver',
         type: 'select',
+        defaultValue: '__unassigned__',
         options: driverOptions,
       },
       { key: 'currentOdometerKm', label: 'Current Odometer (KM)', type: 'number', required: true, step: '1' },
@@ -219,7 +216,7 @@ export default function VehicleMasterPage() {
       },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
-    [departmentOptions, driverOptions, projectOptions]
+    [departmentOptions, driverOptions, projectOptions, vehicleTypeOptions]
   );
 
   return (
@@ -245,6 +242,7 @@ export default function VehicleMasterPage() {
         next.engineNumber = String(next.engineNumber || '').toUpperCase().trim();
         next.assignedDepartmentName = departmentMap[String(next.assignedDepartmentId)]?.name || '';
         next.assignedProjectName = projectMap[String(next.assignedProjectId)]?.projectName || '';
+        if (next.assignedDriverId === '__unassigned__') next.assignedDriverId = '';
         next.assignedDriverName = driverMap[String(next.assignedDriverId)]?.driverName || '';
         next.currentStatus = String(next.currentStatus || 'In Operation');
 

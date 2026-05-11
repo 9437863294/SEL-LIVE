@@ -67,6 +67,8 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/loan';
       case 'LC Module':
         return '/lc-module';
+      case 'LC Management':
+        return '/lc-management';
       case 'Insurance':
         return '/insurance';
       case 'Store & Stock Management':

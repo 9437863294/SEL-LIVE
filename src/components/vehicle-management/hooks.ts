@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { DEFAULT_VEHICLE_TYPES, VEHICLE_COLLECTIONS, VEHICLE_TYPES_DOC_ID } from '@/lib/vehicle-management';
 import { useAuth } from '@/components/auth/AuthProvider';
 
 export interface SelectOption {
@@ -216,6 +216,35 @@ export const useCurrentDriverProfile = () => {
   }, [user?.id, user?.mobile]);
 
   return { driver, isLoading };
+};
+
+export const useVehicleTypeOptions = () => {
+  const [types, setTypes] = useState<string[]>(DEFAULT_VEHICLE_TYPES);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const ref = doc(db, VEHICLE_COLLECTIONS.settings, VEHICLE_TYPES_DOC_ID);
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as { types?: string[] };
+        setTypes(Array.isArray(data.types) && data.types.length > 0 ? data.types : DEFAULT_VEHICLE_TYPES);
+      } else {
+        setTypes(DEFAULT_VEHICLE_TYPES);
+      }
+      setIsLoading(false);
+    }, () => {
+      setTypes(DEFAULT_VEHICLE_TYPES);
+      setIsLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  const options = useMemo<SelectOption[]>(
+    () => types.map((t) => ({ value: t, label: t })),
+    [types]
+  );
+
+  return { types, options, isLoading };
 };
 
 export const useUserOptions = () => {

@@ -179,6 +179,17 @@ export const permissionModules = {
     'Loan Details': ['View', 'Update EMI'],
     'Reports': ['View'],
   },
+  'LC Management': {
+    'View Module': [],
+    'Dashboard': ['View'],
+    'LC Request': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Approve'],
+    'LC Detail': ['View'],
+    'LC Opening': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
+    'LC Documents': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Verify'],
+    'LC Payments': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Settle'],
+    'LC Amendments': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Approve'],
+    'LC Reports': ['View', 'Export'],
+  },
   'Insurance': {
     'View Module': [],
     'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History'],

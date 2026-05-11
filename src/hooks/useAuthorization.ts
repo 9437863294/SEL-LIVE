@@ -48,6 +48,16 @@ export const useAuthorization = () => {
       'Bank Balance.Expenses': ['Bank Balance.Expenses Log'],
       'Bank Balance.Receipts': ['Bank Balance.Receipts Log'],
       'Bank Balance.Internal Transaction': ['Bank Balance.Internal Transaction Log'],
+      'LC Management': ['LC Module'],
+      'LC Management.View Module': ['LC Module.View Module'],
+      'LC Management.Dashboard': ['LC Module.Dashboard'],
+      'LC Management.LC Request': ['LC Module.LC Request'],
+      'LC Management.LC Detail': ['LC Module.LC Detail'],
+      'LC Management.LC Opening': ['LC Module.LC Opening'],
+      'LC Management.LC Documents': ['LC Module.LC Documents'],
+      'LC Management.LC Payments': ['LC Module.LC Payments'],
+      'LC Management.LC Amendments': ['LC Module.LC Amendments'],
+      'LC Management.LC Reports': ['LC Module.LC Reports'],
     };
 
     const candidateResources = (() => {
