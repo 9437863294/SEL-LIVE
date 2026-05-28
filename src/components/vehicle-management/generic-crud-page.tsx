@@ -723,7 +723,7 @@ export default function GenericCrudPage({
   return (
     <div className="space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
+        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="tracking-tight">{title}</CardTitle>
@@ -760,7 +760,7 @@ export default function GenericCrudPage({
             <Button
               onClick={openAddDialog}
               disabled={!canAdd}
-              className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-[0_16px_36px_-22px_rgba(14,116,205,0.85)] hover:from-cyan-600 hover:to-blue-700"
+              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_16px_36px_-22px_rgba(5,150,105,0.72)] hover:from-emerald-600 hover:to-teal-700"
             >
               Add {itemName}
             </Button>
@@ -772,14 +772,14 @@ export default function GenericCrudPage({
               placeholder={`Search ${itemName.toLowerCase()}...`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="bg-white/80 border-white/70 focus-visible:ring-cyan-400/40 w-full sm:max-w-xs"
+              className="w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:max-w-xs"
             />
             <div className="flex items-center gap-1 rounded-lg bg-white/50 p-1 border border-white/70 shadow-sm w-fit">
               <button
                 onClick={() => setActiveTab('active')}
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
-                  activeTab === 'active' ? 'bg-white shadow-sm text-cyan-700' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                  activeTab === 'active' ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-500 hover:bg-white/50 hover:text-slate-700'
                 )}
               >
                 <List className="h-3.5 w-3.5" />
@@ -789,7 +789,7 @@ export default function GenericCrudPage({
                 onClick={() => setActiveTab('history')}
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
-                  activeTab === 'history' ? 'bg-white shadow-sm text-cyan-700' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                  activeTab === 'history' ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-500 hover:bg-white/50 hover:text-slate-700'
                 )}
               >
                 <History className="h-3.5 w-3.5" />
@@ -858,7 +858,7 @@ export default function GenericCrudPage({
                   </TableRow>
                 ) : (
                   filteredRows.map((row) => (
-                    <TableRow key={row.id as string} className="hover:bg-cyan-50/70 transition-colors">
+                    <TableRow key={row.id as string} className="transition-colors hover:bg-emerald-50/70">
                       {columns.map((column) => (
                         <TableCell key={column.key}>
                           {column.formatter
@@ -899,7 +899,7 @@ export default function GenericCrudPage({
         <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
 
           {/* ── Sticky header ─────────────────────────────────── */}
-          <div className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-cyan-500/5 to-sky-500/5 px-6 pb-4 pt-5 pr-12">
+          <div className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
             {isRenewalMode && (
               <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
                 <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -920,15 +920,23 @@ export default function GenericCrudPage({
 
           {/* ── Scrollable form body ───────────────────────────── */}
           <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            <div className="grid grid-cols-1 gap-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <div className="mb-3 rounded-md border border-slate-200 bg-slate-100/90 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                General Info
+              </div>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
               {fields.map((field) => {
                 if (!isFieldVisible(field, formState, editingRow)) return null;
+                const isWideField = field.type === 'textarea' || field.type === 'file';
                 return (
                   <div
                     key={field.key}
-                    className="space-y-1.5"
+                    className={cn(
+                      'space-y-1 rounded-md border border-slate-200 bg-white px-2.5 py-2 transition-all hover:border-emerald-200 focus-within:border-emerald-300 focus-within:ring-1 focus-within:ring-emerald-200/70',
+                      isWideField && 'md:col-span-2 xl:col-span-3'
+                    )}
                   >
-                    <Label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <Label className="text-[11px] font-semibold tracking-wide text-slate-700">
                       {field.label}
                       {field.required && <span className="ml-1 text-rose-500">*</span>}
                     </Label>
@@ -938,17 +946,17 @@ export default function GenericCrudPage({
                         value={formState[field.key] ?? ''}
                         onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
                         placeholder={field.placeholder}
-                        className="min-h-[80px] resize-none border-slate-200 bg-white transition-colors focus-visible:border-cyan-400 focus-visible:ring-1 focus-visible:ring-cyan-400/50"
+                        className="min-h-[88px] resize-none border-slate-200 bg-white transition-colors focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/50"
                       />
                     ) : field.type === 'file' ? (
                       <div className="space-y-1.5">
                         <label
                           htmlFor={`file-field-${field.key}`}
                           className={cn(
-                            'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-3 text-sm transition-colors',
+                            'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm transition-colors',
                             fileState[field.key]
                               ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                              : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-cyan-400 hover:bg-cyan-50/60'
+                              : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/60'
                           )}
                         >
                           <Upload className="h-3.5 w-3.5 shrink-0" />
@@ -971,7 +979,7 @@ export default function GenericCrudPage({
                             href={formState[field.key]}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-medium text-cyan-700 underline underline-offset-2 hover:text-cyan-800"
+                            className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
                           >
                             <ExternalLink className="h-3 w-3" />
                             View current file
@@ -983,7 +991,7 @@ export default function GenericCrudPage({
                         value={formState[field.key] || undefined}
                         onValueChange={(value) => setFormState((prev) => ({ ...prev, [field.key]: value }))}
                       >
-                        <SelectTrigger className="h-9 border-slate-200 bg-white transition-colors focus:ring-1 focus:ring-cyan-400/50 data-[state=open]:border-cyan-400">
+                        <SelectTrigger className="h-9 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400">
                           <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
                         </SelectTrigger>
                         <SelectContent>
@@ -1001,12 +1009,13 @@ export default function GenericCrudPage({
                         value={formState[field.key] ?? ''}
                         onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
                         placeholder={field.placeholder}
-                        className="h-9 border-slate-200 bg-white transition-colors focus-visible:border-cyan-400 focus-visible:ring-1 focus-visible:ring-cyan-400/50"
+                        className="h-9 border-slate-200 bg-white text-[13px] transition-colors focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/50"
                       />
                     )}
                   </div>
                 );
               })}
+            </div>
             </div>
           </div>
 
@@ -1029,7 +1038,7 @@ export default function GenericCrudPage({
                   size="sm"
                   onClick={submitForm}
                   disabled={isSaving}
-                  className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-sm hover:from-cyan-600 hover:to-blue-700 disabled:opacity-60"
+                  className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60"
                 >
                   {isSaving ? (
                     <>
