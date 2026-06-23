@@ -809,6 +809,31 @@ export default function AllRequisitionsTab() {
   };
 
   // Parse a paste event (TSV from Excel copy) into bulk rows starting at rowIndex
+  // Normalize a date string pasted from Excel into yyyy-MM-dd for <input type="date">
+  const normalizePastedDate = (raw: string): string => {
+    const s = raw.trim();
+    if (!s) return '';
+    // Already ISO: 2024-06-23
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const MON: Record<string, string> = {
+      jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
+      jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12',
+    };
+    // dd-MMM-yyyy or dd/MMM/yyyy  e.g. 23-Jun-2026
+    const m1 = s.match(/^(\d{1,2})[-\/]([a-zA-Z]{3})[-\/](\d{4})$/);
+    if (m1) {
+      const mo = MON[m1[2].toLowerCase()];
+      if (mo) return `${m1[3]}-${mo}-${m1[1].padStart(2,'0')}`;
+    }
+    // dd/MM/yyyy or dd-MM-yyyy  e.g. 23/06/2026 or 23-06-2026
+    const m2 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+    if (m2) return `${m2[3]}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
+    // MM/dd/yyyy  e.g. 06/23/2026 (US format) — try JS Date as fallback
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return format(d, 'yyyy-MM-dd');
+    return s;
+  };
+
   const handleBulkPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     const text = e.clipboardData.getData('text/plain');
     if (!text) return;
@@ -822,7 +847,13 @@ export default function AllRequisitionsTab() {
         if (li >= next.length) next.push(mkEmptyBulkRow(Date.now() + li));
         const row = { ...next[li] };
         cells.forEach((cell, ci) => {
-          if (ci < COLS.length) (row as any)[COLS[ci]] = cell.trim();
+          if (ci >= COLS.length) return;
+          const col = COLS[ci];
+          let val = cell.trim();
+          if (col === 'date') val = normalizePastedDate(val);
+          // strip currency symbols and thousand separators from amount
+          if (col === 'amount') val = val.replace(/[₹$£€,\s]/g, '');
+          (row as any)[col] = val;
         });
         next[li] = row;
       });
