@@ -41,7 +41,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X, View, Shuffle, Check, ChevronsUpDown } from 'lucide-react';
+import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X, View, Shuffle, Check, ChevronsUpDown, Download, AlertCircle } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
@@ -62,6 +63,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 
 const formSchema = z.object({
@@ -70,16 +72,16 @@ const formSchema = z.object({
   amount: z.coerce.number().min(1, { message: 'Amount must be greater than 0.' }),
   partyName: z.string().min(1, { message: 'Party name is required.' }),
   description: z.string(),
-  date: z.date({ required_error: "A date is required."}),
+  date: z.date({ required_error: "A date is required." }),
   attachments: z.custom<FileList>().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
 
 const baseTableHeaders = [
-    'Request ID', 'Date', 'Project', 'Department', 'Entered By', 'Party Name',
-    'Description', 'Amount', 'Stage', 'Status', 'Attachments', 'Expense Request No',
-    'Reception No', 'Reception Date'
+  'Request ID', 'Date', 'Project', 'Department', 'Entered By', 'Party Name',
+  'Description', 'Amount', 'Stage', 'Status', 'Attachments', 'Expense Request No',
+  'Reception No', 'Reception Date'
 ];
 
 function normalizeColumnPrefs(
@@ -200,7 +202,7 @@ export default function AllRequisitionsTab() {
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
   const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
-  
+
   const settingsKey = 'requisitions_all';
   const isInitialMount = useRef(true);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -215,6 +217,22 @@ export default function AllRequisitionsTab() {
 
   const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
   const [partySearch, setPartySearch] = useState("");
+
+  // Excel import state
+  type ExcelRow = {
+    date: string;
+    projectId: string;
+    departmentId: string;
+    amount: number;
+    partyName: string;
+    description: string;
+    _rowNum: number;
+    _error?: string;
+  };
+  const [newRequestMode, setNewRequestMode] = useState<'manual' | 'excel'>('manual');
+  const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const canCreate = can('Create Requisition', 'Site Fund Requisition');
   const canViewAll = can('View All', 'Site Fund Requisition');
@@ -238,7 +256,7 @@ export default function AllRequisitionsTab() {
           }
         }
       } catch (e) {
-          console.error("Failed to load user settings", e);
+        console.error("Failed to load user settings", e);
       }
     };
     fetchSettings();
@@ -248,48 +266,48 @@ export default function AllRequisitionsTab() {
     if (!user) return;
     const settingsRef = doc(db, 'userSettings', user.id);
     try {
-        // Debounced caller ensures this doesn't fire too frequently.
-        // Also preserve any extra fields previously stored for this page key (names/sort/etc).
-        const existing = loadedPrefRef.current ?? {};
-        const payload = { ...existing, order, visibility };
+      // Debounced caller ensures this doesn't fire too frequently.
+      // Also preserve any extra fields previously stored for this page key (names/sort/etc).
+      const existing = loadedPrefRef.current ?? {};
+      const payload = { ...existing, order, visibility };
 
-        await setDoc(
-          settingsRef,
-          { columnPreferences: { [settingsKey]: payload } },
-          // Only update this page key without overwriting other columnPreferences entries.
-          { mergeFields: [`columnPreferences.${settingsKey}`] }
-        );
-    } catch(e) {
-        console.error("Failed to save settings", e);
-        toast({ title: 'Error', description: 'Could not save column preferences.', variant: 'destructive'});
+      await setDoc(
+        settingsRef,
+        { columnPreferences: { [settingsKey]: payload } },
+        // Only update this page key without overwriting other columnPreferences entries.
+        { mergeFields: [`columnPreferences.${settingsKey}`] }
+      );
+    } catch (e) {
+      console.error("Failed to save settings", e);
+      toast({ title: 'Error', description: 'Could not save column preferences.', variant: 'destructive' });
     }
   };
 
   useEffect(() => {
     latestPrefsRef.current = { order: columnOrder, visibility: columnVisibility };
   }, [columnOrder, columnVisibility]);
-  
+
   useEffect(() => {
-      if (isInitialMount.current) {
-          isInitialMount.current = false;
-          return;
-      }
-      if (!user) return;
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    if (!user) return;
 
-      // Debounce writes to avoid Firestore queued-writes exhaustion in dev/slow networks.
+    // Debounce writes to avoid Firestore queued-writes exhaustion in dev/slow networks.
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const prefs = { order: columnOrder, visibility: columnVisibility };
+      const key = JSON.stringify(prefs);
+      saveTimerRef.current = null;
+      if (key === lastSavedPrefsRef.current) return;
+      lastSavedPrefsRef.current = key;
+      void saveColumnSettings(columnOrder, columnVisibility);
+    }, 700);
+
+    return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        const prefs = { order: columnOrder, visibility: columnVisibility };
-        const key = JSON.stringify(prefs);
-        saveTimerRef.current = null;
-        if (key === lastSavedPrefsRef.current) return;
-        lastSavedPrefsRef.current = key;
-        void saveColumnSettings(columnOrder, columnVisibility);
-      }, 700);
-
-      return () => {
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      };
+    };
   }, [columnOrder, columnVisibility, user]);
 
   useEffect(() => {
@@ -311,13 +329,13 @@ export default function AllRequisitionsTab() {
     };
   }, [user]);
 
-  
+
   useEffect(() => {
-      if (!canViewAll) {
+    if (!canViewAll) {
       setShowMyRequests(true);
     }
   }, [canViewAll]);
-  
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -335,21 +353,21 @@ export default function AllRequisitionsTab() {
     try {
       const reqQuery = query(collection(db, 'requisitions'), orderBy('createdAt', 'desc'));
       const expReqQuery = query(collection(db, 'expenseRequests'));
-      
+
       const [reqSnapshot, expReqSnapshot] = await Promise.all([
-          getDocs(reqQuery),
-          getDocs(expReqQuery)
+        getDocs(reqQuery),
+        getDocs(expReqQuery)
       ]);
 
       const requisitionsData = reqSnapshot.docs.map(doc => {
         const data = doc.data();
-        return { 
-          id: doc.id, 
+        return {
+          id: doc.id,
           ...data,
         } as Requisition;
       });
       setRequisitions(requisitionsData);
-      
+
       const expenseRequestsData = expReqSnapshot.docs.map(doc => doc.data() as ExpenseRequest);
       setExpenseRequests(expenseRequestsData);
 
@@ -362,7 +380,7 @@ export default function AllRequisitionsTab() {
     }
     setIsLoading(false);
   };
-  
+
   const displayedRequisitions = useMemo(() => {
     let filtered = requisitions;
     if (showMyRequests) {
@@ -460,24 +478,24 @@ export default function AllRequisitionsTab() {
     }
     return months;
   }, [requisitions, showMyRequests, statusFilter, fyFilter, fromDate, toDate, user]);
-  
+
   const generatePreviewId = async () => {
     try {
-        const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
-        const configDoc = await getDoc(configRef);
-        if (configDoc.exists()) {
-            const configData = configDoc.data() as SerialNumberConfig;
-            const newIndex = configData.startingIndex;
-            const formattedIndex = newIndex.toString().padStart(4, '0');
-            const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}`;
-            setPreviewRequisitionId(requisitionId);
-        } else {
-            setPreviewRequisitionId('Configuration not found');
-        }
+      const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
+      const configDoc = await getDoc(configRef);
+      if (configDoc.exists()) {
+        const configData = configDoc.data() as SerialNumberConfig;
+        const newIndex = configData.startingIndex;
+        const formattedIndex = newIndex.toString().padStart(4, '0');
+        const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}`;
+        setPreviewRequisitionId(requisitionId);
+      } else {
+        setPreviewRequisitionId('Configuration not found');
+      }
     } catch (error) {
-        console.error("Error generating preview ID: ", error);
-        setPreviewRequisitionId('Error generating ID');
-        toast({ title: 'Error', description: 'Could not generate requisition ID preview.', variant: 'destructive' });
+      console.error("Error generating preview ID: ", error);
+      setPreviewRequisitionId('Error generating ID');
+      toast({ title: 'Error', description: 'Could not generate requisition ID preview.', variant: 'destructive' });
     }
   };
 
@@ -497,7 +515,7 @@ export default function AllRequisitionsTab() {
       setSelectedFiles([]);
     }
   }, [isNewRequestOpen, form]);
-  
+
   useEffect(() => {
     if (isEditRequestOpen && editingRequisition) {
       form.reset({
@@ -517,7 +535,7 @@ export default function AllRequisitionsTab() {
         const projectsSnapshot = await getDocs(collection(db, 'projects'));
         const projectsData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
         setProjects(projectsData);
-        
+
         const departmentsSnapshot = await getDocs(collection(db, 'departments'));
         const departmentsData = departmentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department));
         setDepartments(departmentsData);
@@ -525,110 +543,255 @@ export default function AllRequisitionsTab() {
       } catch (error) {
         console.error("Error fetching projects or departments: ", error);
         toast({
-            title: 'Error',
-            description: 'Failed to load projects or departments.',
-            variant: 'destructive',
+          title: 'Error',
+          description: 'Failed to load projects or departments.',
+          variant: 'destructive',
         });
       }
     };
     fetchProjectsAndDepartments();
     fetchRequisitions();
   }, [toast]);
-  
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files) {
-        setSelectedFiles(Array.from(e.target.files));
-      }
+    if (e.target.files) {
+      setSelectedFiles(Array.from(e.target.files));
+    }
   };
 
   const handleCreateRequest = async (values: FormValues) => {
     if (!user) {
-        toast({ title: 'Error', description: 'You must be logged in to create a request.', variant: 'destructive' });
-        return;
+      toast({ title: 'Error', description: 'You must be logged in to create a request.', variant: 'destructive' });
+      return;
     }
     setIsSubmitting(true);
     try {
-        const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
-        const workflowSnap = await getDoc(workflowRef);
-        if (!workflowSnap.exists()) throw new Error("Workflow not configured for Site Fund Requisition.");
-        
-        const steps = workflowSnap.data().steps as WorkflowStep[];
-        if (!steps || steps.length === 0) throw new Error("Workflow has no steps.");
-        
-        const firstStep = steps[0];
+      const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+      const workflowSnap = await getDoc(workflowRef);
+      if (!workflowSnap.exists()) throw new Error("Workflow not configured for Site Fund Requisition.");
 
+      const steps = workflowSnap.data().steps as WorkflowStep[];
+      if (!steps || steps.length === 0) throw new Error("Workflow has no steps.");
+
+      const firstStep = steps[0];
+
+      const tempRequisition = {
+        ...values,
+        date: format(values.date, 'yyyy-MM-dd'),
+        raisedBy: user.name,
+        raisedById: user.id,
+        status: 'Pending' as const,
+        stage: firstStep.name,
+        requisitionId: 'temp',
+        partyName: values.partyName,
+      };
+
+      const assignees = await getAssigneeForStep(firstStep, tempRequisition);
+      if (assignees.length === 0) throw new Error(`Could not determine assignee for the first step: ${firstStep.name}`);
+
+      const deadline = await calculateDeadline(new Date(), firstStep.tat);
+
+      const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
+      const newRequisitionId = await runTransaction(db, async (transaction) => {
+        const configDoc = await transaction.get(configRef);
+        if (!configDoc.exists()) throw new Error("Serial number configuration not found!");
+
+        const configData = configDoc.data() as SerialNumberConfig;
+        const newIndex = configData.startingIndex;
+        const formattedIndex = newIndex.toString().padStart(4, '0');
+        const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}`;
+
+        transaction.update(configRef, { startingIndex: newIndex + 1 });
+        return requisitionId;
+      });
+
+      const attachmentUrls: Attachment[] = [];
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          const storageRef = ref(storage, `requisitions/${newRequisitionId}/${file.name}`);
+          await uploadBytes(storageRef, file);
+          const downloadURL = await getDownloadURL(storageRef);
+          attachmentUrls.push({ name: file.name, url: downloadURL });
+        }
+      }
+
+      const initialLog: ActionLog = {
+        action: 'Created',
+        comment: 'Requisition created.',
+        userId: user.id,
+        userName: user.name,
+        timestamp: Timestamp.now(),
+        stepName: 'Creation',
+      };
+
+      const finalRequisitionData = {
+        ...tempRequisition,
+        requisitionId: newRequisitionId,
+        createdAt: Timestamp.now(),
+        currentStepId: firstStep.id,
+        assignees: assignees,
+        deadline: Timestamp.fromDate(deadline),
+        history: [initialLog],
+        attachments: attachmentUrls,
+      };
+
+      await addDoc(collection(db, 'requisitions'), finalRequisitionData);
+
+      toast({ title: 'Success', description: 'New fund requisition created.' });
+      setIsNewRequestOpen(false);
+      fetchRequisitions();
+    } catch (error: any) {
+      console.error('Error creating requisition:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to create requisition.', variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  const downloadExcelTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['Date (YYYY-MM-DD)', 'Project', 'Department', 'Amount', 'Party Name', 'Description'],
+      ['2024-06-01', 'Project Alpha', 'Civil', '50000', 'ABC Contractors', 'Site work'],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    XLSX.writeFile(wb, 'site_fund_requisition_template.xlsx');
+  };
+
+  const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target!.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        const parsed = rows.map((row, i) => {
+          const dateRaw = row['Date (YYYY-MM-DD)'] || row['Date'] || '';
+          let dateStr = '';
+          if (dateRaw instanceof Date) {
+            dateStr = format(dateRaw, 'yyyy-MM-dd');
+          } else if (typeof dateRaw === 'string' && dateRaw.trim()) {
+            dateStr = dateRaw.trim();
+          } else if (typeof dateRaw === 'number') {
+            const d = XLSX.SSF.parse_date_code(dateRaw);
+            dateStr = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+          }
+
+          const projectName = String(row['Project'] || '').trim();
+          const deptName = String(row['Department'] || '').trim();
+          const matchedProject = projects.find(p => p.projectName.toLowerCase() === projectName.toLowerCase());
+          const matchedDept = departments.find(d => d.name.toLowerCase() === deptName.toLowerCase());
+
+          const errors: string[] = [];
+          if (!dateStr) errors.push('Missing date');
+          if (!matchedProject) errors.push(`Project "${projectName}" not found`);
+          if (!matchedDept) errors.push(`Department "${deptName}" not found`);
+          const amount = Number(row['Amount']);
+          if (!amount || amount <= 0) errors.push('Invalid amount');
+          const partyName = String(row['Party Name'] || '').trim();
+          if (!partyName) errors.push('Missing party name');
+
+          return {
+            date: dateStr,
+            projectId: matchedProject?.id || '',
+            departmentId: matchedDept?.id || '',
+            amount,
+            partyName,
+            description: String(row['Description'] || '').trim(),
+            _rowNum: i + 2,
+            _error: errors.length ? errors.join('; ') : undefined,
+            _projectName: projectName,
+            _deptName: deptName,
+          } as ExcelRow & { _projectName: string; _deptName: string };
+        });
+        setExcelRows(parsed as ExcelRow[]);
+      } catch {
+        toast({ title: 'Error', description: 'Failed to parse Excel file. Please use the template.', variant: 'destructive' });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
+
+  const handleBulkImport = async () => {
+    if (!user) return;
+    const validRows = (excelRows as any[]).filter((r: any) => !r._error);
+    if (validRows.length === 0) {
+      toast({ title: 'Nothing to import', description: 'Fix all errors before importing.', variant: 'destructive' });
+      return;
+    }
+    setIsImporting(true);
+    try {
+      const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+      const workflowSnap = await getDoc(workflowRef);
+      if (!workflowSnap.exists()) throw new Error("Workflow not configured.");
+      const steps = workflowSnap.data().steps as WorkflowStep[];
+      const firstStep = steps[0];
+
+      for (const row of validRows) {
         const tempRequisition = {
-            ...values,
-            date: format(values.date, 'yyyy-MM-dd'),
-            raisedBy: user.name,
-            raisedById: user.id,
-            status: 'Pending' as const,
-            stage: firstStep.name,
-            requisitionId: 'temp', 
-            partyName: values.partyName,
+          projectId: row.projectId,
+          departmentId: row.departmentId,
+          amount: row.amount,
+          partyName: row.partyName,
+          description: row.description,
+          date: row.date,
+          raisedBy: user.name,
+          raisedById: user.id,
+          status: 'Pending' as const,
+          stage: firstStep.name,
+          requisitionId: 'temp',
         };
-
         const assignees = await getAssigneeForStep(firstStep, tempRequisition);
-        if (assignees.length === 0) throw new Error(`Could not determine assignee for the first step: ${firstStep.name}`);
-        
+        if (assignees.length === 0) throw new Error(`No assignee for step: ${firstStep.name}`);
         const deadline = await calculateDeadline(new Date(), firstStep.tat);
 
         const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
         const newRequisitionId = await runTransaction(db, async (transaction) => {
-            const configDoc = await transaction.get(configRef);
-            if (!configDoc.exists()) throw new Error("Serial number configuration not found!");
-
-            const configData = configDoc.data() as SerialNumberConfig;
-            const newIndex = configData.startingIndex;
-            const formattedIndex = newIndex.toString().padStart(4, '0');
-            const requisitionId = `${configData.prefix || ''}${configData.format || ''}${formattedIndex}`;
-            
-            transaction.update(configRef, { startingIndex: newIndex + 1 });
-            return requisitionId;
+          const configDoc = await transaction.get(configRef);
+          if (!configDoc.exists()) throw new Error("Serial number config not found!");
+          const configData = configDoc.data() as SerialNumberConfig;
+          const newIndex = configData.startingIndex;
+          const requisitionId = `${configData.prefix || ''}${configData.format || ''}${newIndex.toString().padStart(4, '0')}`;
+          transaction.update(configRef, { startingIndex: newIndex + 1 });
+          return requisitionId;
         });
-        
-        const attachmentUrls: Attachment[] = [];
-        if (selectedFiles.length > 0) {
-          for (const file of selectedFiles) {
-              const storageRef = ref(storage, `requisitions/${newRequisitionId}/${file.name}`);
-              await uploadBytes(storageRef, file);
-              const downloadURL = await getDownloadURL(storageRef);
-              attachmentUrls.push({ name: file.name, url: downloadURL });
-          }
-        }
 
         const initialLog: ActionLog = {
-            action: 'Created',
-            comment: 'Requisition created.',
-            userId: user.id,
-            userName: user.name,
-            timestamp: Timestamp.now(),
-            stepName: 'Creation',
+          action: 'Created',
+          comment: 'Requisition created via Excel import.',
+          userId: user.id,
+          userName: user.name,
+          timestamp: Timestamp.now(),
+          stepName: 'Creation',
         };
 
-        const finalRequisitionData = {
-            ...tempRequisition,
-            requisitionId: newRequisitionId,
-            createdAt: Timestamp.now(),
-            currentStepId: firstStep.id,
-            assignees: assignees,
-            deadline: Timestamp.fromDate(deadline),
-            history: [initialLog],
-            attachments: attachmentUrls,
-        };
+        await addDoc(collection(db, 'requisitions'), {
+          ...tempRequisition,
+          requisitionId: newRequisitionId,
+          createdAt: Timestamp.now(),
+          currentStepId: firstStep.id,
+          assignees,
+          deadline: Timestamp.fromDate(deadline),
+          history: [initialLog],
+          attachments: [],
+        });
+      }
 
-        await addDoc(collection(db, 'requisitions'), finalRequisitionData);
-        
-        toast({ title: 'Success', description: 'New fund requisition created.' });
-        setIsNewRequestOpen(false);
-        fetchRequisitions();
+      toast({ title: 'Success', description: `${validRows.length} requisition(s) imported.` });
+      setIsNewRequestOpen(false);
+      setExcelRows([]);
+      fetchRequisitions();
     } catch (error: any) {
-        console.error('Error creating requisition:', error);
-        toast({ title: 'Error', description: error.message || 'Failed to create requisition.', variant: 'destructive' });
+      toast({ title: 'Error', description: error.message || 'Import failed.', variant: 'destructive' });
     } finally {
-        setIsSubmitting(false);
+      setIsImporting(false);
     }
-  }
+  };
 
   const handleEditRequest = async (values: FormValues) => {
     if (!editingRequisition) return;
@@ -656,7 +819,7 @@ export default function AllRequisitionsTab() {
     setEditingRequisition(req);
     setIsEditRequestOpen(true);
   };
-  
+
   const openViewDialog = (req: Requisition) => {
     setSelectedRequisition(req);
     setIsViewDialogOpen(true);
@@ -666,405 +829,511 @@ export default function AllRequisitionsTab() {
     () => columnOrder.filter((header) => columnVisibility[header] !== false),
     [columnOrder, columnVisibility]
   );
-  
+
   const moveColumn = (index: number, direction: 'up' | 'down') => {
-      const newOrder = [...columnOrder];
-      const newIndex = direction === 'up' ? index - 1 : index + 1;
-      
-      if (newIndex >= 0 && newIndex < newOrder.length) {
-          [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
-          setColumnOrder(newOrder);
-      }
+    const newOrder = [...columnOrder];
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+
+    if (newIndex >= 0 && newIndex < newOrder.length) {
+      [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
+      setColumnOrder(newOrder);
+    }
   };
 
   const renderNewForm = () => (
-     <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleCreateRequest)} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-                <div className="space-y-2">
-                    <Label htmlFor="requisitionId">Request ID</Label>
-                    <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="timestamp">Timestamp</Label>
-                    <Input id="timestamp" type="text" value={timestamp} readOnly />
-                </div>
-                <FormField
-                    control={form.control}
-                    name="date"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2 flex flex-col">
-                            <FormLabel>Date</FormLabel>
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <FormControl>
-                                        <Button
-                                            variant={"outline"}
-                                            className={cn(
-                                            "w-full justify-start text-left font-normal",
-                                            !field.value && "text-muted-foreground"
-                                            )}
-                                        >
-                                            <CalendarIcon className="mr-2 h-4 w-4" />
-                                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                        </Button>
-                                    </FormControl>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                    mode="single"
-                                    selected={field.value}
-                                    onSelect={field.onChange}
-                                    initialFocus
-                                />
-                                </PopoverContent>
-                            </Popover>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="projectId"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2">
-                            <FormLabel>Project</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl>
-                                    <SelectTrigger id="project">
-                                        <SelectValue placeholder="Select Project" />
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    {projects.map(project => (
-                                        <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="departmentId"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2">
-                            <FormLabel>Department</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                <FormControl>
-                                    <SelectTrigger id="department">
-                                        <SelectValue placeholder="Select Department" />
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    {departments.map(department => (
-                                        <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="amount"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2">
-                            <FormLabel>Amount</FormLabel>
-                            <FormControl>
-                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                  control={form.control}
-                  name="partyName"
-                  render={({ field }) => (
-                    <FormItem className="lg:col-span-3 space-y-2">
-                      <FormLabel>Party Name</FormLabel>
-                      <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              role="combobox"
-                              className={cn("w-full justify-between font-normal", !field.value && "text-muted-foreground")}
-                            >
-                              {field.value ? partyNames.find(p => p === field.value) || field.value : "Select or type party name..."}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                          <Command>
-                            <CommandInput 
-                              placeholder="Search party name..."
-                              value={partySearch}
-                              onValueChange={setPartySearch}
-                            />
-                            <CommandList>
-                              <CommandEmpty>No party found.</CommandEmpty>
-                              <CommandGroup>
-                                {partyNames.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map((name) => (
-                                  <CommandItem
-                                    value={name}
-                                    key={name}
-                                    onSelect={() => {
-                                      form.setValue("partyName", name);
-                                      setPartySearch(name);
-                                      setPartyPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Check className={cn("mr-2 h-4 w-4", name === field.value ? "opacity-100" : "opacity-0")} />
-                                    {name}
-                                  </CommandItem>
-                                ))}
-                                {partySearch && !partyNames.some(name => name.toLowerCase() === partySearch.toLowerCase()) && (
-                                  <CommandItem
-                                    value={partySearch}
-                                    onSelect={() => {
-                                      form.setValue("partyName", partySearch);
-                                      setPartyNames(prev => [...prev, partySearch].sort());
-                                      setPartyPopoverOpen(false);
-                                    }}
-                                  >
-                                    <Check className="mr-2 h-4 w-4 opacity-0" />
-                                    Create "{partySearch}"
-                                  </CommandItem>
-                                )}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+    <Tabs value={newRequestMode} onValueChange={(v) => { setNewRequestMode(v as 'manual' | 'excel'); setExcelRows([]); }}>
+      <TabsList className="mb-4 w-full grid grid-cols-2">
+        <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+        <TabsTrigger value="excel">Import from Excel</TabsTrigger>
+      </TabsList>
 
-                <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                        <FormItem className="lg:col-span-3 space-y-2">
-                            <FormLabel>Description</FormLabel>
-                            <FormControl>
-                                <Textarea id="description" placeholder="Enter a brief description" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <div className="lg:col-span-3 space-y-2">
-                  <Label htmlFor="attachments">Attachments</Label>
+      <TabsContent value="manual">
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(handleCreateRequest)} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="requisitionId">Request ID</Label>
+            <Input id="requisitionId" type="text" value={previewRequisitionId} readOnly />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="timestamp">Timestamp</Label>
+            <Input id="timestamp" type="text" value={timestamp} readOnly />
+          </div>
+          <FormField
+            control={form.control}
+            name="date"
+            render={({ field }) => (
+              <FormItem className="space-y-2 flex flex-col">
+                <FormLabel>Date</FormLabel>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant={"outline"}
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !field.value && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={field.value}
+                      onSelect={field.onChange}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="projectId"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel>Project</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
                   <FormControl>
-                      <Input id="attachments" type="file" multiple onChange={handleFileChange} />
+                    <SelectTrigger id="project">
+                      <SelectValue placeholder="Select Project" />
+                    </SelectTrigger>
                   </FormControl>
-                   {selectedFiles.length > 0 && (
-                        <div className="mt-2 space-y-2">
-                            {selectedFiles.map((file, i) => (
-                                <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
-                                    <div className="flex items-center gap-2">
-                                        <FileIcon className="w-4 h-4" />
-                                        <span className="text-sm">{file.name}</span>
-                                    </div>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
-                                        <X className="w-4 h-4" />
-                                    </Button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-            <DialogFooter>
-                <DialogClose asChild>
-                    <Button type="button" variant="outline">Cancel</Button>
-                </DialogClose>
-                <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Create Request
-                </Button>
-            </DialogFooter>
-        </form>
+                  <SelectContent>
+                    {projects.map(project => (
+                      <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="departmentId"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel>Department</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <FormControl>
+                    <SelectTrigger id="department">
+                      <SelectValue placeholder="Select Department" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {departments.map(department => (
+                      <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="amount"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel>Amount</FormLabel>
+                <FormControl>
+                  <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="partyName"
+            render={({ field }) => (
+              <FormItem className="lg:col-span-3 space-y-2">
+                <FormLabel>Party Name</FormLabel>
+                <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className={cn("w-full justify-between font-normal", !field.value && "text-muted-foreground")}
+                      >
+                        {field.value ? partyNames.find(p => p === field.value) || field.value : "Select or type party name..."}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                    <Command>
+                      <CommandInput
+                        placeholder="Search party name..."
+                        value={partySearch}
+                        onValueChange={setPartySearch}
+                      />
+                      <CommandList>
+                        <CommandEmpty>No party found.</CommandEmpty>
+                        <CommandGroup>
+                          {partyNames.filter(p => p.toLowerCase().includes(partySearch.toLowerCase())).map((name) => (
+                            <CommandItem
+                              value={name}
+                              key={name}
+                              onSelect={() => {
+                                form.setValue("partyName", name);
+                                setPartySearch(name);
+                                setPartyPopoverOpen(false);
+                              }}
+                            >
+                              <Check className={cn("mr-2 h-4 w-4", name === field.value ? "opacity-100" : "opacity-0")} />
+                              {name}
+                            </CommandItem>
+                          ))}
+                          {partySearch && !partyNames.some(name => name.toLowerCase() === partySearch.toLowerCase()) && (
+                            <CommandItem
+                              value={partySearch}
+                              onSelect={() => {
+                                form.setValue("partyName", partySearch);
+                                setPartyNames(prev => [...prev, partySearch].sort());
+                                setPartyPopoverOpen(false);
+                              }}
+                            >
+                              <Check className="mr-2 h-4 w-4 opacity-0" />
+                              Create "{partySearch}"
+                            </CommandItem>
+                          )}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem className="lg:col-span-3 space-y-2">
+                <FormLabel>Description</FormLabel>
+                <FormControl>
+                  <Textarea id="description" placeholder="Enter a brief description" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="lg:col-span-3 space-y-2">
+            <Label htmlFor="attachments">Attachments</Label>
+            <FormControl>
+              <Input id="attachments" type="file" multiple onChange={handleFileChange} />
+            </FormControl>
+            {selectedFiles.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {selectedFiles.map((file, i) => (
+                  <div key={i} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                    <div className="flex items-center gap-2">
+                      <FileIcon className="w-4 h-4" />
+                      <span className="text-sm">{file.name}</span>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectedFiles(selectedFiles.filter((_, index) => index !== i))}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Create Request
+          </Button>
+        </DialogFooter>
+      </form>
     </Form>
+    </TabsContent>
+
+      <TabsContent value="excel" className="space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Upload an Excel file. Non-editable fields (Request ID, Timestamp) are generated automatically.
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={downloadExcelTemplate}>
+            <Download className="mr-2 h-4 w-4" />
+            Download Template
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            ref={excelInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={handleExcelUpload}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => excelInputRef.current?.click()}
+          >
+            <UploadCloud className="mr-2 h-4 w-4" />
+            Choose Excel File
+          </Button>
+          {excelRows.length > 0 && (
+            <span className="text-sm text-muted-foreground">
+              {excelRows.length} row(s) loaded &mdash; {(excelRows as any[]).filter((r: any) => !r._error).length} valid,{' '}
+              {(excelRows as any[]).filter((r: any) => r._error).length} with errors
+            </span>
+          )}
+        </div>
+
+        {excelRows.length > 0 && (
+          <ScrollArea className="max-h-72 rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">#</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Department</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Party Name</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(excelRows as any[]).map((row: any) => (
+                  <TableRow key={row._rowNum} className={row._error ? 'bg-rose-50' : ''}>
+                    <TableCell className="text-muted-foreground">{row._rowNum}</TableCell>
+                    <TableCell>{row.date}</TableCell>
+                    <TableCell>{row._projectName ?? projects.find(p => p.id === row.projectId)?.projectName ?? row.projectId}</TableCell>
+                    <TableCell>{row._deptName ?? departments.find(d => d.id === row.departmentId)?.name ?? row.departmentId}</TableCell>
+                    <TableCell>{row.amount}</TableCell>
+                    <TableCell>{row.partyName}</TableCell>
+                    <TableCell className="max-w-[150px] truncate">{row.description}</TableCell>
+                    <TableCell>
+                      {row._error ? (
+                        <span className="flex items-center gap-1 text-rose-600 text-xs">
+                          <AlertCircle className="h-3 w-3 shrink-0" />
+                          {row._error}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-emerald-600 text-xs">
+                          <Check className="h-3 w-3" />
+                          OK
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        )}
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button
+            type="button"
+            disabled={isImporting || (excelRows as any[]).filter((r: any) => !r._error).length === 0}
+            onClick={handleBulkImport}
+          >
+            {isImporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Import {(excelRows as any[]).filter((r: any) => !r._error).length > 0
+              ? `${(excelRows as any[]).filter((r: any) => !r._error).length} Record(s)`
+              : 'Records'}
+          </Button>
+        </DialogFooter>
+      </TabsContent>
+    </Tabs>
   );
-  
+
   const renderEditForm = () => (
-     <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleEditRequest)} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
-                <div className="space-y-2">
-                    <Label htmlFor="requisitionId">Request ID</Label>
-                    <Input id="requisitionId" type="text" value={editingRequisition?.requisitionId} readOnly />
-                </div>
-                <div className="space-y-2">
-                    <Label htmlFor="timestamp">Timestamp</Label>
-                    <Input id="timestamp" type="text" value={editingRequisition?.createdAt ? format(editingRequisition.createdAt.toDate(), 'PPpp') : ''} readOnly />
-                </div>
-                <FormField
-                    control={form.control}
-                    name="date"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2 flex flex-col">
-                            <FormLabel>Date</FormLabel>
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <FormControl>
-                                        <Button
-                                            variant={"outline"}
-                                            className={cn(
-                                            "w-full justify-start text-left font-normal",
-                                            !field.value && "text-muted-foreground"
-                                            )}
-                                        >
-                                            <CalendarIcon className="mr-2 h-4 w-4" />
-                                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                                        </Button>
-                                    </FormControl>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                    mode="single"
-                                    selected={field.value}
-                                    onSelect={field.onChange}
-                                    initialFocus
-                                />
-                                </PopoverContent>
-                            </Popover>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="projectId"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2">
-                            <FormLabel>Project</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                                <FormControl>
-                                    <SelectTrigger id="project">
-                                        <SelectValue placeholder="Select Project" />
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    {projects.map(project => (
-                                        <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="departmentId"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2">
-                            <FormLabel>Department</FormLabel>
-                            <Select onValueChange={field.onChange} value={field.value}>
-                                <FormControl>
-                                    <SelectTrigger id="department">
-                                        <SelectValue placeholder="Select Department" />
-                                    </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                    {departments.map(department => (
-                                        <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="amount"
-                    render={({ field }) => (
-                        <FormItem className="space-y-2">
-                            <FormLabel>Amount</FormLabel>
-                            <FormControl>
-                                <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="partyName"
-                    render={({ field }) => (
-                        <FormItem className="lg:col-span-3 space-y-2">
-                            <FormLabel>Party Name</FormLabel>
-                            <FormControl>
-                                <Input placeholder="Enter the name of the party" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                        <FormItem className="lg:col-span-3 space-y-2">
-                            <FormLabel>Description</FormLabel>
-                            <FormControl>
-                                <Textarea id="description" placeholder="Enter a brief description" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                        </FormItem>
-                    )}
-                />
-                <div className="space-y-2">
-                <Label htmlFor="attachments">Attachments</Label>
-                <Input id="attachments" type="file" multiple />
-                </div>
-            </div>
-            <DialogFooter>
-                <DialogClose asChild>
-                    <Button type="button" variant="outline">Cancel</Button>
-                </DialogClose>
-                <Button type="submit">Save Changes</Button>
-            </DialogFooter>
-        </form>
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(handleEditRequest)} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="requisitionId">Request ID</Label>
+            <Input id="requisitionId" type="text" value={editingRequisition?.requisitionId} readOnly />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="timestamp">Timestamp</Label>
+            <Input id="timestamp" type="text" value={editingRequisition?.createdAt ? format(editingRequisition.createdAt.toDate(), 'PPpp') : ''} readOnly />
+          </div>
+          <FormField
+            control={form.control}
+            name="date"
+            render={({ field }) => (
+              <FormItem className="space-y-2 flex flex-col">
+                <FormLabel>Date</FormLabel>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant={"outline"}
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !field.value && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={field.value}
+                      onSelect={field.onChange}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="projectId"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel>Project</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger id="project">
+                      <SelectValue placeholder="Select Project" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {projects.map(project => (
+                      <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="departmentId"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel>Department</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger id="department">
+                      <SelectValue placeholder="Select Department" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {departments.map(department => (
+                      <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="amount"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel>Amount</FormLabel>
+                <FormControl>
+                  <Input type="number" placeholder="Enter Amount" {...field} onChange={e => field.onChange(e.target.valueAsNumber || 0)} value={field.value || ''} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="partyName"
+            render={({ field }) => (
+              <FormItem className="lg:col-span-3 space-y-2">
+                <FormLabel>Party Name</FormLabel>
+                <FormControl>
+                  <Input placeholder="Enter the name of the party" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem className="lg:col-span-3 space-y-2">
+                <FormLabel>Description</FormLabel>
+                <FormControl>
+                  <Textarea id="description" placeholder="Enter a brief description" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="space-y-2">
+            <Label htmlFor="attachments">Attachments</Label>
+            <Input id="attachments" type="file" multiple />
+          </div>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button type="submit">Save Changes</Button>
+        </DialogFooter>
+      </form>
     </Form>
   );
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-        <div className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-          <div className="mb-3 h-1.5 w-full rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-3">
+      <div className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+        <div className="mb-3 h-1.5 w-full rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
             {canViewAll && (
               <div className="flex items-center space-x-2">
-                  <Switch 
-                      id="my-requests-switch" 
-                      checked={showMyRequests}
-                      onCheckedChange={setShowMyRequests}
-                  />
-                  <Label htmlFor="my-requests-switch" className="text-sm text-slate-700">My Requests Only</Label>
+                <Switch
+                  id="my-requests-switch"
+                  checked={showMyRequests}
+                  onCheckedChange={setShowMyRequests}
+                />
+                <Label htmlFor="my-requests-switch" className="text-sm text-slate-700">My Requests Only</Label>
               </div>
             )}
-             <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[200px] bg-white/80 border-white/70">
-                    <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="Pending">Pending</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Completed">Completed</SelectItem>
-                    <SelectItem value="Rejected">Rejected</SelectItem>
-                </SelectContent>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[200px] bg-white/80 border-white/70">
+                <SelectValue placeholder="All Statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="In Progress">In Progress</SelectItem>
+                <SelectItem value="Completed">Completed</SelectItem>
+                <SelectItem value="Rejected">Rejected</SelectItem>
+              </SelectContent>
             </Select>
 
             <Select
@@ -1136,225 +1405,225 @@ export default function AllRequisitionsTab() {
                 Reset
               </Button>
             </div>
-            </div>
+          </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Dialog open={isNewRequestOpen} onOpenChange={setIsNewRequestOpen}>
-                <DialogTrigger asChild>
-                    <Button
-                      disabled={!canCreate}
-                      className="bg-slate-900 text-white shadow hover:bg-slate-900/90"
-                    >
-                      New Request
-                    </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-4xl overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
-                    <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
-                    <div className="p-6">
-                    <DialogHeader>
-                        <DialogTitle>New Site Fund Requisition</DialogTitle>
-                        <DialogDescription>
-                            Fill out the form to create a new fund request.
-                        </DialogDescription>
-                    </DialogHeader>
-                    {renderNewForm()}
-                    </div>
-                </DialogContent>
+              <DialogTrigger asChild>
+                <Button
+                  disabled={!canCreate}
+                  className="bg-slate-900 text-white shadow hover:bg-slate-900/90"
+                >
+                  New Request
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-4xl overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
+                <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
+                <div className="p-6">
+                  <DialogHeader>
+                    <DialogTitle>New Site Fund Requisition</DialogTitle>
+                    <DialogDescription>
+                      Fill out the form to create a new fund request.
+                    </DialogDescription>
+                  </DialogHeader>
+                  {renderNewForm()}
+                </div>
+              </DialogContent>
             </Dialog>
             <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
-                <DialogTrigger asChild>
-                    <Button variant="outline">
-                        <Shuffle className="mr-2 h-4 w-4" /> Sequence
-                    </Button>
-                </DialogTrigger>
-                <DialogContent className="overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
-                    <DialogHeader>
-                        <DialogTitle>Edit Column Sequence</DialogTitle>
-                        <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
-                    </DialogHeader>
-                    <div className="py-4 space-y-2">
-                        {columnOrder.map((header, index) => (
-                            <div key={header} className="flex items-center justify-between rounded-xl border border-white/70 bg-white/70 p-2">
-                                <span className="font-medium">{header}</span>
-                                <div className="flex items-center gap-1">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => moveColumn(index, 'up')}
-                                    disabled={index === 0}
-                                    aria-label={`Move ${header} up`}
-                                  >
-                                    <ChevronsUpDown className="h-4 w-4 rotate-180 text-slate-600" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => moveColumn(index, 'down')}
-                                    disabled={index === columnOrder.length - 1}
-                                    aria-label={`Move ${header} down`}
-                                  >
-                                    <ChevronsUpDown className="h-4 w-4 text-slate-600" />
-                                  </Button>
-                                </div>
-                            </div>
-                        ))}
+              <DialogTrigger asChild>
+                <Button variant="outline">
+                  <Shuffle className="mr-2 h-4 w-4" /> Sequence
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="overflow-hidden rounded-3xl border border-white/70 bg-white/80 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
+                <DialogHeader>
+                  <DialogTitle>Edit Column Sequence</DialogTitle>
+                  <DialogDescription>Use the arrows to reorder the columns. Your changes will be saved automatically.</DialogDescription>
+                </DialogHeader>
+                <div className="py-4 space-y-2">
+                  {columnOrder.map((header, index) => (
+                    <div key={header} className="flex items-center justify-between rounded-xl border border-white/70 bg-white/70 p-2">
+                      <span className="font-medium">{header}</span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => moveColumn(index, 'up')}
+                          disabled={index === 0}
+                          aria-label={`Move ${header} up`}
+                        >
+                          <ChevronsUpDown className="h-4 w-4 rotate-180 text-slate-600" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => moveColumn(index, 'down')}
+                          disabled={index === columnOrder.length - 1}
+                          aria-label={`Move ${header} down`}
+                        >
+                          <ChevronsUpDown className="h-4 w-4 text-slate-600" />
+                        </Button>
+                      </div>
                     </div>
-                </DialogContent>
+                  ))}
+                </div>
+              </DialogContent>
             </Dialog>
             <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
-                        <View className="mr-2 h-4 w-4" />
-                        Columns
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {baseTableHeaders.map((header) => (
-                        <DropdownMenuCheckboxItem
-                            key={header}
-                            className="capitalize"
-                            checked={columnVisibility[header] !== false}
-                            onCheckedChange={(value) =>
-                                setColumnVisibility(prev => ({...prev, [header]: !!value}))
-                            }
-                        >
-                            {header}
-                        </DropdownMenuCheckboxItem>
-                    ))}
-                </DropdownMenuContent>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <View className="mr-2 h-4 w-4" />
+                  Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {baseTableHeaders.map((header) => (
+                  <DropdownMenuCheckboxItem
+                    key={header}
+                    className="capitalize"
+                    checked={columnVisibility[header] !== false}
+                    onCheckedChange={(value) =>
+                      setColumnVisibility(prev => ({ ...prev, [header]: !!value }))
+                    }
+                  >
+                    {header}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
             </DropdownMenu>
-            </div>
           </div>
         </div>
+      </div>
 
-        <div className="min-w-0 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
-          <TooltipProvider>
-            <ScrollArea className="h-[calc(100vh-22rem)]" showHorizontalScrollbar>
-              <Table
-                containerClassName="w-max overflow-visible"
-                className="w-max min-w-[1200px]"
-              >
-                <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
+      <div className="min-w-0 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+        <TooltipProvider>
+          <ScrollArea className="h-[calc(100vh-22rem)]" showHorizontalScrollbar>
+            <Table
+              containerClassName="w-max overflow-visible"
+              className="w-max min-w-[1200px]"
+            >
+              <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
+                <TableRow>
+                  {visibleHeaders.map(header => (
+                    <TableHead key={header} className="whitespace-nowrap text-slate-700">{header}</TableHead>
+                  ))}
+                  <TableHead className="text-center text-slate-700">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {displayedRequisitions.length > 0 ? (
+                  displayedRequisitions.map((req) => {
+                    const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
+                    return (
+                      <TableRow key={req.id} className="hover:bg-slate-50/70">
+                        {visibleHeaders.map(header => {
+                          let content: React.ReactNode = 'N/A';
+                          switch (header) {
+                            case 'Request ID': content = req.requisitionId; break;
+                            case 'Date': {
+                              const d = toDateSafe(req.date);
+                              content = d ? format(d, 'dd MMM, yyyy') : '—';
+                              break;
+                            }
+                            case 'Project': content = getProjectName(req.projectId); break;
+                            case 'Department': content = getDepartmentName(req.departmentId); break;
+                            case 'Entered By': content = req.raisedBy; break;
+                            case 'Party Name': content = req.partyName; break;
+                            case 'Description':
+                              content = (
+                                <Tooltip>
+                                  <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
+                                  <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
+                                </Tooltip>
+                              );
+                              break;
+                            case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
+                            case 'Stage': content = req.stage; break;
+                            case 'Status':
+                              content = (
+                                <Badge variant="outline" className={cn("whitespace-nowrap", statusBadgeClass(req.status))}>
+                                  {req.status || '—'}
+                                </Badge>
+                              );
+                              break;
+                            case 'Attachments':
+                              content = (
+                                <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-700">
+                                  {req.attachments?.length || 0}
+                                </Badge>
+                              );
+                              break;
+                            case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
+                            case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
+                            case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
+                          }
+                          return <TableCell key={header}>{content}</TableCell>
+                        })}
+                        <TableCell className="text-center">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openViewDialog(req)}>
+                                <Eye className="mr-2 h-4 w-4" />
+                                View Details
+                              </DropdownMenuItem>
+                              {req.stage === 'Request Receiving' && (
+                                <DropdownMenuItem onClick={() => openEditDialog(req)}>
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Edit
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })
+                ) : (
                   <TableRow>
-                    {visibleHeaders.map(header => (
-                      <TableHead key={header} className="whitespace-nowrap text-slate-700">{header}</TableHead>
-                    ))}
-                    <TableHead className="text-center text-slate-700">Actions</TableHead>
+                    <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
+                      No requisitions found.
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayedRequisitions.length > 0 ? (
-                    displayedRequisitions.map((req) => {
-                        const expenseRequest = expenseRequests.find(exp => exp.requestNo === req.expenseRequestNo);
-                        return (
-                          <TableRow key={req.id} className="hover:bg-slate-50/70">
-                            {visibleHeaders.map(header => {
-                                let content: React.ReactNode = 'N/A';
-                                switch(header) {
-                                    case 'Request ID': content = req.requisitionId; break;
-                                    case 'Date': {
-                                      const d = toDateSafe(req.date);
-                                      content = d ? format(d, 'dd MMM, yyyy') : '—';
-                                      break;
-                                    }
-                                    case 'Project': content = getProjectName(req.projectId); break;
-                                    case 'Department': content = getDepartmentName(req.departmentId); break;
-                                    case 'Entered By': content = req.raisedBy; break;
-                                    case 'Party Name': content = req.partyName; break;
-                                    case 'Description': 
-                                      content = (
-                                        <Tooltip>
-                                          <TooltipTrigger><p className="truncate max-w-[150px]">{req.description}</p></TooltipTrigger>
-                                          <TooltipContent><p className="max-w-sm">{req.description}</p></TooltipContent>
-                                        </Tooltip>
-                                      ); 
-                                      break;
-                                    case 'Amount': content = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(req.amount); break;
-                                    case 'Stage': content = req.stage; break;
-                                    case 'Status': 
-                                      content = (
-                                        <Badge variant="outline" className={cn("whitespace-nowrap", statusBadgeClass(req.status))}>
-                                          {req.status || '—'}
-                                        </Badge>
-                                      );
-                                      break;
-                                    case 'Attachments': 
-                                      content = (
-                                        <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-700">
-                                          {req.attachments?.length || 0}
-                                        </Badge>
-                                      );
-                                      break;
-                                    case 'Expense Request No': content = req.expenseRequestNo || 'N/A'; break;
-                                    case 'Reception No': content = expenseRequest?.receptionNo || 'N/A'; break;
-                                    case 'Reception Date': content = expenseRequest?.receptionDate ? format(new Date(expenseRequest.receptionDate), 'dd MMM, yyyy') : 'N/A'; break;
-                                }
-                                return <TableCell key={header}>{content}</TableCell>
-                            })}
-                            <TableCell className="text-center">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => openViewDialog(req)}>
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    View Details
-                                  </DropdownMenuItem>
-                                  {req.stage === 'Request Receiving' && (
-                                    <DropdownMenuItem onClick={() => openEditDialog(req)}>
-                                      <Edit className="mr-2 h-4 w-4" />
-                                      Edit
-                                    </DropdownMenuItem>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        )
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={visibleHeaders.length + 1} className="text-center h-24">
-                        No requisitions found.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </TooltipProvider>
-        </div>
+                )}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        </TooltipProvider>
+      </div>
       {selectedRequisition && (
         <ViewRequisitionDialog
-            isOpen={isViewDialogOpen}
-            onOpenChange={setIsViewDialogOpen}
-            requisition={selectedRequisition}
-            projects={projects}
-            departments={departments}
-            onRequisitionUpdate={fetchRequisitions}
+          isOpen={isViewDialogOpen}
+          onOpenChange={setIsViewDialogOpen}
+          requisition={selectedRequisition}
+          projects={projects}
+          departments={departments}
+          onRequisitionUpdate={fetchRequisitions}
         />
       )}
       <Dialog open={isEditRequestOpen} onOpenChange={setIsEditRequestOpen}>
         <DialogContent className="sm:max-w-4xl overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
-            <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
-            <div className="p-6">
-                <DialogHeader>
-                    <DialogTitle>Edit Site Fund Requisition</DialogTitle>
-                    <DialogDescription>
-                        Make changes to the fund request below.
-                    </DialogDescription>
-                </DialogHeader>
-                {renderEditForm()}
-            </div>
+          <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
+          <div className="p-6">
+            <DialogHeader>
+              <DialogTitle>Edit Site Fund Requisition</DialogTitle>
+              <DialogDescription>
+                Make changes to the fund request below.
+              </DialogDescription>
+            </DialogHeader>
+            {renderEditForm()}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

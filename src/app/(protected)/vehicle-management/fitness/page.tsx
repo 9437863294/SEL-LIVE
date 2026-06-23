@@ -80,8 +80,8 @@ export default function FitnessManagementPage() {
         const fitnessStatus = !mandatory
           ? 'Not Applicable'
           : meta.complianceStatus === 'Missing'
-          ? 'Expired'
-          : meta.complianceStatus;
+            ? 'Expired'
+            : meta.complianceStatus;
         return {
           ...payload,
           vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
