@@ -218,7 +218,7 @@ export default function AllRequisitionsTab() {
   const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
   const [partySearch, setPartySearch] = useState("");
 
-  // Excel import state
+  // Bulk / Excel import state
   type ExcelRow = {
     date: string;
     projectId: string;
@@ -229,10 +229,25 @@ export default function AllRequisitionsTab() {
     _rowNum: number;
     _error?: string;
   };
-  const [newRequestMode, setNewRequestMode] = useState<'manual' | 'excel'>('manual');
+  type BulkRow = {
+    id: number;
+    date: string;
+    project: string;
+    department: string;
+    amount: string;
+    partyName: string;
+    description: string;
+  };
+  const mkEmptyBulkRow = (id: number): BulkRow => ({ id, date: '', project: '', department: '', amount: '', partyName: '', description: '' });
+
+  const [newRequestMode, setNewRequestMode] = useState<'manual' | 'bulk' | 'excel'>('manual');
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]);
   const [isImporting, setIsImporting] = useState(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
+  const bulkTableRef = useRef<HTMLDivElement>(null);
+  const [dialogSize, setDialogSize] = useState<'md' | 'lg' | 'xl' | 'full'>('lg');
+  const dialogWidths = { md: '680px', lg: '900px', xl: '1100px', full: '96vw' } as const;
 
   const canCreate = can('Create Requisition', 'Site Fund Requisition');
   const canViewAll = can('View All', 'Site Fund Requisition');
@@ -793,6 +808,125 @@ export default function AllRequisitionsTab() {
     }
   };
 
+  // Parse a paste event (TSV from Excel copy) into bulk rows starting at rowIndex
+  const handleBulkPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const text = e.clipboardData.getData('text/plain');
+    if (!text) return;
+    e.preventDefault();
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim() !== '');
+    const COLS: (keyof BulkRow)[] = ['date', 'project', 'department', 'amount', 'partyName', 'description'];
+    setBulkRows(prev => {
+      const next = [...prev];
+      lines.forEach((line, li) => {
+        const cells = line.split('\t');
+        if (li >= next.length) next.push(mkEmptyBulkRow(Date.now() + li));
+        const row = { ...next[li] };
+        cells.forEach((cell, ci) => {
+          if (ci < COLS.length) (row as any)[COLS[ci]] = cell.trim();
+        });
+        next[li] = row;
+      });
+      return next;
+    });
+  };
+
+  const handleBulkManualSubmit = async () => {
+    if (!user) return;
+    const filled = bulkRows.filter(r => r.date || r.project || r.department || r.amount || r.partyName);
+    if (filled.length === 0) {
+      toast({ title: 'Nothing to submit', description: 'Add at least one row.', variant: 'destructive' });
+      return;
+    }
+
+    const errors: string[] = [];
+    const resolved = filled.map((row, i) => {
+      const rowErrors: string[] = [];
+      const matchedProject = projects.find(p => p.projectName.toLowerCase() === row.project.trim().toLowerCase());
+      const matchedDept = departments.find(d => d.name.toLowerCase() === row.department.trim().toLowerCase());
+      const amount = Number(row.amount);
+      if (!row.date.trim()) rowErrors.push('Missing date');
+      if (!matchedProject) rowErrors.push(`Row ${i + 1}: Project "${row.project}" not found`);
+      if (!matchedDept) rowErrors.push(`Row ${i + 1}: Department "${row.department}" not found`);
+      if (!amount || amount <= 0) rowErrors.push(`Row ${i + 1}: Invalid amount`);
+      if (!row.partyName.trim()) rowErrors.push(`Row ${i + 1}: Missing party name`);
+      errors.push(...rowErrors);
+      return { ...row, projectId: matchedProject?.id || '', departmentId: matchedDept?.id || '', amount };
+    });
+
+    if (errors.length > 0) {
+      toast({ title: 'Validation errors', description: errors.slice(0, 3).join(' | ') + (errors.length > 3 ? ` …and ${errors.length - 3} more` : ''), variant: 'destructive' });
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
+      const workflowSnap = await getDoc(workflowRef);
+      if (!workflowSnap.exists()) throw new Error("Workflow not configured.");
+      const steps = workflowSnap.data().steps as WorkflowStep[];
+      const firstStep = steps[0];
+
+      for (const row of resolved) {
+        const tempRequisition = {
+          projectId: row.projectId,
+          departmentId: row.departmentId,
+          amount: row.amount,
+          partyName: row.partyName,
+          description: row.description,
+          date: row.date,
+          raisedBy: user.name,
+          raisedById: user.id,
+          status: 'Pending' as const,
+          stage: firstStep.name,
+          requisitionId: 'temp',
+        };
+        const assignees = await getAssigneeForStep(firstStep, tempRequisition);
+        if (assignees.length === 0) throw new Error(`No assignee for step: ${firstStep.name}`);
+        const deadline = await calculateDeadline(new Date(), firstStep.tat);
+
+        const configRef = doc(db, 'serialNumberConfigs', 'site-fund-requisition');
+        const newRequisitionId = await runTransaction(db, async (transaction) => {
+          const configDoc = await transaction.get(configRef);
+          if (!configDoc.exists()) throw new Error("Serial number config not found!");
+          const configData = configDoc.data() as SerialNumberConfig;
+          const newIndex = configData.startingIndex;
+          const requisitionId = `${configData.prefix || ''}${configData.format || ''}${newIndex.toString().padStart(4, '0')}`;
+          transaction.update(configRef, { startingIndex: newIndex + 1 });
+          return requisitionId;
+        });
+
+        const initialLog: ActionLog = {
+          action: 'Created',
+          comment: 'Requisition created via bulk manual entry.',
+          userId: user.id,
+          userName: user.name,
+          timestamp: Timestamp.now(),
+          stepName: 'Creation',
+        };
+
+        await addDoc(collection(db, 'requisitions'), {
+          ...tempRequisition,
+          requisitionId: newRequisitionId,
+          createdAt: Timestamp.now(),
+          currentStepId: firstStep.id,
+          assignees,
+          deadline: Timestamp.fromDate(deadline),
+          history: [initialLog],
+          attachments: [],
+        });
+      }
+
+      toast({ title: 'Success', description: `${resolved.length} requisition(s) created.` });
+      setIsNewRequestOpen(false);
+      setBulkRows([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]);
+      fetchRequisitions();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message || 'Bulk submit failed.', variant: 'destructive' });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const handleEditRequest = async (values: FormValues) => {
     if (!editingRequisition) return;
 
@@ -841,9 +975,10 @@ export default function AllRequisitionsTab() {
   };
 
   const renderNewForm = () => (
-    <Tabs value={newRequestMode} onValueChange={(v) => { setNewRequestMode(v as 'manual' | 'excel'); setExcelRows([]); }}>
-      <TabsList className="mb-4 w-full grid grid-cols-2">
-        <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+    <Tabs value={newRequestMode} onValueChange={(v) => { setNewRequestMode(v as 'manual' | 'bulk' | 'excel'); setExcelRows([]); }}>
+      <TabsList className="mb-4 w-full grid grid-cols-3">
+        <TabsTrigger value="manual">Single Entry</TabsTrigger>
+        <TabsTrigger value="bulk">Multiple Entries</TabsTrigger>
         <TabsTrigger value="excel">Import from Excel</TabsTrigger>
       </TabsList>
 
@@ -1064,6 +1199,150 @@ export default function AllRequisitionsTab() {
     </Form>
     </TabsContent>
 
+      <TabsContent value="bulk" className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Fill rows manually <strong>or</strong> copy cells from Excel and paste (<kbd className="rounded border px-1 font-mono text-xs">Ctrl+V</kbd>) anywhere in the table.
+          Columns order: <span className="font-mono text-xs">Date · Project · Department · Amount · Party Name · Description</span>
+        </p>
+
+        {/* native overflow so table rows always scroll — Radix ScrollArea doesn't reliably scroll <Table> */}
+        <div
+          ref={bulkTableRef}
+          onPaste={handleBulkPaste}
+          className="rounded-md border focus-within:ring-2 focus-within:ring-ring outline-none overflow-y-auto"
+          style={{ maxHeight: 'calc(60vh - 180px)', minHeight: '160px' }}
+        >
+          <Table>
+            <TableHeader className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm">
+              <TableRow>
+                <TableHead className="w-8 text-center text-muted-foreground">#</TableHead>
+                <TableHead className="min-w-[120px]">Date</TableHead>
+                <TableHead className="min-w-[130px]">Project</TableHead>
+                <TableHead className="min-w-[130px]">Department</TableHead>
+                <TableHead className="min-w-[100px]">Amount</TableHead>
+                <TableHead className="min-w-[150px]">Party Name</TableHead>
+                <TableHead className="min-w-[160px]">Description</TableHead>
+                <TableHead className="w-8" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {bulkRows.map((row, idx) => (
+                <TableRow key={row.id}>
+                  <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
+                  <TableCell className="p-1">
+                    <Input
+                      type="date"
+                      value={row.date}
+                      onChange={e => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, date: e.target.value } : r))}
+                      className="h-8 text-sm"
+                    />
+                  </TableCell>
+                  <TableCell className="p-1">
+                    <Select
+                      value={row.project}
+                      onValueChange={val => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, project: val } : r))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projects.map(p => (
+                          <SelectItem key={p.id} value={p.projectName}>{p.projectName}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell className="p-1">
+                    <Select
+                      value={row.department}
+                      onValueChange={val => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, department: val } : r))}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select dept" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {departments.map(d => (
+                          <SelectItem key={d.id} value={d.name}>{d.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell className="p-1">
+                    <Input
+                      type="number"
+                      placeholder="0"
+                      value={row.amount}
+                      onChange={e => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, amount: e.target.value } : r))}
+                      className="h-8 text-sm"
+                    />
+                  </TableCell>
+                  <TableCell className="p-1">
+                    <Input
+                      placeholder="Party name"
+                      value={row.partyName}
+                      onChange={e => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, partyName: e.target.value } : r))}
+                      className="h-8 text-sm"
+                    />
+                  </TableCell>
+                  <TableCell className="p-1">
+                    <Input
+                      placeholder="Description"
+                      value={row.description}
+                      onChange={e => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
+                      className="h-8 text-sm"
+                    />
+                  </TableCell>
+                  <TableCell className="p-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-muted-foreground hover:text-rose-500"
+                      onClick={() => setBulkRows(prev => prev.filter(r => r.id !== row.id))}
+                      disabled={bulkRows.length === 1}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setBulkRows(prev => [...prev, mkEmptyBulkRow(Date.now())])}
+          >
+            + Add Row
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={() => setBulkRows([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)])}
+          >
+            Clear All
+          </Button>
+        </div>
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button type="button" disabled={isImporting} onClick={handleBulkManualSubmit}>
+            {isImporting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Submit {bulkRows.filter(r => r.date || r.project || r.amount || r.partyName).length > 0
+              ? `${bulkRows.filter(r => r.date || r.project || r.amount || r.partyName).length} Record(s)`
+              : 'Records'}
+          </Button>
+        </DialogFooter>
+      </TabsContent>
+
       <TabsContent value="excel" className="space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
@@ -1100,9 +1379,9 @@ export default function AllRequisitionsTab() {
         </div>
 
         {excelRows.length > 0 && (
-          <ScrollArea className="max-h-72 rounded-md border">
+          <div className="overflow-y-auto rounded-md border" style={{ maxHeight: '288px' }}>
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm">
                 <TableRow>
                   <TableHead className="w-10">#</TableHead>
                   <TableHead>Date</TableHead>
@@ -1141,7 +1420,7 @@ export default function AllRequisitionsTab() {
                 ))}
               </TableBody>
             </Table>
-          </ScrollArea>
+          </div>
         )}
 
         <DialogFooter>
@@ -1408,7 +1687,7 @@ export default function AllRequisitionsTab() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Dialog open={isNewRequestOpen} onOpenChange={setIsNewRequestOpen}>
+            <Dialog open={isNewRequestOpen} onOpenChange={(open) => { setIsNewRequestOpen(open); if (!open) { setNewRequestMode('manual'); setExcelRows([]); setBulkRows([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]); } }}>
               <DialogTrigger asChild>
                 <Button
                   disabled={!canCreate}
@@ -1417,15 +1696,44 @@ export default function AllRequisitionsTab() {
                   New Request
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-4xl overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur">
-                <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
-                <div className="p-6">
+              <DialogContent
+                style={{ maxWidth: dialogWidths[dialogSize] }}
+                className="overflow-hidden rounded-3xl border border-white/70 bg-white/80 p-0 shadow-[0_30px_120px_-80px_rgba(2,6,23,0.8)] backdrop-blur max-h-[92vh] flex flex-col w-[96vw]"
+              >
+                {/* gradient accent */}
+                <div className="h-1.5 w-full shrink-0 bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-80" />
+
+                {/* fixed header row */}
+                <div className="flex items-start justify-between px-6 pt-5 pb-2 shrink-0">
                   <DialogHeader>
                     <DialogTitle>New Site Fund Requisition</DialogTitle>
                     <DialogDescription>
                       Fill out the form to create a new fund request.
                     </DialogDescription>
                   </DialogHeader>
+                  {/* resize toggle */}
+                  <div className="flex items-center gap-1 ml-4 mt-0.5 shrink-0">
+                    {(['md', 'lg', 'xl', 'full'] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setDialogSize(s)}
+                        title={{ md: 'Medium', lg: 'Large', xl: 'Extra Large', full: 'Full Width' }[s]}
+                        className={cn(
+                          'rounded px-2 py-0.5 text-[11px] font-medium border transition-colors',
+                          dialogSize === s
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-white/60 text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
+                        )}
+                      >
+                        {{ md: 'M', lg: 'L', xl: 'XL', full: '⤢' }[s]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* scrollable form body */}
+                <div className="flex-1 overflow-y-auto px-6 pb-6">
                   {renderNewForm()}
                 </div>
               </DialogContent>

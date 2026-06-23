@@ -5,7 +5,10 @@
       "Bash(npx tsc:*)",
       "Bash(npm audit:*)",
       "Bash(npm install:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"AllRequisitionsTab2\" } | Select-Object -First 40)",
+      "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Select-String \"AllRequisitionsTab2\" | ForEach-Object { $_.Line })",
+      "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && \\(npx tsc --noEmit 2>&1\\) -join \"`n\" | Select-String \"AllRequisitionsTab2\" -AllMatches | Select-Object -ExpandProperty Line | Select-Object -First 40)"
     ]
   }
 }
