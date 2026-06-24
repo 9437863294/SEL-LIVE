@@ -35,7 +35,9 @@ const nextConfig: NextConfig = {
     ],
   },
   devIndicators: false,
-  experimental: {},
+  experimental: {
+    turbopackFileSystemCacheForDev: false,
+  },
   env: {
     NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'module-hub-uc7tw.appspot.com',
   },
