@@ -41,7 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X, View, Shuffle, Check, ChevronsUpDown, Download, AlertCircle } from 'lucide-react';
+import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X, View, Shuffle, Check, ChevronsUpDown, Download, AlertCircle, Paperclip, ArrowUpDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Textarea } from './ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
@@ -237,13 +237,15 @@ export default function AllRequisitionsTab() {
     amount: string;
     partyName: string;
     description: string;
+    files: File[];
   };
-  const mkEmptyBulkRow = (id: number): BulkRow => ({ id, date: '', project: '', department: '', amount: '', partyName: '', description: '' });
+  const mkEmptyBulkRow = (id: number): BulkRow => ({ id, date: '', project: '', department: '', amount: '', partyName: '', description: '', files: [] });
 
   const [newRequestMode, setNewRequestMode] = useState<'manual' | 'bulk' | 'excel'>('manual');
   const [excelRows, setExcelRows] = useState<ExcelRow[]>([]);
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]);
   const [isImporting, setIsImporting] = useState(false);
+  const [bulkIdOrder, setBulkIdOrder] = useState<'asc' | 'desc'>('asc');
   const excelInputRef = useRef<HTMLInputElement>(null);
   const bulkTableRef = useRef<HTMLDivElement>(null);
   const [dialogSize, setDialogSize] = useState<'md' | 'lg' | 'xl' | 'full'>('lg');
@@ -889,6 +891,9 @@ export default function AllRequisitionsTab() {
       return;
     }
 
+    // Apply ID order: desc means bottom row gets the lowest serial number → reverse before processing
+    const orderedRows = bulkIdOrder === 'desc' ? [...resolved].reverse() : resolved;
+
     setIsImporting(true);
     try {
       const workflowRef = doc(db, 'workflows', 'site-fund-requisition');
@@ -897,7 +902,7 @@ export default function AllRequisitionsTab() {
       const steps = workflowSnap.data().steps as WorkflowStep[];
       const firstStep = steps[0];
 
-      for (const row of resolved) {
+      for (const row of orderedRows) {
         const tempRequisition = {
           projectId: row.projectId,
           departmentId: row.departmentId,
@@ -926,6 +931,17 @@ export default function AllRequisitionsTab() {
           return requisitionId;
         });
 
+        // Upload attachments for this row
+        const attachmentUrls: Attachment[] = [];
+        if (row.files && row.files.length > 0) {
+          for (const file of row.files) {
+            const storageRef = ref(storage, `requisitions/${newRequisitionId}/${file.name}`);
+            await uploadBytes(storageRef, file);
+            const downloadURL = await getDownloadURL(storageRef);
+            attachmentUrls.push({ name: file.name, url: downloadURL });
+          }
+        }
+
         const initialLog: ActionLog = {
           action: 'Created',
           comment: 'Requisition created via bulk manual entry.',
@@ -943,13 +959,14 @@ export default function AllRequisitionsTab() {
           assignees,
           deadline: Timestamp.fromDate(deadline),
           history: [initialLog],
-          attachments: [],
+          attachments: attachmentUrls,
         });
       }
 
       toast({ title: 'Success', description: `${resolved.length} requisition(s) created.` });
       setIsNewRequestOpen(false);
       setBulkRows([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]);
+      setBulkIdOrder('asc');
       fetchRequisitions();
     } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Bulk submit failed.', variant: 'destructive' });
@@ -1231,10 +1248,43 @@ export default function AllRequisitionsTab() {
     </TabsContent>
 
       <TabsContent value="bulk" className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Fill rows manually <strong>or</strong> copy cells from Excel and paste (<kbd className="rounded border px-1 font-mono text-xs">Ctrl+V</kbd>) anywhere in the table.
-          Columns order: <span className="font-mono text-xs">Date · Project · Department · Amount · Party Name · Description</span>
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            Fill rows manually <strong>or</strong> paste (<kbd className="rounded border px-1 font-mono text-xs">Ctrl+V</kbd>) cells copied from Excel.
+            <span className="ml-1 font-mono text-xs">Date · Project · Department · Amount · Party Name · Description</span>
+          </p>
+
+          {/* Request ID order selector */}
+          <div className="flex items-center gap-1.5 rounded-lg border bg-white/60 px-3 py-1.5 text-xs shrink-0">
+            <ArrowUpDown className="h-3.5 w-3.5 text-slate-500" />
+            <span className="font-medium text-slate-600">Request ID:</span>
+            <button
+              type="button"
+              onClick={() => setBulkIdOrder('asc')}
+              className={cn(
+                'rounded px-2 py-0.5 font-medium transition-colors',
+                bulkIdOrder === 'asc'
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              Row 1 → first ID
+            </button>
+            <span className="text-slate-300">|</span>
+            <button
+              type="button"
+              onClick={() => setBulkIdOrder('desc')}
+              className={cn(
+                'rounded px-2 py-0.5 font-medium transition-colors',
+                bulkIdOrder === 'desc'
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              Last row → first ID
+            </button>
+          </div>
+        </div>
 
         {/* native overflow so table rows always scroll — Radix ScrollArea doesn't reliably scroll <Table> */}
         <div
@@ -1253,6 +1303,7 @@ export default function AllRequisitionsTab() {
                 <TableHead className="min-w-[100px]">Amount</TableHead>
                 <TableHead className="min-w-[150px]">Party Name</TableHead>
                 <TableHead className="min-w-[160px]">Description</TableHead>
+                <TableHead className="w-20 text-center">Docs</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
@@ -1322,6 +1373,30 @@ export default function AllRequisitionsTab() {
                       onChange={e => setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, description: e.target.value } : r))}
                       className="h-8 text-sm"
                     />
+                  </TableCell>
+                  {/* Attachments */}
+                  <TableCell className="p-1 text-center">
+                    <label className="cursor-pointer inline-flex flex-col items-center gap-0.5">
+                      <span className={cn(
+                        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs border transition-colors',
+                        row.files.length > 0
+                          ? 'border-sky-300 bg-sky-50 text-sky-700'
+                          : 'border-slate-200 bg-white/60 text-slate-500 hover:border-slate-400'
+                      )}>
+                        <Paperclip className="h-3 w-3" />
+                        {row.files.length > 0 ? row.files.length : '+'}
+                      </span>
+                      <input
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={e => {
+                          const newFiles = e.target.files ? Array.from(e.target.files) : [];
+                          setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, files: [...r.files, ...newFiles] } : r));
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
                   </TableCell>
                   <TableCell className="p-1">
                     <Button
@@ -1718,7 +1793,7 @@ export default function AllRequisitionsTab() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Dialog open={isNewRequestOpen} onOpenChange={(open) => { setIsNewRequestOpen(open); if (!open) { setNewRequestMode('manual'); setExcelRows([]); setBulkRows([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]); } }}>
+            <Dialog open={isNewRequestOpen} onOpenChange={(open) => { setIsNewRequestOpen(open); if (!open) { setNewRequestMode('manual'); setExcelRows([]); setBulkRows([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]); setBulkIdOrder('asc'); } }}>
               <DialogTrigger asChild>
                 <Button
                   disabled={!canCreate}
