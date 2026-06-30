@@ -20,6 +20,7 @@ import {
   query,
   where,
   getDocs,
+  onSnapshot,
 } from 'firebase/firestore';
 import type { User, Role, SavedUser } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -89,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const warningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const sessionUnsubscribeRef = useRef<(() => void) | null>(null);
+  const roleUnsubscribeRef = useRef<(() => void) | null>(null);
   const lastSessionUpdateRef = useRef<number>(0);
   // Holds the configured session duration so resetTimeouts doesn't depend on `user`
   // directly (which would create an infinite render loop via onAuthStateChanged).
@@ -114,6 +116,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const sessionId = typeof window !== 'undefined' ? localStorage.getItem('sessionId') : null;
         if (sessionId) {
           await terminateSession(sessionId, isExpired ? 'timeout' : 'user').catch(() => {});
+        }
+
+        // Clean up real-time role permissions listener
+        if (roleUnsubscribeRef.current) {
+          roleUnsubscribeRef.current();
+          roleUnsubscribeRef.current = null;
         }
 
         await signOut(auth);
@@ -327,20 +335,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setShouldRemember(false);
         }
 
-        // Role & permissions
+        // Role & permissions — real-time listener so permission changes
+        // in Role Management take effect immediately without re-login.
         if (userData.role) {
           const rolesQuery = query(
             collection(db, 'roles'),
             where('name', '==', userData.role)
           );
-          const roleSnap = await getDocs(rolesQuery);
-          if (!roleSnap.empty) {
-            const roleData = roleSnap.docs[0].data() as Role;
-            setPermissions(roleData.permissions || {});
-          } else {
-            console.warn(`Role '${userData.role}' not found`);
-            setPermissions({});
+          // Unsubscribe any previous role listener before creating a new one
+          if (roleUnsubscribeRef.current) {
+            roleUnsubscribeRef.current();
+            roleUnsubscribeRef.current = null;
           }
+          roleUnsubscribeRef.current = onSnapshot(rolesQuery, (snap) => {
+            if (!snap.empty) {
+              const roleData = snap.docs[0].data() as Role;
+              setPermissions(roleData.permissions || {});
+            } else {
+              console.warn(`Role '${userData.role}' not found`);
+              setPermissions({});
+            }
+          }, (err) => {
+            console.error('Role permissions listener error:', err);
+          });
         } else {
           console.warn('User has no role');
           setPermissions({});

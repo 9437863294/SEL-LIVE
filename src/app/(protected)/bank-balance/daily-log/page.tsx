@@ -407,7 +407,7 @@ export default function DailyLogPage() {
 
             <Popover>
               <PopoverTrigger asChild>
-                <Button id="date" variant="outline" className={cn('w-[280px] shrink-0 justify-start text-left font-normal rounded-xl', !dateRange && 'text-muted-foreground')}>
+                <Button id="date" variant="outline" className={cn('w-full sm:w-[280px] shrink-0 justify-start text-left font-normal rounded-xl', !dateRange && 'text-muted-foreground')}>
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {dateRange?.from ? (
                     dateRange.to

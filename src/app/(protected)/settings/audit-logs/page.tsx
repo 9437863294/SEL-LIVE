@@ -80,8 +80,8 @@ const moduleBadgeClass = (module: string) =>
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function AuditLogsPage() {
-  const { can } = useAuthorization();
-  const canView = can('View', 'Settings.User Management') || can('View', 'Settings.Role Management');
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const canView = can('View', 'Settings.Audit Logs') || can('View', 'Settings.User Management') || can('View', 'Settings.Role Management');
 
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -198,13 +198,26 @@ export default function AuditLogsPage() {
     }
   };
 
+  if (isAuthLoading) {
+    return (
+      <div className="space-y-4 px-4 py-3 sm:px-5">
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <Skeleton className="h-10 w-full rounded-lg" />
+        <Skeleton className="h-[400px] w-full rounded-xl" />
+      </div>
+    );
+  }
+
   if (!canView) {
     return (
       <div className="px-4 py-3 sm:px-5">
         <Card>
           <CardHeader>
             <CardTitle>Access Restricted</CardTitle>
-            <CardDescription>You need User Management or Role Management permission to view audit logs.</CardDescription>
+            <CardDescription>
+              You need the <strong>Audit Logs → View</strong> permission under Settings.
+              Ask an administrator to grant it in Role Management, then sign out and back in.
+            </CardDescription>
           </CardHeader>
         </Card>
       </div>

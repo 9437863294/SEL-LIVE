@@ -7,6 +7,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { ModuleProvider } from '@/context/ModuleContext';
 import { Suspense } from 'react';
 import { ClientSessionHandler } from '@/components/auth/ClientSessionHandler';
+import ProgressBar from '@/components/app/ProgressBar';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       suppressHydrationWarning
     >
       <body>
+        <ProgressBar />
         <AuthProvider>
           {/* ClientSessionHandler must be inside AuthProvider but outside AppShell to run reliably */}
           <Suspense fallback={null}>

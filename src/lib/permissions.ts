@@ -147,6 +147,11 @@ export const permissionModules = {
     'Employee Trip Log': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Approve'],
     'Trip Management': ['View', 'Add', 'Edit', 'Delete', 'Export'],
   },
+  'Store & Stock Management': {
+    'View Module': [],
+    'Projects': ['View Dashboard', 'View Inventory', 'View Transactions', 'View Conversions', 'View BOM', 'View BOQ', 'View Reports', 'View AI Forecast'],
+    'Settings': ['View', 'Edit'],
+  },
   'Settings': {
     'View Module': [],
     'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
@@ -159,5 +164,7 @@ export const permissionModules = {
     'Appearance': ['View', 'Edit'],
     'Email Authorization': ['View', 'Send Request', 'Revoke'],
     'Login Expiry': ['View', 'Edit'],
+    'Session Management': ['View', 'Delete'],
+    'Audit Logs': ['View'],
   },
 };

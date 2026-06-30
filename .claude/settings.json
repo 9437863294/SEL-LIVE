@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sed -i 's/SelectTrigger className=\"w-\\\\[260px\\\\]\">/SelectTrigger className=\"w-full sm:w-[260px]\">/g' \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/billing-recon/[project]/page.tsx\")",
+      "Bash(sed -i 's/SelectTrigger className=\"w-\\\\[260px\\\\]\"><SelectValue placeholder=\"Select Project\" \\\\/><\\\\/SelectTrigger>/SelectTrigger className=\"w-full sm:w-[260px]\"><SelectValue placeholder=\"Select Project\" \\\\/><\\\\/SelectTrigger>/g' \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/subcontractors-management/[project]/page.tsx\")",
+      "Bash(sed -i 's/SelectTrigger className=\"w-\\\\[260px\\\\]\">/SelectTrigger className=\"w-full sm:w-[260px]\">/g' \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/subcontractors-management/[project]/page.tsx\")"
+    ]
+  }
+}

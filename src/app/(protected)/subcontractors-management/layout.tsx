@@ -1,11 +1,13 @@
-// This file is intentionally left empty. 
-// The layout logic has been moved to src/app/(protected)/subcontractors-management/[project]/layout.tsx
-// to prevent nested layouts.
+// The sidebar layout logic lives in [project]/layout.tsx to prevent nested layouts.
 
-export default function SubcontractorsLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
+
+export const metadata: Metadata = {
+  title: 'Subcontractors Management | SEL Live',
+  description: 'Manage subcontractor contracts, work orders, billing, and payment tracking across all projects.',
+};
+
+export default function SubcontractorsLayout({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }

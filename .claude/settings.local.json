@@ -43,7 +43,9 @@
       "Bash(sed -i \"s|from './auth/AuthProvider'|from '@/components/auth/AuthProvider'|g\" app/AppShell.tsx)",
       "Bash(sed -i \"s|from './ViewRequisitionDialog'|from '@/components/site-fund-requisition/ViewRequisitionDialog'|g\" app/Header.tsx)",
       "Bash(grep -rn \"from '\\\\.\\\\\\(\\\\/auth\\\\|\\\\/vehicle-management\\\\|\\\\/billing-recon\\\\|\\\\/ViewRequisition\\\\|\\\\/DocumentLink\\\\\\)\" \"d:/Application Dev/SEL Live/src/components/\")",
-      "Bash(xargs grep -l \"Table\\\\b\")"
+      "Bash(xargs grep -l \"Table\\\\b\")",
+      "Bash(node -e \"require\\('next-nprogress-bar'\\)\")",
+      "Bash(grep -v \"//\\\\|console\")"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

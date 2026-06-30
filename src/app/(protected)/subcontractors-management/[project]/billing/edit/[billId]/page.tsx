@@ -88,17 +88,19 @@ export default function EditBillPage() {
             const billsQuery = query(collectionGroup(db, 'bills'), where('__name__', '==', `projects/${projectSlug}/bills/${billId}`));
             const billSnapshot = await getDocs(billsQuery);
 
+            let resolvedSnapshot = billSnapshot;
             if (billSnapshot.empty) {
                  const billsQueryFallback = query(collectionGroup(db, 'bills'), where('__name__', '==', `projects/${currentProject?.id}/bills/${billId}`));
-                 const billSnapshotFallback = await getDocs(billsQuery);
-                 if(billSnapshotFallback.empty) {
+                 const billSnapshotFallback = await getDocs(billsQueryFallback);
+                 if (billSnapshotFallback.empty) {
                     toast({ title: 'Bill not found', variant: 'destructive' });
                     notFound();
                     return;
                  }
+                 resolvedSnapshot = billSnapshotFallback;
             }
-            
-            const billDocSnap = billSnapshot.docs[0];
+
+            const billDocSnap = resolvedSnapshot.docs[0];
             const billData = { id: billDocSnap.id, ...billDocSnap.data() } as Bill;
             setBill(billData);
 

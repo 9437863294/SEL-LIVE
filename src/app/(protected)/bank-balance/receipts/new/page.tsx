@@ -323,7 +323,7 @@ export default function NewReceiptPage() {
                   value={selectedBank}
                   onValueChange={setSelectedBank}
                 >
-                  <SelectTrigger className="w-[280px]">
+                  <SelectTrigger className="w-full sm:w-[280px]">
                     <SelectValue placeholder="Select a bank account" />
                   </SelectTrigger>
                   <SelectContent>

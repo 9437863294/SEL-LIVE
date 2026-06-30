@@ -240,7 +240,7 @@ export default function SubcontractorsProjectDashboard() {
                <div className="flex items-center gap-2">
                 <FolderOpen className="h-5 w-5 text-muted-foreground" />
                 <Select value={selectedValue} onValueChange={handleProjectChange}>
-                    <SelectTrigger className="w-[260px]"><SelectValue placeholder="Select Project" /></SelectTrigger>
+                    <SelectTrigger className="w-full sm:w-[260px]"><SelectValue placeholder="Select Project" /></SelectTrigger>
                     <SelectContent>
                     <SelectItem value="all">All Projects</SelectItem>
                     {projects.map((p) => {
@@ -270,7 +270,7 @@ export default function SubcontractorsProjectDashboard() {
         <div className="flex items-center gap-2">
           <FolderOpen className="h-5 w-5 text-muted-foreground" />
           <Select value={selectedValue} onValueChange={handleProjectChange}>
-            <SelectTrigger className="w-[260px]">
+            <SelectTrigger className="w-full sm:w-[260px]">
               <SelectValue placeholder="Select Project" />
             </SelectTrigger>
             <SelectContent>

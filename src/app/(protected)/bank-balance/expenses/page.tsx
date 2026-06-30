@@ -343,7 +343,7 @@ export default function ExpensesLogPage() {
                   id="date"
                   variant="outline"
                   className={cn(
-                    'w-[260px] justify-start text-left font-normal',
+                    'w-full sm:w-[260px] justify-start text-left font-normal',
                     !dateRange && 'text-muted-foreground'
                   )}
                 >
@@ -419,7 +419,7 @@ export default function ExpensesLogPage() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search description, Ref No., UTR..."
-                className="pl-8 w-[260px]"
+                className="pl-8 w-full sm:w-[260px]"
                 value={searchFilter}
                 onChange={(e) =>
                   setSearchFilter(

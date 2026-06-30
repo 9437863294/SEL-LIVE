@@ -253,6 +253,7 @@ export default function SettingsPage() {
     '/settings/appearance': 'Settings.Appearance',
     '/settings/email-authorization': 'Settings.Email Authorization',
     '/settings/login-expiry': 'Settings.Login Expiry',
+    '/settings/audit-logs': 'Settings.Audit Logs',
     '/store-stock-management/settings': 'Store & Stock Management',
   };
 

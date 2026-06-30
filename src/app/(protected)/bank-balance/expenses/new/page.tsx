@@ -583,7 +583,7 @@ export default function NewPaymentPage() {
                 >
                   <SelectTrigger
                     id="bank-select"
-                    className="w-[280px]"
+                    className="w-full sm:w-[280px]"
                   >
                     <SelectValue placeholder="Select a bank account" />
                   </SelectTrigger>

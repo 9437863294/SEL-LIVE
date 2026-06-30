@@ -291,7 +291,7 @@ export default function ProjectDashboardPage() {
         <div className="flex items-center gap-2">
           <FolderOpen className="h-5 w-5 text-muted-foreground" />
           <Select value={selectedValue} onValueChange={handleProjectChange}>
-            <SelectTrigger className="w-[260px]">
+            <SelectTrigger className="w-full sm:w-[260px]">
               <SelectValue placeholder="Select Project" />
             </SelectTrigger>
             <SelectContent>
