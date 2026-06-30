@@ -13,7 +13,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { BoqItem, Project, FabricationBomItem } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { BomDialog } from '@/components/BomDialog';
+import { BomDialog } from '@/components/store-stock-management/BomDialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';

@@ -175,6 +175,9 @@ export default function AddRolePage() {
           await addDoc(collection(db, 'roles'), newRole);
           await logUserActivity({
             userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+            module: 'Settings',
             action: 'Create Role',
             details: { roleName: newRole.name }
           });

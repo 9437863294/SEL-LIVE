@@ -44,7 +44,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { GstTdsVerificationDialog } from '@/components/GstTdsVerificationDialog';
+import { GstTdsVerificationDialog } from '@/components/daily-requisition/GstTdsVerificationDialog';
 import {
   DailyMetricCard,
   DailyPageHeader,

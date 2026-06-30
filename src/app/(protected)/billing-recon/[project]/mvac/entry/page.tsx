@@ -467,6 +467,9 @@ export default function MvacEntryPage() {
 
       await logUserActivity({
         userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+        userName: (user as any).name ?? (user as any).displayName,
+        userEmail: (user as any).email,
+        module: 'Billing Recon',
         action: 'Create MVAC Entry',
         details: { project: projectSlug, mvacNo: details.mvacNo, workOrderNo: details.woNo, itemCount: items.length },
       });

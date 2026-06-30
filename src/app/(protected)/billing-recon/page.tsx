@@ -13,7 +13,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
 import { useRouter } from 'next/navigation';
-import AllProjectsDashboard from '@/components/AllProjectsDashboard';
+import AllProjectsDashboard from '@/components/billing-recon/AllProjectsDashboard';
 
 const slugify = (text: string) => {
   if (!text) return '';

@@ -41,7 +41,7 @@ import { useParams, useRouter } from 'next/navigation';
 import type { InventoryLog, EnrichedLogItem, BoqItem, Project } from '@/lib/types';
 import { format } from 'date-fns';
 import Link from 'next/link';
-import ViewTransactionDialog from '@/components/ViewTransactionDialog';
+import ViewTransactionDialog from '@/components/store-stock-management/ViewTransactionDialog';
 import { useToast } from '@/hooks/use-toast';
 import {
   AlertDialog,

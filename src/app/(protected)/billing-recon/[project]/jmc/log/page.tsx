@@ -319,6 +319,9 @@ export default function JmcLogPage() {
       );
       await logUserActivity({
         userId,
+        userName: (user as any)?.name ?? (user as any)?.displayName,
+        userEmail: (user as any)?.email,
+        module: 'Billing Recon',
         action: 'Delete JMC Entry',
         details: { project: projectSlug, jmcNo: entry.jmcNo, entryId: entry.id },
       });

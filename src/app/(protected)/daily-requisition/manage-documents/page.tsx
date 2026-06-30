@@ -13,7 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { RequisitionDocumentDialog } from '@/components/RequisitionDocumentDialog';
+import { RequisitionDocumentDialog } from '@/components/daily-requisition/RequisitionDocumentDialog';
 import { format } from 'date-fns';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/auth/AuthProvider';

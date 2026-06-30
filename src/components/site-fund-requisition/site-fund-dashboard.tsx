@@ -2,7 +2,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import AllRequisitionsTab from '@/components/AllRequisitionsTab';
+import AllRequisitionsTab from '@/components/site-fund-requisition/AllRequisitionsTab';
 
 export function SiteFundDashboard() {
   return (

@@ -16,16 +16,16 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { BoqItem, JmcEntry, Bill, MvacEntry, MvacItem, Project } from '@/lib/types';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { ScrollArea } from './ui/scroll-area';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
-import ViewJmcEntryDialog from './billing-recon/ViewJmcEntryDialog';
+import ViewJmcEntryDialog from './ViewJmcEntryDialog';
 import { Eye, Maximize, Minimize, Loader2 } from 'lucide-react';
 import { Timestamp, collection, getDocs, query } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import ViewMvacEntryDialog from './billing-recon/ViewMvacEntryDialog';
+import ViewMvacEntryDialog from './ViewMvacEntryDialog';
 
 
 /* ---------- Props ---------- */

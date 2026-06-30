@@ -338,6 +338,9 @@ export default function MvacWorkflowConfigurationPage() {
 
       await logUserActivity({
         userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+        userName: (user as any).name ?? (user as any).displayName,
+        userEmail: (user as any).email,
+        module: 'Billing Recon',
         action: 'Update MVAC Workflow',
         details: { stepCount: validation.steps.length },
       });

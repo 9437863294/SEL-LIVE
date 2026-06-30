@@ -12,7 +12,7 @@ import { Settings } from 'lucide-react';
 import type { BoqItem } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useParams } from 'next/navigation';
-import { ConversionDialog } from '@/components/ConversionDialog';
+import { ConversionDialog } from '@/components/store-stock-management/ConversionDialog';
 
 export default function ConversionsPage() {
   const { toast } = useToast();

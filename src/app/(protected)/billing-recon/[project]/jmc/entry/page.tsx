@@ -464,6 +464,9 @@ export default function JmcEntryPage() {
 
       await logUserActivity({
         userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+        userName: (user as any).name ?? (user as any).displayName,
+        userEmail: (user as any).email,
+        module: 'Billing Recon',
         action: 'Create JMC Entry',
         details: { project: projectSlug, jmcNo: details.jmcNo, workOrderNo: details.woNo, itemCount: items.length },
       });

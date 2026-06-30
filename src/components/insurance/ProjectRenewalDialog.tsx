@@ -20,9 +20,9 @@ import { doc, updateDoc, addDoc, collection, Timestamp, runTransaction } from 'f
 import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X } from 'lucide-react';
 import type { ProjectInsurancePolicy } from '@/lib/types';
 import { format, addYears, addMonths, addDays } from 'date-fns';
-import { useAuth } from './auth/AuthProvider';
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { Calendar } from './ui/calendar';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 

@@ -353,6 +353,9 @@ export default function DepartmentExpensesPage() {
       await updateDoc(expenseRef, dataToUpdate);
       await logUserActivity({
         userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: 'Expenses',
         action: 'Update Expense Request',
         details: { requestNo: editFormData.requestNo, department: department?.name || 'N/A' },
       });

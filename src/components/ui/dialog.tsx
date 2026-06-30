@@ -53,6 +53,7 @@ const DialogContent = React.forwardRef<
       <DialogOverlay />
       <DialogPrimitive.Content
         ref={ref}
+        aria-describedby={undefined}
         className={cn(
           // Centering + animations
           'fixed left-1/2 top-1/2 z-50 translate-x-[-50%] translate-y-[-50%] border bg-background shadow-lg duration-200',

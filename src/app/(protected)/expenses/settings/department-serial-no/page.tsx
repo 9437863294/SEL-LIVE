@@ -98,6 +98,9 @@ export default function DepartmentSerialNoPage() {
       await setDoc(doc(db, 'departmentSerialConfigs', deptId), configs[deptId]);
       await logUserActivity({
           userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: 'Expenses',
           action: 'Update Department Serial No. Config',
           details: { department: deptName, config: configs[deptId] }
       });

@@ -314,6 +314,9 @@ export default function MvacLogPage() {
       await deleteDoc(doc(db, 'projects', projectData.id, 'mvacEntries', entry.id!));
       await logUserActivity({
         userId,
+        userName: (user as any)?.name ?? (user as any)?.displayName,
+        userEmail: (user as any)?.email,
+        module: 'Billing Recon',
         action: 'Delete MVAC Entry',
         details: { project: projectSlug, mvacNo: entry.mvacNo, entryId: entry.id },
       });

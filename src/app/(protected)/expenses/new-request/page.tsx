@@ -213,6 +213,9 @@ function NewExpenseRequestForm() {
       await addDoc(collection(db, 'expenseRequests'), newExpenseRequest);
       await logUserActivity({
         userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: 'Expenses',
         action: 'Create Expense Request',
         details: { requestNo: newRequestNo, department: selectedDept.name, amount: data.amount },
       });

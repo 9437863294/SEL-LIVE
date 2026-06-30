@@ -23,7 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import type { TransactionSummary } from '@/app/(protected)/store-stock-management/[project]/transactions/page';
-import ViewTransactionDialog from '@/components/ViewTransactionDialog';
+import ViewTransactionDialog from '@/components/store-stock-management/ViewTransactionDialog';
 
 
 interface InventoryItem {

@@ -34,7 +34,15 @@
       "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\loan\\\\reports\\\\portfolio-overview\")",
       "Bash(sed -i \"s/px-6 py-6 sm:px-8 lg:px-10/px-4 py-5 sm:px-6/g\" \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/settings/role-management/edit/[roleId]/page.tsx\" && echo \"done\")",
       "Bash(sed -i \"s/px-4 pb-4 pt-2 space-y-3/px-3 pb-3 pt-1 space-y-2.5/g\" \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/settings/role-management/edit/[roleId]/page.tsx\" && echo \"done\")",
-      "Bash(sed -i \"s/h-\\\\[calc\\(100vh-22rem\\)\\\\]/h-[calc\\(100vh-20rem\\)]/g\" \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/settings/role-management/edit/[roleId]/page.tsx\" && echo \"done\")"
+      "Bash(sed -i \"s/h-\\\\[calc\\(100vh-22rem\\)\\\\]/h-[calc\\(100vh-20rem\\)]/g\" \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/settings/role-management/edit/[roleId]/page.tsx\" && echo \"done\")",
+      "Bash(Remove-Item -Recurse -Force \"d:/Application Dev/SEL Live/.next\" -ErrorAction SilentlyContinue)",
+      "Bash(grep -rn \"from '\\\\.\\\\./\\\\|from '\\\\.\\\\/\" \"d:/Application Dev/SEL Live/src/components/module-hub/\" \"d:/Application Dev/SEL Live/src/components/app/\" \"d:/Application Dev/SEL Live/src/components/site-fund-requisition/\" \"d:/Application Dev/SEL Live/src/components/insurance/\" \"d:/Application Dev/SEL Live/src/components/store-stock-management/\" \"d:/Application Dev/SEL Live/src/components/billing-recon/AllProjectsDashboard.tsx\" \"d:/Application Dev/SEL Live/src/components/billing-recon/BoqItemDetailsDialog.tsx\" --include=\"*.tsx\")",
+      "Bash(sed -i \"s|from './auth/AuthProvider'|from '@/components/auth/AuthProvider'|g\" module-hub/ModuleDashboard.tsx)",
+      "Bash(sed -i \"s|from './vehicle-management/hooks'|from '@/components/vehicle-management/hooks'|g\" module-hub/ModuleDashboard.tsx)",
+      "Bash(sed -i \"s|from './auth/SessionExpiryDialog'|from '@/components/auth/SessionExpiryDialog'|g\" app/AppShell.tsx)",
+      "Bash(sed -i \"s|from './auth/AuthProvider'|from '@/components/auth/AuthProvider'|g\" app/AppShell.tsx)",
+      "Bash(sed -i \"s|from './ViewRequisitionDialog'|from '@/components/site-fund-requisition/ViewRequisitionDialog'|g\" app/Header.tsx)",
+      "Bash(grep -rn \"from '\\\\.\\\\\\(\\\\/auth\\\\|\\\\/vehicle-management\\\\|\\\\/billing-recon\\\\|\\\\/ViewRequisition\\\\|\\\\/DocumentLink\\\\\\)\" \"d:/Application Dev/SEL Live/src/components/\")"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

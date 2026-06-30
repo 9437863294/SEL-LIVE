@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const ModuleDashboard = dynamic(() => import('@/components/ModuleDashboard'), {
+const ModuleDashboard = dynamic(() => import('@/components/module-hub/ModuleDashboard'), {
   ssr: false,
   loading: () => (
     <div className="p-4">

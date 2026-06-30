@@ -17,6 +17,7 @@ import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -97,6 +98,7 @@ const mapRowToState = (row: InsuranceRow): InsuranceForm => ({
 
 export default function InsuranceManagementPage() {
   const { toast } = useToast();
+  const { log } = useActivityLogger('Vehicle Management');
   const { can } = useAuthorization();
   const { options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
   const { prefill, renewingFromId } = useRenewalPrefill();
@@ -287,6 +289,12 @@ export default function InsuranceManagementPage() {
         }
       }
 
+      const vehicleNumber = vehicleMap[String(form.vehicleId || '')]?.vehicleNumber || '';
+      if (editingRow) {
+        await log('Edit Insurance', { vehicleNumber, policyNumber: form.policyNumber });
+      } else {
+        await log('Add Insurance', { vehicleNumber, policyNumber: form.policyNumber });
+      }
       toast({
         title: editingRow ? 'Updated' : 'Created',
         description: `Insurance record ${editingRow ? 'updated' : 'created'} successfully.`,
@@ -309,6 +317,7 @@ export default function InsuranceManagementPage() {
     try {
       await deleteDoc(doc(db, VEHICLE_COLLECTIONS.insurance, String(deleteRow.id)));
       if (deleteRow.vehicleId) await syncVehicleComplianceStatus(String(deleteRow.vehicleId));
+      await log('Delete Insurance', { vehicleNumber: deleteRow?.vehicleNumber });
       toast({ title: 'Deleted', description: 'Insurance record deleted.' });
       setDeleteRow(null);
       await loadRows();

@@ -19,7 +19,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import type { InventoryLog } from '@/lib/types';
-import { ScrollArea } from './ui/scroll-area';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface ItemSelectorProps {
   items: InventoryLog[];

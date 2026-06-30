@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import {
-  Home, Briefcase, Construction, Clock, Users, ShieldCheck, Hash,
+  Activity, Home, Briefcase, Construction, Clock, Users, ShieldCheck, Hash,
   Palette, MailCheck, LogIn, Package, Settings2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -169,6 +169,19 @@ const settingsItemsBase: SettingsItemConfig[] = [
       iconBg: 'bg-violet-100 dark:bg-violet-900/40',
       iconColor: 'text-violet-600 dark:text-violet-400',
       border: 'border-violet-200/60 dark:border-violet-800/30 hover:border-violet-400/60',
+    },
+  },
+  {
+    icon: Activity,
+    text: 'Audit Logs',
+    description: 'Track every action across all modules — who, what, when, and where.',
+    href: '/settings/audit-logs',
+    permission: 'View',
+    colorScheme: {
+      bg: 'from-indigo-500/8 to-purple-600/4',
+      iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
+      iconColor: 'text-indigo-600 dark:text-indigo-400',
+      border: 'border-indigo-200/60 dark:border-indigo-800/30 hover:border-indigo-400/60',
     },
   },
 ];

@@ -20,7 +20,7 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc, collection, getDocs } from 'firebase/firestore';
 import type { BoqItem, Conversion, Site } from '@/lib/types';
 import { Plus, Trash2, Loader2 } from 'lucide-react';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 interface ConversionDialogProps {
   isOpen: boolean;

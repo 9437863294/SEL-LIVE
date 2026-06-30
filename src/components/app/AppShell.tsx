@@ -2,9 +2,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Header from '@/components/Header';
-import { SessionExpiryDialog } from './auth/SessionExpiryDialog';
-import { useAuth } from './auth/AuthProvider';
+import Header from '@/components/app/Header';
+import { SessionExpiryDialog } from '@/components/auth/SessionExpiryDialog';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { usePathname } from 'next/navigation';
 
 export default function AppShell({

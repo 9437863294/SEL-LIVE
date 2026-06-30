@@ -196,6 +196,9 @@ export default function EditRolePage() {
 
             await logUserActivity({
                 userId: user.id,
+                userName: user.name,
+                userEmail: user.email,
+                module: 'Settings',
                 action: 'Update Role',
                 details: { roleId: editingRole.id, roleName: editingRole.name }
             });

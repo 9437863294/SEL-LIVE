@@ -18,8 +18,8 @@ import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import type { DailyRequisitionEntry, Attachment } from '@/lib/types';
 import { Loader2, Upload, Paperclip, Download, Eye, Trash2, File as FileIcon, X } from 'lucide-react';
-import { ScrollArea } from './ui/scroll-area';
-import { useAuth } from './auth/AuthProvider';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 interface RequisitionDocumentDialogProps {
   isOpen: boolean;

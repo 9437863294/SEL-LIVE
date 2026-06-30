@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label';
 import { format, addMonths, addYears, addQuarters, isPast, isWithinInterval, addDays } from 'date-fns';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { RenewalDialog } from '@/components/RenewalDialog';
+import { RenewalDialog } from '@/components/insurance/RenewalDialog';
 
 export default function PolicyDetailsPage() {
   const { policyId } = useParams() as { policyId: string };

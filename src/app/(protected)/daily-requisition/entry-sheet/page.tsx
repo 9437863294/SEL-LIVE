@@ -65,7 +65,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { format, parseISO, isSameDay } from 'date-fns';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import ViewDailyRequisitionDialog from '@/components/ViewDailyRequisitionDialog';
+import ViewDailyRequisitionDialog from '@/components/daily-requisition/ViewDailyRequisitionDialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -358,6 +358,9 @@ function EntrySheetPageComponent() {
 
       await logUserActivity({
         userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: 'Daily Requisition',
         action: 'Create Daily Requisition',
         details: {
           receptionNo: generatedReceptionNo,

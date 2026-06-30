@@ -20,14 +20,14 @@ import { auth, db } from '@/lib/firebase';
 import { signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { cn } from '@/lib/utils';
 import { collection, query, where, onSnapshot, getDocs, collectionGroup } from 'firebase/firestore';
 import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
-import ViewRequisitionDialog from './ViewRequisitionDialog';
+import ViewRequisitionDialog from '@/components/site-fund-requisition/ViewRequisitionDialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { SwitchUserDialog } from './auth/SwitchUserDialog';
+import { SwitchUserDialog } from '@/components/auth/SwitchUserDialog';
 
 
 function ImpersonationBanner() {

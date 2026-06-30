@@ -233,6 +233,9 @@ export default function InsuranceWorkflowConfigurationPage() {
             await setDoc(workflowRef, { steps: steps });
             await logUserActivity({
                 userId: user.id,
+                userName: user.name,
+                userEmail: user.email,
+                module: 'Insurance',
                 action: 'Update Insurance Workflow',
                 details: { stepCount: steps.length }
             });

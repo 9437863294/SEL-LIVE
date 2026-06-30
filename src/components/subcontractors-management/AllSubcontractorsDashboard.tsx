@@ -15,7 +15,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { Skeleton } from './ui/skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface SubcontractorCardProps {
   item: {

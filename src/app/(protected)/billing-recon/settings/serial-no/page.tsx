@@ -123,6 +123,9 @@ export default function SerialNoConfigPage() {
             await setDoc(doc(db, 'billingReconSerialConfigs', slug), configs[slug]);
             await logUserActivity({
                 userId: user.id,
+                userName: user.name,
+                userEmail: user.email,
+                module: 'Billing Recon',
                 action: 'Update JMC Serial No. Config',
                 details: { project: projectName, scope1, scope2, config: configs[slug] }
             });

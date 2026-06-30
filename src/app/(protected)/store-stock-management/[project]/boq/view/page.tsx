@@ -47,7 +47,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacEntry, MvacItem } from '@/lib/types';
-import BoqItemDetailsDialog from '@/components/BoqItemDetailsDialog';
+import BoqItemDetailsDialog from '@/components/billing-recon/BoqItemDetailsDialog';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';

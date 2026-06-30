@@ -289,6 +289,9 @@ export default function AddBoqItemPage() {
 
       await logUserActivity({
         userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: 'Billing Recon',
         action: 'Add BOQ Item',
         details: {
           project: projectSlug,

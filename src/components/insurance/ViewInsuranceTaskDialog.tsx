@@ -16,13 +16,13 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import type { InsuranceTask, WorkflowStep, ActionLog, ActionConfig } from '@/lib/types';
 import { format } from 'date-fns';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { ScrollArea } from './ui/scroll-area';
-import { useAuth } from './auth/AuthProvider';
-import { Textarea } from './ui/textarea';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { Textarea } from '@/components/ui/textarea';
 import { useState, useMemo } from 'react';
 import { Loader2, Upload } from 'lucide-react';
-import { Input } from './ui/input';
+import { Input } from '@/components/ui/input';
 
 interface ViewInsuranceTaskDialogProps {
   isOpen: boolean;

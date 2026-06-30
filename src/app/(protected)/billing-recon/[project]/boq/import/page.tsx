@@ -351,6 +351,9 @@ export default function ImportBoqPage() {
 
       await logUserActivity({
         userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: 'Billing Recon',
         action: 'Import BOQ',
         details: {
           project: projectSlug,

@@ -48,7 +48,7 @@ import type {
   SubAccountHead,
 } from '@/lib/types';
 import { format } from 'date-fns';
-import { useAuth } from './auth/AuthProvider';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
   Loader2,
@@ -59,23 +59,23 @@ import {
   FilePlus,
   ChevronDown,
 } from 'lucide-react';
-import { Separator } from './ui/separator';
+import { Separator } from '@/components/ui/separator';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from './ui/collapsible';
+} from '@/components/ui/collapsible';
 import { createExpenseRequest } from '@/ai';
-import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './ui/select';
-import { Badge } from './ui/badge';
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
   TooltipProvider,
@@ -83,7 +83,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
-import { ScrollArea } from './ui/scroll-area';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Table,
   TableBody,
@@ -91,7 +91,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from './ui/table';
+} from '@/components/ui/table';
 
 /* -------- Helpers -------- */
 

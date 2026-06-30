@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Button } from './ui/button';
+import { Button } from '@/components/ui/button';
 import { File as FileIcon } from 'lucide-react';
 
 const DocumentLink = ({ file }: { file: { name: string, url: string }}) => (

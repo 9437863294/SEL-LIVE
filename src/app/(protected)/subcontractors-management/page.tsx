@@ -17,7 +17,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
-import AllSubcontractorsDashboard from '@/components/AllSubcontractorsDashboard';
+import AllSubcontractorsDashboard from '@/components/subcontractors-management/AllSubcontractorsDashboard';
 
 const slugify = (text: string) => {
   if (!text) return '';

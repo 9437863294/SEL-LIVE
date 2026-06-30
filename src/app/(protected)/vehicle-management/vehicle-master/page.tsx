@@ -11,6 +11,7 @@ import {
   useVehicleTypeOptions,
 } from '@/components/vehicle-management/hooks';
 import { getVehicleComplianceRequirements, toVehicleCode, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -164,6 +165,7 @@ const requiresManualRules = (form: VehicleFormState) =>
 
 export default function VehicleMasterPage() {
   const { toast } = useToast();
+  const { log } = useActivityLogger('Vehicle Management');
   const { can } = useAuthorization();
   const { options: departmentOptions, map: departmentMap } = useDepartmentOptions();
   const { options: projectOptions, map: projectMap } = useProjectOptions();
@@ -356,6 +358,11 @@ export default function VehicleMasterPage() {
         });
       }
 
+      if (editingRow) {
+        await log('Edit Vehicle', { vehicleNumber: form.vehicleNumber, vehicleId: editingRow?.id });
+      } else {
+        await log('Add Vehicle', { vehicleNumber: form.vehicleNumber, vehicleType: form.vehicleType });
+      }
       toast({
         title: editingRow ? 'Updated' : 'Created',
         description: `Vehicle ${editingRow ? 'updated' : 'created'} successfully.`,
@@ -376,6 +383,7 @@ export default function VehicleMasterPage() {
     if (!deleteRow) return;
     try {
       await deleteDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, String(deleteRow.id)));
+      await log('Delete Vehicle', { vehicleNumber: deleteRow?.vehicleNumber, vehicleId: deleteRow?.id });
       toast({ title: 'Deleted', description: 'Vehicle deleted successfully.' });
       setDeleteRow(null);
       await loadRows();

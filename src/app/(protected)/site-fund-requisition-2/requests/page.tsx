@@ -1,7 +1,7 @@
 
 'use client';
 
-import AllRequisitionsTab from '@/components/AllRequisitionsTab2';
+import AllRequisitionsTab from '@/components/site-fund-requisition/AllRequisitionsTab2';
 
 export default function RequisitionsPage() {
     return (

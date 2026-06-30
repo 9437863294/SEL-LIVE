@@ -29,7 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, Timestamp, getDocs } from 'firebase/firestore';
 import type { PolicyHolder } from '@/lib/types';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from './ui/command';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command';
 
 const policySchema = z.object({
   insured_person: z.string().min(1, 'Insured person is required'),

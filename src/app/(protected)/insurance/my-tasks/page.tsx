@@ -24,7 +24,7 @@ import { useRouter } from 'next/navigation';
 import { syncInsuranceTasks } from '../actions';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import type { ActionConfig, ActionLog, InsuranceTask, WorkflowStep } from '@/lib/types';
-import ViewInsuranceTaskDialog from '@/components/ViewInsuranceTaskDialog';
+import ViewInsuranceTaskDialog from '@/components/insurance/ViewInsuranceTaskDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

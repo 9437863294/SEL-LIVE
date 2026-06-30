@@ -14,7 +14,7 @@ import { format, isWithinInterval, addDays, isPast } from 'date-fns';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ProjectRenewalDialog } from '@/components/ProjectRenewalDialog';
+import { ProjectRenewalDialog } from '@/components/insurance/ProjectRenewalDialog';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 

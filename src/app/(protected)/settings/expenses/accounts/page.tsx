@@ -139,7 +139,7 @@ export default function ManageAccountsPage() {
           details = { subHeadId: currentSubHead.id, newName: name, oldName: currentSubHead.name };
           break;
       }
-      await logUserActivity({ userId: user.id, action, details });
+      await logUserActivity({ userId: user.id, userName: user.name, userEmail: user.email, module: 'Settings', action, details });
       toast({ title: 'Success', description: 'Account data saved successfully.' });
       fetchData();
       setIsDialogOpen(false);
@@ -156,7 +156,7 @@ export default function ManageAccountsPage() {
       } else {
         await deleteDoc(doc(db, 'subAccountHeads', id));
       }
-      await logUserActivity({ userId: user.id, action: `Delete ${type === 'head' ? 'Account Head' : 'Sub-Account Head'}`, details: { id, name: itemName }});
+      await logUserActivity({ userId: user.id, userName: user.name, userEmail: user.email, module: 'Settings', action: `Delete ${type === 'head' ? 'Account Head' : 'Sub-Account Head'}`, details: { id, name: itemName }});
       toast({ title: 'Success', description: 'Item deleted.' });
       fetchData();
     } catch (error) {
@@ -182,7 +182,7 @@ export default function ManageAccountsPage() {
       }
       await batch.commit();
 
-      await logUserActivity({ userId: user.id, action: 'Seed Account Data', details: {} });
+      await logUserActivity({ userId: user.id, userName: user.name, userEmail: user.email, module: 'Settings', action: 'Seed Account Data', details: {} });
 
       toast({ title: 'Success', description: 'Initial account data has been seeded.' });
       fetchData();

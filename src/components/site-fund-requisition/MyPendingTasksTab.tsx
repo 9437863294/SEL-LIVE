@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import ViewRequisitionDialog from '@/components/ViewRequisitionDialog';
+import ViewRequisitionDialog from '@/components/site-fund-requisition/ViewRequisitionDialog';
 
 /* ---------------- helpers ---------------- */
 

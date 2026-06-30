@@ -24,7 +24,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Loader2, Calendar as CalendarIcon, Upload, File as FileIcon, X } from 'lucide-react';
 import type { InsurancePolicy, PolicyRenewal, Attachment } from '@/lib/types';
 import { format, addMonths, addQuarters, addYears } from 'date-fns';
-import { useAuth } from './auth/AuthProvider';
+import { useAuth } from '@/components/auth/AuthProvider';
 
 interface RenewalDialogProps {
   isOpen: boolean;

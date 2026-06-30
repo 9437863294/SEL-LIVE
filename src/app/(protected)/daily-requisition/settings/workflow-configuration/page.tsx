@@ -330,6 +330,9 @@ export default function DailyRequisitionWorkflowConfigurationPage() {
       await setDoc(workflowRef, { steps: steps });
       await logUserActivity({
         userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: 'Daily Requisition',
         action: 'Update Daily Requisition Workflow',
         details: { stepCount: steps.length },
       });

@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components/vehicle-management/generic-crud-page';
 import { useUserOptions, useVehicleOptions } from '@/components/vehicle-management/hooks';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
 import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
@@ -27,6 +28,7 @@ const columns: CrudColumnConfig[] = [
 
 export default function DriverManagementPage() {
   const { can } = useAuthorization();
+  const { log } = useActivityLogger('Vehicle Management');
   const { options: vehicleOptionsRaw, map: vehicleMap } = useVehicleOptions();
   const { options: userOptions, map: userMap, mobileToUserId } = useUserOptions();
   const canView =
@@ -226,6 +228,9 @@ export default function DriverManagementPage() {
           licenseComplianceStatus: meta.complianceStatus,
         };
       }}
+      onAfterDelete={async ({ row }) => {
+        await log('Delete Driver', { driverName: row?.driverName, driverId: row?.id });
+      }}
       onAfterSave={async ({ id, payload, previousRow }) => {
         const nextVehicleIdRaw = String(payload.assignedVehicleId || '');
         const previousVehicleIdRaw = String(previousRow?.assignedVehicleId || '');
@@ -246,6 +251,12 @@ export default function DriverManagementPage() {
             assignedDriverId: id,
             assignedDriverName: driverName,
           });
+        }
+
+        if (previousRow) {
+          await log('Edit Driver', { driverName, driverId: id });
+        } else {
+          await log('Add Driver', { driverName, driverId: id });
         }
       }}
     />

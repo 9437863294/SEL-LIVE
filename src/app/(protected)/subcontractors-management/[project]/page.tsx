@@ -24,7 +24,7 @@ import { db } from '@/lib/firebase';
 import type { LucideIcon } from 'lucide-react';
 import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import AllSubcontractorsDashboard from '@/components/AllSubcontractorsDashboard';
+import AllSubcontractorsDashboard from '@/components/subcontractors-management/AllSubcontractorsDashboard';
 
 interface SubcontractorCardProps {
   item: {

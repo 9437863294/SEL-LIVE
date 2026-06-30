@@ -4,12 +4,12 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useModules } from '@/context/ModuleContext';
 import ModuleCard from './ModuleCard';
-import { Skeleton } from './ui/skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import type { Module } from '@/lib/types';
 import { permissionModules } from '@/lib/permissions';
-import { useAuth } from './auth/AuthProvider';
-import { useCurrentDriverProfile } from './vehicle-management/hooks';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 
 const moduleIcons: Record<string, string> = {
   'Site Fund Requisition': 'Landmark',

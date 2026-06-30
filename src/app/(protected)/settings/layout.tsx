@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import {
-  Briefcase, ChevronLeft, ChevronRight, Clock, Construction, Hash,
+  Activity, Briefcase, ChevronLeft, ChevronRight, Clock, Construction, Hash,
   LogIn, MailCheck, MonitorSmartphone, Palette, Settings2,
   ShieldCheck, User as UserIcon, Users,
 } from 'lucide-react';
@@ -51,6 +51,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         { href: '/settings/user-management', icon: Users, label: 'Users', permission: can('View', 'Settings.User Management'), iconBg: 'bg-blue-100', iconColor: 'text-blue-600', activeGradient: 'from-blue-500 to-indigo-600' },
         { href: '/settings/role-management', icon: ShieldCheck, label: 'Roles', permission: can('View', 'Settings.Role Management'), iconBg: 'bg-red-100', iconColor: 'text-red-600', activeGradient: 'from-red-500 to-rose-600' },
         { href: '/settings/session-management', icon: MonitorSmartphone, label: 'Sessions', permission: true, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', activeGradient: 'from-indigo-500 to-blue-600' },
+        { href: '/settings/audit-logs', icon: Activity, label: 'Audit Logs', permission: can('View', 'Settings.User Management') || can('View', 'Settings.Role Management'), iconBg: 'bg-violet-100', iconColor: 'text-violet-600', activeGradient: 'from-violet-500 to-purple-600' },
       ],
     },
     {

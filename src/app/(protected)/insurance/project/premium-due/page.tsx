@@ -21,7 +21,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import type { ProjectInsurancePolicy } from '@/lib/types';
-import { ProjectRenewalDialog } from '@/components/ProjectRenewalDialog';
+import { ProjectRenewalDialog } from '@/components/insurance/ProjectRenewalDialog';
 import {
   AlertDialog,
   AlertDialogAction,

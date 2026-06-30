@@ -26,10 +26,10 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc, Timestamp, writeBatch } from 'firebase/firestore';
 import type { DailyRequisitionEntry, Project, Department, ExpenseRequest, Attachment } from '@/lib/types';
 import { format } from 'date-fns';
-import { useAuth } from './auth/AuthProvider';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Loader2, Printer, Paperclip, Download, Eye } from 'lucide-react';
-import { Separator } from './ui/separator';
+import { Separator } from '@/components/ui/separator';
 
 interface ViewDailyRequisitionDialogProps {
   isOpen: boolean;

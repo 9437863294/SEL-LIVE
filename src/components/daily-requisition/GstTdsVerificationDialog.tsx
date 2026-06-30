@@ -20,9 +20,9 @@ import { db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import type { DailyRequisitionEntry } from '@/lib/types';
-import { RadioGroup, RadioGroupItem } from './ui/radio-group';
-import { Separator } from './ui/separator';
-import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface GstTdsVerificationDialogProps {
   isOpen: boolean;
