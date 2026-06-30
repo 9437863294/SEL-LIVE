@@ -173,8 +173,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 <span className="text-xs font-medium">Menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72 p-0 bg-background/98 backdrop-blur-xl">
-              <SheetHeader className="border-b border-border/40 px-4 py-3">
+            <SheetContent side="left" className="w-72 p-0 bg-background/98 backdrop-blur-xl flex flex-col">
+              <SheetHeader className="shrink-0 border-b border-border/40 px-4 py-3">
                 <div className="flex items-center gap-2">
                   <div className="rounded-lg bg-primary/10 p-1.5">
                     <Settings2 className="h-4 w-4 text-primary" />
@@ -183,7 +183,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                 </div>
                 <SheetDescription className="sr-only">Settings navigation menu</SheetDescription>
               </SheetHeader>
-              <div className="overflow-y-auto px-3 py-3 space-y-4">
+              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
                 {navGroups.map(group => {
                   const visible = group.items.filter(i => i.permission);
                   if (!visible.length) return null;

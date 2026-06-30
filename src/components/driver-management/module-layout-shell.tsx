@@ -173,8 +173,8 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
                   <Menu className="h-4 w-4" /> Menu
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[88vw] max-w-[320px] border-r border-white/70 bg-slate-50/95 p-0 backdrop-blur-xl">
-                <SheetHeader className="border-b border-white/80 px-4 py-4 text-left">
+              <SheetContent side="left" className="w-[88vw] max-w-[320px] border-r border-white/70 bg-slate-50/95 p-0 backdrop-blur-xl flex flex-col">
+                <SheetHeader className="shrink-0 border-b border-white/80 px-4 py-4 text-left">
                   <div className="flex items-center gap-2.5">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600">
                       <Truck className="h-4 w-4 text-white" />
@@ -185,7 +185,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
                     </div>
                   </div>
                 </SheetHeader>
-                <div className="overflow-y-auto p-3 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
+                <div className="flex-1 overflow-y-auto p-3 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
               </SheetContent>
             </Sheet>
           </CardContent>
