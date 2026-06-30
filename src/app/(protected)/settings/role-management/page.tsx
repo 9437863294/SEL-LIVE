@@ -178,7 +178,67 @@ export default function ManageRolePage() {
           </div>
         </div>
 
-        <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+        {/* Mobile card view — hidden on md+ */}
+        <div className="space-y-3 md:hidden">
+          {isLoading ? (
+            Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-36 w-full rounded-2xl" />)
+          ) : roles.length === 0 ? (
+            <div className="rounded-2xl border border-white/70 bg-white/70 px-4 py-10 text-center text-sm text-muted-foreground backdrop-blur">
+              No roles found.
+            </div>
+          ) : (
+            roles.map(role => (
+              <div key={role.id} className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-sm backdrop-blur space-y-3 active:scale-[0.99] transition-transform">
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-slate-900">{role.name}</h3>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.keys(permissionModules).map(moduleName => {
+                    const totalPerms = getTotalPermissionsForModule(moduleName);
+                    if (totalPerms === 0) return null;
+                    const grantedPerms = getGrantedPermissionsForModule(role.permissions, moduleName);
+                    if (grantedPerms === 0) return null;
+                    const percentage = Math.round((grantedPerms / totalPerms) * 100);
+                    return (
+                      <Badge key={moduleName} variant="outline"
+                        className={percentage === 100
+                          ? 'border-emerald-200/80 bg-emerald-50 text-emerald-700 text-[10px]'
+                          : 'border-slate-200/80 bg-white/70 text-slate-700 text-[10px]'}>
+                        {moduleName}: {percentage}%
+                      </Badge>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-2 border-t border-slate-100 pt-3">
+                  <Link href={`/settings/role-management/edit/${role.id}`} className="flex-1">
+                    <Button variant="outline" size="sm" disabled={!canEdit} className="w-full bg-white/70 border-white/70 h-10">
+                      <Edit className="mr-2 h-4 w-4" /> Edit
+                    </Button>
+                  </Link>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" size="sm" disabled={!canDelete} className="flex-1 h-10">
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete &quot;{role.name}&quot;?</AlertDialogTitle>
+                        <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => handleDeleteRole(role.id)}>Delete</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <Card className="hidden md:block overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <CardContent className="p-0">
             <ScrollArea className="h-[calc(100vh-18.5rem)]" showHorizontalScrollbar>
               <Table className="min-w-[980px]">

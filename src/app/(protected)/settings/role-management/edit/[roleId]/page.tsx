@@ -279,7 +279,7 @@ export default function EditRolePage() {
     }
 
     return (
-        <div className="relative overflow-hidden px-4 py-3 sm:px-5">
+        <div className="relative overflow-hidden px-4 py-5 sm:px-6 pb-20 lg:pb-0">
           <AuroraBackdrop />
           <div className="w-full">
             {/* ── Header ── */}
@@ -341,7 +341,7 @@ export default function EditRolePage() {
             </Card>
 
             {/* ── Permissions ── */}
-            <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/80 shadow-[0_8px_30px_-10px_rgba(2,6,23,0.25)] backdrop-blur">
+            <Card id="permissions-card" className="overflow-hidden rounded-2xl border border-white/70 bg-white/80 shadow-[0_8px_30px_-10px_rgba(2,6,23,0.25)] backdrop-blur">
               <CardHeader className="border-b border-slate-100 pb-4">
                 <CardTitleShad className="text-base">Module Permissions</CardTitleShad>
                 <CardDescriptionShad>Select the actions this role can perform for each module.</CardDescriptionShad>
@@ -562,6 +562,13 @@ export default function EditRolePage() {
                 </ScrollArea>
               </CardContent>
             </Card>
+
+            {/* Mobile sticky save bar */}
+            <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-background/95 backdrop-blur-sm p-3 lg:hidden">
+              <Button onClick={handleUpdateRole} disabled={isSaving || !canEdit} className="w-full rounded-full shadow-md">
+                {isSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving…</> : <><Save className="mr-2 h-4 w-4" />Save Changes</>}
+              </Button>
+            </div>
           </div>
         </div>
     );

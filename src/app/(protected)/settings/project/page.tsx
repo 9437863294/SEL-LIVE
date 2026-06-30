@@ -320,6 +320,41 @@ export default function ManageProjectPage() {
         </Dialog>
       </div>
 
+      {/* ── Mobile card list (visible below md) ── */}
+      <div className="md:hidden space-y-3">
+        {projects.length === 0 && !isLoading && (
+          <p className="text-center text-sm text-muted-foreground py-8">No projects found.</p>
+        )}
+        {isLoading
+          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-36 w-full rounded-xl" />)
+          : projects.map((proj) => (
+              <Card key={proj.id} className="overflow-hidden border-border/60">
+                <div className="h-0.5 w-full bg-gradient-to-r from-amber-400 to-yellow-400" />
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-sm">{proj.projectName}</span>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      proj.status === 'Active'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+                        : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {proj.status}
+                    </span>
+                  </div>
+                  {proj.siteCode && <p className="text-xs text-muted-foreground">Site Code: {proj.siteCode}</p>}
+                  {proj.projectSite && <p className="text-xs text-muted-foreground">Site: {proj.projectSite}</p>}
+                  {proj.location && <p className="text-xs text-muted-foreground">Location: {proj.location}</p>}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <Button variant="outline" className="h-10 rounded-lg text-sm" onClick={() => openEditDialog(proj)} disabled={!canEdit}>Edit</Button>
+                    <Button variant="destructive" className="h-10 rounded-lg text-sm" onClick={() => handleDeleteProject(proj.id)} disabled={!canDelete}>Delete</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+      </div>
+
+      {/* ── Desktop table (hidden below md) ── */}
+      <div className="hidden md:block">
       <Card>
         <CardContent className="p-0">
           <ScrollArea className="h-[calc(100vh-15rem)]">
@@ -384,6 +419,7 @@ export default function ManageProjectPage() {
           </ScrollArea>
         </CardContent>
       </Card>
+      </div>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-3xl">

@@ -130,41 +130,64 @@ export default function UserLogsPage() {
                     <CardTitle>Activity Logs</CardTitle>
                     <CardDescription>A record of the user's activities within the system.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-[50px]"></TableHead>
-                                <TableHead>Action</TableHead>
-                                <TableHead>Details</TableHead>
-                                <TableHead>Timestamp</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {isLoading ? (
-                                Array.from({ length: 5 }).map((_, i) => (
-                                    <TableRow key={i}>
-                                        <TableCell colSpan={4}><Skeleton className="h-6" /></TableCell>
-                                    </TableRow>
-                                ))
-                            ) : logs.length > 0 ? (
-                                logs.map(log => (
-                                    <TableRow key={log.id}>
-                                        <TableCell>{getIcon(log.action)}</TableCell>
-                                        <TableCell className="font-medium">{log.action}</TableCell>
-                                        <TableCell>{renderDetails(log.details)}</TableCell>
-                                        <TableCell>{format(log.timestamp.toDate(), 'PPpp')}</TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell colSpan={4} className="h-24 text-center">
-                                        No activity logs found for this user.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
+                <CardContent className="p-0 sm:p-6">
+                    {isLoading ? (
+                        <div className="space-y-2 p-4">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                                <Skeleton key={i} className="h-10 w-full rounded-lg" />
+                            ))}
+                        </div>
+                    ) : logs.length === 0 ? (
+                        <div className="py-16 text-center text-sm text-muted-foreground px-4">
+                            No activity logs found for this user.
+                        </div>
+                    ) : (
+                        <>
+                            {/* Mobile card list */}
+                            <div className="space-y-2 sm:hidden p-3">
+                                {logs.map(log => (
+                                    <div key={log.id} className="rounded-xl border bg-white/80 p-3 space-y-1.5 text-xs">
+                                        <div className="flex items-center gap-2">
+                                            {getIcon(log.action)}
+                                            <span className="font-semibold text-slate-800">{log.action}</span>
+                                        </div>
+                                        <p className="text-muted-foreground">
+                                            {format(log.timestamp.toDate(), 'PPpp')}
+                                        </p>
+                                        <p className="text-muted-foreground leading-relaxed">
+                                            {Object.entries(log.details).length === 0
+                                                ? 'N/A'
+                                                : Object.entries(log.details).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Desktop table */}
+                            <div className="hidden sm:block">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead className="w-[50px]"></TableHead>
+                                            <TableHead>Action</TableHead>
+                                            <TableHead>Details</TableHead>
+                                            <TableHead>Timestamp</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {logs.map(log => (
+                                            <TableRow key={log.id}>
+                                                <TableCell>{getIcon(log.action)}</TableCell>
+                                                <TableCell className="font-medium">{log.action}</TableCell>
+                                                <TableCell>{renderDetails(log.details)}</TableCell>
+                                                <TableCell>{format(log.timestamp.toDate(), 'PPpp')}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </>
+                    )}
                 </CardContent>
             </Card>
         </div>

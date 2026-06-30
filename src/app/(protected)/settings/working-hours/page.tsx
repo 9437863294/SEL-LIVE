@@ -204,16 +204,18 @@ export default function WorkingHoursPage() {
                Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)
             ) : (
               daysOfWeek.map(day => (
-                <div key={day} className="flex items-center justify-between">
-                  <Label htmlFor={`switch-${day}`} className="w-24 font-medium">{day}</Label>
-                  <div className="flex items-center gap-4">
-                    <Switch
-                      id={`switch-${day}`}
-                      checked={workingHours[day]?.isWorkDay}
-                      onCheckedChange={(checked) => handleWorkingHoursChange(day, 'isWorkDay', checked)}
-                      disabled={!canEdit}
-                    />
-                    <span className="text-sm text-muted-foreground">{workingHours[day]?.isWorkDay ? 'Work' : 'Off'}</span>
+                <div key={day} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="flex items-center justify-between sm:justify-start gap-4">
+                    <Label htmlFor={`switch-${day}`} className="w-24 font-medium">{day}</Label>
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        id={`switch-${day}`}
+                        checked={workingHours[day]?.isWorkDay}
+                        onCheckedChange={(checked) => handleWorkingHoursChange(day, 'isWorkDay', checked)}
+                        disabled={!canEdit}
+                      />
+                      <span className="text-sm text-muted-foreground w-8">{workingHours[day]?.isWorkDay ? 'Work' : 'Off'}</span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Input
@@ -221,14 +223,14 @@ export default function WorkingHoursPage() {
                       value={workingHours[day]?.startTime || '00:00'}
                       onChange={(e) => handleWorkingHoursChange(day, 'startTime', e.target.value)}
                       disabled={!workingHours[day]?.isWorkDay || !canEdit}
-                      className="w-32"
+                      className="w-full sm:w-32"
                     />
                     <Input
                       type="time"
                       value={workingHours[day]?.endTime || '00:00'}
                       onChange={(e) => handleWorkingHoursChange(day, 'endTime', e.target.value)}
                       disabled={!workingHours[day]?.isWorkDay || !canEdit}
-                      className="w-32"
+                      className="w-full sm:w-32"
                     />
                   </div>
                 </div>
@@ -290,7 +292,7 @@ export default function WorkingHoursPage() {
                   </div>
               </div>
             </CollapsibleContent>
-            <CardContent className="p-0">
+            <CardContent className="p-0 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>

@@ -115,10 +115,12 @@ export default function ProfilePage() {
           <Button
             onClick={handleSave}
             disabled={isSaving}
-            className="rounded-full shadow-md shadow-primary/20"
+            size="sm"
+            className="rounded-full shadow-md shadow-primary/20 shrink-0"
           >
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Changes
+            <span className="hidden xs:inline">Save Changes</span>
+            <span className="xs:hidden">Save</span>
           </Button>
         </div>
 

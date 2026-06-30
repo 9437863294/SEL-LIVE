@@ -320,6 +320,41 @@ export default function ManageDepartmentPage() {
         </Dialog>
       </div>
 
+      {/* ── Mobile card list (visible below md) ── */}
+      <div className="md:hidden space-y-3">
+        {departments.length === 0 && !isLoading && (
+          <p className="text-center text-sm text-muted-foreground py-8">No departments found. Add your first department.</p>
+        )}
+        {isLoading
+          ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl" />)
+          : departments.map((dept) => (
+              <Card key={dept.id} className="overflow-hidden border-border/60">
+                <div className="h-0.5 w-full bg-gradient-to-r from-sky-400 to-blue-400" />
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-sm">{dept.name}</span>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      dept.status === 'Active'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400'
+                        : 'bg-muted text-muted-foreground'
+                    }`}>
+                      {dept.status}
+                    </span>
+                  </div>
+                  {dept.head && dept.head !== 'N/A' && (
+                    <p className="text-xs text-muted-foreground">Head: {dept.head}</p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" className="h-10 rounded-lg text-sm" onClick={() => openEditDialog(dept)} disabled={!canEdit}>Edit</Button>
+                    <Button variant="destructive" className="h-10 rounded-lg text-sm" onClick={() => handleDeleteDepartment(dept.id)} disabled={!canDelete}>Delete</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+      </div>
+
+      {/* ── Desktop table (hidden below md) ── */}
+      <div className="hidden md:block">
       <Card className="overflow-hidden border-border/60">
         <div className="h-0.5 w-full bg-gradient-to-r from-sky-400 to-blue-400" />
         <CardContent className="p-0">
@@ -376,6 +411,7 @@ export default function ManageDepartmentPage() {
           </Table>
         </CardContent>
       </Card>
+      </div>
 
       {/* Edit Department Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

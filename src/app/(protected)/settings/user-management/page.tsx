@@ -423,7 +423,51 @@ export default function ManageUserPage() {
         </CardContent>
       </Card>
 
-      <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
+      {/* Mobile card list — hidden on md and above */}
+      <div className="md:hidden space-y-3 mb-4">
+        {displayedUsers.length === 0 ? (
+          <p className="text-center text-sm text-slate-600 py-8">No users found.</p>
+        ) : (
+          displayedUsers.map((user) => (
+            <div key={user.id} className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-sm backdrop-blur space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                  {user.name?.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase() || '?'}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm text-slate-900 truncate">{user.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {user.role && <Badge variant="outline" className="text-xs">{user.role}</Badge>}
+                <Badge
+                  variant={user.status === 'Active' ? 'default' : 'outline'}
+                  className={user.status === 'Active' ? 'bg-emerald-500 text-white text-xs border-0' : 'text-xs'}
+                >
+                  {user.status || 'Active'}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+                <Link href={`/settings/user-management/${user.id}/logs`}>
+                  <Button variant="outline" size="sm" className="w-full h-9 bg-white/70 text-xs">Logs</Button>
+                </Link>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!canEdit}
+                  onClick={() => openEditDialog(user)}
+                  className="h-9 bg-white/70 text-xs"
+                >
+                  Edit
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <Card className="hidden md:block overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
         <CardContent className="p-0">
           <ScrollArea className="h-[calc(100vh-22rem)]" showHorizontalScrollbar>
             <Table className="min-w-[980px]">

@@ -329,57 +329,75 @@ export default function AuditLogsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-auto h-[calc(100vh-340px)]">
-              <table className="w-full caption-bottom text-sm">
-                <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
-                  <TableRow>
-                    <TableHead className="w-[160px]">Timestamp</TableHead>
-                    <TableHead className="w-[160px]">User</TableHead>
-                    <TableHead className="w-[140px]">Module</TableHead>
-                    <TableHead className="w-[160px]">Action</TableHead>
-                    <TableHead>Details</TableHead>
-                    <TableHead className="w-[110px]">IP Address</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((log) => (
-                    <TableRow key={log.id} className="hover:bg-muted/30 transition-colors align-top">
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap py-2.5">
-                        {formatTimestamp(log.timestamp)}
-                      </TableCell>
-                      <TableCell className="py-2.5">
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-medium text-slate-800 leading-tight">
-                            {log.userName ?? log.userId?.slice(0, 8) ?? '—'}
-                          </p>
-                          {log.userEmail && (
-                            <p className="text-[11px] text-muted-foreground truncate max-w-[140px]">{log.userEmail}</p>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-2.5">
-                        <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${moduleBadgeClass(log.module)}`}>
-                          {log.module || '—'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="py-2.5">
-                        <span className="text-xs font-medium text-slate-700">{log.action}</span>
-                      </TableCell>
-                      <TableCell className="py-2.5 max-w-[320px]">
-                        <p className="text-[11px] text-muted-foreground leading-relaxed break-words">
-                          {formatDetails(log.details)}
-                        </p>
-                      </TableCell>
-                      <TableCell className="py-2.5">
-                        <span className="text-[11px] font-mono text-muted-foreground">
-                          {log.ipAddress ?? '—'}
-                        </span>
-                      </TableCell>
+            <>
+              {/* Mobile log list */}
+              <div className="space-y-2 sm:hidden p-3">
+                {filtered.map(log => (
+                  <div key={log.id} className="rounded-xl border bg-white/80 p-3 space-y-1.5 text-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-semibold text-slate-800">{log.action}</span>
+                      <Badge variant="outline" className={`text-[10px] shrink-0 ${moduleBadgeClass(log.module)}`}>{log.module || '—'}</Badge>
+                    </div>
+                    <p className="text-muted-foreground">{log.userName ?? log.userId?.slice(0, 8) ?? '—'} · {formatTimestamp(log.timestamp)}</p>
+                    {log.ipAddress && <p className="font-mono text-muted-foreground">{log.ipAddress}</p>}
+                    <p className="text-muted-foreground leading-relaxed">{formatDetails(log.details)}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-auto h-[calc(100vh-340px)]">
+                <table className="w-full caption-bottom text-sm">
+                  <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+                    <TableRow>
+                      <TableHead className="w-[160px]">Timestamp</TableHead>
+                      <TableHead className="w-[160px]">User</TableHead>
+                      <TableHead className="w-[140px]">Module</TableHead>
+                      <TableHead className="w-[160px]">Action</TableHead>
+                      <TableHead>Details</TableHead>
+                      <TableHead className="w-[110px]">IP Address</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((log) => (
+                      <TableRow key={log.id} className="hover:bg-muted/30 transition-colors align-top">
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap py-2.5">
+                          {formatTimestamp(log.timestamp)}
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-medium text-slate-800 leading-tight">
+                              {log.userName ?? log.userId?.slice(0, 8) ?? '—'}
+                            </p>
+                            {log.userEmail && (
+                              <p className="text-[11px] text-muted-foreground truncate max-w-[140px]">{log.userEmail}</p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <Badge variant="outline" className={`text-[11px] px-1.5 py-0 ${moduleBadgeClass(log.module)}`}>
+                            {log.module || '—'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <span className="text-xs font-medium text-slate-700">{log.action}</span>
+                        </TableCell>
+                        <TableCell className="py-2.5 max-w-[320px]">
+                          <p className="text-[11px] text-muted-foreground leading-relaxed break-words">
+                            {formatDetails(log.details)}
+                          </p>
+                        </TableCell>
+                        <TableCell className="py-2.5">
+                          <span className="text-[11px] font-mono text-muted-foreground">
+                            {log.ipAddress ?? '—'}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </table>
+              </div>
+            </>
           )}
 
           {/* Load more */}

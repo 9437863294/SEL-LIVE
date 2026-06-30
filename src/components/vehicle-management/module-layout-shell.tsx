@@ -143,24 +143,16 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
       {/* Mobile header */}
       <div className="mb-3 lg:hidden">
         <Card className="vm-panel-strong">
-          <CardContent className="flex items-center justify-between px-3 py-2.5">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
-                <Truck className="h-4.5 w-4.5 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold tracking-tight leading-tight">Vehicle Management</p>
-                <p className="text-[11px] text-muted-foreground leading-tight">Command Center</p>
-              </div>
-            </div>
+          <CardContent className="flex items-center gap-3 px-3 py-2.5">
+            {/* Menu button — left side */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
-                <Button variant="outline" className="bg-white/90 gap-2 h-10 px-3 text-sm font-medium">
+                <Button variant="outline" className="bg-white/90 gap-2 h-10 px-3 text-sm font-medium shrink-0">
                   <Menu className="h-4 w-4" /> Menu
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[88vw] max-w-[300px] border-r border-white/70 bg-slate-50/98 p-0 backdrop-blur-xl">
-                <SheetHeader className="border-b border-slate-200/60 px-4 py-3 text-left">
+              <SheetContent side="left" className="w-[88vw] max-w-[300px] border-r border-white/70 bg-slate-50/98 p-0 backdrop-blur-xl flex flex-col">
+                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
                   <div className="flex items-center gap-2.5">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow">
                       <Truck className="h-4 w-4 text-white" />
@@ -171,9 +163,23 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
                     </div>
                   </div>
                 </SheetHeader>
-                <div className="overflow-y-auto p-2 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
+                {/* Scrollable nav list — flex-1 + overflow-y-auto makes it scroll within the sheet */}
+                <div className="flex-1 overflow-y-auto p-2 pb-8">
+                  {navigationLinks(() => setMobileMenuOpen(false))}
+                </div>
               </SheetContent>
             </Sheet>
+
+            {/* Logo + title — right of Menu button */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
+                <Truck className="h-4 w-4 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold tracking-tight leading-tight truncate">Vehicle Management</p>
+                <p className="text-[11px] text-muted-foreground leading-tight">Command Center</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

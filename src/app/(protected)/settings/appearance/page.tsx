@@ -102,12 +102,12 @@ export default function AppearancePage() {
               <p className="text-xs text-muted-foreground">Personalize your experience</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Link href="/settings">
               <Button variant="outline" className="rounded-full" size="sm">Cancel</Button>
             </Link>
             <Button onClick={handleSave} disabled={isSaving} className="rounded-full shadow-md shadow-primary/20" size="sm">
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? 'Saving…' : 'Save'}
             </Button>
           </div>
         </div>

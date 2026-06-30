@@ -5,9 +5,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   Activity, Briefcase, ChevronLeft, ChevronRight, Clock, Construction, Hash,
-  LogIn, MailCheck, MonitorSmartphone, Palette, Settings2,
+  LogIn, MailCheck, Menu, MonitorSmartphone, Palette, Settings2,
   ShieldCheck, User as UserIcon, Users,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -27,6 +29,7 @@ type NavGroup = { label: string; items: NavItem[] };
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { can } = useAuthorization();
   const pathname = usePathname();
 
@@ -155,6 +158,75 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
       </aside>
 
       <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'lg:ml-56' : 'lg:ml-14')}>
+        {/* Mobile navigation bar — only on screens below lg */}
+        <div className="lg:hidden flex items-center justify-between border-b border-border/40 bg-background/95 backdrop-blur-sm px-4 py-2.5 sticky top-16 z-30">
+          <div className="flex items-center gap-2">
+            <div className="rounded-md bg-primary/10 p-1.5">
+              <Settings2 className="h-4 w-4 text-primary" />
+            </div>
+            <span className="text-sm font-semibold text-foreground/80">Settings</span>
+          </div>
+          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 h-8 px-2.5">
+                <Menu className="h-4 w-4" />
+                <span className="text-xs font-medium">Menu</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-72 p-0 bg-background/98 backdrop-blur-xl">
+              <SheetHeader className="border-b border-border/40 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <div className="rounded-lg bg-primary/10 p-1.5">
+                    <Settings2 className="h-4 w-4 text-primary" />
+                  </div>
+                  <SheetTitle className="text-sm font-semibold">Settings</SheetTitle>
+                </div>
+                <SheetDescription className="sr-only">Settings navigation menu</SheetDescription>
+              </SheetHeader>
+              <div className="overflow-y-auto px-3 py-3 space-y-4">
+                {navGroups.map(group => {
+                  const visible = group.items.filter(i => i.permission);
+                  if (!visible.length) return null;
+                  return (
+                    <div key={group.label}>
+                      <p className="mb-1.5 px-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">{group.label}</p>
+                      <nav className="flex flex-col gap-0.5">
+                        {visible.map(item => {
+                          const isActive = active(item.href);
+                          return (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              onClick={() => setMobileNavOpen(false)}
+                            >
+                              <div className={cn(
+                                'flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-200',
+                                isActive
+                                  ? cn('bg-gradient-to-r text-white shadow-sm', item.activeGradient)
+                                  : 'hover:bg-muted/40',
+                              )}>
+                                <div className={cn(
+                                  'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+                                  isActive ? 'bg-white/25' : item.iconBg,
+                                )}>
+                                  <item.icon className={cn('h-3.5 w-3.5', isActive ? 'text-white' : item.iconColor)} />
+                                </div>
+                                <span className={cn('text-sm', isActive ? 'font-semibold' : 'font-medium text-foreground/80')}>
+                                  {item.label}
+                                </span>
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </nav>
+                    </div>
+                  );
+                })}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+
         <main className="flex-grow">{children}</main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>
