@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -372,12 +371,14 @@ export default function TripManagementPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           {filteredTrips.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No trips found for selected filter.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-white/70 bg-white/85">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50/80">
+              <div className="rounded-xl border border-white/70 bg-white/85 px-4 py-10 text-center text-muted-foreground">
+                No trips found.
+              </div>
+            ) : (
+            <div className="overflow-auto rounded-xl border border-white/70 bg-white/85 h-[calc(100vh-230px)]">
+              <table className="w-full caption-bottom text-sm">
+                <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                  <TableRow>
                     <TableHead>Trip ID</TableHead>
                     <TableHead>Vehicle</TableHead>
                     <TableHead>Driver</TableHead>
@@ -461,9 +462,9 @@ export default function TripManagementPage() {
                     );
                   })}
                 </TableBody>
-              </Table>
+              </table>
             </div>
-          )}
+            )}
         </CardContent>
       </Card>
     </div>

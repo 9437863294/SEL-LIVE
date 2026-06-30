@@ -319,3 +319,28 @@
     animation: vm-reveal-up 0.4s ease-out both;
   }
 }
+
+/* ─── Mobile: compact vm-panel card padding ──────────────────────── */
+@media (max-width: 640px) {
+  /* Reduce ShadCN default CardHeader/CardContent p-6 inside vm-panel */
+  .vm-panel [class~="p-6"],
+  .vm-panel-strong [class~="p-6"] {
+    padding: 0.875rem;
+  }
+  .vm-panel [class~="px-6"],
+  .vm-panel-strong [class~="px-6"] {
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+  }
+  .vm-panel [class~="py-6"],
+  .vm-panel-strong [class~="py-6"] {
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+  }
+  /* Smaller section heading on mobile */
+  .vm-panel [class~="text-2xl"],
+  .vm-panel-strong [class~="text-2xl"] {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+}

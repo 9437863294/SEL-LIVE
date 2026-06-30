@@ -27,7 +27,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -336,10 +335,15 @@ export default function PucManagementPage() {
             onChange={(event) => setQuery(event.target.value)}
             className="max-w-xs border-slate-200 bg-white focus-visible:ring-emerald-400/40"
           />
-          <div className="overflow-x-auto rounded-lg border border-white/70 bg-white/80">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50/80">
+          {!isLoading && filteredRows.length === 0 ? (
+            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+              No records found.
+            </div>
+          ) : (
+          <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
+            <table className="w-full caption-bottom text-sm">
+              <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                <TableRow>
                   <TableHead>Vehicle Number</TableHead>
                   <TableHead>Certificate Number</TableHead>
                   <TableHead>Testing Center</TableHead>
@@ -359,12 +363,6 @@ export default function PucManagementPage() {
                       </TableCell>
                     </TableRow>
                   ))
-                ) : filteredRows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-20 text-center text-muted-foreground">
-                      No PUC records found.
-                    </TableCell>
-                  </TableRow>
                 ) : (
                   filteredRows.map((row) => (
                     <TableRow key={String(row.id)} className="hover:bg-emerald-50/70">
@@ -392,8 +390,9 @@ export default function PucManagementPage() {
                   ))
                 )}
               </TableBody>
-            </Table>
+            </table>
           </div>
+          )}
         </CardContent>
       </Card>
 

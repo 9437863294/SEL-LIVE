@@ -279,23 +279,23 @@ export default function VehicleManagementOverviewPage() {
         <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-sky-500/5 to-blue-500/10 animate-bb-gradient" />
         <div className="electric-scan-line top-8" />
         <CardHeader className="relative">
-          <CardTitle className="text-2xl tracking-tight">Vehicle Management</CardTitle>
+          <CardTitle className="text-xl sm:text-2xl tracking-tight">Vehicle Management</CardTitle>
           <CardDescription>
             Separate pages with sidebar navigation, expiry intelligence, and a modern command-center view.
           </CardDescription>
         </CardHeader>
-        <CardContent className="relative grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-xl border border-cyan-100/70 bg-white/80 p-4 shadow-sm">
+        <CardContent className="relative grid grid-cols-2 gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-cyan-100/70 bg-white/80 p-3 sm:p-4 shadow-sm">
             <p className="text-xs text-muted-foreground">Visible Modules</p>
-            <p className="mt-1 text-2xl font-semibold">{visibleCards.length}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-semibold">{visibleCards.length}</p>
           </div>
-          <div className="rounded-xl border border-cyan-100/70 bg-white/80 p-4 shadow-sm">
+          <div className="rounded-xl border border-cyan-100/70 bg-white/80 p-3 sm:p-4 shadow-sm">
             <p className="text-xs text-muted-foreground">Total Records</p>
-            <p className="mt-1 text-2xl font-semibold">{isLoading ? '...' : totalVisibleRecords}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-semibold">{isLoading ? '...' : totalVisibleRecords}</p>
           </div>
-          <div className="rounded-xl border border-cyan-100/70 bg-white/80 p-4 shadow-sm">
+          <div className="col-span-2 rounded-xl border border-cyan-100/70 bg-white/80 p-3 sm:p-4 shadow-sm md:col-span-1">
             <p className="text-xs text-muted-foreground">Compliance Alerts</p>
-            <p className="mt-1 text-2xl font-semibold">{isLoading ? '...' : totalAlerts}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-semibold">{isLoading ? '...' : totalAlerts}</p>
             <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
               <Badge variant="destructive" className="shadow-sm">
                 Expired: {alertSummary.expired}
@@ -320,7 +320,7 @@ export default function VehicleManagementOverviewPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
         {visibleCards.map((item, idx) => {
           const Icon = item.icon;
           return (
@@ -328,23 +328,23 @@ export default function VehicleManagementOverviewPage() {
               <Card
                 className={cn(
                   'group relative h-full overflow-hidden vm-panel transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_24px_50px_-32px_rgba(14,116,205,0.55)]',
-                  'vm-reveal cursor-pointer'
+                  'vm-reveal cursor-pointer active:scale-[0.98]'
                 )}
                 style={{ animationDelay: `${Math.min(idx * 45, 240)}ms` }}
               >
                 <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-br opacity-80', item.gradient)} />
-                <CardHeader className="relative">
-                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 shadow-sm ring-1 ring-cyan-100">
-                    <Icon className="h-5 w-5 text-cyan-700 transition-transform duration-300 group-hover:scale-110" />
+                <CardHeader className="relative p-3 sm:p-6">
+                  <div className="mb-2 sm:mb-3 flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-white/80 shadow-sm ring-1 ring-cyan-100">
+                    <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-700 transition-transform duration-300 group-hover:scale-110" />
                   </div>
-                  <CardTitle className="text-lg">{item.label}</CardTitle>
-                  <CardDescription>{item.description}</CardDescription>
+                  <CardTitle className="text-sm sm:text-lg leading-tight">{item.label}</CardTitle>
+                  <CardDescription className="hidden sm:block">{item.description}</CardDescription>
                 </CardHeader>
-                <CardContent className="relative">
+                <CardContent className="relative px-3 pb-3 sm:px-6 sm:pb-6">
                   {isLoading ? (
-                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-4 w-14" />
                   ) : (
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-xs sm:text-sm text-muted-foreground">
                       {counts[item.collection] ?? 0} records
                     </span>
                   )}
@@ -377,46 +377,46 @@ export default function VehicleManagementOverviewPage() {
       )}
 
       {/* Quick-access banner row */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Link href="/vehicle-management/renewals" className="block" aria-label="Open Renewals Hub">
-          <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(239,68,68,0.45)]">
+          <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(239,68,68,0.45)] active:scale-[0.98]">
             <div className="h-1 w-full bg-gradient-to-r from-rose-500 via-orange-400 to-amber-500" />
-            <CardHeader className="flex flex-row items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 shadow-sm ring-1 ring-rose-100">
-                <RefreshCw className="h-5 w-5 text-rose-600" />
+            <CardHeader className="flex flex-row items-center gap-2.5 p-3 sm:p-6">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 shadow-sm ring-1 ring-rose-100">
+                <RefreshCw className="h-4 w-4 sm:h-5 sm:w-5 text-rose-600" />
               </div>
               <div>
-                <CardTitle className="text-lg">Renewals Hub</CardTitle>
-                <CardDescription>All expired &amp; due-soon compliance items in one place. Take renewal action instantly.</CardDescription>
+                <CardTitle className="text-base sm:text-lg">Renewals Hub</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Expired &amp; due-soon compliance items. Take action instantly.</CardDescription>
               </div>
             </CardHeader>
           </Card>
         </Link>
         <Link href="/vehicle-management/renewals/history" className="block" aria-label="Open Renewal History">
-          <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(100,116,139,0.45)]">
+          <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(100,116,139,0.45)] active:scale-[0.98]">
             <div className="h-1 w-full bg-gradient-to-r from-slate-400 via-zinc-400 to-gray-400" />
-            <CardHeader className="flex flex-row items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 shadow-sm ring-1 ring-slate-100">
-                <History className="h-5 w-5 text-slate-600" />
+            <CardHeader className="flex flex-row items-center gap-2.5 p-3 sm:p-6">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 shadow-sm ring-1 ring-slate-100">
+                <History className="h-4 w-4 sm:h-5 sm:w-5 text-slate-600" />
               </div>
               <div>
-                <CardTitle className="text-lg">Renewal History</CardTitle>
-                <CardDescription>Archive of all expired PUC, Insurance, DL, Fitness, Road Tax &amp; Permit records.</CardDescription>
+                <CardTitle className="text-base sm:text-lg">Renewal History</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Archive of expired PUC, Insurance, DL, Fitness, Road Tax &amp; Permit.</CardDescription>
               </div>
             </CardHeader>
           </Card>
         </Link>
         {canViewHealth && (
           <Link href="/vehicle-management/vehicle-health" className="block" aria-label="Open Vehicle Health Dashboard">
-            <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(6,182,212,0.45)]">
+            <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(6,182,212,0.45)] active:scale-[0.98]">
               <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-cyan-500 to-blue-600" />
-              <CardHeader className="flex flex-row items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 shadow-sm ring-1 ring-cyan-100">
-                  <Activity className="h-5 w-5 text-cyan-600" />
+              <CardHeader className="flex flex-row items-center gap-2.5 p-3 sm:p-6">
+                <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 shadow-sm ring-1 ring-cyan-100">
+                  <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-600" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <CardTitle className="text-lg">Vehicle Health</CardTitle>
+                    <CardTitle className="text-base sm:text-lg">Vehicle Health</CardTitle>
                     {!isLoading && alertSummary.expired > 0 && (
                       <Badge variant="destructive" className="text-[10px] shadow-sm">
                         {alertSummary.expired} expired

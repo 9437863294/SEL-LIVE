@@ -386,8 +386,8 @@ export default function VehicleHealthPage() {
       </div>
 
       {/* Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="flex flex-col gap-2">
+        <div className="relative">
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -397,8 +397,9 @@ export default function VehicleHealthPage() {
           <Activity className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         </div>
 
-        {/* Grade filter pills */}
-        <div className="flex gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+        {/* Grade filter pills — scrollable on mobile */}
+        <div className="flex gap-1 overflow-x-auto pb-0.5 flex-shrink-0">
           {(['All', 'A', 'B', 'C', 'D', 'F'] as const).map((g) => {
             const active = gradeFilter === g;
             const colorMap: Record<string, string> = {
@@ -445,11 +446,12 @@ export default function VehicleHealthPage() {
 
         <Link
           href="/vehicle-management/renewals"
-          className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90 transition-opacity"
+          className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90 transition-opacity ml-auto"
         >
           <AlertTriangle className="h-3.5 w-3.5" />
           Renewals Hub
         </Link>
+        </div>
       </div>
 
       {/* Vehicle Cards */}

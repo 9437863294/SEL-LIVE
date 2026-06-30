@@ -15,7 +15,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -797,33 +796,33 @@ export default function GenericCrudPage({
               </button>
             </div>
           </div>
-          <div className="space-y-3 sm:hidden">
+          <div className="space-y-2.5 sm:hidden">
             {isLoading ? (
               Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-32 w-full rounded-xl" />)
             ) : filteredRows.length === 0 ? (
-              <div className="rounded-xl border border-white/70 bg-white/85 px-3 py-6 text-center text-sm text-muted-foreground">
+              <div className="rounded-xl border border-white/70 bg-white/85 px-3 py-8 text-center text-sm text-muted-foreground">
                 {emptyMessage}
               </div>
             ) : (
               filteredRows.map((row) => (
-                <div key={row.id as string} className="rounded-xl border border-white/70 bg-white/85 p-3 shadow-sm">
-                  <div className="space-y-2">
+                <div key={row.id as string} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+                  <div className="space-y-2.5">
                     {columns.map((column) => (
-                      <div key={column.key} className="flex items-start justify-between gap-3">
-                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <div key={column.key} className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
                           {column.label}
                         </span>
-                        <span className="max-w-[64%] text-right text-sm">
+                        <span className="max-w-[58%] break-words text-right text-sm font-medium text-slate-700">
                           {column.formatter ? column.formatter(row[column.key], row) : toDisplay(row[column.key])}
                         </span>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3">
-                    <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="bg-white/80">
+                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                    <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="flex-1 bg-white/80 h-10">
                       Edit
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} disabled={!canDelete}>
+                    <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10">
                       Delete
                     </Button>
                   </div>
@@ -831,54 +830,56 @@ export default function GenericCrudPage({
               ))
             )}
           </div>
-          <div className="hidden overflow-x-auto rounded-lg border border-white/70 bg-white/80 sm:block">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50/80">
-                  {columns.map((column) => (
-                    <TableHead key={column.key}>{column.label}</TableHead>
-                  ))}
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 4 }).map((_, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell colSpan={columns.length + 1}>
-                        <Skeleton className="h-8 w-full" />
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : filteredRows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={columns.length + 1} className="h-20 text-center text-muted-foreground">
-                      {emptyMessage}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredRows.map((row) => (
-                    <TableRow key={row.id as string} className="transition-colors hover:bg-emerald-50/70">
+          <div className="hidden sm:block">
+            {!isLoading && filteredRows.length === 0 ? (
+              <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+                {emptyMessage}
+              </div>
+            ) : (
+              <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
+                <table className="w-full caption-bottom text-sm">
+                  <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                    <TableRow>
                       {columns.map((column) => (
-                        <TableCell key={column.key}>
-                          {column.formatter
-                            ? column.formatter(row[column.key], row)
-                            : toDisplay(row[column.key])}
-                        </TableCell>
+                        <TableHead key={column.key}>{column.label}</TableHead>
                       ))}
-                      <TableCell className="space-x-2 text-right">
-                        <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="bg-white/80">
-                          Edit
-                        </Button>
-                        <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} disabled={!canDelete}>
-                          Delete
-                        </Button>
-                      </TableCell>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      Array.from({ length: 4 }).map((_, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell colSpan={columns.length + 1}>
+                            <Skeleton className="h-8 w-full" />
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      filteredRows.map((row) => (
+                        <TableRow key={row.id as string} className="transition-colors hover:bg-emerald-50/70">
+                          {columns.map((column) => (
+                            <TableCell key={column.key}>
+                              {column.formatter
+                                ? column.formatter(row[column.key], row)
+                                : toDisplay(row[column.key])}
+                            </TableCell>
+                          ))}
+                          <TableCell className="space-x-2 text-right">
+                            <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="bg-white/80">
+                              Edit
+                            </Button>
+                            <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} disabled={!canDelete}>
+                              Delete
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </table>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -936,7 +937,7 @@ export default function GenericCrudPage({
                       isWideField && 'md:col-span-2 xl:col-span-3'
                     )}
                   >
-                    <Label className="text-[11px] font-semibold tracking-wide text-slate-700">
+                    <Label className="text-xs font-semibold tracking-wide text-slate-700">
                       {field.label}
                       {field.required && <span className="ml-1 text-rose-500">*</span>}
                     </Label>

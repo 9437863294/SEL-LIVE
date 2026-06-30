@@ -94,7 +94,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
             href={item.href}
             onClick={onNavigate}
             className={cn(
-              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-all duration-200',
+              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 lg:py-2 text-sm font-medium transition-all duration-200',
               active
                 ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-[0_8px_24px_-8px_rgba(14,116,205,0.6)]'
                 : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
@@ -135,7 +135,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
   }
 
   return (
-    <div className="relative w-full px-4 py-5 sm:px-6 lg:px-8">
+    <div className="relative w-full px-3 py-4 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl vm-gradient-atmosphere" />
       <div className="pointer-events-none absolute -z-10 left-[8%] top-[8%] h-56 w-56 rounded-full bg-cyan-300/20 blur-3xl vm-orb-a" />
       <div className="pointer-events-none absolute -z-10 right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-blue-300/20 blur-3xl vm-orb-b" />
@@ -143,35 +143,35 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
       {/* Mobile header */}
       <div className="mb-3 lg:hidden">
         <Card className="vm-panel-strong">
-          <CardContent className="flex items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
-                <Truck className="h-4 w-4 text-white" />
+          <CardContent className="flex items-center justify-between px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
+                <Truck className="h-4.5 w-4.5 text-white" />
               </div>
               <div>
-                <p className="text-sm font-semibold tracking-tight">Vehicle Management</p>
-                <p className="text-xs text-muted-foreground">Command Center</p>
+                <p className="text-sm font-semibold tracking-tight leading-tight">Vehicle Management</p>
+                <p className="text-[11px] text-muted-foreground leading-tight">Command Center</p>
               </div>
             </div>
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
-                <Button size="sm" variant="outline" className="bg-white/90 gap-1.5">
+                <Button variant="outline" className="bg-white/90 gap-2 h-10 px-3 text-sm font-medium">
                   <Menu className="h-4 w-4" /> Menu
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[88vw] max-w-[320px] border-r border-white/70 bg-slate-50/95 p-0 backdrop-blur-xl">
-                <SheetHeader className="border-b border-white/80 px-4 py-4 text-left">
+              <SheetContent side="left" className="w-[88vw] max-w-[300px] border-r border-white/70 bg-slate-50/98 p-0 backdrop-blur-xl">
+                <SheetHeader className="border-b border-slate-200/60 px-4 py-3 text-left">
                   <div className="flex items-center gap-2.5">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow">
                       <Truck className="h-4 w-4 text-white" />
                     </div>
                     <div>
-                      <SheetTitle className="text-sm">Vehicle Management</SheetTitle>
-                      <SheetDescription className="text-xs">Navigate between sections</SheetDescription>
+                      <SheetTitle className="text-sm font-semibold">Vehicle Management</SheetTitle>
+                      <SheetDescription className="text-[11px]">Tap a section to navigate</SheetDescription>
                     </div>
                   </div>
                 </SheetHeader>
-                <div className="overflow-y-auto p-2">{navigationLinks(() => setMobileMenuOpen(false))}</div>
+                <div className="overflow-y-auto p-2 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
               </SheetContent>
             </Sheet>
           </CardContent>

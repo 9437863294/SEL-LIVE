@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -374,58 +373,66 @@ export default function RenewalHistoryPage() {
               </div>
 
               {/* Desktop table */}
-              <div className="hidden overflow-x-auto sm:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-slate-50/80">
-                      <TableHead>Category</TableHead>
-                      <TableHead>Vehicle / Driver</TableHead>
-                      <TableHead>Detail / Reference</TableHead>
-                      <TableHead>Expiry Date</TableHead>
-                      <TableHead>Days Expired</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Added On</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredRecords.map((rec) => (
-                      <TableRow
-                        key={rec.id}
-                        className="hover:bg-rose-50/50 transition-colors"
-                      >
-                        <TableCell>
-                          <Badge
-                            className={cn(
-                              'border text-[10px] font-semibold',
-                              categoryColors[rec.category] ?? 'bg-slate-50 text-slate-700'
-                            )}
-                            variant="outline"
-                          >
-                            {rec.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-medium">{rec.vehicleOrDriver}</TableCell>
-                        <TableCell className="text-muted-foreground">{rec.detail}</TableCell>
-                        <TableCell>
-                          <span className="font-mono text-xs">{rec.expiryDate || '—'}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="destructive" className="text-xs">
-                            {rec.daysExpired > 0 ? `${rec.daysExpired}d ago` : 'Today'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-xs text-rose-600 font-medium">
-                            {toDisplay(rec.status)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {rec.createdAt || '—'}
-                        </TableCell>
+              <div className="hidden sm:block">
+                {filteredRecords.length === 0 ? (
+                  <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+                    No records found.
+                  </div>
+                ) : (
+                <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
+                  <table className="w-full caption-bottom text-sm">
+                    <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                      <TableRow>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Vehicle / Driver</TableHead>
+                        <TableHead>Detail / Reference</TableHead>
+                        <TableHead>Expiry Date</TableHead>
+                        <TableHead>Days Expired</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Added On</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRecords.map((rec) => (
+                        <TableRow
+                          key={rec.id}
+                          className="hover:bg-rose-50/50 transition-colors"
+                        >
+                          <TableCell>
+                            <Badge
+                              className={cn(
+                                'border text-[10px] font-semibold',
+                                categoryColors[rec.category] ?? 'bg-slate-50 text-slate-700'
+                              )}
+                              variant="outline"
+                            >
+                              {rec.category}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">{rec.vehicleOrDriver}</TableCell>
+                          <TableCell className="text-muted-foreground">{rec.detail}</TableCell>
+                          <TableCell>
+                            <span className="font-mono text-xs">{rec.expiryDate || '—'}</span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="destructive" className="text-xs">
+                              {rec.daysExpired > 0 ? `${rec.daysExpired}d ago` : 'Today'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs text-rose-600 font-medium">
+                              {toDisplay(rec.status)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {rec.createdAt || '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </table>
+                </div>
+                )}
               </div>
 
               {/* Footer count */}
