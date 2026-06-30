@@ -382,8 +382,111 @@ export default function EmiSummaryPage() {
           </CardContent>
         </Card>
 
+        {/* Mobile card list */}
+        <div className="sm:hidden space-y-3">
+          {isLoading ? (
+            Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} className="overflow-hidden border-border/60">
+                <CardContent className="p-4"><Skeleton className="h-20" /></CardContent>
+              </Card>
+            ))
+          ) : filteredEmis.length === 0 ? (
+            <Card className="overflow-hidden border-border/60">
+              <CardContent className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+                <CalendarCheck className="h-8 w-8 opacity-30" />
+                <span className="text-sm">No EMIs due for {selectedMonth}, {selectedYear}.</span>
+              </CardContent>
+            </Card>
+          ) : filteredEmis.map(emi => {
+            const isOverdue = emi.status !== 'Paid' && isPast(startOfDay(emi.dueDate.toDate()));
+            const isPaid    = emi.status === 'Paid';
+            return (
+              <div
+                key={emi.id}
+                className={`rounded-xl border transition-transform active:scale-[0.99] ${isOverdue ? 'border-red-200 bg-red-50/30' : 'border-border/60 bg-background'}`}
+              >
+                {/* Colour bar */}
+                <div className={`h-1 w-full rounded-t-xl ${isPaid ? 'bg-emerald-500' : isOverdue ? 'bg-red-500' : 'bg-amber-400'}`} />
+                <div className="p-4 space-y-3">
+                  {/* Top row: loan name + status badge */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm leading-tight truncate">{emi.loan.lenderName}</p>
+                      <p className="font-mono text-xs text-muted-foreground">{emi.loan.accountNo}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${isPaid ? 'bg-emerald-100 text-emerald-700' : isOverdue ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {isPaid ? 'Paid' : isOverdue ? 'Overdue' : 'Pending'}
+                    </span>
+                  </div>
+
+                  {/* EMI amount */}
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-lg font-bold">{formatCurrency(emi.emiAmount)}</span>
+                    <span className="text-xs text-muted-foreground">EMI #{emi.emiNo}</span>
+                  </div>
+
+                  {/* Detail rows */}
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <div className="text-muted-foreground">Due Date</div>
+                    <div className={`font-medium ${isOverdue ? 'text-red-600' : ''}`}>{formatDate(emi.dueDate)}</div>
+
+                    <div className="text-muted-foreground">Principal</div>
+                    <div className="font-medium">{formatCurrency(emi.principal)}</div>
+
+                    <div className="text-muted-foreground">Interest</div>
+                    <div className="font-medium">{formatCurrency(emi.interest)}</div>
+
+                    {isPaid && (
+                      <>
+                        <div className="text-muted-foreground">Paid Date</div>
+                        <div className="font-medium text-emerald-600">{formatDate(emi.paidAt)}</div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="pt-1">
+                    {emi.status === 'Pending' || isOverdue ? (
+                      <Button
+                        size="sm"
+                        onClick={() => handleMarkAsPaidClick(emi)}
+                        className={`w-full h-8 text-xs gap-1 ${isOverdue ? 'bg-red-600 hover:bg-red-700 text-white' : ''}`}
+                      >
+                        {isOverdue && <AlertTriangle className="h-3 w-3" />}
+                        Mark as Paid
+                      </Button>
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1">
+                            <MoreHorizontal className="h-3.5 w-3.5" /> Options
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => { setSelectedEmi(emi); setIsViewDetailsOpen(true); }}>
+                            <Eye className="mr-2 h-4 w-4" /> View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => handleMarkAsPaidClick(emi)}>
+                            <Edit className="mr-2 h-4 w-4" /> Edit Payment
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => openCreateExpenseDialog(emi)} disabled={!!emi.expenseRequestNo}>
+                            <FilePlus className="mr-2 h-4 w-4" /> Create Expense
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => handleMarkAsUnpaid(emi)} disabled={isUpdatingEmi === emi.id} className="text-destructive">
+                            <RotateCcw className="mr-2 h-4 w-4" /> Mark as Unpaid
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         {/* Table */}
-        <Card className="overflow-hidden border-border/60">
+        <Card className="hidden sm:block overflow-hidden border-border/60">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>

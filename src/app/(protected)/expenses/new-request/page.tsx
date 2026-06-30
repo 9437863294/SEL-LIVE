@@ -47,7 +47,7 @@ type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
 function ReadOnlyField({ label, value, id }: { label: string; value: string; id?: string }) {
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+      <Label htmlFor={id} className="text-sm font-medium text-slate-700 flex items-center gap-1">
         {label}
         <Info className="h-3 w-3 text-muted-foreground/50" />
       </Label>
@@ -263,15 +263,6 @@ function NewExpenseRequestForm() {
             <p className="text-xs text-muted-foreground">Fill in the details below to create a new expense request.</p>
           </div>
         </div>
-        <Button
-          onClick={form.handleSubmit(handleSave)}
-          disabled={isSaving || isLoadingData}
-          size="sm"
-          className="gap-2 min-w-[130px]"
-        >
-          {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          {isSaving ? 'Saving...' : 'Save Request'}
-        </Button>
       </div>
 
       {isLoadingData ? (
@@ -300,7 +291,7 @@ function NewExpenseRequestForm() {
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="h-px flex-1 bg-border/50" />
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">Auto-generated</span>
+                    <span className="text-xs font-semibold text-muted-foreground tracking-normal px-2">Auto-generated</span>
                     <div className="h-px flex-1 bg-border/50" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -314,7 +305,7 @@ function NewExpenseRequestForm() {
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <div className="h-px flex-1 bg-border/50" />
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-2">Request Details</span>
+                    <span className="text-xs font-semibold text-muted-foreground tracking-normal px-2">Request Details</span>
                     <div className="h-px flex-1 bg-border/50" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -324,7 +315,7 @@ function NewExpenseRequestForm() {
                       name="departmentId"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5">
-                          <FormLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Department</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">Department</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value} disabled={!!departmentIdFromUrl}>
                             <FormControl>
                               <SelectTrigger className="h-9 text-sm">
@@ -346,7 +337,7 @@ function NewExpenseRequestForm() {
                       name="projectId"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5">
-                          <FormLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Project Name</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">Project Name</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select Project" /></SelectTrigger>
@@ -364,7 +355,7 @@ function NewExpenseRequestForm() {
                       name="amount"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5">
-                          <FormLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Amount (₹)</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">Amount (₹)</FormLabel>
                           <FormControl>
                             <Input type="number" placeholder="0.00" className="h-9 text-sm" {...field} />
                           </FormControl>
@@ -379,7 +370,7 @@ function NewExpenseRequestForm() {
                       name="partyName"
                       render={({ field }) => (
                         <FormItem className="flex flex-col space-y-1.5">
-                          <FormLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Name of the Party</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">Name of the Party</FormLabel>
                           <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
                             <PopoverTrigger asChild>
                               <FormControl>
@@ -445,7 +436,7 @@ function NewExpenseRequestForm() {
                       name="subHeadOfAccount"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5">
-                          <FormLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sub-Head of A/c</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">Sub-Head of A/c</FormLabel>
                           <Select onValueChange={handleSubHeadChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select Sub-Head" /></SelectTrigger>
@@ -463,7 +454,7 @@ function NewExpenseRequestForm() {
                       name="headOfAccount"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5">
-                          <FormLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                          <FormLabel className="text-sm font-medium text-slate-700 flex items-center gap-1">
                             Head of A/c
                             <Info className="h-3 w-3 text-muted-foreground/50" />
                           </FormLabel>
@@ -486,7 +477,7 @@ function NewExpenseRequestForm() {
                       name="description"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                          <FormLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Description</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">Description</FormLabel>
                           <FormControl>
                             <Textarea {...field} rows={3} placeholder="Describe the purpose of this expense..." className="text-sm resize-none" />
                           </FormControl>
@@ -501,7 +492,7 @@ function NewExpenseRequestForm() {
                       name="remarks"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                          <FormLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          <FormLabel className="text-sm font-medium text-slate-700">
                             Remarks <span className="normal-case font-normal text-muted-foreground">(optional)</span>
                           </FormLabel>
                           <FormControl>

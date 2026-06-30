@@ -9,7 +9,35 @@
       "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"AllRequisitionsTab2\" } | Select-Object -First 40)",
       "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Select-String \"AllRequisitionsTab2\" | ForEach-Object { $_.Line })",
       "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && \\(npx tsc --noEmit 2>&1\\) -join \"`n\" | Select-String \"AllRequisitionsTab2\" -AllMatches | Select-Object -ExpandProperty Line | Select-Object -First 40)",
-      "Bash(xargs grep -l \"vehicle\" -i)"
+      "Bash(xargs grep -l \"vehicle\" -i)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(powershell -Command ' *)",
+      "Bash(xargs grep -l \"approval.*threshold\\\\|notification.*email\\\\|escalation\\\\|retention\")",
+      "Bash(node -e \"require\\('firebase-admin'\\)\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\daily-requisition\\\\reports\\\\status-overview\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\daily-requisition\\\\reports\\\\monthly-trend\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\daily-requisition\\\\reports\\\\department-analysis\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\daily-requisition\\\\reports\\\\project-analysis\")",
+      "PowerShell(Select-String -Path \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\lib\\\\types.ts\" -Pattern \"DailyRequisitionEntry\" -Context 0,50 | Select-Object -First 1 | ForEach-Object { $_.Context.PostContext })",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\daily-requisition\\\\reports\\\\party-analysis\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\daily-requisition\\\\reports\\\\financial-breakdown\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\daily-requisition\\\\reports\\\\ageing\")",
+      "Bash(dir \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\\\\\)\\\\loan\" /s /b)",
+      "Bash(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\loan\\\\reports\\\\amortization\")",
+      "Bash(Out-Null)",
+      "Bash(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\loan\\\\reports\\\\portfolio-overview\")",
+      "Bash(Write-Host \"Directories created\")",
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\loan\\\\reports\\\\overdue-analysis\")",
+      "PowerShell(New-Item -ItemType Directory -Force -Path \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\loan\\\\reports\\\\lender-summary\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\loan\\\\reports\\\\amortization\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"D:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\loan\\\\reports\\\\portfolio-overview\")",
+      "Bash(sed -i \"s/px-6 py-6 sm:px-8 lg:px-10/px-4 py-5 sm:px-6/g\" \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/settings/role-management/edit/[roleId]/page.tsx\" && echo \"done\")",
+      "Bash(sed -i \"s/px-4 pb-4 pt-2 space-y-3/px-3 pb-3 pt-1 space-y-2.5/g\" \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/settings/role-management/edit/[roleId]/page.tsx\" && echo \"done\")",
+      "Bash(sed -i \"s/h-\\\\[calc\\(100vh-22rem\\)\\\\]/h-[calc\\(100vh-20rem\\)]/g\" \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/settings/role-management/edit/[roleId]/page.tsx\" && echo \"done\")"
+    ],
+    "additionalDirectories": [
+      "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"
     ]
   }
 }

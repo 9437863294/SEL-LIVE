@@ -92,9 +92,9 @@ export default function ManageRolePage() {
 
   if (isAuthLoading || (isLoading && canView)) {
     return (
-        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
             <AuroraBackdrop />
-            <div className="mx-auto w-full max-w-7xl">
+            <div className="w-full">
               <div className="mb-6 flex items-center justify-between">
                   <Skeleton className="h-10 w-48" />
                   <Skeleton className="h-10 w-32" />
@@ -111,9 +111,9 @@ export default function ManageRolePage() {
   
   if (!canView) {
     return (
-        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
             <AuroraBackdrop />
-            <div className="mx-auto w-full max-w-4xl">
+            <div className="w-full">
               <div className="mb-6 flex items-center gap-4">
                 <Link href="/settings">
                   <Button variant="ghost" size="icon">
@@ -137,10 +137,10 @@ export default function ManageRolePage() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
       <AuroraBackdrop />
 
-      <div className="mx-auto w-full max-w-7xl">
+      <div className="w-full">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex items-start gap-4">
             <Link href="/settings">

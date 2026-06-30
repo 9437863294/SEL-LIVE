@@ -370,12 +370,77 @@ export default function TripManagementPage() {
           <CardTitle className="text-lg">Trip List</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {filteredTrips.length === 0 ? (
-              <div className="rounded-xl border border-white/70 bg-white/85 px-4 py-10 text-center text-muted-foreground">
+          {/* Mobile card view */}
+          <div className="space-y-2.5 sm:hidden">
+            {filteredTrips.length === 0 ? (
+              <div className="rounded-xl border border-white/70 bg-white/85 px-4 py-8 text-center text-sm text-muted-foreground">
                 No trips found.
               </div>
             ) : (
-            <div className="overflow-auto rounded-xl border border-white/70 bg-white/85 h-[calc(100vh-230px)]">
+              filteredTrips.map((trip) => (
+                <div
+                  key={String(trip.id)}
+                  onClick={() => setSelectedTripId((current) => current === String(trip.id) ? '' : String(trip.id))}
+                  className={`rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform cursor-pointer ${
+                    selectedTripId === String(trip.id) ? 'ring-2 ring-cyan-400/60' : ''
+                  }`}
+                >
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[11px] font-mono text-muted-foreground truncate max-w-[180px]">{String(trip.id || '-')}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{trip.vehicleNumber || '-'} · {trip.driverName || '-'}</p>
+                    </div>
+                    <Badge
+                      variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
+                      className={`shrink-0 text-[11px] ${String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}`}
+                    >
+                      {trip.tripStatus || '-'}
+                    </Badge>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Start</span>
+                      <span className="text-xs text-right">{formatDateTime(String(trip.startTimeIso || ''))}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">End</span>
+                      <span className="text-xs text-right">{formatDateTime(String(trip.endTimeIso || ''))}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Distance</span>
+                      <span className="text-xs">{Number(trip.totalDistanceKm || 0).toFixed(2)} km</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Points</span>
+                      <span className="text-xs">{Number(trip.totalPoints || 0)}</span>
+                    </div>
+                  </div>
+                  {selectedTripId === String(trip.id) && (
+                    <div className="mt-3 border-t border-slate-100 pt-3 space-y-1.5">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">Start Address</span>
+                        <span className="text-xs max-w-[60%] text-right">{String(trip.startAddress || '-')}</span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">End Address</span>
+                        <span className="text-xs max-w-[60%] text-right">{String(trip.endAddress || '-')}</span>
+                      </div>
+                      <div className="mt-2">
+                        <TripMapView points={selectedTripPoints} title="Trip Route Map" heightClassName="h-[240px]" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {filteredTrips.length === 0 ? (
+              <div className="hidden sm:block rounded-xl border border-white/70 bg-white/85 px-4 py-10 text-center text-muted-foreground">
+                No trips found.
+              </div>
+            ) : (
+            <div className="hidden sm:block overflow-auto rounded-xl border border-white/70 bg-white/85 h-[calc(100vh-230px)]">
               <table className="w-full caption-bottom text-sm">
                 <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                   <TableRow>

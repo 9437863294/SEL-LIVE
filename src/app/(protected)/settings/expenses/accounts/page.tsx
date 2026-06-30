@@ -204,7 +204,7 @@ export default function ManageAccountsPage() {
 
   if(isAuthLoading || (isLoading && canViewPage)) {
     return (
-        <div className="w-full max-w-4xl mx-auto">
+        <div className="w-full">
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-96 w-full" />
         </div>
@@ -213,7 +213,7 @@ export default function ManageAccountsPage() {
 
   if(!canViewPage) {
     return (
-        <div className="w-full max-w-4xl mx-auto">
+        <div className="w-full">
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <Link href="/expenses/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
@@ -230,7 +230,7 @@ export default function ManageAccountsPage() {
 
   return (
     <>
-      <div className="w-full max-w-4xl mx-auto">
+      <div className="w-full">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/expenses/settings">

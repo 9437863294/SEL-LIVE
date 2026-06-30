@@ -282,27 +282,29 @@ export default function SettingsPage() {
         />
       </div>
 
-      {/* ── Header ── */}
-      <div className="px-4 sm:px-6 lg:px-8 pt-5 mb-6 flex items-center gap-3">
-        <Link href="/">
-          <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
-            <Home className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div>
-          <div className="flex items-center gap-2">
-            <Settings2 className="h-5 w-5 text-primary/70" />
-            <h1 className="text-xl font-bold tracking-tight">System Settings</h1>
+      <div className="w-full px-4 sm:px-5">
+        {/* ── Header ── */}
+        <div className="pt-3 mb-4 flex items-center gap-3">
+          <Link href="/">
+            <Button variant="ghost" size="icon" className="rounded-full hover:bg-primary/10">
+              <Home className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <div className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5 text-primary/70" />
+              <h1 className="text-xl font-bold tracking-tight">System Settings</h1>
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5">Configure system preferences and manage access</p>
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">Configure system preferences and manage access</p>
         </div>
-      </div>
 
-      {/* ── Settings Grid ── */}
-      <div className="px-4 sm:px-6 lg:px-8 pb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {settingsItems.map((item, i) => (
-          <SettingsCard key={item.text} item={item} index={i} />
-        ))}
+        {/* ── Settings Grid ── */}
+        <div className="pb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {settingsItems.map((item, i) => (
+            <SettingsCard key={item.text} item={item} index={i} />
+          ))}
+        </div>
       </div>
     </>
   );

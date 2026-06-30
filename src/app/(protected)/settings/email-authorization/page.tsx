@@ -17,7 +17,7 @@ export default function EmailAuthorizationPage() {
 
   if (isLoading) {
     return (
-      <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+      <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
         <AuroraBackdrop />
         <Card className="overflow-hidden rounded-2xl border border-white/70 bg-white/70 backdrop-blur">
           <CardContent className="p-8">
@@ -32,7 +32,7 @@ export default function EmailAuthorizationPage() {
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+      <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
         <AuroraBackdrop />
         <div className="mb-6 flex items-center gap-4">
           <Link href="/settings">
@@ -58,7 +58,7 @@ export default function EmailAuthorizationPage() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
       <AuroraBackdrop />
 
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

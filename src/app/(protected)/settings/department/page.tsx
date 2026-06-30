@@ -200,7 +200,7 @@ export default function ManageDepartmentPage() {
         <div className="fixed inset-0 -z-10 pointer-events-none">
           <div className="absolute inset-0 bg-gradient-to-br from-sky-50/60 via-background to-blue-50/40 dark:from-sky-950/20 dark:via-background dark:to-blue-950/15" />
         </div>
-        <div className="w-full max-w-5xl mx-auto space-y-4">
+        <div className="w-full space-y-4">
           <div className="flex items-center justify-between">
             <Skeleton className="h-9 w-48 rounded-xl" />
             <Skeleton className="h-9 w-36 rounded-full" />
@@ -213,7 +213,7 @@ export default function ManageDepartmentPage() {
 
   if (!canView) {
     return (
-      <div className="w-full max-w-5xl mx-auto">
+      <div className="w-full">
         <div className="mb-5 flex items-center gap-3">
           <Link href="/settings"><Button variant="ghost" size="icon" className="rounded-full"><ArrowLeft className="h-5 w-5" /></Button></Link>
           <h1 className="text-xl font-bold">Manage Department</h1>
@@ -236,7 +236,7 @@ export default function ManageDepartmentPage() {
           style={{ backgroundImage: 'radial-gradient(circle, rgba(14,165,233,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
         />
       </div>
-    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+    <div className="w-full px-4 sm:px-5 py-3">
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/settings">

@@ -184,8 +184,8 @@ export default function ManageBanksPage() {
     <>
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-violet-50/60 via-background to-sky-50/40 dark:from-violet-950/20 dark:via-background dark:to-sky-950/15" />
-        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/15 blur-3xl" />
-        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-sky-300/12 blur-3xl" />
+        <div className="animate-bb-orb-1 absolute top-[-10%] left-[-5%] w-[40vw] h-[40vw] rounded-full bg-violet-300/8 blur-3xl" />
+        <div className="animate-bb-orb-2 absolute bottom-[-8%] right-[-6%] w-[45vw] h-[45vw] rounded-full bg-sky-300/6 blur-3xl" />
         <div className="absolute inset-0 opacity-20 dark:opacity-12"
           style={{ backgroundImage: 'radial-gradient(circle, rgba(139,92,246,0.12) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
         />
@@ -206,7 +206,7 @@ export default function ManageBanksPage() {
             </p>
           </div>
         </div>
-        <Button onClick={() => openDialog('add')} disabled={!canAdd} className="rounded-full shadow-md shadow-primary/20">
+        <Button onClick={() => openDialog('add')} disabled={!canAdd} className="rounded-lg shadow-md shadow-primary/20">
           <Plus className="mr-2 h-4 w-4" />
           Add Bank
         </Button>
@@ -237,7 +237,7 @@ export default function ManageBanksPage() {
                   ))
                   : accounts.length > 0
                     ? accounts.map(acc => (
-                      <TableRow key={acc.id} className="hover:bg-muted/20 transition-colors">
+                      <TableRow key={acc.id} className="hover:bg-muted/30 transition-colors cursor-pointer">
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             {acc.accountType === 'Cash Credit'
@@ -306,10 +306,13 @@ export default function ManageBanksPage() {
                     ))
                     : (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center h-32 text-muted-foreground">
-                          <div className="flex flex-col items-center gap-2">
-                            <Building2 className="h-8 w-8 opacity-30" />
-                            <p>No banks configured. Add one to get started.</p>
+                        <TableCell colSpan={8}>
+                          <div className="flex flex-col items-center justify-center py-16 text-center">
+                            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+                              <Building2 className="h-8 w-8 text-muted-foreground" />
+                            </div>
+                            <h3 className="mb-1 text-base font-semibold">No bank accounts yet</h3>
+                            <p className="mb-4 text-sm text-muted-foreground">Add your first bank account to get started.</p>
                           </div>
                         </TableCell>
                       </TableRow>

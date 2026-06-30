@@ -112,7 +112,7 @@ export default function UserLogsPage() {
 
 
     return (
-        <div className="w-full max-w-4xl mx-auto">
+        <div className="w-full">
             <div className="mb-6 flex items-center gap-4">
                 <Link href="/settings/user-management">
                     <Button variant="ghost" size="icon">

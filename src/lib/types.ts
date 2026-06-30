@@ -116,12 +116,13 @@ export const permissionModules = {
   },
   'Daily Requisition': {
     'View Module': [],
-    'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
-    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject'],
-    'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
-    'Processed for Payment': ['View', 'Mark as Received for Payment'],
+    'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist', 'Export', 'Cancel'],
+    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject', 'Cancel'],
+    'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending', 'Send for Payment'],
+    'Processed for Payment': ['View', 'Mark as Received for Payment', 'Approve'],
     'Manage Documents': ['View', 'Upload', 'Download', 'Mark as Missing', 'Not Required', 'Move to Pending'],
     'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights', 'View Workflow', 'Edit Workflow'],
+    'Reports': ['View', 'Export'],
   },
   'Billing Recon': {
     'View Module': [],
@@ -273,6 +274,11 @@ export interface Requisition {
   raisedBy: string;
   raisedById: string;
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
+  /** Set when the item enters a new workflow step — used for TAT escalation */
+  stepEnteredAt?: Timestamp;
+  /** Set by the escalation checker to prevent duplicate notifications */
+  escalationNotifiedStepId?: string;
   status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
   stage: string;
   currentStepId: string | null;
@@ -316,6 +322,14 @@ export interface WorkflowStepBase {
   tat: number; // in hours
   actions: (string | ActionConfig)[];   // <-- widened
   upload: UploadRequirement;
+  /** Instructions shown to the assignee when this step is active */
+  description?: string;
+  /** User IDs to notify via in-app/email when this step becomes active */
+  notifyUserIds?: string[];
+  /** Escalation: user ID to escalate to when TAT threshold is reached */
+  escalationUserId?: string;
+  /** Percentage of TAT elapsed before escalation fires (default 80) */
+  escalationThreshold?: number;
 }
 
 export interface WorkflowStepUser extends WorkflowStepBase {

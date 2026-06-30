@@ -169,7 +169,7 @@ export default function EmployeeSettingsPage() {
       <div className="mb-6 flex items-center gap-2">
         <Link href="/settings">
             <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
+                <ArrowLeft className="h-5 w-5" />
             </Button>
         </Link>
         <h1 className="text-2xl font-bold">Employee Management</h1>
@@ -182,3 +182,4 @@ export default function EmployeeSettingsPage() {
     </div>
   );
 }
+

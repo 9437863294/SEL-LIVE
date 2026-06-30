@@ -147,9 +147,9 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
             </div>
         </div>
       </CardHeader>
-      <CardContent className="mt-auto flex justify-end gap-1 p-2 border-t">
+      <CardContent className="mt-auto flex justify-end gap-1.5 p-2 border-t">
         {canEdit && (
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.preventDefault(); setIsEditOpen(true); }}>
+          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={(e) => { e.preventDefault(); setIsEditOpen(true); }}>
               <Edit className="h-4 w-4" />
               <span className="sr-only">Edit</span>
           </Button>
@@ -157,7 +157,7 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         {canDelete && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(e) => e.preventDefault()}>
+              <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(e) => e.preventDefault()}>
                   <Trash2 className="h-4 w-4" />
                   <span className="sr-only">Delete</span>
               </Button>

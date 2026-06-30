@@ -188,7 +188,7 @@ export default function ManageProjectPage() {
 
   if (isAuthLoading || (isLoading && canView)) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-5">
             <div className="mb-6 flex items-center justify-between">
                 <Skeleton className="h-10 w-48" />
                 <Skeleton className="h-10 w-32" />
@@ -204,7 +204,7 @@ export default function ManageProjectPage() {
   
   if (!canView) {
       return (
-        <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-5">
             <div className="mb-6 flex items-center gap-4">
               <Link href="/settings">
                 <Button variant="ghost" size="icon">
@@ -237,7 +237,7 @@ export default function ManageProjectPage() {
           style={{ backgroundImage: 'radial-gradient(circle, rgba(245,158,11,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
         />
       </div>
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-5">
+    <div className="w-full px-4 sm:px-5 py-3">
       <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/settings">

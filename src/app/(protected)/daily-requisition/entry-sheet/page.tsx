@@ -687,7 +687,7 @@ function EntrySheetPageComponent() {
         </Card>
 
         <Card className={dailySurfaceCardClass}>
-          <div className="h-1.5 w-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
+          <div className="h-1 w-full bg-gradient-to-r from-slate-600 to-slate-800 opacity-60" />
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>

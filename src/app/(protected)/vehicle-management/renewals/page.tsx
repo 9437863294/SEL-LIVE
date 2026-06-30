@@ -370,15 +370,15 @@ export default function RenewalsHubPage() {
       {/* ── Filters ── */}
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-0.5 w-full bg-gradient-to-r from-rose-500 via-orange-400 to-amber-500" />
-        <CardContent className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:flex-wrap">
+        <CardContent className="flex flex-col gap-2 pt-4">
           {/* Kind filter */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-1 overflow-x-auto pb-0.5">
             {(['all', 'expired', 'dueSoon'] as FilterTab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setFilter(tab)}
                 className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200',
+                  'shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200',
                   filter === tab
                     ? tab === 'expired'
                       ? 'bg-rose-500 text-white shadow-sm'
@@ -394,13 +394,13 @@ export default function RenewalsHubPage() {
           </div>
 
           {/* Category filter */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-1 overflow-x-auto pb-0.5">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setCategoryFilter(cat)}
                 className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
+                  'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
                   categoryFilter === cat
                     ? 'bg-slate-800 text-white shadow-sm'
                     : 'bg-white/80 text-muted-foreground hover:bg-white border border-white/70'
@@ -416,7 +416,7 @@ export default function RenewalsHubPage() {
             placeholder="Search vehicle, driver, details..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="ml-auto max-w-xs bg-white/80 border-white/70 focus-visible:ring-rose-400/40"
+            className="w-full sm:ml-auto sm:max-w-xs bg-white/80 border-white/70 focus-visible:ring-rose-400/40"
           />
         </CardContent>
       </Card>

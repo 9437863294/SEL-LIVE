@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { BarChart3, CalendarCheck, ChevronRight, TrendingUp } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarCheck, ChevronRight, Landmark, TrendingUp } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,18 +17,47 @@ const REPORTS = [
     gradient: 'from-violet-500 to-purple-600',
     bg: 'bg-violet-50',
     iconColor: 'text-violet-600',
-    permission: 'View Month-wise Status',
+    soon: false,
   },
   {
     icon: TrendingUp,
-    title: 'Loan Amortization',
-    description: 'View principal vs interest breakdown across the full loan tenure.',
-    href: '#',
+    title: 'Loan Amortization Schedule',
+    description: 'Full EMI-by-EMI breakdown of principal vs interest per loan across entire tenure.',
+    href: '/loan/reports/amortization',
     gradient: 'from-blue-500 to-indigo-600',
     bg: 'bg-blue-50',
     iconColor: 'text-blue-600',
-    permission: null,
-    soon: true,
+    soon: false,
+  },
+  {
+    icon: BarChart3,
+    title: 'Portfolio Overview',
+    description: 'Total outstanding, paid, active loans and breakdown by loan type.',
+    href: '/loan/reports/portfolio-overview',
+    gradient: 'from-emerald-500 to-teal-600',
+    bg: 'bg-emerald-50',
+    iconColor: 'text-emerald-600',
+    soon: false,
+  },
+  {
+    icon: AlertTriangle,
+    title: 'Overdue Analysis',
+    description: 'All overdue EMIs sorted by days past due — identify critical payment gaps.',
+    href: '/loan/reports/overdue-analysis',
+    gradient: 'from-rose-500 to-red-600',
+    bg: 'bg-rose-50',
+    iconColor: 'text-rose-600',
+    soon: false,
+  },
+  {
+    icon: Landmark,
+    title: 'Lender Summary',
+    description: 'Portfolio exposure by lender — principal, outstanding, active loans, and average rate.',
+    href: '/loan/reports/lender-summary',
+    gradient: 'from-amber-500 to-orange-600',
+    bg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
+    soon: false,
   },
 ];
 
@@ -74,14 +103,11 @@ export default function LoanReportsPage() {
 
       {/* Report tiles */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {REPORTS.map((item) => {
-          const isDisabled = item.soon || (item.permission && !can('View', 'Loan.Reports'));
-          const content = (
+        {REPORTS.map((item) => (
+          <Link key={item.title} href={item.href} className="no-underline">
             <div className={cn(
               'group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-200',
-              isDisabled
-                ? 'cursor-not-allowed opacity-60 border-border/40 bg-muted/30'
-                : 'cursor-pointer border-border/60 bg-background hover:-translate-y-1 hover:shadow-md'
+              'cursor-pointer border-border/60 bg-background hover:-translate-y-1 hover:shadow-md'
             )}>
               <div className={cn('h-1 w-full bg-gradient-to-r', item.gradient)} />
               <div className="flex items-center gap-3 p-4">
@@ -89,19 +115,14 @@ export default function LoanReportsPage() {
                   <item.icon className={cn('h-5 w-5', item.iconColor)} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-sm leading-tight">{item.title}</p>
-                    {item.soon && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">Soon</span>}
-                  </div>
+                  <p className="font-semibold text-sm leading-tight">{item.title}</p>
                   <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{item.description}</p>
                 </div>
-                {!isDisabled && <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />}
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
               </div>
             </div>
-          );
-          if (isDisabled) return <div key={item.title}>{content}</div>;
-          return <Link key={item.title} href={item.href} className="no-underline">{content}</Link>;
-        })}
+          </Link>
+        ))}
       </div>
     </div>
   );

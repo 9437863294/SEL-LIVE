@@ -11,12 +11,22 @@ export const permissionModules = {
   ],
   'Daily Requisition': {
     'View Module': [],
-    'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist'],
-    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject'],
-    'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending'],
-    'Processed for Payment': ['View', 'Mark as Received for Payment'],
+    'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist', 'Export', 'Cancel'],
+    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject', 'Cancel'],
+    'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending', 'Send for Payment'],
+    'Processed for Payment': ['View', 'Mark as Received for Payment', 'Approve'],
     'Manage Documents': ['View', 'Upload', 'Download', 'Mark as Missing', 'Not Required', 'Move to Pending'],
-    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights'],
+    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights', 'View Workflow', 'Edit Workflow'],
+    'Reports': ['View', 'Export'],
+  },
+  'Site Fund Requisition 2': {
+    'View Module': [],
+    'Requests': ['View', 'Add', 'Edit', 'Delete', 'Approve', 'Reject', 'View All'],
+    'Settings': ['View', 'Edit', 'View Workflow', 'Edit Workflow'],
+    'Reports': {
+      'View': [],
+      'Site Fund Summary': ['View'],
+    },
   },
   'Billing Recon': {
     'View Module': [],

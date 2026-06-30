@@ -84,7 +84,7 @@ export default function DepartmentSerialNoPage() {
   };
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full px-4 sm:px-5">
       <div className="mb-6 flex items-center gap-4">
         <Link href="/settings/expenses">
           <Button variant="ghost" size="icon">

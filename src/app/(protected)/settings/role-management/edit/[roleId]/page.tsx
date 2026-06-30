@@ -223,9 +223,9 @@ export default function EditRolePage() {
 
     if (isAuthLoading || isLoading) {
       return (
-        <div className="relative overflow-hidden px-6 py-6 sm:px-8 lg:px-10">
+        <div className="relative overflow-hidden px-4 py-3 sm:px-5">
           <AuroraBackdrop />
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="w-full">
             <div className="mb-6 flex items-center justify-between">
               <Skeleton className="h-10 w-56" /><Skeleton className="h-10 w-32" />
             </div>
@@ -238,9 +238,9 @@ export default function EditRolePage() {
 
     if (!canEdit) {
       return (
-        <div className="relative overflow-hidden px-6 py-6 sm:px-8 lg:px-10">
+        <div className="relative overflow-hidden px-4 py-3 sm:px-5">
           <AuroraBackdrop />
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="w-full">
             <div className="mb-6 flex items-center gap-3">
               <Link href="/settings/role-management">
                 <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90"><ArrowLeft className="h-5 w-5" /></Button>
@@ -258,9 +258,9 @@ export default function EditRolePage() {
 
     if (!editingRole) {
       return (
-        <div className="relative overflow-hidden px-6 py-6 sm:px-8 lg:px-10">
+        <div className="relative overflow-hidden px-4 py-3 sm:px-5">
           <AuroraBackdrop />
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="w-full">
             <div className="mb-6 flex items-center gap-3">
               <Link href="/settings/role-management">
                 <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90"><ArrowLeft className="h-5 w-5" /></Button>
@@ -276,9 +276,9 @@ export default function EditRolePage() {
     }
 
     return (
-        <div className="relative overflow-hidden px-6 py-6 sm:px-8 lg:px-10">
+        <div className="relative overflow-hidden px-4 py-3 sm:px-5">
           <AuroraBackdrop />
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="w-full">
             {/* ── Header ── */}
             <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
@@ -344,7 +344,7 @@ export default function EditRolePage() {
                 <CardDescriptionShad>Select the actions this role can perform for each module.</CardDescriptionShad>
               </CardHeader>
               <CardContent className="p-0">
-                <ScrollArea className="h-[calc(100vh-22rem)]">
+                <ScrollArea className="h-[calc(100vh-20rem)]">
                   <div className="p-5">
                   <Accordion type="multiple" value={openModules} onValueChange={(v) => setOpenModules(v as string[])} className="w-full space-y-2">
                     {filteredModules.map(([moduleName, moduleValue]) => {
@@ -360,7 +360,7 @@ export default function EditRolePage() {
                             </div>
                           </AccordionTrigger>
                           <AccordionContent>
-                            <div className="px-4 pb-4 pt-2 space-y-3">
+                            <div className="px-3 pb-3 pt-1 space-y-2.5">
                             {Array.isArray(moduleValue) ? (
                               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                 {moduleValue.map(permission => (

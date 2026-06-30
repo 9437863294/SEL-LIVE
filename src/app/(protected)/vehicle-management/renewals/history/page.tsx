@@ -309,7 +309,7 @@ export default function RenewalHistoryPage() {
             placeholder="Search by vehicle, driver, detail or date..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="ml-auto max-w-xs bg-white/80 border-white/70 focus-visible:ring-slate-400/40"
+            className="w-full sm:ml-auto sm:max-w-xs bg-white/80 border-white/70 focus-visible:ring-slate-400/40"
           />
         </CardContent>
       </Card>

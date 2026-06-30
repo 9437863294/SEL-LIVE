@@ -80,7 +80,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   return (
     <div className="flex w-full h-full">
       <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
+        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 hidden lg:flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
         isExpanded ? 'w-56' : 'w-14',
       )}>
         {/* Header */}
@@ -153,7 +153,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         </div>
       </aside>
 
-      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'ml-56' : 'ml-14')}>
+      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'lg:ml-56' : 'lg:ml-14')}>
         <main className="flex-grow">{children}</main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>

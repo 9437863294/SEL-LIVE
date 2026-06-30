@@ -440,9 +440,35 @@ export default function SessionManagementPage() {
 
   const handleTerminate = async () => {
     if (!confirmSession || !user) return;
+
+    // Safety guard: never terminate your own current session from this action.
+    // The UI already hides the button for isCurrent, but double-check here.
+    if (confirmSession.id === currentSessionId) {
+      toast({ title: 'Not allowed', description: 'You cannot sign out your own active session here.', variant: 'destructive' });
+      setConfirmSession(null);
+      return;
+    }
+
     setIsTerminating(true);
     try {
+      // Step 1 — Mark session inactive in Firestore.
+      // This triggers the real-time listenToSession() listener on the target
+      // user's open tab, which calls handleSignOut() and shows them a toast.
       await terminateSession(confirmSession.id, 'admin', user.id, user.name);
+
+      // Step 2 — Revoke Firebase Auth refresh tokens for the target user.
+      // This ensures they cannot silently refresh their auth token even if their
+      // tab was closed or offline when the Firestore change happened.
+      // We fire-and-forget with a catch so a revocation failure doesn't block
+      // the admin's workflow — Firestore termination is the primary mechanism.
+      fetch('/api/session/revoke-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: confirmSession.userId }),
+      }).catch((err) => {
+        console.warn('[session-management] Token revocation request failed (non-blocking):', err);
+      });
+
       toast({
         title: 'Session signed out',
         description: `${confirmSession.userName || confirmSession.userEmail} has been signed out from ${confirmSession.deviceLabel}.`,

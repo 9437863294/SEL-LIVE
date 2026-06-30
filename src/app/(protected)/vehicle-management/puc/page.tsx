@@ -335,6 +335,71 @@ export default function PucManagementPage() {
             onChange={(event) => setQuery(event.target.value)}
             className="max-w-xs border-slate-200 bg-white focus-visible:ring-emerald-400/40"
           />
+          {/* Mobile card list — visible only on small screens */}
+          <div className="space-y-2.5 sm:hidden">
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-36 w-full rounded-xl" />
+              ))
+            ) : filteredRows.length === 0 ? (
+              <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+                No records found.
+              </div>
+            ) : (
+              filteredRows.map((row) => (
+                <div key={row.id} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{row.vehicleNumber || '-'}</p>
+                      <p className="text-xs text-muted-foreground">{row.pucCertificateNumber || '-'}</p>
+                    </div>
+                    {row.alertStage && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'shrink-0 text-[10px]',
+                          row.alertStage === 'Expired'
+                            ? 'border-rose-300 bg-rose-50 text-rose-700'
+                            : row.alertStage === 'Critical'
+                            ? 'border-orange-300 bg-orange-50 text-orange-700'
+                            : row.alertStage === 'Warning'
+                            ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
+                            : 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                        )}
+                      >
+                        {row.alertStage}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Testing Center</span>
+                      <span className="text-right text-xs max-w-[60%]">{row.testingCenterName || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Issue Date</span>
+                      <span className="text-xs">{row.issueDate || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Expiry</span>
+                      <span className="text-xs font-medium">{row.expiryDate || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Amount Paid</span>
+                      <span className="text-xs">{row.amountPaid ? `₹${row.amountPaid}` : '-'}</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                    <button onClick={() => openEdit(row)} disabled={!canEdit} className="flex-1 h-10 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700 disabled:opacity-50">Edit</button>
+                    <button onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10 rounded-md bg-rose-500 text-sm font-medium text-white disabled:opacity-50">Delete</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Desktop table — hidden on small screens */}
+          <div className="hidden sm:block">
           {!isLoading && filteredRows.length === 0 ? (
             <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
               No records found.
@@ -393,6 +458,7 @@ export default function PucManagementPage() {
             </table>
           </div>
           )}
+          </div>
         </CardContent>
       </Card>
 

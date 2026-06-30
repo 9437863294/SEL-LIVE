@@ -209,9 +209,9 @@ export default function AddRolePage() {
 
     if (isAuthLoading || isLoading) {
       return (
-        <div className="relative overflow-hidden px-6 py-6 sm:px-8 lg:px-10">
+        <div className="relative overflow-hidden px-4 py-3 sm:px-5">
           <AuroraBackdrop />
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="w-full">
             <div className="mb-6 flex items-center justify-between">
               <Skeleton className="h-10 w-56" />
               <Skeleton className="h-10 w-32" />
@@ -225,9 +225,9 @@ export default function AddRolePage() {
 
     if (!canAdd) {
       return (
-        <div className="relative overflow-hidden px-6 py-6 sm:px-8 lg:px-10">
+        <div className="relative overflow-hidden px-4 py-3 sm:px-5">
           <AuroraBackdrop />
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="w-full">
             <div className="mb-6 flex items-center gap-4">
               <Link href="/settings/role-management">
                 <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur hover:bg-white/90">
@@ -246,9 +246,9 @@ export default function AddRolePage() {
     }
 
     return (
-        <div className="relative overflow-hidden px-6 py-6 sm:px-8 lg:px-10">
+        <div className="relative overflow-hidden px-4 py-3 sm:px-5">
           <AuroraBackdrop />
-          <div className="mx-auto w-full max-w-5xl">
+          <div className="w-full">
             {/* ── Header ── */}
             <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">

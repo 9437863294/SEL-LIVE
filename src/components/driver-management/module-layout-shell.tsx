@@ -104,7 +104,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
             href={item.href}
             onClick={onNavigate}
             className={cn(
-              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-all duration-200',
+              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-3 lg:py-2 text-sm font-medium transition-all duration-200',
               active
                 ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-[0_8px_24px_-8px_rgba(14,116,205,0.6)]'
                 : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
@@ -185,7 +185,7 @@ export default function DriverManagementLayoutShell({ children }: { children: Re
                     </div>
                   </div>
                 </SheetHeader>
-                <div className="overflow-y-auto p-2">{navigationLinks(() => setMobileMenuOpen(false))}</div>
+                <div className="overflow-y-auto p-3 pb-8">{navigationLinks(() => setMobileMenuOpen(false))}</div>
               </SheetContent>
             </Sheet>
           </CardContent>

@@ -23,6 +23,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import { cn } from '@/lib/utils';
+import { Textarea } from '@/components/ui/textarea';
 
 
 const initialSteps: WorkflowStep[] = [
@@ -507,6 +508,91 @@ export default function InsuranceWorkflowConfigurationPage() {
                                                         </div>
                                                     ))}
                                                 </RadioGroup>
+                                            </div>
+
+                                            {/* Step instructions */}
+                                            <div className="space-y-2">
+                                                <Label htmlFor={`desc-${step.id}`}>Step Instructions</Label>
+                                                <p className="text-xs text-muted-foreground">Shown to the assignee when this step is active.</p>
+                                                <Textarea
+                                                    id={`desc-${step.id}`}
+                                                    value={step.description || ''}
+                                                    onChange={(e) => handleStepChange(step.id, 'description', e.target.value)}
+                                                    placeholder="Describe what the assignee needs to do at this step..."
+                                                    disabled={!canViewPage}
+                                                    className="resize-none"
+                                                    rows={2}
+                                                />
+                                            </div>
+
+                                            {/* Notifications & Escalation */}
+                                            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                                                <div className="space-y-2">
+                                                    <Label>Notify on Step Entry</Label>
+                                                    <p className="text-xs text-muted-foreground">Users notified when this step becomes active.</p>
+                                                    <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-border p-2.5">
+                                                        {users.length === 0 ? (
+                                                            <p className="text-xs text-muted-foreground py-2 text-center">No users available</p>
+                                                        ) : (
+                                                            users.map((u) => {
+                                                                const notifyIds = step.notifyUserIds ?? [];
+                                                                const checked = notifyIds.includes(u.id);
+                                                                return (
+                                                                    <div key={u.id} className="flex items-center space-x-2">
+                                                                        <Checkbox
+                                                                            id={`notify-${step.id}-${u.id}`}
+                                                                            checked={checked}
+                                                                            onCheckedChange={(c) => {
+                                                                                const current = step.notifyUserIds ?? [];
+                                                                                const next = c ? [...current, u.id] : current.filter((id) => id !== u.id);
+                                                                                handleStepChange(step.id, 'notifyUserIds', next);
+                                                                            }}
+                                                                            disabled={!canViewPage}
+                                                                        />
+                                                                        <Label htmlFor={`notify-${step.id}-${u.id}`} className="cursor-pointer font-normal text-sm">{u.name}</Label>
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>TAT Escalation</Label>
+                                                    <p className="text-xs text-muted-foreground">Auto-escalate to this user when deadline approaches.</p>
+                                                    <Select
+                                                        value={step.escalationUserId || 'none'}
+                                                        onValueChange={(v) => handleStepChange(step.id, 'escalationUserId', v === 'none' ? '' : v)}
+                                                        disabled={!canViewPage}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Select escalation user" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="none">No escalation</SelectItem>
+                                                            {users.map((u) => (
+                                                                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    {step.escalationUserId && (
+                                                        <div className="space-y-1 pt-1">
+                                                            <Label className="text-xs text-muted-foreground">Escalate after % of TAT elapsed</Label>
+                                                            <div className="flex items-center gap-2">
+                                                                <Input
+                                                                    type="number" min={10} max={100} step={10}
+                                                                    value={step.escalationThreshold ?? 80}
+                                                                    onChange={(e) => handleStepChange(step.id, 'escalationThreshold', Number(e.target.value))}
+                                                                    disabled={!canViewPage}
+                                                                    className="w-20"
+                                                                />
+                                                                <span className="text-sm text-muted-foreground">%</span>
+                                                                <span className="text-xs text-muted-foreground">
+                                                                    = after {Math.round(((step.escalationThreshold ?? 80) * step.tat) / 100)}h of {step.tat}h
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </AccordionContent>

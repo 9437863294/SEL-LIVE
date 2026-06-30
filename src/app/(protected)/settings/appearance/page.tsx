@@ -64,7 +64,7 @@ export default function AppearancePage() {
 
   if (authLoading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-4">
+      <div className=" space-y-4">
         <Skeleton className="h-10 w-48 rounded-xl" />
         <Skeleton className="h-80 w-full rounded-xl" />
       </div>
@@ -85,7 +85,7 @@ export default function AppearancePage() {
         />
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+      <div className=" px-4 sm:px-5 py-3">
         {/* Header */}
         <div className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-3">

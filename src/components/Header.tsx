@@ -180,10 +180,10 @@ export default function Header() {
     <>
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <ImpersonationBanner />
-        <div className="flex h-16 items-center px-4 md:px-6">
-          <div className="flex items-center gap-4">
+        <div className="flex h-14 items-center px-3 md:h-16 md:px-6">
+          <div className="flex items-center gap-2 md:gap-4">
               <Link href="/">
-                <div className="relative h-10 w-28">
+                <div className="relative h-8 w-24 md:h-10 md:w-28">
                   <Image
                     src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788"
                     alt="Company Logo"
@@ -194,20 +194,20 @@ export default function Header() {
                   />
                 </div>
               </Link>
-              <div className="border-l pl-4">
-                 <h1 className="text-lg font-semibold text-foreground hidden md:block">Siddhartha Engineering Limited</h1>
+              <div className="border-l pl-3 md:pl-4">
+                 <h1 className="text-sm font-semibold text-foreground hidden sm:block md:text-lg">Siddhartha Engineering Limited</h1>
               </div>
           </div>
 
 
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-2 md:gap-4">
              <span className="text-sm font-medium text-foreground hidden sm:inline">{user?.name}</span>
             <TooltipProvider>
-              
+
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                   <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                    <Avatar className="h-8 w-8">
+                   <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                    <Avatar className="h-9 w-9">
                       <AvatarImage src={user?.photoURL || undefined} alt={user?.name || 'User avatar'} />
                       <AvatarFallback>{getInitials(user?.name)}</AvatarFallback>
                     </Avatar>
@@ -255,10 +255,10 @@ export default function Header() {
 
                <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="relative h-8 w-8 rounded-full">
+                  <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
                     <Bell className="h-5 w-5" />
                     {pendingTasks.length > 0 && (
-                      <span className="absolute top-0 right-0 flex h-2 w-2">
+                      <span className="absolute top-1 right-1 flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
                       </span>
@@ -266,7 +266,7 @@ export default function Header() {
                     <span className="sr-only">Notifications</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-80">
+                <DropdownMenuContent align="end" className="w-[min(320px,calc(100vw-1rem))]">
                   <DropdownMenuLabel>Pending Tasks ({pendingTasks.length})</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {pendingTasks.length > 0 ? (

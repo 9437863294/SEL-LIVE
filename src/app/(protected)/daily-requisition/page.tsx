@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
+  BarChart3,
   FilePlus,
   Landmark,
   Receipt,
@@ -72,6 +73,15 @@ const supportItems = [
     permission: 'View',
     badge: 'Support',
     accentClassName: 'bg-gradient-to-r from-emerald-300 via-cyan-300 to-sky-400',
+  },
+  {
+    icon: BarChart3,
+    title: 'Reports',
+    href: '/daily-requisition/reports',
+    description: 'Status overview, trends, department/project analysis, financial breakdown, ageing, and more.',
+    permission: 'View',
+    badge: 'Reports',
+    accentClassName: 'bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-500',
   },
   {
     icon: Settings,
@@ -153,7 +163,7 @@ export default function DailyRequisitionPage() {
     return (
       <div className={dailyPageContainerClass}>
         <Skeleton className="mb-6 h-10 w-80" />
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />
@@ -186,7 +196,7 @@ export default function DailyRequisitionPage() {
         }
       />
 
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
+      <div className="mb-6 grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
         <DailyMetricCard label="Workflow Stages" value={stageCount} hint="Receiving to payment" />
         <DailyMetricCard label="Support Areas" value={3} hint="Entry, documents & settings" />
         <DailyMetricCard label="Your Access" value={enabledCount} hint="Cards enabled for your role" />

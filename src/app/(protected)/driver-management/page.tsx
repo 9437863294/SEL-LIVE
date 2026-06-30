@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { CarFront, Fuel, Gauge, ListFilter, LocateFixed, ReceiptText, User } from 'lucide-react';
+import { CarFront, Clock, Fuel, Gauge, LocateFixed, ReceiptText, Smartphone } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,7 +38,7 @@ export default function DriverManagementOverviewPage() {
       title: 'Driver Mobile Hub',
       description: 'Driver app dashboard for daily operations.',
       href: '/driver-management/mobile-hub',
-      icon: Gauge,
+      icon: Smartphone,
       canView:
         can('View', 'Driver Management.Driver Mobile Hub') ||
         can('View', 'Vehicle Management.Driver Mobile') ||
@@ -88,7 +88,7 @@ export default function DriverManagementOverviewPage() {
       title: 'Driver Trip Log',
       description: 'Full trip table with summary, filters, and popup details.',
       href: '/driver-management/trip-log',
-      icon: ListFilter,
+      icon: Clock,
       canView:
         can('View', 'Driver Management.Driver Trips') ||
         can('View', 'Vehicle Management.Driver Mobile Trip') ||

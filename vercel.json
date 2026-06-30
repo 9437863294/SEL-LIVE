@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/workflow/check-escalations",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

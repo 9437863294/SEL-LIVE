@@ -428,12 +428,61 @@ export default function VehicleMasterPage() {
             onChange={(event) => setQuery(event.target.value)}
             className="max-w-xs border-slate-200 bg-white focus-visible:ring-emerald-400/40"
           />
+          {/* Mobile card view */}
+          <div className="space-y-2.5 sm:hidden">
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl" />)
+            ) : filteredRows.length === 0 ? (
+              <div className="rounded-xl border border-white/70 bg-white/85 px-4 py-8 text-center text-sm text-muted-foreground">
+                No vehicle records found.
+              </div>
+            ) : (
+              filteredRows.map((row) => (
+                <div key={String(row.id)} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{row.vehicleNumber || '-'}</p>
+                      <p className="text-xs text-muted-foreground">{row.vehicleType || '-'} · {row.fuelType || '-'}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      String(row.vehicleStatus || '').toLowerCase() === 'active'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>{row.vehicleStatus || '-'}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Vehicle ID</span>
+                      <span className="text-xs">{row.vehicleId || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Project</span>
+                      <span className="text-xs max-w-[60%] text-right truncate">{row.assignedProjectName || 'Unassigned'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Driver</span>
+                      <span className="text-xs max-w-[60%] text-right truncate">{row.assignedDriverName || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground">Docs Health</span>
+                      <span className="text-xs">{row.documentHealthStatus || '-'}</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                    <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit} className="flex-1 h-10 bg-white/80">Edit</Button>
+                    <Button size="sm" variant="destructive" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10">Delete</Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
           {!isLoading && filteredRows.length === 0 ? (
-            <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+            <div className="hidden sm:block rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
               No vehicle records found.
             </div>
           ) : (
-          <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
+          <div className="hidden sm:block overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
             <table className="w-full caption-bottom text-sm">
               <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                 <TableRow>

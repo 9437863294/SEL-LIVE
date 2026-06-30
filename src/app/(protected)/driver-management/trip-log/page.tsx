@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import {
+  collection, doc, getDocs, limit, orderBy,
+  query, QueryDocumentSnapshot, serverTimestamp,
+  startAfter, updateDoc, where,
+} from 'firebase/firestore';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
@@ -54,8 +60,13 @@ export default function DriverTripLogPage() {
     can('View', 'Vehicle Management.Driver Management') ||
     isAssignedDriver;
 
+  const PAGE_SIZE = 30;
+
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [trips, setTrips] = useState<Record<string, any>[]>([]);
+  const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Record<string, any> | null>(null);
   const [tripDialogOpen, setTripDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<TripStatusFilter>('All');
@@ -113,15 +124,17 @@ export default function DriverTripLogPage() {
     }
     setIsLoading(true);
     try {
-      const snap = await getDocs(
-        query(collection(db, VEHICLE_COLLECTIONS.trips), where('driverId', '==', String(driver.id)))
+      const q = query(
+        collection(db, VEHICLE_COLLECTIONS.trips),
+        where('driverId', '==', String(driver.id)),
+        orderBy('startTimeIso', 'desc'),
+        limit(PAGE_SIZE),
       );
-      const rows: Record<string, any>[] = snap.docs
-        .map<Record<string, any>>((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) =>
-          String(b.startTimeIso || '').localeCompare(String(a.startTimeIso || ''))
-        );
+      const snap = await getDocs(q);
+      const rows = snap.docs.map<Record<string, any>>((d) => ({ id: d.id, ...d.data() }));
       setTrips(rows);
+      setLastDoc(snap.docs[snap.docs.length - 1] ?? null);
+      setHasMore(snap.docs.length === PAGE_SIZE);
     } catch (error) {
       console.error('Failed to load driver trip log', error);
     } finally {
@@ -129,8 +142,31 @@ export default function DriverTripLogPage() {
     }
   };
 
+  const loadMoreTrips = async () => {
+    if (!driver?.id || !lastDoc || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const q = query(
+        collection(db, VEHICLE_COLLECTIONS.trips),
+        where('driverId', '==', String(driver.id)),
+        orderBy('startTimeIso', 'desc'),
+        startAfter(lastDoc),
+        limit(PAGE_SIZE),
+      );
+      const snap = await getDocs(q);
+      const rows = snap.docs.map<Record<string, any>>((d) => ({ id: d.id, ...d.data() }));
+      setTrips((prev) => [...prev, ...rows]);
+      setLastDoc(snap.docs[snap.docs.length - 1] ?? null);
+      setHasMore(snap.docs.length === PAGE_SIZE);
+    } catch (error) {
+      console.error('Failed to load more trips', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   useEffect(() => {
-    loadTrips();
+    void loadTrips();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driver?.id]);
 
@@ -227,7 +263,7 @@ export default function DriverTripLogPage() {
       </Card>
 
       <Card className="vm-panel">
-        <CardContent className="grid grid-cols-1 gap-3 pt-6 md:grid-cols-2 xl:grid-cols-4">
+        <CardContent className="grid grid-cols-2 gap-3 pt-6 md:grid-cols-4">
           <div className="rounded-xl border border-cyan-100/70 bg-white/85 px-3 py-2">
             <p className="text-xs text-muted-foreground">Trips</p>
             <p className="text-xl font-semibold">{tripSummary.totalTrips}</p>
@@ -285,54 +321,118 @@ export default function DriverTripLogPage() {
         <CardHeader>
           <CardTitle className="text-lg">Trip Table</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-0 p-0">
           {isLoading ? (
-            Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="mb-2 h-20 w-full rounded-xl" />)
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 3 }).map((_, idx) => <Skeleton key={idx} className="h-20 w-full rounded-xl" />)}
+            </div>
           ) : filteredTrips.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No trips found.</p>
+            <div className="px-6 py-10 text-center text-sm text-muted-foreground">No trips found.</div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-white/70 bg-white/85">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-slate-50/80">
-                    <TableHead>Status</TableHead>
-                    <TableHead>Start</TableHead>
-                    <TableHead>End</TableHead>
-                    <TableHead>Distance</TableHead>
-                    <TableHead>Points</TableHead>
-                    <TableHead>Start Address</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTrips.map((trip) => (
-                    <TableRow
-                      key={String(trip.id)}
-                      className="cursor-pointer hover:bg-cyan-50/70 transition-colors"
-                      onClick={() => {
-                        setSelectedTrip(trip);
-                        setTripDialogOpen(true);
-                        void hydrateTripDistance(trip);
-                      }}
-                    >
-                      <TableCell>
-                        <Badge
-                          variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
-                          className={String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}
-                        >
-                          {trip.tripStatus || '-'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{formatDateTime(String(trip.startTimeIso || ''))}</TableCell>
-                      <TableCell>{formatDateTime(String(trip.endTimeIso || ''))}</TableCell>
-                      <TableCell>{Number(trip.totalDistanceKm || 0).toFixed(2)} km</TableCell>
-                      <TableCell>{Number(trip.totalPoints || 0)}</TableCell>
-                      <TableCell className="max-w-[340px] truncate">
-                        {String(trip.startAddress || '-')}
-                      </TableCell>
+            <>
+              {/* Mobile card view */}
+              <div className="space-y-2 p-4 sm:hidden">
+                {filteredTrips.map((trip) => (
+                  <div
+                    key={String(trip.id)}
+                    className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform cursor-pointer"
+                    onClick={() => {
+                      setSelectedTrip(trip);
+                      setTripDialogOpen(true);
+                      void hydrateTripDistance(trip);
+                    }}
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <Badge
+                        variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
+                        className={String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}
+                      >
+                        {trip.tripStatus || '-'}
+                      </Badge>
+                      <span className="text-sm font-semibold">{Number(trip.totalDistanceKm || 0).toFixed(2)} km</span>
+                    </div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <div className="flex justify-between gap-2">
+                        <span>Start</span>
+                        <span className="font-medium text-slate-700">{formatDateTime(String(trip.startTimeIso || ''))}</span>
+                      </div>
+                      <div className="flex justify-between gap-2">
+                        <span>End</span>
+                        <span className="font-medium text-slate-700">{formatDateTime(String(trip.endTimeIso || ''))}</span>
+                      </div>
+                      {trip.startAddress && (
+                        <div className="flex justify-between gap-2">
+                          <span>From</span>
+                          <span className="max-w-[60%] truncate text-right">{String(trip.startAddress)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between gap-2">
+                        <span>Points</span>
+                        <span>{Number(trip.totalPoints || 0)}</span>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-right text-xs text-muted-foreground">Tap for details →</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-auto rounded-xl border border-white/70 bg-white/85 h-[calc(100vh-420px)]">
+                <table className="w-full caption-bottom text-sm">
+                  <TableHeader className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-sm">
+                    <TableRow>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Start</TableHead>
+                      <TableHead>End</TableHead>
+                      <TableHead>Distance</TableHead>
+                      <TableHead>Points</TableHead>
+                      <TableHead>Start Address</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTrips.map((trip) => (
+                      <TableRow
+                        key={String(trip.id)}
+                        className="cursor-pointer hover:bg-cyan-50/70 transition-colors"
+                        onClick={() => {
+                          setSelectedTrip(trip);
+                          setTripDialogOpen(true);
+                          void hydrateTripDistance(trip);
+                        }}
+                      >
+                        <TableCell>
+                          <Badge
+                            variant={String(trip.tripStatus) === 'In Progress' ? 'default' : 'outline'}
+                            className={String(trip.tripStatus) === 'In Progress' ? 'bg-emerald-600 text-white' : ''}
+                          >
+                            {trip.tripStatus || '-'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{formatDateTime(String(trip.startTimeIso || ''))}</TableCell>
+                        <TableCell>{formatDateTime(String(trip.endTimeIso || ''))}</TableCell>
+                        <TableCell>{Number(trip.totalDistanceKm || 0).toFixed(2)} km</TableCell>
+                        <TableCell>{Number(trip.totalPoints || 0)}</TableCell>
+                        <TableCell className="max-w-[280px] truncate">{String(trip.startAddress || '-')}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </table>
+              </div>
+            </>
+          )}
+          {/* Load More + count */}
+          {!isLoading && trips.length > 0 && (
+            <div className="flex flex-col items-center gap-2 px-4 pb-4 pt-2">
+              <p className="text-xs text-muted-foreground">
+                Showing {trips.length} trip{trips.length !== 1 ? 's' : ''}
+                {hasMore ? ' · more available' : ' · all loaded'}
+              </p>
+              {hasMore && (
+                <Button variant="outline" size="sm" onClick={loadMoreTrips} disabled={isLoadingMore} className="w-full sm:w-auto">
+                  {isLoadingMore && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                  {isLoadingMore ? 'Loading…' : `Load ${PAGE_SIZE} More`}
+                </Button>
+              )}
             </div>
           )}
         </CardContent>
@@ -345,29 +445,19 @@ export default function DriverTripLogPage() {
           if (!open) setSelectedTrip(null);
         }}
       >
-        <DialogContent className="max-h-[88vh] w-[calc(100vw-1rem)] max-w-4xl overflow-y-auto vm-panel-strong">
+        <DialogContent className="max-h-[88vh] w-[calc(100vw-1rem)] sm:max-w-xl lg:max-w-3xl overflow-y-auto vm-panel-strong">
           <DialogHeader>
             <DialogTitle>Trip Details</DialogTitle>
             <DialogDescription>Complete information in tabular format.</DialogDescription>
           </DialogHeader>
-          <div className="overflow-x-auto rounded-xl border border-white/70 bg-white/85">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50/80">
-                  <TableHead className="w-[220px]">Field</TableHead>
-                  <TableHead>Value</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tripDetailRows.map((row) => (
-                  <TableRow key={row.label}>
-                    <TableCell className="font-medium">{row.label}</TableCell>
-                    <TableCell className="break-words">{row.value || '-'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <dl className="divide-y divide-border rounded-xl border border-white/70 bg-white/85">
+            {tripDetailRows.map((row) => (
+              <div key={row.label} className="flex flex-col gap-0.5 px-4 py-2.5 sm:flex-row sm:justify-between sm:gap-4">
+                <dt className="text-xs font-semibold text-muted-foreground sm:w-48 sm:shrink-0">{row.label}</dt>
+                <dd className="break-words text-sm font-medium text-slate-800">{row.value || '-'}</dd>
+              </div>
+            ))}
+          </dl>
         </DialogContent>
       </Dialog>
     </div>

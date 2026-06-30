@@ -116,7 +116,7 @@ export default function SerialNoConfigurationPage() {
     
     if (isAuthLoading) {
         return (
-             <div className="w-full max-w-4xl mx-auto">
+             <div className="w-full">
                 <div className="mb-6 flex items-center gap-4">
                     <Skeleton className="h-10 w-10" />
                     <Skeleton className="h-8 w-64" />
@@ -128,7 +128,7 @@ export default function SerialNoConfigurationPage() {
 
     if (!canView) {
         return (
-            <div className="w-full max-w-4xl mx-auto">
+            <div className="w-full">
                 <div className="mb-6 flex items-center gap-4">
                   <Link href="/settings">
                     <Button variant="ghost" size="icon">
@@ -162,7 +162,7 @@ export default function SerialNoConfigurationPage() {
             style={{ backgroundImage: 'radial-gradient(circle, rgba(99,102,241,0.10) 1px, transparent 1px)', backgroundSize: '28px 28px' }}
           />
         </div>
-        <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+        <div className="w-full px-4 sm:px-5 py-3">
             <div className="mb-5 flex items-center gap-3">
                 <Link href="/settings">
                     <Button variant="ghost" size="icon" className="rounded-full hover:bg-indigo-50 dark:hover:bg-indigo-950/30">

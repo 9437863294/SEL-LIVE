@@ -203,7 +203,7 @@ export default function LcManagementDashboardPage() {
             Complete LC workflow from request and bank opening to documents, settlement, and closure.
           </CardDescription>
         </CardHeader>
-        <CardContent className="relative grid grid-cols-1 gap-3 md:grid-cols-4">
+        <CardContent className="relative grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-xl border border-cyan-100/70 bg-white/80 p-4 shadow-sm">
             <p className="text-xs text-muted-foreground">Visible Screens</p>
             <p className="mt-1 text-2xl font-semibold">{visibleCards.length}</p>

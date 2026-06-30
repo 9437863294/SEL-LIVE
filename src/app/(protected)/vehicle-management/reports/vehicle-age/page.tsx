@@ -217,7 +217,7 @@ export default function VehicleAgeReportPage() {
           <div className="h-1 w-full bg-gradient-to-r from-emerald-500/80 to-teal-500/80" />
           <CardHeader className="pb-2">
             <CardDescription>Newest Vehicle</CardDescription>
-            <CardTitle className="text-base truncate">{ageStats.newest?.vehicleNumber || 'N/A'}</CardTitle>
+            <CardTitle className="text-base truncate" title={ageStats.newest?.vehicleNumber || 'N/A'}>{ageStats.newest?.vehicleNumber || 'N/A'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             {ageStats.newest?.age !== null ? `${ageStats.newest?.age} yrs old (${ageStats.newest?.yearOfManufacture})` : '-'}
@@ -227,7 +227,7 @@ export default function VehicleAgeReportPage() {
           <div className="h-1 w-full bg-gradient-to-r from-slate-400/80 to-slate-500/80" />
           <CardHeader className="pb-2">
             <CardDescription>Oldest Vehicle</CardDescription>
-            <CardTitle className="text-base truncate">{ageStats.oldest?.vehicleNumber || 'N/A'}</CardTitle>
+            <CardTitle className="text-base truncate" title={ageStats.oldest?.vehicleNumber || 'N/A'}>{ageStats.oldest?.vehicleNumber || 'N/A'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             {ageStats.oldest?.age !== null ? `${ageStats.oldest?.age} yrs old (${ageStats.oldest?.yearOfManufacture})` : '-'}

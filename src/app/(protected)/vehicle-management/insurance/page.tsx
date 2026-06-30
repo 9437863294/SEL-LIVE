@@ -361,6 +361,56 @@ export default function InsuranceManagementPage() {
             onChange={(event) => setQuery(event.target.value)}
             className="max-w-xs border-slate-200 bg-white focus-visible:ring-emerald-400/40"
           />
+          {/* Mobile card list — visible only on small screens */}
+          <div className="space-y-2.5 sm:hidden">
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-36 w-full rounded-xl" />
+              ))
+            ) : filteredRows.length === 0 ? (
+              <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
+                No records found.
+              </div>
+            ) : (
+              filteredRows.map((row) => (
+                <div key={row.id} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+                  {/* Top: vehicle number + alert badge */}
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{row.vehicleNumber || '-'}</p>
+                      <p className="text-xs text-muted-foreground">{row.insuranceCompany || '-'}</p>
+                    </div>
+                    <Badge variant="outline" className="shrink-0 text-xs bg-white/70">
+                      {row.alertStage || '-'}
+                    </Badge>
+                  </div>
+                  {/* Key fields grid */}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Policy No.</span>
+                      <span className="text-right text-xs font-medium max-w-[60%] break-all">{row.policyNumber || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Expiry</span>
+                      <span className="text-right text-xs">{row.expiryDate || '-'}</span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Policy Type</span>
+                      <span className="text-right text-xs">{row.policyType || '-'}</span>
+                    </div>
+                  </div>
+                  {/* Action buttons */}
+                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                    <button onClick={() => openEdit(row)} disabled={!canEdit} className="flex-1 h-10 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700 disabled:opacity-50 active:bg-slate-50">Edit</button>
+                    <button onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10 rounded-md bg-rose-500 text-sm font-medium text-white disabled:opacity-50 active:bg-rose-600">Delete</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Desktop table — hidden on small screens */}
+          <div className="hidden sm:block">
           {!isLoading && filteredRows.length === 0 ? (
             <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
               No records found.
@@ -419,6 +469,7 @@ export default function InsuranceManagementPage() {
             </table>
           </div>
           )}
+          </div>
         </CardContent>
       </Card>
 

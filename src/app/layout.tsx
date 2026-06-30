@@ -1,17 +1,25 @@
 // src/app/layout.tsx
 import './globals.css';
 import type { ReactNode } from 'react';
+import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 import { Toaster } from '@/components/ui/toaster';
 import { ModuleProvider } from '@/context/ModuleContext';
 import { Suspense } from 'react';
 import { ClientSessionHandler } from '@/components/auth/ClientSessionHandler';
 
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+  weight: ['300', '400', '500', '600', '700'],
+});
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
-      className="font-body"
+      className={`font-body antialiased ${inter.variable}`}
       suppressHydrationWarning
     >
       <body>

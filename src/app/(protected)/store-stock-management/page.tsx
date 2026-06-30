@@ -84,14 +84,14 @@ export default function StoreStockDashboard() {
   if (!canViewModule) {
       return (
         <div className="w-full p-6">
-             <h1 className="text-3xl font-bold mb-6">Store & Stock Management</h1>
+             <h1 className="text-2xl sm:text-3xl font-bold mb-6">Store & Stock Management</h1>
             <Card>
                 <CardHeader>
                     <CardTitle>Access Denied</CardTitle>
                     <CardDescription>You do not have permission to access the Store & Stock Management module.</CardDescription>
                 </CardHeader>
                 <CardContent className="flex justify-center p-8">
-                    <ShieldAlert className="h-16 w-16 text-destructive" />
+                    <ShieldAlert className="h-12 w-12 sm:h-16 sm:w-16 text-destructive" />
                 </CardContent>
             </Card>
         </div>
