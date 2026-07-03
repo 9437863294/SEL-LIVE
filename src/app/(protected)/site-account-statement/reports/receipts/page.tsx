@@ -5,6 +5,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASPayment, type SASProject } from '@/lib/site-account-statement';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,8 +19,10 @@ const MODULE = 'Site Account Statement';
 
 export default function ReceiptReportPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const canView   = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
-  const canExport = can('Export', `${MODULE}.Reports`);
+  const { user } = useAuth();
+  const canView    = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
+  const canExport  = can('Export', `${MODULE}.Reports`);
+  const canViewAll = can('View',   `${MODULE}.All Projects`);
 
   const [projects,   setProjects]   = useState<SASProject[]>([]);
   const [payments,   setPayments]   = useState<SASPayment[]>([]);
@@ -49,15 +52,26 @@ export default function ReceiptReportPage() {
     }
   }
 
+  const visibleProjects = useMemo(
+    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    [projects, user?.id, canViewAll]
+  );
+
+  const userProjectIds = useMemo(
+    () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
+    [visibleProjects, canViewAll]
+  );
+
   const filtered = useMemo(() => payments.filter(p => {
+    if (userProjectIds && !userProjectIds.has(p.projectId)) return false;
     if (filterProject && p.projectId !== filterProject) return false;
     if (filterFrom    && p.receiptDate < filterFrom)    return false;
     if (filterTo      && p.receiptDate > filterTo)      return false;
-    if (search && !p.projectName.toLowerCase().includes(search.toLowerCase()) &&
-        !p.receivedBy.toLowerCase().includes(search.toLowerCase()) &&
-        !p.referenceNo.toLowerCase().includes(search.toLowerCase()))  return false;
+    if (search && !(p.projectName || '').toLowerCase().includes(search.toLowerCase()) &&
+        !(p.receivedBy || '').toLowerCase().includes(search.toLowerCase()) &&
+        !(p.referenceNo || '').toLowerCase().includes(search.toLowerCase()))  return false;
     return true;
-  }), [payments, filterProject, filterFrom, filterTo, search]);
+  }), [payments, userProjectIds, filterProject, filterFrom, filterTo, search]);
 
   const total = useMemo(() => filtered.reduce((s, p) => s + (p.receivedAmount || 0), 0), [filtered]);
 
@@ -124,7 +138,7 @@ export default function ReceiptReportPage() {
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Projects</SelectItem>
-            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+            {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
         <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />

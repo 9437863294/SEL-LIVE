@@ -25,8 +25,10 @@ interface ProjectStat {
 
 export default function ProjectSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const canView   = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
-  const canExport = can('Export', `${MODULE}.Reports`);
+  const { user } = useAuth();
+  const canView    = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
+  const canExport  = can('Export', `${MODULE}.Reports`);
+  const canViewAll = can('View',   `${MODULE}.All Projects`);
 
   const [projects,  setProjects]  = useState<SASProject[]>([]);
   const [payments,  setPayments]  = useState<SASPayment[]>([]);
@@ -38,6 +40,11 @@ export default function ProjectSummaryPage() {
   useEffect(() => {
     if (!isAuthLoading && canView) void loadAll();
   }, [isAuthLoading, canView]);
+
+  const visibleProjects = useMemo(
+    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    [projects, user?.id, canViewAll]
+  );
 
   async function loadAll() {
     setLoading(true);
@@ -56,12 +63,12 @@ export default function ProjectSummaryPage() {
   }
 
   const stats = useMemo<ProjectStat[]>(() => {
-    return projects.map(proj => {
+    return visibleProjects.map(proj => {
       const received = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
       const spent    = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
       return { id: proj.id, name: proj.projectName, totalReceived: received, totalExpenses: spent, balance: received - spent };
     });
-  }, [projects, payments, expenses]);
+  }, [visibleProjects, payments, expenses]);
 
   const filtered = useMemo(
     () => stats.filter(s => s.name.toLowerCase().includes(search.toLowerCase())),

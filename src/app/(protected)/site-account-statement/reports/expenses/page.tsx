@@ -8,6 +8,7 @@ import {
   type SASCategory, type SASExpense, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,8 +22,10 @@ const MODULE = 'Site Account Statement';
 
 export default function ExpenseReportPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const canView   = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
-  const canExport = can('Export', `${MODULE}.Reports`);
+  const { user } = useAuth();
+  const canView    = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
+  const canExport  = can('Export', `${MODULE}.Reports`);
+  const canViewAll = can('View',   `${MODULE}.All Projects`);
 
   const [projects,    setProjects]    = useState<SASProject[]>([]);
   const [categories,  setCategories]  = useState<SASCategory[]>([]);
@@ -57,17 +60,28 @@ export default function ExpenseReportPage() {
     }
   }
 
+  const visibleProjects = useMemo(
+    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    [projects, user?.id, canViewAll]
+  );
+
+  const userProjectIds = useMemo(
+    () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
+    [visibleProjects, canViewAll]
+  );
+
   const filtered = useMemo(() => expenses.filter(e => {
+    if (userProjectIds && !userProjectIds.has(e.projectId)) return false;
     if (filterProject  && e.projectId !== filterProject)       return false;
     if (filterCategory && e.expenseCategory !== filterCategory) return false;
     if (filterMode     && e.paymentMode !== filterMode)         return false;
     if (filterFrom     && e.expenseDate < filterFrom)           return false;
     if (filterTo       && e.expenseDate > filterTo)             return false;
-    if (search && !e.projectName.toLowerCase().includes(search.toLowerCase()) &&
-        !e.expensedBy.toLowerCase().includes(search.toLowerCase()) &&
-        !e.expenseCategory.toLowerCase().includes(search.toLowerCase()))  return false;
+    if (search && !(e.projectName || '').toLowerCase().includes(search.toLowerCase()) &&
+        !(e.expensedBy || '').toLowerCase().includes(search.toLowerCase()) &&
+        !(e.expenseCategory || '').toLowerCase().includes(search.toLowerCase()))  return false;
     return true;
-  }), [expenses, filterProject, filterCategory, filterMode, filterFrom, filterTo, search]);
+  }), [expenses, userProjectIds, filterProject, filterCategory, filterMode, filterFrom, filterTo, search]);
 
   const total = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
 
@@ -136,7 +150,7 @@ export default function ExpenseReportPage() {
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Projects</SelectItem>
-            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+            {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filterCategory || '_all_'} onValueChange={v => setFilterCategory(v === '_all_' ? '' : v)}>

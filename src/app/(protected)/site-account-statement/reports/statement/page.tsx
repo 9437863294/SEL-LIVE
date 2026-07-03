@@ -28,8 +28,10 @@ interface TxLine {
 
 export default function AccountStatementPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const canView   = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
-  const canExport = can('Export', `${MODULE}.Reports`);
+  const { user } = useAuth();
+  const canView    = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
+  const canExport  = can('Export', `${MODULE}.Reports`);
+  const canViewAll = can('View',   `${MODULE}.All Projects`);
 
   const searchParams = useSearchParams();
   const paramProjectId = searchParams.get('projectId') ?? '';
@@ -48,6 +50,10 @@ export default function AccountStatementPage() {
     if (!isAuthLoading && canView) void loadAll();
   }, [isAuthLoading, canView]);
 
+  const visibleProjects = useMemo(
+    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    [projects, user?.id, canViewAll]
+  );
 
   async function loadAll() {
     setLoading(true);
@@ -154,7 +160,7 @@ export default function AccountStatementPage() {
           <Select value={selectedProject} onValueChange={setSelectedProject}>
             <SelectTrigger className="h-9"><SelectValue placeholder="Select a project" /></SelectTrigger>
             <SelectContent>
-              {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+              {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
