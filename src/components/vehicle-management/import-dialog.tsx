@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, Fragment } from 'react';
 import ExcelJS from 'exceljs';
 import {
   AlertTriangle,
@@ -82,6 +82,27 @@ interface ImportSummary {
 }
 
 const SKIP = '__skip__';
+
+/* ------------------------------------------------------------------ */
+/* Cell value → plain string (handles Date, RichText, formula objects) */
+/* ------------------------------------------------------------------ */
+
+function cellValueToString(value: unknown): string {
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, '0');
+    const d = String(value.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    if (Array.isArray(o['richText']))
+      return (o['richText'] as { text: string }[]).map((r) => r.text).join('');
+    if ('result' in o) return String(o['result'] ?? '');
+    if ('text'   in o) return String(o['text']   ?? '');
+  }
+  return String(value ?? '').trim();
+}
 
 /* ------------------------------------------------------------------ */
 /* Fuzzy auto-map: try to match source columns to expected field labels */
@@ -202,13 +223,19 @@ export function VehicleImportDialog({
       cell.alignment = { horizontal: 'left' };
       ws.getColumn(col).width = Math.max(headers[col - 1].length + 6, 16);
     });
-    // Sample row
+    // Sample row — use a concrete example date so Excel doesn't treat
+    // 'YYYY-MM-DD' as a format mask and render the cell empty.
     const sampleValues = fields.map((f) => {
       if (f.type === 'number') return '0';
-      if (f.key.toLowerCase().includes('date')) return 'YYYY-MM-DD';
-      return `Sample ${f.label}`;
+      if (f.key.toLowerCase().includes('date')) return '2024-07-15';
+      return f.hint ? f.hint.split(/[,(]/)[0].trim() : `Sample ${f.label}`;
     });
-    ws.addRow(sampleValues);
+    const sampleRow = ws.addRow(sampleValues);
+    // Force every sample cell to text format so Excel never reinterprets values.
+    sampleRow.eachCell((cell) => {
+      cell.numFmt = '@';
+      cell.font   = { italic: true, color: { argb: 'FF64748B' } };
+    });
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -234,7 +261,7 @@ export function VehicleImportDialog({
     // Extract column headers
     const cols: string[] = [];
     ws.getRow(1).eachCell((cell) => {
-      const v = String(cell.value ?? '').trim();
+      const v = cellValueToString(cell.value).trim();
       if (v) cols.push(v);
     });
     setSourceColumns(cols);
@@ -247,7 +274,7 @@ export function VehicleImportDialog({
       ws.getRow(r).eachCell({ includeEmpty: false }, (cell, colNum) => {
         const col = cols[colNum - 1];
         if (col) {
-          const v = String(cell.value ?? '').trim();
+          const v = cellValueToString(cell.value).trim();
           rowObj[col] = v;
           if (v) hasData = true;
         }
@@ -276,7 +303,7 @@ export function VehicleImportDialog({
           errors.push(`"${field.label}" must be a number (got "${value}")`);
         } else if (value && field.validate) {
           const msg = field.validate(value);
-          if (msg) errors.push(msg);
+          if (msg) errors.push(`"${field.label}": ${msg}`);
         }
       }
 
@@ -525,8 +552,6 @@ export function VehicleImportDialog({
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
                     <tr>
-                      <th className="whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 w-12">#</th>
-                      <th className="whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400 w-16">Status</th>
                       {fields.map((f) => (
                         <th key={f.key} className="whitespace-nowrap px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                           {f.label}
@@ -537,57 +562,56 @@ export function VehicleImportDialog({
                   <tbody className="divide-y divide-slate-100">
                     {filteredRows.length === 0 ? (
                       <tr>
-                        <td colSpan={fields.length + 2} className="py-10 text-center text-sm text-slate-400">
+                        <td colSpan={fields.length} className="py-10 text-center text-sm text-slate-400">
                           No rows match the current filter.
                         </td>
                       </tr>
                     ) : (
                       filteredRows.map((row) => (
-                        <tr
-                          key={row.rowNumber}
-                          className={cn(
-                            'group transition-colors',
-                            row.valid ? 'hover:bg-emerald-50/30' : 'bg-rose-50/20 hover:bg-rose-50/40'
-                          )}
-                        >
-                          <td className="px-3 py-2 text-xs text-slate-400">{row.rowNumber}</td>
-                          <td className="px-3 py-2">
-                            {row.valid ? (
-                              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                            ) : (
-                              <div className="relative">
-                                <XCircle className="h-4 w-4 text-rose-500 cursor-help" />
-                                {/* Hover tooltip */}
-                                <div className="pointer-events-none absolute left-6 top-0 z-50 hidden w-64 rounded-lg border border-rose-200 bg-white p-2.5 shadow-xl group-hover:block">
-                                  <p className="mb-1 text-[11px] font-semibold text-rose-700">Validation Errors</p>
-                                  {row.errors.map((e, i) => (
-                                    <p key={i} className="text-[11px] text-rose-600 leading-relaxed">• {e}</p>
-                                  ))}
+                        <Fragment key={row.rowNumber}>
+                          <tr className={cn('transition-colors', row.valid ? 'hover:bg-emerald-50/30' : 'bg-rose-50/20')}>
+                            {fields.map((f) => {
+                              const hasError = row.errors.some((e) => e.includes(`"${f.label}"`));
+                              const val = row.mapped[f.key];
+                              return (
+                                <td
+                                  key={f.key}
+                                  className={cn(
+                                    'max-w-[140px] truncate px-3 py-2 text-xs',
+                                    hasError
+                                      ? 'font-semibold text-rose-600'
+                                      : val
+                                      ? 'text-slate-700'
+                                      : 'italic text-slate-300'
+                                  )}
+                                  title={val || ''}
+                                >
+                                  {val || 'empty'}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                          {!row.valid && (
+                            <tr className="bg-rose-50/40 border-b border-rose-100">
+                              <td colSpan={fields.length} className="px-3 pb-2 pt-0">
+                                <div className="flex flex-wrap gap-x-5 gap-y-0.5">
+                                  {row.errors.map((e, i) => {
+                                    const colon = e.indexOf(':');
+                                    const hasLabel = e.startsWith('"') && colon !== -1;
+                                    const label = hasLabel ? e.slice(0, colon) : null;
+                                    const msg   = hasLabel ? e.slice(colon + 1).trim() : e;
+                                    return (
+                                      <span key={i} className="text-[11px] text-rose-600 leading-relaxed">
+                                        {label && <strong className="font-semibold">{label}: </strong>}
+                                        {msg}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
-                              </div>
-                            )}
-                          </td>
-                          {fields.map((f) => {
-                            const hasError = row.errors.some((e) => e.includes(`"${f.label}"`));
-                            const val = row.mapped[f.key];
-                            return (
-                              <td
-                                key={f.key}
-                                className={cn(
-                                  'max-w-[140px] truncate px-3 py-2 text-xs',
-                                  hasError
-                                    ? 'font-semibold text-rose-600'
-                                    : val
-                                    ? 'text-slate-700'
-                                    : 'italic text-slate-300'
-                                )}
-                                title={val || ''}
-                              >
-                                {val || 'empty'}
                               </td>
-                            );
-                          })}
-                        </tr>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))
                     )}
                   </tbody>
