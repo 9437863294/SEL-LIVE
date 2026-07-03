@@ -53,7 +53,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ExternalLink, Loader2, Upload } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { Download, ExternalLink, FileUp, Loader2, Upload } from 'lucide-react';
+import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
 type InsuranceRow = Record<string, any>;
 type InsuranceForm = Record<string, string>;
@@ -107,6 +109,8 @@ export default function InsuranceManagementPage() {
   const canAdd = can('Add', 'Vehicle Management.Insurance Management');
   const canEdit = can('Edit', 'Vehicle Management.Insurance Management');
   const canDelete = can('Delete', 'Vehicle Management.Insurance Management');
+  const canExport = can('Export', 'Vehicle Management.Insurance Management') || canView;
+  const canImport = can('Import', 'Vehicle Management.Insurance Management') || canAdd;
 
   const [rows, setRows] = useState<InsuranceRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -115,6 +119,8 @@ export default function InsuranceManagementPage() {
   const [editingRow, setEditingRow] = useState<InsuranceRow | null>(null);
   const [deleteRow, setDeleteRow] = useState<InsuranceRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [form, setForm] = useState<InsuranceForm>(buildInitialState());
   const [file, setFile] = useState<File | null>(null);
   const prefillApplied = useRef(false);
@@ -170,6 +176,93 @@ export default function InsuranceManagementPage() {
         .some((value) => value.includes(term))
     );
   }, [query, rows]);
+
+  const exportExcel = async () => {
+    if (!canExport || isExporting) return;
+    setIsExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Insurance');
+      ws.columns = [
+        { header: 'Vehicle Number', key: 'vehicleNumber', width: 18 },
+        { header: 'Insurance Company', key: 'insuranceCompany', width: 24 },
+        { header: 'Policy Number', key: 'policyNumber', width: 22 },
+        { header: 'Policy Type', key: 'policyType', width: 20 },
+        { header: 'Start Date', key: 'startDate', width: 14 },
+        { header: 'Expiry Date', key: 'expiryDate', width: 14 },
+        { header: 'Premium Amount', key: 'premiumAmount', width: 18 },
+        { header: 'IDV Value', key: 'idvValue', width: 16 },
+        { header: 'Agent Name', key: 'agentName', width: 20 },
+        { header: 'Agent Contact', key: 'agentContact', width: 18 },
+        { header: 'Alert Stage', key: 'alertStage', width: 14 },
+        { header: 'Renewal Status', key: 'renewalStatus', width: 16 },
+      ];
+      filteredRows.forEach(row => {
+        ws.addRow({
+          vehicleNumber: row.vehicleNumber || '',
+          insuranceCompany: row.insuranceCompany || '',
+          policyNumber: row.policyNumber || '',
+          policyType: row.policyType || '',
+          startDate: row.startDate || '',
+          expiryDate: row.expiryDate || '',
+          premiumAmount: row.premiumAmount || '',
+          idvValue: row.idvValue || '',
+          agentName: row.agentName || '',
+          agentContact: row.agentContact || '',
+          alertStage: row.alertStage || '',
+          renewalStatus: row.renewalStatus || '',
+        });
+      });
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `insurance-records.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: 'Exported', description: `${filteredRows.length} records exported.` });
+    } catch (err) {
+      console.error('Export failed', err);
+      toast({ title: 'Export Failed', description: 'Unable to export records.', variant: 'destructive' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const INSURANCE_IMPORT_FIELDS: ImportField[] = [
+    { key: 'vehicleNumber', label: 'Vehicle Number', required: true, hint: 'e.g. MH12AB1234' },
+    { key: 'insuranceCompany', label: 'Insurance Company', required: true },
+    { key: 'policyNumber', label: 'Policy Number', required: true },
+    { key: 'policyType', label: 'Policy Type', required: true, hint: 'Comprehensive / Third-Party / Own-Damage …' },
+    { key: 'startDate', label: 'Start Date', required: true, hint: 'YYYY-MM-DD', validate: (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) ? null : 'Format must be YYYY-MM-DD' },
+    { key: 'expiryDate', label: 'Expiry Date', required: true, hint: 'YYYY-MM-DD', validate: (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) ? null : 'Format must be YYYY-MM-DD' },
+    { key: 'premiumAmount', label: 'Premium Amount', required: true, type: 'number', validate: (v) => Number(v) > 0 ? null : 'Premium must be greater than 0' },
+    { key: 'idvValue', label: 'IDV Value', type: 'number' },
+    { key: 'agentName', label: 'Agent Name' },
+    { key: 'agentContact', label: 'Agent Contact' },
+  ];
+
+  const saveInsuranceRow = async (row: Record<string, any>) => {
+    const meta = computeRenewalMeta(String(row.expiryDate || ''));
+    await addDoc(collection(db, VEHICLE_COLLECTIONS.insurance), {
+      vehicleNumber: String(row.vehicleNumber || '').trim(),
+      insuranceCompany: String(row.insuranceCompany || '').trim(),
+      policyNumber: String(row.policyNumber || '').trim(),
+      policyType: String(row.policyType || 'Comprehensive').trim(),
+      startDate: String(row.startDate || '').trim(),
+      expiryDate: String(row.expiryDate || '').trim(),
+      premiumAmount: Number(row.premiumAmount || 0),
+      idvValue: row.idvValue ? Number(row.idvValue) : '',
+      agentName: String(row.agentName || '').trim(),
+      agentContact: String(row.agentContact || '').trim(),
+      alertStage: meta.alertStage,
+      complianceStatus: meta.complianceStatus,
+      renewalStatus: meta.alertStage === 'Expired' ? 'Overdue' : ['Due Today', '7d', '15d', '30d'].includes(meta.alertStage) ? 'Due Soon' : 'Not Due',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  };
 
   const openAdd = () => {
     if (!canAdd) return;
@@ -354,6 +447,17 @@ export default function InsuranceManagementPage() {
             <Button variant="outline" onClick={() => void loadRows()} className="bg-white/80 hover:bg-white">
               Refresh
             </Button>
+            {canExport && (
+              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting} className="bg-white/80 hover:bg-white">
+                {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                {isExporting ? 'Exporting…' : 'Export'}
+              </Button>
+            )}
+            {canImport && (
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="bg-white/80 hover:bg-white">
+                <FileUp className="mr-2 h-4 w-4" /> Import
+              </Button>
+            )}
             <Button
               onClick={openAdd}
               disabled={!canAdd}
@@ -588,6 +692,15 @@ export default function InsuranceManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <VehicleImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Insurance Records"
+        fields={INSURANCE_IMPORT_FIELDS}
+        onSaveRow={saveInsuranceRow}
+        onImportComplete={() => { void loadRows(); void log('Import Insurance', {}); }}
+      />
     </div>
   );
 }

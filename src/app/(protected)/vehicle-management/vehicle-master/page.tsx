@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -47,7 +47,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Loader2 } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import { Download, FileUp, Loader2 } from 'lucide-react';
+import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
 const DRIVER_UNASSIGNED = '__unassigned__';
 
@@ -180,6 +182,8 @@ export default function VehicleMasterPage() {
   const canAdd = can('Add', 'Vehicle Management.Vehicle Master');
   const canEdit = can('Edit', 'Vehicle Management.Vehicle Master');
   const canDelete = can('Delete', 'Vehicle Management.Vehicle Master');
+  const canExport = can('Export', 'Vehicle Management.Vehicle Master') || canView;
+  const canImport = can('Import', 'Vehicle Management.Vehicle Master') || canAdd;
 
   const [rows, setRows] = useState<VehicleRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -188,6 +192,8 @@ export default function VehicleMasterPage() {
   const [editingRow, setEditingRow] = useState<VehicleRow | null>(null);
   const [deleteRow, setDeleteRow] = useState<VehicleRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [form, setForm] = useState<VehicleFormState>(buildInitialState());
 
   const loadRows = async () => {
@@ -231,6 +237,125 @@ export default function VehicleMasterPage() {
         .some((value) => value.includes(term))
     );
   }, [query, rows]);
+
+  const exportExcel = async () => {
+    if (!canExport || isExporting) return;
+    setIsExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Vehicle Master');
+      ws.columns = [
+        { header: 'Vehicle ID', key: 'vehicleId', width: 14 },
+        { header: 'Vehicle Number', key: 'vehicleNumber', width: 18 },
+        { header: 'Vehicle Type', key: 'vehicleType', width: 16 },
+        { header: 'Category', key: 'vehicleCategory', width: 16 },
+        { header: 'Brand', key: 'brand', width: 14 },
+        { header: 'Model', key: 'model', width: 14 },
+        { header: 'Year', key: 'yearOfManufacture', width: 10 },
+        { header: 'Fuel Type', key: 'fuelType', width: 12 },
+        { header: 'Chassis Number', key: 'chassisNumber', width: 22 },
+        { header: 'Engine Number', key: 'engineNumber', width: 22 },
+        { header: 'Ownership', key: 'ownershipType', width: 14 },
+        { header: 'Purchase Date', key: 'purchaseDate', width: 14 },
+        { header: 'Purchase Value', key: 'purchaseValue', width: 16 },
+        { header: 'Odometer (KM)', key: 'currentOdometerKm', width: 16 },
+        { header: 'Department', key: 'assignedDepartmentName', width: 20 },
+        { header: 'Project', key: 'assignedProjectName', width: 24 },
+        { header: 'Driver', key: 'assignedDriverName', width: 20 },
+        { header: 'Current Status', key: 'currentStatus', width: 16 },
+        { header: 'Vehicle Status', key: 'vehicleStatus', width: 16 },
+        { header: 'Remarks', key: 'remarks', width: 28 },
+      ];
+      filteredRows.forEach(row => {
+        ws.addRow({
+          vehicleId: row.vehicleId || '',
+          vehicleNumber: row.vehicleNumber || '',
+          vehicleType: row.vehicleType || '',
+          vehicleCategory: row.vehicleCategory || '',
+          brand: row.brand || '',
+          model: row.model || '',
+          yearOfManufacture: row.yearOfManufacture || '',
+          fuelType: row.fuelType || '',
+          chassisNumber: row.chassisNumber || '',
+          engineNumber: row.engineNumber || '',
+          ownershipType: row.ownershipType || '',
+          purchaseDate: row.purchaseDate || '',
+          purchaseValue: row.purchaseValue || '',
+          currentOdometerKm: row.currentOdometerKm || '',
+          assignedDepartmentName: row.assignedDepartmentName || '',
+          assignedProjectName: row.assignedProjectName || '',
+          assignedDriverName: row.assignedDriverName || '',
+          currentStatus: row.currentStatus || '',
+          vehicleStatus: row.vehicleStatus || '',
+          remarks: row.remarks || '',
+        });
+      });
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vehicle-master.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: 'Exported', description: `${filteredRows.length} vehicles exported.` });
+    } catch (err) {
+      console.error('Export failed', err);
+      toast({ title: 'Export Failed', description: 'Unable to export records.', variant: 'destructive' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const VEHICLE_IMPORT_FIELDS: ImportField[] = [
+    { key: 'vehicleNumber', label: 'Vehicle Number', required: true, hint: 'e.g. MH12AB1234', validate: (v) => v.trim() ? null : 'Cannot be empty' },
+    { key: 'vehicleType', label: 'Vehicle Type', required: true },
+    { key: 'vehicleCategory', label: 'Vehicle Category', required: true, hint: 'Commercial / Passenger / Light / Heavy …' },
+    { key: 'brand', label: 'Brand', required: true },
+    { key: 'model', label: 'Model', required: true },
+    { key: 'yearOfManufacture', label: 'Year of Manufacture', required: true, type: 'number', validate: (v) => { const y = Number(v); return y >= 1900 && y <= new Date().getFullYear() + 2 ? null : `Invalid year: ${v}`; } },
+    { key: 'fuelType', label: 'Fuel Type', required: true, hint: 'Diesel / Petrol / CNG / Electric …' },
+    { key: 'chassisNumber', label: 'Chassis Number' },
+    { key: 'engineNumber', label: 'Engine Number' },
+    { key: 'ownershipType', label: 'Ownership Type', hint: 'Owned / Leased / Rented / Attached' },
+    { key: 'purchaseDate', label: 'Purchase Date', hint: 'YYYY-MM-DD' },
+    { key: 'purchaseValue', label: 'Purchase Value', type: 'number' },
+    { key: 'currentOdometerKm', label: 'Odometer (KM)', type: 'number' },
+    { key: 'vehicleStatus', label: 'Vehicle Status', hint: 'Active / Inactive / Under Maintenance …' },
+    { key: 'currentStatus', label: 'Current Status', hint: 'In Operation / Idle / On Trip …' },
+    { key: 'remarks', label: 'Remarks' },
+  ];
+
+  const saveVehicleRow = async (row: Record<string, any>) => {
+    const vehicleNumber = String(row.vehicleNumber || '').toUpperCase().replace(/\s+/g, '');
+    await addDoc(collection(db, VEHICLE_COLLECTIONS.vehicleMaster), {
+      vehicleId: toVehicleCode(Date.now() % 1000000),
+      vehicleNumber,
+      vehicleType: row.vehicleType || '',
+      vehicleCategory: row.vehicleCategory || '',
+      brand: row.brand || '',
+      model: row.model || '',
+      yearOfManufacture: Number(row.yearOfManufacture || 0),
+      fuelType: row.fuelType || 'Diesel',
+      chassisNumber: String(row.chassisNumber || '').toUpperCase(),
+      engineNumber: String(row.engineNumber || '').toUpperCase(),
+      ownershipType: row.ownershipType || 'Owned',
+      purchaseDate: row.purchaseDate || '',
+      purchaseValue: row.purchaseValue ? Number(row.purchaseValue) : '',
+      currentOdometerKm: Number(row.currentOdometerKm || 0),
+      vehicleStatus: row.vehicleStatus || 'Active',
+      currentStatus: row.currentStatus || 'In Operation',
+      remarks: row.remarks || '',
+      requireInsurance: 'Yes',
+      requirePuc: 'Yes',
+      requireFitness: 'Yes',
+      requireRoadTax: 'Yes',
+      requirePermit: 'Yes',
+      complianceRuleMode: 'Auto',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  };
 
   const openAdd = () => {
     if (!canAdd) return;
@@ -420,6 +545,17 @@ export default function VehicleMasterPage() {
             <Button variant="outline" onClick={() => void loadRows()} className="bg-white/80 hover:bg-white">
               Refresh
             </Button>
+            {canExport && (
+              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting} className="bg-white/80 hover:bg-white">
+                {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                {isExporting ? 'Exporting…' : 'Export'}
+              </Button>
+            )}
+            {canImport && (
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="bg-white/80 hover:bg-white">
+                <FileUp className="mr-2 h-4 w-4" /> Import
+              </Button>
+            )}
             <Button
               onClick={openAdd}
               disabled={!canAdd}
@@ -650,6 +786,15 @@ export default function VehicleMasterPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <VehicleImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Vehicles"
+        fields={VEHICLE_IMPORT_FIELDS}
+        onSaveRow={saveVehicleRow}
+        onImportComplete={() => { void loadRows(); void log('Import Vehicles', {}); }}
+      />
     </div>
   );
 }
