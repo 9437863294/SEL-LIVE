@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
@@ -30,19 +31,23 @@ export default function AccountStatementPage() {
   const canView   = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
   const canExport = can('Export', `${MODULE}.Reports`);
 
+  const searchParams = useSearchParams();
+  const paramProjectId = searchParams.get('projectId') ?? '';
+
   const [projects,   setProjects]   = useState<SASProject[]>([]);
   const [payments,   setPayments]   = useState<SASPayment[]>([]);
   const [expenses,   setExpenses]   = useState<SASExpense[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [exporting,  setExporting]  = useState(false);
 
-  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedProject, setSelectedProject] = useState(paramProjectId);
   const [filterFrom,      setFilterFrom]      = useState('');
   const [filterTo,        setFilterTo]        = useState('');
 
   useEffect(() => {
     if (!isAuthLoading && canView) void loadAll();
   }, [isAuthLoading, canView]);
+
 
   async function loadAll() {
     setLoading(true);
