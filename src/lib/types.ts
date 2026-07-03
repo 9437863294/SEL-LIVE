@@ -251,6 +251,7 @@ export const permissionModules = {
   },
   'Site Account Statement': {
     'View Module': [],
+    'All Projects': ['View'],
     'Dashboard': ['View'],
     'Payments': ['View', 'Add', 'Edit', 'Delete', 'Export'],
     'Expenses': ['View', 'Add', 'Edit', 'Delete', 'Export'],

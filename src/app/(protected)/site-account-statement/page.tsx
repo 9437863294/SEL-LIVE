@@ -319,7 +319,7 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
 export default function SiteAccountDashboardPage() {
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  const canViewAll = can('View Module', MODULE);
+  const canViewAll = can('View', `${MODULE}.All Projects`);
   const canViewDashboard = can('View', `${MODULE}.Dashboard`) || canViewAll;
 
   const [projects,   setProjects]   = useState<SASProject[]>([]);

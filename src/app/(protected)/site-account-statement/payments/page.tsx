@@ -9,6 +9,7 @@ import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -58,8 +59,10 @@ export default function PaymentsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
+  const { user } = useAuth();
 
-  const canView      = can('View',   `${MODULE}.${RESOURCE}`) || can('View Module', MODULE);
+  const canViewAll   = can('View', `${MODULE}.All Projects`);
+  const canView      = can('View',   `${MODULE}.${RESOURCE}`) || canViewAll;
   const canAdd       = can('Add',    `${MODULE}.${RESOURCE}`);
   const canEdit      = can('Edit',   `${MODULE}.${RESOURCE}`);
   const canDelete    = can('Delete', `${MODULE}.${RESOURCE}`);
@@ -126,11 +129,22 @@ export default function PaymentsPage() {
   }
 
   function selectProject(id: string) {
-    const proj = projects.find(p => p.id === id);
+    const proj = visibleProjects.find(p => p.id === id);
     setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
   }
 
-  // ── Import field definitions (validate against live project list) ──────────
+  // ── Projects visible to this user (admins see all, others see only assigned) ─
+  const visibleProjects = useMemo(
+    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    [projects, user?.id, canViewAll]
+  );
+
+  const userProjectIds = useMemo(
+    () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
+    [visibleProjects, canViewAll]
+  );
+
+  // ── Import field definitions (validate against visible projects) ─────────────
   const paymentImportFields = useMemo<ImportField[]>(() => [
     {
       key: 'projectName',
@@ -138,7 +152,7 @@ export default function PaymentsPage() {
       required: true,
       hint: 'Must exactly match an enabled project name',
       validate: (v) => {
-        const match = projects.find(p => p.projectName.toLowerCase() === v.trim().toLowerCase());
+        const match = visibleProjects.find(p => p.projectName.toLowerCase() === v.trim().toLowerCase());
         return match ? null : `Project "${v}" not found — check enabled projects`;
       },
     },
@@ -166,11 +180,11 @@ export default function PaymentsPage() {
     { key: 'referenceNo', label: 'Reference No.',  hint: 'Transaction / UTR / Cheque number' },
     { key: 'receivedBy',  label: 'Received By',    hint: 'Name of person who received' },
     { key: 'remarks',     label: 'Remarks' },
-  ], [projects]);
+  ], [visibleProjects]);
 
   async function savePaymentRow(row: Record<string, any>) {
     const projName = String(row.projectName || '').trim();
-    const proj = projects.find(p => p.projectName.toLowerCase() === projName.toLowerCase());
+    const proj = visibleProjects.find(p => p.projectName.toLowerCase() === projName.toLowerCase());
     if (!proj) throw new Error(`Project "${projName}" not found`);
 
     const amount = Number(row.receivedAmount);
@@ -250,14 +264,15 @@ export default function PaymentsPage() {
   }
 
   const filtered = useMemo(() => payments.filter(p => {
-    if (filterProject && p.projectId !== filterProject) return false;
-    if (filterFrom && p.receiptDate < filterFrom) return false;
-    if (filterTo   && p.receiptDate > filterTo)   return false;
-    if (search && !p.projectName.toLowerCase().includes(search.toLowerCase()) &&
-        !p.receivedBy.toLowerCase().includes(search.toLowerCase()) &&
-        !p.referenceNo.toLowerCase().includes(search.toLowerCase())) return false;
+    if (userProjectIds && !userProjectIds.has(p.projectId))                                      return false;
+    if (filterProject && p.projectId !== filterProject)                                          return false;
+    if (filterFrom && p.receiptDate < filterFrom)                                                return false;
+    if (filterTo   && p.receiptDate > filterTo)                                                  return false;
+    if (search && !(p.projectName  || '').toLowerCase().includes(search.toLowerCase()) &&
+                  !(p.receivedBy   || '').toLowerCase().includes(search.toLowerCase()) &&
+                  !(p.referenceNo  || '').toLowerCase().includes(search.toLowerCase()))          return false;
     return true;
-  }), [payments, filterProject, filterFrom, filterTo, search]);
+  }), [payments, userProjectIds, filterProject, filterFrom, filterTo, search]);
 
   const totalFiltered = useMemo(() => filtered.reduce((s, p) => s + (p.receivedAmount || 0), 0), [filtered]);
 
@@ -327,7 +342,7 @@ export default function PaymentsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Projects</SelectItem>
-            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+            {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
         <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" placeholder="From" />
@@ -442,7 +457,7 @@ export default function PaymentsPage() {
               <Select value={form.projectId} onValueChange={selectProject}>
                 <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                 <SelectContent>
-                  {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                  {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

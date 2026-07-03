@@ -9,6 +9,7 @@ import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASCategory, type SASExpense, type SASProject,
 } from '@/lib/site-account-statement';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -60,8 +61,10 @@ export default function SiteExpensesPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
+  const { user } = useAuth();
 
-  const canView   = can('View',   `${MODULE}.${RESOURCE}`) || can('View Module', MODULE);
+  const canViewAll = can('View', `${MODULE}.All Projects`);
+  const canView   = can('View',   `${MODULE}.${RESOURCE}`) || canViewAll;
   const canAdd    = can('Add',    `${MODULE}.${RESOURCE}`);
   const canEdit   = can('Edit',   `${MODULE}.${RESOURCE}`);
   const canDelete = can('Delete', `${MODULE}.${RESOURCE}`);
@@ -107,10 +110,22 @@ export default function SiteExpensesPage() {
     }
   }
 
-  // ── Derived category names list for import validation ───────────────────────
+  // ── Category names list for import validation ────────────────────────────────
   const categoryNames = useMemo(() => categories.map(c => c.name), [categories]);
 
-  // ── Import field definitions (validate against live projects + categories) ──
+  // ── Projects visible to this user (admins see all, others see only assigned) ─
+  const visibleProjects = useMemo(
+    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    [projects, user?.id, canViewAll]
+  );
+
+  // Set of visible project IDs used in data filter (null = show all)
+  const userProjectIds = useMemo(
+    () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
+    [visibleProjects, canViewAll]
+  );
+
+  // ── Import field definitions (validate against visible projects + categories) ─
   const expenseImportFields = useMemo<ImportField[]>(() => [
     {
       key: 'projectName',
@@ -118,7 +133,7 @@ export default function SiteExpensesPage() {
       required: true,
       hint: 'Must exactly match an enabled project name',
       validate: (v) => {
-        const match = projects.find(p => p.projectName.toLowerCase() === v.trim().toLowerCase());
+        const match = visibleProjects.find(p => p.projectName.toLowerCase() === v.trim().toLowerCase());
         return match ? null : `Project "${v}" not found — check enabled projects`;
       },
     },
@@ -162,11 +177,11 @@ export default function SiteExpensesPage() {
     { key: 'vendorPartyName', label: 'Vendor / Party Name', hint: 'Optional vendor or party name' },
     { key: 'billNo',          label: 'Bill No.',            hint: 'Bill or voucher number' },
     { key: 'remarks',         label: 'Remarks' },
-  ], [projects, categoryNames]);
+  ], [visibleProjects, categoryNames]);
 
   async function saveExpenseRow(row: Record<string, any>) {
     const projName = String(row.projectName || '').trim();
-    const proj = projects.find(p => p.projectName.toLowerCase() === projName.toLowerCase());
+    const proj = visibleProjects.find(p => p.projectName.toLowerCase() === projName.toLowerCase());
     if (!proj) throw new Error(`Project "${projName}" not found`);
 
     const catRaw  = String(row.expenseCategory || '').trim();
@@ -211,7 +226,7 @@ export default function SiteExpensesPage() {
   function setField(key: keyof FormState, value: string) { setForm(f => ({ ...f, [key]: value })); }
 
   function selectProject(id: string) {
-    const proj = projects.find(p => p.id === id);
+    const proj = visibleProjects.find(p => p.id === id);
     setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
   }
 
@@ -263,17 +278,18 @@ export default function SiteExpensesPage() {
   }
 
   const filtered = useMemo(() => expenses.filter(e => {
+    if (userProjectIds && !userProjectIds.has(e.projectId))                                 return false;
     if (filterProject  && e.projectId !== filterProject)                                    return false;
     if (filterCategory && e.expenseCategory !== filterCategory)                             return false;
     if (filterMode     && e.paymentMode !== filterMode)                                     return false;
     if (filterFrom     && e.expenseDate < filterFrom)                                       return false;
     if (filterTo       && e.expenseDate > filterTo)                                         return false;
-    if (search && !e.projectName.toLowerCase().includes(search.toLowerCase()) &&
-        !e.expensedBy.toLowerCase().includes(search.toLowerCase()) &&
-        !e.expenseCategory.toLowerCase().includes(search.toLowerCase()) &&
-        !(e.billNo || '').toLowerCase().includes(search.toLowerCase()))                     return false;
+    if (search && !(e.projectName     || '').toLowerCase().includes(search.toLowerCase()) &&
+                  !(e.expensedBy      || '').toLowerCase().includes(search.toLowerCase()) &&
+                  !(e.expenseCategory || '').toLowerCase().includes(search.toLowerCase()) &&
+                  !(e.billNo          || '').toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [expenses, filterProject, filterCategory, filterMode, filterFrom, filterTo, search]);
+  }), [expenses, userProjectIds, filterProject, filterCategory, filterMode, filterFrom, filterTo, search]);
 
   const totalFiltered = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
 
@@ -341,7 +357,7 @@ export default function SiteExpensesPage() {
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Projects</SelectItem>
-            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+            {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filterCategory || '_all_'} onValueChange={v => setFilterCategory(v === '_all_' ? '' : v)}>
@@ -474,7 +490,7 @@ export default function SiteExpensesPage() {
               <Select value={form.projectId} onValueChange={selectProject}>
                 <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                 <SelectContent>
-                  {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                  {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
