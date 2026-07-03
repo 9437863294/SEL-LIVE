@@ -152,6 +152,15 @@ export const permissionModules = {
     'Projects': ['View Dashboard', 'View Inventory', 'View Transactions', 'View Conversions', 'View BOM', 'View BOQ', 'View Reports', 'View AI Forecast'],
     'Settings': ['View', 'Edit'],
   },
+  'Site Account Statement': {
+    'View Module': [],
+    'Dashboard': ['View'],
+    'Payments': ['View', 'Add', 'Edit', 'Delete', 'Export'],
+    'Expenses': ['View', 'Add', 'Edit', 'Delete', 'Export'],
+    'Expense Categories': ['View', 'Add', 'Edit', 'Delete'],
+    'Project Settings': ['View', 'Add', 'Edit', 'Delete'],
+    'Reports': ['View', 'Export'],
+  },
   'Settings': {
     'View Module': [],
     'Manage Department': ['View', 'Add', 'Edit', 'Delete'],

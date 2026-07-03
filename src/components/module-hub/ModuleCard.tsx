@@ -77,6 +77,8 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/vehicle-management';
       case 'Driver Management':
         return '/driver-management';
+      case 'Site Account Statement':
+        return '/site-account-statement';
       // Nested Settings Pages
       case 'User Management':
         return '/settings/user-management';
