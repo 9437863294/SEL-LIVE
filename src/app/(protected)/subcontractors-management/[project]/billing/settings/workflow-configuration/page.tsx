@@ -340,6 +340,7 @@ export default function BillingWorkflowConfigurationPage() {
 
       await logUserActivity({
         userId: user.id,
+        module: 'Subcontractors Management',
         action: 'Update Billing Workflow',
         details: { stepCount: validation.steps.length },
       });

@@ -280,6 +280,7 @@ export default function ImportBoqPage() {
 
       await logUserActivity({
         userId: user.id,
+        module: 'Store & Stock Management',
         action: 'Import BOQ',
         details: {
           project: projectSlug,

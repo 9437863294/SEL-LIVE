@@ -82,6 +82,7 @@ export default function AddBoqItemPage() {
 
         await logUserActivity({
             userId: user.id,
+            module: 'Store & Stock Management',
             action: 'Add BOQ Item (Stock)',
             details: {
                 project: projectSlug,

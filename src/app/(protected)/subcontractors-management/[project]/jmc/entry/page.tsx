@@ -463,6 +463,7 @@ export default function JmcEntryPage() {
 
       await logUserActivity({
         userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+        module: 'Subcontractors Management',
         action: 'Create JMC Entry',
         details: { project: projectSlug, jmcNo: details.jmcNo, workOrderNo: details.woNo, itemCount: items.length },
       });

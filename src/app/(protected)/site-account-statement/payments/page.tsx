@@ -30,8 +30,9 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Download, Loader2, Pencil, Plus, TrendingUp, Trash2 } from 'lucide-react';
+import { Download, Loader2, Pencil, Plus, TrendingUp, Trash2, Upload } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
 const MODULE   = 'Site Account Statement';
 const RESOURCE = 'Payments';
@@ -63,13 +64,15 @@ export default function PaymentsPage() {
   const canEdit      = can('Edit',   `${MODULE}.${RESOURCE}`);
   const canDelete    = can('Delete', `${MODULE}.${RESOURCE}`);
   const canExport    = can('Export', `${MODULE}.${RESOURCE}`);
+  const canImport    = canAdd;
 
   const [projects,  setProjects]  = useState<SASProject[]>([]);
   const [payments,  setPayments]  = useState<SASPayment[]>([]);
   const [loading,   setLoading]   = useState(true);
-  const [saving,    setSaving]    = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving,           setSaving]           = useState(false);
+  const [exporting,        setExporting]        = useState(false);
+  const [dialogOpen,       setDialogOpen]       = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<SASPayment | null>(null);
   const [form,      setForm]      = useState<FormState>(blank());
 
@@ -125,6 +128,68 @@ export default function PaymentsPage() {
   function selectProject(id: string) {
     const proj = projects.find(p => p.id === id);
     setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
+  }
+
+  // ── Import field definitions (validate against live project list) ──────────
+  const paymentImportFields = useMemo<ImportField[]>(() => [
+    {
+      key: 'projectName',
+      label: 'Project Name',
+      required: true,
+      hint: 'Must exactly match an enabled project name',
+      validate: (v) => {
+        const match = projects.find(p => p.projectName.toLowerCase() === v.trim().toLowerCase());
+        return match ? null : `Project "${v}" not found — check enabled projects`;
+      },
+    },
+    {
+      key: 'receiptDate',
+      label: 'Receipt Date',
+      required: true,
+      hint: 'YYYY-MM-DD  e.g. 2024-07-15',
+      validate: (v) => /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? null : 'Date must be in YYYY-MM-DD format',
+    },
+    {
+      key: 'receivedAmount',
+      label: 'Amount (₹)',
+      required: true,
+      type: 'number',
+      hint: 'Positive number without commas',
+      validate: (v) => Number(v) > 0 ? null : 'Amount must be greater than 0',
+    },
+    {
+      key: 'paymentMode',
+      label: 'Payment Mode',
+      hint: `Cash | Bank | UPI | Other  (defaults to Cash if blank)`,
+      validate: (v) => !v || PAYMENT_MODES.includes(v as any) ? null : `Must be one of: ${PAYMENT_MODES.join(', ')}`,
+    },
+    { key: 'referenceNo', label: 'Reference No.',  hint: 'Transaction / UTR / Cheque number' },
+    { key: 'receivedBy',  label: 'Received By',    hint: 'Name of person who received' },
+    { key: 'remarks',     label: 'Remarks' },
+  ], [projects]);
+
+  async function savePaymentRow(row: Record<string, any>) {
+    const projName = String(row.projectName || '').trim();
+    const proj = projects.find(p => p.projectName.toLowerCase() === projName.toLowerCase());
+    if (!proj) throw new Error(`Project "${projName}" not found`);
+
+    const amount = Number(row.receivedAmount);
+    if (!amount || amount <= 0) throw new Error('Amount must be > 0');
+
+    const mode = PAYMENT_MODES.includes(row.paymentMode as any) ? row.paymentMode : 'Cash';
+
+    await addDoc(collection(db, SAS_COLLECTIONS.payments), {
+      projectId:      proj.id,
+      projectName:    proj.projectName,
+      receiptDate:    String(row.receiptDate || '').trim(),
+      receivedAmount: amount,
+      paymentMode:    mode,
+      referenceNo:    String(row.referenceNo    || '').trim(),
+      receivedBy:     String(row.receivedBy     || '').trim(),
+      remarks:        String(row.remarks        || '').trim(),
+      createdAt:      serverTimestamp(),
+      updatedAt:      serverTimestamp(),
+    });
   }
 
   async function handleSubmit() {
@@ -241,6 +306,11 @@ export default function PaymentsPage() {
               Export
             </Button>
           )}
+          {canImport && (
+            <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-2">
+              <Upload className="h-4 w-4" /> Import
+            </Button>
+          )}
           {canAdd && (
             <Button size="sm" onClick={openAdd} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
               <Plus className="h-4 w-4" /> Add Payment
@@ -349,6 +419,16 @@ export default function PaymentsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Import Dialog */}
+      <VehicleImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        title="Import Payments Received"
+        fields={paymentImportFields}
+        onSaveRow={savePaymentRow}
+        onImportComplete={() => { void log('Import SAS Payments', {}); void loadAll(); }}
+      />
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

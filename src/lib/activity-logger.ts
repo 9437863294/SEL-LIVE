@@ -44,7 +44,7 @@ export async function logUserActivity(logData: ActivityLogData): Promise<void> {
       userId:      logData.userId,
       userName:    logData.userName    ?? null,
       userEmail:   logData.userEmail   ?? null,
-      module:      logData.module,
+      module:      logData.module ?? 'Unknown',
       action:      logData.action,
       details:     logData.details     ?? {},
       sessionId:   logData.sessionId   ?? null,
