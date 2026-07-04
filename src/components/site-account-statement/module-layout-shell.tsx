@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
+  Activity,
   BarChart3,
   BookOpen,
   ClipboardList,
@@ -11,12 +12,15 @@ import {
   Layers,
   LayoutDashboard,
   Menu,
+  PieChart,
   Receipt,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   Tags,
   TrendingDown,
   TrendingUp,
+  Users,
   Wallet,
 } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -28,15 +32,19 @@ import { cn } from '@/lib/utils';
 const MODULE = 'Site Account Statement';
 
 const sections = [
-  { href: '/site-account-statement',                    label: 'Dashboard',          resource: 'Dashboard',          icon: LayoutDashboard, color: 'text-emerald-600', bg: 'bg-emerald-50',  group: 'core' },
-  { href: '/site-account-statement/payments',           label: 'Payments Received',  resource: 'Payments',           icon: TrendingUp,      color: 'text-blue-600',    bg: 'bg-blue-50',     group: 'transactions' },
-  { href: '/site-account-statement/expenses',           label: 'Site Expenses',      resource: 'Expenses',           icon: TrendingDown,    color: 'text-rose-600',    bg: 'bg-rose-50',     group: 'transactions' },
-  { href: '/site-account-statement/reports/receipts',  label: 'Receipt Report',     resource: 'Reports',            icon: FileText,        color: 'text-teal-600',    bg: 'bg-teal-50',     group: 'reports' },
-  { href: '/site-account-statement/reports/expenses',  label: 'Expense Report',     resource: 'Reports',            icon: Receipt,         color: 'text-orange-600',  bg: 'bg-orange-50',   group: 'reports' },
-  { href: '/site-account-statement/reports/statement', label: 'Account Statement',  resource: 'Reports',            icon: BookOpen,        color: 'text-violet-600',  bg: 'bg-violet-50',   group: 'reports' },
-  { href: '/site-account-statement/reports/summary',   label: 'Project Summary',    resource: 'Reports',            icon: BarChart3,       color: 'text-indigo-600',  bg: 'bg-indigo-50',   group: 'reports' },
-  { href: '/site-account-statement/expense-categories',label: 'Expense Categories', resource: 'Expense Categories', icon: Tags,            color: 'text-amber-600',   bg: 'bg-amber-50',    group: 'master' },
-  { href: '/site-account-statement/settings',          label: 'Project Settings',   resource: 'Project Settings',   icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master' },
+  { href: '/site-account-statement',                    label: 'Dashboard',          resource: 'Dashboard',          icon: LayoutDashboard, color: 'text-emerald-600', bg: 'bg-emerald-50',  group: 'core',         viewAllAccess: true  },
+  { href: '/site-account-statement/payments',           label: 'Payments Received',  resource: 'Payments',           icon: TrendingUp,      color: 'text-blue-600',    bg: 'bg-blue-50',     group: 'transactions', viewAllAccess: true  },
+  { href: '/site-account-statement/expenses',           label: 'Site Expenses',      resource: 'Expenses',           icon: TrendingDown,    color: 'text-rose-600',    bg: 'bg-rose-50',     group: 'transactions', viewAllAccess: true  },
+  { href: '/site-account-statement/reports/receipts',  label: 'Receipt Report',     resource: 'Reports',            icon: FileText,        color: 'text-teal-600',    bg: 'bg-teal-50',     group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/reports/expenses',  label: 'Expense Report',     resource: 'Reports',            icon: Receipt,         color: 'text-orange-600',  bg: 'bg-orange-50',   group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/reports/statement', label: 'Account Statement',  resource: 'Reports',            icon: BookOpen,        color: 'text-violet-600',  bg: 'bg-violet-50',   group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/reports/summary',   label: 'Project Summary',    resource: 'Reports',            icon: BarChart3,       color: 'text-indigo-600',  bg: 'bg-indigo-50',   group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/reports/category',  label: 'Category Analysis',  resource: 'Reports',            icon: PieChart,        color: 'text-purple-600',  bg: 'bg-purple-50',   group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/reports/cashflow',  label: 'Cash Flow',          resource: 'Reports',            icon: Activity,        color: 'text-sky-600',     bg: 'bg-sky-50',      group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/reports/person',    label: 'Person Expenses',    resource: 'Reports',            icon: Users,           color: 'text-pink-600',    bg: 'bg-pink-50',     group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/reports/balance',   label: 'Balance Status',     resource: 'Reports',            icon: ShieldCheck,     color: 'text-green-600',   bg: 'bg-green-50',    group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/expense-categories',label: 'Expense Categories', resource: 'Expense Categories', icon: Tags,            color: 'text-amber-600',   bg: 'bg-amber-50',    group: 'master',       viewAllAccess: false },
+  { href: '/site-account-statement/settings',          label: 'Project Settings',   resource: 'Project Settings',   icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       viewAllAccess: false },
 ];
 
 export default function SiteAccountStatementShell({ children }: { children: React.ReactNode }) {
@@ -45,7 +53,10 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
   const { can } = useAuthorization();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const canViewAll = can('View', `${MODULE}.All Projects`);
+
   const canViewModule =
+    canViewAll ||
     can('View Module', MODULE) ||
     sections.some(s => Boolean(s.resource) && (
       can('View', `${MODULE}.${s.resource}`) ||
@@ -53,6 +64,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
     ));
 
   const availableSections = sections.filter(item => {
+    if (canViewAll && item.viewAllAccess) return true;
     if (!item.resource) return canViewModule;
     return (
       can('View', `${MODULE}.${item.resource}`) ||
