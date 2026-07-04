@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASCategory, type SASExpense, type SASProject,
+  type SASAttachment, type SASCategory, type SASExpense, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -31,17 +33,24 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Download, Loader2, Pencil, Plus, Receipt, Trash2, Upload } from 'lucide-react';
+import {
+  Download, ExternalLink, File, FileText, Image, Loader2,
+  Paperclip, Pencil, Plus, Receipt, Trash2, Upload, X,
+} from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
 const MODULE   = 'Site Account Statement';
 const RESOURCE = 'Expenses';
+const ACCEPT   = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt';
 
 interface FormState {
   projectId: string;
   projectName: string;
+  expenseCategoryId: string;
   expenseCategory: string;
+  expenseSubCategory: string;
+  narration: string;
   expensedBy: string;
   expenseDate: string;
   expenseAmount: string;
@@ -52,16 +61,30 @@ interface FormState {
 }
 
 const blank = (): FormState => ({
-  projectId: '', projectName: '', expenseCategory: '',
-  expensedBy: '', expenseDate: '', expenseAmount: '',
+  projectId: '', projectName: '',
+  expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '',
+  narration: '', expensedBy: '', expenseDate: '', expenseAmount: '',
   paymentMode: 'Cash', vendorPartyName: '', billNo: '', remarks: '',
 });
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024)    return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function AttachmentIcon({ type }: { type: string }) {
+  if (type.startsWith('image/')) return <Image className="h-4 w-4 text-sky-500 shrink-0" />;
+  if (type === 'application/pdf')  return <FileText className="h-4 w-4 text-rose-500 shrink-0" />;
+  return <File className="h-4 w-4 text-slate-400 shrink-0" />;
+}
 
 export default function SiteExpensesPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
   const { user } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
   const canView   = can('View',   `${MODULE}.${RESOURCE}`) || canViewAll;
@@ -71,24 +94,32 @@ export default function SiteExpensesPage() {
   const canExport = can('Export', `${MODULE}.${RESOURCE}`);
   const canImport = canAdd;
 
-  const [projects,    setProjects]    = useState<SASProject[]>([]);
-  const [categories,  setCategories]  = useState<SASCategory[]>([]);
-  const [expenses,    setExpenses]    = useState<SASExpense[]>([]);
-  const [loading,     setLoading]     = useState(true);
+  const [projects,   setProjects]   = useState<SASProject[]>([]);
+  const [categories, setCategories] = useState<SASCategory[]>([]);
+  const [expenses,   setExpenses]   = useState<SASExpense[]>([]);
+  const [loading,    setLoading]    = useState(true);
   const [saving,           setSaving]           = useState(false);
+  const [uploading,        setUploading]        = useState(false);
   const [exporting,        setExporting]        = useState(false);
   const [dialogOpen,       setDialogOpen]       = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [editingRow,  setEditingRow]  = useState<SASExpense | null>(null);
-  const [form,        setForm]        = useState<FormState>(blank());
+  const [editingRow,       setEditingRow]       = useState<SASExpense | null>(null);
+  const [form,             setForm]             = useState<FormState>(blank());
+
+  // Attachment state
+  const [pendingFiles,        setPendingFiles]        = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<SASAttachment[]>([]);
+  const [removedAttachments,  setRemovedAttachments]  = useState<SASAttachment[]>([]);
+  const [viewDocExpense,      setViewDocExpense]      = useState<SASExpense | null>(null);
 
   // Filters
-  const [filterProject,  setFilterProject]  = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterMode,     setFilterMode]     = useState('');
-  const [filterFrom,     setFilterFrom]     = useState('');
-  const [filterTo,       setFilterTo]       = useState('');
-  const [search,         setSearch]         = useState('');
+  const [filterProject,     setFilterProject]     = useState('');
+  const [filterCategory,    setFilterCategory]    = useState('');
+  const [filterSubCategory, setFilterSubCategory] = useState('');
+  const [filterMode,        setFilterMode]        = useState('');
+  const [filterFrom,        setFilterFrom]        = useState('');
+  const [filterTo,          setFilterTo]          = useState('');
+  const [search,            setSearch]            = useState('');
 
   useEffect(() => {
     if (!isAuthLoading && canView) void loadAll();
@@ -110,74 +141,79 @@ export default function SiteExpensesPage() {
     }
   }
 
-  // ── Category names list for import validation ────────────────────────────────
-  const categoryNames = useMemo(() => categories.map(c => c.name), [categories]);
+  const mainCategories    = useMemo(() => categories.filter(c => !c.parentId), [categories]);
+  const subCategories     = useMemo(() => categories.filter(c => !!c.parentId), [categories]);
+  const formSubCategories = useMemo(
+    () => subCategories.filter(c => c.parentId === form.expenseCategoryId),
+    [subCategories, form.expenseCategoryId]
+  );
+  const filterSubCategoryOptions = useMemo(
+    () => filterCategory
+      ? subCategories.filter(c => {
+          const main = mainCategories.find(m => m.name === filterCategory);
+          return main ? c.parentId === main.id : false;
+        })
+      : subCategories,
+    [filterCategory, subCategories, mainCategories]
+  );
 
-  // ── Projects visible to this user (admins see all, others see only assigned) ─
   const visibleProjects = useMemo(
     () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
     [projects, user?.id, canViewAll]
   );
-
-  // Set of visible project IDs used in data filter (null = show all)
   const userProjectIds = useMemo(
     () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
     [visibleProjects, canViewAll]
   );
 
-  // ── Import field definitions (validate against visible projects + categories) ─
+  // ── Import field definitions ──────────────────────────────────────────────────
   const expenseImportFields = useMemo<ImportField[]>(() => [
     {
-      key: 'projectName',
-      label: 'Project Name',
-      required: true,
+      key: 'projectName', label: 'Project Name', required: true,
       hint: 'Must exactly match an enabled project name',
       validate: (v) => {
         const match = visibleProjects.find(p => p.projectName.toLowerCase() === v.trim().toLowerCase());
-        return match ? null : `Project "${v}" not found — check enabled projects`;
+        return match ? null : `Project "${v}" not found`;
       },
     },
     {
-      key: 'expenseCategory',
-      label: 'Expense Category',
-      required: true,
-      hint: 'Must match a configured category (see Expense Categories)',
+      key: 'expenseCategory', label: 'Main Category', required: true,
+      hint: 'Must match a configured main category',
       validate: (v) => {
-        const match = categoryNames.find(c => c.toLowerCase() === v.trim().toLowerCase());
-        return match ? null : `Category "${v}" not found — add it in Expense Categories first`;
+        const match = mainCategories.find(c => c.name.toLowerCase() === v.trim().toLowerCase());
+        return match ? null : `Main category "${v}" not found`;
       },
     },
     {
-      key: 'expensedBy',
-      label: 'Expensed By',
-      required: true,
-      hint: 'Name of person who spent the amount',
+      key: 'expenseSubCategory', label: 'Sub-Category',
+      hint: 'Optional — must match a sub-category under the main category',
+      validate: (v) => {
+        if (!v.trim()) return null;
+        const match = subCategories.find(c => c.name.toLowerCase() === v.trim().toLowerCase());
+        return match ? null : `Sub-category "${v}" not found`;
+      },
     },
+    { key: 'narration', label: 'Narration', hint: 'Brief description of payment purpose' },
+    { key: 'expensedBy', label: 'Expensed By', required: true, hint: 'Name of person who spent the amount' },
     {
-      key: 'expenseDate',
-      label: 'Expense Date',
-      required: true,
+      key: 'expenseDate', label: 'Expense Date', required: true,
       hint: 'YYYY-MM-DD  e.g. 2024-07-15',
       validate: (v) => /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? null : 'Date must be in YYYY-MM-DD format',
     },
     {
-      key: 'expenseAmount',
-      label: 'Amount (₹)',
-      required: true,
-      type: 'number',
+      key: 'expenseAmount', label: 'Amount (₹)', required: true, type: 'number',
       hint: 'Positive number without commas',
       validate: (v) => Number(v) > 0 ? null : 'Amount must be greater than 0',
     },
     {
-      key: 'paymentMode',
-      label: 'Payment Mode',
+      key: 'paymentMode', label: 'Payment Mode',
       hint: `Cash | Bank | UPI | Other  (defaults to Cash if blank)`,
       validate: (v) => !v || PAYMENT_MODES.includes(v as any) ? null : `Must be one of: ${PAYMENT_MODES.join(', ')}`,
     },
-    { key: 'vendorPartyName', label: 'Vendor / Party Name', hint: 'Optional vendor or party name' },
+    { key: 'vendorPartyName', label: 'Vendor / Party Name', hint: 'Optional' },
     { key: 'billNo',          label: 'Bill No.',            hint: 'Bill or voucher number' },
     { key: 'remarks',         label: 'Remarks' },
-  ], [visibleProjects, categoryNames]);
+  ], [visibleProjects, mainCategories, subCategories]);
 
   async function saveExpenseRow(row: Record<string, any>) {
     const projName = String(row.projectName || '').trim();
@@ -185,41 +221,97 @@ export default function SiteExpensesPage() {
     if (!proj) throw new Error(`Project "${projName}" not found`);
 
     const catRaw  = String(row.expenseCategory || '').trim();
-    const catName = categoryNames.find(c => c.toLowerCase() === catRaw.toLowerCase());
-    if (!catName) throw new Error(`Category "${catRaw}" not found`);
+    const mainCat = mainCategories.find(c => c.name.toLowerCase() === catRaw.toLowerCase());
+    if (!mainCat) throw new Error(`Main category "${catRaw}" not found`);
+
+    const subCatRaw = String(row.expenseSubCategory || '').trim();
+    let subCatName = '';
+    if (subCatRaw) {
+      const subCat = subCategories.find(c =>
+        c.parentId === mainCat.id && c.name.toLowerCase() === subCatRaw.toLowerCase()
+      );
+      subCatName = subCat?.name || subCatRaw;
+    }
 
     const amount = Number(row.expenseAmount);
     if (!amount || amount <= 0) throw new Error('Amount must be > 0');
-
     const mode = PAYMENT_MODES.includes(row.paymentMode as any) ? row.paymentMode : 'Cash';
 
     await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
-      projectId:       proj.id,
-      projectName:     proj.projectName,
-      expenseCategory: catName,
-      expensedBy:      String(row.expensedBy      || '').trim(),
-      expenseDate:     String(row.expenseDate      || '').trim(),
-      expenseAmount:   amount,
-      paymentMode:     mode,
-      vendorPartyName: String(row.vendorPartyName  || '').trim(),
-      billNo:          String(row.billNo           || '').trim(),
-      remarks:         String(row.remarks          || '').trim(),
-      createdAt:       serverTimestamp(),
-      updatedAt:       serverTimestamp(),
+      projectId:          proj.id,
+      projectName:        proj.projectName,
+      expenseCategory:    mainCat.name,
+      expenseSubCategory: subCatName,
+      narration:          String(row.narration       || '').trim(),
+      expensedBy:         String(row.expensedBy      || '').trim(),
+      expenseDate:        String(row.expenseDate      || '').trim(),
+      expenseAmount:      amount,
+      paymentMode:        mode,
+      vendorPartyName:    String(row.vendorPartyName  || '').trim(),
+      billNo:             String(row.billNo           || '').trim(),
+      remarks:            String(row.remarks          || '').trim(),
+      attachments:        [],
+      createdAt:          serverTimestamp(),
+      updatedAt:          serverTimestamp(),
     });
   }
 
-  function openAdd() { setEditingRow(null); setForm(blank()); setDialogOpen(true); }
+  // ── Attachment helpers ────────────────────────────────────────────────────────
+  async function uploadAttachments(expenseId: string, files: File[]): Promise<SASAttachment[]> {
+    return Promise.all(files.map(async file => {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `siteAccountExpenses/${expenseId}/${Date.now()}-${safeName}`;
+      const sRef = storageRef(storage, path);
+      await uploadBytes(sRef, file);
+      const url = await getDownloadURL(sRef);
+      return { name: file.name, url, storagePath: path, size: file.size, type: file.type || 'application/octet-stream' };
+    }));
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setPendingFiles(prev => [...prev, ...files]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function handleRemovePending(idx: number) {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function handleRemoveExisting(idx: number) {
+    const att = existingAttachments[idx];
+    setExistingAttachments(prev => prev.filter((_, i) => i !== idx));
+    setRemovedAttachments(prev => [...prev, att]);
+  }
+
+  // ── Dialog open/close ─────────────────────────────────────────────────────────
+  function openAdd() {
+    setEditingRow(null);
+    setForm(blank());
+    setPendingFiles([]);
+    setExistingAttachments([]);
+    setRemovedAttachments([]);
+    setDialogOpen(true);
+  }
 
   function openEdit(row: SASExpense) {
     setEditingRow(row);
+    const mainCat = mainCategories.find(c => c.name === row.expenseCategory);
     setForm({
       projectId: row.projectId, projectName: row.projectName,
-      expenseCategory: row.expenseCategory, expensedBy: row.expensedBy,
+      expenseCategoryId: mainCat?.id || '',
+      expenseCategory: row.expenseCategory,
+      expenseSubCategory: row.expenseSubCategory || '',
+      narration: row.narration || '',
+      expensedBy: row.expensedBy,
       expenseDate: row.expenseDate, expenseAmount: String(row.expenseAmount),
       paymentMode: row.paymentMode, vendorPartyName: row.vendorPartyName || '',
       billNo: row.billNo || '', remarks: row.remarks || '',
     });
+    setPendingFiles([]);
+    setExistingAttachments(row.attachments ? [...row.attachments] : []);
+    setRemovedAttachments([]);
     setDialogOpen(true);
   }
 
@@ -230,87 +322,140 @@ export default function SiteExpensesPage() {
     setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
   }
 
+  function selectMainCategory(id: string) {
+    const cat = mainCategories.find(c => c.id === id);
+    setForm(f => ({ ...f, expenseCategoryId: id, expenseCategory: cat?.name || '', expenseSubCategory: '' }));
+  }
+
+  // ── Submit ────────────────────────────────────────────────────────────────────
   async function handleSubmit() {
-    if (!form.projectId)       { toast({ title: 'Validation', description: 'Select a project.',         variant: 'destructive' }); return; }
-    if (!form.expenseCategory) { toast({ title: 'Validation', description: 'Select expense category.',  variant: 'destructive' }); return; }
-    if (!form.expensedBy.trim()){ toast({ title: 'Validation', description: 'Expensed By is required.', variant: 'destructive' }); return; }
-    if (!form.expenseDate)     { toast({ title: 'Validation', description: 'Expense date is required.', variant: 'destructive' }); return; }
+    if (!form.projectId)        { toast({ title: 'Validation', description: 'Select a project.',         variant: 'destructive' }); return; }
+    if (!form.expenseCategory)  { toast({ title: 'Validation', description: 'Select main category.',     variant: 'destructive' }); return; }
+    if (!form.expensedBy.trim()){ toast({ title: 'Validation', description: 'Expensed By is required.',  variant: 'destructive' }); return; }
+    if (!form.expenseDate)      { toast({ title: 'Validation', description: 'Expense date is required.', variant: 'destructive' }); return; }
     const amount = Number(form.expenseAmount);
-    if (!amount || amount <= 0){ toast({ title: 'Validation', description: 'Enter a valid amount.',     variant: 'destructive' }); return; }
+    if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.',     variant: 'destructive' }); return; }
 
     setSaving(true);
+    if (pendingFiles.length > 0) setUploading(true);
     try {
-      const data = {
+      const baseData = {
         projectId: form.projectId, projectName: form.projectName,
-        expenseCategory: form.expenseCategory, expensedBy: form.expensedBy.trim(),
-        expenseDate: form.expenseDate, expenseAmount: amount,
-        paymentMode: form.paymentMode, vendorPartyName: form.vendorPartyName.trim(),
-        billNo: form.billNo.trim(), remarks: form.remarks.trim(),
-        updatedAt: serverTimestamp(),
+        expenseCategory:    form.expenseCategory,
+        expenseSubCategory: form.expenseSubCategory.trim(),
+        narration:          form.narration.trim(),
+        expensedBy:         form.expensedBy.trim(),
+        expenseDate:        form.expenseDate,
+        expenseAmount:      amount,
+        paymentMode:        form.paymentMode,
+        vendorPartyName:    form.vendorPartyName.trim(),
+        billNo:             form.billNo.trim(),
+        remarks:            form.remarks.trim(),
+        updatedAt:          serverTimestamp(),
       };
+
       if (editingRow) {
-        await updateDoc(doc(db, SAS_COLLECTIONS.expenses, editingRow.id), data);
+        // Delete removed attachments from Storage (best-effort)
+        await Promise.allSettled(
+          removedAttachments.map(a => deleteObject(storageRef(storage, a.storagePath)))
+        );
+        // Upload new pending files
+        const newAttachments = await uploadAttachments(editingRow.id, pendingFiles);
+        const finalAttachments = [...existingAttachments, ...newAttachments];
+        await updateDoc(doc(db, SAS_COLLECTIONS.expenses, editingRow.id), {
+          ...baseData, attachments: finalAttachments,
+        });
         void log('Edit SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
         toast({ title: 'Updated', description: 'Expense updated.' });
       } else {
-        await addDoc(collection(db, SAS_COLLECTIONS.expenses), { ...data, createdAt: serverTimestamp() });
+        // Create expense first to get the ID
+        const docRef = await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
+          ...baseData, attachments: [], createdAt: serverTimestamp(),
+        });
+        // Upload files using the new doc ID
+        const attachments = await uploadAttachments(docRef.id, pendingFiles);
+        if (attachments.length > 0) {
+          await updateDoc(docRef, { attachments });
+        }
         void log('Add SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
-        toast({ title: 'Added', description: 'Expense recorded.' });
+        toast({ title: 'Added', description: `Expense recorded${attachments.length > 0 ? ` with ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}` : ''}.` });
       }
+
       setDialogOpen(false);
       void loadAll();
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setSaving(false);
+      setUploading(false);
     }
   }
 
   async function handleDelete(row: SASExpense) {
     try {
+      // Delete storage files first (best-effort)
+      if (row.attachments?.length) {
+        await Promise.allSettled(
+          row.attachments.map(a => deleteObject(storageRef(storage, a.storagePath)))
+        );
+      }
       await deleteDoc(doc(db, SAS_COLLECTIONS.expenses, row.id));
       void log('Delete SAS Expense', { project: row.projectName });
-      toast({ title: 'Deleted', description: 'Expense deleted.' });
+      toast({ title: 'Deleted', description: 'Expense and attachments deleted.' });
       void loadAll();
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
   }
 
+  // ── Filters ───────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => expenses.filter(e => {
-    if (userProjectIds && !userProjectIds.has(e.projectId))                                 return false;
-    if (filterProject  && e.projectId !== filterProject)                                    return false;
-    if (filterCategory && e.expenseCategory !== filterCategory)                             return false;
-    if (filterMode     && e.paymentMode !== filterMode)                                     return false;
-    if (filterFrom     && e.expenseDate < filterFrom)                                       return false;
-    if (filterTo       && e.expenseDate > filterTo)                                         return false;
-    if (search && !(e.projectName     || '').toLowerCase().includes(search.toLowerCase()) &&
-                  !(e.expensedBy      || '').toLowerCase().includes(search.toLowerCase()) &&
-                  !(e.expenseCategory || '').toLowerCase().includes(search.toLowerCase()) &&
-                  !(e.billNo          || '').toLowerCase().includes(search.toLowerCase())) return false;
+    if (userProjectIds    && !userProjectIds.has(e.projectId))                         return false;
+    if (filterProject     && e.projectId !== filterProject)                            return false;
+    if (filterCategory    && e.expenseCategory !== filterCategory)                     return false;
+    if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory)       return false;
+    if (filterMode        && e.paymentMode !== filterMode)                             return false;
+    if (filterFrom        && e.expenseDate < filterFrom)                               return false;
+    if (filterTo          && e.expenseDate > filterTo)                                 return false;
+    if (search &&
+      !(e.projectName        || '').toLowerCase().includes(search.toLowerCase()) &&
+      !(e.expensedBy         || '').toLowerCase().includes(search.toLowerCase()) &&
+      !(e.expenseCategory    || '').toLowerCase().includes(search.toLowerCase()) &&
+      !(e.expenseSubCategory || '').toLowerCase().includes(search.toLowerCase()) &&
+      !(e.narration          || '').toLowerCase().includes(search.toLowerCase()) &&
+      !(e.billNo             || '').toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [expenses, userProjectIds, filterProject, filterCategory, filterMode, filterFrom, filterTo, search]);
+  }), [expenses, userProjectIds, filterProject, filterCategory, filterSubCategory, filterMode, filterFrom, filterTo, search]);
 
   const totalFiltered = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
 
+  // ── Export ────────────────────────────────────────────────────────────────────
   async function exportExcel() {
     setExporting(true);
     try {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Site Expenses');
       ws.columns = [
-        { header: 'Project',          key: 'projectName',     width: 28 },
-        { header: 'Expense Category', key: 'expenseCategory', width: 22 },
-        { header: 'Expensed By',      key: 'expensedBy',      width: 20 },
-        { header: 'Expense Date',     key: 'expenseDate',     width: 14 },
-        { header: 'Amount (₹)',       key: 'expenseAmount',   width: 14 },
-        { header: 'Payment Mode',     key: 'paymentMode',     width: 14 },
-        { header: 'Vendor / Party',   key: 'vendorPartyName', width: 22 },
-        { header: 'Bill No.',         key: 'billNo',          width: 16 },
-        { header: 'Remarks',          key: 'remarks',         width: 30 },
+        { header: 'Project',        key: 'projectName',        width: 28 },
+        { header: 'Main Category',  key: 'expenseCategory',    width: 22 },
+        { header: 'Sub-Category',   key: 'expenseSubCategory', width: 22 },
+        { header: 'Narration',      key: 'narration',          width: 30 },
+        { header: 'Expensed By',    key: 'expensedBy',         width: 20 },
+        { header: 'Expense Date',   key: 'expenseDate',        width: 14 },
+        { header: 'Amount (₹)',     key: 'expenseAmount',      width: 14 },
+        { header: 'Payment Mode',   key: 'paymentMode',        width: 14 },
+        { header: 'Vendor / Party', key: 'vendorPartyName',    width: 22 },
+        { header: 'Bill No.',       key: 'billNo',             width: 16 },
+        { header: 'Remarks',        key: 'remarks',            width: 30 },
+        { header: 'Attachments',    key: 'attachCount',        width: 14 },
       ];
       ws.getRow(1).font = { bold: true };
-      filtered.forEach(e => ws.addRow({ ...e }));
+      filtered.forEach(e => ws.addRow({
+        ...e,
+        expenseSubCategory: e.expenseSubCategory || '',
+        narration:          e.narration          || '',
+        attachCount:        e.attachments?.length || 0,
+      }));
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
       const a = document.createElement('a'); a.href = url; a.download = 'site-expenses.xlsx'; a.click();
@@ -326,6 +471,7 @@ export default function SiteExpensesPage() {
 
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-lg font-bold text-slate-800">Site Expenses</h1>
@@ -351,8 +497,8 @@ export default function SiteExpensesPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      {/* Filters row 1 */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
@@ -360,11 +506,18 @@ export default function SiteExpensesPage() {
             {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={filterCategory || '_all_'} onValueChange={v => setFilterCategory(v === '_all_' ? '' : v)}>
+        <Select value={filterCategory || '_all_'} onValueChange={v => { setFilterCategory(v === '_all_' ? '' : v); setFilterSubCategory(''); }}>
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Categories" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Categories</SelectItem>
-            {categories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+            {mainCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterSubCategory || '_all_'} onValueChange={v => setFilterSubCategory(v === '_all_' ? '' : v)}>
+          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Sub-Categories" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all_">All Sub-Categories</SelectItem>
+            {filterSubCategoryOptions.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filterMode || '_all_'} onValueChange={v => setFilterMode(v === '_all_' ? '' : v)}>
@@ -374,6 +527,9 @@ export default function SiteExpensesPage() {
             {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
           </SelectContent>
         </Select>
+      </div>
+      {/* Filters row 2 */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
         <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
@@ -382,7 +538,9 @@ export default function SiteExpensesPage() {
       {/* Summary bar */}
       <div className="flex items-center gap-3 rounded-lg border bg-rose-50 px-4 py-2.5 text-rose-700">
         <Receipt className="h-4 w-4 shrink-0" />
-        <span className="text-sm font-medium">Total shown: <strong>{formatINR(totalFiltered)}</strong> across {filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
+        <span className="text-sm font-medium">
+          Total shown: <strong>{formatINR(totalFiltered)}</strong> across {filtered.length} record{filtered.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
       {/* Table */}
@@ -400,12 +558,16 @@ export default function SiteExpensesPage() {
                   <tr className="border-b bg-muted/30">
                     <th className="px-4 py-2.5 text-left font-medium">Project</th>
                     <th className="px-4 py-2.5 text-left font-medium">Category</th>
+                    <th className="px-4 py-2.5 text-left font-medium">Narration</th>
                     <th className="px-4 py-2.5 text-left font-medium">Expensed By</th>
                     <th className="px-4 py-2.5 text-left font-medium">Date</th>
                     <th className="px-4 py-2.5 text-right font-medium">Amount</th>
                     <th className="px-4 py-2.5 text-left font-medium">Mode</th>
                     <th className="px-4 py-2.5 text-left font-medium">Vendor / Party</th>
                     <th className="px-4 py-2.5 text-left font-medium">Bill No.</th>
+                    <th className="px-4 py-2.5 text-center font-medium">
+                      <Paperclip className="h-3.5 w-3.5 inline" />
+                    </th>
                     <th className="px-4 py-2.5 text-left font-medium">Remarks</th>
                     {(canEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
                   </tr>
@@ -413,15 +575,36 @@ export default function SiteExpensesPage() {
                 <tbody>
                   {filtered.map(row => (
                     <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-2.5 font-medium max-w-[140px] truncate">{row.projectName}</td>
-                      <td className="px-4 py-2.5"><Badge variant="outline" className="text-xs">{row.expenseCategory}</Badge></td>
+                      <td className="px-4 py-2.5 font-medium max-w-[130px] truncate">{row.projectName}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex flex-col gap-0.5">
+                          <Badge variant="outline" className="text-xs w-fit">{row.expenseCategory}</Badge>
+                          {row.expenseSubCategory && (
+                            <span className="text-xs text-purple-600">↳ {row.expenseSubCategory}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground max-w-[130px] truncate">{row.narration || '—'}</td>
                       <td className="px-4 py-2.5">{row.expensedBy}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{row.expenseDate}</td>
                       <td className="px-4 py-2.5 text-right font-semibold text-rose-700">{formatINR(row.expenseAmount)}</td>
                       <td className="px-4 py-2.5"><Badge variant="secondary">{row.paymentMode}</Badge></td>
-                      <td className="px-4 py-2.5 max-w-[120px] truncate">{row.vendorPartyName || '—'}</td>
+                      <td className="px-4 py-2.5 max-w-[110px] truncate">{row.vendorPartyName || '—'}</td>
                       <td className="px-4 py-2.5 text-muted-foreground">{row.billNo || '—'}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground max-w-[120px] truncate">{row.remarks || '—'}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        {row.attachments && row.attachments.length > 0 ? (
+                          <button
+                            onClick={() => setViewDocExpense(row)}
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-blue-600 hover:bg-blue-50 transition-colors"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                            <span className="text-xs font-medium">{row.attachments.length}</span>
+                          </button>
+                        ) : (
+                          <Paperclip className="h-3.5 w-3.5 text-muted-foreground/25 mx-auto" />
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground max-w-[110px] truncate">{row.remarks || '—'}</td>
                       {(canEdit || canDelete) && (
                         <td className="px-4 py-2.5 text-right">
                           <div className="flex justify-end gap-1">
@@ -440,7 +623,9 @@ export default function SiteExpensesPage() {
                                 <AlertDialogContent>
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Delete Expense</AlertDialogTitle>
-                                    <AlertDialogDescription>Delete this expense record? This cannot be undone.</AlertDialogDescription>
+                                    <AlertDialogDescription>
+                                      Delete this expense record{row.attachments?.length ? ` and its ${row.attachments.length} attachment${row.attachments.length > 1 ? 's' : ''}` : ''}? This cannot be undone.
+                                    </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -457,9 +642,9 @@ export default function SiteExpensesPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={4} className="px-4 py-2.5">Total</td>
+                    <td colSpan={5} className="px-4 py-2.5">Total</td>
                     <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totalFiltered)}</td>
-                    <td colSpan={(canEdit || canDelete) ? 5 : 4} />
+                    <td colSpan={(canEdit || canDelete) ? 6 : 5} />
                   </tr>
                 </tfoot>
               </table>
@@ -478,13 +663,56 @@ export default function SiteExpensesPage() {
         onImportComplete={() => { void log('Import SAS Expenses', {}); void loadAll(); }}
       />
 
-      {/* Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-xl">
+      {/* View Attachments Dialog */}
+      <Dialog open={!!viewDocExpense} onOpenChange={() => setViewDocExpense(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Paperclip className="h-4 w-4 text-blue-500" />
+              Attachments
+              {viewDocExpense?.attachments?.length
+                ? <Badge variant="secondary" className="ml-1">{viewDocExpense.attachments.length}</Badge>
+                : null}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            {viewDocExpense?.attachments?.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No attachments.</p>
+            )}
+            {viewDocExpense?.attachments?.map((att, i) => (
+              <a
+                key={i}
+                href={att.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2.5 hover:bg-muted/50 transition-colors group"
+              >
+                <AttachmentIcon type={att.type} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{att.name}</p>
+                  <p className="text-xs text-muted-foreground">{formatSize(att.size)}</p>
+                </div>
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground group-hover:text-blue-500 shrink-0 transition-colors" />
+              </a>
+            ))}
+          </div>
+          {viewDocExpense && canEdit && (
+            <p className="text-xs text-muted-foreground text-center pt-1">
+              To add or remove attachments, use the Edit button on the expense row.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add / Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Expense' : 'Record Site Expense'}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
+
+            {/* Project */}
             <div className="col-span-2 space-y-1.5">
               <Label>Project <span className="text-destructive">*</span></Label>
               <Select value={form.projectId} onValueChange={selectProject}>
@@ -494,27 +722,59 @@ export default function SiteExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Main Category */}
             <div className="space-y-1.5">
-              <Label>Expense Category <span className="text-destructive">*</span></Label>
-              <Select value={form.expenseCategory} onValueChange={v => setField('expenseCategory', v)}>
+              <Label>Main Category <span className="text-destructive">*</span></Label>
+              <Select value={form.expenseCategoryId} onValueChange={selectMainCategory}>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
-                  {categories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                  {mainCategories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Sub-Category */}
+            <div className="space-y-1.5">
+              <Label>Sub-Category <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Select
+                value={form.expenseSubCategory || '_none_'}
+                onValueChange={v => setField('expenseSubCategory', v === '_none_' ? '' : v)}
+                disabled={!form.expenseCategoryId || formSubCategories.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={
+                    !form.expenseCategoryId ? 'Select main category first'
+                    : formSubCategories.length === 0 ? 'No sub-categories'
+                    : 'Select sub-category'
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none_">None</SelectItem>
+                  {formSubCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Expensed By */}
             <div className="space-y-1.5">
               <Label>Expensed By <span className="text-destructive">*</span></Label>
               <Input value={form.expensedBy} onChange={e => setField('expensedBy', e.target.value)} placeholder="Person who spent" />
             </div>
+
+            {/* Date */}
             <div className="space-y-1.5">
               <Label>Expense Date <span className="text-destructive">*</span></Label>
               <Input type="date" value={form.expenseDate} onChange={e => setField('expenseDate', e.target.value)} />
             </div>
+
+            {/* Amount */}
             <div className="space-y-1.5">
               <Label>Amount (₹) <span className="text-destructive">*</span></Label>
               <Input type="number" min="0" value={form.expenseAmount} onChange={e => setField('expenseAmount', e.target.value)} placeholder="0" />
             </div>
+
+            {/* Payment Mode */}
             <div className="space-y-1.5">
               <Label>Payment Mode</Label>
               <Select value={form.paymentMode} onValueChange={v => setField('paymentMode', v)}>
@@ -524,24 +784,114 @@ export default function SiteExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Vendor */}
             <div className="space-y-1.5">
               <Label>Vendor / Party Name</Label>
               <Input value={form.vendorPartyName} onChange={e => setField('vendorPartyName', e.target.value)} placeholder="Vendor or party name" />
             </div>
+
+            {/* Bill No */}
             <div className="space-y-1.5">
               <Label>Bill No.</Label>
               <Input value={form.billNo} onChange={e => setField('billNo', e.target.value)} placeholder="Bill / voucher number" />
             </div>
+
+            {/* Narration */}
+            <div className="col-span-2 space-y-1.5">
+              <Label>Narration</Label>
+              <Input value={form.narration} onChange={e => setField('narration', e.target.value)} placeholder="Brief description of payment purpose" />
+            </div>
+
+            {/* Remarks */}
             <div className="col-span-2 space-y-1.5">
               <Label>Remarks</Label>
-              <Textarea rows={2} value={form.remarks} onChange={e => setField('remarks', e.target.value)} placeholder="Expense details" />
+              <Textarea rows={2} value={form.remarks} onChange={e => setField('remarks', e.target.value)} placeholder="Additional notes" />
+            </div>
+
+            {/* ── Attachments ─────────────────────────────────────────────────── */}
+            <div className="col-span-2 space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Paperclip className="h-3.5 w-3.5" />
+                Attachments
+                <span className="text-muted-foreground text-xs font-normal">— PDF, images, Word, Excel</span>
+              </Label>
+
+              {/* Existing uploaded files */}
+              {existingAttachments.map((att, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                  <AttachmentIcon type={att.type} />
+                  <a
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 text-sm text-blue-600 hover:underline truncate"
+                  >
+                    {att.name}
+                  </a>
+                  <span className="text-xs text-muted-foreground shrink-0">{formatSize(att.size)}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0"
+                    onClick={() => handleRemoveExisting(i)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* Pending files (not yet uploaded) */}
+              {pendingFiles.map((file, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2">
+                  <AttachmentIcon type={file.type} />
+                  <span className="flex-1 text-sm truncate">{file.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{formatSize(file.size)}</span>
+                  <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 shrink-0">Pending</Badge>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0"
+                    onClick={() => handleRemovePending(i)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* File picker */}
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 px-4 py-2.5 text-sm text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/40 transition-colors">
+                <Upload className="h-4 w-4 shrink-0" />
+                <span>Click to attach files</span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={ACCEPT}
+                  className="sr-only"
+                  onChange={handleFileSelect}
+                />
+              </label>
+
+              {pendingFiles.length > 0 && (
+                <p className="text-xs text-blue-600">
+                  {pendingFiles.length} file{pendingFiles.length > 1 ? 's' : ''} will be uploaded when you save.
+                </p>
+              )}
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={saving} className="bg-rose-600 hover:bg-rose-700">
-              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {editingRow ? 'Save Changes' : 'Record Expense'}
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={saving} className="bg-rose-600 hover:bg-rose-700 min-w-[130px]">
+              {saving && (
+                uploading
+                  ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Uploading…</>
+                  : <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</>
+              )}
+              {!saving && (editingRow ? 'Save Changes' : 'Record Expense')}
             </Button>
           </DialogFooter>
         </DialogContent>

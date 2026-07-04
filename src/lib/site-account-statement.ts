@@ -33,11 +33,21 @@ export interface SASPayment {
   updatedAt: any;
 }
 
+export interface SASAttachment {
+  name: string;
+  url: string;
+  storagePath: string;
+  size: number;
+  type: string;
+}
+
 export interface SASExpense {
   id: string;
   projectId: string;
   projectName: string;
   expenseCategory: string;
+  expenseSubCategory?: string;
+  narration?: string;
   expensedBy: string;
   expenseDate: string;
   expenseAmount: number;
@@ -45,6 +55,7 @@ export interface SASExpense {
   vendorPartyName: string;
   billNo: string;
   remarks: string;
+  attachments?: SASAttachment[];
   createdAt: any;
   updatedAt: any;
 }
@@ -54,6 +65,8 @@ export interface SASCategory {
   name: string;
   description: string;
   isActive: boolean;
+  parentId?: string;
+  parentName?: string;
   createdAt: any;
   updatedAt: any;
 }

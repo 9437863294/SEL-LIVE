@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, Loader2, Receipt } from 'lucide-react';
+import { Download, ExternalLink, Loader2, Paperclip, Receipt } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const MODULE = 'Site Account Statement';
@@ -33,12 +33,13 @@ export default function ExpenseReportPage() {
   const [loading,     setLoading]     = useState(true);
   const [exporting,   setExporting]   = useState(false);
 
-  const [filterProject,  setFilterProject]  = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterMode,     setFilterMode]     = useState('');
-  const [filterFrom,     setFilterFrom]     = useState('');
-  const [filterTo,       setFilterTo]       = useState('');
-  const [search,         setSearch]         = useState('');
+  const [filterProject,     setFilterProject]     = useState('');
+  const [filterCategory,    setFilterCategory]    = useState('');
+  const [filterSubCategory, setFilterSubCategory] = useState('');
+  const [filterMode,        setFilterMode]        = useState('');
+  const [filterFrom,        setFilterFrom]        = useState('');
+  const [filterTo,          setFilterTo]          = useState('');
+  const [search,            setSearch]            = useState('');
 
   useEffect(() => {
     if (!isAuthLoading && canView) void loadAll();
@@ -60,6 +61,19 @@ export default function ExpenseReportPage() {
     }
   }
 
+  const mainCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
+  const subCategories  = useMemo(() => categories.filter(c => !!c.parentId),  [categories]);
+
+  const filterSubCategoryOptions = useMemo(
+    () => filterCategory
+      ? subCategories.filter(c => {
+          const main = mainCategories.find(m => m.name === filterCategory);
+          return main ? c.parentId === main.id : false;
+        })
+      : subCategories,
+    [filterCategory, subCategories, mainCategories]
+  );
+
   const visibleProjects = useMemo(
     () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
     [projects, user?.id, canViewAll]
@@ -71,21 +85,23 @@ export default function ExpenseReportPage() {
   );
 
   const filtered = useMemo(() => expenses.filter(e => {
-    if (userProjectIds && !userProjectIds.has(e.projectId)) return false;
-    if (filterProject  && e.projectId !== filterProject)       return false;
-    if (filterCategory && e.expenseCategory !== filterCategory) return false;
-    if (filterMode     && e.paymentMode !== filterMode)         return false;
-    if (filterFrom     && e.expenseDate < filterFrom)           return false;
-    if (filterTo       && e.expenseDate > filterTo)             return false;
-    if (search && !(e.projectName || '').toLowerCase().includes(search.toLowerCase()) &&
-        !(e.expensedBy || '').toLowerCase().includes(search.toLowerCase()) &&
-        !(e.expenseCategory || '').toLowerCase().includes(search.toLowerCase()))  return false;
+    if (userProjectIds    && !userProjectIds.has(e.projectId))                          return false;
+    if (filterProject     && e.projectId !== filterProject)                             return false;
+    if (filterCategory    && e.expenseCategory !== filterCategory)                      return false;
+    if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory)        return false;
+    if (filterMode        && e.paymentMode !== filterMode)                              return false;
+    if (filterFrom        && e.expenseDate < filterFrom)                                return false;
+    if (filterTo          && e.expenseDate > filterTo)                                  return false;
+    if (search && !(e.projectName        || '').toLowerCase().includes(search.toLowerCase()) &&
+        !(e.expensedBy         || '').toLowerCase().includes(search.toLowerCase()) &&
+        !(e.expenseCategory    || '').toLowerCase().includes(search.toLowerCase()) &&
+        !(e.expenseSubCategory || '').toLowerCase().includes(search.toLowerCase()) &&
+        !(e.narration          || '').toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [expenses, userProjectIds, filterProject, filterCategory, filterMode, filterFrom, filterTo, search]);
+  }), [expenses, userProjectIds, filterProject, filterCategory, filterSubCategory, filterMode, filterFrom, filterTo, search]);
 
   const total = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
 
-  // Group by project
   const grouped = useMemo(() => {
     const map = new Map<string, { name: string; rows: SASExpense[]; total: number }>();
     filtered.forEach(e => {
@@ -104,18 +120,21 @@ export default function ExpenseReportPage() {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Expense Report');
       ws.columns = [
-        { header: 'Project',          key: 'projectName',     width: 28 },
-        { header: 'Expense Category', key: 'expenseCategory', width: 22 },
-        { header: 'Expensed By',      key: 'expensedBy',      width: 20 },
-        { header: 'Expense Date',     key: 'expenseDate',     width: 14 },
-        { header: 'Amount (₹)',       key: 'expenseAmount',   width: 14 },
-        { header: 'Payment Mode',     key: 'paymentMode',     width: 14 },
-        { header: 'Vendor / Party',   key: 'vendorPartyName', width: 22 },
-        { header: 'Bill No.',         key: 'billNo',          width: 16 },
-        { header: 'Remarks',          key: 'remarks',         width: 30 },
+        { header: 'Project',          key: 'projectName',        width: 28 },
+        { header: 'Main Category',    key: 'expenseCategory',    width: 22 },
+        { header: 'Sub-Category',     key: 'expenseSubCategory', width: 22 },
+        { header: 'Narration',        key: 'narration',          width: 30 },
+        { header: 'Expensed By',      key: 'expensedBy',         width: 20 },
+        { header: 'Expense Date',     key: 'expenseDate',        width: 14 },
+        { header: 'Amount (₹)',       key: 'expenseAmount',      width: 14 },
+        { header: 'Payment Mode',     key: 'paymentMode',        width: 14 },
+        { header: 'Vendor / Party',   key: 'vendorPartyName',    width: 22 },
+        { header: 'Bill No.',         key: 'billNo',             width: 16 },
+        { header: 'Remarks',       key: 'remarks',      width: 30 },
+        { header: 'Attachments',  key: 'attachCount',  width: 14 },
       ];
       ws.getRow(1).font = { bold: true };
-      filtered.forEach(e => ws.addRow({ ...e }));
+      filtered.forEach(e => ws.addRow({ ...e, expenseSubCategory: e.expenseSubCategory || '', narration: e.narration || '', attachCount: e.attachments?.length || 0 }));
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
       const a = document.createElement('a'); a.href = url; a.download = 'expense-report.xlsx'; a.click();
@@ -144,8 +163,8 @@ export default function ExpenseReportPage() {
         )}
       </div>
 
-      {/* Filters */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      {/* Filters row 1 */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
@@ -153,11 +172,18 @@ export default function ExpenseReportPage() {
             {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={filterCategory || '_all_'} onValueChange={v => setFilterCategory(v === '_all_' ? '' : v)}>
+        <Select value={filterCategory || '_all_'} onValueChange={v => { setFilterCategory(v === '_all_' ? '' : v); setFilterSubCategory(''); }}>
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Categories" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Categories</SelectItem>
-            {categories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+            {mainCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={filterSubCategory || '_all_'} onValueChange={v => setFilterSubCategory(v === '_all_' ? '' : v)}>
+          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Sub-Categories" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all_">All Sub-Categories</SelectItem>
+            {filterSubCategoryOptions.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filterMode || '_all_'} onValueChange={v => setFilterMode(v === '_all_' ? '' : v)}>
@@ -167,6 +193,9 @@ export default function ExpenseReportPage() {
             {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
           </SelectContent>
         </Select>
+      </div>
+      {/* Filters row 2 */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
         <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
@@ -196,32 +225,59 @@ export default function ExpenseReportPage() {
                   <thead>
                     <tr className="border-b bg-muted/30">
                       <th className="px-4 py-2 text-left font-medium">Category</th>
+                      <th className="px-4 py-2 text-left font-medium">Narration</th>
                       <th className="px-4 py-2 text-left font-medium">Expensed By</th>
                       <th className="px-4 py-2 text-left font-medium">Date</th>
                       <th className="px-4 py-2 text-right font-medium">Amount</th>
                       <th className="px-4 py-2 text-left font-medium">Mode</th>
                       <th className="px-4 py-2 text-left font-medium">Vendor</th>
                       <th className="px-4 py-2 text-left font-medium">Bill No.</th>
+                      <th className="px-4 py-2 text-center font-medium"><Paperclip className="h-3.5 w-3.5 inline" /></th>
                       <th className="px-4 py-2 text-left font-medium">Remarks</th>
                     </tr>
                   </thead>
                   <tbody>
                     {group.rows.map(row => (
                       <tr key={row.id} className="border-b hover:bg-muted/20">
-                        <td className="px-4 py-2"><Badge variant="outline" className="text-xs">{row.expenseCategory}</Badge></td>
+                        <td className="px-4 py-2">
+                          <div className="flex flex-col gap-0.5">
+                            <Badge variant="outline" className="text-xs w-fit">{row.expenseCategory}</Badge>
+                            {row.expenseSubCategory && (
+                              <span className="text-xs text-purple-600">↳ {row.expenseSubCategory}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground max-w-[160px] truncate">
+                          {row.narration || '—'}
+                        </td>
                         <td className="px-4 py-2">{row.expensedBy}</td>
                         <td className="px-4 py-2 whitespace-nowrap">{row.expenseDate}</td>
                         <td className="px-4 py-2 text-right font-medium text-rose-700">{formatINR(row.expenseAmount)}</td>
                         <td className="px-4 py-2"><Badge variant="secondary">{row.paymentMode}</Badge></td>
                         <td className="px-4 py-2 max-w-[120px] truncate">{row.vendorPartyName || '—'}</td>
                         <td className="px-4 py-2 text-muted-foreground">{row.billNo || '—'}</td>
+                        <td className="px-4 py-2 text-center">
+                          {row.attachments && row.attachments.length > 0 ? (
+                            <div className="flex flex-col gap-0.5 items-center">
+                              {row.attachments.map((att, ai) => (
+                                <a key={ai} href={att.url} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs">
+                                  <ExternalLink className="h-3 w-3" />
+                                </a>
+                              ))}
+                              <span className="text-[10px] text-muted-foreground">{row.attachments.length}</span>
+                            </div>
+                          ) : (
+                            <Paperclip className="h-3.5 w-3.5 text-muted-foreground/20 mx-auto" />
+                          )}
+                        </td>
                         <td className="px-4 py-2 text-muted-foreground max-w-[150px] truncate">{row.remarks || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="bg-muted/30 font-semibold">
-                      <td colSpan={3} className="px-4 py-2">Subtotal</td>
+                      <td colSpan={4} className="px-4 py-2">Subtotal</td>
                       <td className="px-4 py-2 text-right text-rose-700">{formatINR(group.total)}</td>
                       <td colSpan={4} />
                     </tr>

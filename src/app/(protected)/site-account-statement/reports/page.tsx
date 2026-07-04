@@ -3,7 +3,7 @@
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import Link from 'next/link';
-import { BarChart3, Activity, FileText, PieChart, Users, Wallet, ClipboardList, ShieldCheck } from 'lucide-react';
+import { BarChart3, Activity, CalendarDays, FileText, PieChart, Users, Wallet, ClipboardList, ShieldCheck } from 'lucide-react';
 
 const MODULE = 'Site Account Statement';
 
@@ -80,6 +80,15 @@ const REPORTS = [
     bg: 'bg-teal-50',
     border: 'border-teal-200',
   },
+  {
+    href: 'reports/daywise',
+    icon: CalendarDays,
+    title: 'Day-wise Statement',
+    description: 'Every receipt and expense grouped by date with day totals and running balance.',
+    color: 'text-cyan-600',
+    bg: 'bg-cyan-50',
+    border: 'border-cyan-200',
+  },
 ] as const;
 
 export default function ReportsIndexPage() {
@@ -102,6 +111,7 @@ export default function ReportsIndexPage() {
       <div>
         <h1 className="text-lg font-bold text-slate-800">Reports</h1>
         <p className="text-sm text-muted-foreground">{REPORTS.length} reports available — click any card to open</p>
+
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

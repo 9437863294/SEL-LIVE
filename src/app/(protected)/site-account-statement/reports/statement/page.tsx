@@ -103,7 +103,13 @@ export default function AccountStatementPage() {
       if (e.projectId !== selectedProject) return;
       if (filterFrom && e.expenseDate < filterFrom) return;
       if (filterTo   && e.expenseDate > filterTo)   return;
-      entries.push({ date: e.expenseDate, particulars: `${e.expenseCategory}${e.expensedBy ? ` — ${e.expensedBy}` : ''}${e.billNo ? ` (Bill: ${e.billNo})` : ''}`, receipt: 0, expense: e.expenseAmount || 0 });
+      const catLabel = e.expenseSubCategory
+        ? `${e.expenseCategory} › ${e.expenseSubCategory}`
+        : e.expenseCategory;
+      const narrationPart = e.narration ? ` — ${e.narration}` : '';
+      const personPart    = e.expensedBy && !e.narration ? ` — ${e.expensedBy}` : '';
+      const billPart      = e.billNo ? ` (Bill: ${e.billNo})` : '';
+      entries.push({ date: e.expenseDate, particulars: `${catLabel}${narrationPart || personPart}${billPart}`, receipt: 0, expense: e.expenseAmount || 0 });
     });
 
     entries.sort((a, b) => a.date.localeCompare(b.date));
