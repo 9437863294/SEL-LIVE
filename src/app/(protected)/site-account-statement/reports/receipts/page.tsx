@@ -20,9 +20,9 @@ const MODULE = 'Site Account Statement';
 export default function ReceiptReportPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
-  const canView    = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
-  const canExport  = can('Export', `${MODULE}.Reports`);
   const canViewAll = can('View',   `${MODULE}.All Projects`);
+  const canView    = can('View',   `${MODULE}.Reports`) || canViewAll;
+  const canExport  = can('Export', `${MODULE}.Reports`);
 
   const [projects,   setProjects]   = useState<SASProject[]>([]);
   const [payments,   setPayments]   = useState<SASPayment[]>([]);

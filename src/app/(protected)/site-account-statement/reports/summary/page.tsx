@@ -5,6 +5,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,9 +27,9 @@ interface ProjectStat {
 export default function ProjectSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
-  const canView    = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
-  const canExport  = can('Export', `${MODULE}.Reports`);
   const canViewAll = can('View',   `${MODULE}.All Projects`);
+  const canView    = can('View',   `${MODULE}.Reports`) || canViewAll;
+  const canExport  = can('Export', `${MODULE}.Reports`);
 
   const [projects,  setProjects]  = useState<SASProject[]>([]);
   const [payments,  setPayments]  = useState<SASPayment[]>([]);

@@ -6,6 +6,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -29,9 +30,9 @@ interface TxLine {
 export default function AccountStatementPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
-  const canView    = can('View',   `${MODULE}.Reports`) || can('View Module', MODULE);
-  const canExport  = can('Export', `${MODULE}.Reports`);
   const canViewAll = can('View',   `${MODULE}.All Projects`);
+  const canView    = can('View',   `${MODULE}.Reports`) || canViewAll;
+  const canExport  = can('Export', `${MODULE}.Reports`);
 
   const searchParams = useSearchParams();
   const paramProjectId = searchParams.get('projectId') ?? '';
@@ -55,6 +56,19 @@ export default function AccountStatementPage() {
     [projects, user?.id, canViewAll]
   );
 
+  const visibleProjectIds = useMemo(
+    () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
+    [visibleProjects, canViewAll]
+  );
+
+  // Reset selectedProject if it falls outside the user's visible projects
+  useEffect(() => {
+    if (!visibleProjectIds || visibleProjects.length === 0) return;
+    if (selectedProject && !visibleProjectIds.has(selectedProject)) {
+      setSelectedProject('');
+    }
+  }, [visibleProjectIds, visibleProjects.length, selectedProject]);
+
   async function loadAll() {
     setLoading(true);
     try {
@@ -73,6 +87,7 @@ export default function AccountStatementPage() {
 
   const statement = useMemo<TxLine[]>(() => {
     if (!selectedProject) return [];
+    if (visibleProjectIds && !visibleProjectIds.has(selectedProject)) return [];
 
     type RawEntry = { date: string; particulars: string; receipt: number; expense: number };
     const entries: RawEntry[] = [];
