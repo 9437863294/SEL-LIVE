@@ -5,7 +5,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASCategory, type SASExpense, type SASProject,
+  type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -30,6 +30,7 @@ export default function ExpenseReportPage() {
   const [projects,    setProjects]    = useState<SASProject[]>([]);
   const [categories,  setCategories]  = useState<SASCategory[]>([]);
   const [expenses,    setExpenses]    = useState<SASExpense[]>([]);
+  const [payments,    setPayments]    = useState<SASPayment[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [exporting,   setExporting]   = useState(false);
 
@@ -48,14 +49,16 @@ export default function ExpenseReportPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, catSnap, expSnap] = await Promise.all([
+      const [pSnap, catSnap, expSnap, paySnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.expenses), orderBy('expenseDate', 'desc'))),
+        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)));
       setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
+      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
     } finally {
       setLoading(false);
     }
@@ -113,6 +116,25 @@ export default function ExpenseReportPage() {
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [filtered]);
+
+  // Per-project balance
+  const perProjectBalance = useMemo(() => {
+    const map = new Map<string, { received: number; spent: number; balance: number }>();
+    payments.forEach(p => {
+      if (userProjectIds && !userProjectIds.has(p.projectId)) return;
+      const cur = map.get(p.projectId) ?? { received: 0, spent: 0, balance: 0 };
+      cur.received += p.receivedAmount || 0;
+      map.set(p.projectId, cur);
+    });
+    expenses.forEach(e => {
+      if (userProjectIds && !userProjectIds.has(e.projectId)) return;
+      const cur = map.get(e.projectId) ?? { received: 0, spent: 0, balance: 0 };
+      cur.spent += e.expenseAmount || 0;
+      map.set(e.projectId, cur);
+    });
+    map.forEach((v, k) => { v.balance = v.received - v.spent; map.set(k, v); });
+    return map;
+  }, [payments, expenses, userProjectIds]);
 
   async function exportExcel() {
     setExporting(true);
@@ -214,10 +236,25 @@ export default function ExpenseReportPage() {
         grouped.map(group => (
           <Card key={group.name} className="bg-white/80 backdrop-blur-sm">
             <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center justify-between">
-                <span>{group.name}</span>
-                <span className="text-rose-600">{formatINR(group.total)}</span>
-              </CardTitle>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <CardTitle className="text-sm font-semibold text-slate-700">{group.name}</CardTitle>
+                <div className="flex items-center gap-3 text-xs">
+                  {(() => {
+                    const b = perProjectBalance.get(group.rows[0]?.projectId || '');
+                    return b ? (
+                      <>
+                        <span className="text-blue-600">Received: {formatINR(b.received)}</span>
+                        <span className="text-rose-600">Expenses: {formatINR(group.total)}</span>
+                        <span className={`font-bold ${b.balance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                          Balance: {formatINR(b.balance)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-rose-600 font-semibold">{formatINR(group.total)}</span>
+                    );
+                  })()}
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">

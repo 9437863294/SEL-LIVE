@@ -9,7 +9,7 @@ const MODULE = 'Site Account Statement';
 
 const REPORTS = [
   {
-    href: 'reports/receipts',
+    href: '/site-account-statement/reports/receipts',
     icon: BarChart3,
     title: 'Payment Receipts',
     description: 'List all incoming payments with date, amount, mode and reference details.',
@@ -18,7 +18,7 @@ const REPORTS = [
     border: 'border-blue-200',
   },
   {
-    href: 'reports/expenses',
+    href: '/site-account-statement/reports/expenses',
     icon: ClipboardList,
     title: 'Expense Register',
     description: 'Full expense ledger with category, vendor, payment mode and bill tracking.',
@@ -27,7 +27,7 @@ const REPORTS = [
     border: 'border-rose-200',
   },
   {
-    href: 'reports/statement',
+    href: '/site-account-statement/reports/statement',
     icon: FileText,
     title: 'Account Statement',
     description: 'Chronological debit/credit ledger for a project with running balance.',
@@ -36,7 +36,7 @@ const REPORTS = [
     border: 'border-violet-200',
   },
   {
-    href: 'reports/summary',
+    href: '/site-account-statement/reports/summary',
     icon: Wallet,
     title: 'Project-wise Summary',
     description: 'High-level totals — received, expenses, and balance for each project.',
@@ -45,7 +45,7 @@ const REPORTS = [
     border: 'border-emerald-200',
   },
   {
-    href: 'reports/category',
+    href: '/site-account-statement/reports/category',
     icon: PieChart,
     title: 'Category Analysis',
     description: 'Which expense categories are consuming the most budget, ranked by amount.',
@@ -54,7 +54,7 @@ const REPORTS = [
     border: 'border-amber-200',
   },
   {
-    href: 'reports/cashflow',
+    href: '/site-account-statement/reports/cashflow',
     icon: Activity,
     title: 'Month-wise Cash Flow',
     description: 'Monthly receipts vs expenses with running balance and flow visualisation.',
@@ -63,7 +63,7 @@ const REPORTS = [
     border: 'border-sky-200',
   },
   {
-    href: 'reports/person',
+    href: '/site-account-statement/reports/person',
     icon: Users,
     title: 'Person-wise Expenses',
     description: 'Who spent what — grouped by person with per-category breakdown and share.',
@@ -72,7 +72,7 @@ const REPORTS = [
     border: 'border-indigo-200',
   },
   {
-    href: 'reports/balance',
+    href: '/site-account-statement/reports/balance',
     icon: ShieldCheck,
     title: 'Balance Status',
     description: 'Health snapshot — projects colour-coded as Healthy, Warning, or Critical.',
@@ -81,7 +81,7 @@ const REPORTS = [
     border: 'border-teal-200',
   },
   {
-    href: 'reports/daywise',
+    href: '/site-account-statement/reports/daywise',
     icon: CalendarDays,
     title: 'Day-wise Statement',
     description: 'Every receipt and expense grouped by date with day totals and running balance.',

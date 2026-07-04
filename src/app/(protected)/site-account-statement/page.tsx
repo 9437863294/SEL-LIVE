@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDoc, collection, getDocs, orderBy, query, serverTimestamp,
+  addDoc, collection, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '@/lib/firebase';
 import { db } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASCategory, type SASExpense, type SASPayment, type SASProject,
+  type SASAttachment, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -26,8 +28,8 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
-  BookOpen, Building2, FileText, Loader2, Plus, Receipt,
-  TrendingDown, TrendingUp, Wallet,
+  BookOpen, Building2, File, FileText, Loader2, Paperclip, Plus, Receipt,
+  TrendingDown, TrendingUp, Wallet, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -59,54 +61,113 @@ interface QuickExpenseDialogProps {
   project: SASProject;
   categories: SASCategory[];
   defaultExpensedBy: string;
+  projectReceived: number;
+  projectSpent: number;
+  projectBalance: number;
   onSuccess: () => void;
 }
 
 function QuickExpenseDialog({
-  open, onOpenChange, project, categories, defaultExpensedBy, onSuccess,
+  open, onOpenChange, project, categories, defaultExpensedBy,
+  projectReceived, projectSpent, projectBalance,
+  onSuccess,
 }: QuickExpenseDialogProps) {
   const { toast } = useToast();
   const { log } = useActivityLogger(MODULE);
   const [saving, setSaving] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [form, setForm] = useState({
-    expenseCategory: '',
-    expensedBy: defaultExpensedBy,
-    expenseDate: new Date().toISOString().slice(0, 10),
-    expenseAmount: '',
-    paymentMode: 'Cash',
-    vendorPartyName: '',
-    billNo: '',
-    remarks: '',
+    expenseCategoryId:  '',   // UI only — for sub-cat filtering
+    expenseCategory:    '',   // main category name stored in DB
+    expenseSubCategory: '',   // sub-category name stored in DB
+    narration:          '',
+    expensedBy:         defaultExpensedBy,
+    expenseDate:        new Date().toISOString().slice(0, 10),
+    expenseAmount:      '',
+    paymentMode:        'Cash',
+    vendorPartyName:    '',
+    billNo:             '',
+    remarks:            '',
   });
+
+  const mainCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
+  const subCategoryOptions = useMemo(
+    () => form.expenseCategoryId
+      ? categories.filter(c => c.parentId === form.expenseCategoryId)
+      : [],
+    [categories, form.expenseCategoryId]
+  );
 
   function setF(key: string, value: string) { setForm(f => ({ ...f, [key]: value })); }
 
+  function handleMainCategoryChange(catId: string) {
+    if (catId === '_none_') { setForm(f => ({ ...f, expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '' })); return; }
+    const cat = mainCategories.find(c => c.id === catId);
+    setForm(f => ({ ...f, expenseCategoryId: catId, expenseCategory: cat?.name ?? '', expenseSubCategory: '' }));
+  }
+
+  function addFiles(files: FileList | null) {
+    if (!files) return;
+    setPendingFiles(prev => [...prev, ...Array.from(files)]);
+  }
+
+  async function uploadAttachments(expenseId: string, files: File[]): Promise<SASAttachment[]> {
+    return Promise.all(files.map(async file => {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `siteAccountExpenses/${expenseId}/${Date.now()}-${safeName}`;
+      const sRef = storageRef(storage, path);
+      await uploadBytes(sRef, file);
+      const url = await getDownloadURL(sRef);
+      return { name: file.name, url, storagePath: path, size: file.size, type: file.type || 'application/octet-stream' };
+    }));
+  }
+
+  function resetForm() {
+    setForm(f => ({
+      ...f,
+      expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '',
+      narration: '', expenseAmount: '', vendorPartyName: '', billNo: '', remarks: '',
+    }));
+    setPendingFiles([]);
+  }
+
   async function submit() {
-    if (!form.expenseCategory) { toast({ title: 'Validation', description: 'Select expense category.', variant: 'destructive' }); return; }
+    if (!form.expenseCategory) { toast({ title: 'Validation', description: 'Select a main category.', variant: 'destructive' }); return; }
     if (!form.expensedBy.trim()) { toast({ title: 'Validation', description: 'Expensed By is required.', variant: 'destructive' }); return; }
     if (!form.expenseDate)       { toast({ title: 'Validation', description: 'Date is required.',        variant: 'destructive' }); return; }
     const amount = Number(form.expenseAmount);
-    if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.',     variant: 'destructive' }); return; }
+    if (!amount || amount <= 0)  { toast({ title: 'Validation', description: 'Enter a valid amount.',    variant: 'destructive' }); return; }
 
     setSaving(true);
     try {
-      await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
-        projectId:       project.id,
-        projectName:     project.projectName,
-        expenseCategory: form.expenseCategory,
-        expensedBy:      form.expensedBy.trim(),
-        expenseDate:     form.expenseDate,
-        expenseAmount:   amount,
-        paymentMode:     form.paymentMode,
-        vendorPartyName: form.vendorPartyName.trim(),
-        billNo:          form.billNo.trim(),
-        remarks:         form.remarks.trim(),
-        createdAt:       serverTimestamp(),
-        updatedAt:       serverTimestamp(),
+      const docRef = await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
+        projectId:          project.id,
+        projectName:        project.projectName,
+        expenseCategory:    form.expenseCategory,
+        expenseSubCategory: form.expenseSubCategory || null,
+        narration:          form.narration.trim() || null,
+        expensedBy:         form.expensedBy.trim(),
+        expenseDate:        form.expenseDate,
+        expenseAmount:      amount,
+        paymentMode:        form.paymentMode,
+        vendorPartyName:    form.vendorPartyName.trim(),
+        billNo:             form.billNo.trim(),
+        remarks:            form.remarks.trim(),
+        attachments:        [],
+        createdAt:          serverTimestamp(),
+        updatedAt:          serverTimestamp(),
       });
+
+      if (pendingFiles.length > 0) {
+        const attachments = await uploadAttachments(docRef.id, pendingFiles);
+        await updateDoc(doc(db, SAS_COLLECTIONS.expenses, docRef.id), { attachments, updatedAt: serverTimestamp() });
+      }
+
       void log('Add SAS Expense (quick)', { project: project.projectName, amount });
       toast({ title: 'Expense recorded', description: `₹${amount.toLocaleString('en-IN')} saved for ${project.projectName}.` });
-      setForm(f => ({ ...f, expenseCategory: '', expenseAmount: '', vendorPartyName: '', billNo: '', remarks: '' }));
+      resetForm();
       onOpenChange(false);
       onSuccess();
     } catch (e: any) {
@@ -118,21 +179,74 @@ function QuickExpenseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Expense — {project.projectName}</DialogTitle>
         </DialogHeader>
+
+        {/* Project balance banner */}
+        <div className="grid grid-cols-3 gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-center text-xs">
+          <div>
+            <p className="text-muted-foreground">Received</p>
+            <p className="font-semibold text-blue-600">{formatINR(projectReceived)}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Expenses</p>
+            <p className="font-semibold text-rose-600">{formatINR(projectSpent)}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Available Balance</p>
+            <p className={`font-bold text-sm ${projectBalance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+              {formatINR(projectBalance)}
+            </p>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-3 py-1">
+
+          {/* Main Category */}
           <div className="col-span-2 space-y-1.5">
-            <Label>Category <span className="text-destructive">*</span></Label>
-            <Select value={form.expenseCategory || '_none_'} onValueChange={v => setF('expenseCategory', v === '_none_' ? '' : v)}>
-              <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+            <Label>Main Category <span className="text-destructive">*</span></Label>
+            <Select value={form.expenseCategoryId || '_none_'} onValueChange={handleMainCategoryChange}>
+              <SelectTrigger><SelectValue placeholder="Select main category" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="_none_" disabled>Select category</SelectItem>
-                {categories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+                <SelectItem value="_none_" disabled>Select main category</SelectItem>
+                {mainCategories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
+
+          {/* Sub-Category */}
+          <div className="col-span-2 space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              Sub-Category
+              <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Select
+              value={form.expenseSubCategory || '_none_'}
+              onValueChange={v => setF('expenseSubCategory', v === '_none_' ? '' : v)}
+              disabled={subCategoryOptions.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={subCategoryOptions.length === 0 ? 'No sub-categories' : 'Select sub-category'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none_">None</SelectItem>
+                {subCategoryOptions.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Narration */}
+          <div className="col-span-2 space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              Narration
+              <span className="text-xs text-muted-foreground font-normal">(payment details)</span>
+            </Label>
+            <Input value={form.narration} onChange={e => setF('narration', e.target.value)} placeholder="e.g. Labour wages for week ending…" />
+          </div>
+
+          {/* Expensed By + Date */}
           <div className="space-y-1.5">
             <Label>Expensed By <span className="text-destructive">*</span></Label>
             <Input value={form.expensedBy} onChange={e => setF('expensedBy', e.target.value)} />
@@ -141,6 +255,8 @@ function QuickExpenseDialog({
             <Label>Date <span className="text-destructive">*</span></Label>
             <Input type="date" value={form.expenseDate} onChange={e => setF('expenseDate', e.target.value)} />
           </div>
+
+          {/* Amount + Mode */}
           <div className="space-y-1.5">
             <Label>Amount (₹) <span className="text-destructive">*</span></Label>
             <Input type="number" min="0" value={form.expenseAmount} onChange={e => setF('expenseAmount', e.target.value)} placeholder="0" />
@@ -152,6 +268,8 @@ function QuickExpenseDialog({
               <SelectContent>{PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
             </Select>
           </div>
+
+          {/* Vendor + Bill */}
           <div className="space-y-1.5">
             <Label>Vendor / Party</Label>
             <Input value={form.vendorPartyName} onChange={e => setF('vendorPartyName', e.target.value)} placeholder="Optional" />
@@ -160,15 +278,61 @@ function QuickExpenseDialog({
             <Label>Bill No.</Label>
             <Input value={form.billNo} onChange={e => setF('billNo', e.target.value)} placeholder="Optional" />
           </div>
+
+          {/* Remarks */}
           <div className="col-span-2 space-y-1.5">
             <Label>Remarks</Label>
-            <Textarea rows={2} value={form.remarks} onChange={e => setF('remarks', e.target.value)} placeholder="Details" />
+            <Textarea rows={2} value={form.remarks} onChange={e => setF('remarks', e.target.value)} placeholder="Additional notes" />
           </div>
+
+          {/* Documents */}
+          <div className="col-span-2 space-y-2">
+            <Label className="flex items-center gap-1.5">
+              <Paperclip className="h-3.5 w-3.5" /> Documents
+              <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+            </Label>
+
+            {/* Pending files list */}
+            {pendingFiles.length > 0 && (
+              <div className="space-y-1">
+                {pendingFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5">
+                    <File className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                    <span className="flex-1 truncate text-xs">{f.name}</span>
+                    <span className="text-[10px] text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                    <button
+                      type="button"
+                      onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))}
+                      className="ml-1 rounded-sm text-blue-400 hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* File picker */}
+            <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-muted-foreground/30 px-3 py-2 text-xs text-muted-foreground hover:border-primary hover:text-primary transition-colors">
+              <Paperclip className="h-3.5 w-3.5 shrink-0" />
+              <span>Click to attach files (PDF, images, documents)</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt"
+                className="sr-only"
+                onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+              />
+            </label>
+          </div>
+
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={submit} disabled={saving} className="bg-rose-600 hover:bg-rose-700">
-            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Save Expense
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            {saving && pendingFiles.length > 0 ? 'Uploading…' : 'Save Expense'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -308,6 +472,9 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
         project={project}
         categories={categories}
         defaultExpensedBy={currentUserName}
+        projectReceived={totalReceived}
+        projectSpent={totalExpenses}
+        projectBalance={balance}
         onSuccess={onRefresh}
       />
     </>

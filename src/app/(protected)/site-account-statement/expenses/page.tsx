@@ -9,7 +9,7 @@ import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASAttachment, type SASCategory, type SASExpense, type SASProject,
+  type SASAttachment, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -97,6 +97,7 @@ export default function SiteExpensesPage() {
   const [projects,   setProjects]   = useState<SASProject[]>([]);
   const [categories, setCategories] = useState<SASCategory[]>([]);
   const [expenses,   setExpenses]   = useState<SASExpense[]>([]);
+  const [payments,   setPayments]   = useState<SASPayment[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [saving,           setSaving]           = useState(false);
   const [uploading,        setUploading]        = useState(false);
@@ -128,14 +129,16 @@ export default function SiteExpensesPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, catSnap, expSnap] = await Promise.all([
+      const [pSnap, catSnap, expSnap, paySnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.expenses), orderBy('expenseDate', 'desc'))),
+        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
       setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
+      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
     } finally {
       setLoading(false);
     }
@@ -164,6 +167,35 @@ export default function SiteExpensesPage() {
   const userProjectIds = useMemo(
     () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
     [visibleProjects, canViewAll]
+  );
+
+  // Per-project balance (received - expenses)
+  const perProjectBalance = useMemo(() => {
+    const map = new Map<string, { received: number; spent: number; balance: number }>();
+    payments.forEach(p => {
+      const cur = map.get(p.projectId) ?? { received: 0, spent: 0, balance: 0 };
+      cur.received += p.receivedAmount || 0;
+      map.set(p.projectId, cur);
+    });
+    expenses.forEach(e => {
+      const cur = map.get(e.projectId) ?? { received: 0, spent: 0, balance: 0 };
+      cur.spent += e.expenseAmount || 0;
+      map.set(e.projectId, cur);
+    });
+    map.forEach((v, k) => { v.balance = v.received - v.spent; map.set(k, v); });
+    return map;
+  }, [payments, expenses]);
+
+  // Balance for the project currently selected in the form
+  const formProjectBalance = useMemo(
+    () => form.projectId ? perProjectBalance.get(form.projectId) : undefined,
+    [perProjectBalance, form.projectId]
+  );
+
+  // Balance for the project currently being filtered in the list
+  const filterProjectBalance = useMemo(
+    () => filterProject ? perProjectBalance.get(filterProject) : undefined,
+    [perProjectBalance, filterProject]
   );
 
   // ── Import field definitions ──────────────────────────────────────────────────
@@ -536,11 +568,21 @@ export default function SiteExpensesPage() {
       </div>
 
       {/* Summary bar */}
-      <div className="flex items-center gap-3 rounded-lg border bg-rose-50 px-4 py-2.5 text-rose-700">
-        <Receipt className="h-4 w-4 shrink-0" />
-        <span className="text-sm font-medium">
-          Total shown: <strong>{formatINR(totalFiltered)}</strong> across {filtered.length} record{filtered.length !== 1 ? 's' : ''}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-rose-50 px-4 py-2.5">
+        <Receipt className="h-4 w-4 shrink-0 text-rose-600" />
+        <span className="text-sm font-medium text-rose-700">
+          Total shown: <strong>{formatINR(totalFiltered)}</strong> — {filtered.length} record{filtered.length !== 1 ? 's' : ''}
         </span>
+        {filterProjectBalance !== undefined && (
+          <>
+            <span className="h-4 w-px bg-rose-200" />
+            <span className="text-xs text-blue-600 font-medium">Received: {formatINR(filterProjectBalance.received)}</span>
+            <span className="text-xs text-rose-600 font-medium">Expenses: {formatINR(filterProjectBalance.spent)}</span>
+            <span className={`text-xs font-bold ${filterProjectBalance.balance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+              Balance: {formatINR(filterProjectBalance.balance)}
+            </span>
+          </>
+        )}
       </div>
 
       {/* Table */}
@@ -722,6 +764,26 @@ export default function SiteExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Available balance for selected project */}
+            {formProjectBalance !== undefined && (
+              <div className="col-span-2 grid grid-cols-3 gap-2 rounded-lg border bg-slate-50 px-3 py-2 text-center text-xs">
+                <div>
+                  <p className="text-muted-foreground">Received</p>
+                  <p className="font-semibold text-blue-600">{formatINR(formProjectBalance.received)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Expenses</p>
+                  <p className="font-semibold text-rose-600">{formatINR(formProjectBalance.spent)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Available Balance</p>
+                  <p className={`font-bold text-sm ${formProjectBalance.balance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                    {formatINR(formProjectBalance.balance)}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Main Category */}
             <div className="space-y-1.5">
