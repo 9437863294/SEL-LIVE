@@ -293,7 +293,12 @@ export function LoginPageContent() {
         if ((window.location.pathname || "") === "/login") window.location.replace(nextPath);
       }, 350);
     } catch (err: any) {
-      toast({ title: "Google sign-in failed", description: "Please try again.", variant: "destructive" });
+      const errDesc = err?.code
+        ? `Error: ${err.code}`
+        : err?.message
+          ? err.message.slice(0, 120)
+          : "Please try again.";
+      toast({ title: "Google sign-in failed", description: errDesc, variant: "destructive" });
       setIsGoogleLoading(false);
     }
   };

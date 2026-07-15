@@ -1,4 +1,4 @@
-package com.sel.driver;
+package com.sel;
 
 import android.os.Bundle;
 

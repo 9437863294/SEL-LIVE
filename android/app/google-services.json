@@ -7,17 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1098805626846:android:81430cc63998f4759dbf4f",
+        "mobilesdk_app_id": "1:1098805626846:android:173b2009fc7004109dbf4f",
         "android_client_info": {
-          "package_name": "SEL.live"
+          "package_name": "com.sel"
         }
       },
       "oauth_client": [
         {
-          "client_id": "1098805626846-pphemi2muka76diad0o41b1fk7qh53a6.apps.googleusercontent.com",
+          "client_id": "1098805626846-vrfeurda80r79l686kspnafsoksedlab.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "SEL.live",
+            "package_name": "com.sel",
             "certificate_hash": "3f9561c87a250674137e2918fa7c60beefeb47c0"
           }
         },

@@ -33,6 +33,12 @@ const config: CapacitorConfig = {
   android: {
     useLegacyBridge: true,
   },
+  plugins: {
+    FirebaseAuthentication: {
+      skipNativeAuth: false,
+      providers: ["google.com"],
+    },
+  },
   ...(liveBaseUrl
     ? {
         server: {

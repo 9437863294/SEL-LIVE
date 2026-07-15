@@ -21,7 +21,16 @@
       "Read(//c/Program Files/Android/Android Studio/jbr/bin/**)",
       "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.gradle\\\\wrapper\\\\dists\" -Recurse -Filter \"keytool.exe\" -ErrorAction SilentlyContinue | Select-Object -First 3 FullName)",
       "Read(//c/Program Files \\\\\\(x86\\\\\\)/Common Files/Oracle/Java/java8path_target_345047515/**)",
-      "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\Java\\\\jre1.8.0_431\\\\bin\\\\keytool.exe\" -list -v -keystore \"$env:USERPROFILE\\\\.android\\\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android 2>&1 | Select-String \"SHA1|SHA256|Owner|Valid\")"
+      "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\Java\\\\jre1.8.0_431\\\\bin\\\\keytool.exe\" -list -v -keystore \"$env:USERPROFILE\\\\.android\\\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android 2>&1 | Select-String \"SHA1|SHA256|Owner|Valid\")",
+      "PowerShell(where.exe java 2>&1; Get-ChildItem \"C:\\\\Program Files\\\\Java\", \"C:\\\\Program Files \\(x86\\)\\\\Java\", \"C:\\\\Program Files\\\\Microsoft\", \"C:\\\\Program Files\\\\Eclipse Adoptium\", \"C:\\\\Program Files\\\\BellSoft\" -ErrorAction SilentlyContinue | Where-Object { $_.PSIsContainer } | Select-Object FullName)",
+      "Read(//c/Users/Ashish D/AppData/Local/Programs/**)",
+      "PowerShell(Get-Command java -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source; [System.Environment]::GetEnvironmentVariable\\(\"JAVA_HOME\", \"Machine\"\\))",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\Android\", \"${env:LOCALAPPDATA}\\\\Programs\\\\Android\", \"${env:APPDATA}\\\\Local\\\\Android\" -ErrorAction SilentlyContinue -Directory | Select-Object FullName; Test-Path \"C:\\\\Program Files\\\\Android\\\\Android Studio\\\\jbr\"; Test-Path \"C:\\\\Program Files\\\\Android\\\\Android Studio\\\\jre\")",
+      "Read(//c/Program Files/Android/Android Studio/**)",
+      "PowerShell(Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\" -Directory -ErrorAction SilentlyContinue | Select-Object Name | Select-Object -First 10)",
+      "PowerShell(Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\" -Directory -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell(Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\\\\cmdline-tools\" -Recurse -Filter \"java.exe\" -ErrorAction SilentlyContinue | Select-Object FullName; Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\\\\emulator\" -Filter \"java.exe\" -ErrorAction SilentlyContinue | Select-Object FullName; Get-ChildItem \"HKLM:\\\\SOFTWARE\\\\JavaSoft\" -ErrorAction SilentlyContinue | Get-ItemProperty -Name JavaHome -ErrorAction SilentlyContinue | Select-Object JavaHome)",
+      "Read(//c/Program Files/Android/Android Studio/bin/**)"
     ]
   }
 }

@@ -45,7 +45,8 @@
       "Bash(grep -rn \"from '\\\\.\\\\\\(\\\\/auth\\\\|\\\\/vehicle-management\\\\|\\\\/billing-recon\\\\|\\\\/ViewRequisition\\\\|\\\\/DocumentLink\\\\\\)\" \"d:/Application Dev/SEL Live/src/components/\")",
       "Bash(xargs grep -l \"Table\\\\b\")",
       "Bash(node -e \"require\\('next-nprogress-bar'\\)\")",
-      "Bash(grep -v \"//\\\\|console\")"
+      "Bash(grep -v \"//\\\\|console\")",
+      "PowerShell(winget install --id EclipseAdoptium.Temurin.21.JDK --silent --accept-source-agreements --accept-package-agreements 2>&1)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"
