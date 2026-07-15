@@ -11,7 +11,17 @@
       "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Select-String \"site-account-statement\" | Where-Object { $_ -notmatch \"statement/page\\\\.tsx\\\\\\(38\" } | Select-Object -First 20)",
       "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && \\(npx tsc --noEmit 2>&1\\) | ForEach-Object { $_ } | Select-String \"error TS\" | Select-Object -First 30)",
       "Bash(npx cap *)",
-      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('firebase:', p.dependencies.firebase\\); console.log\\('next:', p.dependencies.next\\);\")"
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('firebase:', p.dependencies.firebase\\); console.log\\('next:', p.dependencies.next\\);\")",
+      "Bash(node -e \"const p=require\\('./package.json'\\); const keys=Object.keys\\({...p.dependencies,...p.devDependencies}\\).filter\\(k=>k.includes\\('capacitor'\\)||k.includes\\('firebase'\\)\\); console.log\\(keys.join\\('\\\\n'\\)\\);\")",
+      "Bash(npm install *)",
+      "Read(//c/Program Files/Android/**)",
+      "Read(//c/Program Files/**)",
+      "PowerShell(& \"C:\\\\Program Files\\\\Android\\\\Android Studio\\\\jbr\\\\bin\\\\keytool.exe\" -list -v -keystore \"$env:USERPROFILE\\\\.android\\\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android 2>&1 | Select-String \"SHA1|SHA256|Owner|Valid\")",
+      "Read(//c/Program Files/Android/Android Studio/jbr/**)",
+      "Read(//c/Program Files/Android/Android Studio/jbr/bin/**)",
+      "PowerShell(Get-ChildItem \"$env:USERPROFILE\\\\.gradle\\\\wrapper\\\\dists\" -Recurse -Filter \"keytool.exe\" -ErrorAction SilentlyContinue | Select-Object -First 3 FullName)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/Common Files/Oracle/Java/java8path_target_345047515/**)",
+      "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\Java\\\\jre1.8.0_431\\\\bin\\\\keytool.exe\" -list -v -keystore \"$env:USERPROFILE\\\\.android\\\\debug.keystore\" -alias androiddebugkey -storepass android -keypass android 2>&1 | Select-String \"SHA1|SHA256|Owner|Valid\")"
     ]
   }
 }

@@ -17,8 +17,10 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
+  signInWithCredential,
   getRedirectResult,
 } from "firebase/auth";
+import { Capacitor } from "@capacitor/core";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -255,10 +257,35 @@ export function LoginPageContent() {
   };
 
   const handleGoogleSignIn = async () => {
-    const provider = new GoogleAuthProvider();
     setIsGoogleLoading(true);
     try {
-      await signInWithPopup(auth, provider);
+      if (Capacitor.isNativePlatform()) {
+        // Android: native Google Sign-In dialog via Capacitor plugin
+        const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        const idToken = result.credential?.idToken;
+        if (!idToken) throw new Error("Google sign-in did not return an ID token.");
+        await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+      } else {
+        // Web browser: popup with redirect fallback
+        try {
+          await signInWithPopup(auth, new GoogleAuthProvider());
+        } catch (popupErr: any) {
+          const code: string = popupErr?.code || "";
+          if (
+            code === "auth/popup-blocked" ||
+            code === "auth/operation-not-supported-in-this-environment"
+          ) {
+            await signInWithRedirect(auth, new GoogleAuthProvider());
+            return;
+          }
+          if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+            setIsGoogleLoading(false);
+            return;
+          }
+          throw popupErr;
+        }
+      }
       setShouldRemember(false);
       const nextPath = resolvePostLoginPath();
       router.replace(nextPath);
@@ -266,18 +293,7 @@ export function LoginPageContent() {
         if ((window.location.pathname || "") === "/login") window.location.replace(nextPath);
       }, 350);
     } catch (err: any) {
-      const code: string = err?.code || "";
-      if (
-        code === "auth/popup-blocked" ||
-        code === "auth/operation-not-supported-in-this-environment"
-      ) {
-        // WebView / Capacitor — fall back to redirect flow
-        await signInWithRedirect(auth, new GoogleAuthProvider());
-        return;
-      }
-      if (code !== "auth/popup-closed-by-user" && code !== "auth/cancelled-popup-request") {
-        toast({ title: "Google sign-in failed", description: "Please try again.", variant: "destructive" });
-      }
+      toast({ title: "Google sign-in failed", description: "Please try again.", variant: "destructive" });
       setIsGoogleLoading(false);
     }
   };
