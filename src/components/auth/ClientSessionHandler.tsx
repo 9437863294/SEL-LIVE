@@ -33,7 +33,13 @@ const isDriverAppClient = (currentPath: string, searchParams: SearchParamGetter)
   const maybeCapacitor = (window as any).Capacitor;
   const isNativeCapacitor =
     typeof maybeCapacitor?.isNativePlatform === 'function' && Boolean(maybeCapacitor.isNativePlatform());
-  if (isNativeCapacitor) return true;
+  if (isNativeCapacitor) {
+    // Only driver-specific routes trigger driver login; the general SEL app starts at '/'
+    return (
+      currentPath.startsWith('/driver-management') ||
+      currentPath.startsWith('/vehicle-management/driver-mobile')
+    );
+  }
 
   const ua = navigator.userAgent || '';
   const isAndroidWebView = /Android/i.test(ua) && /\bwv\b/i.test(ua);
