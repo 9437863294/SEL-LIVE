@@ -34,8 +34,9 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
+  Calendar, ChevronLeft, ChevronRight,
   Download, ExternalLink, File, FileText, Image, Loader2,
-  Paperclip, Pencil, Plus, Receipt, Trash2, Upload, X,
+  Paperclip, Pencil, Plus, Receipt, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
@@ -66,6 +67,34 @@ const blank = (): FormState => ({
   narration: '', expensedBy: '', expenseDate: '', expenseAmount: '',
   paymentMode: 'Cash', vendorPartyName: '', billNo: '', remarks: '',
 });
+
+function getMonthRange(fromDate?: string, offset = 0) {
+  let y: number, m: number;
+  if (fromDate) {
+    const parts = fromDate.split('-').map(Number);
+    y = parts[0]; m = parts[1] - 1 + offset;
+  } else {
+    const now = new Date();
+    y = now.getFullYear(); m = now.getMonth() + offset;
+  }
+  // normalise overflow (e.g. month 13 → next year)
+  const d = new Date(y, m, 1);
+  y = d.getFullYear(); m = d.getMonth();
+  const start = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  const end   = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { start, end, year: y, month: m };
+}
+
+function formatTimestamp(ts: any): string {
+  if (!ts) return '—';
+  const d: Date | null = ts?.toDate?.() ?? (ts?.seconds ? new Date(ts.seconds * 1000) : null);
+  if (!d || isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  });
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024)    return `${bytes} B`;
@@ -113,18 +142,18 @@ export default function SiteExpensesPage() {
   const [removedAttachments,  setRemovedAttachments]  = useState<SASAttachment[]>([]);
   const [viewDocExpense,      setViewDocExpense]      = useState<SASExpense | null>(null);
 
-  // Filters
+  // Filters — default to current month
   const [filterProject,     setFilterProject]     = useState('');
   const [filterCategory,    setFilterCategory]    = useState('');
   const [filterSubCategory, setFilterSubCategory] = useState('');
   const [filterMode,        setFilterMode]        = useState('');
-  const [filterFrom,        setFilterFrom]        = useState('');
-  const [filterTo,          setFilterTo]          = useState('');
+  const [filterFrom,        setFilterFrom]        = useState(() => getMonthRange().start);
+  const [filterTo,          setFilterTo]          = useState(() => getMonthRange().end);
   const [search,            setSearch]            = useState('');
 
   useEffect(() => {
-    if (!isAuthLoading && canView) void loadAll();
-  }, [isAuthLoading, canView]);
+    if (!isAuthLoading) void loadAll();
+  }, [isAuthLoading]);
 
   async function loadAll() {
     setLoading(true);
@@ -161,13 +190,24 @@ export default function SiteExpensesPage() {
   );
 
   const visibleProjects = useMemo(
-    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    () => canViewAll ? projects : projects.filter(p =>
+      p.assignedPersonId === user?.id || p.altUserId === user?.id || p.viewerId === user?.id
+    ),
     [projects, user?.id, canViewAll]
   );
   const userProjectIds = useMemo(
     () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
     [visibleProjects, canViewAll]
   );
+
+  // Alt-user projects allow add/edit even without RBAC permissions
+  const isAltUser = useMemo(
+    () => !canViewAll && visibleProjects.some(p => p.altUserId === user?.id),
+    [canViewAll, visibleProjects, user?.id]
+  );
+  const effectiveCanAdd    = canAdd    || isAltUser;
+  const effectiveCanEdit   = canEdit   || isAltUser;
+  const effectiveCanImport = canImport || isAltUser;
 
   // Per-project balance (received - expenses)
   const perProjectBalance = useMemo(() => {
@@ -197,6 +237,47 @@ export default function SiteExpensesPage() {
     () => filterProject ? perProjectBalance.get(filterProject) : undefined,
     [perProjectBalance, filterProject]
   );
+
+  // ── Opening / closing balance for the filtered period ────────────────────────
+  const openingBalance = useMemo(() => {
+    if (!filterFrom) return null;
+    const inScope = (id: string) => filterProject ? id === filterProject : (!userProjectIds || userProjectIds.has(id));
+    const rec = payments.filter(p => inScope(p.projectId) && p.receiptDate < filterFrom)
+      .reduce((s, p) => s + (p.receivedAmount || 0), 0);
+    const exp = expenses.filter(e => inScope(e.projectId) && e.expenseDate < filterFrom)
+      .reduce((s, e) => s + (e.expenseAmount || 0), 0);
+    return rec - exp;
+  }, [filterFrom, filterProject, payments, expenses, userProjectIds]);
+
+  const periodReceipts = useMemo(() => payments
+    .filter(p => {
+      if (filterProject && p.projectId !== filterProject) return false;
+      if (userProjectIds && !userProjectIds.has(p.projectId)) return false;
+      if (filterFrom && p.receiptDate < filterFrom) return false;
+      if (filterTo   && p.receiptDate > filterTo)   return false;
+      return true;
+    })
+    .reduce((s, p) => s + (p.receivedAmount || 0), 0),
+  [filterFrom, filterTo, filterProject, payments, userProjectIds]);
+
+  // ── Month navigation ─────────────────────────────────────────────────────────
+  function shiftMonth(offset: number) {
+    const { start, end } = getMonthRange(filterFrom, offset);
+    setFilterFrom(start);
+    setFilterTo(end);
+  }
+
+  function goToCurrentMonth() {
+    const { start, end } = getMonthRange();
+    setFilterFrom(start);
+    setFilterTo(end);
+  }
+
+  const monthLabel = useMemo(() => {
+    if (!filterFrom) return 'All Time';
+    const [y, m] = filterFrom.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  }, [filterFrom]);
 
   // ── Import field definitions ──────────────────────────────────────────────────
   const expenseImportFields = useMemo<ImportField[]>(() => [
@@ -461,12 +542,29 @@ export default function SiteExpensesPage() {
 
   const totalFiltered = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
 
+  const closingBalance = useMemo(
+    () => openingBalance === null ? null : openingBalance + periodReceipts - totalFiltered,
+    [openingBalance, periodReceipts, totalFiltered]
+  );
+
   // ── Export ────────────────────────────────────────────────────────────────────
   async function exportExcel() {
     setExporting(true);
     try {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Site Expenses');
+
+      // Balance summary rows at top
+      if (openingBalance !== null) {
+        ws.addRow(['Period', filterFrom || '', 'to', filterTo || '']);
+        ws.addRow(['Opening Balance', openingBalance]);
+        ws.addRow(['Receipts (period)', periodReceipts]);
+        ws.addRow(['Expenses (period)', totalFiltered]);
+        ws.addRow(['Closing Balance', closingBalance ?? '']);
+        ws.addRow([]);
+      }
+
+      const headerRow = ws.rowCount + 1;
       ws.columns = [
         { header: 'Project',        key: 'projectName',        width: 28 },
         { header: 'Main Category',  key: 'expenseCategory',    width: 22 },
@@ -480,13 +578,15 @@ export default function SiteExpensesPage() {
         { header: 'Bill No.',       key: 'billNo',             width: 16 },
         { header: 'Remarks',        key: 'remarks',            width: 30 },
         { header: 'Attachments',    key: 'attachCount',        width: 14 },
+        { header: 'Recorded At',    key: 'createdAtStr',       width: 22 },
       ];
-      ws.getRow(1).font = { bold: true };
+      ws.getRow(headerRow).font = { bold: true };
       filtered.forEach(e => ws.addRow({
         ...e,
         expenseSubCategory: e.expenseSubCategory || '',
         narration:          e.narration          || '',
         attachCount:        e.attachments?.length || 0,
+        createdAtStr:       formatTimestamp(e.createdAt),
       }));
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
@@ -516,17 +616,37 @@ export default function SiteExpensesPage() {
               Export
             </Button>
           )}
-          {canImport && (
+          {effectiveCanImport && (
             <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-2">
               <Upload className="h-4 w-4" /> Import
             </Button>
           )}
-          {canAdd && (
+          {effectiveCanAdd && (
             <Button size="sm" onClick={openAdd} className="gap-2 bg-rose-600 hover:bg-rose-700">
               <Plus className="h-4 w-4" /> Add Expense
             </Button>
           )}
         </div>
+      </div>
+
+      {/* Month navigation */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" className="h-8 px-2.5 gap-1" onClick={() => shiftMonth(-1)}>
+          <ChevronLeft className="h-3.5 w-3.5" /> Prev
+        </Button>
+        <div className="flex items-center gap-1.5 rounded-md border bg-white/80 px-3 py-1.5 text-sm font-medium min-w-[160px] justify-center">
+          <Calendar className="h-3.5 w-3.5 text-rose-500" />
+          <span>{monthLabel}</span>
+        </div>
+        <Button variant="outline" size="sm" className="h-8 px-2.5 gap-1" onClick={() => shiftMonth(1)}>
+          Next <ChevronRight className="h-3.5 w-3.5" />
+        </Button>
+        <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={goToCurrentMonth}>
+          This Month
+        </Button>
+        <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground" onClick={() => { setFilterFrom(''); setFilterTo(''); }}>
+          All Time
+        </Button>
       </div>
 
       {/* Filters row 1 */}
@@ -567,6 +687,44 @@ export default function SiteExpensesPage() {
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
       </div>
 
+      {/* Opening / Closing balance strip */}
+      {openingBalance !== null && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="flex items-center gap-2.5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+            <Wallet className="h-4 w-4 shrink-0 text-emerald-600" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wide">Opening Balance</p>
+              <p className={`text-sm font-bold leading-tight ${openingBalance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                {formatINR(openingBalance)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5">
+            <TrendingUp className="h-4 w-4 shrink-0 text-blue-600" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium text-blue-600 uppercase tracking-wide">Receipts</p>
+              <p className="text-sm font-bold text-blue-700 leading-tight">{formatINR(periodReceipts)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
+            <TrendingDown className="h-4 w-4 shrink-0 text-rose-600" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium text-rose-600 uppercase tracking-wide">Expenses ({filtered.length})</p>
+              <p className="text-sm font-bold text-rose-700 leading-tight">{formatINR(totalFiltered)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5">
+            <Receipt className="h-4 w-4 shrink-0 text-indigo-600" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium text-indigo-600 uppercase tracking-wide">Closing Balance</p>
+              <p className={`text-sm font-bold leading-tight ${(closingBalance ?? 0) >= 0 ? 'text-indigo-700' : 'text-destructive'}`}>
+                {closingBalance !== null ? formatINR(closingBalance) : '—'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Summary bar */}
       <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-rose-50 px-4 py-2.5">
         <Receipt className="h-4 w-4 shrink-0 text-rose-600" />
@@ -579,7 +737,7 @@ export default function SiteExpensesPage() {
             <span className="text-xs text-blue-600 font-medium">Received: {formatINR(filterProjectBalance.received)}</span>
             <span className="text-xs text-rose-600 font-medium">Expenses: {formatINR(filterProjectBalance.spent)}</span>
             <span className={`text-xs font-bold ${filterProjectBalance.balance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
-              Balance: {formatINR(filterProjectBalance.balance)}
+              Available Balance: {formatINR(filterProjectBalance.balance)}
             </span>
           </>
         )}
@@ -611,7 +769,8 @@ export default function SiteExpensesPage() {
                       <Paperclip className="h-3.5 w-3.5 inline" />
                     </th>
                     <th className="px-4 py-2.5 text-left font-medium">Remarks</th>
-                    {(canEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
+                    <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Recorded At</th>
+                    {(effectiveCanEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -647,10 +806,11 @@ export default function SiteExpensesPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-muted-foreground max-w-[110px] truncate">{row.remarks || '—'}</td>
-                      {(canEdit || canDelete) && (
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{formatTimestamp(row.createdAt)}</td>
+                      {(effectiveCanEdit || canDelete) && (
                         <td className="px-4 py-2.5 text-right">
                           <div className="flex justify-end gap-1">
-                            {canEdit && (
+                            {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -686,7 +846,7 @@ export default function SiteExpensesPage() {
                   <tr className="bg-muted/30 font-semibold">
                     <td colSpan={5} className="px-4 py-2.5">Total</td>
                     <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totalFiltered)}</td>
-                    <td colSpan={(canEdit || canDelete) ? 6 : 5} />
+                    <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
                   </tr>
                 </tfoot>
               </table>
@@ -738,7 +898,7 @@ export default function SiteExpensesPage() {
               </a>
             ))}
           </div>
-          {viewDocExpense && canEdit && (
+          {viewDocExpense && effectiveCanEdit && (
             <p className="text-xs text-muted-foreground text-center pt-1">
               To add or remove attachments, use the Edit button on the expense row.
             </p>

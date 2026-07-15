@@ -43,8 +43,8 @@ export default function ExpenseReportPage() {
   const [search,            setSearch]            = useState('');
 
   useEffect(() => {
-    if (!isAuthLoading && canView) void loadAll();
-  }, [isAuthLoading, canView]);
+    if (!isAuthLoading) void loadAll();
+  }, [isAuthLoading]);
 
   async function loadAll() {
     setLoading(true);
@@ -78,7 +78,9 @@ export default function ExpenseReportPage() {
   );
 
   const visibleProjects = useMemo(
-    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    () => canViewAll ? projects : projects.filter(p =>
+      p.assignedPersonId === user?.id || p.altUserId === user?.id || p.viewerId === user?.id
+    ),
     [projects, user?.id, canViewAll]
   );
 

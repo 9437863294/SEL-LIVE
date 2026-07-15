@@ -42,6 +42,12 @@ interface FormState {
   assignedPersonId: string;
   assignedPersonName: string;
   assignedPersonEmail: string;
+  altUserId: string;
+  altUserName: string;
+  altUserEmail: string;
+  viewerId: string;
+  viewerName: string;
+  viewerEmail: string;
   status: 'Active' | 'Inactive';
 }
 
@@ -53,6 +59,8 @@ const blank = (): FormState => ({
   assignedPersonId: '',
   assignedPersonName: '',
   assignedPersonEmail: '',
+  altUserId: '', altUserName: '', altUserEmail: '',
+  viewerId: '', viewerName: '', viewerEmail: '',
   status: 'Active',
 });
 
@@ -118,6 +126,12 @@ export default function ProjectSettingsPage() {
       assignedPersonId:    row.assignedPersonId || '',
       assignedPersonName:  row.assignedPersonName || '',
       assignedPersonEmail: row.assignedPersonEmail || '',
+      altUserId:           row.altUserId    || '',
+      altUserName:         row.altUserName  || '',
+      altUserEmail:        row.altUserEmail || '',
+      viewerId:            row.viewerId     || '',
+      viewerName:          row.viewerName   || '',
+      viewerEmail:         row.viewerEmail  || '',
       status:              row.status || 'Active',
     });
     setDialogOpen(true);
@@ -145,6 +159,20 @@ export default function ProjectSettingsPage() {
     }));
   }
 
+  function selectAltUser(id: string) {
+    if (id === '_none_') { setForm(f => ({ ...f, altUserId: '', altUserName: '', altUserEmail: '' })); return; }
+    const user = users.find(u => u.id === id);
+    if (!user) return;
+    setForm(f => ({ ...f, altUserId: id, altUserName: user.name, altUserEmail: user.email }));
+  }
+
+  function selectViewer(id: string) {
+    if (id === '_none_') { setForm(f => ({ ...f, viewerId: '', viewerName: '', viewerEmail: '' })); return; }
+    const user = users.find(u => u.id === id);
+    if (!user) return;
+    setForm(f => ({ ...f, viewerId: id, viewerName: user.name, viewerEmail: user.email }));
+  }
+
   function setField(key: keyof FormState, value: any) {
     setForm(f => ({ ...f, [key]: value }));
   }
@@ -164,6 +192,12 @@ export default function ProjectSettingsPage() {
         assignedPersonId:    form.assignedPersonId,
         assignedPersonName:  form.assignedPersonName,
         assignedPersonEmail: form.assignedPersonEmail,
+        altUserId:           form.altUserId,
+        altUserName:         form.altUserName,
+        altUserEmail:        form.altUserEmail,
+        viewerId:            form.viewerId,
+        viewerName:          form.viewerName,
+        viewerEmail:         form.viewerEmail,
         status:              form.status,
         updatedAt:           serverTimestamp(),
       };
@@ -199,7 +233,9 @@ export default function ProjectSettingsPage() {
   const filtered = rows.filter(r =>
     r.projectName.toLowerCase().includes(search.toLowerCase()) ||
     (r.projectCode || '').toLowerCase().includes(search.toLowerCase()) ||
-    (r.assignedPersonName || '').toLowerCase().includes(search.toLowerCase())
+    (r.assignedPersonName || '').toLowerCase().includes(search.toLowerCase()) ||
+    (r.altUserName  || '').toLowerCase().includes(search.toLowerCase()) ||
+    (r.viewerName   || '').toLowerCase().includes(search.toLowerCase())
   );
 
   // In edit mode, the current project should always appear in the dropdown
@@ -275,7 +311,7 @@ export default function ProjectSettingsPage() {
                     <th className="px-4 py-2.5 text-left font-medium">Project Name</th>
                     <th className="px-4 py-2.5 text-left font-medium">Site Code</th>
                     <th className="px-4 py-2.5 text-center font-medium">Enabled</th>
-                    <th className="px-4 py-2.5 text-left font-medium">Assigned Person</th>
+                    <th className="px-4 py-2.5 text-left font-medium">Assigned / Alt. User / Viewer</th>
                     <th className="px-4 py-2.5 text-center font-medium">Status</th>
                     {(canEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
                   </tr>
@@ -291,15 +327,28 @@ export default function ProjectSettingsPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-2.5">
-                        {row.assignedPersonName ? (
-                          <div className="flex items-center gap-1.5">
-                            <User2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span>{row.assignedPersonName}</span>
-                            {row.assignedPersonEmail && (
-                              <span className="text-xs text-muted-foreground hidden sm:inline">({row.assignedPersonEmail})</span>
-                            )}
-                          </div>
-                        ) : '—'}
+                        <div className="flex flex-col gap-0.5">
+                          {row.assignedPersonName ? (
+                            <div className="flex items-center gap-1.5">
+                              <User2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                              <span className="text-xs font-medium">{row.assignedPersonName}</span>
+                            </div>
+                          ) : <span className="text-muted-foreground text-xs">— no primary —</span>}
+                          {row.altUserName && (
+                            <div className="flex items-center gap-1.5">
+                              <User2 className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                              <span className="text-xs text-blue-700">{row.altUserName}</span>
+                              <span className="text-[10px] text-muted-foreground">(alt)</span>
+                            </div>
+                          )}
+                          {row.viewerName && (
+                            <div className="flex items-center gap-1.5">
+                              <User2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                              <span className="text-xs text-slate-600">{row.viewerName}</span>
+                              <span className="text-[10px] text-muted-foreground">(view only)</span>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         <Badge variant={row.status === 'Active' ? 'default' : 'secondary'}>
@@ -416,6 +465,54 @@ export default function ProjectSettingsPage() {
                     <SelectItem key={u.id} value={u.id}>
                       {u.name}
                       {u.email ? ` (${u.email})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Alternative User */}
+            <div className="col-span-2 space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                Alternative User
+                <span className="text-xs font-normal text-muted-foreground">(same access as assigned person)</span>
+              </Label>
+              <Select
+                value={form.altUserId || '_none_'}
+                onValueChange={selectAltUser}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select alternative user (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none_">— None —</SelectItem>
+                  {users.filter(u => u.id !== form.assignedPersonId).map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}{u.email ? ` (${u.email})` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Viewer */}
+            <div className="col-span-2 space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                Viewer
+                <span className="text-xs font-normal text-muted-foreground">(read-only, can view reports & statement)</span>
+              </Label>
+              <Select
+                value={form.viewerId || '_none_'}
+                onValueChange={selectViewer}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select viewer (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none_">— None —</SelectItem>
+                  {users.filter(u => u.id !== form.assignedPersonId && u.id !== form.altUserId).map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}{u.email ? ` (${u.email})` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>

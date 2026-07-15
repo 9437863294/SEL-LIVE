@@ -86,8 +86,8 @@ export default function PaymentsPage() {
   const [search,        setSearch]        = useState('');
 
   useEffect(() => {
-    if (!isAuthLoading && canView) void loadAll();
-  }, [isAuthLoading, canView]);
+    if (!isAuthLoading) void loadAll();
+  }, [isAuthLoading]);
 
   async function loadAll() {
     setLoading(true);
@@ -135,7 +135,9 @@ export default function PaymentsPage() {
 
   // ── Projects visible to this user (admins see all, others see only assigned) ─
   const visibleProjects = useMemo(
-    () => canViewAll ? projects : projects.filter(p => p.assignedPersonId === user?.id),
+    () => canViewAll ? projects : projects.filter(p =>
+      p.assignedPersonId === user?.id || p.altUserId === user?.id || p.viewerId === user?.id
+    ),
     [projects, user?.id, canViewAll]
   );
 
@@ -143,6 +145,14 @@ export default function PaymentsPage() {
     () => canViewAll ? null : new Set(visibleProjects.map(p => p.id)),
     [visibleProjects, canViewAll]
   );
+
+  const isAltUser = useMemo(
+    () => !canViewAll && visibleProjects.some(p => p.altUserId === user?.id),
+    [canViewAll, visibleProjects, user?.id]
+  );
+  const effectiveCanAdd    = canAdd    || isAltUser;
+  const effectiveCanEdit   = canEdit   || isAltUser;
+  const effectiveCanImport = canImport || isAltUser;
 
   // ── Import field definitions (validate against visible projects) ─────────────
   const paymentImportFields = useMemo<ImportField[]>(() => [
@@ -321,12 +331,12 @@ export default function PaymentsPage() {
               Export
             </Button>
           )}
-          {canImport && (
+          {effectiveCanImport && (
             <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="gap-2">
               <Upload className="h-4 w-4" /> Import
             </Button>
           )}
-          {canAdd && (
+          {effectiveCanAdd && (
             <Button size="sm" onClick={openAdd} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
               <Plus className="h-4 w-4" /> Add Payment
             </Button>
@@ -376,7 +386,7 @@ export default function PaymentsPage() {
                     <th className="px-4 py-2.5 text-left font-medium">Reference No.</th>
                     <th className="px-4 py-2.5 text-left font-medium">Received By</th>
                     <th className="px-4 py-2.5 text-left font-medium">Remarks</th>
-                    {(canEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
+                    {(effectiveCanEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -389,10 +399,10 @@ export default function PaymentsPage() {
                       <td className="px-4 py-2.5 text-muted-foreground">{row.referenceNo || '—'}</td>
                       <td className="px-4 py-2.5">{row.receivedBy || '—'}</td>
                       <td className="px-4 py-2.5 text-muted-foreground max-w-[150px] truncate">{row.remarks || '—'}</td>
-                      {(canEdit || canDelete) && (
+                      {(effectiveCanEdit || canDelete) && (
                         <td className="px-4 py-2.5 text-right">
                           <div className="flex justify-end gap-1">
-                            {canEdit && (
+                            {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -426,7 +436,7 @@ export default function PaymentsPage() {
                   <tr className="bg-muted/30 font-semibold">
                     <td colSpan={2} className="px-4 py-2.5">Total</td>
                     <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totalFiltered)}</td>
-                    <td colSpan={(canEdit || canDelete) ? 5 : 4} />
+                    <td colSpan={(effectiveCanEdit || canDelete) ? 5 : 4} />
                   </tr>
                 </tfoot>
               </table>

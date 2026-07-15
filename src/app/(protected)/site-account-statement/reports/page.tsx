@@ -1,7 +1,5 @@
 'use client';
 
-import { useAuthorization } from '@/hooks/useAuthorization';
-import { useAuth } from '@/components/auth/AuthProvider';
 import Link from 'next/link';
 import { BarChart3, Activity, CalendarDays, FileText, PieChart, Users, Wallet, ClipboardList, ShieldCheck } from 'lucide-react';
 
@@ -92,20 +90,6 @@ const REPORTS = [
 ] as const;
 
 export default function ReportsIndexPage() {
-  const { can } = useAuthorization();
-  const { user: _user } = useAuth();
-  const canViewAll = can('View', `${MODULE}.All Projects`);
-  const canView    = can('View', `${MODULE}.Reports`) || canViewAll;
-
-  if (!canView) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
-        <BarChart3 className="h-12 w-12 opacity-30" />
-        <p className="text-sm">You don&apos;t have access to reports.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-5">
       <div>

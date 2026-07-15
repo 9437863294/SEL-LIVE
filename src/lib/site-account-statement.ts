@@ -14,6 +14,12 @@ export interface SASProject {
   assignedPersonId: string;
   assignedPersonName: string;
   assignedPersonEmail: string;
+  altUserId?: string;
+  altUserName?: string;
+  altUserEmail?: string;
+  viewerId?: string;
+  viewerName?: string;
+  viewerEmail?: string;
   status: 'Active' | 'Inactive';
   createdAt: any;
   updatedAt: any;

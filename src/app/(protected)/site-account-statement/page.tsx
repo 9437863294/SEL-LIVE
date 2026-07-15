@@ -496,9 +496,9 @@ export default function SiteAccountDashboardPage() {
   const [loading,    setLoading]    = useState(true);
 
   useEffect(() => {
-    if (isAuthLoading || !canViewDashboard) return;
+    if (isAuthLoading) return;
     void loadAll();
-  }, [isAuthLoading, canViewDashboard]);
+  }, [isAuthLoading]);
 
   async function loadAll() {
     setLoading(true);
@@ -518,10 +518,26 @@ export default function SiteAccountDashboardPage() {
     }
   }
 
-  // Projects assigned to the current user
+  // Projects where the current user is primary, alt, or viewer
   const myProjects = useMemo(
-    () => projects.filter(p => p.assignedPersonId === user?.id && p.enabledForSiteAccount && p.status === 'Active'),
-    [projects, user?.id]
+    () => canViewAll
+      ? []
+      : projects.filter(p =>
+          (p.assignedPersonId === user?.id || p.altUserId === user?.id) &&
+          p.enabledForSiteAccount && p.status === 'Active'
+        ),
+    [projects, user?.id, canViewAll]
+  );
+
+  // Includes viewer-only access (for access gate)
+  const myAccessibleProjects = useMemo(
+    () => canViewAll
+      ? []
+      : projects.filter(p =>
+          (p.assignedPersonId === user?.id || p.altUserId === user?.id || p.viewerId === user?.id) &&
+          p.enabledForSiteAccount && p.status === 'Active'
+        ),
+    [projects, user?.id, canViewAll]
   );
 
   // All enabled projects for admin overview
@@ -557,7 +573,7 @@ export default function SiteAccountDashboardPage() {
     );
   }
 
-  if (!canViewDashboard) {
+  if (!canViewDashboard && myAccessibleProjects.length === 0) {
     return (
       <Card><CardHeader><CardTitle>Access Denied</CardTitle></CardHeader>
         <CardContent><p className="text-muted-foreground text-sm">You do not have permission to view this module.</p></CardContent>

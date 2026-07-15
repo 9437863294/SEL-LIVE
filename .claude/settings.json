@@ -6,7 +6,11 @@
       "Bash(sed -i 's/SelectTrigger className=\"w-\\\\[260px\\\\]\">/SelectTrigger className=\"w-full sm:w-[260px]\">/g' \"d:/Application Dev/SEL Live/src/app/\\(protected\\)/subcontractors-management/[project]/page.tsx\")",
       "PowerShell(ls \"d:\\\\Application Dev\\\\SEL Live\\\\src\\\\app\\\\\\(protected\\)\\\\settings\\\\role-management\\\\edit\\\\\")",
       "Read(//d/Application Dev/SEL Live/src/app/\\(protected\\)/settings/role-management/edit/**)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"site-account-statement\" -and $_ -notmatch \"statement/page.tsx\\\\\\(38\" } | Select-Object -First 20)",
+      "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Select-String \"site-account-statement\" | Where-Object { $_ -notmatch \"statement/page\\\\.tsx\\\\\\(38\" } | Select-Object -First 20)",
+      "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && \\(npx tsc --noEmit 2>&1\\) | ForEach-Object { $_ } | Select-String \"error TS\" | Select-Object -First 30)",
+      "Bash(npx cap *)"
     ]
   }
 }

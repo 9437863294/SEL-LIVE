@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   BarChart3,
@@ -12,6 +12,7 @@ import {
   FileText,
   Layers,
   LayoutDashboard,
+  Loader2,
   Menu,
   PieChart,
   Receipt,
@@ -24,6 +25,10 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { SAS_COLLECTIONS } from '@/lib/site-account-statement';
+import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -53,11 +58,14 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
   const pathname = usePathname();
   const safePathname = pathname ?? '';
   const { can } = useAuthorization();
+  const { user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isProjectMember, setIsProjectMember] = useState(false);
+  const [membershipChecked, setMembershipChecked] = useState(false);
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
 
-  const canViewModule =
+  const hasRbacAccess =
     canViewAll ||
     can('View Module', MODULE) ||
     sections.some(s => Boolean(s.resource) && (
@@ -65,8 +73,34 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
       can('Add', `${MODULE}.${s.resource}`)
     ));
 
+  // Check if the user is assigned to any project (primary, alt, or viewer) — allows
+  // project-level members through even when they have no RBAC module permissions.
+  useEffect(() => {
+    if (hasRbacAccess) {
+      setIsProjectMember(true);
+      setMembershipChecked(true);
+      return;
+    }
+    if (!user?.id) {
+      setMembershipChecked(true);
+      return;
+    }
+    getDocs(collection(db, SAS_COLLECTIONS.projects))
+      .then(snap => {
+        const member = snap.docs.some(d => {
+          const p = d.data();
+          return p.assignedPersonId === user.id || p.altUserId === user.id || p.viewerId === user.id;
+        });
+        setIsProjectMember(member);
+      })
+      .finally(() => setMembershipChecked(true));
+  }, [user?.id, hasRbacAccess]);
+
+  const canViewModule = hasRbacAccess || isProjectMember;
+
   const availableSections = sections.filter(item => {
     if (canViewAll && item.viewAllAccess) return true;
+    if (isProjectMember && item.viewAllAccess) return true;
     if (!item.resource) return canViewModule;
     return (
       can('View', `${MODULE}.${item.resource}`) ||
@@ -112,6 +146,14 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
       );
     });
   };
+
+  if (!membershipChecked && !hasRbacAccess) {
+    return (
+      <div className="flex w-full items-center justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!canViewModule) {
     return (
