@@ -637,7 +637,7 @@ export default function SiteAccountDashboardPage() {
               {highestExpense && (
                 <div className="flex items-start gap-3 rounded-xl border bg-orange-50 p-4 text-orange-700">
                   <BarChart3 className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-wide">Highest Expense Project</p>
                     <p className="font-semibold truncate">{highestExpense.name}</p>
                     <p className="text-sm">{formatINR(highestExpense.expenses)}</p>
@@ -647,10 +647,10 @@ export default function SiteAccountDashboardPage() {
               {lowBalance.length > 0 && (
                 <div className="flex items-start gap-3 rounded-xl border bg-rose-50 p-4 text-rose-700">
                   <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-wide">Low Balance Projects</p>
                     <p className="font-semibold">{lowBalance.length} project{lowBalance.length > 1 ? 's' : ''} below ₹10,000</p>
-                    <p className="text-sm truncate">{lowBalance.map(p => p.name).join(', ')}</p>
+                    <p className="text-sm line-clamp-2 break-words">{lowBalance.map(p => p.name).join(', ')}</p>
                   </div>
                 </div>
               )}

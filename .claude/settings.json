@@ -10,7 +10,8 @@
       "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"site-account-statement\" -and $_ -notmatch \"statement/page.tsx\\\\\\(38\" } | Select-Object -First 20)",
       "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && npx tsc --noEmit 2>&1 | Select-String \"site-account-statement\" | Where-Object { $_ -notmatch \"statement/page\\\\.tsx\\\\\\(38\" } | Select-Object -First 20)",
       "PowerShell(cd \"d:\\\\Application Dev\\\\SEL Live\" && \\(npx tsc --noEmit 2>&1\\) | ForEach-Object { $_ } | Select-String \"error TS\" | Select-Object -First 30)",
-      "Bash(npx cap *)"
+      "Bash(npx cap *)",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('firebase:', p.dependencies.firebase\\); console.log\\('next:', p.dependencies.next\\);\")"
     ]
   }
 }
