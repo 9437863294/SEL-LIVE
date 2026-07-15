@@ -46,7 +46,10 @@
       "Bash(xargs grep -l \"Table\\\\b\")",
       "Bash(node -e \"require\\('next-nprogress-bar'\\)\")",
       "Bash(grep -v \"//\\\\|console\")",
-      "PowerShell(winget install --id EclipseAdoptium.Temurin.21.JDK --silent --accept-source-agreements --accept-package-agreements 2>&1)"
+      "PowerShell(winget install --id EclipseAdoptium.Temurin.21.JDK --silent --accept-source-agreements --accept-package-agreements 2>&1)",
+      "Bash(xargs grep -l \"provider is not enabled\")",
+      "Read(//d/Application Dev/SEL Live/node_modules/@capacitor-firebase/authentication/dist/**)",
+      "PowerShell(Select-String -Path \"d:\\\\Application Dev\\\\SEL Live\\\\node_modules\\\\@capacitor-firebase\\\\authentication\\\\dist\\\\plugin.js\" -Pattern \"provider|providers|enabled\" -CaseSensitive:$false)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"
