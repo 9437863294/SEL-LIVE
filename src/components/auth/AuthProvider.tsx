@@ -273,6 +273,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!snap.exists()) {
           console.error('User doc not found for UID/email:', userToLoadId, firebaseUser.email);
           await handleSignOut();
+          toast({
+            title: 'Account not registered',
+            description: 'This Google account is not linked to any user in the system. Please contact your administrator.',
+            variant: 'destructive',
+          });
           return null;
         }
 

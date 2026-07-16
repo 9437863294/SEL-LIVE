@@ -269,15 +269,22 @@ export function LoginPageContent() {
         await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
       } else {
         // Web browser: popup with redirect fallback
+        // prompt: 'select_account' forces the Google account picker every time
+        // so a user who was rejected can switch to a different account on retry.
+        const makeProvider = () => {
+          const p = new GoogleAuthProvider();
+          p.setCustomParameters({ prompt: "select_account" });
+          return p;
+        };
         try {
-          await signInWithPopup(auth, new GoogleAuthProvider());
+          await signInWithPopup(auth, makeProvider());
         } catch (popupErr: any) {
           const code: string = popupErr?.code || "";
           if (
             code === "auth/popup-blocked" ||
             code === "auth/operation-not-supported-in-this-environment"
           ) {
-            await signInWithRedirect(auth, new GoogleAuthProvider());
+            await signInWithRedirect(auth, makeProvider());
             return;
           }
           if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
