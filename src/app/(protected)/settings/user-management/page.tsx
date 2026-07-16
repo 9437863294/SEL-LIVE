@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, ShieldAlert, Search, Sparkles } from 'lucide-react';
+import { ArrowLeft, CheckCheck, Copy, Plus, RefreshCw, ShieldAlert, Search, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -50,6 +50,26 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 
 
+const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const LOWER = 'abcdefghjkmnpqrstuvwxyz';
+const NUMS  = '23456789';
+const SYMS  = '@#$%!&';
+
+function generatePassword(): string {
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+  const chars = [
+    pick(UPPER), pick(UPPER), pick(UPPER),
+    pick(LOWER), pick(LOWER), pick(LOWER), pick(LOWER),
+    pick(NUMS),  pick(NUMS),  pick(NUMS),
+    pick(SYMS),  pick(SYMS),
+  ];
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}
+
 const initialNewUserState = {
   name: '',
   email: '',
@@ -71,6 +91,14 @@ export default function ManageUserPage() {
   
   const [newUser, setNewUser] = useState(initialNewUserState);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (isAddDialogOpen) {
+      setNewUser(prev => ({ ...prev, password: generatePassword() }));
+      setCopied(false);
+    }
+  }, [isAddDialogOpen]);
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -171,9 +199,21 @@ export default function ManageUserPage() {
           }
       });
 
+      // Send welcome email — non-blocking, don't fail user creation if this errors
+      fetch('/api/send-welcome-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newUser.name,
+          email: newUser.email,
+          password: newUser.password,
+          role: newUser.role,
+        }),
+      }).catch(() => {});
+
       toast({
-        title: 'Success',
-        description: `User "${newUser.name}" created and saved.`,
+        title: 'User Created',
+        description: `"${newUser.name}" has been created. A welcome email with login credentials was sent to ${newUser.email}.`,
       });
       resetAddDialog();
       fetchUsersAndRoles(); 
@@ -325,7 +365,7 @@ export default function ManageUserPage() {
               <DialogHeader>
                 <DialogTitle>Add New User</DialogTitle>
                 <DialogDescription>
-                  Fill in the details to add a new user. A password is required for authentication.
+                  Fill in the details below. A secure password is auto-generated and a welcome email with login credentials will be sent to the user.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
@@ -337,9 +377,44 @@ export default function ManageUserPage() {
                     <Label htmlFor="email">Email</Label>
                     <Input id="email" type="email" placeholder="e.g. john@example.com" value={newUser.email} onChange={(e) => handleInputChange('email', e.target.value)} />
                 </div>
-                <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <Input id="password" type="password" placeholder="Enter a strong password" value={newUser.password} onChange={(e) => handleInputChange('password', e.target.value)} />
+                <div className="space-y-2 md:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Auto-generated Password</Label>
+                    <span className="text-[11px] text-muted-foreground">Sent to user by email</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      id="password"
+                      type="text"
+                      value={newUser.password}
+                      readOnly
+                      className="font-mono tracking-widest text-base flex-1 bg-slate-50 border-dashed"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Copy password"
+                      onClick={() => {
+                        navigator.clipboard.writeText(newUser.password);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                    >
+                      {copied
+                        ? <CheckCheck className="h-4 w-4 text-emerald-600" />
+                        : <Copy className="h-4 w-4" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="Generate new password"
+                      onClick={() => { handleInputChange('password', generatePassword()); setCopied(false); }}
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="mobile">Mobile No</Label>

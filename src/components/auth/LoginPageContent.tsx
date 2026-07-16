@@ -14,7 +14,6 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
-  sendPasswordResetEmail,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
@@ -351,14 +350,19 @@ export function LoginPageContent() {
     setForgotEmailError("");
     setIsForgotLoading(true);
     try {
-      await sendPasswordResetEmail(auth, normalized);
-    } catch (err: any) {
-      // Silently swallow user-not-found to avoid enumeration
-      if (err?.code !== "auth/user-not-found") {
-        setForgotEmailError(mapFirebaseError(err?.code || ""));
-        setIsForgotLoading(false);
+      const res = await fetch("/api/send-password-reset-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalized }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setForgotEmailError(data?.error || "Failed to send reset email. Please try again.");
         return;
       }
+    } catch {
+      setForgotEmailError("Network error. Please check your connection and try again.");
+      return;
     } finally {
       setIsForgotLoading(false);
     }
