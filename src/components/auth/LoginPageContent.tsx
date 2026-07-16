@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { auth } from "@/lib/firebase";
 import {
   signInWithEmailAndPassword,
+  signOut,
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
@@ -302,6 +303,8 @@ export function LoginPageContent() {
       }, 350);
     } catch (err: any) {
       console.error("[Google Sign-In] error:", err);
+      // Ensure Firebase auth is fully cleared so the next attempt starts fresh.
+      await signOut(auth).catch(() => {});
       const errDesc = err?.code
         ? `Error: ${err.code}`
         : err?.message
