@@ -4,6 +4,7 @@ import { initializeApp, getApp, getApps } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import {
   browserLocalPersistence,
+  browserPopupRedirectResolver,
   browserSessionPersistence,
   getAuth,
   inMemoryPersistence,
@@ -42,6 +43,7 @@ const createAuth = (): Auth => {
         browserSessionPersistence,
         inMemoryPersistence,
       ],
+      popupRedirectResolver: browserPopupRedirectResolver,
     });
   } catch (error) {
     // If auth was already initialized, fall back to the existing instance.
