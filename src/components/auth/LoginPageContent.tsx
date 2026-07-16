@@ -261,8 +261,9 @@ export function LoginPageContent() {
     try {
       if (Capacitor.isNativePlatform()) {
         // Android: native Google Sign-In dialog via Capacitor plugin
+        // useCredentialManager: false → uses legacy GoogleSignIn intent (works on all devices)
         const { FirebaseAuthentication } = await import("@capacitor-firebase/authentication");
-        const result = await FirebaseAuthentication.signInWithGoogle();
+        const result = await FirebaseAuthentication.signInWithGoogle({ useCredentialManager: false } as any);
         const idToken = result.credential?.idToken;
         if (!idToken) throw new Error("Google sign-in did not return an ID token.");
         await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
