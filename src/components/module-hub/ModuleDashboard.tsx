@@ -131,11 +131,11 @@ export default function ModuleDashboard() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-8 h-full m-4">
-       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" onDragOver={handleDragOver}>
+    <div className="flex flex-col gap-6 h-full p-3 sm:p-4 md:p-6">
+       <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4" onDragOver={handleDragOver}>
         {isLoading || authLoading || driverProfileLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 rounded-xl" />
+            Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-24 sm:h-28 rounded-xl" />
             ))
         ) : (
           allModules.map((module) => (

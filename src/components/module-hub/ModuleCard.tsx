@@ -135,32 +135,42 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
 
   const cardInnerContent = (
     <>
-      <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
-        <div className="bg-primary/10 p-2 rounded-lg">
-           <LucideIcon name={module.icon} className="w-5 h-5 text-primary" />
+      <CardHeader className="flex-col items-start gap-2 space-y-0 p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-4">
+        <div className="flex w-full items-center gap-2 sm:contents">
+          <div className="bg-primary/10 p-1.5 sm:p-2 rounded-lg shrink-0">
+            <LucideIcon name={module.icon} className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0 sm:hidden">
+            <CardTitle className="text-xs font-bold leading-tight truncate">{module.title}</CardTitle>
+          </div>
+          <div className="ml-auto sm:hidden cursor-grab p-1 text-muted-foreground touch-none" aria-label="Drag to reorder">
+            <GripVertical className="h-4 w-4" />
+          </div>
         </div>
-        <div className="flex-1">
+        <div className="hidden sm:flex sm:flex-1 sm:min-w-0">
+          <div className="flex-1 min-w-0">
             <CardTitle className="text-base font-bold">{module.title}</CardTitle>
             <p className="text-sm text-muted-foreground pt-1 line-clamp-2">{module.content}</p>
-        </div>
-        <div className="flex items-center -mr-2 -mt-2 self-start">
-             <div className="cursor-grab p-2 text-muted-foreground touch-none" aria-label="Drag to reorder">
-                <GripVertical className="h-5 w-5" />
+          </div>
+          <div className="flex items-center -mr-2 -mt-2 self-start shrink-0">
+            <div className="cursor-grab p-2 text-muted-foreground touch-none" aria-label="Drag to reorder">
+              <GripVertical className="h-5 w-5" />
             </div>
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="mt-auto flex justify-end gap-1.5 p-2 border-t">
+      <CardContent className={cn("mt-auto flex justify-end gap-1 p-1.5 sm:gap-1.5 sm:p-2 border-t", !canEdit && !canDelete && "hidden")}>
         {canEdit && (
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={(e) => { e.preventDefault(); setIsEditOpen(true); }}>
-              <Edit className="h-4 w-4" />
+          <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-9 sm:w-9" onClick={(e) => { e.preventDefault(); setIsEditOpen(true); }}>
+              <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="sr-only">Edit</span>
           </Button>
         )}
         {canDelete && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(e) => e.preventDefault()}>
-                  <Trash2 className="h-4 w-4" />
+              <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-9 sm:w-9 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(e) => e.preventDefault()}>
+                  <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   <span className="sr-only">Delete</span>
               </Button>
             </AlertDialogTrigger>
