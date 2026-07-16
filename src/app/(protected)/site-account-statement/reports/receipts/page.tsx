@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, FileText, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Download, FileText, Filter, Loader2 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const MODULE = 'Site Account Statement';
@@ -33,6 +34,7 @@ export default function ReceiptReportPage() {
   const [filterFrom,    setFilterFrom]    = useState('');
   const [filterTo,      setFilterTo]      = useState('');
   const [search,        setSearch]        = useState('');
+  const [showFilters,   setShowFilters]   = useState(false);
 
   useEffect(() => {
     if (!isAuthLoading) void loadAll();
@@ -134,8 +136,18 @@ export default function ReceiptReportPage() {
         )}
       </div>
 
+      {/* Mobile filter toggle */}
+      {(() => { const c = [filterProject, search].filter(Boolean).length; return (
+        <div className="flex sm:hidden">
+          <Button variant="outline" size="sm" className="h-9 gap-2 flex-1 justify-center"
+            onClick={() => setShowFilters(s => !s)}>
+            <Filter className="h-3.5 w-3.5" />{showFilters ? 'Hide Filters' : 'Filters'}
+            {c > 0 && <span className="flex h-4 w-4 items-center justify-center rounded-full bg-blue-600 text-[9px] font-bold text-white">{c}</span>}
+          </Button>
+        </div>
+      ); })()}
       {/* Filters */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className={cn('grid grid-cols-2 gap-2 sm:grid-cols-4', !showFilters && 'hidden sm:grid')}>
         <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
           <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
@@ -169,10 +181,10 @@ export default function ReceiptReportPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="overflow-auto max-h-[400px]">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/30">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="border-b bg-slate-100">
                       <th className="px-4 py-2 text-left font-medium">Date</th>
                       <th className="px-4 py-2 text-right font-medium">Amount</th>
                       <th className="px-4 py-2 text-left font-medium">Mode</th>

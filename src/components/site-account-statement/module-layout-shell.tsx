@@ -187,7 +187,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
                   <Menu className="h-4 w-4" /> Menu
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[88vw] max-w-[300px] border-r border-white/70 bg-slate-50/98 p-0 backdrop-blur-xl flex flex-col">
+              <SheetContent side="left" className="w-[88vw] max-w-[300px] border-r border-slate-200 bg-slate-50 p-0 flex flex-col z-[60]">
                 <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
                   <div className="flex items-center gap-2.5">
                     <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow">

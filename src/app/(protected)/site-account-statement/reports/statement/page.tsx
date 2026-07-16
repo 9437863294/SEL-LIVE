@@ -213,10 +213,10 @@ export default function AccountStatementPage() {
             <CardTitle className="text-sm font-semibold text-slate-700">{selectedProjectName}</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[60vh]">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium w-[110px]">Date</th>
                     <th className="px-4 py-2.5 text-left font-medium">Particulars</th>
                     <th className="px-4 py-2.5 text-right font-medium">Receipt (₹)</th>

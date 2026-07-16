@@ -33,8 +33,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Calendar, ChevronLeft, ChevronRight,
-  Download, Loader2, Pencil, Plus, Receipt, TrendingDown, TrendingUp, Trash2, Upload, Wallet,
+  Download, Filter, Loader2, Pencil, Plus, Receipt, TrendingDown, TrendingUp, Trash2, Upload, Wallet,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import ExcelJS from 'exceljs';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
@@ -114,6 +115,7 @@ export default function PaymentsPage() {
   const [filterFrom,    setFilterFrom]    = useState(() => getMonthRange().start);
   const [filterTo,      setFilterTo]      = useState(() => getMonthRange().end);
   const [search,        setSearch]        = useState('');
+  const [showFilters,   setShowFilters]   = useState(false);
 
   useEffect(() => {
     if (!isAuthLoading) void loadAll();
@@ -455,8 +457,27 @@ export default function PaymentsPage() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {/* Mobile filter toggle */}
+      {(() => {
+        const activeCount = [filterProject, search].filter(Boolean).length;
+        return (
+          <div className="flex items-center gap-2 sm:hidden">
+            <Button variant="outline" size="sm" className="h-9 gap-2 flex-1 justify-center"
+              onClick={() => setShowFilters(s => !s)}>
+              <Filter className="h-3.5 w-3.5" />
+              {showFilters ? 'Hide Filters' : 'Filters'}
+              {activeCount > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-bold text-white">
+                  {activeCount}
+                </span>
+              )}
+            </Button>
+          </div>
+        );
+      })()}
+
+      {/* Filters (collapsible on mobile, always visible on sm+) */}
+      <div className={cn('grid grid-cols-2 gap-2 sm:grid-cols-4', !showFilters && 'hidden sm:grid')}>
         <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
           <SelectTrigger className="h-9 text-sm">
             <SelectValue placeholder="All Projects" />
@@ -528,10 +549,10 @@ export default function PaymentsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[60vh]">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">Project</th>
                     <th className="px-4 py-2.5 text-left font-medium">Date</th>
                     <th className="px-4 py-2.5 text-right font-medium">Amount</th>

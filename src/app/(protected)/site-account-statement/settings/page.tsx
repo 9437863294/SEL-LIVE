@@ -304,10 +304,10 @@ export default function ProjectSettingsPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[60vh]">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">Project Name</th>
                     <th className="px-4 py-2.5 text-left font-medium">Site Code</th>
                     <th className="px-4 py-2.5 text-center font-medium">Enabled</th>

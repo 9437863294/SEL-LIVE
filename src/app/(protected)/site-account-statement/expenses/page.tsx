@@ -35,9 +35,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Calendar, ChevronLeft, ChevronRight,
-  Download, ExternalLink, File, FileText, Image, Loader2,
+  Download, ExternalLink, File, FileText, Filter, Image, Loader2,
   Paperclip, Pencil, Plus, Receipt, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import ExcelJS from 'exceljs';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
@@ -150,6 +151,7 @@ export default function SiteExpensesPage() {
   const [filterFrom,        setFilterFrom]        = useState(() => getMonthRange().start);
   const [filterTo,          setFilterTo]          = useState(() => getMonthRange().end);
   const [search,            setSearch]            = useState('');
+  const [showFilters,       setShowFilters]       = useState(false);
 
   useEffect(() => {
     if (!isAuthLoading) void loadAll();
@@ -649,42 +651,62 @@ export default function SiteExpensesPage() {
         </Button>
       </div>
 
-      {/* Filters row 1 */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-        <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
-          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all_">All Projects</SelectItem>
-            {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={filterCategory || '_all_'} onValueChange={v => { setFilterCategory(v === '_all_' ? '' : v); setFilterSubCategory(''); }}>
-          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Categories" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all_">All Categories</SelectItem>
-            {mainCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={filterSubCategory || '_all_'} onValueChange={v => setFilterSubCategory(v === '_all_' ? '' : v)}>
-          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Sub-Categories" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all_">All Sub-Categories</SelectItem>
-            {filterSubCategoryOptions.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={filterMode || '_all_'} onValueChange={v => setFilterMode(v === '_all_' ? '' : v)}>
-          <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Modes" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all_">All Modes</SelectItem>
-            {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-      {/* Filters row 2 */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-        <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
-        <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
-        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
+      {/* Mobile filter toggle */}
+      {(() => {
+        const activeCount = [filterProject, filterCategory, filterSubCategory, filterMode, search].filter(Boolean).length;
+        return (
+          <div className="flex items-center gap-2 sm:hidden">
+            <Button variant="outline" size="sm" className="h-9 gap-2 flex-1 justify-center"
+              onClick={() => setShowFilters(s => !s)}>
+              <Filter className="h-3.5 w-3.5" />
+              {showFilters ? 'Hide Filters' : 'Filters'}
+              {activeCount > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-bold text-white">
+                  {activeCount}
+                </span>
+              )}
+            </Button>
+          </div>
+        );
+      })()}
+
+      {/* Filters (collapsible on mobile, always visible on sm+) */}
+      <div className={cn('space-y-2', !showFilters && 'hidden sm:block')}>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
+            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Projects" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all_">All Projects</SelectItem>
+              {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterCategory || '_all_'} onValueChange={v => { setFilterCategory(v === '_all_' ? '' : v); setFilterSubCategory(''); }}>
+            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Categories" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all_">All Categories</SelectItem>
+              {mainCategories.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterSubCategory || '_all_'} onValueChange={v => setFilterSubCategory(v === '_all_' ? '' : v)}>
+            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Sub-Categories" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all_">All Sub-Categories</SelectItem>
+              {filterSubCategoryOptions.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterMode || '_all_'} onValueChange={v => setFilterMode(v === '_all_' ? '' : v)}>
+            <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All Modes" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all_">All Modes</SelectItem>
+              {PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
+          <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
+        </div>
       </div>
 
       {/* Opening / Closing balance strip */}
@@ -752,10 +774,10 @@ export default function SiteExpensesPage() {
               <p className="text-sm text-muted-foreground">{expenses.length === 0 ? 'No expenses recorded yet.' : 'No expenses match filters.'}</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[60vh]">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">Project</th>
                     <th className="px-4 py-2.5 text-left font-medium">Category</th>
                     <th className="px-4 py-2.5 text-left font-medium">Narration</th>
