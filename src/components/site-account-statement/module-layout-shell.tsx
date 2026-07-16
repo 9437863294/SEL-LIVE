@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   Activity,
+  ArrowLeftRight,
   BarChart3,
   BookOpen,
   CalendarDays,
@@ -49,7 +50,8 @@ const sections = [
   { href: '/site-account-statement/reports/cashflow',  label: 'Cash Flow',          resource: 'Reports',            icon: Activity,        color: 'text-sky-600',     bg: 'bg-sky-50',      group: 'reports',      viewAllAccess: true  },
   { href: '/site-account-statement/reports/person',    label: 'Person Expenses',    resource: 'Reports',            icon: Users,           color: 'text-pink-600',    bg: 'bg-pink-50',     group: 'reports',      viewAllAccess: true  },
   { href: '/site-account-statement/reports/balance',   label: 'Balance Status',     resource: 'Reports',            icon: ShieldCheck,     color: 'text-green-600',   bg: 'bg-green-50',    group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/daywise',   label: 'Day-wise Statement', resource: 'Reports',            icon: CalendarDays,    color: 'text-cyan-600',    bg: 'bg-cyan-50',     group: 'reports',      viewAllAccess: true  },
+  { href: '/site-account-statement/reports/daywise',             label: 'Day-wise Statement', resource: 'Reports', icon: CalendarDays,    color: 'text-cyan-600',    bg: 'bg-cyan-50',     group: 'reports', viewAllAccess: true  },
+  { href: '/site-account-statement/reports/monthly-comparison', label: 'Month Comparison',   resource: 'Reports', icon: ArrowLeftRight,  color: 'text-fuchsia-600', bg: 'bg-fuchsia-50',  group: 'reports', viewAllAccess: true  },
   { href: '/site-account-statement/expense-categories',label: 'Expense Categories', resource: 'Expense Categories', icon: Tags,            color: 'text-amber-600',   bg: 'bg-amber-50',    group: 'master',       viewAllAccess: false },
   { href: '/site-account-statement/settings',          label: 'Project Settings',   resource: 'Project Settings',   icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       viewAllAccess: false },
 ];

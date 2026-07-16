@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { BarChart3, Activity, CalendarDays, FileText, PieChart, Users, Wallet, ClipboardList, ShieldCheck } from 'lucide-react';
+import { BarChart3, Activity, ArrowLeftRight, CalendarDays, FileText, PieChart, Users, Wallet, ClipboardList, ShieldCheck } from 'lucide-react';
 
 const MODULE = 'Site Account Statement';
 
@@ -86,6 +86,15 @@ const REPORTS = [
     color: 'text-cyan-600',
     bg: 'bg-cyan-50',
     border: 'border-cyan-200',
+  },
+  {
+    href: '/site-account-statement/reports/monthly-comparison',
+    icon: ArrowLeftRight,
+    title: 'Month Comparison',
+    description: 'Compare every project\'s receipts and expenses between the current and previous month with trend indicators.',
+    color: 'text-fuchsia-600',
+    bg: 'bg-fuchsia-50',
+    border: 'border-fuchsia-200',
   },
 ] as const;
 
