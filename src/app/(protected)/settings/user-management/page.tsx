@@ -36,9 +36,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { db, auth } from '@/lib/firebase';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, doc, updateDoc, setDoc } from 'firebase/firestore';
 import type { User, Role } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -175,18 +174,32 @@ export default function ManageUserPage() {
     }
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, newUser.email, newUser.password);
-      const authUser = userCredential.user;
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newUser.name,
+          email: newUser.email,
+          password: newUser.password,
+          mobile: newUser.mobile,
+          role: newUser.role,
+          status: newUser.status,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: 'Error creating user', description: data?.error || 'An unexpected error occurred.', variant: 'destructive' });
+        return;
+      }
 
-      const userData = {
-        name: newUser.name,
-        email: newUser.email,
-        mobile: newUser.mobile,
+      // Write Firestore profile client-side — admin is still signed in here
+      await setDoc(doc(db, 'users', data.uid), {
+        name: newUser.name.trim(),
+        email: newUser.email.trim().toLowerCase(),
+        mobile: newUser.mobile || 'N/A',
         role: newUser.role,
-        status: newUser.status,
-      };
-      
-      await setDoc(doc(db, 'users', authUser.uid), userData);
+        status: newUser.status || 'Active',
+      });
 
       // Log this activity
       await logUserActivity({

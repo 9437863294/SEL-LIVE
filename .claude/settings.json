@@ -30,7 +30,9 @@
       "PowerShell(Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\" -Directory -ErrorAction SilentlyContinue | Select-Object Name | Select-Object -First 10)",
       "PowerShell(Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\" -Directory -ErrorAction SilentlyContinue | Select-Object Name)",
       "PowerShell(Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\\\\cmdline-tools\" -Recurse -Filter \"java.exe\" -ErrorAction SilentlyContinue | Select-Object FullName; Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\\\\emulator\" -Filter \"java.exe\" -ErrorAction SilentlyContinue | Select-Object FullName; Get-ChildItem \"HKLM:\\\\SOFTWARE\\\\JavaSoft\" -ErrorAction SilentlyContinue | Get-ItemProperty -Name JavaHome -ErrorAction SilentlyContinue | Select-Object JavaHome)",
-      "Read(//c/Program Files/Android/Android Studio/bin/**)"
+      "Read(//c/Program Files/Android/Android Studio/bin/**)",
+      "Bash(find \"D:/Application Dev/\" -name \"*.json\" 2>/dev/null | xargs grep -l \"private_key\" 2>/dev/null | head -10)",
+      "Read(//d/Application Dev/**)"
     ]
   }
 }

@@ -89,9 +89,9 @@ function LoadingScreen() {
 
 // ─── main content (needs useSearchParams → must be inside Suspense) ───────────
 function ActionContent() {
-  const params  = useSearchParams();
-  const mode    = params.get('mode') as Mode | null;
-  const oobCode = params.get('oobCode') ?? '';
+  const params      = useSearchParams();
+  const mode        = params.get('mode') as Mode | null;
+  const oobCode     = params.get('oobCode') ?? '';
 
   const [status,   setStatus]   = useState<Status>('loading');
   const [errorMsg, setErrorMsg] = useState('');
@@ -107,13 +107,18 @@ function ActionContent() {
 
   // ── verify / auto-apply the action code on mount ───────────────────────────
   useEffect(() => {
-    if (!oobCode || !mode || !cfg) {
+    if (!mode || !cfg) {
       setErrorMsg('Invalid or missing action link. Please request a new one.');
       setStatus('error');
       return;
     }
 
     if (mode === 'resetPassword') {
+      if (!oobCode) {
+        setErrorMsg('Invalid or missing action link. Please request a new one.');
+        setStatus('error');
+        return;
+      }
       verifyPasswordResetCode(auth, oobCode)
         .then(e  => { setEmail(e); setStatus('ready'); })
         .catch(() => {
@@ -121,6 +126,11 @@ function ActionContent() {
           setStatus('error');
         });
     } else {
+      if (!oobCode) {
+        setErrorMsg('Invalid or missing action link. Please request a new one.');
+        setStatus('error');
+        return;
+      }
       // verifyEmail / recoverEmail / verifyAndChangeEmail — apply immediately
       checkActionCode(auth, oobCode)
         .then(info => {
