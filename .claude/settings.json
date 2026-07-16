@@ -32,7 +32,10 @@
       "PowerShell(Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\\\\cmdline-tools\" -Recurse -Filter \"java.exe\" -ErrorAction SilentlyContinue | Select-Object FullName; Get-ChildItem \"${env:LOCALAPPDATA}\\\\Android\\\\Sdk\\\\emulator\" -Filter \"java.exe\" -ErrorAction SilentlyContinue | Select-Object FullName; Get-ChildItem \"HKLM:\\\\SOFTWARE\\\\JavaSoft\" -ErrorAction SilentlyContinue | Get-ItemProperty -Name JavaHome -ErrorAction SilentlyContinue | Select-Object JavaHome)",
       "Read(//c/Program Files/Android/Android Studio/bin/**)",
       "Bash(find \"D:/Application Dev/\" -name \"*.json\" 2>/dev/null | xargs grep -l \"private_key\" 2>/dev/null | head -10)",
-      "Read(//d/Application Dev/**)"
+      "Read(//d/Application Dev/**)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/firebase/package.json'\\).version\\)\")",
+      "Bash(node -e \"const p = require\\('./package.json'\\); const keys = Object.keys\\({...p.dependencies,...p.devDependencies}\\); const q = keys.filter\\(k => k.includes\\('qr'\\) || k.includes\\('qrcode'\\)\\); console.log\\(q.length ? q : 'none'\\)\")",
+      "Bash(node -e \"require\\('qrcode'\\); console.log\\('ok'\\)\")"
     ]
   }
 }

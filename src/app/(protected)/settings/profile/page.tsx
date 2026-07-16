@@ -3,13 +3,14 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Save, Loader2, Camera, User as UserIcon, Lock, KeyRound, Mail, Shield } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Camera, User as UserIcon, Lock, KeyRound, Mail, Shield, ShieldCheck, ShieldOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { db, storage } from '@/lib/firebase';
+import { auth, db, storage } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { multiFactor } from 'firebase/auth';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { PinSetupDialog } from '@/components/auth/PinSetupDialog';
+import { MFASetupDialog } from '@/components/auth/MFASetupDialog';
 import { cn } from '@/lib/utils';
 
 export default function ProfilePage() {
@@ -29,12 +31,19 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [isPinSetupOpen, setIsPinSetupOpen] = useState(false);
+  const [isMfaSetupOpen, setIsMfaSetupOpen] = useState(false);
+  const [isMfaEnabled, setIsMfaEnabled] = useState(false);
+  const [isMfaDisabling, setIsMfaDisabling] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
       setDisplayName(user.name);
       setPhotoPreview(user.photoURL || null);
+    }
+    // Check MFA enrollment status from the live Firebase Auth user
+    if (auth.currentUser) {
+      setIsMfaEnabled(multiFactor(auth.currentUser).enrolledFactors.length > 0);
     }
   }, [user]);
 
@@ -45,6 +54,29 @@ export default function ProfilePage() {
       const reader = new FileReader();
       reader.onloadend = () => setPhotoPreview(reader.result as string);
       reader.readAsDataURL(file);
+    }
+  };
+
+  const handleDisableMfa = async () => {
+    const fbUser = auth.currentUser;
+    if (!fbUser) return;
+    setIsMfaDisabling(true);
+    try {
+      const mf = multiFactor(fbUser);
+      for (const factor of mf.enrolledFactors) {
+        await mf.unenroll(factor);
+      }
+      setIsMfaEnabled(false);
+      toast({ title: '2FA Disabled', description: 'Two-factor authentication has been turned off.' });
+    } catch (err: any) {
+      const code: string = err?.code ?? '';
+      if (code === 'auth/requires-recent-login') {
+        toast({ title: 'Re-authentication required', description: 'Please sign out and sign back in, then try disabling 2FA.', variant: 'destructive' });
+      } else {
+        toast({ title: 'Error', description: err?.message ?? 'Failed to disable 2FA.', variant: 'destructive' });
+      }
+    } finally {
+      setIsMfaDisabling(false);
     }
   };
 
@@ -242,6 +274,57 @@ export default function ProfilePage() {
                 </div>
               </button>
             </div>
+
+            {/* ── MFA row ── */}
+            <div className="mt-3 flex items-center justify-between rounded-xl border border-border/60 bg-background p-4">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  'rounded-lg p-2 shrink-0',
+                  isMfaEnabled
+                    ? 'bg-emerald-100 dark:bg-emerald-900/40'
+                    : 'bg-slate-100 dark:bg-slate-800/40'
+                )}>
+                  {isMfaEnabled
+                    ? <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    : <ShieldOff className="h-4 w-4 text-slate-500 dark:text-slate-400" />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">Two-Factor Authentication</p>
+                    {isMfaEnabled && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        ON
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {isMfaEnabled
+                      ? 'Your account is protected with an authenticator app.'
+                      : 'Add a second layer of security with an authenticator app.'}
+                  </p>
+                </div>
+              </div>
+              {isMfaEnabled ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 text-rose-600 border-rose-200 hover:bg-rose-50 dark:border-rose-900/50 dark:hover:bg-rose-950/20"
+                  onClick={handleDisableMfa}
+                  disabled={isMfaDisabling}
+                >
+                  {isMfaDisabling ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Disable'}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 text-emerald-700 border-emerald-200 hover:bg-emerald-50 dark:border-emerald-900/50 dark:hover:bg-emerald-950/20"
+                  onClick={() => setIsMfaSetupOpen(true)}
+                >
+                  Enable
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -255,6 +338,11 @@ export default function ProfilePage() {
           onPinSet={loadSavedUsers}
         />
       )}
+      <MFASetupDialog
+        open={isMfaSetupOpen}
+        onOpenChange={setIsMfaSetupOpen}
+        onEnrolled={() => setIsMfaEnabled(true)}
+      />
     </>
   );
 }

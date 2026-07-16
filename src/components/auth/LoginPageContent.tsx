@@ -19,6 +19,9 @@ import {
   signInWithRedirect,
   signInWithCredential,
   getRedirectResult,
+  getMultiFactorResolver,
+  TotpMultiFactorGenerator,
+  type MultiFactorResolver,
 } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
 import {
@@ -30,6 +33,7 @@ import {
   Lock,
   Mail,
   RefreshCw,
+  ShieldCheck,
   User as UserIcon,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -178,12 +182,18 @@ export function LoginPageContent() {
   const [isLoading, setIsLoading] = useState(false);
 
   // ── view state ──
-  type View = "profiles" | "password" | "forgot" | "forgot-sent";
+  type View = "profiles" | "password" | "forgot" | "forgot-sent" | "mfa";
   const [view, setView] = useState<View>("profiles");
   const [activeUser, setActiveUser] = useState<SavedUser | null>(null);
 
   // ── google sign-in ──
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+
+  // ── MFA (two-factor auth) ──
+  const [mfaResolver, setMfaResolver] = useState<MultiFactorResolver | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaCodeError, setMfaCodeError] = useState("");
+  const [isMfaLoading, setIsMfaLoading] = useState(false);
 
   // ── forgot password ──
   const [forgotEmail, setForgotEmail] = useState("");
@@ -280,6 +290,15 @@ export function LoginPageContent() {
           await signInWithPopup(auth, makeProvider());
         } catch (popupErr: any) {
           const code: string = popupErr?.code || "";
+          if (code === "auth/multi-factor-auth-required") {
+            const resolver = getMultiFactorResolver(auth, popupErr);
+            setMfaResolver(resolver);
+            setMfaCode("");
+            setMfaCodeError("");
+            setView("mfa");
+            setIsGoogleLoading(false);
+            return;
+          }
           if (
             code === "auth/popup-blocked" ||
             code === "auth/operation-not-supported-in-this-environment"
@@ -301,6 +320,15 @@ export function LoginPageContent() {
         if ((window.location.pathname || "") === "/login") window.location.replace(nextPath);
       }, 350);
     } catch (err: any) {
+      if (err?.code === "auth/multi-factor-auth-required") {
+        const resolver = getMultiFactorResolver(auth, err);
+        setMfaResolver(resolver);
+        setMfaCode("");
+        setMfaCodeError("");
+        setView("mfa");
+        setIsGoogleLoading(false);
+        return;
+      }
       console.error("[Google Sign-In] error:", err);
       // Ensure Firebase auth is fully cleared so the next attempt starts fresh.
       await signOut(auth).catch(() => {});
@@ -311,6 +339,38 @@ export function LoginPageContent() {
           : err?.toString?.()?.slice(0, 120) ?? "Please try again.";
       toast({ title: "Google sign-in failed", description: errDesc || "Unknown error — check console", variant: "destructive" });
       setIsGoogleLoading(false);
+    }
+  };
+
+  const handleMfaSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mfaResolver) return;
+    const code = mfaCode.trim();
+    if (!code) { setMfaCodeError("Verification code is required."); return; }
+    setIsMfaLoading(true);
+    setMfaCodeError("");
+    try {
+      const hint = mfaResolver.hints[0];
+      if (hint.factorId !== TotpMultiFactorGenerator.FACTOR_ID) {
+        setMfaCodeError("Unsupported MFA type. Please contact your administrator.");
+        return;
+      }
+      const assertion = TotpMultiFactorGenerator.assertionForSignIn(hint.uid, code);
+      await mfaResolver.resolveSignIn(assertion);
+      setShouldRemember(false);
+      const nextPath = resolvePostLoginPath();
+      router.replace(nextPath);
+    } catch (err: any) {
+      const errCode: string = err?.code ?? "";
+      if (errCode === "auth/invalid-verification-code") {
+        setMfaCodeError("Incorrect code. Check your authenticator app and try again.");
+      } else if (errCode === "auth/code-expired") {
+        setMfaCodeError("Code has expired. Please wait for the next code from your authenticator app.");
+      } else {
+        setMfaCodeError(err?.message ?? "Verification failed. Please try again.");
+      }
+    } finally {
+      setIsMfaLoading(false);
     }
   };
 
@@ -617,8 +677,80 @@ export function LoginPageContent() {
     </div>
   );
 
+  const renderMfa = () => (
+    <div className="w-full space-y-6">
+      <div className="text-center">
+        <LogoBlock />
+        <div className="mt-5 flex flex-col items-center gap-2">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-cyan-500/15 ring-2 ring-cyan-400/30">
+            <ShieldCheck className="h-7 w-7 text-cyan-400" />
+          </div>
+          <h2 className="text-xl font-semibold text-white">Two-Factor Authentication</h2>
+          <p className="text-sm text-slate-400 text-center max-w-xs">
+            Open your authenticator app and enter the 6-digit code for this account.
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={handleMfaSignIn} className="space-y-4 w-full" noValidate>
+        <div className="space-y-1.5">
+          <Label htmlFor="mfa-code" className="text-sm font-medium text-slate-300">
+            Verification code
+          </Label>
+          <Input
+            id="mfa-code"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            placeholder="000 000"
+            required
+            value={mfaCode}
+            onChange={(e) => {
+              setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+              if (mfaCodeError) setMfaCodeError("");
+            }}
+            className={cn(
+              "text-center font-mono text-2xl tracking-[0.5em] bg-slate-900/40 border-white/10 focus-visible:ring-primary/60 focus-visible:border-primary/50 h-14 transition-colors",
+              mfaCodeError && "border-rose-500/60 focus-visible:ring-rose-500/30"
+            )}
+            autoFocus
+            autoComplete="one-time-code"
+          />
+          {mfaCodeError && <p className="text-xs text-rose-400">{mfaCodeError}</p>}
+        </div>
+
+        <Button
+          type="submit"
+          className="w-full bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25"
+          disabled={isMfaLoading || mfaCode.length < 6}
+        >
+          {isMfaLoading
+            ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Verifying…</>
+            : "Verify & Sign In"}
+        </Button>
+
+        <Button
+          variant="ghost"
+          type="button"
+          size="sm"
+          className="w-full text-slate-400 hover:text-slate-100 hover:bg-white/5 text-xs"
+          onClick={() => {
+            setView("password");
+            setMfaResolver(null);
+            setMfaCode("");
+            setMfaCodeError("");
+          }}
+        >
+          <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Cancel
+        </Button>
+      </form>
+    </div>
+  );
+
   const renderContent = () => {
     switch (view) {
+      case "mfa": return renderMfa();
       case "forgot": return renderForgot();
       case "forgot-sent": return renderForgotSent();
       case "password": return renderPassword();
