@@ -1,12 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/mail';
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
     const { name, email, password, role } = await req.json();
 
     if (!name || !email || !password) {
-      return NextResponse.json({ ok: false, error: 'Missing required fields' }, { status: 400 });
+      return Response.json({ ok: false, error: 'Missing required fields' }, { status: 400 });
     }
 
     const html = buildWelcomeEmail({ name, email, password, role });
@@ -18,13 +17,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (!result.success) {
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+      return Response.json({ ok: false, error: result.error }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, messageId: result.messageId });
+    return Response.json({ ok: true, messageId: result.messageId });
   } catch (err: any) {
     console.error('send-welcome-email error:', err);
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return Response.json({ ok: false, error: err.message }, { status: 500 });
   }
 }
 

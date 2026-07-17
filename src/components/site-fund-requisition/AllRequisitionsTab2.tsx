@@ -42,7 +42,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadCloud, File as FileIcon, X, View, Shuffle, Check, ChevronsUpDown, Download, AlertCircle, Paperclip, ArrowUpDown } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
@@ -665,26 +665,43 @@ export default function AllRequisitionsTab() {
     }
   }
 
-  const downloadExcelTemplate = () => {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['Date (YYYY-MM-DD)', 'Project', 'Department', 'Amount', 'Party Name', 'Description'],
-      ['2024-06-01', 'Project Alpha', 'Civil', '50000', 'ABC Contractors', 'Site work'],
-    ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    XLSX.writeFile(wb, 'site_fund_requisition_template.xlsx');
+  const downloadExcelTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Template');
+    worksheet.addRow(['Date (YYYY-MM-DD)', 'Project', 'Department', 'Amount', 'Party Name', 'Description']);
+    worksheet.addRow(['2024-06-01', 'Project Alpha', 'Civil', '50000', 'ABC Contractors', 'Site work']);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'site_fund_requisition_template.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
-        const data = new Uint8Array(evt.target!.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: 'array', cellDates: true });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(evt.target!.result as ArrayBuffer);
+        const worksheet = workbook.worksheets[0];
+
+        let headers: string[] = [];
+        const rows: any[] = [];
+        worksheet.eachRow((row, rowNumber) => {
+          const vals = (row.values as ExcelJS.CellValue[]).slice(1);
+          if (rowNumber === 1) {
+            headers = vals.map(v => String(v ?? ''));
+            return;
+          }
+          const obj: any = {};
+          headers.forEach((h, idx) => { obj[h] = vals[idx] ?? ''; });
+          rows.push(obj);
+        });
 
         const parsed = rows.map((row, i) => {
           const dateRaw = row['Date (YYYY-MM-DD)'] || row['Date'] || '';
@@ -694,8 +711,9 @@ export default function AllRequisitionsTab() {
           } else if (typeof dateRaw === 'string' && dateRaw.trim()) {
             dateStr = dateRaw.trim();
           } else if (typeof dateRaw === 'number') {
-            const d = XLSX.SSF.parse_date_code(dateRaw);
-            dateStr = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+            const epoch = new Date(Date.UTC(1899, 11, 30));
+            epoch.setUTCDate(epoch.getUTCDate() + dateRaw);
+            dateStr = format(epoch, 'yyyy-MM-dd');
           }
 
           const projectName = String(row['Project'] || '').trim();
