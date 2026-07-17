@@ -13,6 +13,7 @@ import { useCurrentDriverProfile } from '@/components/vehicle-management/hooks';
 
 const moduleIcons: Record<string, string> = {
   'Site Fund Requisition': 'Landmark',
+  'Site Fund Request': 'GitMerge',
   'Daily Requisition': 'FileText',
   'Billing Recon': 'CreditCard',
   'Bank Balance': 'Banknote',
@@ -32,6 +33,7 @@ const moduleIcons: Record<string, string> = {
 
 const moduleDescriptions: Record<string, string> = {
     'Site Fund Requisition': 'Handle site fund requests and approvals.',
+  'Site Fund Request': 'Submit and approve site fund requests with workflow.',
     'Daily Requisition': 'Handle daily material and service requests.',
     'Billing Recon': 'Reconcile billing statements and payments.',
     'Bank Balance': 'View and manage bank balance information.',

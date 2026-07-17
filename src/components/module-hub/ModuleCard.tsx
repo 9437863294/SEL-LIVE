@@ -53,6 +53,8 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/subcontractors-management/all';
       case 'Site Fund Requisition':
         return '/site-fund-requisition-2';
+      case 'Site Fund Request':
+        return '/site-fund-request';
       case 'Daily Requisition':
         return '/daily-requisition';
       case 'Billing Recon':

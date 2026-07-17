@@ -70,7 +70,7 @@
     "embla-carousel-react": "^8.1.6",
     "exceljs": "^3.4.0",
     "firebase": "^12.5.0",
-    "genkit": "^0.5.17",
+    "genkit": "^1.40.0",
     "lucide-react": "^0.417.0",
     "next": "^16.2.10",
     "next-nprogress-bar": "^2.4.7",

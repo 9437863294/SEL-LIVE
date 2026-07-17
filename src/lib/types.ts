@@ -114,6 +114,13 @@ export const permissionModules = {
     },
     'Settings': ['View', 'Edit Workflow','View Workflow'],
   },
+  'Site Fund Request': {
+    'View Module': [],
+    'Dashboard': ['View'],
+    'Requests': ['View', 'Add', 'Edit', 'Delete', 'Approve', 'Reject', 'View All'],
+    'Reports': ['View', 'Export'],
+    'Settings': ['View', 'Edit', 'View Workflow', 'Edit Workflow'],
+  },
   'Daily Requisition': {
     'View Module': [],
     'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist', 'Export', 'Cancel'],

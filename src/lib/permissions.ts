@@ -28,6 +28,13 @@ export const permissionModules = {
       'Site Fund Summary': ['View'],
     },
   },
+  'Site Fund Request': {
+    'View Module': [],
+    'Requests': ['View', 'Add', 'Edit', 'Delete', 'Approve', 'Reject', 'View All'],
+    'Settings': ['View', 'Edit', 'View Workflow', 'Edit Workflow'],
+    'Reports': ['View', 'Export'],
+    'Dashboard': ['View'],
+  },
   'Billing Recon': {
     'View Module': [],
     'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
