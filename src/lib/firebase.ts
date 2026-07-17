@@ -54,4 +54,4 @@ const createAuth = (): Auth => {
 const auth = createAuth();
 const storage = getStorage(app);
 
-export { db, auth, storage };
+export { app, db, auth, storage };

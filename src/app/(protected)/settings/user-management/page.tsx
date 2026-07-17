@@ -36,7 +36,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { db } from '@/lib/firebase';
+import { app, db } from '@/lib/firebase';
 import { collection, getDocs, doc, updateDoc, setDoc } from 'firebase/firestore';
 import type { User, Role } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -173,27 +173,41 @@ export default function ManageUserPage() {
         return;
     }
 
+    const FRIENDLY_FB: Record<string, string> = {
+      EMAIL_EXISTS: 'An account with this email already exists.',
+      INVALID_EMAIL: 'Invalid email address.',
+      OPERATION_NOT_ALLOWED: 'Email/password accounts are not enabled.',
+    };
+
     try {
-      const res = await fetch('/api/create-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newUser.name,
-          email: newUser.email,
-          password: newUser.password,
-          mobile: newUser.mobile,
-          role: newUser.role,
-          status: newUser.status,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast({ title: 'Error creating user', description: data?.error || 'An unexpected error occurred.', variant: 'destructive' });
+      // Call Firebase Auth REST API directly from the browser so the Referer header
+      // matches the allowed origins and the admin's session is never touched.
+      const fbRes = await fetch(
+        `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${app.options.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: newUser.email.trim().toLowerCase(),
+            password: newUser.password,
+            displayName: newUser.name.trim(),
+            returnSecureToken: false,
+          }),
+        }
+      );
+      const fbData = await fbRes.json();
+      if (!fbRes.ok) {
+        const code: string = fbData?.error?.message ?? '';
+        const msg =
+          FRIENDLY_FB[code] ??
+          (code.startsWith('WEAK_PASSWORD') ? 'Password must be at least 6 characters.' : (code || 'Failed to create user.'));
+        toast({ title: 'Error creating user', description: msg, variant: 'destructive' });
         return;
       }
+      const uid: string = fbData.localId;
 
       // Write Firestore profile client-side — admin is still signed in here
-      await setDoc(doc(db, 'users', data.uid), {
+      await setDoc(doc(db, 'users', uid), {
         name: newUser.name.trim(),
         email: newUser.email.trim().toLowerCase(),
         mobile: newUser.mobile || 'N/A',
@@ -204,6 +218,7 @@ export default function ManageUserPage() {
       // Log this activity
       await logUserActivity({
           userId: adminUser.id,
+          module: 'User Management',
           action: 'Create User',
           details: {
               createdUserName: newUser.name,
@@ -255,6 +270,7 @@ export default function ManageUserPage() {
 
       await logUserActivity({
           userId: adminUser.id,
+          module: 'User Management',
           action: 'Update User',
           details: {
               updatedUserName: editingUser.name,
