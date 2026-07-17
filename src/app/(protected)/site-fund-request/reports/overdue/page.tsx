@@ -8,6 +8,7 @@ import { AlertTriangle, ArrowLeft, Download, Loader2, ShieldAlert } from 'lucide
 import { db } from '@/lib/firebase';
 import type { Requisition, Project, Department, User } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useSFRProjectAccess } from '@/hooks/useSFRProjectAccess';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -39,6 +40,7 @@ function overdueBadgeClass(days: number): string {
 export default function OverdueRequestsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = can('View', 'Site Fund Request.Reports');
+  const accessData = useSFRProjectAccess();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -53,7 +55,7 @@ export default function OverdueRequestsPage() {
 
   // ── fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || accessData.isLoading) return;
     if (!canView) { setIsLoading(false); return; }
     const load = async () => {
       setIsLoading(true);
@@ -64,7 +66,12 @@ export default function OverdueRequestsPage() {
           getDocs(collection(db, 'departments')),
           getDocs(collection(db, 'users')),
         ]);
-        setRequests(reqSnap.docs.map(d => ({ id: d.id, ...d.data() } as Requisition)));
+        const allDocs = reqSnap.docs.map(d => ({ id: d.id, ...d.data() } as Requisition));
+        let filteredByAccess = allDocs;
+        if (!accessData.canViewAll && accessData.accessibleProjectIds !== null) {
+          filteredByAccess = allDocs.filter(r => accessData.accessibleProjectIds!.has(r.projectId));
+        }
+        setRequests(filteredByAccess);
         setProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project)));
         setDepartments(deptSnap.docs.map(d => ({ id: d.id, ...d.data() } as Department)));
         setUsers(userSnap.docs.map(d => ({ id: d.id, ...d.data() } as User)));
@@ -75,7 +82,7 @@ export default function OverdueRequestsPage() {
       }
     };
     load();
-  }, [isAuthLoading, canView]);
+  }, [isAuthLoading, canView, accessData.isLoading, accessData.canViewAll]);
 
   // ── derived ────────────────────────────────────────────────────────────────
   const now = useMemo(() => new Date(), []);
@@ -171,7 +178,7 @@ export default function OverdueRequestsPage() {
   };
 
   // ── loading ────────────────────────────────────────────────────────────────
-  if (isAuthLoading || (isLoading && canView)) {
+  if (isAuthLoading || accessData.isLoading || (isLoading && canView)) {
     return (
       <div className="w-full space-y-4 p-4 sm:p-6">
         <Skeleton className="h-10 w-72" />

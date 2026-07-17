@@ -1124,7 +1124,7 @@ export default function AllRequestsTab() {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {projects.map(project => (
+                    {projectsForForm.map(project => (
                       <SelectItem key={project.id} value={project.id}>{project.projectName}</SelectItem>
                     ))}
                   </SelectContent>
@@ -1363,7 +1363,7 @@ export default function AllRequestsTab() {
                         <SelectValue placeholder="Select project" />
                       </SelectTrigger>
                       <SelectContent>
-                        {projects.map(p => (
+                        {projectsForForm.map(p => (
                           <SelectItem key={p.id} value={p.projectName}>{p.projectName}</SelectItem>
                         ))}
                       </SelectContent>
@@ -1733,7 +1733,7 @@ export default function AllRequestsTab() {
         <div className="mb-3 h-1.5 w-full rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-amber-300 opacity-70" />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            {canViewAll && (
+            {permCanViewAll && (
               <div className="flex items-center space-x-2">
                 <Switch
                   id="my-requests-switch"
@@ -1831,7 +1831,7 @@ export default function AllRequestsTab() {
             <Dialog open={isNewRequestOpen} onOpenChange={(open) => { setIsNewRequestOpen(open); if (!open) { setNewRequestMode('manual'); setExcelRows([]); setBulkRows([mkEmptyBulkRow(1), mkEmptyBulkRow(2), mkEmptyBulkRow(3)]); setBulkIdOrder('asc'); } }}>
               <DialogTrigger asChild>
                 <Button
-                  disabled={!canCreate}
+                  disabled={!effectiveCanAdd}
                   className="bg-slate-900 text-white shadow hover:bg-slate-900/90"
                 >
                   New Request

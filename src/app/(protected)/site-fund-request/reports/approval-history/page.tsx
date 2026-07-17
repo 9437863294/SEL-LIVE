@@ -8,6 +8,7 @@ import { ArrowLeft, Download, Loader2, ScrollText, ShieldAlert } from 'lucide-re
 import { db } from '@/lib/firebase';
 import type { Requisition, Project } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useSFRProjectAccess } from '@/hooks/useSFRProjectAccess';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -82,6 +83,7 @@ interface FlatEntry {
 export default function ApprovalHistoryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = can('View', 'Site Fund Request.Reports');
+  const accessData = useSFRProjectAccess();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -95,7 +97,7 @@ export default function ApprovalHistoryPage() {
 
   // ── fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || accessData.isLoading) return;
     if (!canView) { setIsLoading(false); return; }
     const load = async () => {
       setIsLoading(true);
@@ -104,7 +106,12 @@ export default function ApprovalHistoryPage() {
           getDocs(collection(db, 'siteFundRequests')),
           getDocs(collection(db, 'projects')),
         ]);
-        setRequests(reqSnap.docs.map(d => ({ id: d.id, ...d.data() } as Requisition)));
+        const allDocs = reqSnap.docs.map(d => ({ id: d.id, ...d.data() } as Requisition));
+        let filteredByAccess = allDocs;
+        if (!accessData.canViewAll && accessData.accessibleProjectIds !== null) {
+          filteredByAccess = allDocs.filter(r => accessData.accessibleProjectIds!.has(r.projectId));
+        }
+        setRequests(filteredByAccess);
         setProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project)));
       } catch (err) {
         console.error('Failed to load approval history', err);
@@ -113,7 +120,7 @@ export default function ApprovalHistoryPage() {
       }
     };
     load();
-  }, [isAuthLoading, canView]);
+  }, [isAuthLoading, canView, accessData.isLoading, accessData.canViewAll]);
 
   // ── derived ────────────────────────────────────────────────────────────────
   const projectMap = useMemo(() => {
@@ -193,7 +200,7 @@ export default function ApprovalHistoryPage() {
   };
 
   // ── loading ────────────────────────────────────────────────────────────────
-  if (isAuthLoading || (isLoading && canView)) {
+  if (isAuthLoading || accessData.isLoading || (isLoading && canView)) {
     return (
       <div className="w-full space-y-4 p-4 sm:p-6">
         <Skeleton className="h-10 w-72" />

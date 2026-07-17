@@ -8,6 +8,7 @@ import { ArrowLeft, CheckCircle2, Clock, AlertTriangle, Download, Loader2, Shiel
 import { db } from '@/lib/firebase';
 import type { Requisition, WorkflowStep, Project } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useSFRProjectAccess } from '@/hooks/useSFRProjectAccess';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -63,6 +64,7 @@ interface StepAnalysis {
 export default function StageWiseAnalysisPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const canView = can('View', 'Site Fund Request.Reports');
+  const accessData = useSFRProjectAccess();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -76,7 +78,7 @@ export default function StageWiseAnalysisPage() {
 
   // ── fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || accessData.isLoading) return;
     if (!canView) { setIsLoading(false); return; }
     const load = async () => {
       setIsLoading(true);
@@ -86,7 +88,12 @@ export default function StageWiseAnalysisPage() {
           getDoc(doc(db, 'workflows', 'site-fund-request')),
           getDocs(collection(db, 'projects')),
         ]);
-        setRequests(reqSnap.docs.map(d => ({ id: d.id, ...d.data() } as Requisition)));
+        const allDocs = reqSnap.docs.map(d => ({ id: d.id, ...d.data() } as Requisition));
+        let filteredByAccess = allDocs;
+        if (!accessData.canViewAll && accessData.accessibleProjectIds !== null) {
+          filteredByAccess = allDocs.filter(r => accessData.accessibleProjectIds!.has(r.projectId));
+        }
+        setRequests(filteredByAccess);
         setSteps((wfSnap.data()?.steps ?? []) as WorkflowStep[]);
         setProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() } as Project)));
       } catch (err) {
@@ -96,7 +103,7 @@ export default function StageWiseAnalysisPage() {
       }
     };
     load();
-  }, [isAuthLoading, canView]);
+  }, [isAuthLoading, canView, accessData.isLoading, accessData.canViewAll]);
 
   // ── derived ────────────────────────────────────────────────────────────────
   const fyOptions = useMemo(() => {
@@ -225,7 +232,7 @@ export default function StageWiseAnalysisPage() {
   };
 
   // ── loading ────────────────────────────────────────────────────────────────
-  if (isAuthLoading || (isLoading && canView)) {
+  if (isAuthLoading || accessData.isLoading || (isLoading && canView)) {
     return (
       <div className="w-full space-y-4 p-4 sm:p-6">
         <Skeleton className="h-10 w-72" />
