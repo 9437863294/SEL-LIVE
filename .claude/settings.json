@@ -35,7 +35,8 @@
       "Read(//d/Application Dev/**)",
       "Bash(node -e \"console.log\\(require\\('./node_modules/firebase/package.json'\\).version\\)\")",
       "Bash(node -e \"const p = require\\('./package.json'\\); const keys = Object.keys\\({...p.dependencies,...p.devDependencies}\\); const q = keys.filter\\(k => k.includes\\('qr'\\) || k.includes\\('qrcode'\\)\\); console.log\\(q.length ? q : 'none'\\)\")",
-      "Bash(node -e \"require\\('qrcode'\\); console.log\\('ok'\\)\")"
+      "Bash(node -e \"require\\('qrcode'\\); console.log\\('ok'\\)\")",
+      "Bash(node -p \"require\\('./node_modules/firebase-admin/package.json'\\).version\")"
     ]
   }
 }
