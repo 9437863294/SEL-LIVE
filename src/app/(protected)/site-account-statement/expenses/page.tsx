@@ -34,7 +34,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Calendar, ChevronLeft, ChevronRight,
+  Calendar, Camera, ChevronLeft, ChevronRight,
   Download, ExternalLink, File, FileText, Filter, Image, Loader2,
   Paperclip, Pencil, Plus, Receipt, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
@@ -114,7 +114,8 @@ export default function SiteExpensesPage() {
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
   const { user } = useAuth();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef   = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
   const canView   = can('View',   `${MODULE}.${RESOURCE}`) || canViewAll;
@@ -142,6 +143,7 @@ export default function SiteExpensesPage() {
   const [existingAttachments, setExistingAttachments] = useState<SASAttachment[]>([]);
   const [removedAttachments,  setRemovedAttachments]  = useState<SASAttachment[]>([]);
   const [viewDocExpense,      setViewDocExpense]      = useState<SASExpense | null>(null);
+  const [viewExpense,         setViewExpense]         = useState<SASExpense | null>(null);
 
   // Filters — default to current month
   const [filterProject,     setFilterProject]     = useState('');
@@ -388,6 +390,13 @@ export default function SiteExpensesPage() {
     if (files.length === 0) return;
     setPendingFiles(prev => [...prev, ...files]);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function handleCameraSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setPendingFiles(prev => [...prev, ...files]);
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
   }
 
   function handleRemovePending(idx: number) {
@@ -797,7 +806,7 @@ export default function SiteExpensesPage() {
                 </thead>
                 <tbody>
                   {filtered.map(row => (
-                    <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors">
+                    <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => setViewExpense(row)}>
                       <td className="px-4 py-2.5 font-medium max-w-[130px] truncate">{row.projectName}</td>
                       <td className="px-4 py-2.5">
                         <div className="flex flex-col gap-0.5">
@@ -817,7 +826,7 @@ export default function SiteExpensesPage() {
                       <td className="px-4 py-2.5 text-center">
                         {row.attachments && row.attachments.length > 0 ? (
                           <button
-                            onClick={() => setViewDocExpense(row)}
+                            onClick={e => { e.stopPropagation(); setViewExpense(row); }}
                             className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-blue-600 hover:bg-blue-50 transition-colors"
                           >
                             <Paperclip className="h-3.5 w-3.5" />
@@ -831,7 +840,7 @@ export default function SiteExpensesPage() {
                       <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{formatTimestamp(row.createdAt)}</td>
                       {(effectiveCanEdit || canDelete) && (
                         <td className="px-4 py-2.5 text-right">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                             {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
                                 <Pencil className="h-3.5 w-3.5" />
@@ -886,6 +895,111 @@ export default function SiteExpensesPage() {
         onSaveRow={saveExpenseRow}
         onImportComplete={() => { void log('Import SAS Expenses', {}); void loadAll(); }}
       />
+
+      {/* Expense Detail Dialog */}
+      <Dialog open={!!viewExpense} onOpenChange={() => setViewExpense(null)}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-rose-500" />
+              Expense Details
+            </DialogTitle>
+          </DialogHeader>
+          {viewExpense && (
+            <div className="space-y-4 py-1">
+              {/* Amount highlight */}
+              <div className="rounded-xl border bg-rose-50 px-4 py-3 text-center">
+                <p className="text-xs font-medium uppercase tracking-wide text-rose-500">Amount</p>
+                <p className="text-2xl font-bold text-rose-700">{formatINR(viewExpense.expenseAmount)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{viewExpense.expenseDate} &bull; <Badge variant="secondary" className="text-xs">{viewExpense.paymentMode}</Badge></p>
+              </div>
+
+              {/* Fields grid */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Project</p>
+                  <p className="font-medium mt-0.5">{viewExpense.projectName}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Expensed By</p>
+                  <p className="mt-0.5">{viewExpense.expensedBy}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Main Category</p>
+                  <p className="mt-0.5">{viewExpense.expenseCategory}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sub-Category</p>
+                  <p className="mt-0.5">{viewExpense.expenseSubCategory || <span className="text-muted-foreground">—</span>}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Vendor / Party</p>
+                  <p className="mt-0.5">{viewExpense.vendorPartyName || <span className="text-muted-foreground">—</span>}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill No.</p>
+                  <p className="mt-0.5">{viewExpense.billNo || <span className="text-muted-foreground">—</span>}</p>
+                </div>
+                {viewExpense.narration && (
+                  <div className="col-span-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Narration</p>
+                    <p className="mt-0.5">{viewExpense.narration}</p>
+                  </div>
+                )}
+                {viewExpense.remarks && (
+                  <div className="col-span-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Remarks</p>
+                    <p className="mt-0.5">{viewExpense.remarks}</p>
+                  </div>
+                )}
+                <div className="col-span-2 border-t pt-3">
+                  <p className="text-xs text-muted-foreground">Recorded: {formatTimestamp(viewExpense.createdAt)}</p>
+                  {viewExpense.updatedAt && viewExpense.updatedAt !== viewExpense.createdAt && (
+                    <p className="text-xs text-muted-foreground">Updated: {formatTimestamp(viewExpense.updatedAt)}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Attachments */}
+              {viewExpense.attachments && viewExpense.attachments.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Paperclip className="h-3.5 w-3.5" />
+                    Attachments ({viewExpense.attachments.length})
+                  </p>
+                  {viewExpense.attachments.map((att, i) => (
+                    <a
+                      key={i}
+                      href={att.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2.5 hover:bg-muted/50 transition-colors group"
+                    >
+                      <AttachmentIcon type={att.type} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{att.name}</p>
+                        <p className="text-xs text-muted-foreground">{formatSize(att.size)}</p>
+                      </div>
+                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground group-hover:text-blue-500 shrink-0 transition-colors" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewExpense(null)}>Close</Button>
+            {effectiveCanEdit && viewExpense && (
+              <Button
+                className="bg-rose-600 hover:bg-rose-700"
+                onClick={() => { const e = viewExpense; setViewExpense(null); openEdit(e); }}
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* View Attachments Dialog */}
       <Dialog open={!!viewDocExpense} onOpenChange={() => setViewDocExpense(null)}>
@@ -1105,19 +1219,33 @@ export default function SiteExpensesPage() {
                 </div>
               ))}
 
-              {/* File picker */}
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 px-4 py-2.5 text-sm text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/40 transition-colors">
-                <Upload className="h-4 w-4 shrink-0" />
-                <span>Click to attach files</span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept={ACCEPT}
-                  className="sr-only"
-                  onChange={handleFileSelect}
-                />
-              </label>
+              {/* File picker row */}
+              <div className="flex gap-2">
+                <label className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 px-4 py-2.5 text-sm text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/40 transition-colors">
+                  <Upload className="h-4 w-4 shrink-0" />
+                  <span>Attach files</span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept={ACCEPT}
+                    className="sr-only"
+                    onChange={handleFileSelect}
+                  />
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 px-4 py-2.5 text-sm text-muted-foreground hover:border-sky-400 hover:bg-sky-50/40 transition-colors">
+                  <Camera className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">Take Photo</span>
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    onChange={handleCameraSelect}
+                  />
+                </label>
+              </div>
 
               {pendingFiles.length > 0 && (
                 <p className="text-xs text-blue-600">

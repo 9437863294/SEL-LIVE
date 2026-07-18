@@ -35,6 +35,7 @@ export interface SASPayment {
   referenceNo: string;
   receivedBy: string;
   remarks: string;
+  attachments?: SASAttachment[];
   createdAt: any;
   updatedAt: any;
 }

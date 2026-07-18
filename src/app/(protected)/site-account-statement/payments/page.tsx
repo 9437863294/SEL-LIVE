@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { db, storage } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASExpense, type SASPayment, type SASProject,
+  type SASAttachment, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -32,8 +33,9 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Calendar, ChevronLeft, ChevronRight,
-  Download, Filter, Loader2, Pencil, Plus, Receipt, TrendingDown, TrendingUp, Trash2, Upload, Wallet,
+  Camera, Calendar, ChevronLeft, ChevronRight,
+  Download, ExternalLink, File, FileText, Filter, Image, Loader2,
+  Paperclip, Pencil, Plus, Receipt, TrendingDown, TrendingUp, Trash2, Upload, Wallet, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ExcelJS from 'exceljs';
@@ -41,6 +43,7 @@ import { VehicleImportDialog, type ImportField } from '@/components/vehicle-mana
 
 const MODULE   = 'Site Account Statement';
 const RESOURCE = 'Payments';
+const ACCEPT   = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt';
 
 interface FormState {
   projectId: string;
@@ -76,6 +79,18 @@ function getMonthRange(fromDate?: string, offset = 0) {
   return { start, end, year: y, month: m };
 }
 
+function formatSize(bytes: number): string {
+  if (bytes < 1024)    return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function AttachmentIcon({ type }: { type: string }) {
+  if (type.startsWith('image/')) return <Image className="h-4 w-4 text-sky-500 shrink-0" />;
+  if (type === 'application/pdf')  return <FileText className="h-4 w-4 text-rose-500 shrink-0" />;
+  return <File className="h-4 w-4 text-slate-400 shrink-0" />;
+}
+
 function formatTimestamp(ts: any): string {
   if (!ts) return '—';
   const d: Date | null = ts?.toDate?.() ?? (ts?.seconds ? new Date(ts.seconds * 1000) : null);
@@ -91,6 +106,8 @@ export default function PaymentsPage() {
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
   const { user } = useAuth();
+  const fileInputRef   = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
   const canAdd     = can('Add',    `${MODULE}.${RESOURCE}`);
@@ -104,11 +121,18 @@ export default function PaymentsPage() {
   const [expenses,  setExpenses]  = useState<SASExpense[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [saving,           setSaving]           = useState(false);
+  const [uploading,        setUploading]        = useState(false);
   const [exporting,        setExporting]        = useState(false);
   const [dialogOpen,       setDialogOpen]       = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [editingRow, setEditingRow] = useState<SASPayment | null>(null);
-  const [form,      setForm]      = useState<FormState>(blank());
+  const [editingRow,       setEditingRow]       = useState<SASPayment | null>(null);
+  const [form,             setForm]             = useState<FormState>(blank());
+
+  // Attachment state
+  const [pendingFiles,        setPendingFiles]        = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<SASAttachment[]>([]);
+  const [removedAttachments,  setRemovedAttachments]  = useState<SASAttachment[]>([]);
+  const [viewPayment,         setViewPayment]         = useState<SASPayment | null>(null);
 
   // Filters — default to current month
   const [filterProject, setFilterProject] = useState('');
@@ -140,6 +164,9 @@ export default function PaymentsPage() {
   function openAdd() {
     setEditingRow(null);
     setForm(blank());
+    setPendingFiles([]);
+    setExistingAttachments([]);
+    setRemovedAttachments([]);
     setDialogOpen(true);
   }
 
@@ -155,6 +182,9 @@ export default function PaymentsPage() {
       receivedBy: row.receivedBy || '',
       remarks: row.remarks || '',
     });
+    setPendingFiles([]);
+    setExistingAttachments(row.attachments ? [...row.attachments] : []);
+    setRemovedAttachments([]);
     setDialogOpen(true);
   }
 
@@ -286,9 +316,46 @@ export default function PaymentsPage() {
       referenceNo:    String(row.referenceNo    || '').trim(),
       receivedBy:     String(row.receivedBy     || '').trim(),
       remarks:        String(row.remarks        || '').trim(),
+      attachments:    [],
       createdAt:      serverTimestamp(),
       updatedAt:      serverTimestamp(),
     });
+  }
+
+  // ── Attachment helpers ────────────────────────────────────────────────────────
+  async function uploadAttachments(paymentId: string, files: File[]): Promise<SASAttachment[]> {
+    return Promise.all(files.map(async file => {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `siteAccountPayments/${paymentId}/${Date.now()}-${safeName}`;
+      const sRef = storageRef(storage, path);
+      await uploadBytes(sRef, file);
+      const url = await getDownloadURL(sRef);
+      return { name: file.name, url, storagePath: path, size: file.size, type: file.type || 'application/octet-stream' };
+    }));
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setPendingFiles(prev => [...prev, ...files]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function handleCameraSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setPendingFiles(prev => [...prev, ...files]);
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+  }
+
+  function handleRemovePending(idx: number) {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function handleRemoveExisting(idx: number) {
+    const att = existingAttachments[idx];
+    setExistingAttachments(prev => prev.filter((_, i) => i !== idx));
+    setRemovedAttachments(prev => [...prev, att]);
   }
 
   async function handleSubmit() {
@@ -307,26 +374,40 @@ export default function PaymentsPage() {
     }
 
     setSaving(true);
+    if (pendingFiles.length > 0) setUploading(true);
     try {
-      const data = {
-        projectId: form.projectId,
-        projectName: form.projectName,
-        receiptDate: form.receiptDate,
+      const baseData = {
+        projectId:      form.projectId,
+        projectName:    form.projectName,
+        receiptDate:    form.receiptDate,
         receivedAmount: amount,
-        paymentMode: form.paymentMode,
-        referenceNo: form.referenceNo.trim(),
-        receivedBy: form.receivedBy.trim(),
-        remarks: form.remarks.trim(),
-        updatedAt: serverTimestamp(),
+        paymentMode:    form.paymentMode,
+        referenceNo:    form.referenceNo.trim(),
+        receivedBy:     form.receivedBy.trim(),
+        remarks:        form.remarks.trim(),
+        updatedAt:      serverTimestamp(),
       };
       if (editingRow) {
-        await updateDoc(doc(db, SAS_COLLECTIONS.payments, editingRow.id), data);
+        await Promise.allSettled(
+          removedAttachments.map(a => deleteObject(storageRef(storage, a.storagePath)))
+        );
+        const newAttachments = await uploadAttachments(editingRow.id, pendingFiles);
+        const finalAttachments = [...existingAttachments, ...newAttachments];
+        await updateDoc(doc(db, SAS_COLLECTIONS.payments, editingRow.id), {
+          ...baseData, attachments: finalAttachments,
+        });
         void log('Edit SAS Payment', { project: form.projectName, amount });
         toast({ title: 'Updated', description: 'Payment updated.' });
       } else {
-        await addDoc(collection(db, SAS_COLLECTIONS.payments), { ...data, createdAt: serverTimestamp() });
+        const docRef = await addDoc(collection(db, SAS_COLLECTIONS.payments), {
+          ...baseData, attachments: [], createdAt: serverTimestamp(),
+        });
+        const attachments = await uploadAttachments(docRef.id, pendingFiles);
+        if (attachments.length > 0) {
+          await updateDoc(docRef, { attachments });
+        }
         void log('Add SAS Payment', { project: form.projectName, amount });
-        toast({ title: 'Added', description: 'Payment recorded.' });
+        toast({ title: 'Added', description: `Payment recorded${attachments.length > 0 ? ` with ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}` : ''}.` });
       }
       setDialogOpen(false);
       void loadAll();
@@ -334,14 +415,20 @@ export default function PaymentsPage() {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setSaving(false);
+      setUploading(false);
     }
   }
 
   async function handleDelete(row: SASPayment) {
     try {
+      if (row.attachments?.length) {
+        await Promise.allSettled(
+          row.attachments.map(a => deleteObject(storageRef(storage, a.storagePath)))
+        );
+      }
       await deleteDoc(doc(db, SAS_COLLECTIONS.payments, row.id));
       void log('Delete SAS Payment', { project: row.projectName });
-      toast({ title: 'Deleted', description: 'Payment deleted.' });
+      toast({ title: 'Deleted', description: 'Payment and attachments deleted.' });
       void loadAll();
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -559,6 +646,9 @@ export default function PaymentsPage() {
                     <th className="px-4 py-2.5 text-left font-medium">Mode</th>
                     <th className="px-4 py-2.5 text-left font-medium">Reference No.</th>
                     <th className="px-4 py-2.5 text-left font-medium">Received By</th>
+                    <th className="px-4 py-2.5 text-center font-medium">
+                      <Paperclip className="h-3.5 w-3.5 inline" />
+                    </th>
                     <th className="px-4 py-2.5 text-left font-medium">Remarks</th>
                     <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Recorded At</th>
                     {(effectiveCanEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
@@ -566,18 +656,31 @@ export default function PaymentsPage() {
                 </thead>
                 <tbody>
                   {filtered.map(row => (
-                    <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors">
+                    <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => setViewPayment(row)}>
                       <td className="px-4 py-2.5 font-medium max-w-[160px] truncate">{row.projectName}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap">{row.receiptDate}</td>
                       <td className="px-4 py-2.5 text-right font-semibold text-blue-700">{formatINR(row.receivedAmount)}</td>
                       <td className="px-4 py-2.5"><Badge variant="secondary">{row.paymentMode}</Badge></td>
                       <td className="px-4 py-2.5 text-muted-foreground">{row.referenceNo || '—'}</td>
                       <td className="px-4 py-2.5">{row.receivedBy || '—'}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        {row.attachments && row.attachments.length > 0 ? (
+                          <button
+                            onClick={e => { e.stopPropagation(); setViewPayment(row); }}
+                            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-blue-600 hover:bg-blue-50 transition-colors"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                            <span className="text-xs font-medium">{row.attachments.length}</span>
+                          </button>
+                        ) : (
+                          <Paperclip className="h-3.5 w-3.5 text-muted-foreground/25 mx-auto" />
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-muted-foreground max-w-[150px] truncate">{row.remarks || '—'}</td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{formatTimestamp(row.createdAt)}</td>
                       {(effectiveCanEdit || canDelete) && (
                         <td className="px-4 py-2.5 text-right">
-                          <div className="flex justify-end gap-1">
+                          <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
                             {effectiveCanEdit && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(row)}>
                                 <Pencil className="h-3.5 w-3.5" />
@@ -593,7 +696,9 @@ export default function PaymentsPage() {
                                 <AlertDialogContent>
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Delete Payment</AlertDialogTitle>
-                                    <AlertDialogDescription>Delete this payment record? This cannot be undone.</AlertDialogDescription>
+                                    <AlertDialogDescription>
+                                      Delete this payment record{row.attachments?.length ? ` and its ${row.attachments.length} attachment${row.attachments.length > 1 ? 's' : ''}` : ''}? This cannot be undone.
+                                    </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -612,7 +717,7 @@ export default function PaymentsPage() {
                   <tr className="bg-muted/30 font-semibold">
                     <td colSpan={2} className="px-4 py-2.5">Total</td>
                     <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totalFiltered)}</td>
-                    <td colSpan={(effectiveCanEdit || canDelete) ? 6 : 5} />
+                    <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
                   </tr>
                 </tfoot>
               </table>
@@ -631,9 +736,93 @@ export default function PaymentsPage() {
         onImportComplete={() => { void log('Import SAS Payments', {}); void loadAll(); }}
       />
 
+      {/* Payment Detail Dialog */}
+      <Dialog open={!!viewPayment} onOpenChange={() => setViewPayment(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-emerald-500" />
+              Payment Details
+            </DialogTitle>
+          </DialogHeader>
+          {viewPayment && (
+            <div className="space-y-4 py-1">
+              {/* Amount highlight */}
+              <div className="rounded-xl border bg-emerald-50 px-4 py-3 text-center">
+                <p className="text-xs font-medium uppercase tracking-wide text-emerald-500">Amount Received</p>
+                <p className="text-2xl font-bold text-emerald-700">{formatINR(viewPayment.receivedAmount)}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{viewPayment.receiptDate} &bull; <Badge variant="secondary" className="text-xs">{viewPayment.paymentMode}</Badge></p>
+              </div>
+
+              {/* Fields grid */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Project</p>
+                  <p className="font-medium mt-0.5">{viewPayment.projectName}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Received By</p>
+                  <p className="mt-0.5">{viewPayment.receivedBy || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reference No.</p>
+                  <p className="mt-0.5">{viewPayment.referenceNo || '—'}</p>
+                </div>
+                {viewPayment.remarks && (
+                  <div className="col-span-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Remarks</p>
+                    <p className="mt-0.5">{viewPayment.remarks}</p>
+                  </div>
+                )}
+                <div className="col-span-2 border-t pt-3">
+                  <p className="text-xs text-muted-foreground">Recorded: {formatTimestamp(viewPayment.createdAt)}</p>
+                </div>
+              </div>
+
+              {/* Attachments */}
+              {viewPayment.attachments && viewPayment.attachments.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Paperclip className="h-3.5 w-3.5" />
+                    Attachments ({viewPayment.attachments.length})
+                  </p>
+                  {viewPayment.attachments.map((att, i) => (
+                    <a
+                      key={i}
+                      href={att.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 rounded-lg border bg-muted/20 px-3 py-2.5 hover:bg-muted/50 transition-colors group"
+                    >
+                      <AttachmentIcon type={att.type} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{att.name}</p>
+                        <p className="text-xs text-muted-foreground">{formatSize(att.size)}</p>
+                      </div>
+                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground group-hover:text-blue-500 shrink-0 transition-colors" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewPayment(null)}>Close</Button>
+            {effectiveCanEdit && viewPayment && (
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => { const p = viewPayment; setViewPayment(null); openEdit(p); }}
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Add / Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Payment' : 'Record Payment Received'}</DialogTitle>
           </DialogHeader>
@@ -676,12 +865,103 @@ export default function PaymentsPage() {
               <Label>Remarks</Label>
               <Textarea rows={2} value={form.remarks} onChange={e => setField('remarks', e.target.value)} placeholder="Additional notes" />
             </div>
+
+            {/* ── Attachments ─────────────────────────────────────────────────── */}
+            <div className="col-span-2 space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Paperclip className="h-3.5 w-3.5" />
+                Attachments
+                <span className="text-muted-foreground text-xs font-normal">— PDF, images, Word, Excel</span>
+              </Label>
+
+              {/* Existing uploaded files */}
+              {existingAttachments.map((att, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                  <AttachmentIcon type={att.type} />
+                  <a
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 text-sm text-blue-600 hover:underline truncate"
+                  >
+                    {att.name}
+                  </a>
+                  <span className="text-xs text-muted-foreground shrink-0">{formatSize(att.size)}</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0"
+                    onClick={() => handleRemoveExisting(i)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* Pending files (not yet uploaded) */}
+              {pendingFiles.map((file, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2">
+                  <AttachmentIcon type={file.type} />
+                  <span className="flex-1 text-sm truncate">{file.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{formatSize(file.size)}</span>
+                  <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 shrink-0">Pending</Badge>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0"
+                    onClick={() => handleRemovePending(i)}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+
+              {/* File picker row */}
+              <div className="flex gap-2">
+                <label className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 px-4 py-2.5 text-sm text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/40 transition-colors">
+                  <Upload className="h-4 w-4 shrink-0" />
+                  <span>Attach files</span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept={ACCEPT}
+                    className="sr-only"
+                    onChange={handleFileSelect}
+                  />
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 px-4 py-2.5 text-sm text-muted-foreground hover:border-sky-400 hover:bg-sky-50/40 transition-colors">
+                  <Camera className="h-4 w-4 shrink-0" />
+                  <span className="whitespace-nowrap">Take Photo</span>
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    onChange={handleCameraSelect}
+                  />
+                </label>
+              </div>
+
+              {pendingFiles.length > 0 && (
+                <p className="text-xs text-blue-600">
+                  {pendingFiles.length} file{pendingFiles.length > 1 ? 's' : ''} will be uploaded when you save.
+                </p>
+              )}
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">
-              {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              {editingRow ? 'Save Changes' : 'Record Payment'}
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSubmit} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 min-w-[130px]">
+              {saving && (
+                uploading
+                  ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Uploading…</>
+                  : <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</>
+              )}
+              {!saving && (editingRow ? 'Save Changes' : 'Record Payment')}
             </Button>
           </DialogFooter>
         </DialogContent>
