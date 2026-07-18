@@ -42,9 +42,10 @@ import { cn } from '@/lib/utils';
 import ExcelJS from 'exceljs';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
-const MODULE   = 'Site Account Statement';
-const RESOURCE = 'Expenses';
-const ACCEPT   = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt';
+const MODULE    = 'Site Account Statement';
+const RESOURCE  = 'Expenses';
+const ACCEPT    = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt';
+const MAX_SIZE  = 5 * 1024 * 1024; // 5 MB
 
 interface FormState {
   projectId: string;
@@ -385,18 +386,31 @@ export default function SiteExpensesPage() {
     }));
   }
 
+  function addFiles(files: File[]) {
+    const tooBig = files.filter(f => f.size > MAX_SIZE);
+    const ok     = files.filter(f => f.size <= MAX_SIZE);
+    if (tooBig.length > 0) {
+      toast({
+        title: 'File too large',
+        description: `${tooBig.map(f => f.name).join(', ')} exceed${tooBig.length === 1 ? 's' : ''} the 5 MB limit and were skipped.`,
+        variant: 'destructive',
+      });
+    }
+    if (ok.length > 0) setPendingFiles(prev => [...prev, ...ok]);
+  }
+
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    setPendingFiles(prev => [...prev, ...files]);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (files.length === 0) return;
+    addFiles(files);
   }
 
   function handleCameraSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-    setPendingFiles(prev => [...prev, ...files]);
     if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (files.length === 0) return;
+    addFiles(files);
   }
 
   function handleRemovePending(idx: number) {
