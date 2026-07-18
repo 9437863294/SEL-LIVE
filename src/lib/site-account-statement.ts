@@ -3,6 +3,7 @@ export const SAS_COLLECTIONS = {
   payments:   'siteAccountPayments',
   expenses:   'siteAccountExpenses',
   categories: 'siteAccountCategories',
+  budgets:    'siteAccountBudgets',
 } as const;
 
 export interface SASProject {
@@ -63,6 +64,18 @@ export interface SASExpense {
   billNo: string;
   remarks: string;
   attachments?: SASAttachment[];
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface SASBudget {
+  id: string;
+  projectId: string;
+  projectName: string;
+  budgetType: 'total' | 'monthly' | 'fy';
+  period?: string;  // monthly → "2025-07"  |  fy → "2025-26"  |  total → undefined
+  budgetAmount: number;
+  notes?: string;
   createdAt: any;
   updatedAt: any;
 }

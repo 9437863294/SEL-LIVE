@@ -9,7 +9,7 @@ import { storage } from '@/lib/firebase';
 import { db } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASAttachment, type SASCategory, type SASExpense, type SASPayment, type SASProject,
+  type SASAttachment, type SASBudget, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
-  BookOpen, Building2, File, FileText, Loader2, Paperclip, Plus, Receipt,
+  BookOpen, Building2, File, FileText, Loader2, Paperclip, Plus, Receipt, Target,
   TrendingDown, TrendingUp, Wallet, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -348,10 +348,11 @@ interface MyProjectCardProps {
   expenses: SASExpense[];
   categories: SASCategory[];
   currentUserName: string;
+  budget?: SASBudget;
   onRefresh: () => void;
 }
 
-function MyProjectCard({ project, payments, expenses, categories, currentUserName, onRefresh }: MyProjectCardProps) {
+function MyProjectCard({ project, payments, expenses, categories, currentUserName, budget, onRefresh }: MyProjectCardProps) {
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
 
   const projPayments = useMemo(() => payments.filter(p => p.projectId === project.id), [payments, project.id]);
@@ -409,6 +410,33 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
               <p className="text-base font-bold text-rose-700">{formatINR(totalExpenses)}</p>
             </div>
           </div>
+
+          {/* Budget utilization */}
+          {budget && (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-1.5">
+                  <Target className="h-3.5 w-3.5 text-emerald-600" />
+                  <p className="text-xs text-emerald-700 font-medium">Total Budget</p>
+                </div>
+                <span className={cn('text-xs font-semibold', totalExpenses > budget.budgetAmount ? 'text-destructive' : totalExpenses / budget.budgetAmount >= 0.8 ? 'text-amber-600' : 'text-emerald-600')}>
+                  {((totalExpenses / budget.budgetAmount) * 100).toFixed(1)}% used
+                </span>
+              </div>
+              <div className="w-full bg-emerald-200/50 rounded-full h-1.5">
+                <div
+                  className={cn('h-1.5 rounded-full', totalExpenses > budget.budgetAmount ? 'bg-destructive' : totalExpenses / budget.budgetAmount >= 0.8 ? 'bg-amber-500' : 'bg-emerald-500')}
+                  style={{ width: `${Math.min((totalExpenses / budget.budgetAmount) * 100, 100)}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1">
+                <p className="text-[10px] text-muted-foreground">{formatINR(totalExpenses)} spent</p>
+                <p className={cn('text-[10px] font-medium', budget.budgetAmount - totalExpenses < 0 ? 'text-destructive' : 'text-emerald-600')}>
+                  {budget.budgetAmount - totalExpenses >= 0 ? formatINR(budget.budgetAmount - totalExpenses) + ' remaining' : formatINR(totalExpenses - budget.budgetAmount) + ' over budget'}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Recent transactions */}
           {recentTx.length > 0 ? (
@@ -493,6 +521,7 @@ export default function SiteAccountDashboardPage() {
   const [payments,   setPayments]   = useState<SASPayment[]>([]);
   const [expenses,   setExpenses]   = useState<SASExpense[]>([]);
   const [categories, setCategories] = useState<SASCategory[]>([]);
+  const [budgets,    setBudgets]    = useState<SASBudget[]>([]);
   const [loading,    setLoading]    = useState(true);
 
   useEffect(() => {
@@ -503,16 +532,18 @@ export default function SiteAccountDashboardPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, paySnap, expSnap, catSnap] = await Promise.all([
+      const [pSnap, paySnap, expSnap, catSnap, budSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects))),
         getDocs(query(collection(db, SAS_COLLECTIONS.payments), orderBy('receiptDate', 'desc'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.expenses), orderBy('expenseDate', 'desc'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
+        getDocs(collection(db, SAS_COLLECTIONS.budgets)),
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)));
       setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
       setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
+      setBudgets(budSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
     } finally {
       setLoading(false);
     }
@@ -551,16 +582,17 @@ export default function SiteAccountDashboardPage() {
   const totalExpenses = useMemo(() => expenses.reduce((s, e) => s + (e.expenseAmount || 0), 0), [expenses]);
   const totalBalance  = totalReceived - totalExpenses;
 
-  const projectStats = useMemo(() => enabledProjects.map(proj => ({
-    id: proj.id,
-    name: proj.projectName,
-    received: payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0),
-    expenses: expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0),
-  })).map(s => ({ ...s, balance: s.received - s.expenses }))
-    .sort((a, b) => b.balance - a.balance), [enabledProjects, payments, expenses]);
+  const projectStats = useMemo(() => enabledProjects.map(proj => {
+    const received    = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
+    const spent       = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+    const budget      = budgets.find(b => b.projectId === proj.id && b.budgetType === 'total');
+    const totalBudget = budget?.budgetAmount ?? 0;
+    return { id: proj.id, name: proj.projectName, received, expenses: spent, balance: received - spent, totalBudget, budgetUsedPct: totalBudget > 0 ? (spent / totalBudget) * 100 : 0 };
+  }).sort((a, b) => b.balance - a.balance), [enabledProjects, payments, expenses, budgets]);
 
   const highestExpense = useMemo(() => [...projectStats].sort((a, b) => b.expenses - a.expenses)[0], [projectStats]);
   const lowBalance     = useMemo(() => projectStats.filter(p => p.balance < 10000),                  [projectStats]);
+  const overBudget     = useMemo(() => projectStats.filter(p => p.totalBudget > 0 && p.expenses > p.totalBudget), [projectStats]);
 
   if (isAuthLoading || loading) {
     return (
@@ -601,6 +633,7 @@ export default function SiteAccountDashboardPage() {
                 expenses={expenses}
                 categories={categories}
                 currentUserName={user?.name ?? ''}
+                budget={budgets.find(b => b.projectId === proj.id && b.budgetType === 'total')}
                 onRefresh={loadAll}
               />
             ))}
@@ -632,7 +665,7 @@ export default function SiteAccountDashboardPage() {
           </div>
 
           {/* Alert tiles */}
-          {(highestExpense || lowBalance.length > 0) && (
+          {(highestExpense || lowBalance.length > 0 || overBudget.length > 0) && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mb-4">
               {highestExpense && (
                 <div className="flex items-start gap-3 rounded-xl border bg-orange-50 p-4 text-orange-700">
@@ -651,6 +684,16 @@ export default function SiteAccountDashboardPage() {
                     <p className="text-xs font-semibold uppercase tracking-wide">Low Balance Projects</p>
                     <p className="font-semibold">{lowBalance.length} project{lowBalance.length > 1 ? 's' : ''} below ₹10,000</p>
                     <p className="text-sm line-clamp-2 break-words">{lowBalance.map(p => p.name).join(', ')}</p>
+                  </div>
+                </div>
+              )}
+              {overBudget.length > 0 && (
+                <div className="flex items-start gap-3 rounded-xl border bg-purple-50 p-4 text-purple-700">
+                  <Target className="mt-0.5 h-5 w-5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wide">Over Budget</p>
+                    <p className="font-semibold">{overBudget.length} project{overBudget.length > 1 ? 's' : ''} exceeded total budget</p>
+                    <p className="text-sm line-clamp-2 break-words">{overBudget.map(p => p.name).join(', ')}</p>
                   </div>
                 </div>
               )}
@@ -676,6 +719,8 @@ export default function SiteAccountDashboardPage() {
                         <th className="px-4 py-2 text-right font-medium">Received</th>
                         <th className="px-4 py-2 text-right font-medium">Expenses</th>
                         <th className="px-4 py-2 text-right font-medium">Balance</th>
+                        <th className="px-4 py-2 text-right font-medium">Budget</th>
+                        <th className="px-4 py-2 text-right font-medium">Used %</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -686,6 +731,12 @@ export default function SiteAccountDashboardPage() {
                           <td className="px-4 py-2 text-right text-rose-600">{formatINR(stat.expenses)}</td>
                           <td className={cn('px-4 py-2 text-right font-semibold', stat.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
                             {formatINR(stat.balance)}
+                          </td>
+                          <td className="px-4 py-2 text-right text-emerald-700 text-sm">
+                            {stat.totalBudget > 0 ? formatINR(stat.totalBudget) : <span className="text-muted-foreground">—</span>}
+                          </td>
+                          <td className={cn('px-4 py-2 text-right text-sm font-medium', stat.totalBudget > 0 && stat.budgetUsedPct >= 100 ? 'text-destructive' : stat.totalBudget > 0 && stat.budgetUsedPct >= 80 ? 'text-amber-600' : 'text-slate-500')}>
+                            {stat.totalBudget > 0 ? `${stat.budgetUsedPct.toFixed(1)}%` : <span className="text-muted-foreground">—</span>}
                           </td>
                         </tr>
                       ))}
@@ -698,6 +749,8 @@ export default function SiteAccountDashboardPage() {
                         <td className={cn('px-4 py-2 text-right', totalBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                           {formatINR(totalBalance)}
                         </td>
+                        <td />
+                        <td />
                       </tr>
                     </tfoot>
                   </table>

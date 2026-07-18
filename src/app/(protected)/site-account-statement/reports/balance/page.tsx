@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { formatINR, SAS_COLLECTIONS, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
+import { formatINR, SAS_COLLECTIONS, type SASBudget, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, CheckCircle2, Download, Loader2, ShieldAlert, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, Loader2, ShieldAlert, Target, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const MODULE = 'Site Account Statement';
@@ -37,6 +37,7 @@ export default function BalanceStatusPage() {
   const [projects, setProjects] = useState<SASProject[]>([]);
   const [payments, setPayments] = useState<SASPayment[]>([]);
   const [expenses, setExpenses] = useState<SASExpense[]>([]);
+  const [budgets,  setBudgets]  = useState<SASBudget[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [exporting, setExporting] = useState(false);
   const [search,    setSearch]    = useState('');
@@ -49,14 +50,16 @@ export default function BalanceStatusPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, paySnap, expSnap] = await Promise.all([
+      const [pSnap, paySnap, expSnap, budSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
         getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
+        getDocs(collection(db, SAS_COLLECTIONS.budgets)),
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
       setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
+      setBudgets(budSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
     } finally {
       setLoading(false);
     }
@@ -70,18 +73,22 @@ export default function BalanceStatusPage() {
   );
 
   const projectStats = useMemo(() => visibleProjects.map(proj => {
-    const received = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-    const spent    = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-    const balance  = received - spent;
+    const received    = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
+    const spent       = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+    const balance     = received - spent;
+    const budget      = budgets.find(b => b.projectId === proj.id && b.budgetType === 'total');
+    const totalBudget = budget?.budgetAmount ?? 0;
     return {
       id: proj.id,
       name: proj.projectName,
       code: proj.projectCode || '',
       assignedPerson: proj.assignedPersonName || '—',
       received, spent, balance,
+      totalBudget,
+      budgetUsedPct: totalBudget > 0 ? (spent / totalBudget) * 100 : 0,
       status: getStatus(balance),
     };
-  }), [visibleProjects, payments, expenses]);
+  }), [visibleProjects, payments, expenses, budgets]);
 
   const filtered = useMemo(() => projectStats.filter(p => {
     if (search && !p.name.toLowerCase().includes(search.toLowerCase()) &&
@@ -108,16 +115,18 @@ export default function BalanceStatusPage() {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Balance Status');
       ws.columns = [
-        { header: 'Project',         key: 'name',    width: 30 },
-        { header: 'Code',            key: 'code',    width: 12 },
-        { header: 'Assigned Person', key: 'person',  width: 22 },
-        { header: 'Total Received',  key: 'received',width: 18 },
-        { header: 'Total Expenses',  key: 'spent',   width: 18 },
-        { header: 'Balance',         key: 'balance', width: 16 },
-        { header: 'Status',          key: 'status',  width: 12 },
+        { header: 'Project',           key: 'name',          width: 30 },
+        { header: 'Code',              key: 'code',          width: 12 },
+        { header: 'Assigned Person',   key: 'person',        width: 22 },
+        { header: 'Total Received',    key: 'received',      width: 18 },
+        { header: 'Total Expenses',    key: 'spent',         width: 18 },
+        { header: 'Balance',           key: 'balance',       width: 16 },
+        { header: 'Total Budget (₹)',  key: 'totalBudget',   width: 18 },
+        { header: 'Budget Used (%)',   key: 'budgetUsedPct', width: 16 },
+        { header: 'Status',            key: 'status',        width: 12 },
       ];
       ws.getRow(1).font = { bold: true };
-      filtered.forEach(p => ws.addRow({ name: p.name, code: p.code, person: p.assignedPerson, received: p.received, spent: p.spent, balance: p.balance, status: p.status.toUpperCase() }));
+      filtered.forEach(p => ws.addRow({ name: p.name, code: p.code, person: p.assignedPerson, received: p.received, spent: p.spent, balance: p.balance, totalBudget: p.totalBudget || '—', budgetUsedPct: p.totalBudget > 0 ? `${p.budgetUsedPct.toFixed(1)}%` : '—', status: p.status.toUpperCase() }));
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
       const a = document.createElement('a'); a.href = url; a.download = 'balance-status.xlsx'; a.click();
@@ -219,6 +228,9 @@ export default function BalanceStatusPage() {
                     <th className="px-4 py-2.5 text-right font-medium">
                       <span className="flex items-center justify-end gap-1"><Wallet className="h-3.5 w-3.5 text-emerald-500" />Balance</span>
                     </th>
+                    <th className="px-4 py-2.5 text-right font-medium">
+                      <span className="flex items-center justify-end gap-1"><Target className="h-3.5 w-3.5 text-emerald-500" />Budget Used</span>
+                    </th>
                     <th className="px-4 py-2.5 text-center font-medium">Status</th>
                   </tr>
                 </thead>
@@ -238,6 +250,13 @@ export default function BalanceStatusPage() {
                         <td className={cn('px-4 py-2.5 text-right font-semibold', proj.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
                           {formatINR(proj.balance)}
                         </td>
+                        <td className="px-4 py-2.5 text-right">
+                          {proj.totalBudget > 0 ? (
+                            <span className={cn('text-sm font-medium', proj.budgetUsedPct >= 100 ? 'text-destructive' : proj.budgetUsedPct >= 80 ? 'text-amber-600' : 'text-emerald-600')}>
+                              {proj.budgetUsedPct.toFixed(1)}%
+                            </span>
+                          ) : <span className="text-muted-foreground text-xs">—</span>}
+                        </td>
                         <td className="px-4 py-2.5 text-center">
                           <Badge className={cn('text-xs', cfg.badge)}>{cfg.label}</Badge>
                         </td>
@@ -253,6 +272,7 @@ export default function BalanceStatusPage() {
                     <td className={cn('px-4 py-2.5 text-right', totals.balance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                       {formatINR(totals.balance)}
                     </td>
+                    <td />
                     <td />
                   </tr>
                 </tfoot>
