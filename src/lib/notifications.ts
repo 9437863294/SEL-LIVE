@@ -6,7 +6,8 @@ import { db } from './firebase';
 export type NotificationType =
   | 'tat_escalation'   // TAT threshold breached on a workflow step
   | 'step_entry'       // A step became active and notifyUserIds should be alerted
-  | 'workflow_complete'; // Workflow reached its final step
+  | 'workflow_complete' // Workflow reached its final step
+  | 'budget_alert';    // Category budget exceeded for a project
 
 export interface NotificationPayload {
   type: NotificationType;

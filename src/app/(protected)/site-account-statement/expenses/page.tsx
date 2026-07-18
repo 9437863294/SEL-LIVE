@@ -2,15 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
+  addDoc, collection, deleteDoc, doc, getDocs, orderBy, query,
+  serverTimestamp, updateDoc, where,
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASAttachment, type SASCategory, type SASExpense, type SASPayment, type SASProject,
+  type SASAttachment, type SASCategory, type SASCategoryBudget, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { createUserNotification, type NotificationType } from '@/lib/notifications';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -465,6 +467,78 @@ export default function SiteExpensesPage() {
     setForm(f => ({ ...f, expenseCategoryId: id, expenseCategory: cat?.name || '', expenseSubCategory: '' }));
   }
 
+  // ── Budget breach check (fire-and-forget after new expense) ─────────────────
+  async function checkCategoryBudgetBreach(
+    projectId: string,
+    projectName: string,
+    categoryName: string,
+    expenseDate: string,
+    prevExpenses: SASExpense[],
+    newAmount: number,
+    project: SASProject,
+  ) {
+    const monthStr = expenseDate.substring(0, 7);
+    const cbSnap = await getDocs(
+      query(
+        collection(db, SAS_COLLECTIONS.categoryBudgets),
+        where('projectId', '==', projectId),
+        where('categoryName', '==', categoryName),
+        where('period', '==', monthStr),
+      )
+    );
+    if (cbSnap.empty) return;
+
+    const budget = cbSnap.docs[0].data() as SASCategoryBudget;
+    const prevTotal = prevExpenses
+      .filter(e => e.projectId === projectId && e.expenseCategory === categoryName && e.expenseDate?.startsWith(monthStr))
+      .reduce((s, e) => s + (e.expenseAmount || 0), 0);
+    const newTotal = prevTotal + newAmount;
+
+    // Only notify on the first crossing (prevTotal was within budget, newTotal exceeds it)
+    if (prevTotal >= budget.budgetAmount) return;
+    if (newTotal <= budget.budgetAmount) return;
+
+    const overage = newTotal - budget.budgetAmount;
+    const mLabel  = new Date(`${monthStr}-15`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const notifPayload = {
+      type: 'budget_alert' as NotificationType,
+      title: `Category Budget Exceeded: ${categoryName}`,
+      body: `${categoryName} expenses for "${projectName}" in ${mLabel} have crossed the set budget. Budget: ₹${budget.budgetAmount.toLocaleString('en-IN')}, Spent: ₹${newTotal.toLocaleString('en-IN')}, Over by: ₹${overage.toLocaleString('en-IN')}.`,
+      module: 'site-account-statement',
+      itemId: projectId,
+      itemRef: projectName,
+      stepName: 'category_budget_breach',
+      link: '/site-account-statement/budget/category',
+    };
+
+    const notifyIds = new Set<string>();
+    if (project.assignedPersonId) notifyIds.add(project.assignedPersonId);
+    if (project.altUserId) notifyIds.add(project.altUserId);
+
+    // Find project managers: users whose role grants 'View' on 'Site Account Statement.All Projects'
+    try {
+      const rolesSnap = await getDocs(collection(db, 'roles'));
+      const adminRoleNames = rolesSnap.docs
+        .filter(d => {
+          const perms = (d.data().permissions || {}) as Record<string, string[]>;
+          return (perms['Site Account Statement.All Projects'] || []).includes('View');
+        })
+        .map(d => d.data().name as string)
+        .filter(Boolean);
+
+      if (adminRoleNames.length > 0) {
+        const usersSnap = await getDocs(
+          query(collection(db, 'users'), where('role', 'in', adminRoleNames), where('status', '==', 'Active'))
+        );
+        usersSnap.docs.forEach(d => notifyIds.add(d.id));
+      }
+    } catch {
+      // Best-effort — role query failure does not block the notification to the project handler
+    }
+
+    await Promise.allSettled([...notifyIds].map(uid => createUserNotification(uid, notifPayload)));
+  }
+
   // ── Submit ────────────────────────────────────────────────────────────────────
   async function handleSubmit() {
     if (!form.projectId)        { toast({ title: 'Validation', description: 'Select a project.',         variant: 'destructive' }); return; }
@@ -517,6 +591,14 @@ export default function SiteExpensesPage() {
         }
         void log('Add SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
         toast({ title: 'Added', description: `Expense recorded${attachments.length > 0 ? ` with ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}` : ''}.` });
+        // Check if category budget is exceeded (fire-and-forget, does not block UI)
+        const project = projects.find(p => p.id === form.projectId);
+        if (project && form.expenseCategory && form.expenseDate) {
+          void checkCategoryBudgetBreach(
+            form.projectId, form.projectName, form.expenseCategory,
+            form.expenseDate, expenses, amount, project,
+          );
+        }
       }
 
       setDialogOpen(false);

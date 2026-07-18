@@ -7,7 +7,7 @@ import {
 import { db } from '@/lib/firebase';
 import {
   formatINR, SAS_COLLECTIONS,
-  type SASBudget, type SASExpense, type SASPayment, type SASProject,
+  type SASBudget, type SASCategory, type SASCategoryBudget, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -30,8 +30,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, Loader2,
-  Pencil, Plus, Target, Trash2, TrendingDown, TrendingUp, Wallet,
+  Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, Layers, Loader2,
+  Pencil, Plus, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cn } from '@/lib/utils';
@@ -82,6 +82,17 @@ interface FormState {
 }
 const blank = (): FormState => ({ projectId: '', projectName: '', budgetAmount: '', notes: '' });
 
+interface UploadRow {
+  rowNum: number;
+  projectName: string;
+  projectId: string;   // empty string if not matched
+  period: string;      // YYYY-MM, empty if invalid
+  amount: number;
+  notes: string;
+  valid: boolean;
+  error: string;
+}
+
 // ── Status badge ──────────────────────────────────────────────────────────────
 function StatusBadge({ budget, spent }: { budget: SASBudget | null; spent: number }) {
   if (!budget) return <Badge variant="outline" className="text-xs text-muted-foreground">No Budget</Badge>;
@@ -89,6 +100,14 @@ function StatusBadge({ budget, spent }: { budget: SASBudget | null; spent: numbe
   if (spent > budget.budgetAmount) return <Badge variant="destructive" className="text-xs">Over Budget</Badge>;
   if (pct >= 80) return <Badge className="text-xs bg-amber-500 hover:bg-amber-500">Warning</Badge>;
   return <Badge className="text-xs bg-emerald-600 hover:bg-emerald-600">On Track</Badge>;
+}
+
+function CatStatusBadge({ budget, spent }: { budget: SASCategoryBudget | undefined; spent: number }) {
+  if (!budget) return <Badge variant="outline" className="text-[10px] px-1.5 text-muted-foreground">—</Badge>;
+  const pct = budget.budgetAmount > 0 ? (spent / budget.budgetAmount) * 100 : 0;
+  if (spent > budget.budgetAmount) return <Badge variant="destructive" className="text-[10px] px-1.5">Over</Badge>;
+  if (pct >= 80) return <Badge className="text-[10px] px-1.5 bg-amber-500 hover:bg-amber-500">Near</Badge>;
+  return <Badge className="text-[10px] px-1.5 bg-emerald-600 hover:bg-emerald-600">OK</Badge>;
 }
 
 // ── Delete confirm dialog ─────────────────────────────────────────────────────
@@ -128,20 +147,24 @@ export default function SiteFundBudgetPage() {
   const canExport  = can('Export', `${MODULE}.${RESOURCE}`);
 
   // ── Data ─────────────────────────────────────────────────────────────────────
-  const [projects,    setProjects]    = useState<SASProject[]>([]);
-  const [allBudgets,  setAllBudgets]  = useState<SASBudget[]>([]);
-  const [allExpenses, setAllExpenses] = useState<SASExpense[]>([]);
-  const [allPayments, setAllPayments] = useState<SASPayment[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [saving,      setSaving]      = useState(false);
-  const [exporting,   setExporting]   = useState(false);
+  const [projects,     setProjects]     = useState<SASProject[]>([]);
+  const [allBudgets,   setAllBudgets]   = useState<SASBudget[]>([]);
+  const [allExpenses,  setAllExpenses]  = useState<SASExpense[]>([]);
+  const [allPayments,  setAllPayments]  = useState<SASPayment[]>([]);
+  const [categories,   setCategories]   = useState<SASCategory[]>([]);
+  const [allCatBudgets, setAllCatBudgets] = useState<SASCategoryBudget[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [saving,       setSaving]       = useState(false);
+  const [catSaving,    setCatSaving]    = useState(false);
+  const [exporting,    setExporting]    = useState(false);
 
   // ── Tree expand state ─────────────────────────────────────────────────────────
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [expandedFYs,      setExpandedFYs]      = useState<Set<string>>(new Set());
+  const [expandedMonths,   setExpandedMonths]   = useState<Set<string>>(new Set());
   const [initialized,      setInitialized]      = useState(false);
 
-  // ── Dialog state ──────────────────────────────────────────────────────────────
+  // ── Budget dialog state ──────────────────────────────────────────────────────
   const [dialogOpen,    setDialogOpen]    = useState(false);
   const [editingBudget, setEditingBudget] = useState<SASBudget | null>(null);
   const [dialogTab,     setDialogTab]     = useState<BudgetTab>('total');
@@ -149,21 +172,46 @@ export default function SiteFundBudgetPage() {
   const [dialogMonth,   setDialogMonth]   = useState(currentMonthStr);
   const [form,          setForm]          = useState<FormState>(blank());
 
+  // ── Category budget dialog state (single-category edit) ─────────────────────
+  const [catDialogOpen,     setCatDialogOpen]     = useState(false);
+  const [catEditingBudget,  setCatEditingBudget]  = useState<SASCategoryBudget | null>(null);
+  const [catDialogProject,  setCatDialogProject]  = useState<SASProject | null>(null);
+  const [catDialogMonth,    setCatDialogMonth]    = useState('');
+  const [catDialogCategory, setCatDialogCategory] = useState('');
+  const [catDialogAmount,   setCatDialogAmount]   = useState('');
+  const [catDialogNotes,    setCatDialogNotes]    = useState('');
+
+  // ── Bulk category budget dialog state ────────────────────────────────────────
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkProject,    setBulkProject]    = useState<SASProject | null>(null);
+  const [bulkMonth,      setBulkMonth]      = useState('');
+  const [bulkAmounts,    setBulkAmounts]    = useState<Record<string, string>>({});
+  const [bulkSaving,     setBulkSaving]     = useState(false);
+
+  // ── Upload Approval Sheet state ───────────────────────────────────────────────
+  const [uploadOpen,   setUploadOpen]   = useState(false);
+  const [uploadRows,   setUploadRows]   = useState<UploadRow[]>([]);
+  const [uploadSaving, setUploadSaving] = useState(false);
+
   useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading]);
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, bSnap, eSnap, paySnap] = await Promise.all([
+      const [pSnap, bSnap, eSnap, paySnap, cSnap, cbSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.budgets))),
         getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
         getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
+        getDocs(query(collection(db, SAS_COLLECTIONS.categories))),
+        getDocs(collection(db, SAS_COLLECTIONS.categoryBudgets)),
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setAllBudgets(bSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
       setAllExpenses(eSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
       setAllPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
+      setCategories(cSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false).sort((a, b) => a.name.localeCompare(b.name)));
+      setAllCatBudgets(cbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategoryBudget)));
     } finally {
       setLoading(false);
     }
@@ -180,7 +228,7 @@ export default function SiteFundBudgetPage() {
   const effectiveCanAdd  = canAdd  || isAltUser;
   const effectiveCanEdit = canEdit || isAltUser;
 
-  // Auto-expand all projects + current FY on first load
+  // Auto-expand all projects + current FY on first load; months stay collapsed until clicked
   useEffect(() => {
     if (!loading && !initialized && visibleProjects.length > 0) {
       setExpandedProjects(new Set(visibleProjects.map(p => p.id)));
@@ -193,13 +241,13 @@ export default function SiteFundBudgetPage() {
   // ── Summary cards (total-budget level only) ───────────────────────────────────
   const summary = useMemo(() => {
     const ids = new Set(visibleProjects.map(p => p.id));
-    const budget   = allBudgets.filter(b => b.budgetType === 'total' && ids.has(b.projectId)).reduce((s, b) => s + b.budgetAmount, 0);
+    const budget   = allBudgets.filter(b => b.budgetType === 'monthly' && ids.has(b.projectId)).reduce((s, b) => s + b.budgetAmount, 0);
     const spent    = allExpenses.filter(e => ids.has(e.projectId)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
     const received = allPayments.filter(p => ids.has(p.projectId)).reduce((s, p) => s + (p.receivedAmount || 0), 0);
     const overCount = [...ids].filter(id => {
-      const b = allBudgets.find(b => b.projectId === id && b.budgetType === 'total');
-      const s = allExpenses.filter(e => e.projectId === id).reduce((sum, e) => sum + (e.expenseAmount || 0), 0);
-      return b && s > b.budgetAmount;
+      const monthSum = allBudgets.filter(b => b.projectId === id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0);
+      const spent = allExpenses.filter(e => e.projectId === id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+      return monthSum > 0 && spent > monthSum;
     }).length;
     return { budget, spent, received, overCount };
   }, [visibleProjects, allBudgets, allExpenses, allPayments]);
@@ -212,7 +260,8 @@ export default function SiteFundBudgetPage() {
       if (b.budgetType === 'monthly' && b.period) fySet.add(getFYStartFromDate(b.period + '-01'));
     });
     allExpenses.filter(e => e.projectId === projectId).forEach(e => fySet.add(getFYStartFromDate(e.expenseDate)));
-    return [...fySet].sort((a, b) => b - a); // newest first
+    allCatBudgets.filter(b => b.projectId === projectId && b.period).forEach(b => fySet.add(getFYStartFromDate(b.period + '-01')));
+    return [...fySet].sort((a, b) => b - a);
   }
 
   function getRelevantMonths(projectId: string, fyStartYear: number): string[] {
@@ -220,8 +269,20 @@ export default function SiteFundBudgetPage() {
     return getFYMonths(fyStartYear).filter(m =>
       m === cur ||
       allBudgets.some(b => b.projectId === projectId && b.budgetType === 'monthly' && b.period === m) ||
-      allExpenses.some(e => e.projectId === projectId && e.expenseDate.startsWith(m))
+      allExpenses.some(e => e.projectId === projectId && e.expenseDate.startsWith(m)) ||
+      allCatBudgets.some(b => b.projectId === projectId && b.period === m)
     );
+  }
+
+  // Returns sorted list of category names to show under a month
+  function getMonthCategories(projectId: string, month: string): string[] {
+    const names = new Set<string>();
+    categories.forEach(c => { if (c.name) names.add(c.name); });
+    allCatBudgets.filter(b => b.projectId === projectId && b.period === month).forEach(b => names.add(b.categoryName));
+    allExpenses.filter(e => e.projectId === projectId && e.expenseDate?.startsWith(month)).forEach(e => {
+      if (e.expenseCategory) names.add(e.expenseCategory);
+    });
+    return [...names].sort();
   }
 
   function toggleProject(id: string) {
@@ -230,9 +291,12 @@ export default function SiteFundBudgetPage() {
   function toggleFY(key: string) {
     setExpandedFYs(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   }
+  function toggleMonth(key: string) {
+    setExpandedMonths(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
 
-  // ── Dialog helpers ────────────────────────────────────────────────────────────
-  function openAdd(project?: SASProject, tab: BudgetTab = 'total', fyStartYear?: number, month?: string) {
+  // ── Budget dialog helpers ─────────────────────────────────────────────────────
+  function openAdd(project?: SASProject, tab: BudgetTab = 'monthly', fyStartYear?: number, month?: string) {
     setEditingBudget(null);
     setDialogTab(tab);
     if (fyStartYear !== undefined) setDialogFYStart(fyStartYear);
@@ -259,7 +323,7 @@ export default function SiteFundBudgetPage() {
 
     if (!editingBudget) {
       const dup = allBudgets.find(b => b.projectId === form.projectId && b.budgetType === dialogTab && b.period === period);
-      if (dup) { toast({ title: 'Already exists', description: 'A budget already exists for this project and period. Edit it instead.', variant: 'destructive' }); return; }
+      if (dup) { toast({ title: 'Already exists', description: 'A budget already exists for this period. Edit it instead.', variant: 'destructive' }); return; }
     }
 
     setSaving(true);
@@ -300,6 +364,273 @@ export default function SiteFundBudgetPage() {
     }
   }
 
+  // ── Bulk category budget helpers ─────────────────────────────────────────────
+  function openBulkCatDialog(project: SASProject, month: string) {
+    setBulkProject(project);
+    setBulkMonth(month);
+    // Pre-fill with existing budgets for this project+month
+    const prefilled: Record<string, string> = {};
+    allCatBudgets
+      .filter(b => b.projectId === project.id && b.period === month)
+      .forEach(b => { prefilled[b.categoryName] = String(b.budgetAmount); });
+    setBulkAmounts(prefilled);
+    setBulkDialogOpen(true);
+  }
+
+  async function handleBulkCatSave() {
+    if (!bulkProject) return;
+    const toSave = categories.filter(cat => {
+      const v = bulkAmounts[cat.name];
+      return v && Number(v) > 0;
+    });
+    if (toSave.length === 0) {
+      toast({ title: 'Nothing to save', description: 'Enter a budget amount for at least one category.', variant: 'destructive' });
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      await Promise.all(toSave.map(async cat => {
+        const amount = Number(bulkAmounts[cat.name]);
+        const existing = allCatBudgets.find(b =>
+          b.projectId === bulkProject.id && b.period === bulkMonth && b.categoryName === cat.name
+        );
+        if (existing) {
+          await updateDoc(doc(db, SAS_COLLECTIONS.categoryBudgets, existing.id), {
+            budgetAmount: amount, updatedAt: serverTimestamp(),
+          });
+        } else {
+          await addDoc(collection(db, SAS_COLLECTIONS.categoryBudgets), {
+            projectId:    bulkProject.id,
+            projectName:  bulkProject.projectName,
+            period:       bulkMonth,
+            categoryId:   cat.id,
+            categoryName: cat.name,
+            budgetAmount: amount,
+            notes:        '',
+            createdAt:    serverTimestamp(),
+            updatedAt:    serverTimestamp(),
+          });
+        }
+      }));
+      toast({ title: 'Saved', description: `Budgets set for ${toSave.length} categor${toSave.length > 1 ? 'ies' : 'y'} in ${monthLabel(bulkMonth)}.` });
+      setBulkDialogOpen(false);
+      void loadAll();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setBulkSaving(false);
+    }
+  }
+
+  // ── Category budget helpers ───────────────────────────────────────────────────
+  function openCatAdd(project: SASProject, month: string, categoryName: string) {
+    setCatEditingBudget(null);
+    setCatDialogProject(project);
+    setCatDialogMonth(month);
+    setCatDialogCategory(categoryName);
+    setCatDialogAmount('');
+    setCatDialogNotes('');
+    setCatDialogOpen(true);
+  }
+
+  function openCatEdit(budget: SASCategoryBudget) {
+    setCatEditingBudget(budget);
+    setCatDialogProject(projects.find(p => p.id === budget.projectId) || null);
+    setCatDialogMonth(budget.period);
+    setCatDialogCategory(budget.categoryName);
+    setCatDialogAmount(String(budget.budgetAmount));
+    setCatDialogNotes(budget.notes || '');
+    setCatDialogOpen(true);
+  }
+
+  async function handleCatSubmit() {
+    const amount = Number(catDialogAmount);
+    if (!amount || amount <= 0) {
+      toast({ title: 'Validation', description: 'Enter a valid budget amount.', variant: 'destructive' });
+      return;
+    }
+    if (!catDialogProject) return;
+
+    if (!catEditingBudget) {
+      const dup = allCatBudgets.find(b =>
+        b.projectId === catDialogProject.id &&
+        b.period === catDialogMonth &&
+        b.categoryName === catDialogCategory
+      );
+      if (dup) {
+        toast({ title: 'Already exists', description: 'A budget for this category and month already exists. Edit it instead.', variant: 'destructive' });
+        return;
+      }
+    }
+
+    setCatSaving(true);
+    try {
+      const catDoc = categories.find(c => c.name === catDialogCategory);
+      if (catEditingBudget) {
+        await updateDoc(doc(db, SAS_COLLECTIONS.categoryBudgets, catEditingBudget.id), {
+          budgetAmount: amount,
+          notes: catDialogNotes.trim(),
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: 'Updated', description: `${catDialogCategory} budget updated.` });
+      } else {
+        await addDoc(collection(db, SAS_COLLECTIONS.categoryBudgets), {
+          projectId:    catDialogProject.id,
+          projectName:  catDialogProject.projectName,
+          period:       catDialogMonth,
+          categoryId:   catDoc?.id || '',
+          categoryName: catDialogCategory,
+          budgetAmount: amount,
+          notes:        catDialogNotes.trim(),
+          createdAt:    serverTimestamp(),
+          updatedAt:    serverTimestamp(),
+        });
+        toast({ title: 'Budget Set', description: `${catDialogCategory} budget set for ${monthLabel(catDialogMonth)}.` });
+      }
+      setCatDialogOpen(false);
+      void loadAll();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setCatSaving(false);
+    }
+  }
+
+  async function handleCatDelete(budget: SASCategoryBudget) {
+    try {
+      await deleteDoc(doc(db, SAS_COLLECTIONS.categoryBudgets, budget.id));
+      toast({ title: 'Removed', description: 'Category budget removed.' });
+      void loadAll();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+  }
+
+  // ── Upload Approval Sheet helpers ─────────────────────────────────────────────
+  function parseMonthStr(val: string): string {
+    if (!val) return '';
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}$/.test(s)) return s;
+    const monthNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    const lower = s.toLowerCase();
+    for (let i = 0; i < monthNames.length; i++) {
+      if (lower.startsWith(monthNames[i].slice(0, 3))) {
+        const yr = s.match(/\d{4}/);
+        if (yr) return `${yr[0]}-${String(i + 1).padStart(2, '0')}`;
+      }
+    }
+    // Excel date serial number
+    if (/^\d+$/.test(s)) {
+      const n = parseInt(s);
+      if (n > 40000 && n < 60000) {
+        const d = new Date((n - 25569) * 86400000);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
+    }
+    return '';
+  }
+
+  async function handleUploadFile(file: File) {
+    const buf = await file.arrayBuffer();
+    const wb2 = new ExcelJS.Workbook();
+    await wb2.xlsx.load(buf);
+    const ws2 = wb2.worksheets[0];
+    if (!ws2) { toast({ title: 'Error', description: 'No worksheet found in file.', variant: 'destructive' }); return; }
+
+    const parsed: UploadRow[] = [];
+    ws2.eachRow((row, rn) => {
+      if (rn === 1) return; // skip header
+      const cells = row.values as any[];
+      const rawProject = String(cells[1] ?? '').trim();
+      const rawPeriod  = String(cells[2] ?? '').trim();
+      const rawAmount  = cells[3];
+      const rawNotes   = String(cells[4] ?? '').trim();
+
+      const amount  = parseFloat(String(rawAmount ?? '0').replace(/[^0-9.]/g, '')) || 0;
+      const period  = parseMonthStr(rawPeriod);
+      const matched = visibleProjects.find(p =>
+        p.projectName.toLowerCase() === rawProject.toLowerCase() ||
+        (p.projectCode && p.projectCode.toLowerCase() === rawProject.toLowerCase())
+      );
+
+      const errors: string[] = [];
+      if (!rawProject) errors.push('Project name missing');
+      else if (!matched) errors.push(`Project "${rawProject}" not found`);
+      if (!period) errors.push(`Invalid month "${rawPeriod}"`);
+      if (amount <= 0) errors.push('Amount must be > 0');
+
+      parsed.push({
+        rowNum:      rn,
+        projectName: rawProject,
+        projectId:   matched?.id ?? '',
+        period,
+        amount,
+        notes:       rawNotes,
+        valid:       errors.length === 0,
+        error:       errors.join('; '),
+      });
+    });
+    setUploadRows(parsed);
+    setUploadOpen(true);
+  }
+
+  async function handleUploadSave() {
+    const valid = uploadRows.filter(r => r.valid);
+    if (!valid.length) return;
+    setUploadSaving(true);
+    try {
+      await Promise.all(valid.map(async row => {
+        const existing = allBudgets.find(b =>
+          b.projectId === row.projectId && b.budgetType === 'monthly' && b.period === row.period
+        );
+        const proj = visibleProjects.find(p => p.id === row.projectId);
+        if (existing) {
+          await updateDoc(doc(db, SAS_COLLECTIONS.budgets, existing.id), {
+            budgetAmount: row.amount, notes: row.notes, updatedAt: serverTimestamp(),
+          });
+        } else {
+          await addDoc(collection(db, SAS_COLLECTIONS.budgets), {
+            projectId:   row.projectId,
+            projectName: proj?.projectName ?? row.projectName,
+            budgetType:  'monthly',
+            period:      row.period,
+            budgetAmount: row.amount,
+            notes:       row.notes,
+            createdAt:   serverTimestamp(),
+            updatedAt:   serverTimestamp(),
+          });
+        }
+      }));
+      toast({ title: 'Imported', description: `${valid.length} monthly budget${valid.length > 1 ? 's' : ''} saved.` });
+      setUploadOpen(false);
+      setUploadRows([]);
+      void loadAll();
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setUploadSaving(false);
+    }
+  }
+
+  async function downloadTemplate() {
+    const wb2 = new ExcelJS.Workbook();
+    const ws2 = wb2.addWorksheet('Monthly Budget');
+    ws2.columns = [
+      { header: 'Project Name', key: 'proj', width: 32 },
+      { header: 'Period (YYYY-MM)', key: 'period', width: 18 },
+      { header: 'Budget Amount (₹)', key: 'amount', width: 20 },
+      { header: 'Notes', key: 'notes', width: 30 },
+    ];
+    ws2.getRow(1).font = { bold: true };
+    // Add one sample row per visible project for current month
+    const cur = currentMonthStr();
+    visibleProjects.forEach(p => ws2.addRow({ proj: p.projectName, period: cur, amount: 0, notes: '' }));
+    const buf = await wb2.xlsx.writeBuffer();
+    const url = URL.createObjectURL(new Blob([buf]));
+    const a = document.createElement('a'); a.href = url; a.download = 'monthly-budget-template.xlsx'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   // ── Export ────────────────────────────────────────────────────────────────────
   async function exportExcel() {
     setExporting(true);
@@ -307,7 +638,7 @@ export default function SiteFundBudgetPage() {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Budget Tree');
       ws.columns = [
-        { header: 'Level',          key: 'level',     width: 14 },
+        { header: 'Level',          key: 'level',     width: 16 },
         { header: 'Name',           key: 'name',      width: 35 },
         { header: 'Budget (₹)',     key: 'budget',    width: 16 },
         { header: 'Received (₹)',   key: 'received',  width: 16 },
@@ -318,12 +649,6 @@ export default function SiteFundBudgetPage() {
         { header: 'Notes',          key: 'notes',     width: 30 },
       ];
       ws.getRow(1).font = { bold: true };
-
-      const allFYStarts = [...new Set([
-        ...allBudgets.filter(b => b.budgetType === 'fy'      && b.period).map(b => parseInt(b.period!.split('-')[0])),
-        ...allBudgets.filter(b => b.budgetType === 'monthly' && b.period).map(b => getFYStartFromDate(b.period! + '-01')),
-        currentFYStart(),
-      ])].sort((a, b) => b - a);
 
       for (const project of visibleProjects) {
         const pExp = allExpenses.filter(e => e.projectId === project.id);
@@ -342,7 +667,7 @@ export default function SiteFundBudgetPage() {
         });
         tRow.font = { bold: true };
 
-        for (const fyS of allFYStarts) {
+        for (const fyS of getRelevantFYs(project.id)) {
           const r   = fyRange(fyS);
           const fyB = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'fy' && b.period === fyLabel(fyS));
           const fySpent = pExp.filter(e => e.expenseDate >= r.start && e.expenseDate <= r.end).reduce((s, e) => s + (e.expenseAmount || 0), 0);
@@ -358,11 +683,11 @@ export default function SiteFundBudgetPage() {
             notes: fyB?.notes || '',
           });
 
-          for (const m of getFYMonths(fyS)) {
+          for (const m of getRelevantMonths(project.id, fyS)) {
             const mB = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m);
             const mSpent = pExp.filter(e => e.expenseDate.startsWith(m)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
             const mRcvd  = pPay.filter(p => p.receiptDate.startsWith(m)).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-            if (!mB && mSpent === 0) continue;
+            if (!mB && mSpent === 0 && !allCatBudgets.some(b => b.projectId === project.id && b.period === m)) continue;
             const mAmt = mB?.budgetAmount ?? 0;
             ws.addRow({
               level: monthLabel(m), name: `    ${monthLabel(m)}`,
@@ -372,6 +697,22 @@ export default function SiteFundBudgetPage() {
               status: !mB ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
               notes: mB?.notes || '',
             });
+
+            // Category rows
+            for (const cat of getMonthCategories(project.id, m)) {
+              const cb = allCatBudgets.find(b => b.projectId === project.id && b.period === m && b.categoryName === cat);
+              const cSpent = pExp.filter(e => e.expenseDate.startsWith(m) && e.expenseCategory === cat).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+              if (!cb && cSpent === 0) continue;
+              const cAmt = cb?.budgetAmount ?? 0;
+              ws.addRow({
+                level: 'Category', name: `      ${cat}`,
+                budget: cAmt || '—', received: '—', spent: cSpent,
+                remaining: cAmt > 0 ? cAmt - cSpent : '—',
+                pctUsed: cAmt > 0 ? formatPct((cSpent / cAmt) * 100) : '—',
+                status: !cb ? 'No Budget' : cSpent > cAmt ? 'Over' : (cSpent / cAmt) * 100 >= 80 ? 'Near Limit' : 'OK',
+                notes: cb?.notes || '',
+              });
+            }
           }
         }
       }
@@ -389,7 +730,7 @@ export default function SiteFundBudgetPage() {
     return <div className="space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>;
   }
 
-  const curMonth = currentMonthStr();
+  const curMonth  = currentMonthStr();
   const curFYStart = currentFYStart();
 
   return (
@@ -399,13 +740,27 @@ export default function SiteFundBudgetPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-lg font-bold text-slate-800">Site Fund Budget</h1>
-          <p className="text-sm text-muted-foreground">Hierarchical tracking — Total → FY-wise → Month-wise per project</p>
+          <p className="text-sm text-muted-foreground">
+            Hierarchical tracking — Total → FY-wise → Month-wise → Category-wise
+          </p>
         </div>
         <div className="flex gap-2">
           {canExport && (
             <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Export
+            </Button>
+          )}
+          <input
+            id="budget-upload-input"
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) void handleUploadFile(f); e.target.value = ''; }}
+          />
+          {effectiveCanAdd && (
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => document.getElementById('budget-upload-input')?.click()}>
+              <Upload className="h-4 w-4" /> Upload Approval Sheet
             </Button>
           )}
           {effectiveCanAdd && (
@@ -478,7 +833,11 @@ export default function SiteFundBudgetPage() {
                     const pExp    = allExpenses.filter(e => e.projectId === project.id);
                     const pPay    = allPayments.filter(p => p.projectId === project.id);
                     const tSpent  = pExp.reduce((s, e) => s + (e.expenseAmount  || 0), 0);
-                    const tAmt    = totalBudget?.budgetAmount ?? 0;
+                    // Roll-up: if no explicit total budget, sum all monthly budgets for this project
+                    const monthBudgetSumAll = allBudgets
+                      .filter(b => b.projectId === project.id && b.budgetType === 'monthly')
+                      .reduce((s, b) => s + b.budgetAmount, 0);
+                    const tAmt    = monthBudgetSumAll;
                     const tPct    = tAmt > 0 ? Math.min((tSpent / tAmt) * 100, 100) : 0;
                     const isExpanded = expandedProjects.has(project.id);
                     const fys = getRelevantFYs(project.id);
@@ -502,29 +861,26 @@ export default function SiteFundBudgetPage() {
                             </button>
                           </td>
                           <td className="px-4 py-3 text-right font-semibold text-emerald-700">
-                            {totalBudget ? formatINR(tAmt) : <span className="text-muted-foreground text-xs">—</span>}
+                            {tAmt > 0 ? formatINR(tAmt) : <span className="text-muted-foreground text-xs">—</span>}
                           </td>
                           <td className="px-4 py-3 text-right text-rose-700 font-medium">{formatINR(tSpent)}</td>
-                          <td className={cn('px-4 py-3 text-right font-semibold', !totalBudget ? 'text-muted-foreground' : tAmt - tSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
-                            {totalBudget ? formatINR(tAmt - tSpent) : '—'}
+                          <td className={cn('px-4 py-3 text-right font-semibold', tAmt === 0 ? 'text-muted-foreground' : tAmt - tSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
+                            {tAmt > 0 ? formatINR(tAmt - tSpent) : '—'}
                           </td>
                           <td className="px-4 py-3">
-                            {totalBudget ? (
+                            {tAmt > 0 ? (
                               <div className="space-y-1 min-w-[110px]">
                                 <Progress value={tPct} className="h-2" />
                                 <p className="text-xs text-muted-foreground">{formatPct(tPct)}</p>
                               </div>
                             ) : <span className="text-xs text-muted-foreground">—</span>}
                           </td>
-                          <td className="px-4 py-3"><StatusBadge budget={totalBudget} spent={tSpent} /></td>
+                          <td className="px-4 py-3">
+                            <StatusBadge budget={monthBudgetSumAll > 0 ? { budgetAmount: monthBudgetSumAll } as SASBudget : null} spent={tSpent} />
+                          </td>
                           {(effectiveCanEdit || canDelete) && (
                             <td className="px-4 py-3 text-right">
                               <div className="flex justify-end gap-1">
-                                {effectiveCanEdit && (
-                                  totalBudget
-                                    ? <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(totalBudget)}><Pencil className="h-3.5 w-3.5" /></Button>
-                                    : <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => openAdd(project, 'total')}><Plus className="h-3 w-3" />Set Total</Button>
-                                )}
                                 {canDelete && totalBudget && (
                                   <DeleteConfirm label={`Remove total budget for ${project.projectName}?`} onConfirm={() => handleDelete(totalBudget)} />
                                 )}
@@ -540,10 +896,15 @@ export default function SiteFundBudgetPage() {
                           const r       = fyRange(fyS);
                           const fyB     = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'fy' && b.period === fyLabel(fyS)) ?? null;
                           const fySpent = pExp.filter(e => e.expenseDate >= r.start && e.expenseDate <= r.end).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-                          const fAmt    = fyB?.budgetAmount ?? 0;
-                          const fyPct   = fAmt > 0 ? Math.min((fySpent / fAmt) * 100, 100) : 0;
                           const isCurFY = fyS === curFYStart;
                           const months  = getRelevantMonths(project.id, fyS);
+                          // Roll-up: if no explicit FY budget, sum monthly budgets in this FY
+                          const fyMonthSum = months.reduce((s, m) => {
+                            const mb = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m);
+                            return s + (mb?.budgetAmount ?? 0);
+                          }, 0);
+                          const fAmt    = fyMonthSum;
+                          const fyPct   = fAmt > 0 ? Math.min((fySpent / fAmt) * 100, 100) : 0;
 
                           return (
                             <Fragment key={fyKey}>
@@ -563,29 +924,26 @@ export default function SiteFundBudgetPage() {
                                   </button>
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-medium text-emerald-700">
-                                  {fyB ? formatINR(fAmt) : <span className="text-muted-foreground text-xs">—</span>}
+                                  {fAmt > 0 ? formatINR(fAmt) : <span className="text-muted-foreground text-xs">—</span>}
                                 </td>
                                 <td className="px-4 py-2.5 text-right text-rose-700">{fySpent > 0 ? formatINR(fySpent) : <span className="text-muted-foreground text-xs">—</span>}</td>
-                                <td className={cn('px-4 py-2.5 text-right font-medium', !fyB ? 'text-muted-foreground' : fAmt - fySpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
-                                  {fyB ? formatINR(fAmt - fySpent) : '—'}
+                                <td className={cn('px-4 py-2.5 text-right font-medium', fAmt === 0 ? 'text-muted-foreground' : fAmt - fySpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
+                                  {fAmt > 0 ? formatINR(fAmt - fySpent) : '—'}
                                 </td>
                                 <td className="px-4 py-2.5">
-                                  {fyB ? (
+                                  {fAmt > 0 ? (
                                     <div className="space-y-1 min-w-[110px]">
                                       <Progress value={fyPct} className="h-1.5" />
                                       <p className="text-xs text-muted-foreground">{formatPct(fyPct)}</p>
                                     </div>
                                   ) : <span className="text-xs text-muted-foreground">—</span>}
                                 </td>
-                                <td className="px-4 py-2.5"><StatusBadge budget={fyB} spent={fySpent} /></td>
+                                <td className="px-4 py-2.5">
+                                  <StatusBadge budget={fyMonthSum > 0 ? { budgetAmount: fyMonthSum } as SASBudget : null} spent={fySpent} />
+                                </td>
                                 {(effectiveCanEdit || canDelete) && (
                                   <td className="px-4 py-2.5 text-right">
                                     <div className="flex justify-end gap-1">
-                                      {effectiveCanEdit && (
-                                        fyB
-                                          ? <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(fyB)}><Pencil className="h-3 w-3" /></Button>
-                                          : <Button variant="outline" size="sm" className="h-6 text-xs gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'fy', fyS)}><Plus className="h-2.5 w-2.5" />Set</Button>
-                                      )}
                                       {canDelete && fyB && (
                                         <DeleteConfirm label={`Remove FY ${fyLabel(fyS)} budget for ${project.projectName}?`} onConfirm={() => handleDelete(fyB)} size="sm" />
                                       )}
@@ -596,54 +954,150 @@ export default function SiteFundBudgetPage() {
 
                               {/* ══ Level 2 — Month rows ══ */}
                               {isFYExp && months.map(m => {
-                                const mB      = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m) ?? null;
-                                const mSpent  = pExp.filter(e => e.expenseDate.startsWith(m)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-                                const mAmt    = mB?.budgetAmount ?? 0;
-                                const mPct    = mAmt > 0 ? Math.min((mSpent / mAmt) * 100, 100) : 0;
-                                const isCurMo = m === curMonth;
+                                const monthKey = `${project.id}:${m}`;
+                                const isMoExp  = expandedMonths.has(monthKey);
+                                const mB       = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m) ?? null;
+                                const mSpent   = pExp.filter(e => e.expenseDate.startsWith(m)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+                                // Roll-up: if no monthly budget, sum category budgets for this month
+                                const catBudgetSum = allCatBudgets
+                                  .filter(b => b.projectId === project.id && b.period === m)
+                                  .reduce((s, b) => s + b.budgetAmount, 0);
+                                const mAmt     = mB?.budgetAmount ?? catBudgetSum;
+                                const mPct     = mAmt > 0 ? Math.min((mSpent / mAmt) * 100, 100) : 0;
+                                // How much of monthly budget has been allocated to categories
+                                const catAllocated = catBudgetSum;
+                                const showCatAlloc = mB && catAllocated > 0;
+                                const isCurMo  = m === curMonth;
+                                const catRows  = getMonthCategories(project.id, m);
 
                                 return (
-                                  <tr key={m} className={cn('border-b transition-colors', isCurMo ? 'bg-amber-50/40' : 'bg-white/50 hover:bg-muted/10')}>
-                                    <td className="pl-16 pr-4 py-2">
-                                      <div className="flex items-center gap-2 text-slate-600">
-                                        <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
-                                        <span className="text-xs">{monthLabel(m)}</span>
-                                        {isCurMo && <Badge className="text-[9px] px-1.5 py-0 bg-amber-100 text-amber-700 hover:bg-amber-100 font-normal">This Month</Badge>}
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-2 text-right text-xs font-medium text-emerald-700">
-                                      {mB ? formatINR(mAmt) : <span className="text-muted-foreground">—</span>}
-                                    </td>
-                                    <td className="px-4 py-2 text-right text-xs text-rose-700">
-                                      {mSpent > 0 ? formatINR(mSpent) : <span className="text-muted-foreground">—</span>}
-                                    </td>
-                                    <td className={cn('px-4 py-2 text-right text-xs font-medium', !mB ? 'text-muted-foreground' : mAmt - mSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
-                                      {mB ? formatINR(mAmt - mSpent) : '—'}
-                                    </td>
-                                    <td className="px-4 py-2">
-                                      {mB ? (
-                                        <div className="space-y-0.5 min-w-[110px]">
-                                          <Progress value={mPct} className="h-1.5" />
-                                          <p className="text-[11px] text-muted-foreground">{formatPct(mPct)}</p>
-                                        </div>
-                                      ) : <span className="text-xs text-muted-foreground">—</span>}
-                                    </td>
-                                    <td className="px-4 py-2"><StatusBadge budget={mB} spent={mSpent} /></td>
-                                    {(effectiveCanEdit || canDelete) && (
-                                      <td className="px-4 py-2 text-right">
-                                        <div className="flex justify-end gap-1">
-                                          {effectiveCanEdit && (
-                                            mB
-                                              ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(mB)}><Pencil className="h-3 w-3" /></Button>
-                                              : <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'monthly', fyS, m)}><Plus className="h-2.5 w-2.5" />Set</Button>
-                                          )}
-                                          {canDelete && mB && (
-                                            <DeleteConfirm label={`Remove ${monthLabel(m)} budget for ${project.projectName}?`} onConfirm={() => handleDelete(mB)} size="sm" />
-                                          )}
-                                        </div>
+                                  <Fragment key={m}>
+                                    <tr className={cn('border-b transition-colors', isCurMo ? 'bg-amber-50/40' : isMoExp ? 'bg-amber-50/20' : 'bg-white/50 hover:bg-muted/10')}>
+                                      <td className="pl-14 pr-4 py-2">
+                                        <button
+                                          onClick={() => toggleMonth(monthKey)}
+                                          className="flex items-center gap-1.5 text-slate-600 hover:text-amber-700 transition-colors"
+                                        >
+                                          {isMoExp
+                                            ? <ChevronDown  className="h-3 w-3 text-amber-500 shrink-0" />
+                                            : <ChevronRight className="h-3 w-3 text-slate-400 shrink-0" />}
+                                          <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
+                                          <span className="text-xs">{monthLabel(m)}</span>
+                                          {isCurMo && <Badge className="text-[9px] px-1.5 py-0 bg-amber-100 text-amber-700 hover:bg-amber-100 font-normal">This Month</Badge>}
+                                          <span className="ml-1 text-[10px] text-muted-foreground">
+                                            ({catRows.length} categories)
+                                          </span>
+                                        </button>
                                       </td>
-                                    )}
-                                  </tr>
+                                      <td className="px-4 py-2 text-right text-xs font-medium text-emerald-700">
+                                        {mAmt > 0
+                                          ? <div>
+                                              {formatINR(mAmt)}
+                                              {!mB && <p className="text-[10px] font-normal text-muted-foreground">∑ categories</p>}
+                                              {showCatAlloc && (
+                                                <p className={cn('text-[10px] font-normal', catAllocated > mAmt ? 'text-destructive' : 'text-muted-foreground')}>
+                                                  {formatINR(catAllocated)} alloc'd
+                                                </p>
+                                              )}
+                                            </div>
+                                          : <span className="text-muted-foreground">—</span>}
+                                      </td>
+                                      <td className="px-4 py-2 text-right text-xs text-rose-700">
+                                        {mSpent > 0 ? formatINR(mSpent) : <span className="text-muted-foreground">—</span>}
+                                      </td>
+                                      <td className={cn('px-4 py-2 text-right text-xs font-medium', mAmt === 0 ? 'text-muted-foreground' : mAmt - mSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
+                                        {mAmt > 0 ? formatINR(mAmt - mSpent) : '—'}
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        {mAmt > 0 ? (
+                                          <div className="space-y-0.5 min-w-[110px]">
+                                            <Progress value={mPct} className="h-1.5" />
+                                            <p className="text-[11px] text-muted-foreground">{formatPct(mPct)}</p>
+                                          </div>
+                                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                                      </td>
+                                      <td className="px-4 py-2">
+                                        <StatusBadge budget={mB ?? (catBudgetSum > 0 ? { budgetAmount: catBudgetSum } as SASBudget : null)} spent={mSpent} />
+                                      </td>
+                                      {(effectiveCanEdit || canDelete) && (
+                                        <td className="px-4 py-2 text-right">
+                                          <div className="flex justify-end items-center gap-1">
+                                            {effectiveCanEdit && (
+                                              <>
+                                                {mB
+                                                  ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(mB)}><Pencil className="h-3 w-3" /></Button>
+                                                  : <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'monthly', fyS, m)}><Plus className="h-2.5 w-2.5" />Set</Button>
+                                                }
+                                                <Button
+                                                  variant="outline" size="sm"
+                                                  className="h-6 text-[11px] gap-0.5 text-teal-700 border-teal-200 hover:bg-teal-50 px-2"
+                                                  title="Set category budgets for this month"
+                                                  onClick={() => openBulkCatDialog(project, m)}
+                                                >
+                                                  <Layers className="h-2.5 w-2.5" />Categories
+                                                </Button>
+                                              </>
+                                            )}
+                                            {canDelete && mB && (
+                                              <DeleteConfirm label={`Remove ${monthLabel(m)} budget for ${project.projectName}?`} onConfirm={() => handleDelete(mB)} size="sm" />
+                                            )}
+                                          </div>
+                                        </td>
+                                      )}
+                                    </tr>
+
+                                    {/* ══ Level 3 — Category rows ══ */}
+                                    {isMoExp && catRows.map(cat => {
+                                      const catB    = allCatBudgets.find(b => b.projectId === project.id && b.period === m && b.categoryName === cat);
+                                      const cSpent  = pExp.filter(e => e.expenseDate.startsWith(m) && e.expenseCategory === cat).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+                                      const cAmt    = catB?.budgetAmount ?? 0;
+                                      const cPct    = cAmt > 0 ? Math.min((cSpent / cAmt) * 100, 100) : 0;
+
+                                      return (
+                                        <tr key={`${m}:${cat}`} className="border-b bg-slate-50/30 hover:bg-muted/10 transition-colors">
+                                          <td className="pl-20 pr-4 py-1.5">
+                                            <div className="flex items-center gap-1.5">
+                                              <Layers className="h-2.5 w-2.5 text-teal-400 shrink-0" />
+                                              <span className="text-xs text-slate-600">{cat}</span>
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-1.5 text-right text-xs font-medium text-emerald-700">
+                                            {catB ? formatINR(cAmt) : <span className="text-muted-foreground text-xs">—</span>}
+                                          </td>
+                                          <td className="px-4 py-1.5 text-right text-xs text-rose-700">
+                                            {cSpent > 0 ? formatINR(cSpent) : <span className="text-muted-foreground text-xs">—</span>}
+                                          </td>
+                                          <td className={cn('px-4 py-1.5 text-right text-xs font-medium',
+                                            !catB ? 'text-muted-foreground' : cAmt - cSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
+                                            {catB ? formatINR(cAmt - cSpent) : '—'}
+                                          </td>
+                                          <td className="px-4 py-1.5">
+                                            {catB ? (
+                                              <div className="space-y-0.5 min-w-[110px]">
+                                                <Progress value={cPct} className="h-1" />
+                                                <p className="text-[10px] text-muted-foreground">{formatPct(cPct)}</p>
+                                              </div>
+                                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                                          </td>
+                                          <td className="px-4 py-1.5"><CatStatusBadge budget={catB} spent={cSpent} /></td>
+                                          {(effectiveCanEdit || canDelete) && (
+                                            <td className="px-4 py-1.5 text-right">
+                                              <div className="flex justify-end gap-1">
+                                                {effectiveCanEdit && catB && (
+                                                  <Button variant="ghost" size="icon" className="h-5 w-5" title="Edit budget" onClick={() => openCatEdit(catB)}>
+                                                    <Pencil className="h-2.5 w-2.5" />
+                                                  </Button>
+                                                )}
+                                                {canDelete && catB && (
+                                                  <DeleteConfirm label={`Remove ${cat} budget for ${monthLabel(m)}?`} onConfirm={() => handleCatDelete(catB)} size="sm" />
+                                                )}
+                                              </div>
+                                            </td>
+                                          )}
+                                        </tr>
+                                      );
+                                    })}
+                                  </Fragment>
                                 );
                               })}
                             </Fragment>
@@ -669,7 +1123,7 @@ export default function SiteFundBudgetPage() {
         </div>
       )}
 
-      {/* ── Add / Edit Dialog ── */}
+      {/* ── Add / Edit Budget Dialog ── */}
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -683,20 +1137,15 @@ export default function SiteFundBudgetPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-
-            {/* Budget type tabs (add mode only) */}
             {!editingBudget && (
               <div className="space-y-2">
                 <Label>Budget Type</Label>
                 <Tabs value={dialogTab} onValueChange={v => setDialogTab(v as BudgetTab)}>
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="total">Total</TabsTrigger>
-                    <TabsTrigger value="fy">FY-wise</TabsTrigger>
+                  <TabsList className="grid w-full grid-cols-1">
                     <TabsTrigger value="monthly">Monthly</TabsTrigger>
                   </TabsList>
                 </Tabs>
 
-                {/* FY period picker */}
                 {dialogTab === 'fy' && (
                   <div className="flex items-center gap-2 pt-0.5">
                     <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => setDialogFYStart(y => y - 1)}>
@@ -710,7 +1159,6 @@ export default function SiteFundBudgetPage() {
                   </div>
                 )}
 
-                {/* Monthly period picker */}
                 {dialogTab === 'monthly' && (
                   <div className="flex items-center gap-2 pt-0.5">
                     <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => setDialogMonth(m => shiftMonth(m, -1))}>
@@ -733,7 +1181,6 @@ export default function SiteFundBudgetPage() {
               </div>
             )}
 
-            {/* Project select */}
             <div className="space-y-1.5">
               <Label>Project <span className="text-destructive">*</span></Label>
               <Select
@@ -751,7 +1198,6 @@ export default function SiteFundBudgetPage() {
               </Select>
             </div>
 
-            {/* Amount */}
             <div className="space-y-1.5">
               <Label>Budget Amount (₹) <span className="text-destructive">*</span></Label>
               <Input
@@ -762,13 +1208,11 @@ export default function SiteFundBudgetPage() {
               />
             </div>
 
-            {/* Notes */}
             <div className="space-y-1.5">
               <Label>Notes</Label>
               <Textarea rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
             </div>
 
-            {/* Live preview (edit mode) */}
             {editingBudget && (() => {
               const newAmt = Number(form.budgetAmount) || 0;
               if (!newAmt) return null;
@@ -805,6 +1249,207 @@ export default function SiteFundBudgetPage() {
             <Button onClick={handleSubmit} disabled={saving} className="bg-emerald-700 hover:bg-emerald-800 min-w-[110px]">
               {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {editingBudget ? 'Save Changes' : 'Save Budget'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bulk Category Budget Dialog ── */}
+      <Dialog open={bulkDialogOpen} onOpenChange={open => { if (!open && !bulkSaving) setBulkDialogOpen(false); }}>
+        <DialogContent className="max-w-md flex flex-col" style={{ maxHeight: '85vh' }}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-teal-600" />
+              Category Budgets — {bulkMonth ? monthLabel(bulkMonth) : ''}
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Context */}
+          <div className="rounded-lg bg-slate-50 border px-3 py-2 text-sm shrink-0">
+            <p className="text-muted-foreground">
+              <span className="font-medium text-slate-700">Project:</span> {bulkProject?.projectName}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Enter amounts for the categories you want to budget. Leave blank to skip.
+            </p>
+          </div>
+
+          {/* Category list — scrollable */}
+          <div className="flex-1 overflow-y-auto space-y-1 pr-1 py-1">
+            {categories.map(cat => {
+              const existing = allCatBudgets.find(b =>
+                b.projectId === bulkProject?.id && b.period === bulkMonth && b.categoryName === cat.name
+              );
+              const actual = allExpenses
+                .filter(e =>
+                  e.projectId === bulkProject?.id &&
+                  e.expenseCategory === cat.name &&
+                  e.expenseDate?.startsWith(bulkMonth)
+                )
+                .reduce((s, e) => s + (e.expenseAmount || 0), 0);
+              const val = bulkAmounts[cat.name] ?? '';
+              const budgetNum = Number(val);
+              const isOver = existing && actual > existing.budgetAmount;
+              const isNew = val && !existing;
+
+              return (
+                <div key={cat.id} className={cn(
+                  'flex items-center gap-3 rounded-lg px-2.5 py-2 border transition-colors',
+                  val && budgetNum > 0 ? 'bg-teal-50/60 border-teal-100' : 'bg-white border-slate-100'
+                )}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-700 truncate">{cat.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {actual > 0 && (
+                        <span className="text-[10px] text-rose-500">Spent: {formatINR(actual)}</span>
+                      )}
+                      {existing && (
+                        <span className={cn('text-[10px]', isOver ? 'text-destructive' : 'text-emerald-600')}>
+                          Current: {formatINR(existing.budgetAmount)}
+                        </span>
+                      )}
+                      {isNew && (
+                        <span className="text-[10px] text-teal-600 font-medium">New</span>
+                      )}
+                    </div>
+                  </div>
+                  <Input
+                    type="number"
+                    value={val}
+                    onChange={e => setBulkAmounts(prev => ({ ...prev, [cat.name]: e.target.value }))}
+                    placeholder="—"
+                    className="h-8 w-32 text-right text-sm shrink-0"
+                    min={0}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="text-xs text-muted-foreground shrink-0 pt-1">
+            {Object.values(bulkAmounts).filter(v => v && Number(v) > 0).length} of {categories.length} categories have a budget set.
+          </p>
+
+          <DialogFooter className="shrink-0">
+            <Button variant="outline" onClick={() => setBulkDialogOpen(false)} disabled={bulkSaving}>Cancel</Button>
+            <Button onClick={handleBulkCatSave} disabled={bulkSaving} className="gap-2 bg-teal-700 hover:bg-teal-800">
+              {bulkSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              Save All Budgets
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Category Budget Dialog (single edit) ── */}
+      <Dialog open={catDialogOpen} onOpenChange={open => { if (!open && !catSaving) setCatDialogOpen(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-teal-600" />
+              {catEditingBudget ? 'Edit Category Budget' : 'Set Category Budget'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg bg-slate-50 border px-3 py-2.5 text-sm space-y-1">
+              <p className="text-muted-foreground">
+                <span className="font-medium text-slate-700">Project:</span> {catDialogProject?.projectName}
+              </p>
+              <p className="text-muted-foreground">
+                <span className="font-medium text-slate-700">Month:</span> {catDialogMonth ? monthLabel(catDialogMonth) : '—'}
+              </p>
+              <p className="text-muted-foreground">
+                <span className="font-medium text-slate-700">Category:</span> {catDialogCategory}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Budget Amount (₹) <span className="text-destructive">*</span></Label>
+              <Input
+                type="number"
+                value={catDialogAmount}
+                onChange={e => setCatDialogAmount(e.target.value)}
+                placeholder="e.g. 50000"
+                min={1}
+                className="h-9"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes (optional)</Label>
+              <Input
+                value={catDialogNotes}
+                onChange={e => setCatDialogNotes(e.target.value)}
+                placeholder="Optional notes..."
+                className="h-9"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCatDialogOpen(false)} disabled={catSaving}>Cancel</Button>
+            <Button onClick={handleCatSubmit} disabled={catSaving} className="gap-2 bg-teal-700 hover:bg-teal-800">
+              {catSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {catEditingBudget ? 'Update' : 'Set Budget'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Upload preview dialog ── */}
+      <Dialog open={uploadOpen} onOpenChange={open => { if (!open && !uploadSaving) { setUploadOpen(false); setUploadRows([]); } }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-4 w-4" /> Import Monthly Budgets
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>{uploadRows.filter(r => r.valid).length} valid</span>
+              <span>·</span>
+              <span className="text-destructive">{uploadRows.filter(r => !r.valid).length} errors</span>
+              <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs gap-1" onClick={downloadTemplate}>
+                <Download className="h-3 w-3" /> Download Template
+              </Button>
+            </div>
+            <div className="rounded-lg border overflow-auto max-h-[50vh]">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-100 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-2 text-left">#</th>
+                    <th className="px-3 py-2 text-left">Project</th>
+                    <th className="px-3 py-2 text-left">Period</th>
+                    <th className="px-3 py-2 text-right">Amount (₹)</th>
+                    <th className="px-3 py-2 text-left">Notes</th>
+                    <th className="px-3 py-2 text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {uploadRows.map(r => (
+                    <tr key={r.rowNum} className={cn('border-t', r.valid ? 'bg-white' : 'bg-red-50/50')}>
+                      <td className="px-3 py-1.5 text-muted-foreground">{r.rowNum}</td>
+                      <td className="px-3 py-1.5">{r.projectName}</td>
+                      <td className="px-3 py-1.5 font-mono">{r.period || '—'}</td>
+                      <td className="px-3 py-1.5 text-right font-semibold text-emerald-700">{r.amount > 0 ? formatINR(r.amount) : '—'}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[120px]">{r.notes || '—'}</td>
+                      <td className="px-3 py-1.5">
+                        {r.valid
+                          ? <Badge className="text-[10px] bg-emerald-100 text-emerald-700 hover:bg-emerald-100 px-1.5">Valid</Badge>
+                          : <Badge variant="destructive" className="text-[10px] px-1.5" title={r.error}>Error</Badge>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setUploadOpen(false); setUploadRows([]); }}>Cancel</Button>
+            <Button
+              onClick={handleUploadSave}
+              disabled={uploadSaving || uploadRows.filter(r => r.valid).length === 0}
+              className="gap-2 bg-emerald-700 hover:bg-emerald-800"
+            >
+              {uploadSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              Import {uploadRows.filter(r => r.valid).length} Budget{uploadRows.filter(r => r.valid).length !== 1 ? 's' : ''}
             </Button>
           </DialogFooter>
         </DialogContent>

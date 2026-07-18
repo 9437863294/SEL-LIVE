@@ -765,7 +765,7 @@ export default function PaymentsPage() {
               <div className="rounded-xl border bg-emerald-50 px-4 py-3 text-center">
                 <p className="text-xs font-medium uppercase tracking-wide text-emerald-500">Amount Received</p>
                 <p className="text-2xl font-bold text-emerald-700">{formatINR(viewPayment.receivedAmount)}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{viewPayment.receiptDate} &bull; <Badge variant="secondary" className="text-xs">{viewPayment.paymentMode}</Badge></p>
+                <div className="text-xs text-muted-foreground mt-0.5">{viewPayment.receiptDate} &bull; <Badge variant="secondary" className="text-xs">{viewPayment.paymentMode}</Badge></div>
               </div>
 
               {/* Fields grid */}

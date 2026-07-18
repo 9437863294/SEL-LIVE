@@ -1,9 +1,10 @@
 export const SAS_COLLECTIONS = {
-  projects:   'siteAccountProjects',
-  payments:   'siteAccountPayments',
-  expenses:   'siteAccountExpenses',
-  categories: 'siteAccountCategories',
-  budgets:    'siteAccountBudgets',
+  projects:        'siteAccountProjects',
+  payments:        'siteAccountPayments',
+  expenses:        'siteAccountExpenses',
+  categories:      'siteAccountCategories',
+  budgets:         'siteAccountBudgets',
+  categoryBudgets: 'siteAccountCategoryBudgets',
 } as const;
 
 export interface SASProject {
@@ -74,6 +75,19 @@ export interface SASBudget {
   projectName: string;
   budgetType: 'total' | 'monthly' | 'fy';
   period?: string;  // monthly → "2025-07"  |  fy → "2025-26"  |  total → undefined
+  budgetAmount: number;
+  notes?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface SASCategoryBudget {
+  id: string;
+  projectId: string;
+  projectName: string;
+  period: string;         // "YYYY-MM"
+  categoryId: string;
+  categoryName: string;
   budgetAmount: number;
   notes?: string;
   createdAt: any;
