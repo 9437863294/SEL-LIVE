@@ -38,6 +38,7 @@ import {
 import {
   Bell,
   BellOff,
+  FlaskConical,
   Globe,
   Loader2,
   Mail,
@@ -57,7 +58,7 @@ interface AlertConfigState {
 
 interface DialogState {
   open: boolean;
-  isModuleWide: boolean;       // true = editing the module-wide (__module__) config
+  isModuleWide: boolean;       // true = editing the module-wide (_module_wide_) config
   project: SASProject | null;  // null when isModuleWide = true
   enabled: boolean;
   thresholds: number[];
@@ -67,14 +68,14 @@ interface DialogState {
   saving: boolean;
 }
 
-const THRESHOLD_OPTIONS = [80, 90, 100] as const;
+const THRESHOLD_OPTIONS = [80, 90, 100, 110, 120, 130, 150, 200] as const;
 
 const blankDialog = (): DialogState => ({
   open: false,
   isModuleWide: false,
   project: null,
   enabled: false,
-  thresholds: [80, 100],
+  thresholds: [80, 90, 100],
   recipients: [],
   newName: '',
   newEmail: '',
@@ -100,6 +101,7 @@ export default function BudgetAlertsPage() {
   const [moduleConfig,  setModuleConfig]  = useState<SASBudgetAlertConfig | null>(null);
   const [loading,       setLoading]       = useState(true);
   const [dialog,        setDialog]        = useState<DialogState>(blankDialog());
+  const [testingId,     setTestingId]     = useState<string | null>(null);
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -280,6 +282,49 @@ export default function BudgetAlertsPage() {
     }
   }
 
+  // ── Send test alert ─────────────────────────────────────────────────────────
+
+  async function sendTestAlert(configId: string, cfg: SASBudgetAlertConfig) {
+    if (!cfg.enabled) {
+      toast({ title: 'Alerts disabled', description: 'Enable alerts on this config before sending a test.', variant: 'destructive' });
+      return;
+    }
+    if (!cfg.recipients?.length) {
+      toast({ title: 'No recipients', description: 'Add at least one recipient before sending a test.', variant: 'destructive' });
+      return;
+    }
+    setTestingId(configId);
+    try {
+      const now   = new Date();
+      const month = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+      const res   = await fetch('/api/sas/budget-alert-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectName:  cfg.projectName,
+          monthLabel:   month,
+          budgetAmount: 500000,
+          spentAmount:  425000,
+          pctUsed:      85,
+          thresholdPct: cfg.thresholds[0] ?? 80,
+          recipients:   cfg.recipients,
+          link:         window.location.origin + '/site-account-statement/reports/budget',
+          isTest:       true,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: 'Test email sent!', description: `Sent to ${cfg.recipients.map(r => r.email).join(', ')}` });
+      } else {
+        const body = await res.json().catch(() => ({}));
+        toast({ title: 'Failed', description: body.error ?? `HTTP ${res.status}`, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setTestingId(null);
+    }
+  }
+
   // ── Render helpers ──────────────────────────────────────────────────────────
 
   function formatThresholds(projectId: string): string {
@@ -365,6 +410,20 @@ export default function BudgetAlertsPage() {
                 <Badge variant="secondary" className="gap-1 text-slate-500">
                   <BellOff className="h-3 w-3" /> Disabled
                 </Badge>
+              )}
+              {moduleConfig && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50"
+                  disabled={testingId === MODULE_ALERT_DOC_ID}
+                  onClick={() => sendTestAlert(MODULE_ALERT_DOC_ID, moduleConfig)}
+                >
+                  {testingId === MODULE_ALERT_DOC_ID
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <FlaskConical className="h-3.5 w-3.5" />}
+                  Test Email
+                </Button>
               )}
               {canEdit && (
                 <Button
@@ -475,20 +534,36 @@ export default function BudgetAlertsPage() {
                           </div>
                         </TableCell>
 
-                        {/* Configure button — edit-only */}
-                        {canEdit && (
-                          <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs gap-1.5 border-red-200 text-red-700 hover:bg-red-50 hover:border-red-300"
-                              onClick={() => openConfigure(project)}
-                            >
-                              <ShieldAlert className="h-3.5 w-3.5" />
-                              Configure
-                            </Button>
-                          </TableCell>
-                        )}
+                        {/* Actions */}
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {configs[project.id] && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50"
+                                disabled={testingId === project.id}
+                                onClick={() => sendTestAlert(project.id, configs[project.id])}
+                              >
+                                {testingId === project.id
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <FlaskConical className="h-3.5 w-3.5" />}
+                                Test
+                              </Button>
+                            )}
+                            {canEdit && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1.5 border-red-200 text-red-700 hover:bg-red-50 hover:border-red-300"
+                                onClick={() => openConfigure(project)}
+                              >
+                                <ShieldAlert className="h-3.5 w-3.5" />
+                                Configure
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -543,26 +618,31 @@ export default function BudgetAlertsPage() {
                   (select one or more)
                 </span>
               </Label>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap gap-2">
                 {THRESHOLD_OPTIONS.map(t => {
                   const selected = dialog.thresholds.includes(t);
+                  const isOver   = t >= 100;
                   return (
                     <button
                       key={t}
                       type="button"
                       onClick={() => toggleThreshold(t)}
                       className={[
-                        'flex items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors',
+                        'flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors',
                         selected
-                          ? 'border-red-400 bg-red-50 text-red-700'
+                          ? isOver
+                            ? 'border-red-500 bg-red-50 text-red-700'
+                            : 'border-amber-400 bg-amber-50 text-amber-700'
                           : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
                       ].join(' ')}
                     >
                       <span
                         className={[
-                          'flex h-4 w-4 items-center justify-center rounded border text-[10px] font-bold',
+                          'flex h-3.5 w-3.5 items-center justify-center rounded border text-[9px] font-bold',
                           selected
-                            ? 'border-red-500 bg-red-500 text-white'
+                            ? isOver
+                              ? 'border-red-500 bg-red-500 text-white'
+                              : 'border-amber-500 bg-amber-500 text-white'
                             : 'border-slate-300 bg-white',
                         ].join(' ')}
                       >

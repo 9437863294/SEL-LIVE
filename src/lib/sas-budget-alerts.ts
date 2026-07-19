@@ -3,13 +3,15 @@
 import {
   collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where,
 } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
 import { db } from './firebase';
 import { SAS_COLLECTIONS, type SASBudgetAlertConfig, type SASBudgetAlertRecipient } from './site-account-statement';
 import { createUserNotification, type NotificationType } from './notifications';
 
-// Firestore document ID used for the module-wide (all-projects) alert config
-export const MODULE_ALERT_DOC_ID = '__module__';
+export const MODULE_ALERT_DOC_ID = '_module_wide_';
+
+const TAG = '[SAS Budget Alert]';
+
+// ─── Shared helpers ────────────────────────────────────────────────────────────
 
 async function resolveAdminUserIds(): Promise<string[]> {
   try {
@@ -26,169 +28,394 @@ async function resolveAdminUserIds(): Promise<string[]> {
       query(collection(db, 'users'), where('role', 'in', adminRoleNames), where('status', '==', 'Active'))
     );
     return usersSnap.docs.map(d => d.id);
-  } catch {
+  } catch (e) {
+    console.warn(TAG, 'resolveAdminUserIds failed:', e);
     return [];
   }
 }
 
+async function loadAlertConfig(projectId: string): Promise<{
+  activeThresholds: Set<number>;
+  allRecipients: SASBudgetAlertRecipient[];
+}> {
+  const [projSnap, moduleSnap] = await Promise.all([
+    getDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, projectId)),
+    getDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, MODULE_ALERT_DOC_ID)),
+  ]);
+
+  const projCfg = projSnap.exists()   ? projSnap.data()   as Omit<SASBudgetAlertConfig, 'id'> : null;
+  const modCfg  = moduleSnap.exists() ? moduleSnap.data() as Omit<SASBudgetAlertConfig, 'id'> : null;
+
+  console.log(TAG, 'project config:', projCfg ? `enabled=${projCfg.enabled}, thresholds=${projCfg.thresholds}, recipients=${projCfg.recipients.length}` : 'not found');
+  console.log(TAG, 'module config:',  modCfg  ? `enabled=${modCfg.enabled},  thresholds=${modCfg.thresholds},  recipients=${modCfg.recipients.length}`  : 'not found');
+
+  const activeThresholds = new Set<number>();
+  if (projCfg?.enabled) projCfg.thresholds.forEach(t => activeThresholds.add(t));
+  if (modCfg?.enabled)  modCfg.thresholds.forEach(t  => activeThresholds.add(t));
+
+  const recipientMap = new Map<string, SASBudgetAlertRecipient>();
+  if (projCfg?.enabled) projCfg.recipients.forEach(r => recipientMap.set(r.email, r));
+  if (modCfg?.enabled)  modCfg.recipients.forEach(r  => recipientMap.set(r.email, r));
+
+  return { activeThresholds, allRecipients: [...recipientMap.values()] };
+}
+
+// Returns "YYYY-YY" FY string for an expense period "YYYY-MM" (Indian FY: Apr–Mar)
+function fyForPeriod(period: string): string {
+  const [yr, mo] = period.split('-').map(Number);
+  const start = mo >= 4 ? yr : yr - 1;
+  return `${start}-${String(start + 1).slice(-2)}`;
+}
+
+// Returns { from: "YYYY-04-01", to: "YYYY-03-31" } for a fyPeriod like "2026-27"
+function fyDateRange(fyPeriod: string): { from: string; to: string } {
+  const startYr = Number(fyPeriod.split('-')[0]);
+  return {
+    from: `${startYr}-04-01`,
+    to:   `${startYr + 1}-03-31`,
+  };
+}
+
 /**
- * Called after any expense is saved.
- *
- * Uses the same first-crossing check as checkCategoryBudgetBreach:
- *   prevTotal < thresholdAmount  &&  newTotal >= thresholdAmount
- *
- * Merges project-specific config with the module-wide (__module__) config so
- * HO managers configured globally are always included.
- *
- * Swallows all errors — expense save must never be blocked.
+ * Fetch total expense amount for a project, optionally filtered by date range and/or category.
+ * Falls back to a client-side filter when composite indexes are still building.
  */
-export async function checkAndFireBudgetAlerts({
+async function fetchExpenseTotal({
+  projectId,
+  from,
+  to,
+  categoryName,
+}: {
+  projectId: string;
+  from?: string;
+  to?: string;
+  categoryName?: string;
+}): Promise<number> {
+  // Build the full-filter query
+  const fullConstraints: Parameters<typeof where>[] = [
+    ['projectId', '==', projectId] as Parameters<typeof where>,
+  ];
+  if (categoryName) fullConstraints.push(['expenseCategory', '==', categoryName] as Parameters<typeof where>);
+  if (from)         fullConstraints.push(['expenseDate', '>=', from] as Parameters<typeof where>);
+  if (to)           fullConstraints.push(['expenseDate', '<=', to]   as Parameters<typeof where>);
+
+  try {
+    const snap = await getDocs(query(
+      collection(db, SAS_COLLECTIONS.expenses),
+      ...fullConstraints.map(args => where(...args)),
+    ));
+    return snap.docs.reduce((s, d) => s + ((d.data().expenseAmount as number) || 0), 0);
+  } catch (err: any) {
+    if (err?.code !== 'failed-precondition') throw err;
+    // Composite index still building — use simpler query + client-side date filter
+    console.warn(TAG, 'composite index not ready, using fallback query (projectId + optional category)');
+    const fallbackConstraints: Parameters<typeof where>[] = [
+      ['projectId', '==', projectId] as Parameters<typeof where>,
+    ];
+    if (categoryName) fallbackConstraints.push(['expenseCategory', '==', categoryName] as Parameters<typeof where>);
+    const snap = await getDocs(query(
+      collection(db, SAS_COLLECTIONS.expenses),
+      ...fallbackConstraints.map(args => where(...args)),
+    ));
+    return snap.docs
+      .filter(d => {
+        const dt = d.data().expenseDate as string;
+        if (from && dt < from) return false;
+        if (to   && dt > to)   return false;
+        return true;
+      })
+      .reduce((s, d) => s + ((d.data().expenseAmount as number) || 0), 0);
+  }
+}
+
+async function sendAlertEmail(payload: Record<string, unknown>): Promise<void> {
+  try {
+    const res = await fetch('/api/sas/budget-alert-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error(TAG, `email API returned ${res.status}:`, body);
+    } else {
+      console.log(TAG, 'email sent successfully');
+    }
+  } catch (e) {
+    console.error(TAG, 'email fetch failed:', e);
+  }
+}
+
+// Shared: check thresholds, dedup via runTransaction, fire notifications + email
+async function fireAlertIfCrossed({
+  tag,
+  stateDocId,
+  activeThresholds,
+  allRecipients,
+  budget,
+  newTotal,
+  newExpenseAmount,
   projectId,
   projectName,
-  period,
-  newExpenseAmount,
+  period,          // "YYYY-MM" for monthly/category, "YYYY-YY" for FY, undefined for total
+  periodLabel,     // human readable: "July 2026", "FY 2026-27", "All Time"
+  scopeType,       // 'monthly' | 'category' | 'fy' | 'total'
+  categoryName,
   assignedPersonId,
   altUserId,
 }: {
+  tag: string;
+  stateDocId: string;
+  activeThresholds: Set<number>;
+  allRecipients: SASBudgetAlertRecipient[];
+  budget: number;
+  newTotal: number;
+  newExpenseAmount: number;
   projectId: string;
   projectName: string;
-  period: string;           // "YYYY-MM"
-  newExpenseAmount: number; // amount of the expense just saved (used for prevTotal calculation)
+  period?: string;
+  periodLabel: string;
+  scopeType: 'monthly' | 'category' | 'fy' | 'total';
+  categoryName?: string;
   assignedPersonId?: string;
   altUserId?: string;
 }): Promise<void> {
-  try {
-    // 1. Load project-specific config + module-wide config in parallel
-    const [projSnap, moduleSnap] = await Promise.all([
-      getDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, projectId)),
-      getDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, MODULE_ALERT_DOC_ID)),
-    ]);
+  const prevTotal = newTotal - newExpenseAmount;
+  const pctUsed   = (newTotal / budget) * 100;
 
-    const projConfig  = projSnap.exists()   ? { id: projSnap.id,   ...projSnap.data()   } as SASBudgetAlertConfig : null;
-    const moduleConfig = moduleSnap.exists() ? { id: moduleSnap.id, ...moduleSnap.data() } as SASBudgetAlertConfig : null;
+  console.log(TAG, `[${tag}] budget=₹${budget} prevTotal=₹${prevTotal} newTotal=₹${newTotal} (${pctUsed.toFixed(1)}%)`);
+  console.log(TAG, `[${tag}] checking thresholds:`, [...activeThresholds]);
 
-    // 2. Build combined threshold set (union of both enabled configs)
-    const activeThresholds = new Set<number>();
-    if (projConfig?.enabled)   projConfig.thresholds.forEach(t  => activeThresholds.add(t));
-    if (moduleConfig?.enabled) moduleConfig.thresholds.forEach(t => activeThresholds.add(t));
-    if (!activeThresholds.size) return;
+  const stateRef = doc(db, SAS_COLLECTIONS.budgetAlertState, stateDocId);
+  let newlyCrossed: number[] = [];
 
-    // 3. Build combined recipient list (email-deduplicated)
-    const recipientMap = new Map<string, SASBudgetAlertRecipient>();
-    if (projConfig?.enabled)   projConfig.recipients.forEach(r   => recipientMap.set(r.email, r));
-    if (moduleConfig?.enabled) moduleConfig.recipients.forEach(r  => recipientMap.set(r.email, r));
-    const allRecipients = [...recipientMap.values()];
-    if (!allRecipients.length) return;
+  await runTransaction(db, async (txn) => {
+    const stateSnap = await txn.get(stateRef);
+    const sent: number[] = stateSnap.exists() ? (stateSnap.data().sentThresholds || []) : [];
+    console.log(TAG, `[${tag}] already sent thresholds:`, sent);
 
-    // 4. Load monthly budget for this project+period
-    const budgetSnap = await getDocs(query(
-      collection(db, SAS_COLLECTIONS.budgets),
-      where('projectId', '==', projectId),
-      where('budgetType', '==', 'monthly'),
-      where('period', '==', period),
-    ));
-    if (budgetSnap.empty) return;
-    const budget = budgetSnap.docs[0].data().budgetAmount as number;
-    if (!budget || budget <= 0) return;
-
-    // 5. Load total expenses for this period (post-save; includes the new expense)
-    const expSnap = await getDocs(query(
-      collection(db, SAS_COLLECTIONS.expenses),
-      where('projectId', '==', projectId),
-      where('expenseDate', '>=', `${period}-01`),
-      where('expenseDate', '<=', `${period}-31`),
-    ));
-    const newTotal  = expSnap.docs.reduce((s, d) => s + ((d.data().expenseAmount as number) || 0), 0);
-    const prevTotal = newTotal - newExpenseAmount;  // state before this expense was saved
-    const pctUsed   = (newTotal / budget) * 100;
-
-    // 6-7. Atomic read-modify-write: read sent thresholds, compute crossings, persist — all in one transaction.
-    //      Prevents duplicate alert emails when two expenses are saved concurrently for the same project/period.
-    const stateId  = `${projectId}_${period}`;
-    const stateRef = doc(db, SAS_COLLECTIONS.budgetAlertState, stateId);
-    let newlyCrossed: number[] = [];
-
-    await runTransaction(db, async (txn) => {
-      const stateSnap = await txn.get(stateRef);
-      const sentThresholds: number[] = stateSnap.exists() ? (stateSnap.data().sentThresholds || []) : [];
-
-      newlyCrossed = [...activeThresholds].filter(t => {
-        const line = budget * (t / 100);
-        return prevTotal < line && newTotal >= line && !sentThresholds.includes(t);
-      });
-
-      if (!newlyCrossed.length) return;
-
-      txn.set(
-        stateRef,
-        { projectId, period, sentThresholds: [...sentThresholds, ...newlyCrossed], updatedAt: serverTimestamp() },
-        { merge: true }
-      );
+    newlyCrossed = [...activeThresholds].filter(t => {
+      const line   = budget * (t / 100);
+      const crosses = prevTotal < line && newTotal >= line && !sent.includes(t);
+      console.log(TAG, `  threshold ${t}%: line=₹${line.toFixed(0)}, crosses=${crosses}`);
+      return crosses;
     });
 
     if (!newlyCrossed.length) return;
+    txn.set(stateRef, {
+      projectId, period: period ?? null, categoryName: categoryName ?? null, scopeType,
+      sentThresholds: [...sent, ...newlyCrossed],
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  });
 
-    // 8. Resolve in-app notification user IDs
-    const notifyIds = new Set<string>();
-    if (assignedPersonId) notifyIds.add(assignedPersonId);
-    if (altUserId)        notifyIds.add(altUserId);
-    allRecipients.forEach(r => { if (r.userId) notifyIds.add(r.userId); });
-    const adminIds = await resolveAdminUserIds();
-    adminIds.forEach(id => notifyIds.add(id));
+  if (!newlyCrossed.length) {
+    console.log(TAG, `[${tag}] no newly crossed thresholds`); return;
+  }
+  console.log(TAG, `[${tag}] newly crossed:`, newlyCrossed);
 
-    const monthLabel = new Date(`${period}-15`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-    const link       = '/site-account-statement/reports/budget';
+  const notifyIds = new Set<string>();
+  if (assignedPersonId) notifyIds.add(assignedPersonId);
+  if (altUserId)        notifyIds.add(altUserId);
+  allRecipients.forEach(r => { if (r.userId) notifyIds.add(r.userId); });
+  (await resolveAdminUserIds()).forEach(id => notifyIds.add(id));
 
-    // Get Firebase ID token once for authenticated email API calls (best-effort)
-    let idToken = '';
-    try {
-      const user = getAuth().currentUser;
-      if (user) idToken = await user.getIdToken();
-    } catch { /* best-effort — email will be skipped if token unavailable */ }
+  const link = '/site-account-statement/reports/budget';
 
-    // 9. Fire in-app + email alert for each newly crossed threshold
-    for (const threshold of newlyCrossed) {
-      const isOver = threshold >= 100;
-      const title  = isOver
-        ? `Budget Exceeded — ${projectName}`
-        : `Budget ${threshold}% Alert — ${projectName}`;
-      const body   = `${projectName}: ${monthLabel} budget ${isOver ? 'exceeded' : `at ${Math.round(pctUsed)}%`}. Spent ₹${newTotal.toLocaleString('en-IN')} of ₹${budget.toLocaleString('en-IN')}.`;
+  for (const threshold of newlyCrossed) {
+    const isOver     = threshold >= 100;
+    const scopeLabel = categoryName ? `${categoryName} Category` : scopeType === 'fy' ? 'FY Budget' : scopeType === 'total' ? 'Project Total Budget' : 'Monthly Budget';
+    const title = isOver
+      ? `${scopeLabel} Exceeded — ${projectName}`
+      : `${scopeLabel} ${threshold}% Alert — ${projectName}`;
+    const body  = `${projectName}${categoryName ? ` · ${categoryName}` : ''}: ${periodLabel} ${scopeLabel.toLowerCase()} ${isOver ? 'exceeded' : `at ${Math.round(pctUsed)}%`}. Spent ₹${newTotal.toLocaleString('en-IN')} of ₹${budget.toLocaleString('en-IN')}.`;
 
-      // In-app notifications (fire-and-forget, best-effort)
-      void Promise.allSettled([...notifyIds].map(uid =>
-        createUserNotification(uid, {
-          type:     'budget_alert' as NotificationType,
-          title,
-          body,
-          module:   'site-account-statement',
-          itemId:   projectId,
-          itemRef:  projectName,
-          stepName: `${monthLabel} Budget`,
-          link,
-        })
-      ));
+    void Promise.allSettled([...notifyIds].map(uid =>
+      createUserNotification(uid, {
+        type: 'budget_alert' as NotificationType,
+        title, body,
+        module: 'site-account-statement',
+        itemId: projectId, itemRef: projectName,
+        stepName: `${periodLabel}${categoryName ? ` · ${categoryName}` : ''}`,
+        link,
+      })
+    ));
 
-      // Email — fire-and-forget; must never block expense save
-      fetch('/api/sas/budget-alert-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          projectName,
-          monthLabel,
-          budgetAmount: budget,
-          spentAmount:  newTotal,
-          pctUsed:      Math.round(pctUsed),
-          thresholdPct: threshold,
-          recipients:   allRecipients,
-          link:         (typeof window !== 'undefined' ? window.location.origin : '') + link,
-        }),
-      }).catch(() => {});
+    void sendAlertEmail({
+      projectName,
+      monthLabel:   periodLabel,
+      budgetAmount: budget,
+      spentAmount:  newTotal,
+      pctUsed:      Math.round(pctUsed),
+      thresholdPct: threshold,
+      categoryName,
+      scopeType,
+      recipients:   allRecipients,
+      link: (typeof window !== 'undefined' ? window.location.origin : '') + link,
+    });
+  }
+}
+
+// ─── 1. Monthly project-wide alert ────────────────────────────────────────────
+
+export async function checkAndFireBudgetAlerts({
+  projectId, projectName, period, newExpenseAmount, assignedPersonId, altUserId,
+}: {
+  projectId: string; projectName: string; period: string;
+  newExpenseAmount: number; assignedPersonId?: string; altUserId?: string;
+}): Promise<void> {
+  console.log(TAG, `[monthly] checking project=${projectId} period=${period} newAmount=${newExpenseAmount}`);
+  try {
+    const { activeThresholds, allRecipients } = await loadAlertConfig(projectId);
+    if (!activeThresholds.size) { console.log(TAG, '[monthly] no active thresholds — skipping'); return; }
+    if (!allRecipients.length)  { console.log(TAG, '[monthly] no recipients — skipping'); return; }
+
+    // Monthly budget — explicit monthly, or FY÷12, or sum of category budgets
+    const monthSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
+      where('projectId', '==', projectId), where('budgetType', '==', 'monthly'), where('period', '==', period)));
+    let budget: number | null = null;
+    if (!monthSnap.empty) {
+      const amt = monthSnap.docs[0].data().budgetAmount as number;
+      if (amt > 0) { budget = amt; console.log(TAG, `[monthly] monthly budget: ₹${amt}`); }
     }
+    if (!budget) {
+      const fySnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
+        where('projectId', '==', projectId), where('budgetType', '==', 'fy'), where('period', '==', fyForPeriod(period))));
+      if (!fySnap.empty) {
+        const amt = fySnap.docs[0].data().budgetAmount as number;
+        if (amt > 0) { budget = Math.round(amt / 12); console.log(TAG, `[monthly] FY÷12: ₹${budget}`); }
+      }
+    }
+    if (!budget) {
+      const catSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.categoryBudgets),
+        where('projectId', '==', projectId), where('period', '==', period)));
+      if (!catSnap.empty) {
+        const total = catSnap.docs.reduce((s, d) => s + ((d.data().budgetAmount as number) || 0), 0);
+        if (total > 0) { budget = total; console.log(TAG, `[monthly] sum of category budgets: ₹${total}`); }
+      }
+    }
+    if (!budget) { console.log(TAG, '[monthly] no budget found — skipping'); return; }
 
+    const newTotal = await fetchExpenseTotal({ projectId, from: `${period}-01`, to: `${period}-31` });
+    const monthLabel = new Date(`${period}-15`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+    await fireAlertIfCrossed({
+      tag: 'monthly', stateDocId: `${projectId}_${period}`,
+      activeThresholds, allRecipients, budget, newTotal, newExpenseAmount,
+      projectId, projectName, period, periodLabel: monthLabel,
+      scopeType: 'monthly', assignedPersonId, altUserId,
+    });
   } catch (e) {
-    console.error('[SAS Budget Alert] Error (swallowed):', e);
+    console.error(TAG, '[monthly] error:', e);
+  }
+}
+
+// ─── 2. FY-wide alert ─────────────────────────────────────────────────────────
+
+export async function checkFyBudgetAlerts({
+  projectId, projectName, period, newExpenseAmount, assignedPersonId, altUserId,
+}: {
+  projectId: string; projectName: string; period: string;
+  newExpenseAmount: number; assignedPersonId?: string; altUserId?: string;
+}): Promise<void> {
+  const fyPeriod = fyForPeriod(period);
+  console.log(TAG, `[fy] checking project=${projectId} fy=${fyPeriod} newAmount=${newExpenseAmount}`);
+  try {
+    const { activeThresholds, allRecipients } = await loadAlertConfig(projectId);
+    if (!activeThresholds.size) { console.log(TAG, '[fy] no active thresholds — skipping'); return; }
+    if (!allRecipients.length)  { console.log(TAG, '[fy] no recipients — skipping'); return; }
+
+    const fySnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
+      where('projectId', '==', projectId), where('budgetType', '==', 'fy'), where('period', '==', fyPeriod)));
+    if (fySnap.empty) { console.log(TAG, `[fy] no FY budget for ${fyPeriod} — skipping`); return; }
+    const budget = fySnap.docs[0].data().budgetAmount as number;
+    if (!budget || budget <= 0) { console.log(TAG, '[fy] FY budget is zero — skipping'); return; }
+    console.log(TAG, `[fy] FY budget=₹${budget}`);
+
+    const { from, to } = fyDateRange(fyPeriod);
+    const newTotal = await fetchExpenseTotal({ projectId, from, to });
+    const fyLabel  = `FY ${fyPeriod}`;
+
+    await fireAlertIfCrossed({
+      tag: 'fy', stateDocId: `${projectId}_fy_${fyPeriod}`,
+      activeThresholds, allRecipients, budget, newTotal, newExpenseAmount,
+      projectId, projectName, period: fyPeriod, periodLabel: fyLabel,
+      scopeType: 'fy', assignedPersonId, altUserId,
+    });
+  } catch (e) {
+    console.error(TAG, '[fy] error:', e);
+  }
+}
+
+// ─── 3. Project total (all-time) alert ────────────────────────────────────────
+
+export async function checkTotalBudgetAlerts({
+  projectId, projectName, newExpenseAmount, assignedPersonId, altUserId,
+}: {
+  projectId: string; projectName: string;
+  newExpenseAmount: number; assignedPersonId?: string; altUserId?: string;
+}): Promise<void> {
+  console.log(TAG, `[total] checking project=${projectId} newAmount=${newExpenseAmount}`);
+  try {
+    const { activeThresholds, allRecipients } = await loadAlertConfig(projectId);
+    if (!activeThresholds.size) { console.log(TAG, '[total] no active thresholds — skipping'); return; }
+    if (!allRecipients.length)  { console.log(TAG, '[total] no recipients — skipping'); return; }
+
+    const totalSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
+      where('projectId', '==', projectId), where('budgetType', '==', 'total')));
+    if (totalSnap.empty) { console.log(TAG, '[total] no total budget set for project — skipping'); return; }
+    const budget = totalSnap.docs[0].data().budgetAmount as number;
+    if (!budget || budget <= 0) { console.log(TAG, '[total] total budget is zero — skipping'); return; }
+    console.log(TAG, `[total] project total budget=₹${budget}`);
+
+    // All-time total — single equality filter, no composite index needed
+    const newTotal = await fetchExpenseTotal({ projectId });
+
+    await fireAlertIfCrossed({
+      tag: 'total', stateDocId: `${projectId}_total`,
+      activeThresholds, allRecipients, budget, newTotal, newExpenseAmount,
+      projectId, projectName, periodLabel: 'Project Total',
+      scopeType: 'total', assignedPersonId, altUserId,
+    });
+  } catch (e) {
+    console.error(TAG, '[total] error:', e);
+  }
+}
+
+// ─── 4. Category-wise alert ───────────────────────────────────────────────────
+
+export async function checkCategoryBudgetAlerts({
+  projectId, projectName, categoryName, period, newExpenseAmount, assignedPersonId, altUserId,
+}: {
+  projectId: string; projectName: string; categoryName: string; period: string;
+  newExpenseAmount: number; assignedPersonId?: string; altUserId?: string;
+}): Promise<void> {
+  console.log(TAG, `[category] checking project=${projectId} category="${categoryName}" period=${period} newAmount=${newExpenseAmount}`);
+  try {
+    const { activeThresholds, allRecipients } = await loadAlertConfig(projectId);
+    if (!activeThresholds.size) { console.log(TAG, '[category] no active thresholds — skipping'); return; }
+    if (!allRecipients.length)  { console.log(TAG, '[category] no recipients — skipping'); return; }
+
+    const cbSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.categoryBudgets),
+      where('projectId', '==', projectId),
+      where('categoryName', '==', categoryName),
+      where('period', '==', period)));
+    if (cbSnap.empty) { console.log(TAG, `[category] no category budget for "${categoryName}" in ${period} — skipping`); return; }
+    const budget = cbSnap.docs[0].data().budgetAmount as number;
+    if (!budget || budget <= 0) { console.log(TAG, '[category] category budget is zero — skipping'); return; }
+    console.log(TAG, `[category] category budget=₹${budget}`);
+
+    const newTotal = await fetchExpenseTotal({ projectId, categoryName, from: `${period}-01`, to: `${period}-31` });
+    const monthLabel = new Date(`${period}-15`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const safeCategory = categoryName.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    await fireAlertIfCrossed({
+      tag: 'category', stateDocId: `${projectId}_${period}_cat_${safeCategory}`,
+      activeThresholds, allRecipients, budget, newTotal, newExpenseAmount,
+      projectId, projectName, period, periodLabel: monthLabel,
+      scopeType: 'category', categoryName, assignedPersonId, altUserId,
+    });
+  } catch (e) {
+    console.error(TAG, '[category] error:', e);
   }
 }

@@ -17,20 +17,10 @@ const ModuleDashboard = dynamic(() => import('@/components/module-hub/ModuleDash
   ),
 });
 
-const ElectricBackdrop = dynamic(
-  () => import('@/components/effects/ElectricBackdrop').then((m) => m.ElectricBackdrop),
-  { ssr: false }
-);
-
 export default function DashboardPage() {
   return (
     <AppShell>
-      <div className="relative min-h-[calc(100vh-4rem)] w-full overflow-hidden bg-[#020617]">
-        <ElectricBackdrop />
-        <div className="relative z-10">
-          <ModuleDashboard />
-        </div>
-      </div>
+      <ModuleDashboard />
     </AppShell>
   );
 }

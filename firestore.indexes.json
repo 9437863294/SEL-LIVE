@@ -1,0 +1,81 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "careers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "expenseCategory", "order": "ASCENDING" },
+        { "fieldPath": "projectId", "order": "ASCENDING" },
+        { "fieldPath": "expenseDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "expenseDate", "order": "ASCENDING" },
+        { "fieldPath": "expenseAmount", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "projectId", "order": "ASCENDING" },
+        { "fieldPath": "expenseCategory", "order": "ASCENDING" },
+        { "fieldPath": "expenseDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "projectId", "order": "ASCENDING" },
+        { "fieldPath": "expenseDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "projectId", "order": "ASCENDING" },
+        { "fieldPath": "expenseDate", "order": "ASCENDING" },
+        { "fieldPath": "expenseAmount", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "userSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "terminatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "userSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "terminatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicleManagementTrips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "driverId", "order": "ASCENDING" },
+        { "fieldPath": "startTimeIso", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

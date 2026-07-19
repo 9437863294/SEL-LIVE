@@ -2,18 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDoc, collection, deleteDoc, doc, getDocs, orderBy, query,
-  serverTimestamp, updateDoc, where,
+  addDoc, collection, deleteDoc, doc, getDocs, getAggregateFromServer,
+  orderBy, query, serverTimestamp, sum, updateDoc, where,
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASAttachment, type SASCategory, type SASCategoryBudget, type SASExpense, type SASPayment, type SASProject,
+  type SASAttachment, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
-import { createUserNotification, type NotificationType } from '@/lib/notifications';
-import { checkAndFireBudgetAlerts } from '@/lib/sas-budget-alerts';
+import { checkAndFireBudgetAlerts, checkCategoryBudgetAlerts, checkFyBudgetAlerts, checkTotalBudgetAlerts } from '@/lib/sas-budget-alerts';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -122,18 +121,19 @@ export default function SiteExpensesPage() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
-  const canView   = can('View',   `${MODULE}.${RESOURCE}`) || canViewAll;
   const canAdd    = can('Add',    `${MODULE}.${RESOURCE}`);
   const canEdit   = can('Edit',   `${MODULE}.${RESOURCE}`);
   const canDelete = can('Delete', `${MODULE}.${RESOURCE}`);
   const canExport = can('Export', `${MODULE}.${RESOURCE}`);
   const canImport = canAdd;
 
-  const [projects,   setProjects]   = useState<SASProject[]>([]);
-  const [categories, setCategories] = useState<SASCategory[]>([]);
-  const [expenses,   setExpenses]   = useState<SASExpense[]>([]);
-  const [payments,   setPayments]   = useState<SASPayment[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const [projects,      setProjects]      = useState<SASProject[]>([]);
+  const [categories,    setCategories]    = useState<SASCategory[]>([]);
+  const [expenses,      setExpenses]      = useState<SASExpense[]>([]);
+  const [payments,      setPayments]      = useState<SASPayment[]>([]);
+  const [loading,              setLoading]              = useState(true);
+  const [staticLoaded,         setStaticLoaded]         = useState(false);
+  const [prePeriodExpenseSum,  setPrePeriodExpenseSum]  = useState<number | null>(null);
   const [saving,           setSaving]           = useState(false);
   const [uploading,        setUploading]        = useState(false);
   const [exporting,        setExporting]        = useState(false);
@@ -159,27 +159,52 @@ export default function SiteExpensesPage() {
   const [search,            setSearch]            = useState('');
   const [showFilters,       setShowFilters]       = useState(false);
 
+  // Load projects + categories once on mount
   useEffect(() => {
-    if (!isAuthLoading) void loadAll();
+    if (!isAuthLoading) void loadStatic();
   }, [isAuthLoading]);
 
-  async function loadAll() {
+  // Re-query expenses + payments whenever the date range changes
+  useEffect(() => {
+    if (staticLoaded) void loadPeriodData(filterFrom, filterTo);
+  }, [filterFrom, filterTo, staticLoaded]);
+
+  async function loadStatic() {
     setLoading(true);
     try {
-      const [pSnap, catSnap, expSnap, paySnap] = await Promise.all([
+      const [pSnap, catSnap, paySnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.expenses), orderBy('expenseDate', 'desc'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
+        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),   // small — load all for opening balance
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
-      setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
       setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
+      setStaticLoaded(true);
+    } catch {
+      setLoading(false);
+    }
+  }
+
+  async function loadPeriodData(from: string, to: string) {
+    setLoading(true);
+    setPrePeriodExpenseSum(null);
+    try {
+      // Scoped expense fetch — only the visible date window (fast)
+      const expSnap = await getDocs(query(
+        collection(db, SAS_COLLECTIONS.expenses),
+        where('expenseDate', '>=', from),
+        where('expenseDate', '<=', to),
+        orderBy('expenseDate', 'desc'),
+      ));
+      setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
+
     } finally {
       setLoading(false);
     }
   }
+
+  function loadAll() { return loadPeriodData(filterFrom, filterTo); }
 
   const mainCategories    = useMemo(() => categories.filter(c => !c.parentId), [categories]);
   const subCategories     = useMemo(() => categories.filter(c => !!c.parentId), [categories]);
@@ -247,15 +272,34 @@ export default function SiteExpensesPage() {
   );
 
   // ── Opening / closing balance for the filtered period ────────────────────────
+
+  // Reload pre-period expense aggregate whenever the period start or project filter changes
+  useEffect(() => {
+    if (!staticLoaded || !filterFrom) return;
+    const constraints = [where('expenseDate', '<', filterFrom)];
+    if (filterProject) constraints.push(where('projectId', '==', filterProject));
+    getAggregateFromServer(
+      query(collection(db, SAS_COLLECTIONS.expenses), ...constraints),
+      { total: sum('expenseAmount') },
+    ).then(snap => setPrePeriodExpenseSum(snap.data().total ?? 0)).catch(async () => {
+      // Composite index not yet deployed — fall back to full doc fetch
+      try {
+        const snap = await getDocs(query(collection(db, SAS_COLLECTIONS.expenses), ...constraints));
+        setPrePeriodExpenseSum(snap.docs.reduce((s, d) => s + ((d.data().expenseAmount as number) || 0), 0));
+      } catch {
+        setPrePeriodExpenseSum(0);
+      }
+    });
+  }, [filterFrom, filterProject, staticLoaded]);
+
   const openingBalance = useMemo(() => {
-    if (!filterFrom) return null;
+    if (!filterFrom || prePeriodExpenseSum === null) return null;
     const inScope = (id: string) => filterProject ? id === filterProject : (!userProjectIds || userProjectIds.has(id));
-    const rec = payments.filter(p => inScope(p.projectId) && p.receiptDate < filterFrom)
+    const rec = payments
+      .filter(p => inScope(p.projectId) && p.receiptDate < filterFrom)
       .reduce((s, p) => s + (p.receivedAmount || 0), 0);
-    const exp = expenses.filter(e => inScope(e.projectId) && e.expenseDate < filterFrom)
-      .reduce((s, e) => s + (e.expenseAmount || 0), 0);
-    return rec - exp;
-  }, [filterFrom, filterProject, payments, expenses, userProjectIds]);
+    return rec - prePeriodExpenseSum;
+  }, [filterFrom, filterProject, payments, prePeriodExpenseSum, userProjectIds]);
 
   const periodReceipts = useMemo(() => payments
     .filter(p => {
@@ -468,78 +512,6 @@ export default function SiteExpensesPage() {
     setForm(f => ({ ...f, expenseCategoryId: id, expenseCategory: cat?.name || '', expenseSubCategory: '' }));
   }
 
-  // ── Budget breach check (fire-and-forget after new expense) ─────────────────
-  async function checkCategoryBudgetBreach(
-    projectId: string,
-    projectName: string,
-    categoryName: string,
-    expenseDate: string,
-    prevExpenses: SASExpense[],
-    newAmount: number,
-    project: SASProject,
-  ) {
-    const monthStr = expenseDate.substring(0, 7);
-    const cbSnap = await getDocs(
-      query(
-        collection(db, SAS_COLLECTIONS.categoryBudgets),
-        where('projectId', '==', projectId),
-        where('categoryName', '==', categoryName),
-        where('period', '==', monthStr),
-      )
-    );
-    if (cbSnap.empty) return;
-
-    const budget = cbSnap.docs[0].data() as SASCategoryBudget;
-    const prevTotal = prevExpenses
-      .filter(e => e.projectId === projectId && e.expenseCategory === categoryName && e.expenseDate?.startsWith(monthStr))
-      .reduce((s, e) => s + (e.expenseAmount || 0), 0);
-    const newTotal = prevTotal + newAmount;
-
-    // Only notify on the first crossing (prevTotal was within budget, newTotal exceeds it)
-    if (prevTotal >= budget.budgetAmount) return;
-    if (newTotal <= budget.budgetAmount) return;
-
-    const overage = newTotal - budget.budgetAmount;
-    const mLabel  = new Date(`${monthStr}-15`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-    const notifPayload = {
-      type: 'budget_alert' as NotificationType,
-      title: `Category Budget Exceeded: ${categoryName}`,
-      body: `${categoryName} expenses for "${projectName}" in ${mLabel} have crossed the set budget. Budget: ₹${budget.budgetAmount.toLocaleString('en-IN')}, Spent: ₹${newTotal.toLocaleString('en-IN')}, Over by: ₹${overage.toLocaleString('en-IN')}.`,
-      module: 'site-account-statement',
-      itemId: projectId,
-      itemRef: projectName,
-      stepName: 'category_budget_breach',
-      link: '/site-account-statement/budget/category',
-    };
-
-    const notifyIds = new Set<string>();
-    if (project.assignedPersonId) notifyIds.add(project.assignedPersonId);
-    if (project.altUserId) notifyIds.add(project.altUserId);
-
-    // Find project managers: users whose role grants 'View' on 'Site Account Statement.All Projects'
-    try {
-      const rolesSnap = await getDocs(collection(db, 'roles'));
-      const adminRoleNames = rolesSnap.docs
-        .filter(d => {
-          const perms = (d.data().permissions || {}) as Record<string, string[]>;
-          return (perms['Site Account Statement.All Projects'] || []).includes('View');
-        })
-        .map(d => d.data().name as string)
-        .filter(Boolean);
-
-      if (adminRoleNames.length > 0) {
-        const usersSnap = await getDocs(
-          query(collection(db, 'users'), where('role', 'in', adminRoleNames), where('status', '==', 'Active'))
-        );
-        usersSnap.docs.forEach(d => notifyIds.add(d.id));
-      }
-    } catch {
-      // Best-effort — role query failure does not block the notification to the project handler
-    }
-
-    await Promise.allSettled([...notifyIds].map(uid => createUserNotification(uid, notifPayload)));
-  }
-
   // ── Submit ────────────────────────────────────────────────────────────────────
   async function handleSubmit() {
     if (!form.projectId)        { toast({ title: 'Validation', description: 'Select a project.',         variant: 'destructive' }); return; }
@@ -592,22 +564,22 @@ export default function SiteExpensesPage() {
         }
         void log('Add SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
         toast({ title: 'Added', description: `Expense recorded${attachments.length > 0 ? ` with ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}` : ''}.` });
-        // Check if category budget is exceeded (fire-and-forget, does not block UI)
+        // Fire budget alerts (fire-and-forget, does not block UI)
         const project = projects.find(p => p.id === form.projectId);
-        if (project && form.expenseCategory && form.expenseDate) {
-          void checkCategoryBudgetBreach(
-            form.projectId, form.projectName, form.expenseCategory,
-            form.expenseDate, expenses, amount, project,
-          );
-        }
-        void checkAndFireBudgetAlerts({
+        const period = form.expenseDate.slice(0, 7);
+        const alertBase = {
           projectId: form.projectId,
           projectName: form.projectName,
-          period: form.expenseDate.slice(0, 7),
           newExpenseAmount: amount,
           assignedPersonId: project?.assignedPersonId,
           altUserId: project?.altUserId,
-        });
+        };
+        void checkAndFireBudgetAlerts({ ...alertBase, period });
+        void checkFyBudgetAlerts({ ...alertBase, period });
+        void checkTotalBudgetAlerts(alertBase);
+        if (form.expenseCategory) {
+          void checkCategoryBudgetAlerts({ ...alertBase, categoryName: form.expenseCategory, period });
+        }
       }
 
       setDialogOpen(false);
@@ -1016,7 +988,7 @@ export default function SiteExpensesPage() {
               <div className="rounded-xl border bg-rose-50 px-4 py-3 text-center">
                 <p className="text-xs font-medium uppercase tracking-wide text-rose-500">Amount</p>
                 <p className="text-2xl font-bold text-rose-700">{formatINR(viewExpense.expenseAmount)}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{viewExpense.expenseDate} &bull; <Badge variant="secondary" className="text-xs">{viewExpense.paymentMode}</Badge></p>
+                <div className="text-xs text-muted-foreground mt-0.5 flex items-center justify-center gap-1.5">{viewExpense.expenseDate} &bull; <Badge variant="secondary" className="text-xs">{viewExpense.paymentMode}</Badge></div>
               </div>
 
               {/* Fields grid */}
