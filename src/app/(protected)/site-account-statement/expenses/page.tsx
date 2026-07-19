@@ -13,6 +13,7 @@ import {
   type SASAttachment, type SASCategory, type SASCategoryBudget, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { createUserNotification, type NotificationType } from '@/lib/notifications';
+import { checkAndFireBudgetAlerts } from '@/lib/sas-budget-alerts';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -599,6 +600,13 @@ export default function SiteExpensesPage() {
             form.expenseDate, expenses, amount, project,
           );
         }
+        void checkAndFireBudgetAlerts({
+          projectId: form.projectId,
+          projectName: form.projectName,
+          period: form.expenseDate.slice(0, 7),
+          assignedPersonId: project?.assignedPersonId,
+          altUserId: project?.altUserId,
+        });
       }
 
       setDialogOpen(false);

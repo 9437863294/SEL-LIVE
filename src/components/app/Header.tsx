@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users, LogIn, History as HistoryIcon } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -23,7 +23,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
 import { cn } from '@/lib/utils';
-import { collection, query, where, onSnapshot, getDocs, collectionGroup } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs, collectionGroup, orderBy, limit, updateDoc, doc } from 'firebase/firestore';
 import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
 import ViewRequisitionDialog from '@/components/site-fund-requisition/ViewRequisitionDialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -70,6 +70,7 @@ export default function Header() {
   const { can } = useAuthorization();
   
   const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
+  const [budgetAlerts, setBudgetAlerts] = useState<any[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
 
@@ -140,8 +141,22 @@ export default function Header() {
             console.error("Failed to fetch initial data for Header:", error);
         }
     };
-    
+
     fetchSupportingDataAndTasks();
+
+    // Listen for unread budget alerts for this user
+    const alertQuery = query(
+      collection(db, 'userNotifications'),
+      where('userId', '==', user.id),
+      where('type', '==', 'budget_alert'),
+      where('read', '==', false),
+      orderBy('createdAt', 'desc'),
+      limit(20)
+    );
+    const unsubscribeAlerts = onSnapshot(alertQuery, snap => {
+      setBudgetAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, () => {});
+    unsubscribes.push(unsubscribeAlerts);
 
     return () => unsubscribes.forEach(unsub => unsub());
   }, [user, isImpersonating]);
@@ -162,6 +177,10 @@ export default function Header() {
     }
   };
   
+  async function markAlertRead(alertId: string) {
+    try { await updateDoc(doc(db, 'userNotifications', alertId), { read: true }); } catch {}
+  }
+
   const refreshTasks = () => {
     // This is a placeholder for a more direct refresh mechanism if needed.
     // Currently, onSnapshot provides real-time updates.
@@ -257,7 +276,7 @@ export default function Header() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
                     <Bell className="h-5 w-5" />
-                    {pendingTasks.length > 0 && (
+                    {(pendingTasks.length + budgetAlerts.length) > 0 && (
                       <span className="absolute top-1 right-1 flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
@@ -283,6 +302,32 @@ export default function Header() {
                   ) : (
                     <DropdownMenuItem disabled>
                       <p className="text-sm text-muted-foreground">No pending tasks.</p>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Budget Alerts ({budgetAlerts.length})</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {budgetAlerts.length > 0 ? (
+                    budgetAlerts.map(alert => (
+                      <DropdownMenuItem
+                        key={alert.id}
+                        onSelect={() => {
+                          void markAlertRead(alert.id);
+                          if (alert.link) router.push(alert.link);
+                        }}
+                      >
+                        <div className="flex items-start gap-2 w-full">
+                          <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${(alert.pctUsed ?? 0) >= 100 ? 'text-red-500' : 'text-amber-500'}`} />
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-semibold truncate">{alert.title}</span>
+                            <span className="text-xs text-muted-foreground line-clamp-2">{alert.body}</span>
+                          </div>
+                        </div>
+                      </DropdownMenuItem>
+                    ))
+                  ) : (
+                    <DropdownMenuItem disabled>
+                      <p className="text-sm text-muted-foreground">No budget alerts.</p>
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>

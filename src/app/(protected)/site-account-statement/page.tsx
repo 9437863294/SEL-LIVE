@@ -11,6 +11,7 @@ import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASAttachment, type SASBudget, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { checkAndFireBudgetAlerts } from '@/lib/sas-budget-alerts';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -200,6 +201,14 @@ function QuickExpenseDialog({
       resetForm();
       onOpenChange(false);
       onSuccess();
+      // Fire-and-forget — do not await, do not block
+      void checkAndFireBudgetAlerts({
+        projectId: project.id,
+        projectName: project.projectName,
+        period: form.expenseDate.slice(0, 7),
+        assignedPersonId: project.assignedPersonId,
+        altUserId: project.altUserId,
+      });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {

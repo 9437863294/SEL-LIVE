@@ -57,6 +57,7 @@ const sections = [
   { href: '/site-account-statement/reports/budget',            label: 'Budget Report',      resource: 'Reports', icon: Target,          color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'reports', viewAllAccess: true  },
   { href: '/site-account-statement/expense-categories',label: 'Expense Categories', resource: 'Expense Categories', icon: Tags,            color: 'text-amber-600',   bg: 'bg-amber-50',    group: 'master',       viewAllAccess: false },
   { href: '/site-account-statement/settings',          label: 'Project Settings',   resource: 'Project Settings',   icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       viewAllAccess: false },
+  { href: '/site-account-statement/budget-alerts',    label: 'Budget Alerts',      resource: 'Project Settings',   icon: ShieldAlert,     color: 'text-red-600',     bg: 'bg-red-50',      group: 'master',       viewAllAccess: false },
 ];
 
 export default function SiteAccountStatementShell({ children }: { children: React.ReactNode }) {

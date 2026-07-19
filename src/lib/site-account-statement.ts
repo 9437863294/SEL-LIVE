@@ -6,6 +6,8 @@ export const SAS_COLLECTIONS = {
   budgets:         'siteAccountBudgets',
   categoryBudgets: 'siteAccountCategoryBudgets',
   budgetApprovals: 'siteAccountBudgetApprovals',
+  budgetAlertConfigs: 'siteAccountBudgetAlertConfigs',
+  budgetAlertState:   'siteAccountBudgetAlertState',
 } as const;
 
 export interface SASProject {
@@ -93,6 +95,24 @@ export interface SASBudgetApproval {
   uploadedBy: string;
   uploadedByName: string;
   uploadedAt: any;
+}
+
+export interface SASBudgetAlertRecipient {
+  name: string;
+  email: string;
+  userId?: string;
+}
+
+export interface SASBudgetAlertConfig {
+  id: string;
+  projectId: string;
+  projectName: string;
+  enabled: boolean;
+  thresholds: number[];          // e.g. [80, 100]
+  recipients: SASBudgetAlertRecipient[];
+  updatedAt: any;
+  updatedBy: string;
+  updatedByName: string;
 }
 
 export interface SASCategoryBudget {
