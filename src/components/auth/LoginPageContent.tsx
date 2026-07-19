@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { SavedUser } from "@/lib/types";
 import { ElectricBackdrop } from "@/components/effects/ElectricBackdrop";
 import { cn } from "@/lib/utils";
+
+// ─── reCAPTCHA v2 (visible checkbox) ─────────────────────────────────────────
+
+const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ?? '';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -199,6 +203,50 @@ export function LoginPageContent() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotEmailError, setForgotEmailError] = useState("");
   const [isForgotLoading, setIsForgotLoading] = useState(false);
+
+  // ── reCAPTCHA v2 widget ──
+  const [recaptchaToken, setRecaptchaToken] = useState('');
+  const recaptchaWidgetIdRef = useRef<number | null>(null);
+
+  // Ref callback: renders the widget when the container div mounts/remounts
+  const recaptchaContainerRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) {
+      // Container unmounted (view changed away from password)
+      recaptchaWidgetIdRef.current = null;
+      setRecaptchaToken('');
+      return;
+    }
+    const tryRender = () => {
+      const gr = (window as any).grecaptcha;
+      if (!gr?.render || recaptchaWidgetIdRef.current !== null) return true;
+      try {
+        recaptchaWidgetIdRef.current = gr.render(node, {
+          sitekey:          RECAPTCHA_SITE_KEY,
+          theme:            'dark',
+          callback:         (token: string) => setRecaptchaToken(token),
+          'expired-callback': () => setRecaptchaToken(''),
+          'error-callback':   () => setRecaptchaToken(''),
+        });
+      } catch { /* already rendered */ }
+      return true;
+    };
+    // Script might not be loaded yet — poll until it is
+    if (!tryRender()) {
+      const iv = setInterval(() => { if (tryRender()) clearInterval(iv); }, 100);
+    }
+  }, []);
+
+  // ── reCAPTCHA v2 script loader ──
+  useEffect(() => {
+    if (!RECAPTCHA_SITE_KEY || typeof window === 'undefined') return;
+    if (document.getElementById('recaptcha-v2-script')) return;
+    const s = document.createElement('script');
+    s.id  = 'recaptcha-v2-script';
+    s.src = 'https://www.google.com/recaptcha/api.js?render=explicit';
+    s.async = true;
+    s.defer = true;
+    document.head.appendChild(s);
+  }, []);
 
   // ── init ──
   useEffect(() => { loadSavedUsers(); }, [loadSavedUsers]);
@@ -378,9 +426,34 @@ export function LoginPageContent() {
     e.preventDefault();
     if (!validateSignInFields()) return;
 
+    // Require reCAPTCHA checkbox to be completed
+    if (RECAPTCHA_SITE_KEY && !recaptchaToken) {
+      setPasswordError("Please complete the reCAPTCHA verification.");
+      return;
+    }
+
     const finalEmail = (activeUser ? activeUser.email : email).trim().toLowerCase();
     setIsLoading(true);
     try {
+      // Server-side reCAPTCHA token verification
+      if (RECAPTCHA_SITE_KEY && recaptchaToken) {
+        const verifyRes = await fetch('/api/verify-recaptcha', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: recaptchaToken }),
+        });
+        const { success } = await verifyRes.json().catch(() => ({ success: false }));
+        if (!success) {
+          setPasswordError("reCAPTCHA verification failed. Please try again.");
+          if (recaptchaWidgetIdRef.current !== null) {
+            (window as any).grecaptcha?.reset(recaptchaWidgetIdRef.current);
+            setRecaptchaToken('');
+          }
+          setIsLoading(false);
+          return;
+        }
+      }
+
       await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       await signInWithEmailAndPassword(auth, finalEmail, password);
       setShouldRemember(rememberMe);
@@ -397,6 +470,11 @@ export function LoginPageContent() {
       setShouldRemember(false);
       const msg = mapFirebaseError(err?.code);
       setPasswordError(msg);
+      // Reset the reCAPTCHA widget so user can retry (tokens are single-use)
+      if (recaptchaWidgetIdRef.current !== null) {
+        (window as any).grecaptcha?.reset(recaptchaWidgetIdRef.current);
+        setRecaptchaToken('');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -556,6 +634,13 @@ export function LoginPageContent() {
             error={passwordError}
           />
         </div>
+
+        {/* reCAPTCHA v2 visible checkbox */}
+        {RECAPTCHA_SITE_KEY && (
+          <div className="flex justify-center py-1">
+            <div ref={recaptchaContainerRef} />
+          </div>
+        )}
 
         {!activeUser && (
           <div className="flex items-center gap-2">
