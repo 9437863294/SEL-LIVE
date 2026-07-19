@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import ReCAPTCHA from "react-google-recaptcha";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -40,14 +41,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { SavedUser } from "@/lib/types";
-import { ElectricBackdrop } from "@/components/effects/ElectricBackdrop";
 import { cn } from "@/lib/utils";
 
-// ─── reCAPTCHA v2 (visible checkbox) ─────────────────────────────────────────
+// ─── helpers ──────────────────────────────────────────────────────────────────
 
 const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ?? '';
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
 
 const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
@@ -81,7 +79,7 @@ const getInitials = (name: string) =>
     .toUpperCase();
 
 const LOGO_URL =
-  "https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2Fnew%20logo.png?alt=media&token=c5f1dbc2-10c5-4f36-9454-2b2a4b43b6dd";
+  "https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&token=39b0f804-0610-4f3a-b26e-8ce334f94788";
 
 function GoogleIcon() {
   return (
@@ -166,6 +164,91 @@ function PasswordInput({
   );
 }
 
+// ─── Fancy digital clock ──────────────────────────────────────────────────────
+
+function DigitalClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const hh   = String(now.getHours()).padStart(2, '0');
+  const mm   = String(now.getMinutes()).padStart(2, '0');
+  const ss   = String(now.getSeconds()).padStart(2, '0');
+  const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
+  const date = now.toLocaleDateString('en-IN', {
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+  });
+
+  const glow  = '0 0 12px rgba(34,211,238,0.9), 0 0 32px rgba(34,211,238,0.45), 0 0 64px rgba(34,211,238,0.2)';
+  const dimGlow = '0 0 8px rgba(34,211,238,0.5)';
+
+  return (
+    <div className="flex flex-col items-center gap-4 select-none">
+
+      {/* Top decorative line */}
+      <div className="w-40 h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent" />
+
+      {/* Main time display */}
+      <div className="flex items-end gap-1 font-mono leading-none">
+
+        {/* Hours */}
+        <span
+          className="text-6xl font-thin tracking-widest text-cyan-300"
+          style={{ textShadow: glow }}
+        >
+          {hh}
+        </span>
+
+        {/* Blinking colon */}
+        <span
+          className="text-5xl font-thin text-cyan-400 mb-1 animate-pulse"
+          style={{ textShadow: dimGlow }}
+        >
+          :
+        </span>
+
+        {/* Minutes */}
+        <span
+          className="text-6xl font-thin tracking-widest text-cyan-300"
+          style={{ textShadow: glow }}
+        >
+          {mm}
+        </span>
+
+        {/* Seconds + AM/PM stacked */}
+        <div className="flex flex-col items-start ml-1 mb-1 gap-0.5">
+          <span
+            className="text-xs font-mono tracking-widest text-cyan-400/70 leading-none"
+            style={{ textShadow: dimGlow }}
+          >
+            {ampm}
+          </span>
+          <span
+            className="text-2xl font-thin tracking-wider text-cyan-400/80 leading-none"
+            style={{ textShadow: dimGlow }}
+          >
+            {ss}
+          </span>
+        </div>
+      </div>
+
+      {/* Date */}
+      <p
+        className="text-[11px] font-mono tracking-[0.18em] text-cyan-200/55 uppercase text-center"
+        style={{ textShadow: '0 0 8px rgba(34,211,238,0.3)' }}
+      >
+        {date}
+      </p>
+
+      {/* Bottom decorative line */}
+      <div className="w-40 h-px bg-gradient-to-r from-transparent via-cyan-400/50 to-transparent" />
+
+    </div>
+  );
+}
+
 // ─── main component ────────────────────────────────────────────────────────────
 
 export function LoginPageContent() {
@@ -206,47 +289,7 @@ export function LoginPageContent() {
 
   // ── reCAPTCHA v2 widget ──
   const [recaptchaToken, setRecaptchaToken] = useState('');
-  const recaptchaWidgetIdRef = useRef<number | null>(null);
-
-  // Ref callback: renders the widget when the container div mounts/remounts
-  const recaptchaContainerRef = useCallback((node: HTMLDivElement | null) => {
-    if (!node) {
-      // Container unmounted (view changed away from password)
-      recaptchaWidgetIdRef.current = null;
-      setRecaptchaToken('');
-      return;
-    }
-    const tryRender = () => {
-      const gr = (window as any).grecaptcha;
-      if (!gr?.render || recaptchaWidgetIdRef.current !== null) return true;
-      try {
-        recaptchaWidgetIdRef.current = gr.render(node, {
-          sitekey:          RECAPTCHA_SITE_KEY,
-          theme:            'dark',
-          callback:         (token: string) => setRecaptchaToken(token),
-          'expired-callback': () => setRecaptchaToken(''),
-          'error-callback':   () => setRecaptchaToken(''),
-        });
-      } catch { /* already rendered */ }
-      return true;
-    };
-    // Script might not be loaded yet — poll until it is
-    if (!tryRender()) {
-      const iv = setInterval(() => { if (tryRender()) clearInterval(iv); }, 100);
-    }
-  }, []);
-
-  // ── reCAPTCHA v2 script loader ──
-  useEffect(() => {
-    if (!RECAPTCHA_SITE_KEY || typeof window === 'undefined') return;
-    if (document.getElementById('recaptcha-v2-script')) return;
-    const s = document.createElement('script');
-    s.id  = 'recaptcha-v2-script';
-    s.src = 'https://www.google.com/recaptcha/api.js?render=explicit';
-    s.async = true;
-    s.defer = true;
-    document.head.appendChild(s);
-  }, []);
+  const recaptchaRef = useRef<ReCAPTCHA | null>(null);
 
   // ── init ──
   useEffect(() => { loadSavedUsers(); }, [loadSavedUsers]);
@@ -445,10 +488,8 @@ export function LoginPageContent() {
         const { success } = await verifyRes.json().catch(() => ({ success: false }));
         if (!success) {
           setPasswordError("reCAPTCHA verification failed. Please try again.");
-          if (recaptchaWidgetIdRef.current !== null) {
-            (window as any).grecaptcha?.reset(recaptchaWidgetIdRef.current);
-            setRecaptchaToken('');
-          }
+          recaptchaRef.current?.reset();
+          setRecaptchaToken('');
           setIsLoading(false);
           return;
         }
@@ -470,11 +511,9 @@ export function LoginPageContent() {
       setShouldRemember(false);
       const msg = mapFirebaseError(err?.code);
       setPasswordError(msg);
-      // Reset the reCAPTCHA widget so user can retry (tokens are single-use)
-      if (recaptchaWidgetIdRef.current !== null) {
-        (window as any).grecaptcha?.reset(recaptchaWidgetIdRef.current);
-        setRecaptchaToken('');
-      }
+      // Reset reCAPTCHA so user can retry (tokens are single-use)
+      recaptchaRef.current?.reset();
+      setRecaptchaToken('');
     } finally {
       setIsLoading(false);
     }
@@ -638,7 +677,14 @@ export function LoginPageContent() {
         {/* reCAPTCHA v2 visible checkbox */}
         {RECAPTCHA_SITE_KEY && (
           <div className="flex justify-center py-1">
-            <div ref={recaptchaContainerRef} />
+            <ReCAPTCHA
+              ref={recaptchaRef}
+              sitekey={RECAPTCHA_SITE_KEY}
+              theme="dark"
+              onChange={(token) => setRecaptchaToken(token ?? '')}
+              onExpired={() => setRecaptchaToken('')}
+              onError={() => setRecaptchaToken('')}
+            />
           </div>
         )}
 
@@ -844,10 +890,8 @@ export function LoginPageContent() {
   };
 
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#020617] text-slate-100">
-      <ElectricBackdrop />
-
-      <main className="relative z-10 flex min-h-screen items-center justify-center px-4 py-8">
+    <div className="min-h-screen w-full bg-[#020617] text-slate-100">
+      <main className="flex min-h-screen items-center justify-center px-4 py-8">
         <div className="grid w-full max-w-5xl grid-cols-1 overflow-hidden rounded-2xl border border-cyan-300/15 bg-slate-950/50 shadow-[0_30px_120px_-40px_rgba(14,116,255,0.7)] backdrop-blur-xl md:grid-cols-2">
 
           {/* ── Left: Branding panel ── */}
@@ -875,6 +919,11 @@ export function LoginPageContent() {
               </p>
             </div>
 
+            {/* Digital clock — fills the blank space between tagline and features */}
+            <div className="relative z-10 flex justify-center items-center py-4">
+              <DigitalClock />
+            </div>
+
             <div className="relative z-10 space-y-3">
               {FEATURES.map((f) => (
                 <div key={f.label} className="flex items-start gap-3 rounded-xl border border-cyan-300/15 bg-cyan-500/8 px-4 py-3">
@@ -889,12 +938,11 @@ export function LoginPageContent() {
           </div>
 
           {/* ── Right: Auth panel ── */}
-          <div className="relative flex min-h-[600px] flex-col items-center justify-center bg-[#020617]/60 px-8 py-10 md:px-12">
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-cyan-400/6 via-transparent to-blue-500/6" />
-            <div className="relative z-10 w-full max-w-sm">
+          <div className="flex min-h-[600px] flex-col items-center justify-center bg-[#020617] px-8 py-10 md:px-12">
+            <div className="w-full max-w-sm">
               {renderContent()}
             </div>
-            <p className="relative z-10 mt-8 text-center text-[11px] text-slate-500/70">
+            <p className="mt-8 text-center text-[11px] text-slate-500/70">
               &copy; {new Date().getFullYear()} Siddhartha Engineering Limited · All rights reserved
             </p>
           </div>
