@@ -31,6 +31,17 @@ env:
     availability:
       - RUNTIME
 
+  # ── reCAPTCHA v2 ───────────────────────────────────────────────────
+  - variable: NEXT_PUBLIC_RECAPTCHA_SITE_KEY
+    value: 6LdVhlstAAAAAK7cn8oFprUVIJkTWQyhGbdqb9l_
+    availability:
+      - BUILD
+
+  - variable: RECAPTCHA_SECRET_KEY
+    value: 6LdVhlstAAAAAJIF5o1b8Z6--r-yNPN2340HizCs
+    availability:
+      - RUNTIME
+
   # ── Firebase Admin SDK (server-side routes) ─────────────────────────
   - variable: FIREBASE_PROJECT_ID
     secret: firebase-project-id
