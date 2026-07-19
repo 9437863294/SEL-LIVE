@@ -265,6 +265,7 @@ export const permissionModules = {
     'Budget': ['View', 'Add', 'Edit', 'Delete', 'Export'],
     'Expense Categories': ['View', 'Add', 'Edit', 'Delete'],
     'Project Settings': ['View', 'Add', 'Edit', 'Delete'],
+    'Budget Alerts': ['View', 'Edit'],
     'Reports': ['View', 'Export'],
   },
   'Settings': {

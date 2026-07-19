@@ -38,6 +38,7 @@ import {
 import {
   Bell,
   BellOff,
+  Globe,
   Loader2,
   Mail,
   Plus,
@@ -46,6 +47,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { MODULE_ALERT_DOC_ID } from '@/lib/sas-budget-alerts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,7 +57,8 @@ interface AlertConfigState {
 
 interface DialogState {
   open: boolean;
-  project: SASProject | null;
+  isModuleWide: boolean;       // true = editing the module-wide (__module__) config
+  project: SASProject | null;  // null when isModuleWide = true
   enabled: boolean;
   thresholds: number[];
   recipients: { name: string; email: string }[];
@@ -68,6 +71,7 @@ const THRESHOLD_OPTIONS = [80, 90, 100] as const;
 
 const blankDialog = (): DialogState => ({
   open: false,
+  isModuleWide: false,
   project: null,
   enabled: false,
   thresholds: [80, 100],
@@ -84,14 +88,18 @@ export default function BudgetAlertsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
 
-  const canEdit   = can('Edit',   'Site Account Statement.Project Settings');
-  const canViewAll = can('View',  'Site Account Statement.All Projects');
-  const canAccess = canEdit || canViewAll;
+  const canEdit    = can('Edit',   'Site Account Statement.Budget Alerts')
+                  || can('Edit',   'Site Account Statement.Project Settings');
+  const canView    = canEdit
+                  || can('View',   'Site Account Statement.Budget Alerts');
+  const canViewAll = can('View',   'Site Account Statement.All Projects');
+  const canAccess  = canView || canViewAll;
 
-  const [projects, setProjects]   = useState<SASProject[]>([]);
-  const [configs,  setConfigs]    = useState<AlertConfigState>({});
-  const [loading,  setLoading]    = useState(true);
-  const [dialog,   setDialog]     = useState<DialogState>(blankDialog());
+  const [projects,      setProjects]      = useState<SASProject[]>([]);
+  const [configs,       setConfigs]       = useState<AlertConfigState>({});
+  const [moduleConfig,  setModuleConfig]  = useState<SASBudgetAlertConfig | null>(null);
+  const [loading,       setLoading]       = useState(true);
+  const [dialog,        setDialog]        = useState<DialogState>(blankDialog());
 
   // ── Data loading ────────────────────────────────────────────────────────────
 
@@ -119,7 +127,11 @@ export default function BudgetAlertsPage() {
 
       const configMap: AlertConfigState = {};
       configSnap.docs.forEach(d => {
-        configMap[d.id] = { id: d.id, ...d.data() } as SASBudgetAlertConfig;
+        if (d.id === MODULE_ALERT_DOC_ID) {
+          setModuleConfig({ id: d.id, ...d.data() } as SASBudgetAlertConfig);
+        } else {
+          configMap[d.id] = { id: d.id, ...d.data() } as SASBudgetAlertConfig;
+        }
       });
 
       setProjects(projectList);
@@ -137,11 +149,28 @@ export default function BudgetAlertsPage() {
     const existing = configs[project.id];
     setDialog({
       open: true,
+      isModuleWide: false,
       project,
       enabled: existing?.enabled ?? false,
       thresholds: existing?.thresholds?.length ? [...existing.thresholds] : [80, 100],
       recipients: existing?.recipients
         ? existing.recipients.map(r => ({ name: r.name, email: r.email }))
+        : [],
+      newName: '',
+      newEmail: '',
+      saving: false,
+    });
+  }
+
+  function openConfigureModule() {
+    setDialog({
+      open: true,
+      isModuleWide: true,
+      project: null,
+      enabled: moduleConfig?.enabled ?? false,
+      thresholds: moduleConfig?.thresholds?.length ? [...moduleConfig.thresholds] : [80, 100],
+      recipients: moduleConfig?.recipients
+        ? moduleConfig.recipients.map(r => ({ name: r.name, email: r.email }))
         : [],
       newName: '',
       newEmail: '',
@@ -200,55 +229,50 @@ export default function BudgetAlertsPage() {
   // ── Save ────────────────────────────────────────────────────────────────────
 
   async function handleSave() {
-    if (!dialog.project) return;
-
     if (dialog.enabled && dialog.thresholds.length === 0) {
-      toast({
-        title: 'Validation',
-        description: 'Select at least one threshold to enable alerts.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Validation', description: 'Select at least one threshold to enable alerts.', variant: 'destructive' });
       return;
     }
     if (dialog.enabled && dialog.recipients.length === 0) {
-      toast({
-        title: 'Validation',
-        description: 'Add at least one recipient to enable alerts.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Validation', description: 'Add at least one recipient to enable alerts.', variant: 'destructive' });
       return;
     }
 
     setDialog(prev => ({ ...prev, saving: true }));
     try {
-      const { project } = dialog;
-      const docData: Omit<SASBudgetAlertConfig, 'id'> = {
-        projectId:     project.id,
-        projectName:   project.projectName,
-        enabled:       dialog.enabled,
-        thresholds:    [...dialog.thresholds].sort((a, b) => a - b),
-        recipients:    dialog.recipients as SASBudgetAlertRecipient[],
-        updatedAt:     serverTimestamp(),
-        updatedBy:     user?.id ?? '',
-        updatedByName: user?.name ?? '',
-      };
-
-      await setDoc(
-        doc(db, SAS_COLLECTIONS.budgetAlertConfigs, project.id),
-        docData,
-        { merge: true },
-      );
-
-      // Optimistically update local state
-      setConfigs(prev => ({
-        ...prev,
-        [project.id]: { id: project.id, ...docData } as SASBudgetAlertConfig,
-      }));
-
-      toast({
-        title: 'Saved',
-        description: `Budget alert settings updated for "${project.projectName}".`,
-      });
+      if (dialog.isModuleWide) {
+        // ── Save module-wide config ────────────────────────────────────────
+        const docData = {
+          projectId:     MODULE_ALERT_DOC_ID,
+          projectName:   'All Projects',
+          enabled:       dialog.enabled,
+          thresholds:    [...dialog.thresholds].sort((a, b) => a - b),
+          recipients:    dialog.recipients as SASBudgetAlertRecipient[],
+          updatedAt:     serverTimestamp(),
+          updatedBy:     user?.id ?? '',
+          updatedByName: user?.name ?? '',
+        };
+        await setDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, MODULE_ALERT_DOC_ID), docData, { merge: true });
+        setModuleConfig({ id: MODULE_ALERT_DOC_ID, ...docData } as SASBudgetAlertConfig);
+        toast({ title: 'Saved', description: 'Module-wide budget alert settings updated.' });
+      } else {
+        // ── Save per-project config ────────────────────────────────────────
+        if (!dialog.project) return;
+        const { project } = dialog;
+        const docData: Omit<SASBudgetAlertConfig, 'id'> = {
+          projectId:     project.id,
+          projectName:   project.projectName,
+          enabled:       dialog.enabled,
+          thresholds:    [...dialog.thresholds].sort((a, b) => a - b),
+          recipients:    dialog.recipients as SASBudgetAlertRecipient[],
+          updatedAt:     serverTimestamp(),
+          updatedBy:     user?.id ?? '',
+          updatedByName: user?.name ?? '',
+        };
+        await setDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, project.id), docData, { merge: true });
+        setConfigs(prev => ({ ...prev, [project.id]: { id: project.id, ...docData } as SASBudgetAlertConfig }));
+        toast({ title: 'Saved', description: `Alert settings updated for "${project.projectName}".` });
+      }
       closeDialog();
     } catch (e: any) {
       toast({ title: 'Save Error', description: e.message, variant: 'destructive' });
@@ -295,7 +319,7 @@ export default function BudgetAlertsPage() {
         <CardContent>
           <p className="text-sm text-red-600">
             You do not have permission to manage budget alert settings. Contact your administrator to
-            request access to <strong>Site Account Statement — Project Settings</strong>.
+            request access to <strong>Site Account Statement — Budget Alerts</strong>.
           </p>
         </CardContent>
       </Card>
@@ -318,7 +342,66 @@ export default function BudgetAlertsPage() {
         </p>
       </div>
 
-      {/* Main table card */}
+      {/* ── Module-wide (All Projects) alert card ── */}
+      <Card className={`border-2 ${moduleConfig?.enabled ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white/80'} backdrop-blur-sm`}>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-red-500 shrink-0" />
+              <div>
+                <CardTitle className="text-sm font-bold">Module-Wide Alerts — All Projects</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Recipients here receive alerts for <strong>every</strong> project when budgets are crossed.
+                  Ideal for HO managers who oversee all sites.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              {moduleConfig?.enabled ? (
+                <Badge className="bg-emerald-100 text-emerald-700 gap-1 hover:bg-emerald-100">
+                  <Bell className="h-3 w-3" /> Active
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="gap-1 text-slate-500">
+                  <BellOff className="h-3 w-3" /> Disabled
+                </Badge>
+              )}
+              {canEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5 border-red-200 text-red-700 hover:bg-red-50 hover:border-red-300"
+                  onClick={openConfigureModule}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Configure
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        {moduleConfig?.enabled && (
+          <CardContent className="pt-0">
+            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-t border-red-100 pt-3">
+              <span className="flex items-center gap-1">
+                <ShieldAlert className="h-3.5 w-3.5 text-red-400" />
+                Thresholds: <strong className="text-slate-700 ml-1">{moduleConfig.thresholds.map(t => `${t}%`).join(', ') || '—'}</strong>
+              </span>
+              <span className="flex items-center gap-1">
+                <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                Recipients: <strong className="text-slate-700 ml-1">{moduleConfig.recipients?.length ?? 0}</strong>
+                {moduleConfig.recipients?.length > 0 && (
+                  <span className="text-muted-foreground ml-1">
+                    ({moduleConfig.recipients.map(r => r.name).join(', ')})
+                  </span>
+                )}
+              </span>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* ── Per-project table card ── */}
       <Card className="bg-white/80 backdrop-blur-sm">
         <CardContent className="p-0">
           {projects.length === 0 ? (
@@ -392,18 +475,20 @@ export default function BudgetAlertsPage() {
                           </div>
                         </TableCell>
 
-                        {/* Configure button */}
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs gap-1.5 border-red-200 text-red-700 hover:bg-red-50 hover:border-red-300"
-                            onClick={() => openConfigure(project)}
-                          >
-                            <ShieldAlert className="h-3.5 w-3.5" />
-                            Configure
-                          </Button>
-                        </TableCell>
+                        {/* Configure button — edit-only */}
+                        {canEdit && (
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1.5 border-red-200 text-red-700 hover:bg-red-50 hover:border-red-300"
+                              onClick={() => openConfigure(project)}
+                            >
+                              <ShieldAlert className="h-3.5 w-3.5" />
+                              Configure
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}
@@ -419,9 +504,16 @@ export default function BudgetAlertsPage() {
         <DialogContent className="max-w-[95vw] sm:max-w-xl overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
-              <ShieldAlert className="h-4.5 w-4.5 text-red-500" />
-              {dialog.project?.projectName ?? 'Configure Alerts'}
+              {dialog.isModuleWide
+                ? <Globe className="h-4 w-4 text-red-500" />
+                : <ShieldAlert className="h-4 w-4 text-red-500" />}
+              {dialog.isModuleWide ? 'All Projects — Module-Wide Alert Config' : (dialog.project?.projectName ?? 'Configure Alerts')}
             </DialogTitle>
+            {dialog.isModuleWide && (
+              <p className="text-xs text-muted-foreground mt-1">
+                These recipients and thresholds apply to every project in the SAS module.
+              </p>
+            )}
           </DialogHeader>
 
           <div className="space-y-6 py-1">

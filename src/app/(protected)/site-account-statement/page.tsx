@@ -206,6 +206,7 @@ function QuickExpenseDialog({
         projectId: project.id,
         projectName: project.projectName,
         period: form.expenseDate.slice(0, 7),
+        newExpenseAmount: amount,
         assignedPersonId: project.assignedPersonId,
         altUserId: project.altUserId,
       });

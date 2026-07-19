@@ -1,9 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/mail';
 
+function esc(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function verifyFirebaseToken(token: string): Promise<boolean> {
+  try {
+    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+    if (!apiKey) return false;
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: token }) }
+    );
+    return res.ok;
+  } catch { return false; }
+}
+
 export async function POST(req: NextRequest) {
+  // Auth guard — must be a valid Firebase session
+  const authHeader = req.headers.get('authorization') ?? '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const valid = await verifyFirebaseToken(authHeader.slice(7));
+  if (!valid) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const { projectName, monthLabel, budgetAmount, spentAmount, pctUsed, thresholdPct, recipients, link } = await req.json();
+
+    // Validate link is an internal relative URL or matches the app origin
+    const safeLink = typeof link === 'string' && (link.startsWith('/') || link.startsWith(process.env.NEXTAUTH_URL ?? ''))
+      ? link
+      : '/site-account-statement/reports/budget';
 
     const isOver = (thresholdPct as number) >= 100;
     const overBy  = (spentAmount as number) - (budgetAmount as number);
@@ -25,8 +58,8 @@ export async function POST(req: NextRequest) {
     </div>
     <div style="padding:24px 32px;">
       <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px;">
-        <tr><td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e0e0e0;font-weight:bold;width:38%;">Project</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${projectName}</td></tr>
-        <tr><td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e0e0e0;font-weight:bold;">Month</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${monthLabel}</td></tr>
+        <tr><td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e0e0e0;font-weight:bold;width:38%;">Project</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${esc(projectName)}</td></tr>
+        <tr><td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e0e0e0;font-weight:bold;">Month</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">${esc(monthLabel)}</td></tr>
         <tr><td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e0e0e0;font-weight:bold;">Monthly Budget</td><td style="padding:8px 12px;border:1px solid #e0e0e0;">₹${(budgetAmount as number).toLocaleString('en-IN')}</td></tr>
         <tr><td style="padding:8px 12px;background:#f8f8f8;border:1px solid #e0e0e0;font-weight:bold;">Amount Spent</td><td style="padding:8px 12px;border:1px solid #e0e0e0;color:${statusColor};font-weight:bold;">₹${(spentAmount as number).toLocaleString('en-IN')}</td></tr>
         ${isOver
@@ -41,7 +74,7 @@ export async function POST(req: NextRequest) {
         </div>
       </div>
       <div style="text-align:center;margin-top:24px;">
-        <a href="${link}" style="display:inline-block;padding:11px 32px;background:${statusColor};color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px;">View Budget Report →</a>
+        <a href="${esc(safeLink)}" style="display:inline-block;padding:11px 32px;background:${statusColor};color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px;">View Budget Report →</a>
       </div>
     </div>
     <div style="padding:14px 32px;background:#f8f8f8;border-top:1px solid #e0e0e0;text-align:center;font-size:11px;color:#888;">

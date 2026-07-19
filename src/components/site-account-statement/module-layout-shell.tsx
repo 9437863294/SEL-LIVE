@@ -20,14 +20,13 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
-  Tags,
   Target,
   TrendingDown,
   TrendingUp,
   Users,
   Wallet,
 } from 'lucide-react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { SAS_COLLECTIONS } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -55,9 +54,7 @@ const sections = [
   { href: '/site-account-statement/reports/daywise',             label: 'Day-wise Statement', resource: 'Reports', icon: CalendarDays,    color: 'text-cyan-600',    bg: 'bg-cyan-50',     group: 'reports', viewAllAccess: true  },
   { href: '/site-account-statement/reports/monthly-comparison', label: 'Month Comparison',   resource: 'Reports', icon: ArrowLeftRight,  color: 'text-fuchsia-600', bg: 'bg-fuchsia-50',  group: 'reports', viewAllAccess: true  },
   { href: '/site-account-statement/reports/budget',            label: 'Budget Report',      resource: 'Reports', icon: Target,          color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'reports', viewAllAccess: true  },
-  { href: '/site-account-statement/expense-categories',label: 'Expense Categories', resource: 'Expense Categories', icon: Tags,            color: 'text-amber-600',   bg: 'bg-amber-50',    group: 'master',       viewAllAccess: false },
-  { href: '/site-account-statement/settings',          label: 'Project Settings',   resource: 'Project Settings',   icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       viewAllAccess: false },
-  { href: '/site-account-statement/budget-alerts',    label: 'Budget Alerts',      resource: 'Project Settings',   icon: ShieldAlert,     color: 'text-red-600',     bg: 'bg-red-50',      group: 'master',       viewAllAccess: false },
+  { href: '/site-account-statement/settings',          label: 'Settings',           resource: 'Project Settings',   icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       viewAllAccess: false },
 ];
 
 export default function SiteAccountStatementShell({ children }: { children: React.ReactNode }) {
@@ -77,7 +74,12 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
     sections.some(s => Boolean(s.resource) && (
       can('View', `${MODULE}.${s.resource}`) ||
       can('Add', `${MODULE}.${s.resource}`)
-    ));
+    )) ||
+    ['Budget Alerts', 'Expense Categories'].some(r =>
+      can('View', `${MODULE}.${r}`) ||
+      can('Add',  `${MODULE}.${r}`) ||
+      can('Edit', `${MODULE}.${r}`)
+    );
 
   // Check if the user is assigned to any project (primary, alt, or viewer) — allows
   // project-level members through even when they have no RBAC module permissions.
@@ -91,13 +93,14 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
       setMembershipChecked(true);
       return;
     }
-    getDocs(collection(db, SAS_COLLECTIONS.projects))
-      .then(snap => {
-        const member = snap.docs.some(d => {
-          const p = d.data();
-          return p.assignedPersonId === user.id || p.altUserId === user.id || p.viewerId === user.id;
-        });
-        setIsProjectMember(member);
+    const col = collection(db, SAS_COLLECTIONS.projects);
+    Promise.all([
+      getDocs(query(col, where('assignedPersonId', '==', user.id))),
+      getDocs(query(col, where('altUserId',        '==', user.id))),
+      getDocs(query(col, where('viewerId',         '==', user.id))),
+    ])
+      .then(([a, b, c]) => {
+        setIsProjectMember(!a.empty || !b.empty || !c.empty);
       })
       .finally(() => setMembershipChecked(true));
   }, [user?.id, hasRbacAccess]);
@@ -108,6 +111,12 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
     if (canViewAll && item.viewAllAccess) return true;
     if (isProjectMember && item.viewAllAccess) return true;
     if (!item.resource) return canViewModule;
+    // Settings consolidates Project Settings + Expense Categories + Budget Alerts access
+    if (item.href === '/site-account-statement/settings') {
+      return ['Project Settings', 'Expense Categories', 'Budget Alerts'].some(r =>
+        can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
+      );
+    }
     return (
       can('View', `${MODULE}.${item.resource}`) ||
       can('Add', `${MODULE}.${item.resource}`) ||
@@ -118,9 +127,14 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
     return availableSections.map(item => {
+      const isSettingsEntry = item.href === '/site-account-statement/settings';
       const active =
         safePathname === item.href ||
-        (item.href !== '/site-account-statement' && safePathname.startsWith(item.href));
+        (item.href !== '/site-account-statement' && safePathname.startsWith(item.href + '/')) ||
+        (isSettingsEntry && (
+          safePathname.startsWith('/site-account-statement/expense-categories') ||
+          safePathname.startsWith('/site-account-statement/budget-alerts')
+        ));
       const Icon = item.icon;
       const showDivider = item.group !== lastGroup && lastGroup !== '';
       lastGroup = item.group;

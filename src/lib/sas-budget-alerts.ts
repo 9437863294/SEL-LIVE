@@ -1,11 +1,15 @@
 'use client';
 
 import {
-  collection, doc, getDoc, getDocs, query, setDoc, serverTimestamp, where,
+  collection, doc, getDoc, getDocs, query, runTransaction, serverTimestamp, where,
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { db } from './firebase';
-import { SAS_COLLECTIONS, type SASBudgetAlertConfig } from './site-account-statement';
+import { SAS_COLLECTIONS, type SASBudgetAlertConfig, type SASBudgetAlertRecipient } from './site-account-statement';
 import { createUserNotification, type NotificationType } from './notifications';
+
+// Firestore document ID used for the module-wide (all-projects) alert config
+export const MODULE_ALERT_DOC_ID = '__module__';
 
 async function resolveAdminUserIds(): Promise<string[]> {
   try {
@@ -29,30 +33,54 @@ async function resolveAdminUserIds(): Promise<string[]> {
 
 /**
  * Called after any expense is saved.
- * Checks if monthly budget thresholds are crossed and fires in-app + email alerts.
- * Swallows all errors so expense save is never blocked.
+ *
+ * Uses the same first-crossing check as checkCategoryBudgetBreach:
+ *   prevTotal < thresholdAmount  &&  newTotal >= thresholdAmount
+ *
+ * Merges project-specific config with the module-wide (__module__) config so
+ * HO managers configured globally are always included.
+ *
+ * Swallows all errors — expense save must never be blocked.
  */
 export async function checkAndFireBudgetAlerts({
   projectId,
   projectName,
   period,
+  newExpenseAmount,
   assignedPersonId,
   altUserId,
 }: {
   projectId: string;
   projectName: string;
-  period: string;          // "YYYY-MM"
+  period: string;           // "YYYY-MM"
+  newExpenseAmount: number; // amount of the expense just saved (used for prevTotal calculation)
   assignedPersonId?: string;
   altUserId?: string;
 }): Promise<void> {
   try {
-    // 1. Load alert config — stored with projectId as doc ID for O(1) lookup
-    const configSnap = await getDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, projectId));
-    if (!configSnap.exists()) return;
-    const config = { id: configSnap.id, ...configSnap.data() } as SASBudgetAlertConfig;
-    if (!config.enabled || !config.thresholds.length || !config.recipients.length) return;
+    // 1. Load project-specific config + module-wide config in parallel
+    const [projSnap, moduleSnap] = await Promise.all([
+      getDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, projectId)),
+      getDoc(doc(db, SAS_COLLECTIONS.budgetAlertConfigs, MODULE_ALERT_DOC_ID)),
+    ]);
 
-    // 2. Load monthly budget for this project+period
+    const projConfig  = projSnap.exists()   ? { id: projSnap.id,   ...projSnap.data()   } as SASBudgetAlertConfig : null;
+    const moduleConfig = moduleSnap.exists() ? { id: moduleSnap.id, ...moduleSnap.data() } as SASBudgetAlertConfig : null;
+
+    // 2. Build combined threshold set (union of both enabled configs)
+    const activeThresholds = new Set<number>();
+    if (projConfig?.enabled)   projConfig.thresholds.forEach(t  => activeThresholds.add(t));
+    if (moduleConfig?.enabled) moduleConfig.thresholds.forEach(t => activeThresholds.add(t));
+    if (!activeThresholds.size) return;
+
+    // 3. Build combined recipient list (email-deduplicated)
+    const recipientMap = new Map<string, SASBudgetAlertRecipient>();
+    if (projConfig?.enabled)   projConfig.recipients.forEach(r   => recipientMap.set(r.email, r));
+    if (moduleConfig?.enabled) moduleConfig.recipients.forEach(r  => recipientMap.set(r.email, r));
+    const allRecipients = [...recipientMap.values()];
+    if (!allRecipients.length) return;
+
+    // 4. Load monthly budget for this project+period
     const budgetSnap = await getDocs(query(
       collection(db, SAS_COLLECTIONS.budgets),
       where('projectId', '==', projectId),
@@ -63,80 +91,103 @@ export async function checkAndFireBudgetAlerts({
     const budget = budgetSnap.docs[0].data().budgetAmount as number;
     if (!budget || budget <= 0) return;
 
-    // 3. Load current expenses total for this period using date range query
+    // 5. Load total expenses for this period (post-save; includes the new expense)
     const expSnap = await getDocs(query(
       collection(db, SAS_COLLECTIONS.expenses),
       where('projectId', '==', projectId),
       where('expenseDate', '>=', `${period}-01`),
       where('expenseDate', '<=', `${period}-31`),
     ));
-    const total = expSnap.docs.reduce((s, d) => s + ((d.data().expenseAmount as number) || 0), 0);
-    const pctUsed = (total / budget) * 100;
+    const newTotal  = expSnap.docs.reduce((s, d) => s + ((d.data().expenseAmount as number) || 0), 0);
+    const prevTotal = newTotal - newExpenseAmount;  // state before this expense was saved
+    const pctUsed   = (newTotal / budget) * 100;
 
-    // 4. Load alert state — tracks which thresholds have already been triggered
-    const stateId = `${projectId}_${period}`;
-    const stateSnap = await getDoc(doc(db, SAS_COLLECTIONS.budgetAlertState, stateId));
-    const sentThresholds: number[] = stateSnap.exists() ? (stateSnap.data().sentThresholds || []) : [];
+    // 6-7. Atomic read-modify-write: read sent thresholds, compute crossings, persist — all in one transaction.
+    //      Prevents duplicate alert emails when two expenses are saved concurrently for the same project/period.
+    const stateId  = `${projectId}_${period}`;
+    const stateRef = doc(db, SAS_COLLECTIONS.budgetAlertState, stateId);
+    let newlyCrossed: number[] = [];
 
-    // 5. Determine newly triggered thresholds
-    const newlyCrossed = config.thresholds.filter(t => pctUsed >= t && !sentThresholds.includes(t));
+    await runTransaction(db, async (txn) => {
+      const stateSnap = await txn.get(stateRef);
+      const sentThresholds: number[] = stateSnap.exists() ? (stateSnap.data().sentThresholds || []) : [];
+
+      newlyCrossed = [...activeThresholds].filter(t => {
+        const line = budget * (t / 100);
+        return prevTotal < line && newTotal >= line && !sentThresholds.includes(t);
+      });
+
+      if (!newlyCrossed.length) return;
+
+      txn.set(
+        stateRef,
+        { projectId, period, sentThresholds: [...sentThresholds, ...newlyCrossed], updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+    });
+
     if (!newlyCrossed.length) return;
 
-    // 6. Resolve in-app notification recipients
+    // 8. Resolve in-app notification user IDs
     const notifyIds = new Set<string>();
     if (assignedPersonId) notifyIds.add(assignedPersonId);
-    if (altUserId) notifyIds.add(altUserId);
-    config.recipients.forEach(r => { if (r.userId) notifyIds.add(r.userId); });
+    if (altUserId)        notifyIds.add(altUserId);
+    allRecipients.forEach(r => { if (r.userId) notifyIds.add(r.userId); });
     const adminIds = await resolveAdminUserIds();
     adminIds.forEach(id => notifyIds.add(id));
 
     const monthLabel = new Date(`${period}-15`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-    const link = '/site-account-statement/reports/budget';
+    const link       = '/site-account-statement/reports/budget';
 
-    // 7. Fire alerts for each newly crossed threshold
+    // Get Firebase ID token once for authenticated email API calls (best-effort)
+    let idToken = '';
+    try {
+      const user = getAuth().currentUser;
+      if (user) idToken = await user.getIdToken();
+    } catch { /* best-effort — email will be skipped if token unavailable */ }
+
+    // 9. Fire in-app + email alert for each newly crossed threshold
     for (const threshold of newlyCrossed) {
       const isOver = threshold >= 100;
-      const title = isOver
+      const title  = isOver
         ? `Budget Exceeded — ${projectName}`
         : `Budget ${threshold}% Alert — ${projectName}`;
-      const body = `${projectName}: ${monthLabel} budget ${isOver ? 'exceeded' : `at ${Math.round(pctUsed)}%`}. Spent ₹${total.toLocaleString('en-IN')} of ₹${budget.toLocaleString('en-IN')}.`;
+      const body   = `${projectName}: ${monthLabel} budget ${isOver ? 'exceeded' : `at ${Math.round(pctUsed)}%`}. Spent ₹${newTotal.toLocaleString('en-IN')} of ₹${budget.toLocaleString('en-IN')}.`;
 
-      await Promise.allSettled([...notifyIds].map(uid =>
+      // In-app notifications (fire-and-forget, best-effort)
+      void Promise.allSettled([...notifyIds].map(uid =>
         createUserNotification(uid, {
-          type: 'budget_alert' as NotificationType,
+          type:     'budget_alert' as NotificationType,
           title,
           body,
-          module: 'site-account-statement',
-          itemId: projectId,
-          itemRef: projectName,
+          module:   'site-account-statement',
+          itemId:   projectId,
+          itemRef:  projectName,
           stepName: `${monthLabel} Budget`,
           link,
         })
       ));
 
-      // Email — fire-and-forget; failure must never block expense save
+      // Email — fire-and-forget; must never block expense save
       fetch('/api/sas/budget-alert-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           projectName,
           monthLabel,
           budgetAmount: budget,
-          spentAmount: total,
-          pctUsed: Math.round(pctUsed),
+          spentAmount:  newTotal,
+          pctUsed:      Math.round(pctUsed),
           thresholdPct: threshold,
-          recipients: config.recipients,
-          link: (typeof window !== 'undefined' ? window.location.origin : '') + link,
+          recipients:   allRecipients,
+          link:         (typeof window !== 'undefined' ? window.location.origin : '') + link,
         }),
       }).catch(() => {});
     }
 
-    // 8. Persist updated alert state
-    await setDoc(
-      doc(db, SAS_COLLECTIONS.budgetAlertState, stateId),
-      { projectId, period, sentThresholds: [...sentThresholds, ...newlyCrossed], updatedAt: serverTimestamp() },
-      { merge: true }
-    );
   } catch (e) {
     console.error('[SAS Budget Alert] Error (swallowed):', e);
   }

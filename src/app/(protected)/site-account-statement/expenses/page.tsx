@@ -604,6 +604,7 @@ export default function SiteExpensesPage() {
           projectId: form.projectId,
           projectName: form.projectName,
           period: form.expenseDate.slice(0, 7),
+          newExpenseAmount: amount,
           assignedPersonId: project?.assignedPersonId,
           altUserId: project?.altUserId,
         });
