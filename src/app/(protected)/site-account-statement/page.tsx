@@ -28,12 +28,42 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import {
   AlertTriangle, ArrowDownRight, ArrowUpRight, BarChart3,
-  BookOpen, Building2, File, FileText, Loader2, Paperclip, Plus, Receipt, Target,
+  BookOpen, Building2, File, FileText, Filter, Loader2, Paperclip, Plus, Receipt, Search, Target,
   TrendingDown, TrendingUp, Wallet, X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 const MODULE = 'Site Account Statement';
+
+// ─── FY helpers ──────────────────────────────────────────────────────────────
+
+function currentFYStart(): number {
+  const d = new Date();
+  return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+}
+
+function getFYMonths(fyStartYear: number): string[] {
+  const months: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(fyStartYear, 3 + i);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return months;
+}
+
+function fyLabel(fyStartYear: number): string {
+  return `${fyStartYear}-${String(fyStartYear + 1).slice(-2)}`;
+}
+
+function currentMonthStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1).toLocaleString('default', { month: 'short', year: '2-digit' });
+}
 
 // ─── Shared stat card ───────────────────────────────────────────────────────
 
@@ -348,11 +378,11 @@ interface MyProjectCardProps {
   expenses: SASExpense[];
   categories: SASCategory[];
   currentUserName: string;
-  budget?: SASBudget;
+  totalBudgetAmount?: number;
   onRefresh: () => void;
 }
 
-function MyProjectCard({ project, payments, expenses, categories, currentUserName, budget, onRefresh }: MyProjectCardProps) {
+function MyProjectCard({ project, payments, expenses, categories, currentUserName, totalBudgetAmount, onRefresh }: MyProjectCardProps) {
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
 
   const projPayments = useMemo(() => payments.filter(p => p.projectId === project.id), [payments, project.id]);
@@ -412,27 +442,27 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
           </div>
 
           {/* Budget utilization */}
-          {budget && (
+          {!!totalBudgetAmount && (
             <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2 mb-1">
                 <div className="flex items-center gap-1.5">
                   <Target className="h-3.5 w-3.5 text-emerald-600" />
                   <p className="text-xs text-emerald-700 font-medium">Total Budget</p>
                 </div>
-                <span className={cn('text-xs font-semibold', totalExpenses > budget.budgetAmount ? 'text-destructive' : totalExpenses / budget.budgetAmount >= 0.8 ? 'text-amber-600' : 'text-emerald-600')}>
-                  {((totalExpenses / budget.budgetAmount) * 100).toFixed(1)}% used
+                <span className={cn('text-xs font-semibold', totalExpenses > totalBudgetAmount ? 'text-destructive' : totalExpenses / totalBudgetAmount >= 0.8 ? 'text-amber-600' : 'text-emerald-600')}>
+                  {((totalExpenses / totalBudgetAmount) * 100).toFixed(1)}% used
                 </span>
               </div>
               <div className="w-full bg-emerald-200/50 rounded-full h-1.5">
                 <div
-                  className={cn('h-1.5 rounded-full', totalExpenses > budget.budgetAmount ? 'bg-destructive' : totalExpenses / budget.budgetAmount >= 0.8 ? 'bg-amber-500' : 'bg-emerald-500')}
-                  style={{ width: `${Math.min((totalExpenses / budget.budgetAmount) * 100, 100)}%` }}
+                  className={cn('h-1.5 rounded-full', totalExpenses > totalBudgetAmount ? 'bg-destructive' : totalExpenses / totalBudgetAmount >= 0.8 ? 'bg-amber-500' : 'bg-emerald-500')}
+                  style={{ width: `${Math.min((totalExpenses / totalBudgetAmount) * 100, 100)}%` }}
                 />
               </div>
               <div className="flex justify-between mt-1">
                 <p className="text-[10px] text-muted-foreground">{formatINR(totalExpenses)} spent</p>
-                <p className={cn('text-[10px] font-medium', budget.budgetAmount - totalExpenses < 0 ? 'text-destructive' : 'text-emerald-600')}>
-                  {budget.budgetAmount - totalExpenses >= 0 ? formatINR(budget.budgetAmount - totalExpenses) + ' remaining' : formatINR(totalExpenses - budget.budgetAmount) + ' over budget'}
+                <p className={cn('text-[10px] font-medium', totalBudgetAmount - totalExpenses < 0 ? 'text-destructive' : 'text-emerald-600')}>
+                  {totalBudgetAmount - totalExpenses >= 0 ? formatINR(totalBudgetAmount - totalExpenses) + ' remaining' : formatINR(totalExpenses - totalBudgetAmount) + ' over budget'}
                 </p>
               </div>
             </div>
@@ -577,18 +607,65 @@ export default function SiteAccountDashboardPage() {
     [projects]
   );
 
+  // Filters for admin overview
+  const [filterSearch, setFilterSearch] = useState('');
+  const [filterFY, setFilterFY] = useState(() => fyLabel(currentFYStart()));
+  const [filterMonth, setFilterMonth] = useState(() => currentMonthStr());
+  const [filterBudgetStatus, setFilterBudgetStatus] = useState('all');
+
+  // Reset month when FY changes
+  useEffect(() => {
+    const fyMonths = getFYMonths(parseInt(filterFY.split('-')[0]));
+    const cur = currentMonthStr();
+    setFilterMonth(fyMonths.includes(cur) ? cur : '');
+  }, [filterFY]);
+
+  // Derive available FYs from monthly budget records
+  const availableFYs = useMemo(() => {
+    const fySet = new Set<string>();
+    budgets.filter(b => b.budgetType === 'monthly' && b.period).forEach(b => {
+      const [y, m] = b.period!.split('-').map(Number);
+      const s = m >= 4 ? y : y - 1;
+      fySet.add(fyLabel(s));
+    });
+    const cur = fyLabel(currentFYStart());
+    if (!fySet.has(cur)) fySet.add(cur);
+    return Array.from(fySet).sort().reverse();
+  }, [budgets]);
+
   // Admin summary numbers
   const totalReceived = useMemo(() => payments.reduce((s, p) => s + (p.receivedAmount || 0), 0), [payments]);
   const totalExpenses = useMemo(() => expenses.reduce((s, e) => s + (e.expenseAmount || 0), 0), [expenses]);
   const totalBalance = totalReceived - totalExpenses;
 
-  const projectStats = useMemo(() => enabledProjects.map(proj => {
-    const received = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-    const spent = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-    const budget = budgets.find(b => b.projectId === proj.id && b.budgetType === 'total');
-    const totalBudget = budget?.budgetAmount ?? 0;
-    return { id: proj.id, name: proj.projectName, received, expenses: spent, balance: received - spent, totalBudget, budgetUsedPct: totalBudget > 0 ? (spent / totalBudget) * 100 : 0 };
-  }).sort((a, b) => b.balance - a.balance), [enabledProjects, payments, expenses, budgets]);
+  const projectStats = useMemo(() => {
+    const fyStartYear = parseInt(filterFY.split('-')[0]);
+    const fyMonths = getFYMonths(fyStartYear);
+    const activeMonths = filterMonth ? [filterMonth] : fyMonths;
+    return enabledProjects.map(proj => {
+      const received = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
+      const spent = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+      // Budget and period-spent scoped to active months
+      const totalBudget = budgets
+        .filter(b => b.projectId === proj.id && b.budgetType === 'monthly' && b.period && activeMonths.includes(b.period))
+        .reduce((s, b) => s + b.budgetAmount, 0);
+      const periodSpent = expenses
+        .filter(e => e.projectId === proj.id && activeMonths.includes(e.expenseDate?.slice(0, 7) ?? ''))
+        .reduce((s, e) => s + (e.expenseAmount || 0), 0);
+      return { id: proj.id, name: proj.projectName, received, expenses: spent, balance: received - spent, totalBudget, periodSpent, budgetUsedPct: totalBudget > 0 ? (periodSpent / totalBudget) * 100 : 0 };
+    }).sort((a, b) => b.balance - a.balance);
+  }, [enabledProjects, payments, expenses, budgets, filterFY, filterMonth]);
+
+  const filteredProjectStats = useMemo(() => projectStats.filter(stat => {
+    if (filterSearch && !stat.name.toLowerCase().includes(filterSearch.toLowerCase())) return false;
+    if (filterBudgetStatus === 'over' && !(stat.totalBudget > 0 && stat.expenses > stat.totalBudget)) return false;
+    if (filterBudgetStatus === 'ok' && !(stat.totalBudget > 0 && stat.expenses <= stat.totalBudget)) return false;
+    if (filterBudgetStatus === 'none' && stat.totalBudget > 0) return false;
+    return true;
+  }), [projectStats, filterSearch, filterBudgetStatus]);
+
+  // FY budget total for stat card
+  const totalFYBudget = useMemo(() => projectStats.reduce((s, p) => s + p.totalBudget, 0), [projectStats]);
 
   const highestExpense = useMemo(() => [...projectStats].sort((a, b) => b.expenses - a.expenses)[0], [projectStats]);
   const lowBalance = useMemo(() => projectStats.filter(p => p.balance < 10000), [projectStats]);
@@ -633,7 +710,7 @@ export default function SiteAccountDashboardPage() {
                 expenses={expenses}
                 categories={categories}
                 currentUserName={user?.name ?? ''}
-                budget={budgets.find(b => b.projectId === proj.id && b.budgetType === 'total')}
+                totalBudgetAmount={budgets.filter(b => b.projectId === proj.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0) || undefined}
                 onRefresh={loadAll}
               />
             ))}
@@ -652,7 +729,7 @@ export default function SiteAccountDashboardPage() {
           )}
 
           {/* Stat cards */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 mb-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 mb-4">
             <StatCard icon={Building2} label="Enabled Projects" value={String(enabledProjects.length)} colorClass="text-emerald-600" />
             <StatCard icon={TrendingUp} label="Total Received from HO" value={formatINR(totalReceived)} colorClass="text-blue-600" />
             <StatCard icon={TrendingDown} label="Total Site Expenses" value={formatINR(totalExpenses)} colorClass="text-rose-600" />
@@ -662,12 +739,78 @@ export default function SiteAccountDashboardPage() {
               value={formatINR(totalBalance)}
               colorClass={totalBalance >= 0 ? 'text-teal-600' : 'text-destructive'}
             />
+            <StatCard
+              icon={Target}
+              label={filterMonth ? `Budget (${monthLabel(filterMonth)})` : `FY ${filterFY} Budget`}
+              value={totalFYBudget > 0 ? formatINR(totalFYBudget) : '—'}
+              colorClass="text-indigo-600"
+            />
           </div>
 
           {/* Project-wise summary table */}
           <Card className="bg-white/80 backdrop-blur-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Project-Wise Summary</CardTitle>
+            <CardHeader className="pb-2 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <CardTitle className="text-sm">Project-Wise Summary</CardTitle>
+                <span className="text-xs text-muted-foreground">{filteredProjectStats.length} of {projectStats.length} project{projectStats.length !== 1 ? 's' : ''}</span>
+              </div>
+              {/* Filter bar */}
+              <div className="flex flex-wrap gap-2">
+                <div className="relative flex-1 min-w-[150px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                  <Input
+                    className="pl-8 h-8 text-xs"
+                    placeholder="Search projects…"
+                    value={filterSearch}
+                    onChange={e => setFilterSearch(e.target.value)}
+                  />
+                </div>
+                <Select value={filterFY} onValueChange={setFilterFY}>
+                  <SelectTrigger className="h-8 text-xs w-[110px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableFYs.map(fy => (
+                      <SelectItem key={fy} value={fy}>FY {fy}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filterMonth || '_all_'} onValueChange={v => setFilterMonth(v === '_all_' ? '' : v)}>
+                  <SelectTrigger className="h-8 text-xs w-[110px]">
+                    <SelectValue placeholder="All Months" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_all_">All Months</SelectItem>
+                    {getFYMonths(parseInt(filterFY.split('-')[0])).map(m => (
+                      <SelectItem key={m} value={m}>
+                        {monthLabel(m)}{m === currentMonthStr() ? ' ·' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filterBudgetStatus} onValueChange={setFilterBudgetStatus}>
+                  <SelectTrigger className="h-8 text-xs w-[130px]">
+                    <Filter className="h-3 w-3 mr-1" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="over">Over Budget</SelectItem>
+                    <SelectItem value="ok">Within Budget</SelectItem>
+                    <SelectItem value="none">No Budget</SelectItem>
+                  </SelectContent>
+                </Select>
+                {(filterSearch || filterBudgetStatus !== 'all') && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-2 text-xs"
+                    onClick={() => { setFilterSearch(''); setFilterBudgetStatus('all'); }}
+                  >
+                    <X className="h-3.5 w-3.5 mr-1" /> Clear filters
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               {projectStats.length === 0 ? (
@@ -688,7 +831,7 @@ export default function SiteAccountDashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {projectStats.map(stat => (
+                      {filteredProjectStats.map(stat => (
                         <tr key={stat.id} className="border-b hover:bg-muted/20 transition-colors">
                           <td className="px-4 py-2 font-medium">{stat.name}</td>
                           <td className="px-4 py-2 text-right text-blue-600">{formatINR(stat.received)}</td>

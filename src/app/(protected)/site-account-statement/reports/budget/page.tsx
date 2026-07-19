@@ -718,6 +718,26 @@ export default function BudgetReportsPage() {
                           });
                           const hasCats = catData.length > 0;
 
+                          // Category-level totals (always computed, shown in main row + totals footer)
+                          const catBudgetSum   = catData.reduce((s, c) => s + (c.budget ?? 0), 0);
+                          const catSpentSum    = catData.reduce((s, c) => s + c.spent, 0);
+                          const catRemaining   = catBudgetSum > 0 ? catBudgetSum - catSpentSum : null;
+                          const catPctUsed     = catBudgetSum > 0 ? (catSpentSum / catBudgetSum) * 100 : null;
+                          const catTotalStatus: UtilRow['status'] =
+                            catBudgetSum === 0 ? 'no-budget' :
+                            catSpentSum > catBudgetSum ? 'over-budget' :
+                            catPctUsed !== null && catPctUsed >= 80 ? 'warning' : 'on-track';
+
+                          // Allocation vs monthly budget comparison
+                          const allocLabel =
+                            row.budget === null || catBudgetSum === 0 ? null :
+                            catBudgetSum > row.budget  ? 'Over-allocated' :
+                            catBudgetSum === row.budget ? 'Fully allocated' : 'Under-allocated';
+                          const allocColor =
+                            allocLabel === 'Over-allocated'  ? 'bg-red-100 text-red-700 hover:bg-red-100' :
+                            allocLabel === 'Fully allocated' ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' :
+                                                               'bg-amber-100 text-amber-700 hover:bg-amber-100';
+
                           return (
                             <Fragment key={rowKey}>
                               {/* ── Main row ── */}
@@ -737,7 +757,23 @@ export default function BudgetReportsPage() {
                                 </td>
                                 <td className="px-4 py-2.5 whitespace-nowrap text-slate-600 text-xs">{monthLabel(row.month)}</td>
                                 <td className="px-4 py-2.5 text-right font-semibold text-emerald-700 tabular-nums whitespace-nowrap">
-                                  {row.budget !== null ? formatINR(row.budget) : <span className="text-muted-foreground font-normal text-xs">—</span>}
+                                  {row.budget !== null ? (
+                                    <div>
+                                      {formatINR(row.budget)}
+                                      {catBudgetSum > 0 && (
+                                        <p className={cn('text-[10px] font-normal tabular-nums',
+                                          catBudgetSum > row.budget ? 'text-destructive' :
+                                          catBudgetSum === row.budget ? 'text-teal-600' : 'text-amber-600'
+                                        )}>
+                                          {formatINR(catBudgetSum)} alloc'd
+                                        </p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    catBudgetSum > 0
+                                      ? <div>{formatINR(catBudgetSum)}<p className="text-[10px] font-normal text-muted-foreground">∑ categories</p></div>
+                                      : <span className="text-muted-foreground font-normal text-xs">—</span>
+                                  )}
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-semibold text-rose-700 tabular-nums whitespace-nowrap">
                                   {formatINR(row.spent)}
@@ -796,6 +832,38 @@ export default function BudgetReportsPage() {
                                   <td />
                                 </tr>
                               ))}
+
+                              {/* ── Category totals footer row ── */}
+                              {isExp && catData.length > 0 && (
+                                <tr className="border-b bg-teal-50/60 border-t-2 border-t-teal-200">
+                                  <td className="py-2 pl-10 pr-4">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="text-xs font-bold text-teal-800">∑ Total Allocated</span>
+                                      {allocLabel && (
+                                        <Badge className={cn('text-[10px] px-1.5 py-0 font-normal', allocColor)}>
+                                          {allocLabel}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-xs text-muted-foreground italic">{catData.length} categories</td>
+                                  <td className="px-4 py-2 text-right text-xs font-bold text-emerald-700 tabular-nums whitespace-nowrap">
+                                    {catBudgetSum > 0 ? formatINR(catBudgetSum) : <span className="text-muted-foreground font-normal">—</span>}
+                                  </td>
+                                  <td className="px-4 py-2 text-right text-xs font-bold text-rose-700 tabular-nums whitespace-nowrap">
+                                    {catSpentSum > 0 ? formatINR(catSpentSum) : <span className="text-muted-foreground font-normal">—</span>}
+                                  </td>
+                                  <td className={cn('px-4 py-2 text-right text-xs font-bold tabular-nums whitespace-nowrap',
+                                    catRemaining === null ? 'text-muted-foreground' :
+                                    catRemaining < 0 ? 'text-destructive' : 'text-teal-700'
+                                  )}>
+                                    {catRemaining !== null ? formatINR(catRemaining) : '—'}
+                                  </td>
+                                  <td className="px-4 py-2">{pctBar(catPctUsed, catTotalStatus)}</td>
+                                  <td className="px-4 py-2"><StatusBadge status={catTotalStatus} /></td>
+                                  <td />
+                                </tr>
+                              )}
                             </Fragment>
                           );
                         })}
