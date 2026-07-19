@@ -54,6 +54,7 @@ const sections = [
   { href: '/site-account-statement/reports/balance',   label: 'Balance Status',     resource: 'Reports',            icon: ShieldCheck,     color: 'text-green-600',   bg: 'bg-green-50',    group: 'reports',      viewAllAccess: true  },
   { href: '/site-account-statement/reports/daywise',             label: 'Day-wise Statement', resource: 'Reports', icon: CalendarDays,    color: 'text-cyan-600',    bg: 'bg-cyan-50',     group: 'reports', viewAllAccess: true  },
   { href: '/site-account-statement/reports/monthly-comparison', label: 'Month Comparison',   resource: 'Reports', icon: ArrowLeftRight,  color: 'text-fuchsia-600', bg: 'bg-fuchsia-50',  group: 'reports', viewAllAccess: true  },
+  { href: '/site-account-statement/reports/budget',            label: 'Budget Report',      resource: 'Reports', icon: Target,          color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'reports', viewAllAccess: true  },
   { href: '/site-account-statement/expense-categories',label: 'Expense Categories', resource: 'Expense Categories', icon: Tags,            color: 'text-amber-600',   bg: 'bg-amber-50',    group: 'master',       viewAllAccess: false },
   { href: '/site-account-statement/settings',          label: 'Project Settings',   resource: 'Project Settings',   icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       viewAllAccess: false },
 ];
@@ -177,9 +178,11 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
 
   return (
     <div className="relative w-full px-3 py-4 sm:px-6 lg:px-8">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40" />
-      <div className="pointer-events-none absolute -z-10 left-[8%] top-[8%] h-56 w-56 rounded-full bg-emerald-300/20 blur-3xl" />
-      <div className="pointer-events-none absolute -z-10 right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-teal-300/20 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl">
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40" />
+        <div className="absolute left-[8%] top-[8%] h-56 w-56 rounded-full bg-emerald-300/20 blur-3xl" />
+        <div className="absolute right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-teal-300/20 blur-3xl" />
+      </div>
 
       {/* Mobile header */}
       <div className="mb-3 lg:hidden">

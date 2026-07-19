@@ -102,7 +102,7 @@ export default function ReportsIndexPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-lg font-bold text-slate-800">Reports</h1>
+        <h1 className="text-base sm:text-lg font-bold text-slate-800">Reports</h1>
         <p className="text-sm text-muted-foreground">{REPORTS.length} reports available — click any card to open</p>
 
       </div>

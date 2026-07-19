@@ -144,7 +144,7 @@ export default function ProjectSummaryPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Overall Project Summary</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Overall Project Summary</h1>
           <p className="text-sm text-muted-foreground">Total received, spent, and balance across all enabled projects</p>
         </div>
         {canExport && (
@@ -156,47 +156,47 @@ export default function ProjectSummaryPage() {
       </div>
 
       {/* Overall summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="rounded-xl border bg-slate-50 px-4 py-3 text-center">
-          <p className="text-xs text-muted-foreground">Total Projects</p>
-          <p className="text-2xl font-bold text-slate-700">{filtered.length}</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground">Total Projects</p>
+          <p className="text-sm font-bold text-slate-700">{filtered.length}</p>
         </div>
         <div className="rounded-xl border bg-blue-50 px-4 py-3 text-center">
-          <p className="text-xs text-muted-foreground">Total Received</p>
-          <p className="text-lg font-bold text-blue-700">{formatINR(overallReceived)}</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground">Total Received</p>
+          <p className="text-sm font-bold text-blue-700">{formatINR(overallReceived)}</p>
         </div>
         <div className="rounded-xl border bg-rose-50 px-4 py-3 text-center">
-          <p className="text-xs text-muted-foreground">Total Expenses</p>
-          <p className="text-lg font-bold text-rose-700">{formatINR(overallExpenses)}</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground">Total Expenses</p>
+          <p className="text-sm font-bold text-rose-700">{formatINR(overallExpenses)}</p>
         </div>
         <div className={cn('rounded-xl border px-4 py-3 text-center', overallBalance >= 0 ? 'bg-emerald-50' : 'bg-destructive/10')}>
-          <p className="text-xs text-muted-foreground">Total Balance</p>
-          <p className={cn('text-lg font-bold', overallBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>{formatINR(overallBalance)}</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground">Total Balance</p>
+          <p className={cn('text-sm font-bold', overallBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>{formatINR(overallBalance)}</p>
         </div>
       </div>
 
       {/* Budget summary */}
       {budgetedCount > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="rounded-xl border bg-emerald-50 px-4 py-3 text-center">
-            <p className="text-xs text-muted-foreground">Total Budget</p>
-            <p className="text-lg font-bold text-emerald-700">{formatINR(overallBudget)}</p>
-            <p className="text-[11px] text-muted-foreground">{budgetedCount} project{budgetedCount !== 1 ? 's' : ''} budgeted</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Total Budget</p>
+            <p className="text-sm font-bold text-emerald-700">{formatINR(overallBudget)}</p>
+            <p className="text-[10px] sm:text-[11px] text-muted-foreground">{budgetedCount} project{budgetedCount !== 1 ? 's' : ''} budgeted</p>
           </div>
           <div className="rounded-xl border bg-indigo-50 px-4 py-3 text-center">
-            <p className="text-xs text-muted-foreground">Budget Used</p>
-            <p className="text-lg font-bold text-indigo-700">{overallBudgetUsed.toFixed(1)}%</p>
-            <p className="text-[11px] text-muted-foreground">{formatINR(overallExpenses)} of {formatINR(overallBudget)}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Budget Used</p>
+            <p className="text-sm font-bold text-indigo-700">{overallBudgetUsed.toFixed(1)}%</p>
+            <p className="text-[10px] sm:text-[11px] text-muted-foreground">{formatINR(overallExpenses)} of {formatINR(overallBudget)}</p>
           </div>
           <div className={cn('rounded-xl border px-4 py-3 text-center', overBudgetCount > 0 ? 'bg-red-50' : 'bg-slate-50')}>
-            <p className="text-xs text-muted-foreground">Over Budget</p>
-            <p className={cn('text-lg font-bold', overBudgetCount > 0 ? 'text-destructive' : 'text-slate-500')}>{overBudgetCount}</p>
-            <p className="text-[11px] text-muted-foreground">project{overBudgetCount !== 1 ? 's' : ''}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Over Budget</p>
+            <p className={cn('text-sm font-bold', overBudgetCount > 0 ? 'text-destructive' : 'text-slate-500')}>{overBudgetCount}</p>
+            <p className="text-[10px] sm:text-[11px] text-muted-foreground">project{overBudgetCount !== 1 ? 's' : ''}</p>
           </div>
         </div>
       )}
 
-      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects..." className="max-w-xs" />
+      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects..." className="w-full sm:max-w-xs" />
 
       {filtered.length === 0 ? (
         <Card className="bg-white/80"><CardContent className="flex flex-col items-center gap-3 py-12">
@@ -206,8 +206,8 @@ export default function ProjectSummaryPage() {
       ) : (
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardContent className="p-0">
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+            <div className="overflow-auto overflow-x-auto max-h-[60vh]">
+              <table className="w-full min-w-[700px] text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">#</th>

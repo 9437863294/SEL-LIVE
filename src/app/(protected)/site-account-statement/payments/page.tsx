@@ -515,10 +515,10 @@ export default function PaymentsPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Payments Received</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Payments Received</h1>
           <p className="text-sm text-muted-foreground">Payments received from Head Office per project</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canExport && (
             <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -650,8 +650,8 @@ export default function PaymentsPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+              <table className="w-full min-w-[700px] text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">Project</th>
@@ -752,7 +752,7 @@ export default function PaymentsPage() {
 
       {/* Payment Detail Dialog */}
       <Dialog open={!!viewPayment} onOpenChange={() => setViewPayment(null)}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-emerald-500" />
@@ -769,7 +769,7 @@ export default function PaymentsPage() {
               </div>
 
               {/* Fields grid */}
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Project</p>
                   <p className="font-medium mt-0.5">{viewPayment.projectName}</p>
@@ -836,7 +836,7 @@ export default function PaymentsPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Payment' : 'Record Payment Received'}</DialogTitle>
           </DialogHeader>

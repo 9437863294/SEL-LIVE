@@ -207,7 +207,7 @@ export default function ExpenseCategoriesPage() {
             {mainCategories.length} main {mainCategories.length === 1 ? 'category' : 'categories'} · {subCategories.length} sub-{subCategories.length === 1 ? 'category' : 'categories'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {canAdd && rows.length === 0 && (
             <Button variant="outline" size="sm" onClick={seedDefaults} disabled={seeding} className="gap-2">
               {seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sprout className="h-4 w-4" />}
@@ -245,8 +245,8 @@ export default function ExpenseCategoriesPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+              <table className="w-full min-w-[600px] text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">#</th>
@@ -341,7 +341,7 @@ export default function ExpenseCategoriesPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-[95vw] sm:max-w-md overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Category' : 'Add Expense Category'}</DialogTitle>
           </DialogHeader>

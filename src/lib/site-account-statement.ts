@@ -5,6 +5,7 @@ export const SAS_COLLECTIONS = {
   categories:      'siteAccountCategories',
   budgets:         'siteAccountBudgets',
   categoryBudgets: 'siteAccountCategoryBudgets',
+  budgetApprovals: 'siteAccountBudgetApprovals',
 } as const;
 
 export interface SASProject {
@@ -79,6 +80,19 @@ export interface SASBudget {
   notes?: string;
   createdAt: any;
   updatedAt: any;
+}
+
+export interface SASBudgetApproval {
+  id: string;
+  projectId: string;
+  projectName: string;
+  period: string;          // "YYYY-MM"
+  fileName: string;
+  fileUrl: string;
+  storagePath: string;
+  uploadedBy: string;
+  uploadedByName: string;
+  uploadedAt: any;
 }
 
 export interface SASCategoryBudget {

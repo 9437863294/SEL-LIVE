@@ -35,7 +35,7 @@ export default function AccountStatementPage() {
   const canExport  = can('Export', `${MODULE}.Reports`);
 
   const searchParams = useSearchParams();
-  const paramProjectId = searchParams.get('projectId') ?? '';
+  const paramProjectId = searchParams?.get('projectId') ?? '';
 
   const [projects,   setProjects]   = useState<SASProject[]>([]);
   const [payments,   setPayments]   = useState<SASPayment[]>([]);
@@ -165,7 +165,7 @@ export default function AccountStatementPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Project-Wise Account Statement</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Project-Wise Account Statement</h1>
           <p className="text-sm text-muted-foreground">Running balance of receipts and expenses</p>
         </div>
         {canExport && selectedProject && (
@@ -213,8 +213,8 @@ export default function AccountStatementPage() {
             <CardTitle className="text-sm font-semibold text-slate-700">{selectedProjectName}</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+            <div className="overflow-auto overflow-x-auto max-h-[60vh]">
+              <table className="w-full min-w-[600px] text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium w-[110px]">Date</th>

@@ -142,7 +142,7 @@ export default function CashFlowPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Month-wise Cash Flow</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Month-wise Cash Flow</h1>
           <p className="text-sm text-muted-foreground">Monthly receipts, expenses and running balance for {filterYear}</p>
         </div>
         {canExport && (
@@ -156,14 +156,14 @@ export default function CashFlowPage() {
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
         <Select value={filterProject || '_all_'} onValueChange={v => setFilterProject(v === '_all_' ? '' : v)}>
-          <SelectTrigger className="h-9 text-sm w-[200px]"><SelectValue placeholder="All Projects" /></SelectTrigger>
+          <SelectTrigger className="h-9 text-sm w-full sm:w-auto sm:min-w-[200px]"><SelectValue placeholder="All Projects" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="_all_">All Projects</SelectItem>
             {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={filterYear} onValueChange={setFilterYear}>
-          <SelectTrigger className="h-9 text-sm w-[110px]"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-9 text-sm w-full sm:w-auto sm:min-w-[110px]"><SelectValue /></SelectTrigger>
           <SelectContent>
             {availableYears.map(y => <SelectItem key={y} value={y}>{y}</SelectItem>)}
           </SelectContent>
@@ -171,7 +171,7 @@ export default function CashFlowPage() {
       </div>
 
       {/* Summary tiles */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="rounded-xl border bg-blue-50 px-4 py-3 text-center">
           <p className="text-xs text-muted-foreground">Total Receipts</p>
           <p className="text-lg font-bold text-blue-700">{formatINR(totals.receipts)}</p>
@@ -196,8 +196,8 @@ export default function CashFlowPage() {
       ) : (
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardContent className="p-0">
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+              <table className="min-w-[600px] w-full text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">Month</th>

@@ -259,7 +259,7 @@ export default function ProjectSettingsPage() {
             Enable projects for Site Account Statement and assign responsible persons
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link href="/settings/project" target="_blank">
             <Button variant="outline" size="sm" className="gap-2 text-xs">
               <ExternalLink className="h-3.5 w-3.5" /> Manage Projects
@@ -304,8 +304,8 @@ export default function ProjectSettingsPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+              <table className="w-full min-w-[700px] text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">Project Name</th>
@@ -398,7 +398,7 @@ export default function ProjectSettingsPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-[95vw] sm:max-w-lg overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Project Settings' : 'Add Project'}</DialogTitle>
           </DialogHeader>

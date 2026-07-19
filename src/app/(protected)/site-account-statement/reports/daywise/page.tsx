@@ -266,7 +266,7 @@ export default function DaywiseStatementPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Day-wise Statement</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Day-wise Statement</h1>
           <p className="text-sm text-muted-foreground">Every receipt and expense grouped by date with running balance</p>
         </div>
         {canExport && dayGroups.length > 0 && (
@@ -301,7 +301,7 @@ export default function DaywiseStatementPage() {
 
       {/* Grand summary tiles */}
       {dayGroups.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="rounded-xl border bg-blue-50 px-4 py-3 text-center">
             <p className="text-xs text-muted-foreground">Total Receipts</p>
             <p className="text-lg font-bold text-blue-700">{formatINR(grandTotals.receipts)}</p>
@@ -347,7 +347,7 @@ export default function DaywiseStatementPage() {
                     <p className="text-xs text-muted-foreground">{day.txs.length} transaction{day.txs.length !== 1 ? 's' : ''}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 text-sm">
+                <div className="flex flex-wrap items-center gap-4 text-sm">
                   {day.totalReceipts > 0 && (
                     <span className="flex items-center gap-1 text-blue-600 font-medium">
                       <TrendingUp className="h-3.5 w-3.5" />
@@ -417,7 +417,7 @@ export default function DaywiseStatementPage() {
                 ))}
 
                 {/* Day net summary bar */}
-                <div className="flex items-center justify-between gap-4 bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground">
+                <div className="flex flex-wrap items-center justify-between gap-4 bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground">
                   <span className="flex items-center gap-3">
                     {day.totalReceipts > 0 && <span className="text-blue-600">Receipts: {formatINR(day.totalReceipts)}</span>}
                     {day.totalExpenses > 0 && <span className="text-rose-600">Expenses: {formatINR(day.totalExpenses)}</span>}
@@ -435,7 +435,7 @@ export default function DaywiseStatementPage() {
             <span className="text-slate-700">
               Grand Total — {dayGroups.length} day{dayGroups.length !== 1 ? 's' : ''} · {grandTotals.txCount} transactions
             </span>
-            <span className="flex items-center gap-4">
+            <span className="flex flex-wrap items-center gap-4">
               <span className="text-blue-700">{formatINR(grandTotals.receipts)}</span>
               <span className="text-slate-400 font-normal">−</span>
               <span className="text-rose-700">{formatINR(grandTotals.expenses)}</span>

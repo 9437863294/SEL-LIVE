@@ -713,10 +713,10 @@ export default function SiteExpensesPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Site Expenses</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Site Expenses</h1>
           <p className="text-sm text-muted-foreground">All expenses incurred at project sites</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canExport && (
             <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -880,7 +880,7 @@ export default function SiteExpensesPage() {
             </div>
           ) : (
             <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[800px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">Project</th>
@@ -994,7 +994,7 @@ export default function SiteExpensesPage() {
 
       {/* Expense Detail Dialog */}
       <Dialog open={!!viewExpense} onOpenChange={() => setViewExpense(null)}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Receipt className="h-4 w-4 text-rose-500" />
@@ -1099,7 +1099,7 @@ export default function SiteExpensesPage() {
 
       {/* View Attachments Dialog */}
       <Dialog open={!!viewDocExpense} onOpenChange={() => setViewDocExpense(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-[95vw] sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Paperclip className="h-4 w-4 text-blue-500" />
@@ -1140,11 +1140,11 @@ export default function SiteExpensesPage() {
 
       {/* Add / Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Expense' : 'Record Site Expense'}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
 
             {/* Project */}
             <div className="col-span-2 space-y-1.5">
@@ -1316,7 +1316,7 @@ export default function SiteExpensesPage() {
               ))}
 
               {/* File picker row */}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <label className="flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-muted-foreground/25 px-4 py-2.5 text-sm text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/40 transition-colors">
                   <Upload className="h-4 w-4 shrink-0" />
                   <span>Attach files</span>

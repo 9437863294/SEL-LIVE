@@ -265,7 +265,7 @@ export default function MonthlyComparisonPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Month-over-Month Comparison</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Month-over-Month Comparison</h1>
           <p className="text-sm text-muted-foreground">
             Budget · Received · Expenses per project — Δ% shows expense change vs previous month
           </p>
@@ -282,7 +282,7 @@ export default function MonthlyComparisonPage() {
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm font-medium text-slate-600">Show previous:</span>
         <Select value={prevCount === 'all' ? 'all' : String(prevCount)} onValueChange={v => setPrevCount(v === 'all' ? 'all' : Number(v))}>
-          <SelectTrigger className="h-9 w-60 text-sm">
+          <SelectTrigger className="h-9 w-full sm:w-60 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -300,7 +300,7 @@ export default function MonthlyComparisonPage() {
       </div>
 
       {/* Summary strip — always shows prev vs current */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {/* Prev month */}
         {hasBudgets && (
           <div className="rounded-lg border bg-emerald-50 px-3 py-2.5">
@@ -380,7 +380,7 @@ export default function MonthlyComparisonPage() {
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardContent className="p-0">
             <div className="overflow-auto max-h-[65vh]">
-              <table className="w-full text-sm border-separate border-spacing-0">
+              <table className="w-full text-sm border-separate border-spacing-0 min-w-[800px]">
                 <thead className="sticky top-0 z-10">
                   {/* Month group headers */}
                   <tr>

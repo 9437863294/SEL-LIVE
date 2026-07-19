@@ -285,7 +285,7 @@ export default function CategoryBudgetPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+          <h1 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
             <Target className="h-5 w-5 text-emerald-600" />
             Category-wise Monthly Budgets
           </h1>
@@ -308,7 +308,7 @@ export default function CategoryBudgetPage() {
         <div className="flex items-center gap-2">
           <Label className="text-sm font-medium shrink-0">Project</Label>
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-            <SelectTrigger className="h-9 text-sm w-[220px]">
+            <SelectTrigger className="h-9 text-sm w-full sm:w-[220px] min-w-[160px]">
               <SelectValue placeholder="Select project..." />
             </SelectTrigger>
             <SelectContent>
@@ -354,8 +354,8 @@ export default function CategoryBudgetPage() {
       ) : (
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardContent className="p-0">
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[700px]">
                 <thead>
                   <tr className="border-b">
                     <th className="px-4 py-2 text-left font-medium text-xs bg-slate-50" rowSpan={2}>
@@ -488,7 +488,7 @@ export default function CategoryBudgetPage() {
 
       {/* Set / Edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-[95vw] sm:max-w-sm overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Target className="h-4 w-4 text-emerald-600" />

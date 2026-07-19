@@ -78,7 +78,7 @@ function ExpenseDetailDialog({ expense, open, onClose }: { expense: SASExpense |
 
   return (
     <Dialog open={open} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             Expense Details
@@ -373,12 +373,12 @@ export default function CategoryAnalysisPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Category-wise Expense Analysis</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Category-wise Expense Analysis</h1>
           <p className="text-sm text-muted-foreground">
             Click a category to expand entries · Click an entry for full details
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button
             variant="outline" size="sm"
             className={cn('gap-2 h-9', activeFilterCount > 0 && 'border-rose-300 text-rose-700 bg-rose-50')}
@@ -519,8 +519,8 @@ export default function CategoryAnalysisPage() {
       ) : (
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardContent className="p-0">
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[700px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium min-w-[180px]">Category</th>
@@ -621,8 +621,8 @@ export default function CategoryAnalysisPage() {
                         {isOpen && (
                           <tr>
                             <td colSpan={4 + (hasBudgetData ? 2 : 0)} className="p-0 border-b">
-                              <div className={cn('border-l-4', borderColor)}>
-                                <table className="w-full text-xs">
+                              <div className={cn('border-l-4 overflow-x-auto', borderColor)}>
+                                <table className="w-full text-xs min-w-[600px]">
                                   <thead>
                                     <tr className="border-b bg-slate-100/70">
                                       <th className="pl-11 pr-3 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">Date</th>

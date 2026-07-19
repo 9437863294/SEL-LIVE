@@ -1,13 +1,16 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase';
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import {
   formatINR, SAS_COLLECTIONS,
-  type SASBudget, type SASCategory, type SASCategoryBudget, type SASExpense, type SASPayment, type SASProject,
+  type SASBudget, type SASBudgetApproval, type SASCategory, type SASCategoryBudget,
+  type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -30,8 +33,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, Layers, Loader2,
-  Pencil, Plus, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet,
+  Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, Filter, Layers, Loader2,
+  Pencil, Plus, Search, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cn } from '@/lib/utils';
@@ -152,8 +155,9 @@ export default function SiteFundBudgetPage() {
   const [allExpenses,  setAllExpenses]  = useState<SASExpense[]>([]);
   const [allPayments,  setAllPayments]  = useState<SASPayment[]>([]);
   const [categories,   setCategories]   = useState<SASCategory[]>([]);
-  const [allCatBudgets, setAllCatBudgets] = useState<SASCategoryBudget[]>([]);
-  const [loading,      setLoading]      = useState(true);
+  const [allCatBudgets,  setAllCatBudgets]  = useState<SASCategoryBudget[]>([]);
+  const [allApprovals,   setAllApprovals]   = useState<SASBudgetApproval[]>([]);
+  const [loading,        setLoading]        = useState(true);
   const [saving,       setSaving]       = useState(false);
   const [catSaving,    setCatSaving]    = useState(false);
   const [exporting,    setExporting]    = useState(false);
@@ -188,10 +192,19 @@ export default function SiteFundBudgetPage() {
   const [bulkAmounts,    setBulkAmounts]    = useState<Record<string, string>>({});
   const [bulkSaving,     setBulkSaving]     = useState(false);
 
-  // ── Upload Approval Sheet state ───────────────────────────────────────────────
+  // ── Upload Approval Sheet (Excel import) state ───────────────────────────────
   const [uploadOpen,   setUploadOpen]   = useState(false);
   const [uploadRows,   setUploadRows]   = useState<UploadRow[]>([]);
   const [uploadSaving, setUploadSaving] = useState(false);
+
+  // ── PDF approval upload state ─────────────────────────────────────────────────
+  const [pdfUploadingKey, setPdfUploadingKey] = useState<string | null>(null); // "projectId:period"
+  const pdfPendingKeyRef = useRef<string | null>(null); // sync ref for file input onChange
+
+  // ── Table filters ─────────────────────────────────────────────────────────────
+  const [filterSearch,  setFilterSearch]  = useState('');
+  const [filterStatus,  setFilterStatus]  = useState<'all' | 'on-track' | 'warning' | 'over-budget' | 'no-budget'>('all');
+  const [filterFY,      setFilterFY]      = useState<string>('all');
 
   useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading]);
 
@@ -215,6 +228,11 @@ export default function SiteFundBudgetPage() {
     } finally {
       setLoading(false);
     }
+    // Load budget approvals separately so a missing collection doesn't blank the page
+    try {
+      const appSnap = await getDocs(collection(db, SAS_COLLECTIONS.budgetApprovals));
+      setAllApprovals(appSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetApproval)));
+    } catch { /* collection may not exist yet */ }
   }
 
   const visibleProjects = useMemo(
@@ -251,6 +269,40 @@ export default function SiteFundBudgetPage() {
     }).length;
     return { budget, spent, received, overCount };
   }, [visibleProjects, allBudgets, allExpenses, allPayments]);
+
+  // ── Filter helpers ────────────────────────────────────────────────────────────
+  const availableFYs = useMemo(() => {
+    const fySet = new Set<number>([currentFYStart()]);
+    allBudgets.filter(b => b.budgetType === 'monthly' && b.period).forEach(b => fySet.add(getFYStartFromDate(b.period! + '-01')));
+    allExpenses.forEach(e => fySet.add(getFYStartFromDate(e.expenseDate)));
+    return [...fySet].sort((a, b) => b - a);
+  }, [allBudgets, allExpenses]);
+
+  const filteredProjects = useMemo(() => {
+    return visibleProjects.filter(p => {
+      if (filterSearch && !p.projectName.toLowerCase().includes(filterSearch.toLowerCase()) &&
+          !p.projectCode?.toLowerCase().includes(filterSearch.toLowerCase())) return false;
+      if (filterFY !== 'all') {
+        const fyStart = parseInt(filterFY);
+        const fyMonths = getFYMonths(fyStart);
+        const hasData = allBudgets.some(b => b.projectId === p.id && b.budgetType === 'monthly' && fyMonths.includes(b.period ?? '')) ||
+                        allExpenses.some(e => e.projectId === p.id && fyMonths.some(m => e.expenseDate.startsWith(m)));
+        if (!hasData) return false;
+      }
+      if (filterStatus !== 'all') {
+        const monthSum = allBudgets.filter(b => b.projectId === p.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0);
+        const spent    = allExpenses.filter(e => e.projectId === p.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+        const pct      = monthSum > 0 ? (spent / monthSum) * 100 : 0;
+        if (filterStatus === 'no-budget'    && monthSum > 0) return false;
+        if (filterStatus === 'on-track'     && !(monthSum > 0 && pct < 80)) return false;
+        if (filterStatus === 'warning'      && !(monthSum > 0 && pct >= 80 && spent <= monthSum)) return false;
+        if (filterStatus === 'over-budget'  && !(monthSum > 0 && spent > monthSum)) return false;
+      }
+      return true;
+    });
+  }, [visibleProjects, filterSearch, filterFY, filterStatus, allBudgets, allExpenses]);
+
+  const hasActiveFilters = filterSearch !== '' || filterStatus !== 'all' || filterFY !== 'all';
 
   // ── Tree helpers ──────────────────────────────────────────────────────────────
   function getRelevantFYs(projectId: string): number[] {
@@ -506,6 +558,54 @@ export default function SiteFundBudgetPage() {
     }
   }
 
+  // ── PDF Approval upload helpers ───────────────────────────────────────────────
+  async function handlePdfUpload(projectId: string, projectName: string, period: string, file: File) {
+    setPdfUploadingKey(`${projectId}:${period}`);
+    try {
+      const existing = allApprovals.find(a => a.projectId === projectId && a.period === period);
+      // Remove previous file from Storage if replacing
+      if (existing?.storagePath) {
+        try { await deleteObject(storageRef(storage, existing.storagePath)); } catch { /* ok if already deleted */ }
+      }
+      const path = `sas/budget-approvals/${projectId}/${period}/${file.name}`;
+      const sRef = storageRef(storage, path);
+      await uploadBytes(sRef, file);
+      const url = await getDownloadURL(sRef);
+      const data = {
+        projectId, projectName, period,
+        fileName: file.name, fileUrl: url, storagePath: path,
+        uploadedBy: user?.id ?? '', uploadedByName: user?.name ?? '',
+        uploadedAt: serverTimestamp(),
+      };
+      if (existing) {
+        await updateDoc(doc(db, SAS_COLLECTIONS.budgetApprovals, existing.id), data);
+      } else {
+        await addDoc(collection(db, SAS_COLLECTIONS.budgetApprovals), data);
+      }
+      toast({ title: 'Uploaded', description: `Approval copy for ${monthLabel(period)} saved.` });
+      // Reload approvals only
+      const appSnap = await getDocs(collection(db, SAS_COLLECTIONS.budgetApprovals));
+      setAllApprovals(appSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudgetApproval)));
+    } catch (e: any) {
+      toast({ title: 'Upload failed', description: e.message, variant: 'destructive' });
+    } finally {
+      setPdfUploadingKey(null);
+    }
+  }
+
+  async function handleDeleteApproval(approval: SASBudgetApproval) {
+    try {
+      if (approval.storagePath) {
+        try { await deleteObject(storageRef(storage, approval.storagePath)); } catch { /* ok */ }
+      }
+      await deleteDoc(doc(db, SAS_COLLECTIONS.budgetApprovals, approval.id));
+      setAllApprovals(prev => prev.filter(a => a.id !== approval.id));
+      toast({ title: 'Removed', description: 'Approval copy removed.' });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    }
+  }
+
   // ── Upload Approval Sheet helpers ─────────────────────────────────────────────
   function parseMonthStr(val: string): string {
     if (!val) return '';
@@ -739,12 +839,12 @@ export default function SiteFundBudgetPage() {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Site Fund Budget</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Site Fund Budget</h1>
           <p className="text-sm text-muted-foreground">
             Hierarchical tracking — Total → FY-wise → Month-wise → Category-wise
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {canExport && (
             <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -757,6 +857,27 @@ export default function SiteFundBudgetPage() {
             accept=".xlsx,.xls"
             className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) void handleUploadFile(f); e.target.value = ''; }}
+          />
+          {/* Hidden PDF input for per-month approval uploads */}
+          <input
+            id="budget-pdf-input"
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              const key = pdfPendingKeyRef.current;
+              if (f && key) {
+                const [pid, period] = key.split(':');
+                const proj = visibleProjects.find(p => p.id === pid);
+                void handlePdfUpload(pid, proj?.projectName ?? '', period, f);
+              } else {
+                // User cancelled without picking — clear spinner
+                setPdfUploadingKey(null);
+                pdfPendingKeyRef.current = null;
+              }
+              e.target.value = '';
+            }}
           />
           {effectiveCanAdd && (
             <Button variant="outline" size="sm" className="gap-2" onClick={() => document.getElementById('budget-upload-input')?.click()}>
@@ -807,28 +928,88 @@ export default function SiteFundBudgetPage() {
 
       {/* ── Tree table ── */}
       <Card className="bg-white/80 backdrop-blur-sm">
+
+        {/* Filter bar */}
+        <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
+          <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <div className="relative w-full sm:w-auto min-w-[140px]">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search project..."
+              value={filterSearch}
+              onChange={e => setFilterSearch(e.target.value)}
+              className="h-7 pl-7 pr-6 text-xs w-full"
+            />
+            {filterSearch && (
+              <button onClick={() => setFilterSearch('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <Select value={filterFY} onValueChange={v => setFilterFY(v)}>
+            <SelectTrigger className="h-7 text-xs w-full sm:w-auto min-w-[140px]">
+              <SelectValue placeholder="All FYs" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All FYs</SelectItem>
+              {availableFYs.map(fy => (
+                <SelectItem key={fy} value={String(fy)}>{fyLabel(fy)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={filterStatus} onValueChange={v => setFilterStatus(v as typeof filterStatus)}>
+            <SelectTrigger className="h-7 text-xs w-full sm:w-auto min-w-[140px]">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="on-track">On Track</SelectItem>
+              <SelectItem value="warning">Warning (&gt;80%)</SelectItem>
+              <SelectItem value="over-budget">Over Budget</SelectItem>
+              <SelectItem value="no-budget">No Budget Set</SelectItem>
+            </SelectContent>
+          </Select>
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground"
+              onClick={() => { setFilterSearch(''); setFilterStatus('all'); setFilterFY('all'); }}>
+              <X className="h-3 w-3" /> Clear filters
+            </Button>
+          )}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {filteredProjects.length} of {visibleProjects.length} project{visibleProjects.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
         <CardContent className="p-0">
           {visibleProjects.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <Target className="h-10 w-10 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">No active projects found.</p>
             </div>
+          ) : filteredProjects.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <Filter className="h-10 w-10 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">No projects match the current filters.</p>
+              <Button variant="outline" size="sm" onClick={() => { setFilterSearch(''); setFilterStatus('all'); setFilterFY('all'); }}>
+                Clear filters
+              </Button>
+            </div>
           ) : (
-            <div className="overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10">
-                  <tr className="border-b bg-slate-100">
+            <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 'calc(100vh - 340px)' }}>
+              <table className="w-full text-sm min-w-[800px]">
+                <thead className="sticky top-0 z-20">
+                  <tr className="border-b bg-slate-100 shadow-sm">
                     <th className="px-4 py-2.5 text-left font-medium min-w-[220px]">Project / Period</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Budget (₹)</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Spent (₹)</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Remaining (₹)</th>
                     <th className="px-4 py-2.5 text-left font-medium min-w-[130px]">Usage</th>
                     <th className="px-4 py-2.5 text-left font-medium">Status</th>
-                    {(effectiveCanEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
+                    {(effectiveCanEdit || canDelete || effectiveCanAdd) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleProjects.map(project => {
+                  {filteredProjects.map(project => {
                     const totalBudget = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'total') ?? null;
                     const pExp    = allExpenses.filter(e => e.projectId === project.id);
                     const pPay    = allPayments.filter(p => p.projectId === project.id);
@@ -957,6 +1138,8 @@ export default function SiteFundBudgetPage() {
                                 const monthKey = `${project.id}:${m}`;
                                 const isMoExp  = expandedMonths.has(monthKey);
                                 const mB       = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m) ?? null;
+                                const approval = allApprovals.find(a => a.projectId === project.id && a.period === m);
+                                const isPdfUploading = pdfUploadingKey === `${project.id}:${m}`;
                                 const mSpent   = pExp.filter(e => e.expenseDate.startsWith(m)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
                                 // Roll-up: if no monthly budget, sum category budgets for this month
                                 const catBudgetSum = allCatBudgets
@@ -984,6 +1167,19 @@ export default function SiteFundBudgetPage() {
                                           <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
                                           <span className="text-xs">{monthLabel(m)}</span>
                                           {isCurMo && <Badge className="text-[9px] px-1.5 py-0 bg-amber-100 text-amber-700 hover:bg-amber-100 font-normal">This Month</Badge>}
+                                          {approval && (
+                                            <a
+                                              href={approval.fileUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              title={`View approval: ${approval.fileName}`}
+                                              onClick={e => e.stopPropagation()}
+                                              className="flex items-center gap-0.5 text-[10px] text-blue-600 hover:text-blue-800 hover:underline"
+                                            >
+                                              <FileText className="h-2.5 w-2.5 shrink-0" />
+                                              <span>Approval</span>
+                                            </a>
+                                          )}
                                           <span className="ml-1 text-[10px] text-muted-foreground">
                                             ({catRows.length} categories)
                                           </span>
@@ -1040,6 +1236,46 @@ export default function SiteFundBudgetPage() {
                                             )}
                                             {canDelete && mB && (
                                               <DeleteConfirm label={`Remove ${monthLabel(m)} budget for ${project.projectName}?`} onConfirm={() => handleDelete(mB)} size="sm" />
+                                            )}
+                                            {/* PDF approval buttons */}
+                                            {effectiveCanAdd && (
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6 text-blue-600 hover:bg-blue-50"
+                                                title={approval ? 'Replace approval copy' : 'Upload approval PDF'}
+                                                disabled={isPdfUploading}
+                                                onClick={() => {
+                                                  const key = `${project.id}:${m}`;
+                                                  pdfPendingKeyRef.current = key;
+                                                  setPdfUploadingKey(key);
+                                                  document.getElementById('budget-pdf-input')?.click();
+                                                }}
+                                              >
+                                                {isPdfUploading
+                                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                                  : <FileText className="h-3 w-3" />}
+                                              </Button>
+                                            )}
+                                            {approval && (
+                                              <>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="icon"
+                                                  className="h-6 w-6 text-blue-600 hover:bg-blue-50"
+                                                  title={`View: ${approval.fileName}`}
+                                                  onClick={() => window.open(approval.fileUrl, '_blank')}
+                                                >
+                                                  <Download className="h-3 w-3" />
+                                                </Button>
+                                                {canDelete && (
+                                                  <DeleteConfirm
+                                                    label={`Remove approval copy for ${monthLabel(m)}?`}
+                                                    onConfirm={() => handleDeleteApproval(approval)}
+                                                    size="sm"
+                                                  />
+                                                )}
+                                              </>
                                             )}
                                           </div>
                                         </td>
@@ -1125,7 +1361,7 @@ export default function SiteFundBudgetPage() {
 
       {/* ── Add / Edit Budget Dialog ── */}
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-[95vw] sm:max-w-md overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>
               {editingBudget ? 'Edit Budget' : 'Set Budget'}
@@ -1256,7 +1492,7 @@ export default function SiteFundBudgetPage() {
 
       {/* ── Bulk Category Budget Dialog ── */}
       <Dialog open={bulkDialogOpen} onOpenChange={open => { if (!open && !bulkSaving) setBulkDialogOpen(false); }}>
-        <DialogContent className="max-w-md flex flex-col" style={{ maxHeight: '85vh' }}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md flex flex-col overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-teal-600" />
@@ -1342,7 +1578,7 @@ export default function SiteFundBudgetPage() {
 
       {/* ── Category Budget Dialog (single edit) ── */}
       <Dialog open={catDialogOpen} onOpenChange={open => { if (!open && !catSaving) setCatDialogOpen(false); }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-[95vw] sm:max-w-sm overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-teal-600" />
@@ -1395,7 +1631,7 @@ export default function SiteFundBudgetPage() {
 
       {/* ── Upload preview dialog ── */}
       <Dialog open={uploadOpen} onOpenChange={open => { if (!open && !uploadSaving) { setUploadOpen(false); setUploadRows([]); } }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-4 w-4" /> Import Monthly Budgets
@@ -1410,7 +1646,7 @@ export default function SiteFundBudgetPage() {
                 <Download className="h-3 w-3" /> Download Template
               </Button>
             </div>
-            <div className="rounded-lg border overflow-auto max-h-[50vh]">
+            <div className="rounded-lg border overflow-x-auto max-h-[50vh]">
               <table className="w-full text-xs">
                 <thead className="bg-slate-100 sticky top-0">
                   <tr>

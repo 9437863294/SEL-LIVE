@@ -46,8 +46,8 @@ function StatCard({ icon: Icon, label, value, colorClass }: {
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-lg font-bold leading-tight truncate">{value}</p>
+        <p className="text-[10px] sm:text-xs text-muted-foreground">{label}</p>
+        <p className="text-sm sm:text-base font-bold leading-tight truncate">{value}</p>
       </div>
     </div>
   );
@@ -79,17 +79,17 @@ function QuickExpenseDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
-    expenseCategoryId:  '',   // UI only — for sub-cat filtering
-    expenseCategory:    '',   // main category name stored in DB
+    expenseCategoryId: '',   // UI only — for sub-cat filtering
+    expenseCategory: '',   // main category name stored in DB
     expenseSubCategory: '',   // sub-category name stored in DB
-    narration:          '',
-    expensedBy:         defaultExpensedBy,
-    expenseDate:        new Date().toISOString().slice(0, 10),
-    expenseAmount:      '',
-    paymentMode:        'Cash',
-    vendorPartyName:    '',
-    billNo:             '',
-    remarks:            '',
+    narration: '',
+    expensedBy: defaultExpensedBy,
+    expenseDate: new Date().toISOString().slice(0, 10),
+    expenseAmount: '',
+    paymentMode: 'Cash',
+    vendorPartyName: '',
+    billNo: '',
+    remarks: '',
   });
 
   const mainCategories = useMemo(() => categories.filter(c => !c.parentId), [categories]);
@@ -136,28 +136,28 @@ function QuickExpenseDialog({
   async function submit() {
     if (!form.expenseCategory) { toast({ title: 'Validation', description: 'Select a main category.', variant: 'destructive' }); return; }
     if (!form.expensedBy.trim()) { toast({ title: 'Validation', description: 'Expensed By is required.', variant: 'destructive' }); return; }
-    if (!form.expenseDate)       { toast({ title: 'Validation', description: 'Date is required.',        variant: 'destructive' }); return; }
+    if (!form.expenseDate) { toast({ title: 'Validation', description: 'Date is required.', variant: 'destructive' }); return; }
     const amount = Number(form.expenseAmount);
-    if (!amount || amount <= 0)  { toast({ title: 'Validation', description: 'Enter a valid amount.',    variant: 'destructive' }); return; }
+    if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.', variant: 'destructive' }); return; }
 
     setSaving(true);
     try {
       const docRef = await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
-        projectId:          project.id,
-        projectName:        project.projectName,
-        expenseCategory:    form.expenseCategory,
+        projectId: project.id,
+        projectName: project.projectName,
+        expenseCategory: form.expenseCategory,
         expenseSubCategory: form.expenseSubCategory || null,
-        narration:          form.narration.trim() || null,
-        expensedBy:         form.expensedBy.trim(),
-        expenseDate:        form.expenseDate,
-        expenseAmount:      amount,
-        paymentMode:        form.paymentMode,
-        vendorPartyName:    form.vendorPartyName.trim(),
-        billNo:             form.billNo.trim(),
-        remarks:            form.remarks.trim(),
-        attachments:        [],
-        createdAt:          serverTimestamp(),
-        updatedAt:          serverTimestamp(),
+        narration: form.narration.trim() || null,
+        expensedBy: form.expensedBy.trim(),
+        expenseDate: form.expenseDate,
+        expenseAmount: amount,
+        paymentMode: form.paymentMode,
+        vendorPartyName: form.vendorPartyName.trim(),
+        billNo: form.billNo.trim(),
+        remarks: form.remarks.trim(),
+        attachments: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
       if (pendingFiles.length > 0) {
@@ -179,7 +179,7 @@ function QuickExpenseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Expense — {project.projectName}</DialogTitle>
         </DialogHeader>
@@ -360,7 +360,7 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
 
   const totalReceived = useMemo(() => projPayments.reduce((s, p) => s + (p.receivedAmount || 0), 0), [projPayments]);
   const totalExpenses = useMemo(() => projExpenses.reduce((s, e) => s + (e.expenseAmount || 0), 0), [projExpenses]);
-  const balance       = totalReceived - totalExpenses;
+  const balance = totalReceived - totalExpenses;
 
   const recentTx = useMemo(() => {
     type Tx = { date: string; label: string; amount: number; type: 'receipt' | 'expense' };
@@ -517,12 +517,12 @@ export default function SiteAccountDashboardPage() {
   const canViewAll = can('View', `${MODULE}.All Projects`);
   const canViewDashboard = can('View', `${MODULE}.Dashboard`) || canViewAll;
 
-  const [projects,   setProjects]   = useState<SASProject[]>([]);
-  const [payments,   setPayments]   = useState<SASPayment[]>([]);
-  const [expenses,   setExpenses]   = useState<SASExpense[]>([]);
+  const [projects, setProjects] = useState<SASProject[]>([]);
+  const [payments, setPayments] = useState<SASPayment[]>([]);
+  const [expenses, setExpenses] = useState<SASExpense[]>([]);
   const [categories, setCategories] = useState<SASCategory[]>([]);
-  const [budgets,    setBudgets]    = useState<SASBudget[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const [budgets, setBudgets] = useState<SASBudget[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -554,9 +554,9 @@ export default function SiteAccountDashboardPage() {
     () => canViewAll
       ? []
       : projects.filter(p =>
-          (p.assignedPersonId === user?.id || p.altUserId === user?.id) &&
-          p.enabledForSiteAccount && p.status === 'Active'
-        ),
+        (p.assignedPersonId === user?.id || p.altUserId === user?.id) &&
+        p.enabledForSiteAccount && p.status === 'Active'
+      ),
     [projects, user?.id, canViewAll]
   );
 
@@ -565,9 +565,9 @@ export default function SiteAccountDashboardPage() {
     () => canViewAll
       ? []
       : projects.filter(p =>
-          (p.assignedPersonId === user?.id || p.altUserId === user?.id || p.viewerId === user?.id) &&
-          p.enabledForSiteAccount && p.status === 'Active'
-        ),
+        (p.assignedPersonId === user?.id || p.altUserId === user?.id || p.viewerId === user?.id) &&
+        p.enabledForSiteAccount && p.status === 'Active'
+      ),
     [projects, user?.id, canViewAll]
   );
 
@@ -580,19 +580,19 @@ export default function SiteAccountDashboardPage() {
   // Admin summary numbers
   const totalReceived = useMemo(() => payments.reduce((s, p) => s + (p.receivedAmount || 0), 0), [payments]);
   const totalExpenses = useMemo(() => expenses.reduce((s, e) => s + (e.expenseAmount || 0), 0), [expenses]);
-  const totalBalance  = totalReceived - totalExpenses;
+  const totalBalance = totalReceived - totalExpenses;
 
   const projectStats = useMemo(() => enabledProjects.map(proj => {
-    const received    = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-    const spent       = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-    const budget      = budgets.find(b => b.projectId === proj.id && b.budgetType === 'total');
+    const received = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
+    const spent = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+    const budget = budgets.find(b => b.projectId === proj.id && b.budgetType === 'total');
     const totalBudget = budget?.budgetAmount ?? 0;
     return { id: proj.id, name: proj.projectName, received, expenses: spent, balance: received - spent, totalBudget, budgetUsedPct: totalBudget > 0 ? (spent / totalBudget) * 100 : 0 };
   }).sort((a, b) => b.balance - a.balance), [enabledProjects, payments, expenses, budgets]);
 
   const highestExpense = useMemo(() => [...projectStats].sort((a, b) => b.expenses - a.expenses)[0], [projectStats]);
-  const lowBalance     = useMemo(() => projectStats.filter(p => p.balance < 10000),                  [projectStats]);
-  const overBudget     = useMemo(() => projectStats.filter(p => p.totalBudget > 0 && p.expenses > p.totalBudget), [projectStats]);
+  const lowBalance = useMemo(() => projectStats.filter(p => p.balance < 10000), [projectStats]);
+  const overBudget = useMemo(() => projectStats.filter(p => p.totalBudget > 0 && p.expenses > p.totalBudget), [projectStats]);
 
   if (isAuthLoading || loading) {
     return (
@@ -653,9 +653,9 @@ export default function SiteAccountDashboardPage() {
 
           {/* Stat cards */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 mb-4">
-            <StatCard icon={Building2}    label="Enabled Projects"      value={String(enabledProjects.length)} colorClass="text-emerald-600" />
-            <StatCard icon={TrendingUp}   label="Total Received from HO" value={formatINR(totalReceived)}       colorClass="text-blue-600" />
-            <StatCard icon={TrendingDown} label="Total Site Expenses"    value={formatINR(totalExpenses)}       colorClass="text-rose-600" />
+            <StatCard icon={Building2} label="Enabled Projects" value={String(enabledProjects.length)} colorClass="text-emerald-600" />
+            <StatCard icon={TrendingUp} label="Total Received from HO" value={formatINR(totalReceived)} colorClass="text-blue-600" />
+            <StatCard icon={TrendingDown} label="Total Site Expenses" value={formatINR(totalExpenses)} colorClass="text-rose-600" />
             <StatCard
               icon={Wallet}
               label="Total Balance"
@@ -663,42 +663,6 @@ export default function SiteAccountDashboardPage() {
               colorClass={totalBalance >= 0 ? 'text-teal-600' : 'text-destructive'}
             />
           </div>
-
-          {/* Alert tiles */}
-          {(highestExpense || lowBalance.length > 0 || overBudget.length > 0) && (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mb-4">
-              {highestExpense && (
-                <div className="flex items-start gap-3 rounded-xl border bg-orange-50 p-4 text-orange-700">
-                  <BarChart3 className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide">Highest Expense Project</p>
-                    <p className="font-semibold truncate">{highestExpense.name}</p>
-                    <p className="text-sm">{formatINR(highestExpense.expenses)}</p>
-                  </div>
-                </div>
-              )}
-              {lowBalance.length > 0 && (
-                <div className="flex items-start gap-3 rounded-xl border bg-rose-50 p-4 text-rose-700">
-                  <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide">Low Balance Projects</p>
-                    <p className="font-semibold">{lowBalance.length} project{lowBalance.length > 1 ? 's' : ''} below ₹10,000</p>
-                    <p className="text-sm line-clamp-2 break-words">{lowBalance.map(p => p.name).join(', ')}</p>
-                  </div>
-                </div>
-              )}
-              {overBudget.length > 0 && (
-                <div className="flex items-start gap-3 rounded-xl border bg-purple-50 p-4 text-purple-700">
-                  <Target className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide">Over Budget</p>
-                    <p className="font-semibold">{overBudget.length} project{overBudget.length > 1 ? 's' : ''} exceeded total budget</p>
-                    <p className="text-sm line-clamp-2 break-words">{overBudget.map(p => p.name).join(', ')}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Project-wise summary table */}
           <Card className="bg-white/80 backdrop-blur-sm">
@@ -711,8 +675,8 @@ export default function SiteAccountDashboardPage() {
                   No enabled projects. Configure in Project Settings.
                 </p>
               ) : (
-                <div className="overflow-auto max-h-[60vh]">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+                  <table className="w-full min-w-[600px] text-sm">
                     <thead className="sticky top-0 z-10">
                       <tr className="border-b bg-slate-100">
                         <th className="px-4 py-2 text-left font-medium">Project</th>

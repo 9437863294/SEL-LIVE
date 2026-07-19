@@ -150,7 +150,7 @@ export default function BalanceStatusPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Project Balance Status</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Project Balance Status</h1>
           <p className="text-sm text-muted-foreground">
             Health overview — Healthy ≥ ₹{(HEALTHY_THRESHOLD / 1000).toFixed(0)}k · Warning ≥ ₹0 · Critical &lt; ₹0
           </p>
@@ -164,7 +164,7 @@ export default function BalanceStatusPage() {
       </div>
 
       {/* Status summary tiles */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {(['healthy', 'warning', 'critical'] as BalanceStatus[]).map(s => {
           const cfg = statusConfig[s];
           const Icon = cfg.icon;
@@ -212,8 +212,8 @@ export default function BalanceStatusPage() {
       ) : (
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardContent className="p-0">
-            <div className="overflow-auto max-h-[60vh]">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+              <table className="min-w-[700px] w-full text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">#</th>

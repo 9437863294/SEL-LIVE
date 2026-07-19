@@ -125,7 +125,7 @@ export default function ReceiptReportPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Project-Wise Receipt Report</h1>
+          <h1 className="text-base sm:text-lg font-bold text-slate-800">Project-Wise Receipt Report</h1>
           <p className="text-sm text-muted-foreground">Payments received from Head Office</p>
         </div>
         {canExport && (
@@ -181,8 +181,8 @@ export default function ReceiptReportPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-auto max-h-[400px]">
-                <table className="w-full text-sm">
+              <div className="overflow-auto overflow-x-auto max-h-[400px]">
+                <table className="w-full min-w-[600px] text-sm">
                   <thead className="sticky top-0 z-10">
                     <tr className="border-b bg-slate-100">
                       <th className="px-4 py-2 text-left font-medium">Date</th>
