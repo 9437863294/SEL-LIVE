@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from './AuthProvider';
 
-const PUBLIC_ROUTES = ['/login', '/driver-login', '/print-auth'];
+const PUBLIC_ROUTES = ['/login', '/driver-login', '/print-auth', '/auth/action'];
 const DRIVER_APP_DEFAULT_REDIRECT = '/driver-management';
 const WEB_DEFAULT_REDIRECT = '/';
 

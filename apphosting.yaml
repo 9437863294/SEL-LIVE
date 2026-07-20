@@ -5,6 +5,12 @@ runConfig:
   maxInstances: 1
 
 env:
+  # ── Public application URL (used in authentication emails) ──────────
+  - variable: APP_BASE_URL
+    value: https://seltech.store
+    availability:
+      - RUNTIME
+
   # ── SMTP (Nodemailer) ───────────────────────────────────────────────
   - variable: SMTP_HOST
     value: smtp.gmail.com

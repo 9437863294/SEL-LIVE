@@ -90,8 +90,10 @@ function LoadingScreen() {
 // ─── main content (needs useSearchParams → must be inside Suspense) ───────────
 function ActionContent() {
   const params      = useSearchParams();
-  const mode        = params.get('mode') as Mode | null;
-  const oobCode     = params.get('oobCode') ?? '';
+  const mode        = params?.get('mode') as Mode | null;
+  // Fallback: some email gateways don't decode &amp; before wrapping links,
+  // so params arrive as "amp;oobCode" instead of "oobCode".
+  const oobCode     = params?.get('oobCode') ?? params?.get('amp;oobCode') ?? '';
 
   const [status,   setStatus]   = useState<Status>('loading');
   const [errorMsg, setErrorMsg] = useState('');
@@ -121,8 +123,16 @@ function ActionContent() {
       }
       verifyPasswordResetCode(auth, oobCode)
         .then(e  => { setEmail(e); setStatus('ready'); })
-        .catch(() => {
-          setErrorMsg('This password reset link has expired or already been used. Please request a new one.');
+        .catch((err: any) => {
+          const code = err?.code ?? '';
+          if (code === 'auth/expired-action-code') {
+            setErrorMsg('This password reset link has expired (links are valid for 1 hour). Please request a new one.');
+          } else if (code === 'auth/invalid-action-code') {
+            setErrorMsg('This password reset link has already been used or is invalid. Please request a new one.');
+          } else {
+            setErrorMsg('Unable to verify this reset link. It may have expired or already been used. Please request a new one.');
+          }
+          console.error('[auth/action] verifyPasswordResetCode failed:', code, err?.message);
           setStatus('error');
         });
     } else {
@@ -156,7 +166,17 @@ function ActionContent() {
       await confirmPasswordReset(auth, oobCode, password);
       setStatus('success');
     } catch (err: any) {
-      setPwError(err?.message ?? 'Failed to reset password. Please try again.');
+      const code = err?.code ?? '';
+      if (code === 'auth/weak-password') {
+        setPwError('Password is too weak. Use at least 8 characters with uppercase, numbers, or symbols.');
+      } else if (code === 'auth/expired-action-code') {
+        setPwError('This reset link has expired. Please go back and request a new password reset.');
+      } else if (code === 'auth/invalid-action-code') {
+        setPwError('This reset link has already been used. Please request a new password reset.');
+      } else {
+        setPwError('Failed to reset password. Please try again or request a new reset link.');
+      }
+      console.error('[auth/action] confirmPasswordReset failed:', code, err?.message);
       setStatus('ready');
     }
   }
