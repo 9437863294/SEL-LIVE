@@ -67,14 +67,7 @@ function buildWelcomeEmail({
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td align="center" style="padding-bottom:18px;">
-                    <table cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <!-- Green logo square -->
-                        <td style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);border-radius:14px;width:56px;height:56px;text-align:center;vertical-align:middle;">
-                          <span style="font-size:21px;font-weight:800;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;letter-spacing:-0.5px;">SE</span>
-                        </td>
-                      </tr>
-                    </table>
+                    <img src="https://firebasestorage.googleapis.com/v0/b/module-hub-uc7tw.firebasestorage.app/o/Logo%2FSEL%20%20logo2%20.png?alt=media&amp;token=39b0f804-0610-4f3a-b26e-8ce334f94788" alt="Siddhartha Engineering Limited" width="160" height="auto" style="display:block;max-width:160px;height:auto;border:0;" />
                   </td>
                 </tr>
                 <tr>

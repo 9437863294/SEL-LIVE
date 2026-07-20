@@ -5,7 +5,15 @@ import { useEffect } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from './AuthProvider';
 
-const PUBLIC_ROUTES = ['/login', '/driver-login', '/print-auth', '/auth/action'];
+// Routes where logged-in users are redirected away (e.g. /login → home)
+const AUTH_ONLY_ROUTES = ['/login', '/driver-login', '/print-auth'];
+
+// Routes accessible without authentication; a superset of AUTH_ONLY_ROUTES.
+// /auth/action is intentionally NOT in AUTH_ONLY_ROUTES — a logged-in user
+// who lands there (e.g. mid-reset Firebase fires an auth event) must not be
+// bounced away before confirmPasswordReset resolves.
+const PUBLIC_ROUTES = [...AUTH_ONLY_ROUTES, '/auth/action'];
+
 const DRIVER_APP_DEFAULT_REDIRECT = '/driver-management';
 const WEB_DEFAULT_REDIRECT = '/';
 
@@ -71,13 +79,16 @@ export function ClientSessionHandler() {
 
     // If user is logged in...
     if (user) {
-      // ...and they are on a public page like /login, redirect them away.
-      if (isPublicRoute && currentPath !== safeRedirect) {
+      // ...and they are on a pure auth page (login / driver-login), redirect them away.
+      // /auth/action is deliberately excluded: confirmPasswordReset may briefly trigger
+      // an auth event; redirecting mid-reset would cancel the password change.
+      const isAuthOnlyRoute = AUTH_ONLY_ROUTES.some((route) => normalizePath(route) === currentPath);
+      if (isAuthOnlyRoute && currentPath !== safeRedirect) {
         router.replace(safeRedirect);
         // Fallback for some mobile WebView navigation cases where router replace does not complete.
         window.setTimeout(() => {
           const livePath = normalizePath(window.location.pathname || '/');
-          if (livePath === currentPath || PUBLIC_ROUTES.some((route) => normalizePath(route) === livePath)) {
+          if (livePath === currentPath || AUTH_ONLY_ROUTES.some((route) => normalizePath(route) === livePath)) {
             window.location.replace(safeRedirect);
           }
         }, 250);
