@@ -312,6 +312,15 @@ export async function checkAndFireBudgetAlerts({
 
 // ─── 2. FY-wide alert ─────────────────────────────────────────────────────────
 
+// Returns all 12 "YYYY-MM" period strings belonging to a given FY (e.g. "2026-27")
+function fyMonthPeriods(fyPeriod: string): string[] {
+  const startYr = Number(fyPeriod.split('-')[0]);
+  const months: string[] = [];
+  for (let m = 4; m <= 12; m++) months.push(`${startYr}-${String(m).padStart(2, '0')}`);
+  for (let m = 1; m <= 3;  m++) months.push(`${startYr + 1}-${String(m).padStart(2, '0')}`);
+  return months;
+}
+
 export async function checkFyBudgetAlerts({
   projectId, projectName, period, newExpenseAmount, assignedPersonId, altUserId,
 }: {
@@ -325,12 +334,27 @@ export async function checkFyBudgetAlerts({
     if (!activeThresholds.size) { console.log(TAG, '[fy] no active thresholds — skipping'); return; }
     if (!allRecipients.length)  { console.log(TAG, '[fy] no recipients — skipping'); return; }
 
+    // 1. Explicit FY budget
+    let budget: number | null = null;
     const fySnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
       where('projectId', '==', projectId), where('budgetType', '==', 'fy'), where('period', '==', fyPeriod)));
-    if (fySnap.empty) { console.log(TAG, `[fy] no FY budget for ${fyPeriod} — skipping`); return; }
-    const budget = fySnap.docs[0].data().budgetAmount as number;
-    if (!budget || budget <= 0) { console.log(TAG, '[fy] FY budget is zero — skipping'); return; }
-    console.log(TAG, `[fy] FY budget=₹${budget}`);
+    if (!fySnap.empty) {
+      const amt = fySnap.docs[0].data().budgetAmount as number;
+      if (amt > 0) { budget = amt; console.log(TAG, `[fy] explicit FY budget: ₹${amt}`); }
+    }
+
+    // 2. Fallback: sum of monthly budgets set for this FY's 12 months
+    if (!budget) {
+      const fyMonths = fyMonthPeriods(fyPeriod);
+      const monthSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
+        where('projectId', '==', projectId), where('budgetType', '==', 'monthly'), where('period', 'in', fyMonths)));
+      if (!monthSnap.empty) {
+        const total = monthSnap.docs.reduce((s, d) => s + ((d.data().budgetAmount as number) || 0), 0);
+        if (total > 0) { budget = total; console.log(TAG, `[fy] sum of monthly budgets: ₹${total}`); }
+      }
+    }
+
+    if (!budget) { console.log(TAG, `[fy] no budget found for ${fyPeriod} — skipping`); return; }
 
     const { from, to } = fyDateRange(fyPeriod);
     const newTotal = await fetchExpenseTotal({ projectId, from, to });
@@ -361,12 +385,36 @@ export async function checkTotalBudgetAlerts({
     if (!activeThresholds.size) { console.log(TAG, '[total] no active thresholds — skipping'); return; }
     if (!allRecipients.length)  { console.log(TAG, '[total] no recipients — skipping'); return; }
 
+    // 1. Explicit project total budget
+    let budget: number | null = null;
     const totalSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
       where('projectId', '==', projectId), where('budgetType', '==', 'total')));
-    if (totalSnap.empty) { console.log(TAG, '[total] no total budget set for project — skipping'); return; }
-    const budget = totalSnap.docs[0].data().budgetAmount as number;
-    if (!budget || budget <= 0) { console.log(TAG, '[total] total budget is zero — skipping'); return; }
-    console.log(TAG, `[total] project total budget=₹${budget}`);
+    if (!totalSnap.empty) {
+      const amt = totalSnap.docs[0].data().budgetAmount as number;
+      if (amt > 0) { budget = amt; console.log(TAG, `[total] explicit total budget: ₹${amt}`); }
+    }
+
+    // 2. Fallback: sum of all FY budgets set for this project
+    if (!budget) {
+      const fySnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
+        where('projectId', '==', projectId), where('budgetType', '==', 'fy')));
+      if (!fySnap.empty) {
+        const total = fySnap.docs.reduce((s, d) => s + ((d.data().budgetAmount as number) || 0), 0);
+        if (total > 0) { budget = total; console.log(TAG, `[total] sum of FY budgets: ₹${total}`); }
+      }
+    }
+
+    // 3. Fallback: sum of all monthly budgets set for this project
+    if (!budget) {
+      const monthSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.budgets),
+        where('projectId', '==', projectId), where('budgetType', '==', 'monthly')));
+      if (!monthSnap.empty) {
+        const total = monthSnap.docs.reduce((s, d) => s + ((d.data().budgetAmount as number) || 0), 0);
+        if (total > 0) { budget = total; console.log(TAG, `[total] sum of monthly budgets: ₹${total}`); }
+      }
+    }
+
+    if (!budget) { console.log(TAG, '[total] no budget found — skipping'); return; }
 
     // All-time total — single equality filter, no composite index needed
     const newTotal = await fetchExpenseTotal({ projectId });

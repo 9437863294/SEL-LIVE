@@ -389,11 +389,11 @@ export default function SiteFundBudgetPage() {
 
       if (editingBudget) {
         await updateDoc(doc(db, SAS_COLLECTIONS.budgets, editingBudget.id), data);
-        void log('Edit SAS Budget', { project: form.projectName, type: dialogTab, period, amount });
+        void log('Edit SAS Budget', { project: form.projectName, type: dialogTab, ...(period !== undefined && { period }), amount });
         toast({ title: 'Updated', description: 'Budget updated.' });
       } else {
         await addDoc(collection(db, SAS_COLLECTIONS.budgets), { ...data, createdAt: serverTimestamp() });
-        void log('Add SAS Budget', { project: form.projectName, type: dialogTab, period, amount });
+        void log('Add SAS Budget', { project: form.projectName, type: dialogTab, ...(period !== undefined && { period }), amount });
         toast({ title: 'Saved', description: 'Budget saved.' });
       }
       setDialogOpen(false);
@@ -756,13 +756,15 @@ export default function SiteFundBudgetPage() {
         const tb   = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'total');
         const tSpent = pExp.reduce((s, e) => s + (e.expenseAmount || 0), 0);
         const tRcvd  = pPay.reduce((s, p) => s + (p.receivedAmount || 0), 0);
-        const tAmt   = tb?.budgetAmount ?? 0;
+        const exportFySumAll = allBudgets.filter(b => b.projectId === project.id && b.budgetType === 'fy').reduce((s, b) => s + b.budgetAmount, 0);
+        const exportMonthSumAll = allBudgets.filter(b => b.projectId === project.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0);
+        const tAmt   = tb ? tb.budgetAmount : exportFySumAll > 0 ? exportFySumAll : exportMonthSumAll;
         const tRow = ws.addRow({
           level: 'Total', name: project.projectName,
-          budget: tAmt, received: tRcvd, spent: tSpent,
+          budget: tAmt || '—', received: tRcvd, spent: tSpent,
           remaining: tAmt > 0 ? tAmt - tSpent : '—',
           pctUsed: tAmt > 0 ? formatPct((tSpent / tAmt) * 100) : '—',
-          status: !tb ? 'No Budget' : tSpent > tAmt ? 'Over Budget' : (tSpent / tAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+          status: tAmt === 0 ? 'No Budget' : tSpent > tAmt ? 'Over Budget' : (tSpent / tAmt) * 100 >= 80 ? 'Warning' : 'On Track',
           notes: tb?.notes || '',
         });
         tRow.font = { bold: true };
@@ -772,14 +774,18 @@ export default function SiteFundBudgetPage() {
           const fyB = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'fy' && b.period === fyLabel(fyS));
           const fySpent = pExp.filter(e => e.expenseDate >= r.start && e.expenseDate <= r.end).reduce((s, e) => s + (e.expenseAmount || 0), 0);
           const fyRcvd  = pPay.filter(p => p.receiptDate >= r.start && p.receiptDate <= r.end).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-          if (!fyB && fySpent === 0) continue;
-          const fAmt = fyB?.budgetAmount ?? 0;
+          const exportFyMonthSum = getRelevantMonths(project.id, fyS).reduce((s, m) => {
+            const mb = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m);
+            return s + (mb?.budgetAmount ?? 0);
+          }, 0);
+          if (!fyB && fySpent === 0 && exportFyMonthSum === 0) continue;
+          const fAmt = fyB ? fyB.budgetAmount : exportFyMonthSum;
           ws.addRow({
             level: `FY ${fyLabel(fyS)}`, name: `  FY ${fyLabel(fyS)}`,
             budget: fAmt || '—', received: fyRcvd, spent: fySpent,
             remaining: fAmt > 0 ? fAmt - fySpent : '—',
             pctUsed: fAmt > 0 ? formatPct((fySpent / fAmt) * 100) : '—',
-            status: !fyB ? 'No Budget' : fySpent > fAmt ? 'Over Budget' : (fySpent / fAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+            status: fAmt === 0 ? 'No Budget' : fySpent > fAmt ? 'Over Budget' : (fySpent / fAmt) * 100 >= 80 ? 'Warning' : 'On Track',
             notes: fyB?.notes || '',
           });
 
@@ -1009,19 +1015,29 @@ export default function SiteFundBudgetPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProjects.map(project => {
+                  {(() => {
+                    const filterFYStart = filterFY !== 'all' ? parseInt(filterFY) : null;
+                    return filteredProjects.map(project => {
                     const totalBudget = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'total') ?? null;
                     const pExp    = allExpenses.filter(e => e.projectId === project.id);
                     const pPay    = allPayments.filter(p => p.projectId === project.id);
                     const tSpent  = pExp.reduce((s, e) => s + (e.expenseAmount  || 0), 0);
-                    // Roll-up: if no explicit total budget, sum all monthly budgets for this project
+                    // Cascade: explicit total → sum of FY budgets → sum of all monthly budgets
+                    const fyBudgetSumAll = allBudgets
+                      .filter(b => b.projectId === project.id && b.budgetType === 'fy')
+                      .reduce((s, b) => s + b.budgetAmount, 0);
                     const monthBudgetSumAll = allBudgets
                       .filter(b => b.projectId === project.id && b.budgetType === 'monthly')
                       .reduce((s, b) => s + b.budgetAmount, 0);
-                    const tAmt    = monthBudgetSumAll;
+                    const tAmt    = totalBudget ? totalBudget.budgetAmount
+                                   : fyBudgetSumAll > 0 ? fyBudgetSumAll
+                                   : monthBudgetSumAll;
+                    const tBudgetSource = totalBudget ? 'explicit' : fyBudgetSumAll > 0 ? 'fy-sum' : 'month-sum';
                     const tPct    = tAmt > 0 ? Math.min((tSpent / tAmt) * 100, 100) : 0;
-                    const isExpanded = expandedProjects.has(project.id);
-                    const fys = getRelevantFYs(project.id);
+                    // When a FY filter is active, force project open and show only the matching FY
+                    const isExpanded = expandedProjects.has(project.id) || filterFYStart !== null;
+                    const allFys = getRelevantFYs(project.id);
+                    const fys = filterFYStart !== null ? allFys.filter(fy => fy === filterFYStart) : allFys;
 
                     return (
                       <Fragment key={project.id}>
@@ -1042,7 +1058,13 @@ export default function SiteFundBudgetPage() {
                             </button>
                           </td>
                           <td className="px-4 py-3 text-right font-semibold text-emerald-700">
-                            {tAmt > 0 ? formatINR(tAmt) : <span className="text-muted-foreground text-xs">—</span>}
+                            {tAmt > 0
+                              ? <div>
+                                  {formatINR(tAmt)}
+                                  {tBudgetSource === 'fy-sum' && <p className="text-[10px] font-normal text-muted-foreground">∑ FY budgets</p>}
+                                  {tBudgetSource === 'month-sum' && <p className="text-[10px] font-normal text-muted-foreground">∑ monthly budgets</p>}
+                                </div>
+                              : <span className="text-muted-foreground text-xs">—</span>}
                           </td>
                           <td className="px-4 py-3 text-right text-rose-700 font-medium">{formatINR(tSpent)}</td>
                           <td className={cn('px-4 py-3 text-right font-semibold', tAmt === 0 ? 'text-muted-foreground' : tAmt - tSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
@@ -1057,11 +1079,16 @@ export default function SiteFundBudgetPage() {
                             ) : <span className="text-xs text-muted-foreground">—</span>}
                           </td>
                           <td className="px-4 py-3">
-                            <StatusBadge budget={monthBudgetSumAll > 0 ? { budgetAmount: monthBudgetSumAll } as SASBudget : null} spent={tSpent} />
+                            <StatusBadge budget={tAmt > 0 ? { budgetAmount: tAmt } as SASBudget : null} spent={tSpent} />
                           </td>
                           {(effectiveCanEdit || canDelete) && (
                             <td className="px-4 py-3 text-right">
-                              <div className="flex justify-end gap-1">
+                              <div className="flex justify-end items-center gap-1">
+                                {effectiveCanEdit && (
+                                  totalBudget
+                                    ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(totalBudget)}><Pencil className="h-3 w-3" /></Button>
+                                    : <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'total')}><Plus className="h-2.5 w-2.5" />Set Total</Button>
+                                )}
                                 {canDelete && totalBudget && (
                                   <DeleteConfirm label={`Remove total budget for ${project.projectName}?`} onConfirm={() => handleDelete(totalBudget)} />
                                 )}
@@ -1073,18 +1100,20 @@ export default function SiteFundBudgetPage() {
                         {/* ══ Level 1 — FY rows ══ */}
                         {isExpanded && fys.map(fyS => {
                           const fyKey   = `${project.id}:${fyLabel(fyS)}`;
-                          const isFYExp = expandedFYs.has(fyKey);
+                          // When a FY filter is active, auto-expand matching FY to show months
+                          const isFYExp = expandedFYs.has(fyKey) || filterFYStart !== null;
                           const r       = fyRange(fyS);
                           const fyB     = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'fy' && b.period === fyLabel(fyS)) ?? null;
                           const fySpent = pExp.filter(e => e.expenseDate >= r.start && e.expenseDate <= r.end).reduce((s, e) => s + (e.expenseAmount || 0), 0);
                           const isCurFY = fyS === curFYStart;
                           const months  = getRelevantMonths(project.id, fyS);
-                          // Roll-up: if no explicit FY budget, sum monthly budgets in this FY
+                          // Cascade: explicit FY budget → sum of monthly budgets in this FY
                           const fyMonthSum = months.reduce((s, m) => {
                             const mb = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m);
                             return s + (mb?.budgetAmount ?? 0);
                           }, 0);
-                          const fAmt    = fyMonthSum;
+                          const fAmt    = fyB ? fyB.budgetAmount : fyMonthSum;
+                          const fBudgetSource = fyB ? 'explicit' : 'month-sum';
                           const fyPct   = fAmt > 0 ? Math.min((fySpent / fAmt) * 100, 100) : 0;
 
                           return (
@@ -1105,7 +1134,12 @@ export default function SiteFundBudgetPage() {
                                   </button>
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-medium text-emerald-700">
-                                  {fAmt > 0 ? formatINR(fAmt) : <span className="text-muted-foreground text-xs">—</span>}
+                                  {fAmt > 0
+                                    ? <div>
+                                        {formatINR(fAmt)}
+                                        {fBudgetSource === 'month-sum' && <p className="text-[10px] font-normal text-muted-foreground">∑ monthly budgets</p>}
+                                      </div>
+                                    : <span className="text-muted-foreground text-xs">—</span>}
                                 </td>
                                 <td className="px-4 py-2.5 text-right text-rose-700">{fySpent > 0 ? formatINR(fySpent) : <span className="text-muted-foreground text-xs">—</span>}</td>
                                 <td className={cn('px-4 py-2.5 text-right font-medium', fAmt === 0 ? 'text-muted-foreground' : fAmt - fySpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
@@ -1120,11 +1154,16 @@ export default function SiteFundBudgetPage() {
                                   ) : <span className="text-xs text-muted-foreground">—</span>}
                                 </td>
                                 <td className="px-4 py-2.5">
-                                  <StatusBadge budget={fyMonthSum > 0 ? { budgetAmount: fyMonthSum } as SASBudget : null} spent={fySpent} />
+                                  <StatusBadge budget={fAmt > 0 ? { budgetAmount: fAmt } as SASBudget : null} spent={fySpent} />
                                 </td>
                                 {(effectiveCanEdit || canDelete) && (
                                   <td className="px-4 py-2.5 text-right">
-                                    <div className="flex justify-end gap-1">
+                                    <div className="flex justify-end items-center gap-1">
+                                      {effectiveCanEdit && (
+                                        fyB
+                                          ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(fyB)}><Pencil className="h-3 w-3" /></Button>
+                                          : <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'fy', fyS)}><Plus className="h-2.5 w-2.5" />Set FY</Button>
+                                      )}
                                       {canDelete && fyB && (
                                         <DeleteConfirm label={`Remove FY ${fyLabel(fyS)} budget for ${project.projectName}?`} onConfirm={() => handleDelete(fyB)} size="sm" />
                                       )}
@@ -1341,7 +1380,8 @@ export default function SiteFundBudgetPage() {
                         })}
                       </Fragment>
                     );
-                  })}
+                  });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1377,7 +1417,9 @@ export default function SiteFundBudgetPage() {
               <div className="space-y-2">
                 <Label>Budget Type</Label>
                 <Tabs value={dialogTab} onValueChange={v => setDialogTab(v as BudgetTab)}>
-                  <TabsList className="grid w-full grid-cols-1">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="total">Total</TabsTrigger>
+                    <TabsTrigger value="fy">Financial Year</TabsTrigger>
                     <TabsTrigger value="monthly">Monthly</TabsTrigger>
                   </TabsList>
                 </Tabs>
