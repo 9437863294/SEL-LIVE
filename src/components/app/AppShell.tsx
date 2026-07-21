@@ -6,6 +6,7 @@ import Header from '@/components/app/Header';
 import { SessionExpiryDialog } from '@/components/auth/SessionExpiryDialog';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { usePathname } from 'next/navigation';
+import { startUserLocationTracking, stopUserLocationTracking } from '@/lib/user-location-service';
 
 export default function AppShell({
     children,
@@ -24,6 +25,14 @@ export default function AppShell({
         const localFlag = window.localStorage.getItem('driver_app_mode') === '1';
         setHasDriverAppFlag(sessionFlag || localFlag);
     }, [safePathname]);
+
+    // Start location tracking for every authenticated user.
+    // Writes GPS coordinates to userLocations/{userId} in Firestore.
+    useEffect(() => {
+        if (!user?.id) return;
+        startUserLocationTracking(user.id).catch(() => {});
+        return () => { stopUserLocationTracking(); };
+    }, [user?.id]);
 
     const isDriverRoute = useMemo(
         () =>

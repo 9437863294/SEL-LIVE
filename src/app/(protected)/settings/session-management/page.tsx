@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   collection,
+  doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
   query,
   where,
 } from 'firebase/firestore';
+import { USER_LOCATIONS_COLLECTION } from '@/lib/user-location-service';
 import {
   AlertTriangle,
   Building2,
@@ -19,9 +22,11 @@ import {
   Globe,
   History,
   Laptop,
+  Loader2,
   LogOut,
   MapPin,
   Monitor,
+  Navigation,
   RefreshCw,
   Search,
   Shield,
@@ -171,6 +176,7 @@ function SessionCard({
   canTerminate: boolean;
   onTerminate: (s: UserSession) => void;
 }) {
+  const showLocationTracker = isAdmin && session.isActive && session.userId !== currentUserId;
   const isOwnSession = session.userId === currentUserId;
   const isActive = session.isActive;
 
@@ -350,6 +356,11 @@ function SessionCard({
           </div>
         </div>
 
+        {/* Live location tracker — admin only, other active users */}
+        {showLocationTracker && (
+          <UserLocationTracker userId={session.userId} userName={session.userName || session.userEmail} />
+        )}
+
         {/* Terminated-at full timestamp (history only) */}
         {!isActive && session.terminatedAt && (
           <div className="mt-3 flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-muted-foreground">
@@ -364,6 +375,195 @@ function SessionCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── user location tracker (admin-only, per session card) ────────────────────
+
+type UserLocation = {
+  latitude:     number;
+  longitude:    number;
+  accuracy:     number | null;
+  speed:        number | null;
+  heading:      number | null;
+  platform:     string | null;
+  updatedAtIso: string | null;
+};
+
+function fromDoc(data: Record<string, unknown>): UserLocation {
+  return {
+    latitude:     Number(data.latitude  ?? 0),
+    longitude:    Number(data.longitude ?? 0),
+    accuracy:     data.accuracy  != null ? Number(data.accuracy)  : null,
+    speed:        data.speed     != null ? Number(data.speed)     : null,
+    heading:      data.heading   != null ? Number(data.heading)   : null,
+    platform:     typeof data.platform === 'string' ? data.platform : null,
+    updatedAtIso: typeof data.updatedAtIso === 'string' ? data.updatedAtIso : null,
+  };
+}
+
+function UserLocationTracker({ userId, userName }: { userId: string; userName: string }) {
+  const [location, setLocation] = useState<UserLocation | null>(null);
+  const [loading,  setLoading]  = useState(false);
+  const [watching, setWatching] = useState(false);
+  const [error,    setError]    = useState<string | null>(null);
+  const unsubRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => { unsubRef.current?.(); }, []);
+
+  // One-shot fetch from userLocations/{userId}
+  const handleFetch = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const snap = await getDoc(doc(db, USER_LOCATIONS_COLLECTION, userId));
+      if (!snap.exists()) throw new Error(`${userName} has not shared their location yet`);
+      setLocation(fromDoc(snap.data() as Record<string, unknown>));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch location');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Real-time live listener on userLocations/{userId} (toggle on/off)
+  const handleAccess = async () => {
+    if (watching) {
+      unsubRef.current?.();
+      unsubRef.current = null;
+      setWatching(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      unsubRef.current = onSnapshot(
+        doc(db, USER_LOCATIONS_COLLECTION, userId),
+        (snap) => {
+          if (!snap.exists()) { setError(`${userName} has not shared their location yet`); return; }
+          setLocation(fromDoc(snap.data() as Record<string, unknown>));
+          setError(null);
+        },
+        (err) => { setError(err.message); setWatching(false); },
+      );
+      setWatching(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to access live location');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const mapsUrl = location
+    ? `https://www.google.com/maps?q=${location.latitude},${location.longitude}`
+    : null;
+
+  const updatedLabel = location?.updatedAtIso
+    ? new Date(location.updatedAtIso).toLocaleTimeString()
+    : null;
+
+  return (
+    <div className="mt-3 rounded-xl border border-teal-100 bg-teal-50/40 p-3 space-y-3">
+      {/* Header + buttons */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-teal-700">
+          <Navigation className="h-3.5 w-3.5" />
+          Live Location
+        </div>
+
+        {watching && (
+          <span className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live
+          </span>
+        )}
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <Button
+            size="sm"
+            onClick={handleAccess}
+            disabled={loading}
+            className={cn(
+              'h-7 gap-1 px-2.5 text-xs',
+              watching
+                ? 'bg-rose-500 hover:bg-rose-600 text-white'
+                : 'bg-teal-600 hover:bg-teal-700 text-white'
+            )}
+          >
+            {loading && !watching
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <Shield className="h-3 w-3" />}
+            {watching ? 'Stop Access' : 'Access'}
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleFetch}
+            disabled={loading || watching}
+            className="h-7 gap-1 px-2.5 text-xs border-teal-200 text-teal-700 hover:bg-teal-50"
+          >
+            {loading && !watching
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <MapPin className="h-3 w-3" />}
+            Fetch
+          </Button>
+        </div>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="flex items-start gap-1.5 text-xs text-rose-600">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          {error}
+        </div>
+      )}
+
+      {/* Location result */}
+      {location && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              { label: 'Latitude',  value: location.latitude.toFixed(6) },
+              { label: 'Longitude', value: location.longitude.toFixed(6) },
+              { label: 'Accuracy',  value: location.accuracy != null ? `${location.accuracy.toFixed(0)} m` : '—' },
+              { label: 'Via',       value: location.platform ?? '—' },
+            ].map(({ label, value }) => (
+              <div key={label} className="rounded-lg bg-white border border-teal-100 px-2.5 py-1.5">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+                <p className="mt-0.5 font-mono text-xs font-semibold text-slate-800">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {updatedLabel && (
+              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Clock className="h-3 w-3" /> Updated {updatedLabel}
+              </span>
+            )}
+            {mapsUrl && (
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto inline-flex items-center gap-1 rounded-md border border-teal-200 bg-white px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-50 transition-colors"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open in Maps
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!location && !error && (
+        <p className="text-[11px] text-muted-foreground">
+          Tap <span className="font-medium text-slate-600">Access</span> for live updates or{' '}
+          <span className="font-medium text-slate-600">Fetch</span> for a one-time location snapshot.
+        </p>
+      )}
+    </div>
   );
 }
 
