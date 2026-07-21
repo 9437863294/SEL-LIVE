@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertTriangle, BarChart3, CalendarDays, ChevronDown, ChevronUp,
-  TrendingDown, TrendingUp, Wallet,
+  ShieldAlert, TrendingDown, TrendingUp, Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -259,6 +259,7 @@ export default function TenderForecastPage() {
   const { user } = useAuth();
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
+  const canView    = canViewAll || can('View', `${MODULE}.${RESOURCE}`) || can('Add', `${MODULE}.${RESOURCE}`) || can('Edit', `${MODULE}.${RESOURCE}`);
 
   const [projects,      setProjects]      = useState<SASProject[]>([]);
   const [tenderBudgets, setTenderBudgets] = useState<SASTenderBudget[]>([]);
@@ -316,6 +317,16 @@ export default function TenderForecastPage() {
 
   if (loading || isAuthLoading) {
     return <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}</div>;
+  }
+
+  if (!canView) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-20 gap-3 text-center">
+        <ShieldAlert className="h-11 w-11 text-destructive" />
+        <p className="font-semibold text-slate-800">Access Denied</p>
+        <p className="text-sm text-muted-foreground">You don&apos;t have permission to access Tender Forecast.</p>
+      </div>
+    );
   }
 
   return (

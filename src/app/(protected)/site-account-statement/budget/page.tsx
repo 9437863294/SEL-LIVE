@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, Filter, Layers, Loader2,
-  Pencil, Plus, Search, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
+  Pencil, Plus, Search, ShieldAlert, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cn } from '@/lib/utils';
@@ -144,6 +144,7 @@ export default function SiteFundBudgetPage() {
   const { user } = useAuth();
 
   const canViewAll = can('View',   `${MODULE}.All Projects`);
+  const canView    = canViewAll || can('View', `${MODULE}.${RESOURCE}`);
   const canAdd     = can('Add',    `${MODULE}.${RESOURCE}`);
   const canEdit    = can('Edit',   `${MODULE}.${RESOURCE}`);
   const canDelete  = can('Delete', `${MODULE}.${RESOURCE}`);
@@ -834,6 +835,16 @@ export default function SiteFundBudgetPage() {
 
   if (isAuthLoading || loading) {
     return <div className="space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>;
+  }
+
+  if (!canView && !canAdd && !canEdit) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-20 gap-3 text-center">
+        <ShieldAlert className="h-11 w-11 text-destructive" />
+        <p className="font-semibold text-slate-800">Access Denied</p>
+        <p className="text-sm text-muted-foreground">You don&apos;t have permission to access Site Fund Budget.</p>
+      </div>
+    );
   }
 
   const curMonth  = currentMonthStr();
