@@ -259,7 +259,7 @@ export default function TenderForecastPage() {
   const { user } = useAuth();
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
-  const canView    = canViewAll || can('View', `${MODULE}.${RESOURCE}`) || can('Add', `${MODULE}.${RESOURCE}`) || can('Edit', `${MODULE}.${RESOURCE}`);
+  const canView    = can('View', `${MODULE}.${RESOURCE}`) || can('Add', `${MODULE}.${RESOURCE}`) || can('Edit', `${MODULE}.${RESOURCE}`);
 
   const [projects,      setProjects]      = useState<SASProject[]>([]);
   const [tenderBudgets, setTenderBudgets] = useState<SASTenderBudget[]>([]);

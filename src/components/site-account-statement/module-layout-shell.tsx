@@ -9,7 +9,6 @@ import {
   BarChart3,
   BookOpen,
   CalendarDays,
-  ClipboardList,
   FileText,
   LayoutDashboard,
   Loader2,
@@ -62,7 +61,6 @@ const sections: {
   { href: '/site-account-statement/payments',           label: 'Payments Received',  resource: 'Payments',         icon: TrendingUp,      color: 'text-blue-600',    bg: 'bg-blue-50',     group: 'transactions', accessMode: 'member+rbac' },
   { href: '/site-account-statement/expenses',           label: 'Site Expenses',      resource: 'Expenses',         icon: TrendingDown,    color: 'text-rose-600',    bg: 'bg-rose-50',     group: 'transactions', accessMode: 'member+rbac' },
   { href: '/site-account-statement/budget',             label: 'Site Fund Budget',   resource: 'Budget',           icon: Target,          color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'transactions', accessMode: 'rbac'       },
-  { href: '/site-account-statement/tender-budget',      label: 'Tender Setup',       resource: 'Tender Budget',    icon: ClipboardList,   color: 'text-teal-600',    bg: 'bg-teal-50',     group: 'transactions', accessMode: 'rbac'       },
   { href: '/site-account-statement/tender-forecast',    label: 'Tender Forecast',    resource: 'Tender Forecast',  icon: BarChart3,       color: 'text-teal-700',    bg: 'bg-teal-50',     group: 'transactions', accessMode: 'rbac'       },
   { href: '/site-account-statement/reports/receipts',  label: 'Receipt Report',     resource: 'Reports',          icon: FileText,        color: 'text-teal-600',    bg: 'bg-teal-50',     group: 'reports',      accessMode: 'member+rbac' },
   { href: '/site-account-statement/reports/expenses',  label: 'Expense Report',     resource: 'Reports',          icon: Receipt,         color: 'text-orange-600',  bg: 'bg-orange-50',   group: 'reports',      accessMode: 'member+rbac' },
@@ -108,7 +106,6 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
 
   useEffect(() => {
     if (!user?.id) { setMembershipChecked(true); return; }
-    if (canViewAll)  { setIsProjectMember(true); setMembershipChecked(true); return; }
     const col = collection(db, SAS_COLLECTIONS.projects);
     Promise.all([
       getDocs(query(col, where('assignedPersonId', '==', user.id))),
@@ -123,11 +120,9 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
 
   // Determine which sections the current user can access.
   function canAccessSection(item: typeof sections[0]): boolean {
-    if (canViewAll) return true;
-
     // Settings: requires explicit Settings-family RBAC
     if (item.href === '/site-account-statement/settings') {
-      return ['Project Settings', 'Expense Categories', 'Budget Alerts'].some(r =>
+      return ['Project Settings', 'Expense Categories', 'Budget Alerts', 'Tender Budget'].some(r =>
         can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
       );
     }

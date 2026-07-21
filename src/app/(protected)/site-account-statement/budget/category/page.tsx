@@ -59,8 +59,8 @@ export default function CategoryBudgetPage() {
   const { toast } = useToast();
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
-  const canView    = can('View', `${MODULE}.Budget`) || canViewAll;
-  const canEdit    = can('Edit', `${MODULE}.Budget`) || canViewAll;
+  const canView    = can('View', `${MODULE}.Budget`);
+  const canEdit    = can('Edit', `${MODULE}.Budget`);
 
   const [projects,     setProjects]     = useState<SASProject[]>([]);
   const [categories,   setCategories]   = useState<SASCategory[]>([]);

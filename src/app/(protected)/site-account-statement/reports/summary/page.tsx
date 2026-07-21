@@ -31,7 +31,7 @@ export default function ProjectSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
   const canViewAll = can('View',   `${MODULE}.All Projects`);
-  const canView    = can('View',   `${MODULE}.Reports`) || canViewAll;
+  const canView    = can('View',   `${MODULE}.Reports`);
   const canExport  = can('Export', `${MODULE}.Reports`);
 
   const [projects,  setProjects]  = useState<SASProject[]>([]);

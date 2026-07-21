@@ -94,7 +94,7 @@ export default function BudgetAlertsPage() {
   const canView    = canEdit
                   || can('View',   'Site Account Statement.Budget Alerts');
   const canViewAll = can('View',   'Site Account Statement.All Projects');
-  const canAccess  = canView || canViewAll;
+  const canAccess  = canView;
 
   const [projects,      setProjects]      = useState<SASProject[]>([]);
   const [configs,       setConfigs]       = useState<AlertConfigState>({});

@@ -59,7 +59,7 @@ export default function TenderBudgetSetupPage() {
   const { user } = useAuth();
 
   const canViewAll = can('View',   `${MODULE}.All Projects`);
-  const canView    = canViewAll || can('View', `${MODULE}.${RESOURCE}`);
+  const canView    = can('View', `${MODULE}.${RESOURCE}`);
   const canAdd     = can('Add',    `${MODULE}.${RESOURCE}`);
   const canEdit    = can('Edit',   `${MODULE}.${RESOURCE}`);
   const canDelete  = can('Delete', `${MODULE}.${RESOURCE}`);
