@@ -11,7 +11,6 @@ import {
   CalendarDays,
   ClipboardList,
   FileText,
-  Layers,
   LayoutDashboard,
   Loader2,
   Menu,
@@ -38,23 +37,45 @@ import { cn } from '@/lib/utils';
 
 const MODULE = 'Site Account Statement';
 
-const sections = [
-  { href: '/site-account-statement',                    label: 'Dashboard',          resource: 'Dashboard',          icon: LayoutDashboard, color: 'text-emerald-600', bg: 'bg-emerald-50',  group: 'core',         viewAllAccess: true  },
-  { href: '/site-account-statement/payments',           label: 'Payments Received',  resource: 'Payments',           icon: TrendingUp,      color: 'text-blue-600',    bg: 'bg-blue-50',     group: 'transactions', viewAllAccess: true  },
-  { href: '/site-account-statement/expenses',           label: 'Site Expenses',      resource: 'Expenses',           icon: TrendingDown,    color: 'text-rose-600',    bg: 'bg-rose-50',     group: 'transactions', viewAllAccess: true  },
-  { href: '/site-account-statement/budget',             label: 'Site Fund Budget',   resource: 'Budget',             icon: Target,          color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'transactions', viewAllAccess: true  },
-  { href: '/site-account-statement/reports/receipts',  label: 'Receipt Report',     resource: 'Reports',            icon: FileText,        color: 'text-teal-600',    bg: 'bg-teal-50',     group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/expenses',  label: 'Expense Report',     resource: 'Reports',            icon: Receipt,         color: 'text-orange-600',  bg: 'bg-orange-50',   group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/statement', label: 'Account Statement',  resource: 'Reports',            icon: BookOpen,        color: 'text-violet-600',  bg: 'bg-violet-50',   group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/summary',   label: 'Project Summary',    resource: 'Reports',            icon: BarChart3,       color: 'text-indigo-600',  bg: 'bg-indigo-50',   group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/category',  label: 'Category Analysis',  resource: 'Reports',            icon: PieChart,        color: 'text-purple-600',  bg: 'bg-purple-50',   group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/cashflow',  label: 'Cash Flow',          resource: 'Reports',            icon: Activity,        color: 'text-sky-600',     bg: 'bg-sky-50',      group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/person',    label: 'Person Expenses',    resource: 'Reports',            icon: Users,           color: 'text-pink-600',    bg: 'bg-pink-50',     group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/balance',   label: 'Balance Status',     resource: 'Reports',            icon: ShieldCheck,     color: 'text-green-600',   bg: 'bg-green-50',    group: 'reports',      viewAllAccess: true  },
-  { href: '/site-account-statement/reports/daywise',             label: 'Day-wise Statement', resource: 'Reports', icon: CalendarDays,    color: 'text-cyan-600',    bg: 'bg-cyan-50',     group: 'reports', viewAllAccess: true  },
-  { href: '/site-account-statement/reports/monthly-comparison', label: 'Month Comparison',   resource: 'Reports', icon: ArrowLeftRight,  color: 'text-fuchsia-600', bg: 'bg-fuchsia-50',  group: 'reports', viewAllAccess: true  },
-  { href: '/site-account-statement/reports/budget',            label: 'Budget Report',      resource: 'Reports', icon: Target,          color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'reports', viewAllAccess: true  },
-  { href: '/site-account-statement/settings',          label: 'Settings',           resource: 'Project Settings',   icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       viewAllAccess: false },
+/*
+ * accessMode controls who can see each nav entry:
+ *   'admin'         – only canViewAll (super-admin)
+ *   'rbac'          – has explicit RBAC permission for the resource
+ *   'member+rbac'   – project member (any role) OR explicit RBAC
+ *   'module'        – any user who can access the module at all (Dashboard)
+ *
+ * Settings uses a dedicated check, so its accessMode is ignored.
+ */
+type AccessMode = 'admin' | 'rbac' | 'member+rbac' | 'module';
+
+const sections: {
+  href: string;
+  label: string;
+  resource: string;
+  icon: React.ElementType;
+  color: string;
+  bg: string;
+  group: string;
+  accessMode: AccessMode;
+}[] = [
+  { href: '/site-account-statement',                    label: 'Dashboard',          resource: 'Dashboard',        icon: LayoutDashboard, color: 'text-emerald-600', bg: 'bg-emerald-50',  group: 'core',         accessMode: 'module'     },
+  { href: '/site-account-statement/payments',           label: 'Payments Received',  resource: 'Payments',         icon: TrendingUp,      color: 'text-blue-600',    bg: 'bg-blue-50',     group: 'transactions', accessMode: 'member+rbac' },
+  { href: '/site-account-statement/expenses',           label: 'Site Expenses',      resource: 'Expenses',         icon: TrendingDown,    color: 'text-rose-600',    bg: 'bg-rose-50',     group: 'transactions', accessMode: 'member+rbac' },
+  { href: '/site-account-statement/budget',             label: 'Site Fund Budget',   resource: 'Budget',           icon: Target,          color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'transactions', accessMode: 'rbac'       },
+  { href: '/site-account-statement/tender-budget',      label: 'Tender Setup',       resource: 'Tender Budget',    icon: ClipboardList,   color: 'text-teal-600',    bg: 'bg-teal-50',     group: 'transactions', accessMode: 'rbac'       },
+  { href: '/site-account-statement/tender-forecast',    label: 'Tender Forecast',    resource: 'Tender Forecast',  icon: BarChart3,       color: 'text-teal-700',    bg: 'bg-teal-50',     group: 'transactions', accessMode: 'rbac'       },
+  { href: '/site-account-statement/reports/receipts',  label: 'Receipt Report',     resource: 'Reports',          icon: FileText,        color: 'text-teal-600',    bg: 'bg-teal-50',     group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/expenses',  label: 'Expense Report',     resource: 'Reports',          icon: Receipt,         color: 'text-orange-600',  bg: 'bg-orange-50',   group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/statement', label: 'Account Statement',  resource: 'Reports',          icon: BookOpen,        color: 'text-violet-600',  bg: 'bg-violet-50',   group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/summary',   label: 'Project Summary',    resource: 'Reports',          icon: BarChart3,       color: 'text-indigo-600',  bg: 'bg-indigo-50',   group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/category',  label: 'Category Analysis',  resource: 'Reports',          icon: PieChart,        color: 'text-purple-600',  bg: 'bg-purple-50',   group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/cashflow',  label: 'Cash Flow',          resource: 'Reports',          icon: Activity,        color: 'text-sky-600',     bg: 'bg-sky-50',      group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/person',    label: 'Person Expenses',    resource: 'Reports',          icon: Users,           color: 'text-pink-600',    bg: 'bg-pink-50',     group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/balance',   label: 'Balance Status',     resource: 'Reports',          icon: ShieldCheck,     color: 'text-green-600',   bg: 'bg-green-50',    group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/daywise',             label: 'Day-wise Statement', resource: 'Reports', icon: CalendarDays,  color: 'text-cyan-600',    bg: 'bg-cyan-50',     group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/monthly-comparison', label: 'Month Comparison',   resource: 'Reports', icon: ArrowLeftRight, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50',  group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/reports/budget',            label: 'Budget Report',      resource: 'Reports', icon: Target,         color: 'text-emerald-700', bg: 'bg-emerald-50',  group: 'reports',      accessMode: 'member+rbac' },
+  { href: '/site-account-statement/settings',          label: 'Settings',           resource: 'Project Settings', icon: Settings,        color: 'text-slate-600',   bg: 'bg-slate-50',    group: 'master',       accessMode: 'rbac'       },
 ];
 
 export default function SiteAccountStatementShell({ children }: { children: React.ReactNode }) {
@@ -63,6 +84,10 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
   const { can } = useAuthorization();
   const { user } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Separate state: is the user actually assigned to a project (any role)?
+  // We always check this — previously the check was skipped for RBAC users,
+  // which caused all RBAC users to be treated as project members for nav purposes.
   const [isProjectMember, setIsProjectMember] = useState(false);
   const [membershipChecked, setMembershipChecked] = useState(false);
 
@@ -73,7 +98,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
     can('View Module', MODULE) ||
     sections.some(s => Boolean(s.resource) && (
       can('View', `${MODULE}.${s.resource}`) ||
-      can('Add', `${MODULE}.${s.resource}`)
+      can('Add',  `${MODULE}.${s.resource}`)
     )) ||
     ['Budget Alerts', 'Expense Categories'].some(r =>
       can('View', `${MODULE}.${r}`) ||
@@ -81,48 +106,71 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
       can('Edit', `${MODULE}.${r}`)
     );
 
-  // Check if the user is assigned to any project (primary, alt, or viewer) — allows
-  // project-level members through even when they have no RBAC module permissions.
   useEffect(() => {
-    if (hasRbacAccess) {
-      setIsProjectMember(true);
-      setMembershipChecked(true);
-      return;
-    }
-    if (!user?.id) {
-      setMembershipChecked(true);
-      return;
-    }
+    if (!user?.id) { setMembershipChecked(true); return; }
+    if (canViewAll)  { setIsProjectMember(true); setMembershipChecked(true); return; }
     const col = collection(db, SAS_COLLECTIONS.projects);
     Promise.all([
       getDocs(query(col, where('assignedPersonId', '==', user.id))),
       getDocs(query(col, where('altUserId',        '==', user.id))),
       getDocs(query(col, where('viewerId',         '==', user.id))),
     ])
-      .then(([a, b, c]) => {
-        setIsProjectMember(!a.empty || !b.empty || !c.empty);
-      })
+      .then(([a, b, c]) => setIsProjectMember(!a.empty || !b.empty || !c.empty))
       .finally(() => setMembershipChecked(true));
-  }, [user?.id, hasRbacAccess]);
+  }, [user?.id, canViewAll]);
 
   const canViewModule = hasRbacAccess || isProjectMember;
 
-  const availableSections = sections.filter(item => {
-    if (canViewAll && item.viewAllAccess) return true;
-    if (isProjectMember && item.viewAllAccess) return true;
-    if (!item.resource) return canViewModule;
-    // Settings consolidates Project Settings + Expense Categories + Budget Alerts access
+  // Determine which sections the current user can access.
+  function canAccessSection(item: typeof sections[0]): boolean {
+    if (canViewAll) return true;
+
+    // Settings: requires explicit Settings-family RBAC
     if (item.href === '/site-account-statement/settings') {
       return ['Project Settings', 'Expense Categories', 'Budget Alerts'].some(r =>
         can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
       );
     }
-    return (
-      can('View', `${MODULE}.${item.resource}`) ||
-      can('Add', `${MODULE}.${item.resource}`) ||
-      can('Edit', `${MODULE}.${item.resource}`)
-    );
-  });
+
+    switch (item.accessMode) {
+      case 'module':
+        return canViewModule;
+      case 'member+rbac':
+        return (
+          isProjectMember ||
+          can('View', `${MODULE}.${item.resource}`) ||
+          can('Add',  `${MODULE}.${item.resource}`) ||
+          can('Edit', `${MODULE}.${item.resource}`)
+        );
+      case 'rbac':
+        return (
+          can('View', `${MODULE}.${item.resource}`) ||
+          can('Add',  `${MODULE}.${item.resource}`) ||
+          can('Edit', `${MODULE}.${item.resource}`)
+        );
+      default:
+        return false;
+    }
+  }
+
+  const availableSections = membershipChecked ? sections.filter(canAccessSection) : [];
+
+  // Check whether the CURRENT page is in the user's allowed set.
+  function isPathInSections(path: string, sectionList: typeof sections): boolean {
+    return sectionList.some(s => {
+      const isSettings = s.href === '/site-account-statement/settings';
+      return (
+        path === s.href ||
+        (s.href !== '/site-account-statement' && path.startsWith(s.href + '/')) ||
+        (isSettings && (
+          path.startsWith('/site-account-statement/expense-categories') ||
+          path.startsWith('/site-account-statement/budget-alerts')
+        ))
+      );
+    });
+  }
+
+  const isCurrentPageAccessible = !membershipChecked || isPathInSections(safePathname, availableSections);
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -152,12 +200,10 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
                 : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
             )}
           >
-            <span
-              className={cn(
-                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg)
-              )}
-            >
+            <span className={cn(
+              'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
+              active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg)
+            )}>
               <Icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'text-white scale-110' : item.color)} />
             </span>
             <span className="truncate">{item.label}</span>
@@ -167,7 +213,8 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
     });
   };
 
-  if (!membershipChecked && !hasRbacAccess) {
+  // Show full-screen loading while we wait for the membership check
+  if (!membershipChecked) {
     return (
       <div className="flex w-full items-center justify-center py-24">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -175,6 +222,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
     );
   }
 
+  // Full module access denied
   if (!canViewModule) {
     return (
       <div className="w-full p-6">
@@ -190,6 +238,20 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
       </div>
     );
   }
+
+  // Page-level access denied content (nav still visible so user can navigate to allowed pages)
+  const pageAccessDenied = (
+    <Card>
+      <CardContent className="py-16 text-center space-y-3">
+        <ShieldAlert className="h-12 w-12 text-destructive mx-auto" />
+        <div>
+          <p className="font-semibold text-slate-800">Access Denied</p>
+          <p className="text-sm text-muted-foreground mt-1">You don&apos;t have permission to view this page.</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Contact your administrator to request access.</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="relative w-full px-3 py-4 sm:px-6 lg:px-8">
@@ -261,7 +323,9 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
           </Card>
         </aside>
 
-        <main className="min-w-0">{children}</main>
+        <main className="min-w-0">
+          {isCurrentPageAccessible ? children : pageAccessDenied}
+        </main>
       </div>
     </div>
   );

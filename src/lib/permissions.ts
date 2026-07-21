@@ -166,6 +166,8 @@ export const permissionModules = {
     'Payments': ['View', 'Add', 'Edit', 'Delete', 'Export'],
     'Expenses': ['View', 'Add', 'Edit', 'Delete', 'Export'],
     'Budget': ['View', 'Add', 'Edit', 'Delete', 'Export'],
+    'Tender Budget': ['View', 'Add', 'Edit', 'Delete'],
+    'Tender Forecast': ['View', 'Add', 'Edit'],
     'Expense Categories': ['View', 'Add', 'Edit', 'Delete'],
     'Project Settings': ['View', 'Add', 'Edit', 'Delete'],
     'Budget Alerts': ['View', 'Edit'],

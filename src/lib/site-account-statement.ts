@@ -8,6 +8,7 @@ export const SAS_COLLECTIONS = {
   budgetApprovals: 'siteAccountBudgetApprovals',
   budgetAlertConfigs: 'siteAccountBudgetAlertConfigs',
   budgetAlertState:   'siteAccountBudgetAlertState',
+  tenderBudgets:   'siteAccountTenderBudgets',
 } as const;
 
 export interface SASProject {
@@ -135,6 +136,18 @@ export interface SASCategory {
   isActive: boolean;
   parentId?: string;
   parentName?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface SASTenderBudget {
+  id: string;
+  projectId: string;
+  projectName: string;
+  tenderAmount: number;
+  startMonth: string;  // "YYYY-MM"
+  endMonth: string;    // "YYYY-MM"
+  notes?: string;
   createdAt: any;
   updatedAt: any;
 }
