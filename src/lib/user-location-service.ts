@@ -5,13 +5,15 @@
  * userLocations/{userId} so any admin can read it from the
  * session management page.
  *
- * Works on:
- *  - Capacitor Android/iOS   → background geolocation via BackgroundGeolocation plugin
- *  - Web browser             → navigator.geolocation (active tab only)
+ * Platform behaviour:
+ *  - Android (native)  → Java Foreground Service via LocationPlugin bridge.
+ *                        Survives the app being swiped away or killed by the OS.
+ *  - iOS / Web         → navigator.geolocation via watchDriverPosition
+ *                        (active while JS thread is alive).
  */
 
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { db } from '@/lib/firebase';
 import {
   clearDriverPositionWatch,
@@ -21,13 +23,21 @@ import {
 
 export const USER_LOCATIONS_COLLECTION = 'userLocations';
 
-// Only write if the user moved enough OR enough time has passed.
-const MIN_INTERVAL_MS   = 60_000;  // 1 minute minimum between writes
-const DISTANCE_FILTER_M = 30;      // 30 m minimum movement filter (native)
+// Native Android bridge — calls LocationForegroundService via LocationPlugin.java
+interface LocationTrackingPlugin {
+  startTracking(options: { userId: string }): Promise<void>;
+  stopTracking(): Promise<void>;
+}
+const LocationTrackingNative = registerPlugin<LocationTrackingPlugin>('LocationTracking');
 
-let activeWatchId: DriverGeoWatchId | null = null;
-let activeUserId:  string | null           = null;
-let lastWriteMs    = 0;
+// Throttle: only write if the user moved enough OR enough time has passed.
+const MIN_INTERVAL_MS   = 60_000;  // 1 minute minimum between writes
+const DISTANCE_FILTER_M = 30;      // 30 m movement filter (web/iOS path only)
+
+let activeWatchId:  DriverGeoWatchId | null = null;
+let activeUserId:   string | null           = null;
+let lastWriteMs     = 0;
+let nativeTracking  = false;
 
 async function persist(
   userId:   string,
@@ -38,7 +48,7 @@ async function persist(
   speed:    number | null,
 ): Promise<void> {
   const now = Date.now();
-  if (now - lastWriteMs < MIN_INTERVAL_MS) return; // throttle
+  if (now - lastWriteMs < MIN_INTERVAL_MS) return;
   lastWriteMs = now;
 
   await setDoc(
@@ -61,14 +71,25 @@ async function persist(
 /**
  * Start watching the user's GPS and syncing it to Firestore.
  * Safe to call multiple times for the same userId — it's a no-op.
+ *
+ * On Android: delegates to LocationForegroundService (survives app kill).
+ * On Web/iOS: uses watchDriverPosition (active while the JS thread is alive).
  */
 export async function startUserLocationTracking(userId: string): Promise<void> {
-  if (activeWatchId !== null && activeUserId === userId) return;
+  if (activeUserId === userId && (activeWatchId !== null || nativeTracking)) return;
   await stopUserLocationTracking();
 
   activeUserId = userId;
-  lastWriteMs  = 0; // force an immediate first write
+  lastWriteMs  = 0;
 
+  // Android: hand off to the native foreground service
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    await LocationTrackingNative.startTracking({ userId });
+    nativeTracking = true;
+    return;
+  }
+
+  // Web / iOS: JS-based watcher
   activeWatchId = await watchDriverPosition(
     {
       enableHighAccuracy:   true,
@@ -96,8 +117,12 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
   );
 }
 
-/** Stop the watcher. Called on logout or unmount. */
+/** Stop tracking. Called on logout or unmount. */
 export async function stopUserLocationTracking(): Promise<void> {
+  if (nativeTracking) {
+    await LocationTrackingNative.stopTracking().catch(() => {});
+    nativeTracking = false;
+  }
   if (activeWatchId !== null) {
     await clearDriverPositionWatch(activeWatchId);
     activeWatchId = null;

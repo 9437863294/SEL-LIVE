@@ -271,13 +271,50 @@ export default function SiteExpensesPage() {
     [perProjectBalance, filterProject]
   );
 
+  // All-time expenses for the selected project (correct figure for Available Balance).
+  // In period mode: pre-period aggregate + project's expenses within the period.
+  // In all-time mode: expenses state already contains every record, so use filterProjectBalance.spent directly.
+  const filterProjectAllTimeExpenses = useMemo(() => {
+    if (!filterProject || !filterProjectBalance) return null;
+    if (!filterFrom || prePeriodExpenseSum === null) {
+      // All-time mode — loadPeriodData fetched every record
+      return filterProjectBalance.spent;
+    }
+    const periodForProject = expenses
+      .filter(e => e.projectId === filterProject)
+      .reduce((s, e) => s + (e.expenseAmount || 0), 0);
+    return prePeriodExpenseSum + periodForProject;
+  }, [filterProject, filterProjectBalance, filterFrom, prePeriodExpenseSum, expenses]);
+
   // ── Opening / closing balance for the filtered period ────────────────────────
 
-  // Reload pre-period expense aggregate whenever the period start or project filter changes
+  // Reload pre-period expense aggregate whenever the period start, project filter, or user scope changes.
+  // IMPORTANT: must match the same project scope used for receipts in openingBalance below,
+  // otherwise opening balance is wrong when no specific project is selected.
   useEffect(() => {
     if (!staticLoaded || !filterFrom) return;
-    const constraints = [where('expenseDate', '<', filterFrom)];
-    if (filterProject) constraints.push(where('projectId', '==', filterProject));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const constraints: any[] = [where('expenseDate', '<', filterFrom)];
+
+    if (filterProject) {
+      // Single project explicitly selected
+      constraints.push(where('projectId', '==', filterProject));
+    } else if (userProjectIds !== null) {
+      // User is scoped to specific projects — restrict aggregate to those only
+      const ids = Array.from(userProjectIds);
+      if (ids.length === 0) {
+        setPrePeriodExpenseSum(0);
+        return;
+      }
+      constraints.push(
+        ids.length === 1
+          ? where('projectId', '==', ids[0])
+          : where('projectId', 'in', ids),
+      );
+    }
+    // else: canViewAll → no project restriction, fetch across all projects
+
     getAggregateFromServer(
       query(collection(db, SAS_COLLECTIONS.expenses), ...constraints),
       { total: sum('expenseAmount') },
@@ -290,7 +327,7 @@ export default function SiteExpensesPage() {
         setPrePeriodExpenseSum(0);
       }
     });
-  }, [filterFrom, filterProject, staticLoaded]);
+  }, [filterFrom, filterProject, staticLoaded, userProjectIds]);
 
   const openingBalance = useMemo(() => {
     if (!filterFrom || prePeriodExpenseSum === null) return null;
@@ -843,10 +880,18 @@ export default function SiteExpensesPage() {
           <>
             <span className="h-4 w-px bg-rose-200" />
             <span className="text-xs text-blue-600 font-medium">Received: {formatINR(filterProjectBalance.received)}</span>
-            <span className="text-xs text-rose-600 font-medium">Expenses: {formatINR(filterProjectBalance.spent)}</span>
-            <span className={`text-xs font-bold ${filterProjectBalance.balance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
-              Available Balance: {formatINR(filterProjectBalance.balance)}
+            <span className="text-xs text-rose-600 font-medium">
+              Expenses: {formatINR(filterProjectAllTimeExpenses ?? filterProjectBalance.spent)}
             </span>
+            {(() => {
+              const spent = filterProjectAllTimeExpenses ?? filterProjectBalance.spent;
+              const bal = filterProjectBalance.received - spent;
+              return (
+                <span className={`text-xs font-bold ${bal >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                  Available Balance: {formatINR(bal)}
+                </span>
+              );
+            })()}
           </>
         )}
       </div>
