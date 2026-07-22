@@ -209,10 +209,23 @@ async function fireAlertIfCrossed({
     }, { merge: true });
   });
 
-  if (!newlyCrossed.length) {
-    console.log(TAG, `[${tag}] no newly crossed thresholds`); return;
+  // Determine which threshold to alert on:
+  // • New crossing → highest threshold just crossed (all are saved to Firestore above).
+  // • Already past the highest configured threshold → alert on every subsequent expense
+  //   so the team knows the project is still over budget even after all thresholds fired.
+  let threshold: number;
+  if (newlyCrossed.length) {
+    threshold = Math.max(...newlyCrossed);
+    console.log(TAG, `[${tag}] newly crossed: ${newlyCrossed.join(', ')}% — alerting for highest: ${threshold}%`);
+  } else {
+    const maxThreshold = Math.max(...activeThresholds);
+    if (newTotal >= budget * (maxThreshold / 100)) {
+      threshold = maxThreshold;
+      console.log(TAG, `[${tag}] already past ${maxThreshold}% — per-expense overage alert`);
+    } else {
+      console.log(TAG, `[${tag}] no newly crossed thresholds — skipping`); return;
+    }
   }
-  console.log(TAG, `[${tag}] newly crossed:`, newlyCrossed);
 
   const notifyIds = new Set<string>();
   if (assignedPersonId) notifyIds.add(assignedPersonId);
@@ -222,38 +235,36 @@ async function fireAlertIfCrossed({
 
   const link = '/site-account-statement/reports/budget';
 
-  for (const threshold of newlyCrossed) {
-    const isOver     = threshold >= 100;
-    const scopeLabel = categoryName ? `${categoryName} Category` : scopeType === 'fy' ? 'FY Budget' : scopeType === 'total' ? 'Project Total Budget' : 'Monthly Budget';
-    const title = isOver
-      ? `${scopeLabel} Exceeded — ${projectName}`
-      : `${scopeLabel} ${threshold}% Alert — ${projectName}`;
-    const body  = `${projectName}${categoryName ? ` · ${categoryName}` : ''}: ${periodLabel} ${scopeLabel.toLowerCase()} ${isOver ? 'exceeded' : `at ${Math.round(pctUsed)}%`}. Spent ₹${newTotal.toLocaleString('en-IN')} of ₹${budget.toLocaleString('en-IN')}.`;
+  const isOver     = threshold >= 100;
+  const scopeLabel = categoryName ? `${categoryName} Category` : scopeType === 'fy' ? 'FY Budget' : scopeType === 'total' ? 'Project Total Budget' : 'Monthly Budget';
+  const title = isOver
+    ? `${scopeLabel} Exceeded — ${projectName}`
+    : `${scopeLabel} ${threshold}% Alert — ${projectName}`;
+  const body  = `${projectName}${categoryName ? ` · ${categoryName}` : ''}: ${periodLabel} ${scopeLabel.toLowerCase()} ${isOver ? 'exceeded' : `at ${Math.round(pctUsed)}%`}. Spent ₹${newTotal.toLocaleString('en-IN')} of ₹${budget.toLocaleString('en-IN')}.`;
 
-    void Promise.allSettled([...notifyIds].map(uid =>
-      createUserNotification(uid, {
-        type: 'budget_alert' as NotificationType,
-        title, body,
-        module: 'site-account-statement',
-        itemId: projectId, itemRef: projectName,
-        stepName: `${periodLabel}${categoryName ? ` · ${categoryName}` : ''}`,
-        link,
-      })
-    ));
+  void Promise.allSettled([...notifyIds].map(uid =>
+    createUserNotification(uid, {
+      type: 'budget_alert' as NotificationType,
+      title, body,
+      module: 'site-account-statement',
+      itemId: projectId, itemRef: projectName,
+      stepName: `${periodLabel}${categoryName ? ` · ${categoryName}` : ''}`,
+      link,
+    })
+  ));
 
-    void sendAlertEmail({
-      projectName,
-      monthLabel:   periodLabel,
-      budgetAmount: budget,
-      spentAmount:  newTotal,
-      pctUsed:      Math.round(pctUsed),
-      thresholdPct: threshold,
-      categoryName,
-      scopeType,
-      recipients:   allRecipients,
-      link: (typeof window !== 'undefined' ? window.location.origin : '') + link,
-    });
-  }
+  void sendAlertEmail({
+    projectName,
+    monthLabel:   periodLabel,
+    budgetAmount: budget,
+    spentAmount:  newTotal,
+    pctUsed:      Math.round(pctUsed),
+    thresholdPct: threshold,
+    categoryName,
+    scopeType,
+    recipients:   allRecipients,
+    link: (typeof window !== 'undefined' ? window.location.origin : '') + link,
+  });
 }
 
 // ─── 1. Monthly project-wide alert ────────────────────────────────────────────
