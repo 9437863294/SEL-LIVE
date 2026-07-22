@@ -32,25 +32,20 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onStart() {
+    public void onStart() {
         super.onStart();
         requestStartupPermissions();
     }
 
-    // Step 1: foreground location + notifications
+    // Step 1: foreground location. Notification access is requested by the
+    // Capacitor Push Notifications plugin after sign-in so Android retains and
+    // reports the user's choice without prompting again on every app start.
     private void requestStartupPermissions() {
         List<String> needed = new ArrayList<>();
 
         if (!hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
             needed.add(Manifest.permission.ACCESS_FINE_LOCATION);
             needed.add(Manifest.permission.ACCESS_COARSE_LOCATION);
-        }
-
-        // POST_NOTIFICATIONS is required on Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (!hasPermission(Manifest.permission.POST_NOTIFICATIONS)) {
-                needed.add(Manifest.permission.POST_NOTIFICATIONS);
-            }
         }
 
         if (!needed.isEmpty()) {

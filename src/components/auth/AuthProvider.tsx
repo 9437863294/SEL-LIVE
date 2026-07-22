@@ -32,6 +32,7 @@ import {
   terminateSession,
   updateSessionActivity,
 } from '@/lib/session-manager';
+import { unregisterCurrentChatPushDevice } from '@/lib/chat-push-client';
 
 /* ---------------- types ---------------- */
 
@@ -124,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           roleUnsubscribeRef.current = null;
         }
 
+        await unregisterCurrentChatPushDevice();
         await signOut(auth);
         localStorage.clear();
 

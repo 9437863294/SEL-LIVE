@@ -39,6 +39,7 @@ const moduleDescriptions: Record<string, string> = {
     'Bank Balance': 'View and manage bank balance information.',
     'Expenses': 'Track and manage project expenses.',
     'Settings': 'Manage application-wide settings.',
+    'Chat System': 'Message colleagues directly or collaborate in groups.',
     'Loan': 'Manage and track loan activities.',
     'LC Module': 'Manage Letters of Credit for trade finance.',
     'LC Management': 'Manage Letters of Credit, bank exposure, margin, and settlement lifecycle.',
@@ -64,6 +65,9 @@ export default function ModuleDashboard() {
     const isAssignedDriverWithVehicle = Boolean(driver?.id && (driver?.assignedVehicleId || driver?.assignedVehicleNumber));
 
     const availableModuleNames = Object.keys(permissionModules).filter(moduleName => {
+        // Chat is a core collaboration tool for every authenticated user. Roles can
+        // adopt its granular permissions without hiding the module in the meantime.
+        if (moduleName === 'Chat System') return true;
         if (moduleName === 'Driver Management') {
           return (
             can('View Module', moduleName) ||

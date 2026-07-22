@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -71,6 +71,7 @@ export default function Header() {
   
   const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
   const [budgetAlerts, setBudgetAlerts] = useState<any[]>([]);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
 
@@ -160,6 +161,29 @@ export default function Header() {
 
     return () => unsubscribes.forEach(unsub => unsub());
   }, [user, isImpersonating]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setChatUnreadCount(0);
+      return;
+    }
+
+    const chatQuery = query(
+      collection(db, 'chatConversations'),
+      where('memberIds', 'array-contains', user.id)
+    );
+    return onSnapshot(
+      chatQuery,
+      (snapshot) => {
+        const total = snapshot.docs.reduce((sum, snapshotDoc) => {
+          const unreadCounts = snapshotDoc.data().unreadCounts as Record<string, number> | undefined;
+          return sum + (unreadCounts?.[user.id] || 0);
+        }, 0);
+        setChatUnreadCount(total);
+      },
+      () => setChatUnreadCount(0)
+    );
+  }, [user?.id]);
   
   const handleViewTask = (task: PendingTask) => {
     if(task.taskType === 'requisition'){
@@ -222,6 +246,22 @@ export default function Header() {
           <div className="ml-auto flex items-center gap-2 md:gap-4">
              <span className="text-sm font-medium text-foreground hidden sm:inline">{user?.name}</span>
             <TooltipProvider>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
+                    <Link href="/chat-system" aria-label="Open chat">
+                      <MessageCircle className="h-5 w-5" />
+                      {chatUnreadCount > 0 && (
+                        <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                          {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                        </span>
+                      )}
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Chat{chatUnreadCount ? ` (${chatUnreadCount} unread)` : ''}</TooltipContent>
+              </Tooltip>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

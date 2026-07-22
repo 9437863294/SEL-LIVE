@@ -36,6 +36,7 @@
     "@capacitor/ios": "^8.3.1",
     "@capacitor/local-notifications": "^8.0.2",
     "@capacitor/network": "^8.0.1",
+    "@capacitor/push-notifications": "^8.1.2",
     "@genkit-ai/google-genai": "1.18.0",
     "@genkit-ai/next": "1.18.0",
     "@hello-pangea/dnd": "^16.6.0",

@@ -65,6 +65,8 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/expenses';
       case 'Settings':
         return '/settings';
+      case 'Chat System':
+        return '/chat-system';
       case 'Loan':
         return '/loan';
       case 'LC Module':

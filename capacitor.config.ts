@@ -38,6 +38,9 @@ const config: CapacitorConfig = {
       skipNativeAuth: false,
       providers: ["google.com"],
     },
+    PushNotifications: {
+      presentationOptions: ['sound', 'alert', 'banner', 'list'],
+    },
   },
   ...(liveBaseUrl
     ? {
