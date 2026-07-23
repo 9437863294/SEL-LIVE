@@ -31,21 +31,21 @@ interface LocationTrackingPlugin {
 const LocationTrackingNative = registerPlugin<LocationTrackingPlugin>('LocationTracking');
 
 // Throttle: only write if the user moved enough OR enough time has passed.
-const MIN_INTERVAL_MS   = 60_000;  // 1 minute minimum between writes
+const MIN_INTERVAL_MS = 60_000;  // 1 minute minimum between writes
 const DISTANCE_FILTER_M = 30;      // 30 m movement filter (web/iOS path only)
 
-let activeWatchId:  DriverGeoWatchId | null = null;
-let activeUserId:   string | null           = null;
-let lastWriteMs     = 0;
-let nativeTracking  = false;
+let activeWatchId: DriverGeoWatchId | null = null;
+let activeUserId: string | null = null;
+let lastWriteMs = 0;
+let nativeTracking = false;
 
 async function persist(
-  userId:   string,
-  lat:      number,
-  lng:      number,
+  userId: string,
+  lat: number,
+  lng: number,
   accuracy: number,
-  heading:  number | null,
-  speed:    number | null,
+  heading: number | null,
+  speed: number | null,
 ): Promise<void> {
   const now = Date.now();
   if (now - lastWriteMs < MIN_INTERVAL_MS) return;
@@ -55,13 +55,13 @@ async function persist(
     doc(db, USER_LOCATIONS_COLLECTION, userId),
     {
       userId,
-      latitude:     lat,
-      longitude:    lng,
+      latitude: lat,
+      longitude: lng,
       accuracy,
       heading,
       speed,
-      platform:     Capacitor.isNativePlatform() ? Capacitor.getPlatform() : 'web',
-      updatedAt:    serverTimestamp(),
+      platform: Capacitor.isNativePlatform() ? Capacitor.getPlatform() : 'web',
+      updatedAt: serverTimestamp(),
       updatedAtIso: new Date().toISOString(),
     },
     { merge: true },
@@ -80,7 +80,7 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
   await stopUserLocationTracking();
 
   activeUserId = userId;
-  lastWriteMs  = 0;
+  lastWriteMs = 0;
 
   // Android: hand off to the native foreground service
   if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
@@ -92,10 +92,10 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
   // Web / iOS: JS-based watcher
   activeWatchId = await watchDriverPosition(
     {
-      enableHighAccuracy:   true,
+      enableHighAccuracy: true,
       distanceFilterMeters: DISTANCE_FILTER_M,
-      backgroundTitle:      'SEL Live',
-      backgroundMessage:    'Your location is being shared with your organisation.',
+      backgroundTitle: 'SEL Live',
+      backgroundMessage: '',
     },
     async (position) => {
       try {
@@ -120,7 +120,7 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
 /** Stop tracking. Called on logout or unmount. */
 export async function stopUserLocationTracking(): Promise<void> {
   if (nativeTracking) {
-    await LocationTrackingNative.stopTracking().catch(() => {});
+    await LocationTrackingNative.stopTracking().catch(() => { });
     nativeTracking = false;
   }
   if (activeWatchId !== null) {
@@ -128,5 +128,5 @@ export async function stopUserLocationTracking(): Promise<void> {
     activeWatchId = null;
   }
   activeUserId = null;
-  lastWriteMs  = 0;
+  lastWriteMs = 0;
 }
