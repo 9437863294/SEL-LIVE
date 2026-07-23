@@ -61,3 +61,7 @@ env:
     secret: firebase-private-key
     availability:
       - RUNTIME
+  - variable: LOCATION_TRACKING_ADMIN_PASSWORD_HASH
+    secret: location-tracking-admin-password-hash
+    availability:
+      - RUNTIME
