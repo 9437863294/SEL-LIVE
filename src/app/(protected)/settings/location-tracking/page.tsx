@@ -65,6 +65,7 @@ type LocationRow = {
     longitude: number;
     accuracy: number | null;
     platform: string | null;
+    lastFetchRequestId: string | null;
     updatedAtIso: string | null;
   } | null;
 };
@@ -135,6 +136,7 @@ export default function LocationTrackingSettingsPage() {
   const [loadingRows, setLoadingRows] = useState(false);
   const [search, setSearch] = useState('');
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [fetchingIds, setFetchingIds] = useState<Set<string>>(new Set());
   const [historyUser, setHistoryUser] = useState<LocationRow | null>(null);
   const [historyRows, setHistoryRows] = useState<LocationHistoryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -158,7 +160,9 @@ export default function LocationTrackingSettingsPage() {
         throw new Error('Email verification expired. Request a new code.');
       }
       const data = await responseData(response);
-      setRows(Array.isArray(data.users) ? data.users : []);
+      const users = Array.isArray(data.users) ? data.users as LocationRow[] : [];
+      setRows(users);
+      return users;
     } finally {
       setLoadingRows(false);
     }
@@ -285,6 +289,50 @@ export default function LocationTrackingSettingsPage() {
     }
   };
 
+  const fetchCurrentLocation = async (row: LocationRow) => {
+    if (!accessToken || !canEdit || !row.enabled || fetchingIds.has(row.id)) return;
+    setFetchingIds((current) => new Set(current).add(row.id));
+    try {
+      const data = await responseData(await authorizedRequest('/api/location-tracking/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ userId: row.id, action: 'fetch-current' }),
+      }, accessToken));
+      const fetchRequestId = String(data?.request?.fetchRequestId || '');
+      toast({
+        title: 'Current location requested',
+        description: `${row.name}’s active app is fetching a fresh GPS point.`,
+      });
+
+      await new Promise((resolve) => window.setTimeout(resolve, 4_000));
+      const refreshedRows = await loadRows(accessToken);
+      const refreshedUser = refreshedRows?.find((item) => item.id === row.id);
+      if (fetchRequestId && refreshedUser?.location?.lastFetchRequestId === fetchRequestId) {
+        toast({
+          title: 'Current location received',
+          description: `${row.name}’s latest coordinates are now available.`,
+        });
+      } else {
+        toast({
+          title: 'Request is waiting',
+          description: 'The location will arrive when the user’s app is active with location permission.',
+        });
+      }
+    } catch (error) {
+      if (error instanceof Error && /expired|verification/i.test(error.message)) clearAccess();
+      toast({
+        title: 'Location request failed',
+        description: error instanceof Error ? error.message : 'Try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setFetchingIds((current) => {
+        const nextIds = new Set(current);
+        nextIds.delete(row.id);
+        return nextIds;
+      });
+    }
+  };
+
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return rows;
@@ -360,11 +408,13 @@ export default function LocationTrackingSettingsPage() {
                   <TableHead>Required</TableHead>
                   <TableHead>Capture interval</TableHead>
                   <TableHead>Last location</TableHead>
+                  <TableHead>Current location</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRows.map((row) => {
                   const saving = savingIds.has(row.id);
+                  const fetching = fetchingIds.has(row.id);
                   return (
                     <TableRow key={row.id}>
                       <TableCell>
@@ -420,10 +470,24 @@ export default function LocationTrackingSettingsPage() {
                           </div>
                         ) : <span className="text-sm text-muted-foreground">Never captured</span>}
                       </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!canEdit || !row.enabled || fetching}
+                          onClick={() => void fetchCurrentLocation(row)}
+                          title={row.enabled ? `Fetch current location for ${row.name}` : 'Enable Required first'}
+                        >
+                          {fetching
+                            ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            : <LocateFixed className="mr-2 h-4 w-4" />}
+                          {fetching ? 'Fetching' : 'Fetch now'}
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
-                {!filteredRows.length && <TableRow><TableCell colSpan={4} className="h-28 text-center text-muted-foreground">No matching users found.</TableCell></TableRow>}
+                {!filteredRows.length && <TableRow><TableCell colSpan={5} className="h-28 text-center text-muted-foreground">No matching users found.</TableCell></TableRow>}
               </TableBody>
             </Table>
           )}

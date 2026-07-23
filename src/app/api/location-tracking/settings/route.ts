@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import {
@@ -57,6 +58,8 @@ export async function GET(request: Request) {
                 longitude,
                 accuracy: Number.isFinite(Number(location?.accuracy)) ? Number(location?.accuracy) : null,
                 platform: typeof location?.platform === 'string' ? location.platform : null,
+                lastFetchRequestId:
+                  typeof location?.lastFetchRequestId === 'string' ? location.lastFetchRequestId : null,
                 updatedAtIso:
                   (typeof location?.updatedAtIso === 'string' ? location.updatedAtIso : null) ||
                   timestampToIso(location?.updatedAt),
@@ -77,8 +80,35 @@ export async function PATCH(request: Request) {
     const actor = await requireLocationOtpSession(request, 'Edit');
     const body = await request.json();
     const userId = String(body?.userId || '').trim();
+    const action = String(body?.action || '').trim();
     const enabled = body?.enabled;
     const intervalSeconds = Math.round(Number(body?.intervalSeconds));
+    if (!userId) throw new LocationAccessError('User is required.', 400);
+
+    const firestore = getFirebaseAdminFirestore();
+    const userSnapshot = await firestore.collection('users').doc(userId).get();
+    if (!userSnapshot.exists) throw new LocationAccessError('Selected user was not found.', 404);
+
+    if (action === 'fetch-current') {
+      const settingRef = firestore.collection(LOCATION_SETTINGS_COLLECTION).doc(userId);
+      const settingSnapshot = await settingRef.get();
+      if (settingSnapshot.data()?.enabled !== true) {
+        throw new LocationAccessError('Enable Required before fetching this user’s location.', 409);
+      }
+
+      const fetchRequestId = randomUUID();
+      const requestedAtMs = Date.now();
+      await settingRef.set({
+        userId,
+        fetchRequestId,
+        fetchRequestedAtMs: requestedAtMs,
+        fetchRequestedAt: FieldValue.serverTimestamp(),
+        fetchRequestedBy: actor.id,
+        fetchRequestedByName: actor.name,
+      }, { merge: true });
+
+      return Response.json({ request: { userId, fetchRequestId, requestedAtMs } });
+    }
 
     if (!userId || typeof enabled !== 'boolean') {
       throw new LocationAccessError('User and tracking status are required.', 400);
@@ -90,10 +120,6 @@ export async function PATCH(request: Request) {
     ) {
       throw new LocationAccessError('Capture interval must be between 30 seconds and 60 minutes.', 400);
     }
-
-    const firestore = getFirebaseAdminFirestore();
-    const userSnapshot = await firestore.collection('users').doc(userId).get();
-    if (!userSnapshot.exists) throw new LocationAccessError('Selected user was not found.', 404);
 
     await firestore.collection(LOCATION_SETTINGS_COLLECTION).doc(userId).set({
       userId,

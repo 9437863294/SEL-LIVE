@@ -43,6 +43,8 @@ let lifecycleVersion = 0;
 let locationCaptureEnabled = false;
 let scheduledCaptureTimer: ReturnType<typeof setInterval> | null = null;
 let scheduledCaptureInFlight = false;
+let requestedCaptureInFlight = false;
+let lastHandledFetchRequestId = '';
 
 const normalizeIntervalSeconds = (value: unknown) =>
   Math.min(
@@ -57,9 +59,14 @@ async function persist(
   accuracy: number,
   heading: number | null,
   speed: number | null,
-): Promise<void> {
+  options: {
+    force?: boolean;
+    fetchRequestId?: string;
+    captureType?: 'movement' | 'scheduled' | 'requested';
+  } = {},
+): Promise<boolean> {
   const now = Date.now();
-  if (now - lastWriteMs < activeIntervalMs) return;
+  if (!options.force && now - lastWriteMs < activeIntervalMs) return false;
   lastWriteMs = now;
 
   const latestLocationRef = doc(db, USER_LOCATIONS_COLLECTION, userId);
@@ -74,21 +81,25 @@ async function persist(
     heading,
     speed,
     platform,
+    captureType: options.captureType || 'scheduled',
   };
   const batch = writeBatch(db);
 
   batch.set(latestLocationRef, {
     ...locationPayload,
     lastHistoryId: historyRef.id,
+    ...(options.fetchRequestId ? { lastFetchRequestId: options.fetchRequestId } : {}),
     updatedAt: serverTimestamp(),
     updatedAtIso: capturedAtIso,
   }, { merge: true });
   batch.set(historyRef, {
     ...locationPayload,
+    ...(options.fetchRequestId ? { fetchRequestId: options.fetchRequestId } : {}),
     capturedAt: serverTimestamp(),
     capturedAtIso,
   });
   await batch.commit();
+  return true;
 }
 
 /**
@@ -141,12 +152,68 @@ async function captureCurrentPosition(userId: string, version: number) {
       position.coords.accuracy,
       position.coords.heading,
       position.coords.speed,
+      { captureType: 'scheduled' },
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to fetch current location.';
     console.warn('[UserLocation] scheduled capture error:', message);
   } finally {
     scheduledCaptureInFlight = false;
+  }
+}
+
+async function captureRequestedPosition(userId: string, version: number, fetchRequestId: string) {
+  if (
+    requestedCaptureInFlight ||
+    !locationCaptureEnabled ||
+    activeUserId !== userId ||
+    version !== lifecycleVersion
+  ) return;
+
+  requestedCaptureInFlight = true;
+  try {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const position = await getCurrentDriverPosition({
+          enableHighAccuracy: true,
+          timeout: 20_000,
+          maximumAge: 0,
+        });
+        if (
+          !locationCaptureEnabled ||
+          activeUserId !== userId ||
+          version !== lifecycleVersion
+        ) return;
+
+        await persist(
+          userId,
+          position.coords.latitude,
+          position.coords.longitude,
+          position.coords.accuracy,
+          position.coords.heading,
+          position.coords.speed,
+          {
+            force: true,
+            fetchRequestId,
+            captureType: 'requested',
+          },
+        );
+        lastHandledFetchRequestId = fetchRequestId;
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(`sel_location_fetch_request_${userId}`, fetchRequestId);
+        }
+        return;
+      } catch (error) {
+        if (attempt === 2) {
+          const message = error instanceof Error ? error.message : 'Unable to fetch requested location.';
+          console.warn('[UserLocation] requested capture error:', message);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+      }
+    }
+  } finally {
+    requestedCaptureInFlight = false;
   }
 }
 
@@ -179,6 +246,7 @@ async function startPositionWatcher(userId: string, version: number) {
             position.coords.accuracy,
             position.coords.heading,
             position.coords.speed,
+            { captureType: 'movement' },
           );
         } catch {
           // Ignore transient Firestore write failures; the watcher stays active.
@@ -205,6 +273,10 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
 
   activeUserId = userId;
   lastWriteMs = 0;
+  lastHandledFetchRequestId =
+    typeof window !== 'undefined'
+      ? window.localStorage.getItem(`sel_location_fetch_request_${userId}`) || ''
+      : '';
   activeIntervalMs = DEFAULT_INTERVAL_SECONDS * 1000;
   const version = lifecycleVersion;
 
@@ -216,11 +288,15 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
       const enabled = snapshot.exists() && setting?.enabled === true;
       locationCaptureEnabled = enabled;
       activeIntervalMs = normalizeIntervalSeconds(setting?.intervalSeconds) * 1000;
+      const fetchRequestId = String(setting?.fetchRequestId || '').trim();
 
       if (!enabled) {
         stopScheduledCapture();
         void stopPositionWatcher();
         return;
+      }
+      if (fetchRequestId && fetchRequestId !== lastHandledFetchRequestId) {
+        void captureRequestedPosition(userId, version, fetchRequestId);
       }
       startScheduledCapture(userId, version);
       void startPositionWatcher(userId, version).catch((error) => {
@@ -242,6 +318,8 @@ export async function stopUserLocationTracking(): Promise<void> {
   settingsUnsubscribe?.();
   settingsUnsubscribe = null;
   locationCaptureEnabled = false;
+  requestedCaptureInFlight = false;
+  lastHandledFetchRequestId = '';
   stopScheduledCapture();
   await stopPositionWatcher();
   activeUserId = null;
