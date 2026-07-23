@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { createHash, createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 
@@ -43,6 +43,26 @@ export function newOpaqueToken(bytes = 32) {
 
 export function hashOpaqueToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
+}
+
+export function verifyLocationAdminPassword(password: string) {
+  const encodedHash = String(process.env.LOCATION_TRACKING_ADMIN_PASSWORD_HASH || '').trim();
+  if (!encodedHash) {
+    throw new LocationAccessError('Location administrator password is not configured.', 503);
+  }
+
+  const [algorithm, salt, expectedHex] = encodedHash.split('$');
+  if (
+    algorithm !== 'scrypt' ||
+    !/^[a-f0-9]{32}$/i.test(salt || '') ||
+    !/^[a-f0-9]{128}$/i.test(expectedHex || '')
+  ) {
+    throw new LocationAccessError('Location administrator password configuration is invalid.', 503);
+  }
+
+  const expected = Buffer.from(expectedHex, 'hex');
+  const provided = scryptSync(password, salt, expected.length);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
 async function resolveAppUser(decodedToken: DecodedIdToken) {

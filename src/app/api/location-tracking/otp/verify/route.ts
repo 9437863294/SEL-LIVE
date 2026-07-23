@@ -12,6 +12,7 @@ import {
   locationErrorResponse,
   LocationAccessError,
   newOpaqueToken,
+  verifyLocationAdminPassword,
 } from '@/lib/location-tracking-admin';
 
 export const runtime = 'nodejs';
@@ -28,9 +29,11 @@ export async function POST(request: Request) {
     const body = await request.json();
     const challengeId = String(body?.challengeId || '').trim();
     const otp = String(body?.otp || '').replace(/\D/g, '').slice(0, 6);
-    if (!challengeId || otp.length !== 6) {
-      throw new LocationAccessError('Enter the complete 6-digit verification code.', 400);
+    const personalPassword = String(body?.personalPassword || '').slice(0, 256);
+    if (!challengeId || otp.length !== 6 || !personalPassword) {
+      throw new LocationAccessError('Enter the complete verification code and personal password.', 400);
     }
+    const personalPasswordValid = verifyLocationAdminPassword(personalPassword);
 
     const firestore = getFirebaseAdminFirestore();
     const accessToken = newOpaqueToken();
@@ -57,11 +60,15 @@ export async function POST(request: Request) {
 
       const expectedHash = String(data?.codeHash || '');
       const providedHash = hashLocationOtp(challengeId, otp);
-      if (!expectedHash || !safeHashEqual(expectedHash, providedHash)) {
+      if (
+        !expectedHash ||
+        !safeHashEqual(expectedHash, providedHash) ||
+        !personalPasswordValid
+      ) {
         transaction.update(challengeRef, { attempts: attempts + 1 });
         return {
           ok: false,
-          message: `Incorrect code. ${LOCATION_OTP_MAX_ATTEMPTS - attempts - 1} attempt(s) remaining.`,
+          message: `Incorrect code or personal password. ${LOCATION_OTP_MAX_ATTEMPTS - attempts - 1} attempt(s) remaining.`,
           status: 400,
         };
       }

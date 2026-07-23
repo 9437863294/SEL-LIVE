@@ -19,6 +19,7 @@ import { Capacitor } from '@capacitor/core';
 import { db } from '@/lib/firebase';
 import {
   clearDriverPositionWatch,
+  getCurrentDriverPosition,
   watchDriverPosition,
   type DriverGeoWatchId,
 } from '@/lib/driver-mobile-geolocation';
@@ -40,6 +41,8 @@ let settingsUnsubscribe: (() => void) | null = null;
 let watcherStarting = false;
 let lifecycleVersion = 0;
 let locationCaptureEnabled = false;
+let scheduledCaptureTimer: ReturnType<typeof setInterval> | null = null;
+let scheduledCaptureInFlight = false;
 
 const normalizeIntervalSeconds = (value: unknown) =>
   Math.min(
@@ -102,6 +105,59 @@ async function stopPositionWatcher() {
   await clearDriverPositionWatch(watchId).catch(() => {});
 }
 
+function stopScheduledCapture() {
+  if (scheduledCaptureTimer !== null) {
+    clearInterval(scheduledCaptureTimer);
+    scheduledCaptureTimer = null;
+  }
+  scheduledCaptureInFlight = false;
+}
+
+async function captureCurrentPosition(userId: string, version: number) {
+  if (
+    scheduledCaptureInFlight ||
+    !locationCaptureEnabled ||
+    activeUserId !== userId ||
+    version !== lifecycleVersion
+  ) return;
+
+  scheduledCaptureInFlight = true;
+  try {
+    const position = await getCurrentDriverPosition({
+      enableHighAccuracy: true,
+      timeout: 20_000,
+      maximumAge: Math.min(15_000, Math.floor(activeIntervalMs / 2)),
+    });
+    if (
+      !locationCaptureEnabled ||
+      activeUserId !== userId ||
+      version !== lifecycleVersion
+    ) return;
+
+    await persist(
+      userId,
+      position.coords.latitude,
+      position.coords.longitude,
+      position.coords.accuracy,
+      position.coords.heading,
+      position.coords.speed,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unable to fetch current location.';
+    console.warn('[UserLocation] scheduled capture error:', message);
+  } finally {
+    scheduledCaptureInFlight = false;
+  }
+}
+
+function startScheduledCapture(userId: string, version: number) {
+  stopScheduledCapture();
+  void captureCurrentPosition(userId, version);
+  scheduledCaptureTimer = setInterval(() => {
+    void captureCurrentPosition(userId, version);
+  }, activeIntervalMs);
+}
+
 async function startPositionWatcher(userId: string, version: number) {
   if (activeWatchId !== null || watcherStarting) return;
   watcherStarting = true;
@@ -162,13 +218,19 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
       activeIntervalMs = normalizeIntervalSeconds(setting?.intervalSeconds) * 1000;
 
       if (!enabled) {
+        stopScheduledCapture();
         void stopPositionWatcher();
         return;
       }
-      void startPositionWatcher(userId, version);
+      startScheduledCapture(userId, version);
+      void startPositionWatcher(userId, version).catch((error) => {
+        const message = error instanceof Error ? error.message : 'Unable to start location watcher.';
+        console.warn('[UserLocation] watcher start error:', message);
+      });
     },
     (error) => {
       console.warn('[UserLocation] settings listener error:', error.message);
+      stopScheduledCapture();
       void stopPositionWatcher();
     },
   );
@@ -180,6 +242,7 @@ export async function stopUserLocationTracking(): Promise<void> {
   settingsUnsubscribe?.();
   settingsUnsubscribe = null;
   locationCaptureEnabled = false;
+  stopScheduledCapture();
   await stopPositionWatcher();
   activeUserId = null;
   lastWriteMs = 0;

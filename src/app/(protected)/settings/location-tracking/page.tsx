@@ -127,6 +127,7 @@ export default function LocationTrackingSettingsPage() {
   const [challengeId, setChallengeId] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
   const [otp, setOtp] = useState('');
+  const [personalPassword, setPersonalPassword] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otpBusy, setOtpBusy] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
@@ -142,6 +143,7 @@ export default function LocationTrackingSettingsPage() {
     sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     sessionStorage.removeItem(ACCESS_EXPIRY_KEY);
     setAccessToken('');
+    setPersonalPassword('');
     setRows([]);
     setHistoryUser(null);
     setHistoryRows([]);
@@ -189,6 +191,7 @@ export default function LocationTrackingSettingsPage() {
       setChallengeId(String(data.challengeId));
       setMaskedEmail(String(data.maskedEmail));
       setOtp('');
+      setPersonalPassword('');
       setOtpSent(true);
       setResendSeconds(60);
       toast({ title: 'Verification code sent', description: `Check ${data.maskedEmail}.` });
@@ -200,18 +203,19 @@ export default function LocationTrackingSettingsPage() {
   };
 
   const verifyOtp = async () => {
-    if (otp.length !== 6 || !challengeId) return;
+    if (otp.length !== 6 || !challengeId || !personalPassword) return;
     setOtpBusy(true);
     try {
       const data = await responseData(await authorizedRequest('/api/location-tracking/otp/verify', {
         method: 'POST',
-        body: JSON.stringify({ challengeId, otp }),
+        body: JSON.stringify({ challengeId, otp, personalPassword }),
       }));
       const token = String(data.accessToken || '');
       const expiresAtMs = Number(data.expiresAtMs || 0);
       sessionStorage.setItem(ACCESS_TOKEN_KEY, token);
       sessionStorage.setItem(ACCESS_EXPIRY_KEY, String(expiresAtMs));
       setAccessToken(token);
+      setPersonalPassword('');
       setOtpSent(false);
       await loadRows(token);
       toast({ title: 'Access verified', description: 'Location settings are unlocked for 15 minutes.' });
@@ -298,10 +302,12 @@ export default function LocationTrackingSettingsPage() {
         email={user?.email || ''}
         maskedEmail={maskedEmail}
         otp={otp}
+        personalPassword={personalPassword}
         otpSent={otpSent}
         busy={otpBusy}
         resendSeconds={resendSeconds}
         onOtpChange={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))}
+        onPersonalPasswordChange={setPersonalPassword}
         onRequest={() => void requestOtp()}
         onVerify={() => void verifyOtp()}
       />
@@ -525,20 +531,24 @@ function OtpGate({
   email,
   maskedEmail,
   otp,
+  personalPassword,
   otpSent,
   busy,
   resendSeconds,
   onOtpChange,
+  onPersonalPasswordChange,
   onRequest,
   onVerify,
 }: {
   email: string;
   maskedEmail: string;
   otp: string;
+  personalPassword: string;
   otpSent: boolean;
   busy: boolean;
   resendSeconds: number;
   onOtpChange: (value: string) => void;
+  onPersonalPasswordChange: (value: string) => void;
   onRequest: () => void;
   onVerify: () => void;
 }) {
@@ -547,8 +557,8 @@ function OtpGate({
       <Card className="w-full max-w-md border-emerald-200/70 shadow-lg">
         <CardHeader className="text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><ShieldCheck className="h-7 w-7" /></div>
-          <CardTitle className="mt-3">Email verification required</CardTitle>
-          <CardDescription>This page controls sensitive employee location settings. Verify your identity before continuing.</CardDescription>
+          <CardTitle className="mt-3">Additional verification required</CardTitle>
+          <CardDescription>This page controls sensitive employee location settings. Enter the email OTP and personal password to continue.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {!otpSent ? (
@@ -576,7 +586,19 @@ function OtpGate({
                   onKeyDown={(event) => { if (event.key === 'Enter') onVerify(); }}
                 />
               </div>
-              <Button className="w-full" onClick={onVerify} disabled={busy || otp.length !== 6}>
+              <div className="space-y-2">
+                <Label htmlFor="location-settings-password">Personal password</Label>
+                <Input
+                  id="location-settings-password"
+                  type="password"
+                  value={personalPassword}
+                  onChange={(event) => onPersonalPasswordChange(event.target.value)}
+                  autoComplete="current-password"
+                  placeholder="Enter personal password"
+                  onKeyDown={(event) => { if (event.key === 'Enter') onVerify(); }}
+                />
+              </div>
+              <Button className="w-full" onClick={onVerify} disabled={busy || otp.length !== 6 || !personalPassword}>
                 {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Verify and open
               </Button>
               <Button variant="ghost" className="w-full" onClick={onRequest} disabled={busy || resendSeconds > 0}>
