@@ -5,7 +5,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   Activity, Briefcase, ChevronLeft, ChevronRight, Clock, Construction, Hash,
-  LogIn, MailCheck, Menu, MonitorSmartphone, Palette, Settings2,
+  LogIn, MailCheck, MapPinned, Menu, MonitorSmartphone, Palette, Settings2,
   ShieldCheck, User as UserIcon, Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -54,6 +54,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         { href: '/settings/user-management', icon: Users, label: 'Users', permission: can('View', 'Settings.User Management'), iconBg: 'bg-blue-100', iconColor: 'text-blue-600', activeGradient: 'from-blue-500 to-indigo-600' },
         { href: '/settings/role-management', icon: ShieldCheck, label: 'Roles', permission: can('View', 'Settings.Role Management'), iconBg: 'bg-red-100', iconColor: 'text-red-600', activeGradient: 'from-red-500 to-rose-600' },
         { href: '/settings/session-management', icon: MonitorSmartphone, label: 'Sessions', permission: true, iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', activeGradient: 'from-indigo-500 to-blue-600' },
+        { href: '/settings/location-tracking', icon: MapPinned, label: 'Location', permission: can('View', 'Settings.Location Tracking'), iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600', activeGradient: 'from-emerald-500 to-teal-600' },
         { href: '/settings/audit-logs', icon: Activity, label: 'Audit Logs', permission: can('View', 'Settings.Audit Logs') || can('View', 'Settings.User Management') || can('View', 'Settings.Role Management'), iconBg: 'bg-violet-100', iconColor: 'text-violet-600', activeGradient: 'from-violet-500 to-purple-600' },
       ],
     },

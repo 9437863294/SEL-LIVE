@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import {
   Activity, Home, Briefcase, Construction, Clock, Users, ShieldCheck, Hash,
-  Palette, MailCheck, LogIn, Package, Settings2,
+  Palette, MailCheck, LogIn, MapPinned, Package, Settings2,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -91,6 +91,19 @@ const settingsItemsBase: SettingsItemConfig[] = [
       iconBg: 'bg-red-100 dark:bg-red-900/40',
       iconColor: 'text-red-600 dark:text-red-400',
       border: 'border-red-200/60 dark:border-red-800/30 hover:border-red-400/60',
+    },
+  },
+  {
+    icon: MapPinned,
+    text: 'Location Tracking',
+    description: 'Control user location capture and reporting intervals.',
+    href: '/settings/location-tracking',
+    permission: 'View',
+    colorScheme: {
+      bg: 'from-emerald-500/8 to-teal-600/4',
+      iconBg: 'bg-emerald-100 dark:bg-emerald-900/40',
+      iconColor: 'text-emerald-600 dark:text-emerald-400',
+      border: 'border-emerald-200/60 dark:border-emerald-800/30 hover:border-emerald-400/60',
     },
   },
   {
@@ -248,6 +261,7 @@ export default function SettingsPage() {
     '/employee': 'Settings.Employee Management',
     '/settings/user-management': 'Settings.User Management',
     '/settings/role-management': 'Settings.Role Management',
+    '/settings/location-tracking': 'Settings.Location Tracking',
     '/settings/serial-no-configuration': 'Settings.Serial No. Config',
     '/settings/working-hours': 'Settings.Working Hrs',
     '/settings/appearance': 'Settings.Appearance',

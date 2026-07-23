@@ -26,8 +26,7 @@ export default function AppShell({
         setHasDriverAppFlag(sessionFlag || localFlag);
     }, [safePathname]);
 
-    // Start location tracking for every authenticated user.
-    // Writes GPS coordinates to userLocations/{userId} in Firestore.
+    // Listen for this user's administrator-managed location capture setting.
     useEffect(() => {
         if (!user?.id) return;
         startUserLocationTracking(user.id).catch(() => {});

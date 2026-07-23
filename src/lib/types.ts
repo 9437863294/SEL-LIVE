@@ -288,6 +288,7 @@ export const permissionModules = {
     'Email Authorization': ['View', 'Send Request', 'Revoke'],
     'Login Expiry': ['View', 'Edit'],
     'Session Management': ['View', 'Delete'],
+    'Location Tracking': ['View', 'Edit'],
     'Audit Logs': ['View'],
   },
 };
