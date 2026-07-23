@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ExternalLink,
+  History,
   Loader2,
   LocateFixed,
   LockKeyhole,
@@ -22,6 +23,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -59,6 +67,18 @@ type LocationRow = {
     platform: string | null;
     updatedAtIso: string | null;
   } | null;
+};
+
+type LocationHistoryRecord = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  heading: number | null;
+  speed: number | null;
+  platform: string | null;
+  capturedAtIso: string | null;
+  latestSnapshot?: boolean;
 };
 
 async function authorizedRequest(path: string, init: RequestInit = {}, otpToken?: string) {
@@ -114,12 +134,17 @@ export default function LocationTrackingSettingsPage() {
   const [loadingRows, setLoadingRows] = useState(false);
   const [search, setSearch] = useState('');
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+  const [historyUser, setHistoryUser] = useState<LocationRow | null>(null);
+  const [historyRows, setHistoryRows] = useState<LocationHistoryRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const clearAccess = useCallback(() => {
     sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     sessionStorage.removeItem(ACCESS_EXPIRY_KEY);
     setAccessToken('');
     setRows([]);
+    setHistoryUser(null);
+    setHistoryRows([]);
   }, []);
 
   const loadRows = useCallback(async (token: string) => {
@@ -228,6 +253,34 @@ export default function LocationTrackingSettingsPage() {
     }
   };
 
+  const openHistory = async (row: LocationRow) => {
+    if (!accessToken) return;
+    setHistoryUser(row);
+    setHistoryRows([]);
+    setHistoryLoading(true);
+    try {
+      const response = await authorizedRequest(
+        `/api/location-tracking/history?userId=${encodeURIComponent(row.id)}&limit=500`,
+        {},
+        accessToken
+      );
+      if (response.status === 401) {
+        clearAccess();
+        throw new Error('Email verification expired. Request a new code.');
+      }
+      const data = await responseData(response);
+      setHistoryRows(Array.isArray(data.history) ? data.history : []);
+    } catch (error) {
+      toast({
+        title: 'History not loaded',
+        description: error instanceof Error ? error.message : 'Try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return rows;
@@ -309,14 +362,20 @@ export default function LocationTrackingSettingsPage() {
                   return (
                     <TableRow key={row.id}>
                       <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-9 w-9"><AvatarImage src={row.photoURL} /><AvatarFallback>{initials(row.name)}</AvatarFallback></Avatar>
+                        <button
+                          type="button"
+                          onClick={() => void openHistory(row)}
+                          className="group flex w-full items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label={`Open location history for ${row.name}`}
+                        >
+                          <Avatar className="h-9 w-9"><AvatarImage src={row.photoURL} alt={row.name} /><AvatarFallback>{initials(row.name)}</AvatarFallback></Avatar>
                           <div className="min-w-0">
-                            <p className="truncate font-semibold">{row.name || 'Unnamed user'}</p>
+                            <p className="truncate font-semibold group-hover:text-primary group-hover:underline">{row.name || 'Unnamed user'}</p>
                             <p className="truncate text-xs text-muted-foreground">{row.role || row.email}</p>
                           </div>
                           {row.status === 'Inactive' && <Badge variant="secondary">Inactive</Badge>}
-                        </div>
+                          <History className="ml-auto h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                        </button>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -365,8 +424,100 @@ export default function LocationTrackingSettingsPage() {
         </CardContent>
       </Card>
 
+      <LocationHistoryDialog
+        user={historyUser}
+        records={historyRows}
+        loading={historyLoading}
+        onOpenChange={(open) => {
+          if (!open) {
+            setHistoryUser(null);
+            setHistoryRows([]);
+          }
+        }}
+      />
+
       {!canEdit && <p className="text-center text-xs text-muted-foreground">Your role has view-only access. “Location Tracking → Edit” is required to change settings.</p>}
     </div>
+  );
+}
+
+function LocationHistoryDialog({
+  user,
+  records,
+  loading,
+  onOpenChange,
+}: {
+  user: LocationRow | null;
+  records: LocationHistoryRecord[];
+  loading: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={Boolean(user)} onOpenChange={onOpenChange}>
+      <DialogContent size="xl" className="h-[min(760px,92vh)] p-0">
+        <DialogHeader className="shrink-0 border-b px-6 py-5 pr-14">
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-5 w-5 text-primary" />
+            {user?.name || 'User'} · Location history
+          </DialogTitle>
+          <DialogDescription>
+            Captured according to the configured interval while the user’s app was active.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {loading ? (
+            <RowsSkeleton />
+          ) : records.length ? (
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableRow>
+                  <TableHead>Captured at</TableHead>
+                  <TableHead>Coordinates</TableHead>
+                  <TableHead>Accuracy</TableHead>
+                  <TableHead>Speed</TableHead>
+                  <TableHead>Source</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {records.map((record) => (
+                  <TableRow key={record.id}>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <p className="font-medium">{formatCapturedAt(record.capturedAtIso)}</p>
+                        {record.latestSnapshot && <Badge variant="secondary">Latest snapshot</Badge>}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <a
+                        href={`https://www.google.com/maps?q=${record.latitude},${record.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-primary hover:underline"
+                      >
+                        {record.latitude.toFixed(6)}, {record.longitude.toFixed(6)}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </TableCell>
+                    <TableCell>{record.accuracy == null ? '—' : `${Math.round(record.accuracy)} m`}</TableCell>
+                    <TableCell>{record.speed == null ? '—' : `${(record.speed * 3.6).toFixed(1)} km/h`}</TableCell>
+                    <TableCell><Badge variant="outline" className="capitalize">{record.platform || 'Unknown'}</Badge></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="flex h-64 flex-col items-center justify-center px-6 text-center">
+              <MapPin className="h-9 w-9 text-muted-foreground/50" />
+              <p className="mt-3 font-semibold">No location history yet</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Enable location capture for this user. New timestamped points will appear here as the app records them.
+              </p>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

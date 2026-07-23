@@ -14,7 +14,7 @@
  * notification is displayed.
  */
 
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { db } from '@/lib/firebase';
 import {
@@ -25,6 +25,7 @@ import {
 
 export const USER_LOCATIONS_COLLECTION = 'userLocations';
 export const USER_LOCATION_SETTINGS_COLLECTION = 'userLocationSettings';
+export const USER_LOCATION_HISTORY_SUBCOLLECTION = 'history';
 
 const DEFAULT_INTERVAL_SECONDS = 60;
 const MIN_INTERVAL_SECONDS = 30;
@@ -58,21 +59,33 @@ async function persist(
   if (now - lastWriteMs < activeIntervalMs) return;
   lastWriteMs = now;
 
-  await setDoc(
-    doc(db, USER_LOCATIONS_COLLECTION, userId),
-    {
-      userId,
-      latitude: lat,
-      longitude: lng,
-      accuracy,
-      heading,
-      speed,
-      platform: Capacitor.isNativePlatform() ? Capacitor.getPlatform() : 'web',
-      updatedAt: serverTimestamp(),
-      updatedAtIso: new Date().toISOString(),
-    },
-    { merge: true },
-  );
+  const latestLocationRef = doc(db, USER_LOCATIONS_COLLECTION, userId);
+  const historyRef = doc(collection(latestLocationRef, USER_LOCATION_HISTORY_SUBCOLLECTION));
+  const platform = Capacitor.isNativePlatform() ? Capacitor.getPlatform() : 'web';
+  const capturedAtIso = new Date(now).toISOString();
+  const locationPayload = {
+    userId,
+    latitude: lat,
+    longitude: lng,
+    accuracy,
+    heading,
+    speed,
+    platform,
+  };
+  const batch = writeBatch(db);
+
+  batch.set(latestLocationRef, {
+    ...locationPayload,
+    lastHistoryId: historyRef.id,
+    updatedAt: serverTimestamp(),
+    updatedAtIso: capturedAtIso,
+  }, { merge: true });
+  batch.set(historyRef, {
+    ...locationPayload,
+    capturedAt: serverTimestamp(),
+    capturedAtIso,
+  });
+  await batch.commit();
 }
 
 /**

@@ -95,8 +95,8 @@ const settingsItemsBase: SettingsItemConfig[] = [
   },
   {
     icon: MapPinned,
-    text: 'Location Tracking',
-    description: 'Control user location capture and reporting intervals.',
+    text: 'other',
+    description: 'other.',
     href: '/settings/location-tracking',
     permission: 'View',
     colorScheme: {
