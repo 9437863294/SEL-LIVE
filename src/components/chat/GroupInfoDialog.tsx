@@ -25,6 +25,7 @@ export function GroupInfoDialog({
   conversation,
   currentUser,
   users,
+  eligibleUserIds,
   onRename,
   onAddMembers,
   onRemoveMember,
@@ -35,6 +36,7 @@ export function GroupInfoDialog({
   conversation: ChatConversation;
   currentUser: User;
   users: User[];
+  eligibleUserIds: ReadonlySet<string>;
   onRename: (name: string) => Promise<void>;
   onAddMembers: (ids: string[]) => Promise<void>;
   onRemoveMember: (id: string) => Promise<void>;
@@ -51,10 +53,11 @@ export function GroupInfoDialog({
     const normalized = search.trim().toLowerCase();
     return users.filter((user) =>
       user.status !== 'Inactive' &&
+      eligibleUserIds.has(user.id) &&
       !conversation.memberIds.includes(user.id) &&
       `${user.name} ${user.email}`.toLowerCase().includes(normalized)
     );
-  }, [conversation.memberIds, search, users]);
+  }, [conversation.memberIds, eligibleUserIds, search, users]);
 
   const reset = () => {
     setMode('details');
@@ -128,4 +131,3 @@ export function GroupInfoDialog({
 function MemberAvatar({ user }: { user: User }) {
   return <Avatar className="h-9 w-9"><AvatarImage src={user.photoURL} alt={user.name} /><AvatarFallback>{getInitials(user.name)}</AvatarFallback></Avatar>;
 }
-

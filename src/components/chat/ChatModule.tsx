@@ -41,8 +41,10 @@ import {
 import { getDownloadURL, ref as storageRef, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 import { useSearchParams } from 'next/navigation';
 import type { User } from '@/lib/types';
+import type { Role } from '@/lib/types';
 import { db, storage } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -80,12 +82,14 @@ import { ChatComposer } from './ChatComposer';
 import { ChatMessageItem, type MessageDeliveryStatus } from './ChatMessageItem';
 import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { GroupInfoDialog } from './GroupInfoDialog';
+import { canRoleReceiveChats } from '@/lib/chat-access';
 
 const MAX_MESSAGE_LENGTH = 4000;
 const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
 
 export default function ChatModule() {
   const { user, users } = useAuth();
+  const { can, isLoading: isLoadingPermissions } = useAuthorization();
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const requestedConversationId = searchParams?.get('conversation') || '';
@@ -110,8 +114,27 @@ export default function ChatModule() {
   const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [groupInfoOpen, setGroupInfoOpen] = useState(false);
   const [typingClock, setTypingClock] = useState(Date.now());
+  const [chatEnabledRoles, setChatEnabledRoles] = useState<Set<string>>(new Set());
+  const [isLoadingChatRoles, setIsLoadingChatRoles] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const canViewChat =
+    can('View Module', 'Chat System') &&
+    can('View', 'Chat System.Conversations');
+  const canSendChat = canViewChat && can('Send', 'Chat System.Conversations');
+  const canCreateGroups = canSendChat && can('Create', 'Chat System.Groups');
+
+  const eligibleChatUsers = useMemo(
+    () => users.filter((candidate) =>
+      candidate.status !== 'Inactive' && chatEnabledRoles.has(candidate.role)
+    ),
+    [chatEnabledRoles, users]
+  );
+  const eligibleChatUserIds = useMemo(
+    () => new Set(eligibleChatUsers.map((candidate) => candidate.id)),
+    [eligibleChatUsers]
+  );
 
   const usersById = useMemo(
     () => new Map(users.map((candidate) => [candidate.id, candidate])),
@@ -146,6 +169,33 @@ export default function ChatModule() {
   }, []);
 
   useEffect(() => {
+    if (isLoadingPermissions || !canViewChat) {
+      setChatEnabledRoles(new Set());
+      setIsLoadingChatRoles(false);
+      return;
+    }
+
+    setIsLoadingChatRoles(true);
+    return onSnapshot(
+      collection(db, 'roles'),
+      (snapshot) => {
+        setChatEnabledRoles(new Set(
+          snapshot.docs
+            .map((roleDocument) => roleDocument.data() as Role)
+            .filter((role) => canRoleReceiveChats(role.permissions))
+            .map((role) => role.name)
+        ));
+        setIsLoadingChatRoles(false);
+      },
+      (error) => {
+        console.error('Unable to load chat-enabled roles:', error);
+        setChatEnabledRoles(new Set());
+        setIsLoadingChatRoles(false);
+      }
+    );
+  }, [canViewChat, isLoadingPermissions]);
+
+  useEffect(() => {
     setReplyingTo(null);
     setEditingMessage(null);
     setDraft('');
@@ -171,7 +221,7 @@ export default function ChatModule() {
   }, [conversations, requestedConversationId]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !canViewChat) return;
     setIsLoadingConversations(true);
     const conversationsQuery = query(
       collection(db, 'chatConversations'),
@@ -219,7 +269,7 @@ export default function ChatModule() {
         });
       }
     );
-  }, [toast, user?.id]);
+  }, [canViewChat, toast, user?.id]);
 
   useEffect(() => {
     if (!selectedConversationId) {
@@ -286,7 +336,9 @@ export default function ChatModule() {
 
   const startDirectConversation = useCallback(
     async (otherUser: User) => {
-      if (!user?.id) return;
+      if (!user?.id || !canSendChat || !eligibleChatUserIds.has(otherUser.id)) {
+        throw new Error('You do not have permission to start this conversation.');
+      }
       setIsCreating(true);
       try {
         const conversationId = directConversationId(user.id, otherUser.id);
@@ -320,12 +372,18 @@ export default function ChatModule() {
         setIsCreating(false);
       }
     },
-    [toast, user?.id]
+    [canSendChat, eligibleChatUserIds, toast, user?.id]
   );
 
   const createGroupConversation = useCallback(
     async (name: string, selectedMemberIds: string[]) => {
-      if (!user?.id) return;
+      if (
+        !user?.id ||
+        !canCreateGroups ||
+        selectedMemberIds.some((memberId) => !eligibleChatUserIds.has(memberId))
+      ) {
+        throw new Error('You do not have permission to create this group.');
+      }
       setIsCreating(true);
       try {
         const memberIds = Array.from(new Set([user.id, ...selectedMemberIds]));
@@ -371,7 +429,7 @@ export default function ChatModule() {
         setIsCreating(false);
       }
     },
-    [toast, user?.id, user?.name]
+    [canCreateGroups, eligibleChatUserIds, toast, user?.id, user?.name]
   );
 
   const persistMessage = async (
@@ -379,7 +437,7 @@ export default function ChatModule() {
     payload: Partial<ChatMessage> & Pick<ChatMessage, 'text' | 'type'>,
     preparedMessageRef?: ReturnType<typeof doc>
   ) => {
-    if (!user?.id) throw new Error('No authenticated user.');
+    if (!user?.id || !canSendChat) throw new Error('You do not have permission to send messages.');
     const conversationRef = doc(db, 'chatConversations', conversation.id);
     const messageRef = preparedMessageRef || doc(collection(conversationRef, 'messages'));
     const batch = writeBatch(db);
@@ -596,7 +654,11 @@ export default function ChatModule() {
   };
 
   const addGroupMembers = async (memberIds: string[]) => {
-    if (!selectedConversation) return;
+    if (
+      !selectedConversation ||
+      !canCreateGroups ||
+      memberIds.some((memberId) => !eligibleChatUserIds.has(memberId))
+    ) return;
     const updates: Record<string, unknown> = { memberIds: arrayUnion(...memberIds), updatedAt: serverTimestamp() };
     memberIds.forEach((id) => { updates[`unreadCounts.${id}`] = 0; });
     await updateDoc(doc(db, 'chatConversations', selectedConversation.id), updates);
@@ -643,8 +705,12 @@ export default function ChatModule() {
     document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
-  if (!user) {
+  if (!user || isLoadingPermissions || isLoadingChatRoles) {
     return <ChatLoadingScreen />;
+  }
+
+  if (!canViewChat) {
+    return <ChatAccessDenied />;
   }
 
   return (
@@ -662,14 +728,16 @@ export default function ChatModule() {
                 <h1 className="text-xl font-bold tracking-tight">Conversations</h1>
                 <p className="mt-0.5 text-xs text-muted-foreground">Direct messages and team groups</p>
               </div>
-              <Button
-                size="icon"
-                className="h-9 w-9 rounded-full"
-                onClick={() => setNewConversationOpen(true)}
-                aria-label="Start a conversation"
-              >
-                <MessageSquarePlus className="h-4 w-4" />
-              </Button>
+              {canSendChat && (
+                <Button
+                  size="icon"
+                  className="h-9 w-9 rounded-full"
+                  onClick={() => setNewConversationOpen(true)}
+                  aria-label="Start a conversation"
+                >
+                  <MessageSquarePlus className="h-4 w-4" />
+                </Button>
+              )}
             </div>
             <div className="relative mt-4">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -781,20 +849,26 @@ export default function ChatModule() {
                   <div ref={bottomRef} />
                 </div>
               </div>
-              <ChatComposer
-                draft={draft}
-                onDraftChange={handleDraftChange}
-                replyingTo={replyingTo}
-                editingMessage={editingMessage}
-                onCancelContext={() => { setReplyingTo(null); setEditingMessage(null); setDraft(''); }}
-                onSend={sendMessage}
-                onFilesSelected={uploadAttachments}
-                isSending={isSending}
-                uploadProgress={uploadProgress}
-              />
+              {canSendChat ? (
+                <ChatComposer
+                  draft={draft}
+                  onDraftChange={handleDraftChange}
+                  replyingTo={replyingTo}
+                  editingMessage={editingMessage}
+                  onCancelContext={() => { setReplyingTo(null); setEditingMessage(null); setDraft(''); }}
+                  onSend={sendMessage}
+                  onFilesSelected={uploadAttachments}
+                  isSending={isSending}
+                  uploadProgress={uploadProgress}
+                />
+              ) : (
+                <div className="border-t bg-background px-4 py-3 text-center text-sm text-muted-foreground">
+                  You have read-only access to this conversation.
+                </div>
+              )}
             </>
           ) : (
-            <EmptyChat onStart={() => setNewConversationOpen(true)} />
+            <EmptyChat onStart={canSendChat ? () => setNewConversationOpen(true) : undefined} />
           )}
         </section>
       </div>
@@ -803,7 +877,8 @@ export default function ChatModule() {
         open={newConversationOpen}
         onOpenChange={setNewConversationOpen}
         currentUserId={user.id}
-        users={users}
+        users={eligibleChatUsers}
+        canCreateGroup={canCreateGroups}
         isCreating={isCreating}
         onStartDirect={startDirectConversation}
         onCreateGroup={createGroupConversation}
@@ -827,6 +902,7 @@ export default function ChatModule() {
           conversation={selectedConversation}
           currentUser={user}
           users={users}
+          eligibleUserIds={eligibleChatUserIds}
           onRename={renameGroup}
           onAddMembers={addGroupMembers}
           onRemoveMember={removeGroupMember}
@@ -997,7 +1073,7 @@ function EmptyConversationList({ hasSearch, onStart }: { hasSearch: boolean; onS
   );
 }
 
-function EmptyChat({ onStart }: { onStart: () => void }) {
+function EmptyChat({ onStart }: { onStart?: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
       <div className="relative">
@@ -1010,9 +1086,27 @@ function EmptyChat({ onStart }: { onStart: () => void }) {
       <p className="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
         Choose a conversation from the left, message a colleague, or create a group for your team.
       </p>
-      <Button className="mt-5" onClick={onStart}>
-        <MessageSquarePlus className="mr-2 h-4 w-4" /> Start a conversation
-      </Button>
+      {onStart && (
+        <Button className="mt-5" onClick={onStart}>
+          <MessageSquarePlus className="mr-2 h-4 w-4" /> Start a conversation
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ChatAccessDenied() {
+  return (
+    <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-6 md:h-[calc(100dvh-4rem)]">
+      <div className="max-w-md rounded-2xl border bg-card p-8 text-center shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <MessageCircle className="h-6 w-6 text-muted-foreground" />
+        </div>
+        <h1 className="mt-4 text-lg font-bold">Chat access is not enabled</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your role does not have permission to view Chat System conversations. Contact an administrator if you need access.
+        </p>
+      </div>
     </div>
   );
 }

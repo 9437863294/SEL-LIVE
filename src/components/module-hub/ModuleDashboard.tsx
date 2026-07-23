@@ -65,9 +65,6 @@ export default function ModuleDashboard() {
     const isAssignedDriverWithVehicle = Boolean(driver?.id && (driver?.assignedVehicleId || driver?.assignedVehicleNumber));
 
     const availableModuleNames = Object.keys(permissionModules).filter(moduleName => {
-        // Chat is a core collaboration tool for every authenticated user. Roles can
-        // adopt its granular permissions without hiding the module in the meantime.
-        if (moduleName === 'Chat System') return true;
         if (moduleName === 'Driver Management') {
           return (
             can('View Module', moduleName) ||

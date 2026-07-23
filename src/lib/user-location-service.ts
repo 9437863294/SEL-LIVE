@@ -6,14 +6,16 @@
  * session management page.
  *
  * Platform behaviour:
- *  - Android (native)  → Java Foreground Service via LocationPlugin bridge.
- *                        Survives the app being swiped away or killed by the OS.
- *  - iOS / Web         → navigator.geolocation via watchDriverPosition
- *                        (active while JS thread is alive).
+ *  - Android / iOS / Web → foreground location watcher, active while the app's
+ *                           JavaScript runtime is alive.
+ *
+ * Android requires a persistent system notification for background location.
+ * This tracker stays foreground-only so no organisation location-sharing
+ * notification is displayed.
  */
 
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
 import { db } from '@/lib/firebase';
 import {
   clearDriverPositionWatch,
@@ -23,21 +25,13 @@ import {
 
 export const USER_LOCATIONS_COLLECTION = 'userLocations';
 
-// Native Android bridge — calls LocationForegroundService via LocationPlugin.java
-interface LocationTrackingPlugin {
-  startTracking(options: { userId: string }): Promise<void>;
-  stopTracking(): Promise<void>;
-}
-const LocationTrackingNative = registerPlugin<LocationTrackingPlugin>('LocationTracking');
-
 // Throttle: only write if the user moved enough OR enough time has passed.
-const MIN_INTERVAL_MS = 60_000;  // 1 minute minimum between writes
-const DISTANCE_FILTER_M = 30;      // 30 m movement filter (web/iOS path only)
+const MIN_INTERVAL_MS = 600_000;  // 1 minute minimum between writes
+const DISTANCE_FILTER_M = 30;      // 30 m movement filter
 
 let activeWatchId: DriverGeoWatchId | null = null;
 let activeUserId: string | null = null;
 let lastWriteMs = 0;
-let nativeTracking = false;
 
 async function persist(
   userId: string,
@@ -72,30 +66,21 @@ async function persist(
  * Start watching the user's GPS and syncing it to Firestore.
  * Safe to call multiple times for the same userId — it's a no-op.
  *
- * On Android: delegates to LocationForegroundService (survives app kill).
- * On Web/iOS: uses watchDriverPosition (active while the JS thread is alive).
+ * Uses a foreground watcher on every platform. It stops when the app's
+ * JavaScript runtime is suspended or terminated.
  */
 export async function startUserLocationTracking(userId: string): Promise<void> {
-  if (activeUserId === userId && (activeWatchId !== null || nativeTracking)) return;
+  if (activeUserId === userId && activeWatchId !== null) return;
   await stopUserLocationTracking();
 
   activeUserId = userId;
   lastWriteMs = 0;
 
-  // Android: hand off to the native foreground service
-  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-    await LocationTrackingNative.startTracking({ userId });
-    nativeTracking = true;
-    return;
-  }
-
-  // Web / iOS: JS-based watcher
   activeWatchId = await watchDriverPosition(
     {
       enableHighAccuracy: true,
       distanceFilterMeters: DISTANCE_FILTER_M,
-      backgroundTitle: 'SEL Live',
-      backgroundMessage: '',
+      forceForegroundWatcher: true,
     },
     async (position) => {
       try {
@@ -119,10 +104,6 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
 
 /** Stop tracking. Called on logout or unmount. */
 export async function stopUserLocationTracking(): Promise<void> {
-  if (nativeTracking) {
-    await LocationTrackingNative.stopTracking().catch(() => { });
-    nativeTracking = false;
-  }
   if (activeWatchId !== null) {
     await clearDriverPositionWatch(activeWatchId);
     activeWatchId = null;

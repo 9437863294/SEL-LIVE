@@ -52,20 +52,6 @@
 
         </activity>
 
-        <service
-            android:name=".LocationForegroundService"
-            android:foregroundServiceType="location"
-            android:exported="false" />
-
-        <receiver
-            android:name=".BootReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-            </intent-filter>
-        </receiver>
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

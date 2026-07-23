@@ -26,6 +26,7 @@ interface NewConversationDialogProps {
   currentUserId: string;
   users: User[];
   isCreating: boolean;
+  canCreateGroup: boolean;
   onStartDirect: (user: User) => Promise<void>;
   onCreateGroup: (name: string, memberIds: string[]) => Promise<void>;
 }
@@ -36,6 +37,7 @@ export function NewConversationDialog({
   currentUserId,
   users,
   isCreating,
+  canCreateGroup,
   onStartDirect,
   onCreateGroup,
 }: NewConversationDialogProps) {
@@ -99,13 +101,15 @@ export function NewConversationDialog({
           onValueChange={(value) => setMode(value as 'direct' | 'group')}
           className="flex min-h-0 flex-1 flex-col px-5 pb-5"
         >
-          <TabsList className="mt-4 grid w-full grid-cols-2">
+          <TabsList className={cn('mt-4 grid w-full', canCreateGroup ? 'grid-cols-2' : 'grid-cols-1')}>
             <TabsTrigger value="direct" className="gap-2">
               <MessageCircle className="h-4 w-4" /> Direct message
             </TabsTrigger>
-            <TabsTrigger value="group" className="gap-2">
-              <UsersRound className="h-4 w-4" /> Group
-            </TabsTrigger>
+            {canCreateGroup && (
+              <TabsTrigger value="group" className="gap-2">
+                <UsersRound className="h-4 w-4" /> Group
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="direct" className="mt-4 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden">
@@ -143,7 +147,7 @@ export function NewConversationDialog({
             </div>
           </TabsContent>
 
-          <TabsContent value="group" className="mt-4 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden">
+          {canCreateGroup && <TabsContent value="group" className="mt-4 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden">
             <div className="space-y-2">
               <Label htmlFor="chat-group-name">Group name</Label>
               <Input
@@ -208,7 +212,7 @@ export function NewConversationDialog({
                 {isCreating ? 'Creating…' : 'Create group'}
               </Button>
             </DialogFooter>
-          </TabsContent>
+          </TabsContent>}
         </Tabs>
       </DialogContent>
     </Dialog>

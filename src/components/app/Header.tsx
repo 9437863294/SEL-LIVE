@@ -79,6 +79,9 @@ export default function Header() {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   
   const canSwitchUser = can('Switch User', 'Settings.User Management');
+  const canViewChat =
+    can('View Module', 'Chat System') &&
+    can('View', 'Chat System.Conversations');
 
   useEffect(() => {
     if (!user || isImpersonating) {
@@ -163,7 +166,7 @@ export default function Header() {
   }, [user, isImpersonating]);
 
   useEffect(() => {
-    if (!user?.id) {
+    if (!user?.id || !canViewChat) {
       setChatUnreadCount(0);
       return;
     }
@@ -183,7 +186,7 @@ export default function Header() {
       },
       () => setChatUnreadCount(0)
     );
-  }, [user?.id]);
+  }, [canViewChat, user?.id]);
   
   const handleViewTask = (task: PendingTask) => {
     if(task.taskType === 'requisition'){
@@ -247,21 +250,23 @@ export default function Header() {
              <span className="text-sm font-medium text-foreground hidden sm:inline">{user?.name}</span>
             <TooltipProvider>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button asChild variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
-                    <Link href="/chat-system" aria-label="Open chat">
-                      <MessageCircle className="h-5 w-5" />
-                      {chatUnreadCount > 0 && (
-                        <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-primary px-1 text-[9px] font-bold text-primary-foreground">
-                          {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
-                        </span>
-                      )}
-                    </Link>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Chat{chatUnreadCount ? ` (${chatUnreadCount} unread)` : ''}</TooltipContent>
-              </Tooltip>
+              {canViewChat && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button asChild variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
+                      <Link href="/chat-system" aria-label="Open chat">
+                        <MessageCircle className="h-5 w-5" />
+                        {chatUnreadCount > 0 && (
+                          <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                            {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+                          </span>
+                        )}
+                      </Link>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Chat{chatUnreadCount ? ` (${chatUnreadCount} unread)` : ''}</TooltipContent>
+                </Tooltip>
+              )}
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

@@ -6,22 +6,37 @@ import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { ToastAction } from '@/components/ui/toast';
 import { useToast } from '@/hooks/use-toast';
 import { openAndroidAppSettings } from '@/lib/native-android-settings';
-import { registerChatPushDevice } from '@/lib/chat-push-client';
+import { registerChatPushDevice, unregisterCurrentChatPushDevice } from '@/lib/chat-push-client';
 
 const CHAT_CHANNEL_ID = 'sel_chat_messages';
 const PERMISSION_STATUS_KEY = 'sel_chat_notification_permission';
 
 export function ChatPushNotifications() {
   const { user } = useAuth();
+  const { can, isLoading } = useAuthorization();
   const router = useRouter();
   const { toast } = useToast();
   const deniedToastShown = useRef(false);
+  const canReceiveChatNotifications =
+    can('View Module', 'Chat System') &&
+    can('View', 'Chat System.Conversations');
 
   useEffect(() => {
-    if (!user?.id || !Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
+    if (
+      isLoading ||
+      !user?.id ||
+      !Capacitor.isNativePlatform() ||
+      Capacitor.getPlatform() !== 'android'
+    ) {
+      return;
+    }
+
+    if (!canReceiveChatNotifications) {
+      void unregisterCurrentChatPushDevice();
       return;
     }
 
@@ -111,8 +126,7 @@ export function ChatPushNotifications() {
       disposed = true;
       listenerHandles.forEach((handle) => void handle.remove());
     };
-  }, [router, toast, user?.id]);
+  }, [canReceiveChatNotifications, isLoading, router, toast, user?.id]);
 
   return null;
 }
-

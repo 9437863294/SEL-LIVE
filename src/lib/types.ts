@@ -99,6 +99,11 @@ export interface Role {
 
 export const permissionModules = {
   'Module Hub': ['View Module', 'Create', 'Edit', 'Delete'],
+  'Chat System': {
+    'View Module': [],
+    'Conversations': ['View', 'Send'],
+    'Groups': ['Create'],
+  },
   'Site Fund Requisition': [
     'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
     'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
