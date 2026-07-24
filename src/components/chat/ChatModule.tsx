@@ -15,7 +15,9 @@ import {
   Loader2,
   MessageCircle,
   MessageSquarePlus,
+  MoreVertical,
   Search,
+  Trash2,
   UsersRound,
   X,
 } from 'lucide-react';
@@ -36,6 +38,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,6 +113,8 @@ export default function ChatModule() {
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [messageToDelete, setMessageToDelete] = useState<ChatMessage | null>(null);
+  const [clearChatOpen, setClearChatOpen] = useState(false);
+  const [isClearingChat, setIsClearingChat] = useState(false);
   const [messageToForward, setMessageToForward] = useState<ChatMessage | null>(null);
   const [isForwarding, setIsForwarding] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -570,6 +580,49 @@ export default function ChatModule() {
     setMessageToDelete(null);
   };
 
+  const clearDirectChat = async () => {
+    if (!selectedConversation || selectedConversation.type !== 'direct' || isClearingChat) return;
+    setIsClearingChat(true);
+    try {
+      const conversationId = selectedConversation.id;
+      const updates: Record<string, unknown> = {
+        [`chatMessages/${conversationId}`]: null,
+        [`chatConversations/${conversationId}/updatedAt`]: realtimeServerTimestamp(),
+        [`chatConversations/${conversationId}/lastMessageAt`]: null,
+        [`chatConversations/${conversationId}/lastMessageId`]: null,
+        [`chatConversations/${conversationId}/lastMessageText`]: '',
+        [`chatConversations/${conversationId}/lastMessageSenderId`]: null,
+        [`chatConversations/${conversationId}/lastMessageSenderName`]: null,
+        [`chatConversations/${conversationId}/lastReadAt`]: null,
+        [`chatConversations/${conversationId}/deliveredAt`]: null,
+        [`chatConversations/${conversationId}/typing`]: null,
+      };
+      selectedConversation.memberIds.forEach((memberId) => {
+        updates[`chatConversations/${conversationId}/unreadCounts/${memberId}`] = 0;
+      });
+      await updateRealtimePaths(updates);
+      setMessages([]);
+      setDraft('');
+      setReplyingTo(null);
+      setEditingMessage(null);
+      setMessageSearch('');
+      setClearChatOpen(false);
+      toast({
+        title: 'Chat cleared',
+        description: 'The messages were deleted for both participants.',
+      });
+    } catch (error) {
+      console.error('Unable to clear direct chat:', error);
+      toast({
+        title: 'Chat not cleared',
+        description: 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsClearingChat(false);
+    }
+  };
+
   const forwardMessage = async (conversationIds: string[]) => {
     if (!messageToForward) return;
     setIsForwarding(true);
@@ -756,6 +809,7 @@ export default function ChatModule() {
                 typingText={activeTypingNames.length ? `${activeTypingNames.join(', ')} typing…` : ''}
                 onSearch={() => setMessageSearchOpen((open) => !open)}
                 onInfo={() => selectedConversation.type === 'group' && setGroupInfoOpen(true)}
+                onClearChat={() => setClearChatOpen(true)}
               />
               {messageSearchOpen && (
                 <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 sm:px-5">
@@ -887,6 +941,31 @@ export default function ChatModule() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={clearChatOpen} onOpenChange={(open) => { if (!isClearingChat) setClearChatOpen(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear this chat for both sides?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every message in this direct chat will be permanently deleted for both participants. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isClearingChat}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isClearingChat}
+              onClick={(event) => {
+                event.preventDefault();
+                void clearDirectChat();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isClearingChat && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Clear for both
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }
@@ -951,6 +1030,7 @@ function ConversationHeader({
   typingText,
   onSearch,
   onInfo,
+  onClearChat,
 }: {
   conversation: ChatConversation;
   currentUser: User;
@@ -959,6 +1039,7 @@ function ConversationHeader({
   typingText: string;
   onSearch: () => void;
   onInfo: () => void;
+  onClearChat: () => void;
 }) {
   const title = getConversationTitle(conversation, currentUser.id, usersById);
   const photo = getConversationPhoto(conversation, currentUser.id, usersById);
@@ -985,6 +1066,24 @@ function ConversationHeader({
       </button>
       <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={onSearch} aria-label="Search messages"><Search className="h-4 w-4" /></Button>
       {conversation.type === 'group' && <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={onInfo} aria-label="Group information"><Info className="h-4 w-4" /></Button>}
+      {conversation.type === 'direct' && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" aria-label="Chat options">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onSelect={onClearChat}
+              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Clear chat
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

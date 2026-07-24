@@ -18,6 +18,7 @@
       "$conversationId": {
         ".indexOn": ["clientCreatedAt"],
         ".read": "auth != null && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true",
+        ".write": "auth != null && data.exists() && !newData.exists() && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true",
         "$messageId": {
           ".write": "auth != null && (root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true || (!data.exists() && newData.child('senderId').val() == auth.uid))",
           ".validate": "!newData.exists() || (newData.hasChildren(['senderId', 'senderName', 'type', 'clientCreatedAt']) && newData.child('senderId').isString() && newData.child('clientCreatedAt').isNumber())"
