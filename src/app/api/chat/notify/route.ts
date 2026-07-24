@@ -1,7 +1,8 @@
-import { FieldValue, type DocumentReference } from 'firebase-admin/firestore';
+import { type DocumentReference } from 'firebase-admin/firestore';
 import { NextResponse } from 'next/server';
 import {
   getFirebaseAdminAuth,
+  getFirebaseAdminDatabase,
   getFirebaseAdminFirestore,
   getFirebaseAdminMessaging,
 } from '@/lib/firebase-admin';
@@ -38,23 +39,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Conversation and message are required.' }, { status: 400 });
     }
 
-    const firestore = getFirebaseAdminFirestore();
-    const conversationRef = firestore.collection('chatConversations').doc(conversationId);
-    const messageRef = conversationRef.collection('messages').doc(messageId);
+    const realtimeDatabase = getFirebaseAdminDatabase();
+    const conversationRef = realtimeDatabase.ref(`chatConversations/${conversationId}`);
+    const messageRef = realtimeDatabase.ref(`chatMessages/${conversationId}/${messageId}`);
     const [conversationSnapshot, messageSnapshot] = await Promise.all([
-      conversationRef.get(),
-      messageRef.get(),
+      conversationRef.once('value'),
+      messageRef.once('value'),
     ]);
 
-    if (!conversationSnapshot.exists || !messageSnapshot.exists) {
+    if (!conversationSnapshot.exists() || !messageSnapshot.exists()) {
       return NextResponse.json({ error: 'Chat message not found.' }, { status: 404 });
     }
 
-    const conversation = conversationSnapshot.data() || {};
-    const message = messageSnapshot.data() || {};
-    const memberIds = Array.isArray(conversation.memberIds)
-      ? conversation.memberIds.filter((id): id is string => typeof id === 'string')
-      : [];
+    const conversation = conversationSnapshot.val() || {};
+    const message = messageSnapshot.val() || {};
+    const memberIds: string[] = Array.isArray(conversation.memberIds)
+      ? conversation.memberIds.filter((id: unknown): id is string => typeof id === 'string')
+      : Object.entries(conversation.memberIds || {})
+          .filter(([, included]) => included)
+          .map(([memberId]) => memberId);
     if (!memberIds.includes(senderUserId) || message.senderId !== senderUserId) {
       return NextResponse.json({ error: 'Not permitted to notify this conversation.' }, { status: 403 });
     }
@@ -63,7 +66,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, duplicate: true });
     }
 
-    const recipientIds = memberIds.filter((memberId) => memberId !== senderUserId);
+    const firestore = getFirebaseAdminFirestore();
+    const recipientIds: string[] = memberIds.filter((memberId: string) => memberId !== senderUserId);
     const deviceSnapshots = await Promise.all(
       recipientIds.map((recipientId) =>
         firestore
@@ -85,7 +89,7 @@ export async function POST(request: Request) {
     const devices = Array.from(devicesByToken.values()).slice(0, 500);
 
     if (!devices.length) {
-      await messageRef.update({ pushNotifiedAt: FieldValue.serverTimestamp(), pushDeliveryCount: 0 });
+      await messageRef.update({ pushNotifiedAt: Date.now(), pushDeliveryCount: 0 });
       return NextResponse.json({ success: true, delivered: 0 });
     }
 
@@ -135,7 +139,7 @@ export async function POST(request: Request) {
     });
     await Promise.allSettled(invalidDeviceDeletes);
     await messageRef.update({
-      pushNotifiedAt: FieldValue.serverTimestamp(),
+      pushNotifiedAt: Date.now(),
       pushDeliveryCount: response.successCount,
       pushFailureCount: response.failureCount,
     });

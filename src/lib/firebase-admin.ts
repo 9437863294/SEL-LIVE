@@ -3,6 +3,7 @@ import 'server-only';
 import { applicationDefault, cert, getApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getDatabase } from 'firebase-admin/database';
 import { getMessaging } from 'firebase-admin/messaging';
 
 function getAdminApp() {
@@ -22,7 +23,14 @@ function getAdminApp() {
     ? cert({ projectId: projectId!, clientEmail: clientEmail!, privateKey: privateKey! })
     : applicationDefault();
 
-  return initializeApp({ credential, projectId });
+  return initializeApp({
+    credential,
+    projectId,
+    databaseURL:
+      process.env.FIREBASE_DATABASE_URL ||
+      process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
+      (projectId ? `https://${projectId}-default-rtdb.firebaseio.com` : undefined),
+  });
 }
 
 export function getFirebaseAdminAuth() {
@@ -35,4 +43,8 @@ export function getFirebaseAdminFirestore() {
 
 export function getFirebaseAdminMessaging() {
   return getMessaging(getAdminApp());
+}
+
+export function getFirebaseAdminDatabase() {
+  return getDatabase(getAdminApp());
 }

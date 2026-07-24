@@ -1,5 +1,6 @@
-import type { Timestamp } from 'firebase/firestore';
 import type { User } from '@/lib/types';
+
+export type ChatTimestamp = number;
 
 export type ConversationType = 'direct' | 'group';
 export type ChatMessageType = 'text' | 'system' | 'image' | 'video' | 'audio' | 'file';
@@ -29,16 +30,16 @@ export interface ChatConversation {
   name?: string;
   memberIds: string[];
   createdBy: string;
-  createdAt?: Timestamp | null;
-  updatedAt?: Timestamp | null;
-  lastMessageAt?: Timestamp | null;
+  createdAt?: ChatTimestamp | null;
+  updatedAt?: ChatTimestamp | null;
+  lastMessageAt?: ChatTimestamp | null;
   lastMessageText?: string;
   lastMessageId?: string;
   lastMessageSenderId?: string;
   lastMessageSenderName?: string;
   unreadCounts?: Record<string, number>;
-  lastReadAt?: Record<string, Timestamp>;
-  deliveredAt?: Record<string, Timestamp>;
+  lastReadAt?: Record<string, ChatTimestamp>;
+  deliveredAt?: Record<string, ChatTimestamp>;
   typing?: Record<string, number>;
   adminIds?: string[];
 }
@@ -50,10 +51,10 @@ export interface ChatMessage {
   senderName: string;
   text: string;
   type: ChatMessageType;
-  createdAt?: Timestamp | null;
+  createdAt?: ChatTimestamp | null;
   clientCreatedAt: number;
-  editedAt?: Timestamp | null;
-  deletedAt?: Timestamp | null;
+  editedAt?: ChatTimestamp | null;
+  deletedAt?: ChatTimestamp | null;
   deletedBy?: string;
   replyTo?: ChatReplyPreview;
   attachments?: ChatAttachment[];
@@ -63,7 +64,7 @@ export interface ChatMessage {
     messageId: string;
     senderName: string;
   };
-  pushNotifiedAt?: Timestamp | null;
+  pushNotifiedAt?: ChatTimestamp | null;
 }
 
 export function createReplyPreview(message: ChatMessage): ChatReplyPreview {
@@ -136,13 +137,13 @@ export function getInitials(name?: string | null) {
     .toUpperCase();
 }
 
-export function timestampMillis(value?: Timestamp | null) {
-  return value?.toMillis?.() || 0;
+export function timestampMillis(value?: ChatTimestamp | null) {
+  return typeof value === 'number' ? value : 0;
 }
 
-export function formatConversationTime(value?: Timestamp | null) {
-  if (!value?.toDate) return '';
-  const date = value.toDate();
+export function formatConversationTime(value?: ChatTimestamp | null) {
+  if (!value) return '';
+  const date = new Date(value);
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
   if (sameDay) {
@@ -162,8 +163,8 @@ export function formatConversationTime(value?: Timestamp | null) {
   }).format(date);
 }
 
-export function formatMessageTime(value?: Timestamp | null, clientCreatedAt?: number) {
-  const date = value?.toDate?.() || (clientCreatedAt ? new Date(clientCreatedAt) : null);
+export function formatMessageTime(value?: ChatTimestamp | null, clientCreatedAt?: number) {
+  const date = value ? new Date(value) : (clientCreatedAt ? new Date(clientCreatedAt) : null);
   if (!date) return '';
   return new Intl.DateTimeFormat('en-IN', {
     hour: 'numeric',

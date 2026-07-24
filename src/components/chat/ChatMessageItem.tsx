@@ -335,7 +335,7 @@ function DeliveryIcon({ status }: { status: MessageDeliveryStatus }) {
 }
 
 function DateDivider({ message }: { message: ChatMessage }) {
-  const date = message.createdAt?.toDate?.() || new Date(message.clientCreatedAt);
+  const date = new Date(message.createdAt || message.clientCreatedAt);
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
@@ -358,7 +358,7 @@ function DateDivider({ message }: { message: ChatMessage }) {
 
 function getMessageDayKey(message?: ChatMessage) {
   if (!message) return '';
-  const date = message.createdAt?.toDate?.() || new Date(message.clientCreatedAt);
+  const date = new Date(message.createdAt || message.clientCreatedAt);
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 }
 
@@ -367,4 +367,3 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-

@@ -1,0 +1,37 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "chatConversations": {
+      "$conversationId": {
+        ".read": "auth != null && data.child('memberIds').child(auth.uid).val() == true",
+        ".write": "auth != null && ((!data.exists() && newData.child('createdBy').val() == auth.uid && newData.child('memberIds').child(auth.uid).val() == true) || data.child('memberIds').child(auth.uid).val() == true)",
+        "memberIds": {
+          ".validate": "newData.hasChildren()"
+        },
+        "type": {
+          ".validate": "newData.val() == 'direct' || newData.val() == 'group'"
+        }
+      }
+    },
+    "chatMessages": {
+      "$conversationId": {
+        ".indexOn": ["clientCreatedAt"],
+        ".read": "auth != null && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true",
+        "$messageId": {
+          ".write": "auth != null && (root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true || (!data.exists() && newData.child('senderId').val() == auth.uid))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['senderId', 'senderName', 'type', 'clientCreatedAt']) && newData.child('senderId').isString() && newData.child('clientCreatedAt').isNumber())"
+        }
+      }
+    },
+    "chatUserConversations": {
+      "$userId": {
+        ".read": "auth != null && auth.uid == $userId",
+        "$conversationId": {
+          ".write": "auth != null && (auth.uid == $userId || (!data.exists() && newData.val() == true) || root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true)",
+          ".validate": "!newData.exists() || newData.val() == true"
+        }
+      }
+    }
+  }
+}

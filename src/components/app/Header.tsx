@@ -28,6 +28,7 @@ import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
 import ViewRequisitionDialog from '@/components/site-fund-requisition/ViewRequisitionDialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { SwitchUserDialog } from '@/components/auth/SwitchUserDialog';
+import { listenToUserConversations } from '@/lib/chat-realtime';
 
 
 function ImpersonationBanner() {
@@ -171,16 +172,11 @@ export default function Header() {
       return;
     }
 
-    const chatQuery = query(
-      collection(db, 'chatConversations'),
-      where('memberIds', 'array-contains', user.id)
-    );
-    return onSnapshot(
-      chatQuery,
-      (snapshot) => {
-        const total = snapshot.docs.reduce((sum, snapshotDoc) => {
-          const unreadCounts = snapshotDoc.data().unreadCounts as Record<string, number> | undefined;
-          return sum + (unreadCounts?.[user.id] || 0);
+    return listenToUserConversations(
+      user.id,
+      (conversations) => {
+        const total = conversations.reduce((sum, conversation) => {
+          return sum + (conversation.unreadCounts?.[user.id] || 0);
         }, 0);
         setChatUnreadCount(total);
       },

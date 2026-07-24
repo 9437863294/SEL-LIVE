@@ -21,7 +21,8 @@
     "mobile:target:driver:run:android": "node scripts/mobile-target.mjs driver run android",
     "mobile:target:full:sync:android": "node scripts/mobile-target.mjs full sync android",
     "mobile:target:full:open:android": "node scripts/mobile-target.mjs full open android",
-    "mobile:target:full:run:android": "node scripts/mobile-target.mjs full run android"
+    "mobile:target:full:run:android": "node scripts/mobile-target.mjs full run android",
+    "chat:migrate-to-rtdb": "node scripts/migrate-chat-to-realtime.js"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

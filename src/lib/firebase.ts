@@ -2,6 +2,7 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApp, getApps } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
+import { getDatabase, type Database } from "firebase/database";
 import {
   browserLocalPersistence,
   browserPopupRedirectResolver,
@@ -22,6 +23,9 @@ const firebaseConfig = {
   apiKey: "AIzaSyBRnB-SvnQWuNipl2SOnuV4opME0ZmsdPQ",
   authDomain: "module-hub-uc7tw.firebaseapp.com",
   messagingSenderId: "1098805626846",
+  databaseURL:
+    process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
+    "https://module-hub-uc7tw-default-rtdb.firebaseio.com",
 };
 
 // Initialize Firebase
@@ -29,6 +33,7 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 // Use getFirestore() for robust initialization
 const db: Firestore = getFirestore(app);
+const realtimeDb: Database = getDatabase(app);
 
 const createAuth = (): Auth => {
   if (typeof window === "undefined") {
@@ -54,4 +59,4 @@ const createAuth = (): Auth => {
 const auth = createAuth();
 const storage = getStorage(app);
 
-export { app, db, auth, storage };
+export { app, db, realtimeDb, auth, storage };

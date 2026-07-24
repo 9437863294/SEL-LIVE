@@ -20,23 +20,8 @@ import {
   X,
 } from 'lucide-react';
 import {
-  arrayRemove,
-  arrayUnion,
   collection,
-  deleteField,
-  doc,
-  getDoc,
-  increment,
-  limitToLast,
   onSnapshot,
-  orderBy,
-  query,
-  runTransaction,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  where,
-  writeBatch,
 } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 import { useSearchParams } from 'next/navigation';
@@ -83,6 +68,20 @@ import { ChatMessageItem, type MessageDeliveryStatus } from './ChatMessageItem';
 import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { GroupInfoDialog } from './GroupInfoDialog';
 import { canRoleReceiveChats } from '@/lib/chat-access';
+import {
+  createRealtimeConversation,
+  getRealtimeConversation,
+  listenToMessages,
+  listenToUserConversations,
+  newRealtimeKey,
+  persistRealtimeMessage,
+  realtimeServerTimestamp,
+  transactMessageReactions,
+  transactMessageStars,
+  updateConversation,
+  updateMessage,
+  updateRealtimePaths,
+} from '@/lib/chat-realtime';
 
 const MAX_MESSAGE_LENGTH = 4000;
 const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
@@ -223,20 +222,10 @@ export default function ChatModule() {
   useEffect(() => {
     if (!user?.id || !canViewChat) return;
     setIsLoadingConversations(true);
-    const conversationsQuery = query(
-      collection(db, 'chatConversations'),
-      where('memberIds', 'array-contains', user.id)
-    );
-
-    return onSnapshot(
-      conversationsQuery,
-      (snapshot) => {
-        const nextConversations = snapshot.docs
-          .map((snapshotDoc) => ({
-            id: snapshotDoc.id,
-            ...snapshotDoc.data(),
-          } as ChatConversation))
-          .sort(
+    return listenToUserConversations(
+      user.id,
+      (nextValues) => {
+        const nextConversations = nextValues.sort(
             (a, b) =>
               timestampMillis(b.lastMessageAt || b.updatedAt || b.createdAt) -
               timestampMillis(a.lastMessageAt || a.updatedAt || a.createdAt)
@@ -246,8 +235,8 @@ export default function ChatModule() {
           const lastMessageAt = timestampMillis(conversation.lastMessageAt);
           const deliveredAt = timestampMillis(conversation.deliveredAt?.[user.id]);
           if (conversation.lastMessageSenderId !== user.id && lastMessageAt > deliveredAt) {
-            updateDoc(doc(db, 'chatConversations', conversation.id), {
-              [`deliveredAt.${user.id}`]: serverTimestamp(),
+            updateConversation(conversation.id, {
+              [`deliveredAt/${user.id}`]: realtimeServerTimestamp(),
             }).catch(() => {});
           }
         });
@@ -277,22 +266,10 @@ export default function ChatModule() {
       return;
     }
     setIsLoadingMessages(true);
-    const messagesQuery = query(
-      collection(db, 'chatConversations', selectedConversationId, 'messages'),
-      orderBy('createdAt', 'asc'),
-      limitToLast(200)
-    );
-
-    return onSnapshot(
-      messagesQuery,
-      (snapshot) => {
-        setMessages(
-          snapshot.docs.map((snapshotDoc) => ({
-            id: snapshotDoc.id,
-            conversationId: selectedConversationId,
-            ...snapshotDoc.data(),
-          } as ChatMessage))
-        );
+    return listenToMessages(
+      selectedConversationId,
+      (nextMessages) => {
+        setMessages(nextMessages);
         setIsLoadingMessages(false);
       },
       (error) => {
@@ -314,10 +291,10 @@ export default function ChatModule() {
 
   useEffect(() => {
     if (!user?.id || !selectedConversationId || selectedUnreadCount < 1) return;
-    updateDoc(doc(db, 'chatConversations', selectedConversationId), {
-      [`unreadCounts.${user.id}`]: 0,
-      [`lastReadAt.${user.id}`]: serverTimestamp(),
-      [`deliveredAt.${user.id}`]: serverTimestamp(),
+    updateConversation(selectedConversationId, {
+      [`unreadCounts/${user.id}`]: 0,
+      [`lastReadAt/${user.id}`]: realtimeServerTimestamp(),
+      [`deliveredAt/${user.id}`]: realtimeServerTimestamp(),
     }).catch((error) => console.error('Unable to mark conversation as read:', error));
   }, [selectedConversationId, selectedUnreadCount, user?.id]);
 
@@ -342,21 +319,24 @@ export default function ChatModule() {
       setIsCreating(true);
       try {
         const conversationId = directConversationId(user.id, otherUser.id);
-        const conversationRef = doc(db, 'chatConversations', conversationId);
-        const existing = await getDoc(conversationRef);
-        if (!existing.exists()) {
-          await setDoc(conversationRef, {
+        const existing = await getRealtimeConversation(conversationId);
+        if (!existing) {
+          await createRealtimeConversation(conversationId, {
             type: 'direct',
             memberIds: [user.id, otherUser.id].sort(),
             createdBy: user.id,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            lastMessageAt: serverTimestamp(),
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            lastMessageAt: Date.now(),
             lastMessageText: '',
             unreadCounts: {
               [user.id]: 0,
               [otherUser.id]: 0,
             },
+          });
+        } else {
+          await updateRealtimePaths({
+            [`chatUserConversations/${user.id}/${conversationId}`]: true,
           });
         }
         setSelectedConversationId(conversationId);
@@ -387,36 +367,33 @@ export default function ChatModule() {
       setIsCreating(true);
       try {
         const memberIds = Array.from(new Set([user.id, ...selectedMemberIds]));
-        const conversationRef = doc(collection(db, 'chatConversations'));
-        const messageRef = doc(collection(conversationRef, 'messages'));
+        const conversationId = newRealtimeKey('chatConversations');
+        const messageId = newRealtimeKey(`chatMessages/${conversationId}`);
         const unreadCounts = Object.fromEntries(memberIds.map((memberId) => [memberId, 0]));
-        const batch = writeBatch(db);
-
-        batch.set(conversationRef, {
+        const createdAt = Date.now();
+        await createRealtimeConversation(conversationId, {
           type: 'group',
           name,
           memberIds,
           createdBy: user.id,
           adminIds: [user.id],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          lastMessageAt: serverTimestamp(),
+          createdAt,
+          updatedAt: createdAt,
+          lastMessageAt: createdAt,
           lastMessageText: `${user.name} created the group`,
-          lastMessageId: messageRef.id,
+          lastMessageId: messageId,
           lastMessageSenderId: user.id,
           lastMessageSenderName: user.name,
           unreadCounts,
-        });
-        batch.set(messageRef, {
+        }, {
           senderId: user.id,
           senderName: user.name,
           text: `${user.name} created the group`,
           type: 'system',
-          createdAt: serverTimestamp(),
-          clientCreatedAt: Date.now(),
+          createdAt,
+          clientCreatedAt: createdAt,
         });
-        await batch.commit();
-        setSelectedConversationId(conversationRef.id);
+        setSelectedConversationId(conversationId);
       } catch (error) {
         console.error('Unable to create group:', error);
         toast({
@@ -435,48 +412,32 @@ export default function ChatModule() {
   const persistMessage = async (
     conversation: ChatConversation,
     payload: Partial<ChatMessage> & Pick<ChatMessage, 'text' | 'type'>,
-    preparedMessageRef?: ReturnType<typeof doc>
+    preparedMessageId?: string,
+    notifyRecipients = true,
+    incrementUnread = true
   ) => {
     if (!user?.id || !canSendChat) throw new Error('You do not have permission to send messages.');
-    const conversationRef = doc(db, 'chatConversations', conversation.id);
-    const messageRef = preparedMessageRef || doc(collection(conversationRef, 'messages'));
-    const batch = writeBatch(db);
     const preview = getMessagePreview(payload as ChatMessage);
-    const conversationUpdate: Record<string, unknown> = {
-      updatedAt: serverTimestamp(),
-      lastMessageAt: serverTimestamp(),
-      lastMessageId: messageRef.id,
-      lastMessageText: preview,
-      lastMessageSenderId: user.id,
-      lastMessageSenderName: user.name,
-      [`unreadCounts.${user.id}`]: 0,
-      [`lastReadAt.${user.id}`]: serverTimestamp(),
-      [`deliveredAt.${user.id}`]: serverTimestamp(),
-      [`typing.${user.id}`]: deleteField(),
-    };
-    conversation.memberIds.forEach((memberId) => {
-      if (memberId !== user.id) conversationUpdate[`unreadCounts.${memberId}`] = increment(1);
-    });
-
-    batch.set(messageRef, {
+    const createdAt = Date.now();
+    const messageId = await persistRealtimeMessage(conversation, {
       senderId: user.id,
       senderName: user.name,
       text: payload.text,
       type: payload.type,
-      createdAt: serverTimestamp(),
-      clientCreatedAt: Date.now(),
+      createdAt,
+      clientCreatedAt: createdAt,
       ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
       ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
       ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
-    });
-    batch.update(conversationRef, conversationUpdate);
-    await batch.commit();
-    try {
-      await notifyChatRecipients(conversation.id, messageRef.id);
-    } catch (notificationError) {
-      console.warn('Message saved, but push notification delivery failed:', notificationError);
+    }, user.id, preparedMessageId, preview, incrementUnread);
+    if (notifyRecipients) {
+      try {
+        await notifyChatRecipients(conversation.id, messageId);
+      } catch (notificationError) {
+        console.warn('Message saved, but push notification delivery failed:', notificationError);
+      }
     }
-    return messageRef.id;
+    return messageId;
   };
 
   const sendMessage = async () => {
@@ -485,10 +446,12 @@ export default function ChatModule() {
     setIsSending(true);
     try {
       if (editingMessage) {
-        const messageRef = doc(db, 'chatConversations', selectedConversation.id, 'messages', editingMessage.id);
-        await updateDoc(messageRef, { text, editedAt: serverTimestamp() });
+        await updateMessage(selectedConversation.id, editingMessage.id, {
+          text,
+          editedAt: realtimeServerTimestamp(),
+        });
         if (selectedConversation.lastMessageId === editingMessage.id) {
-          await updateDoc(doc(db, 'chatConversations', selectedConversation.id), { lastMessageText: text });
+          await updateConversation(selectedConversation.id, { lastMessageText: text });
         }
       } else {
         await persistMessage(selectedConversation, {
@@ -512,14 +475,13 @@ export default function ChatModule() {
     setDraft(value.slice(0, MAX_MESSAGE_LENGTH));
     if (!user?.id || !selectedConversationId) return;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    const conversationRef = doc(db, 'chatConversations', selectedConversationId);
     if (value.trim()) {
-      updateDoc(conversationRef, { [`typing.${user.id}`]: Date.now() }).catch(() => {});
+      updateConversation(selectedConversationId, { [`typing/${user.id}`]: Date.now() }).catch(() => {});
       typingTimerRef.current = setTimeout(() => {
-        updateDoc(conversationRef, { [`typing.${user.id}`]: deleteField() }).catch(() => {});
+        updateConversation(selectedConversationId, { [`typing/${user.id}`]: null }).catch(() => {});
       }, 1800);
     } else {
-      updateDoc(conversationRef, { [`typing.${user.id}`]: deleteField() }).catch(() => {});
+      updateConversation(selectedConversationId, { [`typing/${user.id}`]: null }).catch(() => {});
     }
   };
 
@@ -533,12 +495,12 @@ export default function ChatModule() {
     }
     setUploadProgress(0);
     try {
-      const messageRef = doc(collection(db, 'chatConversations', selectedConversation.id, 'messages'));
+      const messageId = newRealtimeKey(`chatMessages/${selectedConversation.id}`);
       const attachments: ChatAttachment[] = [];
       for (let index = 0; index < selectedFiles.length; index += 1) {
         const file = selectedFiles[index];
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const path = `chat/${selectedConversation.id}/${messageRef.id}/${Date.now()}-${safeName}`;
+        const path = `chat/${selectedConversation.id}/${messageId}/${Date.now()}-${safeName}`;
         const uploadRef = storageRef(storage, path);
         const snapshot = await new Promise<UploadTaskSnapshot>((resolve, reject) => {
           const task = uploadBytesResumable(uploadRef, file, { contentType: file.type || 'application/octet-stream' });
@@ -562,7 +524,7 @@ export default function ChatModule() {
         type: primaryType,
         attachments,
         ...(replyingTo ? { replyTo: createReplyPreview(replyingTo) } : {}),
-      }, messageRef);
+      }, messageId);
       setDraft('');
       setReplyingTo(null);
     } catch (error) {
@@ -575,38 +537,33 @@ export default function ChatModule() {
 
   const toggleReaction = async (message: ChatMessage, emoji: string) => {
     if (!user?.id || !selectedConversationId) return;
-    const messageRef = doc(db, 'chatConversations', selectedConversationId, 'messages', message.id);
-    await runTransaction(db, async (transaction) => {
-      const snapshot = await transaction.get(messageRef);
-      const reactions = { ...((snapshot.data()?.reactions || {}) as Record<string, string[]>) };
+    await transactMessageReactions(selectedConversationId, message.id, (currentReactions) => {
+      const reactions = { ...currentReactions };
       const usersForReaction = reactions[emoji] || [];
       reactions[emoji] = usersForReaction.includes(user.id)
         ? usersForReaction.filter((id) => id !== user.id)
         : [...usersForReaction, user.id];
       if (!reactions[emoji].length) delete reactions[emoji];
-      transaction.update(messageRef, { reactions });
+      return reactions;
     });
   };
 
   const toggleStar = async (message: ChatMessage) => {
     if (!user?.id || !selectedConversationId) return;
-    await updateDoc(doc(db, 'chatConversations', selectedConversationId, 'messages', message.id), {
-      starredBy: message.starredBy?.includes(user.id) ? arrayRemove(user.id) : arrayUnion(user.id),
-    });
+    await transactMessageStars(selectedConversationId, message.id, user.id);
   };
 
   const deleteMessage = async () => {
     if (!messageToDelete || !selectedConversation || !user?.id) return;
-    const messageRef = doc(db, 'chatConversations', selectedConversation.id, 'messages', messageToDelete.id);
-    await updateDoc(messageRef, {
+    await updateMessage(selectedConversation.id, messageToDelete.id, {
       text: '',
       attachments: [],
-      replyTo: deleteField(),
-      deletedAt: serverTimestamp(),
+      replyTo: null,
+      deletedAt: realtimeServerTimestamp(),
       deletedBy: user.id,
     });
     if (selectedConversation.lastMessageId === messageToDelete.id) {
-      await updateDoc(doc(db, 'chatConversations', selectedConversation.id), {
+      await updateConversation(selectedConversation.id, {
         lastMessageText: 'This message was deleted',
       });
     }
@@ -639,17 +596,15 @@ export default function ChatModule() {
 
   const addSystemMessage = async (text: string) => {
     if (!selectedConversation || !user?.id) return;
-    const conversationRef = doc(db, 'chatConversations', selectedConversation.id);
-    const messageRef = doc(collection(conversationRef, 'messages'));
-    const batch = writeBatch(db);
-    batch.set(messageRef, { senderId: user.id, senderName: user.name, text, type: 'system', createdAt: serverTimestamp(), clientCreatedAt: Date.now() });
-    batch.update(conversationRef, { updatedAt: serverTimestamp(), lastMessageAt: serverTimestamp(), lastMessageId: messageRef.id, lastMessageText: text });
-    await batch.commit();
+    await persistMessage(selectedConversation, { text, type: 'system' }, undefined, false, false);
   };
 
   const renameGroup = async (name: string) => {
     if (!selectedConversation) return;
-    await updateDoc(doc(db, 'chatConversations', selectedConversation.id), { name, updatedAt: serverTimestamp() });
+    await updateConversation(selectedConversation.id, {
+      name,
+      updatedAt: realtimeServerTimestamp(),
+    });
     await addSystemMessage(`${user?.name} changed the group name to ${name}`);
   };
 
@@ -659,34 +614,44 @@ export default function ChatModule() {
       !canCreateGroups ||
       memberIds.some((memberId) => !eligibleChatUserIds.has(memberId))
     ) return;
-    const updates: Record<string, unknown> = { memberIds: arrayUnion(...memberIds), updatedAt: serverTimestamp() };
-    memberIds.forEach((id) => { updates[`unreadCounts.${id}`] = 0; });
-    await updateDoc(doc(db, 'chatConversations', selectedConversation.id), updates);
+    const updates: Record<string, unknown> = {
+      [`chatConversations/${selectedConversation.id}/updatedAt`]: realtimeServerTimestamp(),
+    };
+    memberIds.forEach((id) => {
+      updates[`chatConversations/${selectedConversation.id}/memberIds/${id}`] = true;
+      updates[`chatConversations/${selectedConversation.id}/unreadCounts/${id}`] = 0;
+      updates[`chatUserConversations/${id}/${selectedConversation.id}`] = true;
+    });
+    await updateRealtimePaths(updates);
     const names = memberIds.map((id) => usersById.get(id)?.name).filter(Boolean).join(', ');
     await addSystemMessage(`${user?.name} added ${names}`);
   };
 
   const removeGroupMember = async (memberId: string) => {
     if (!selectedConversation) return;
-    await updateDoc(doc(db, 'chatConversations', selectedConversation.id), {
-      memberIds: arrayRemove(memberId),
-      adminIds: arrayRemove(memberId),
-      [`unreadCounts.${memberId}`]: deleteField(),
-      [`lastReadAt.${memberId}`]: deleteField(),
-      [`deliveredAt.${memberId}`]: deleteField(),
-    });
     await addSystemMessage(`${user?.name} removed ${usersById.get(memberId)?.name || 'a member'}`);
+    const nextAdminIds = (selectedConversation.adminIds || []).filter((id) => id !== memberId);
+    await updateRealtimePaths({
+      [`chatConversations/${selectedConversation.id}/memberIds/${memberId}`]: null,
+      [`chatConversations/${selectedConversation.id}/adminIds`]: nextAdminIds,
+      [`chatConversations/${selectedConversation.id}/unreadCounts/${memberId}`]: null,
+      [`chatConversations/${selectedConversation.id}/lastReadAt/${memberId}`]: null,
+      [`chatConversations/${selectedConversation.id}/deliveredAt/${memberId}`]: null,
+      [`chatUserConversations/${memberId}/${selectedConversation.id}`]: null,
+    });
   };
 
   const leaveGroup = async () => {
     if (!selectedConversation || !user?.id) return;
     await addSystemMessage(`${user.name} left the group`);
-    await updateDoc(doc(db, 'chatConversations', selectedConversation.id), {
-      memberIds: arrayRemove(user.id),
-      adminIds: arrayRemove(user.id),
-      [`unreadCounts.${user.id}`]: deleteField(),
-      [`lastReadAt.${user.id}`]: deleteField(),
-      [`deliveredAt.${user.id}`]: deleteField(),
+    const nextAdminIds = (selectedConversation.adminIds || []).filter((id) => id !== user.id);
+    await updateRealtimePaths({
+      [`chatConversations/${selectedConversation.id}/memberIds/${user.id}`]: null,
+      [`chatConversations/${selectedConversation.id}/adminIds`]: nextAdminIds,
+      [`chatConversations/${selectedConversation.id}/unreadCounts/${user.id}`]: null,
+      [`chatConversations/${selectedConversation.id}/lastReadAt/${user.id}`]: null,
+      [`chatConversations/${selectedConversation.id}/deliveredAt/${user.id}`]: null,
+      [`chatUserConversations/${user.id}/${selectedConversation.id}`]: null,
     });
     setGroupInfoOpen(false);
     setSelectedConversationId(null);
