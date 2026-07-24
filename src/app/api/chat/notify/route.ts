@@ -1,5 +1,5 @@
 import { type DocumentReference } from 'firebase-admin/firestore';
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import {
   getFirebaseAdminAuth,
   getFirebaseAdminDatabase,
@@ -25,20 +25,13 @@ function bearerToken(request: Request) {
   return authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
 }
 
-export async function POST(request: Request) {
-  try {
-    const token = bearerToken(request);
-    if (!token) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
-
+async function deliverChatNotification(
+  token: string,
+  conversationId: string,
+  messageId: string
+) {
     const decodedToken = await getFirebaseAdminAuth().verifyIdToken(token);
     const senderUserId = await resolveAuthenticatedAppUserId(decodedToken);
-    const body = await request.json();
-    const conversationId = String(body?.conversationId || '').trim();
-    const messageId = String(body?.messageId || '').trim();
-    if (!conversationId || !messageId) {
-      return NextResponse.json({ error: 'Conversation and message are required.' }, { status: 400 });
-    }
-
     const realtimeDatabase = getFirebaseAdminDatabase();
     const conversationRef = realtimeDatabase.ref(`chatConversations/${conversationId}`);
     const messageRef = realtimeDatabase.ref(`chatMessages/${conversationId}/${messageId}`);
@@ -48,7 +41,7 @@ export async function POST(request: Request) {
     ]);
 
     if (!conversationSnapshot.exists() || !messageSnapshot.exists()) {
-      return NextResponse.json({ error: 'Chat message not found.' }, { status: 404 });
+      throw new Error('Chat message not found.');
     }
 
     const conversation = conversationSnapshot.val() || {};
@@ -59,12 +52,10 @@ export async function POST(request: Request) {
           .filter(([, included]) => included)
           .map(([memberId]) => memberId);
     if (!memberIds.includes(senderUserId) || message.senderId !== senderUserId) {
-      return NextResponse.json({ error: 'Not permitted to notify this conversation.' }, { status: 403 });
+      throw new Error('Not permitted to notify this conversation.');
     }
 
-    if (message.pushNotifiedAt) {
-      return NextResponse.json({ success: true, duplicate: true });
-    }
+    if (message.pushNotifiedAt) return;
 
     const firestore = getFirebaseAdminFirestore();
     const recipientIds: string[] = memberIds.filter((memberId: string) => memberId !== senderUserId);
@@ -90,7 +81,7 @@ export async function POST(request: Request) {
 
     if (!devices.length) {
       await messageRef.update({ pushNotifiedAt: Date.now(), pushDeliveryCount: 0 });
-      return NextResponse.json({ success: true, delivered: 0 });
+      return;
     }
 
     const senderName = String(message.senderName || 'New message').slice(0, 100);
@@ -143,14 +134,29 @@ export async function POST(request: Request) {
       pushDeliveryCount: response.successCount,
       pushFailureCount: response.failureCount,
     });
+}
 
-    return NextResponse.json({
-      success: true,
-      delivered: response.successCount,
-      failed: response.failureCount,
-    });
-  } catch (error) {
-    console.error('Chat push delivery failed:', error);
-    return NextResponse.json({ error: 'Unable to deliver chat notification.' }, { status: 500 });
+export async function POST(request: Request) {
+  const token = bearerToken(request);
+  if (!token) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+
+  const body = await request.json().catch(() => null);
+  const conversationId = String(body?.conversationId || '').trim();
+  const messageId = String(body?.messageId || '').trim();
+  if (!conversationId || !messageId) {
+    return NextResponse.json(
+      { error: 'Conversation and message are required.' },
+      { status: 400 }
+    );
   }
+
+  after(async () => {
+    try {
+      await deliverChatNotification(token, conversationId, messageId);
+    } catch (error) {
+      console.error('Asynchronous chat push delivery failed:', error);
+    }
+  });
+
+  return NextResponse.json({ success: true, queued: true }, { status: 202 });
 }
