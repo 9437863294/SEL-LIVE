@@ -74,8 +74,6 @@ export const LocationManager = {
 
     watchId = await watchDriverPosition(
       {
-        backgroundMessage: 'Location is being tracked in the background.',
-        backgroundTitle: 'Location Active',
         distanceFilterMeters: 10,
         enableHighAccuracy: true,
       },
