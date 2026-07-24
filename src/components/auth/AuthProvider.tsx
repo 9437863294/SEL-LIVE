@@ -33,6 +33,7 @@ import {
   updateSessionActivity,
 } from '@/lib/session-manager';
 import { unregisterCurrentChatPushDevice } from '@/lib/chat-push-client';
+import { stopNativeAndroidUserLocation } from '@/lib/native-user-location';
 
 /* ---------------- types ---------------- */
 
@@ -126,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         await unregisterCurrentChatPushDevice();
+        await stopNativeAndroidUserLocation().catch(() => {});
         await signOut(auth);
         localStorage.clear();
 

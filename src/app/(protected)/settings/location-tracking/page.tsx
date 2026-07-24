@@ -300,7 +300,7 @@ export default function LocationTrackingSettingsPage() {
       const fetchRequestId = String(data?.request?.fetchRequestId || '');
       toast({
         title: 'Current location requested',
-        description: `${row.name}’s active app is fetching a fresh GPS point.`,
+        description: `${row.name}’s device is fetching a fresh GPS point.`,
       });
 
       await new Promise((resolve) => window.setTimeout(resolve, 4_000));
@@ -314,7 +314,7 @@ export default function LocationTrackingSettingsPage() {
       } else {
         toast({
           title: 'Request is waiting',
-          description: 'The location will arrive when the user’s app is active with location permission.',
+          description: 'The user must reopen the app if Android Force Stop is active or background permission was removed.',
         });
       }
     } catch (error) {
@@ -392,7 +392,9 @@ export default function LocationTrackingSettingsPage() {
         <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>User capture settings</CardTitle>
-            <CardDescription>Tracking begins or stops on the user’s active app as soon as this setting changes.</CardDescription>
+            <CardDescription>
+              Android continues after normal app dismissal with the required ongoing location notification.
+            </CardDescription>
           </div>
           <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -531,7 +533,7 @@ function LocationHistoryDialog({
             {user?.name || 'User'} · Location history
           </DialogTitle>
           <DialogDescription>
-            Captured according to the configured interval while the user’s app was active.
+            Captured according to the configured interval, including Android background-service updates.
           </DialogDescription>
         </DialogHeader>
 

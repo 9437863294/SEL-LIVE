@@ -5,4 +5,6 @@
     <string name="package_name">com.sel</string>
     <string name="custom_url_scheme">com.sel</string>
     <string name="chat_notification_channel_id">sel_chat_messages</string>
+    <string name="background_location_channel_name">Background location</string>
+    <string name="background_location_notification_title">SEL location tracking active</string>
 </resources>

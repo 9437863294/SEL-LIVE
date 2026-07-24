@@ -6,12 +6,10 @@
  * session management page.
  *
  * Platform behaviour:
- *  - Android / iOS / Web → foreground location watcher, active while the app's
- *                           JavaScript runtime is alive.
- *
- * Android requires a persistent system notification for background location.
- * This tracker stays foreground-only so no organisation location-sharing
- * notification is displayed.
+ *  - Android → native foreground service backed by native Firebase/Firestore.
+ *              It continues after normal task dismissal and displays Android's
+ *              required ongoing location notification.
+ *  - iOS / Web → foreground location watcher while JavaScript remains active.
  */
 
 import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore';
@@ -23,6 +21,11 @@ import {
   watchDriverPosition,
   type DriverGeoWatchId,
 } from '@/lib/driver-mobile-geolocation';
+import {
+  isNativeAndroidUserLocationAvailable,
+  startNativeAndroidUserLocation,
+  stopNativeAndroidUserLocation,
+} from '@/lib/native-user-location';
 
 export const USER_LOCATIONS_COLLECTION = 'userLocations';
 export const USER_LOCATION_SETTINGS_COLLECTION = 'userLocationSettings';
@@ -106,8 +109,7 @@ async function persist(
  * Start watching the user's GPS and syncing it to Firestore.
  * Safe to call multiple times for the same userId — it's a no-op.
  *
- * Uses a foreground watcher on every platform. It stops when the app's
- * JavaScript runtime is suspended or terminated.
+ * Foreground watcher used by web/iOS. Android uses the native service below.
  */
 async function stopPositionWatcher() {
   if (activeWatchId === null) return;
@@ -291,8 +293,22 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
       const fetchRequestId = String(setting?.fetchRequestId || '').trim();
 
       if (!enabled) {
+        if (isNativeAndroidUserLocationAvailable()) {
+          void stopNativeAndroidUserLocation().catch((error) => {
+            console.warn('[UserLocation] native service stop error:', error);
+          });
+        }
         stopScheduledCapture();
         void stopPositionWatcher();
+        return;
+      }
+      if (isNativeAndroidUserLocationAvailable()) {
+        stopScheduledCapture();
+        void stopPositionWatcher();
+        void startNativeAndroidUserLocation(userId).catch((error) => {
+          const message = error instanceof Error ? error.message : 'Unable to start native location service.';
+          console.warn('[UserLocation] native service start error:', message);
+        });
         return;
       }
       if (fetchRequestId && fetchRequestId !== lastHandledFetchRequestId) {
@@ -313,13 +329,18 @@ export async function startUserLocationTracking(userId: string): Promise<void> {
 }
 
 /** Stop tracking. Called on logout or unmount. */
-export async function stopUserLocationTracking(): Promise<void> {
+export async function stopUserLocationTracking(
+  options: { stopNative?: boolean } = {},
+): Promise<void> {
   lifecycleVersion += 1;
   settingsUnsubscribe?.();
   settingsUnsubscribe = null;
   locationCaptureEnabled = false;
   requestedCaptureInFlight = false;
   lastHandledFetchRequestId = '';
+  if (options.stopNative !== false) {
+    await stopNativeAndroidUserLocation().catch(() => {});
+  }
   stopScheduledCapture();
   await stopPositionWatcher();
   activeUserId = null;

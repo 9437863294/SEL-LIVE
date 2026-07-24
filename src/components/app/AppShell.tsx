@@ -30,7 +30,7 @@ export default function AppShell({
     useEffect(() => {
         if (!user?.id) return;
         startUserLocationTracking(user.id).catch(() => {});
-        return () => { stopUserLocationTracking(); };
+        return () => { stopUserLocationTracking({ stopNative: false }); };
     }, [user?.id]);
 
     const isDriverRoute = useMemo(
