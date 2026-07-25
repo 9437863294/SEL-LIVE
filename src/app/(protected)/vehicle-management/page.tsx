@@ -274,29 +274,29 @@ export default function VehicleManagementOverviewPage() {
   const totalAlerts = alertSummary.expired + alertSummary.dueSoon;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 sm:space-y-5">
       <Card className="relative overflow-hidden vm-panel-strong vm-reveal">
         <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-sky-500/5 to-blue-500/10 animate-bb-gradient" />
         <div className="electric-scan-line top-8" />
-        <CardHeader className="relative">
-          <CardTitle className="text-xl sm:text-2xl tracking-tight">Vehicle Management</CardTitle>
-          <CardDescription>
+        <CardHeader className="relative px-3 pb-2 pt-3 sm:p-6">
+          <CardTitle className="text-lg tracking-tight sm:text-2xl">Vehicle Management</CardTitle>
+          <CardDescription className="hidden sm:block">
             Separate pages with sidebar navigation, expiry intelligence, and a modern command-center view.
           </CardDescription>
         </CardHeader>
-        <CardContent className="relative grid grid-cols-2 gap-3 md:grid-cols-3">
-          <div className="rounded-xl border border-cyan-100/70 bg-white/80 p-3 sm:p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground">Visible Modules</p>
-            <p className="mt-1 text-xl sm:text-2xl font-semibold">{visibleCards.length}</p>
+        <CardContent className="relative grid grid-cols-3 gap-2 px-3 pb-3 sm:grid-cols-2 sm:gap-3 sm:px-6 sm:pb-6 md:grid-cols-3">
+          <div className="rounded-lg border border-cyan-100/70 bg-white/80 p-2 shadow-sm sm:rounded-xl sm:p-4">
+            <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Modules</p>
+            <p className="mt-0.5 text-lg font-semibold sm:mt-1 sm:text-2xl">{visibleCards.length}</p>
           </div>
-          <div className="rounded-xl border border-cyan-100/70 bg-white/80 p-3 sm:p-4 shadow-sm">
-            <p className="text-xs text-muted-foreground">Total Records</p>
-            <p className="mt-1 text-xl sm:text-2xl font-semibold">{isLoading ? '...' : totalVisibleRecords}</p>
+          <div className="rounded-lg border border-cyan-100/70 bg-white/80 p-2 shadow-sm sm:rounded-xl sm:p-4">
+            <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Records</p>
+            <p className="mt-0.5 text-lg font-semibold sm:mt-1 sm:text-2xl">{isLoading ? '...' : totalVisibleRecords}</p>
           </div>
-          <div className="col-span-2 rounded-xl border border-cyan-100/70 bg-white/80 p-3 sm:p-4 shadow-sm md:col-span-1">
-            <p className="text-xs text-muted-foreground">Compliance Alerts</p>
-            <p className="mt-1 text-xl sm:text-2xl font-semibold">{isLoading ? '...' : totalAlerts}</p>
-            <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+          <div className="rounded-lg border border-cyan-100/70 bg-white/80 p-2 shadow-sm sm:col-span-2 sm:rounded-xl sm:p-4 md:col-span-1">
+            <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Alerts</p>
+            <p className="mt-0.5 text-lg font-semibold sm:mt-1 sm:text-2xl">{isLoading ? '...' : totalAlerts}</p>
+            <div className="mt-2 hidden flex-wrap gap-1.5 text-xs sm:flex">
               <Badge variant="destructive" className="shadow-sm">
                 Expired: {alertSummary.expired}
               </Badge>
@@ -310,7 +310,7 @@ export default function VehicleManagementOverviewPage() {
             {totalAlerts > 0 && (
               <Link
                 href="/vehicle-management/renewals"
-                className="mt-2 flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-700 transition-colors"
+                className="mt-1 hidden items-center gap-1 text-xs font-semibold text-rose-600 transition-colors hover:text-rose-700 sm:mt-2 sm:flex"
               >
                 <RefreshCw className="h-3 w-3" />
                 View Renewals Hub
@@ -320,7 +320,7 @@ export default function VehicleManagementOverviewPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
         {visibleCards.map((item, idx) => {
           const Icon = item.icon;
           return (
@@ -333,14 +333,19 @@ export default function VehicleManagementOverviewPage() {
                 style={{ animationDelay: `${Math.min(idx * 45, 240)}ms` }}
               >
                 <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-br opacity-80', item.gradient)} />
-                <CardHeader className="relative p-3 sm:p-6">
-                  <div className="mb-2 sm:mb-3 flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-white/80 shadow-sm ring-1 ring-cyan-100">
-                    <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-700 transition-transform duration-300 group-hover:scale-110" />
+                <CardHeader className="relative flex flex-row items-center gap-2 p-2 sm:block sm:p-6">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/80 shadow-sm ring-1 ring-cyan-100 sm:mb-3 sm:h-10 sm:w-10 sm:rounded-xl">
+                    <Icon className="h-3.5 w-3.5 text-cyan-700 transition-transform duration-300 group-hover:scale-110 sm:h-5 sm:w-5" />
                   </div>
-                  <CardTitle className="text-sm sm:text-lg leading-tight">{item.label}</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle className="line-clamp-2 text-xs leading-tight sm:text-lg">{item.label}</CardTitle>
+                    <span className="mt-0.5 block text-[10px] text-muted-foreground sm:hidden">
+                      {isLoading ? '…' : `${counts[item.collection] ?? 0} records`}
+                    </span>
+                  </div>
                   <CardDescription className="hidden sm:block">{item.description}</CardDescription>
                 </CardHeader>
-                <CardContent className="relative px-3 pb-3 sm:px-6 sm:pb-6">
+                <CardContent className="relative hidden px-3 pb-3 sm:block sm:px-6 sm:pb-6">
                   {isLoading ? (
                     <Skeleton className="h-4 w-14" />
                   ) : (
@@ -368,9 +373,9 @@ export default function VehicleManagementOverviewPage() {
         <Link href="/vehicle-management/reports" className="block" aria-label="Open reports">
           <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(14,116,205,0.55)]">
             <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
-            <CardHeader>
+            <CardHeader className="p-3 sm:p-6">
               <CardTitle className="text-lg">Reports</CardTitle>
-              <CardDescription>Fuel cost, mileage, monthly trends, and project-wise cost analysis.</CardDescription>
+              <CardDescription className="hidden sm:block">Fuel cost, mileage, monthly trends, and project-wise cost analysis.</CardDescription>
             </CardHeader>
           </Card>
         </Link>
@@ -381,13 +386,13 @@ export default function VehicleManagementOverviewPage() {
         <Link href="/vehicle-management/renewals" className="block" aria-label="Open Renewals Hub">
           <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(239,68,68,0.45)] active:scale-[0.98]">
             <div className="h-1 w-full bg-gradient-to-r from-rose-500 via-orange-400 to-amber-500" />
-            <CardHeader className="flex flex-row items-center gap-2.5 p-3 sm:p-6">
-              <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 shadow-sm ring-1 ring-rose-100">
+            <CardHeader className="flex flex-row items-center gap-2 p-2.5 sm:gap-2.5 sm:p-6">
+              <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-rose-50 shadow-sm ring-1 ring-rose-100">
                 <RefreshCw className="h-4 w-4 sm:h-5 sm:w-5 text-rose-600" />
               </div>
               <div>
-                <CardTitle className="text-base sm:text-lg">Renewals Hub</CardTitle>
-                <CardDescription className="text-xs sm:text-sm">Expired &amp; due-soon compliance items. Take action instantly.</CardDescription>
+                <CardTitle className="text-sm sm:text-lg">Renewals Hub</CardTitle>
+                <CardDescription className="hidden text-xs sm:block sm:text-sm">Expired &amp; due-soon compliance items. Take action instantly.</CardDescription>
               </div>
             </CardHeader>
           </Card>
@@ -395,13 +400,13 @@ export default function VehicleManagementOverviewPage() {
         <Link href="/vehicle-management/renewals/history" className="block" aria-label="Open Renewal History">
           <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(100,116,139,0.45)] active:scale-[0.98]">
             <div className="h-1 w-full bg-gradient-to-r from-slate-400 via-zinc-400 to-gray-400" />
-            <CardHeader className="flex flex-row items-center gap-2.5 p-3 sm:p-6">
-              <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-slate-50 shadow-sm ring-1 ring-slate-100">
+            <CardHeader className="flex flex-row items-center gap-2 p-2.5 sm:gap-2.5 sm:p-6">
+              <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-slate-50 shadow-sm ring-1 ring-slate-100">
                 <History className="h-4 w-4 sm:h-5 sm:w-5 text-slate-600" />
               </div>
               <div>
-                <CardTitle className="text-base sm:text-lg">Renewal History</CardTitle>
-                <CardDescription className="text-xs sm:text-sm">Archive of expired PUC, Insurance, DL, Fitness, Road Tax &amp; Permit.</CardDescription>
+                <CardTitle className="text-sm sm:text-lg">Renewal History</CardTitle>
+                <CardDescription className="hidden text-xs sm:block sm:text-sm">Archive of expired PUC, Insurance, DL, Fitness, Road Tax &amp; Permit.</CardDescription>
               </div>
             </CardHeader>
           </Card>
@@ -410,20 +415,20 @@ export default function VehicleManagementOverviewPage() {
           <Link href="/vehicle-management/vehicle-health" className="block" aria-label="Open Vehicle Health Dashboard">
             <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(6,182,212,0.45)] active:scale-[0.98]">
               <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-cyan-500 to-blue-600" />
-              <CardHeader className="flex flex-row items-center gap-2.5 p-3 sm:p-6">
-                <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 shadow-sm ring-1 ring-cyan-100">
+              <CardHeader className="flex flex-row items-center gap-2 p-2.5 sm:gap-2.5 sm:p-6">
+                <div className="flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-cyan-50 shadow-sm ring-1 ring-cyan-100">
                   <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-600" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <CardTitle className="text-base sm:text-lg">Vehicle Health</CardTitle>
+                    <CardTitle className="text-sm sm:text-lg">Vehicle Health</CardTitle>
                     {!isLoading && alertSummary.expired > 0 && (
                       <Badge variant="destructive" className="text-[10px] shadow-sm">
                         {alertSummary.expired} expired
                       </Badge>
                     )}
                   </div>
-                  <CardDescription className="flex items-center gap-1">
+                  <CardDescription className="hidden items-center gap-1 sm:flex">
                     <Gauge className="h-3 w-3 shrink-0" />
                     Compliance scores &amp; grade per vehicle.
                   </CardDescription>

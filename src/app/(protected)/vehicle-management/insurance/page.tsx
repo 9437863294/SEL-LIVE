@@ -435,13 +435,13 @@ export default function InsuranceManagementPage() {
     <div className="space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <CardTitle>Insurance Management</CardTitle>
             <CardDescription>Track policy details, expiry, and renewal status.</CardDescription>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-            <Badge variant="outline" className="bg-white/70">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+            <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
               {rows.length} records
             </Badge>
             <Button variant="outline" onClick={() => void loadRows()} className="bg-white/80 hover:bg-white">
@@ -467,12 +467,12 @@ export default function InsuranceManagementPage() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 px-3 pb-4 sm:px-6 sm:pb-6">
           <Input
             placeholder="Search insurance..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="max-w-xs border-slate-200 bg-white focus-visible:ring-emerald-400/40"
+            className="h-11 w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:h-10 sm:max-w-xs"
           />
           {/* Mobile card list — visible only on small screens */}
           <div className="space-y-2.5 sm:hidden">
@@ -587,12 +587,12 @@ export default function InsuranceManagementPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
-          <div className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
+        <DialogContent className="vm-mobile-dialog flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
+          <div className="vm-dialog-header shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
             <DialogTitle>{editingRow ? 'Edit Insurance' : 'Add Insurance'}</DialogTitle>
             <DialogDescription>Enter policy details and upload the policy file.</DialogDescription>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto px-6 py-5">
             <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
               <div className="mb-3 rounded-md border border-slate-200 bg-slate-100/90 px-3 py-1.5 text-xs font-semibold text-slate-700">
                 General Info
@@ -664,7 +664,7 @@ export default function InsuranceManagementPage() {
               </div>
             </div>
           </div>
-          <DialogFooter className="shrink-0 border-t border-slate-100 bg-slate-50/70 px-6 py-3.5">
+          <DialogFooter className="vm-dialog-footer shrink-0 border-t border-slate-100 bg-slate-50/95 px-6 py-3.5">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel
             </Button>
@@ -757,5 +757,4 @@ function SelectField({
     </Field>
   );
 }
-
 

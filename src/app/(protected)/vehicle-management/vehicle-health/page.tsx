@@ -338,11 +338,11 @@ export default function VehicleHealthPage() {
   }
 
   return (
-    <div className="space-y-5 vm-reveal">
+    <div className="space-y-3 vm-reveal sm:space-y-5">
       {/* Header */}
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-cyan-500 to-blue-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <CardTitle className="flex items-center gap-2 tracking-tight">
               <Activity className="h-5 w-5 text-cyan-500" />
@@ -354,7 +354,7 @@ export default function VehicleHealthPage() {
           </div>
           <button
             onClick={load}
-            className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-foreground backdrop-blur hover:bg-white/20 transition-colors"
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/20 sm:w-auto"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -363,7 +363,7 @@ export default function VehicleHealthPage() {
       </Card>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4">
         {[
           { label: 'Total Vehicles', value: summary.total, icon: Car, color: 'from-blue-500 to-indigo-600' },
           { label: 'Fleet Health Score', value: `${summary.avgScore}%`, icon: Gauge, color: 'from-cyan-500 to-teal-600' },
@@ -372,11 +372,11 @@ export default function VehicleHealthPage() {
         ].map((stat) => (
           <Card key={stat.label} className="vm-panel-strong overflow-hidden">
             <div className={`h-0.5 w-full bg-gradient-to-r ${stat.color}`} />
-            <CardContent className="flex items-center gap-3 p-4">
+            <CardContent className="flex min-w-0 items-center gap-2 p-3 sm:gap-3 sm:p-4">
               <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${stat.color} shadow-lg`}>
                 <stat.icon className="h-5 w-5 text-white" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs text-muted-foreground">{stat.label}</p>
                 <p className="text-2xl font-bold tracking-tight">{isLoading ? '—' : stat.value}</p>
               </div>
@@ -397,9 +397,9 @@ export default function VehicleHealthPage() {
           <Activity className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {/* Grade filter pills — scrollable on mobile */}
-        <div className="flex gap-1 overflow-x-auto pb-0.5 flex-shrink-0">
+        <div className="flex w-full flex-shrink-0 gap-1 overflow-x-auto pb-0.5 sm:w-auto">
           {(['All', 'A', 'B', 'C', 'D', 'F'] as const).map((g) => {
             const active = gradeFilter === g;
             const colorMap: Record<string, string> = {
@@ -428,7 +428,7 @@ export default function VehicleHealthPage() {
         </div>
 
         {/* Sort pills */}
-        <div className="flex gap-1">
+        <div className="flex w-full gap-1 overflow-x-auto sm:w-auto">
           {(['score', 'vehicleNumber', 'expired'] as const).map((key) => (
             <button
               key={key}
@@ -446,7 +446,7 @@ export default function VehicleHealthPage() {
 
         <Link
           href="/vehicle-management/renewals"
-          className="flex items-center gap-1 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow hover:opacity-90 transition-opacity ml-auto"
+          className="flex min-h-11 w-full items-center justify-center gap-1 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow transition-opacity hover:opacity-90 sm:ml-auto sm:min-h-0 sm:w-auto"
         >
           <AlertTriangle className="h-3.5 w-3.5" />
           Renewals Hub

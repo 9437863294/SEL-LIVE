@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
   formatINR, SAS_COLLECTIONS,
@@ -102,9 +102,57 @@ export default function MonthlyComparisonPage() {
   const [budgets,   setBudgets]   = useState<SASBudget[]>([]);
   const [loading,   setLoading]   = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [prevCount, setPrevCount] = useState<number | 'all'>(1);
+  const [prevCount, setPrevCount] = useState(1);
 
-  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading]);
+  useEffect(() => {
+    if (isAuthLoading || !canView) {
+      if (!isAuthLoading) setLoading(false);
+      return;
+    }
+
+    let active = true;
+    const startYM = shiftMonth(currYM, -prevCount);
+    const nextMonthStart = `${shiftMonth(currYM, 1)}-01`;
+
+    setLoading(true);
+    void Promise.all([
+      getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
+      getDocs(query(
+        collection(db, SAS_COLLECTIONS.expenses),
+        where('expenseDate', '>=', `${startYM}-01`),
+        where('expenseDate', '<', nextMonthStart)
+      )),
+      getDocs(query(
+        collection(db, SAS_COLLECTIONS.payments),
+        where('receiptDate', '>=', `${startYM}-01`),
+        where('receiptDate', '<', nextMonthStart)
+      )),
+      getDocs(query(
+        collection(db, SAS_COLLECTIONS.budgets),
+        where('period', '>=', startYM),
+        where('period', '<=', currYM)
+      )),
+    ])
+      .then(([pSnap, expSnap, paySnap, budSnap]) => {
+        if (!active) return;
+        setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount));
+        setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
+        setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
+        setBudgets(
+          budSnap.docs
+            .map(d => ({ id: d.id, ...d.data() } as SASBudget))
+            .filter(b => b.budgetType === 'monthly')
+        );
+      })
+      .catch(err => console.error('[MonthlyComparison] Failed to load report:', err))
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canView, currYM, isAuthLoading, prevCount]);
 
   async function loadAll() {
     setLoading(true);
@@ -136,29 +184,9 @@ export default function MonthlyComparisonPage() {
     [projects, user?.id, canViewAll]
   );
 
-  const maxPrevMonths = useMemo(() => {
-    let earliest: string | null = null;
-    expenses.forEach(e => { const ym = toYM(e.expenseDate); if (ym && (!earliest || ym < earliest)) earliest = ym; });
-    payments.forEach(py => { const ym = toYM(py.receiptDate); if (ym && (!earliest || ym < earliest)) earliest = ym; });
-    budgets.forEach(b => { if (b.period && (!earliest || b.period < earliest)) earliest = b.period; });
-    if (!earliest) return 1;
-    const [ey, em] = (earliest as string).split('-').map(Number);
-    const [cy, cm] = currYM.split('-').map(Number);
-    if (ey > cy || (ey === cy && em >= cm)) return 1;
-    return Math.max(1, (cy - ey) * 12 + (cm - em));
-  }, [expenses, payments, budgets, currYM]);
-
   const months = useMemo((): string[] => {
-    if (prevCount === 'all') {
-      const set = new Set<string>();
-      expenses.forEach(e => { const ym = toYM(e.expenseDate); if (ym) set.add(ym); });
-      payments.forEach(p => { const ym = toYM(p.receiptDate); if (ym) set.add(ym); });
-      budgets.forEach(b => { if (b.period) set.add(b.period); });
-      set.add(currYM);
-      return Array.from(set).sort();
-    }
     return Array.from({ length: prevCount + 1 }, (_, i) => shiftMonth(currYM, i - prevCount));
-  }, [prevCount, expenses, payments, budgets, currYM]);
+  }, [prevCount, currYM]);
 
   // Budget lookup: projectId × period → amount
   const budgetLookup = useMemo(() => {
@@ -172,17 +200,36 @@ export default function MonthlyComparisonPage() {
 
   const hasBudgets = budgets.length > 0;
 
+  const transactionLookup = useMemo(() => {
+    const expenseByProjectMonth = new Map<string, number>();
+    const receivedByProjectMonth = new Map<string, number>();
+    expenses.forEach(expense => {
+      const ym = toYM(expense.expenseDate);
+      if (!ym) return;
+      const key = `${expense.projectId}:${ym}`;
+      expenseByProjectMonth.set(key, (expenseByProjectMonth.get(key) ?? 0) + (expense.expenseAmount || 0));
+    });
+    payments.forEach(payment => {
+      const ym = toYM(payment.receiptDate);
+      if (!ym) return;
+      const key = `${payment.projectId}:${ym}`;
+      receivedByProjectMonth.set(key, (receivedByProjectMonth.get(key) ?? 0) + (payment.receivedAmount || 0));
+    });
+    return { expenseByProjectMonth, receivedByProjectMonth };
+  }, [expenses, payments]);
+
   // Per-project row data
   const rows = useMemo(() => visibleProjects
     .map(p => {
-      const projExp = expenses.filter(e => e.projectId === p.id);
-      const projPay = payments.filter(pay => pay.projectId === p.id);
-      const monthData = months.map(ym => ({
-        ym,
-        budget:  budgetLookup.get(`${p.id}:${ym}`) ?? 0,
-        received: projPay.filter(pay => toYM(pay.receiptDate) === ym).reduce((s, pay) => s + (pay.receivedAmount || 0), 0),
-        expenses: projExp.filter(e => toYM(e.expenseDate) === ym).reduce((s, e) => s + (e.expenseAmount || 0), 0),
-      }));
+      const monthData = months.map(ym => {
+        const key = `${p.id}:${ym}`;
+        return {
+          ym,
+          budget: budgetLookup.get(key) ?? 0,
+          received: transactionLookup.receivedByProjectMonth.get(key) ?? 0,
+          expenses: transactionLookup.expenseByProjectMonth.get(key) ?? 0,
+        };
+      });
       return {
         project: p,
         monthData,
@@ -190,7 +237,7 @@ export default function MonthlyComparisonPage() {
       };
     })
     .filter(r => r.hasData),
-  [visibleProjects, expenses, payments, budgetLookup, months]);
+  [visibleProjects, budgetLookup, months, transactionLookup]);
 
   // Grand totals per month column
   const colTotals = useMemo(() => months.map(ym => ({
@@ -257,7 +304,7 @@ export default function MonthlyComparisonPage() {
   }
 
   // How many sub-columns per month
-  const perMonthCols = (hasBudgets ? 3 : 2) + 1; // budget? + received + expenses [+ balance] + Δ%
+  const perMonthCols = hasBudgets ? 4 : 2;
 
   return (
     <div className="space-y-4">
@@ -281,19 +328,18 @@ export default function MonthlyComparisonPage() {
       {/* Range picker */}
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm font-medium text-slate-600">Show previous:</span>
-        <Select value={prevCount === 'all' ? 'all' : String(prevCount)} onValueChange={v => setPrevCount(v === 'all' ? 'all' : Number(v))}>
+        <Select value={String(prevCount)} onValueChange={v => setPrevCount(Number(v))}>
           <SelectTrigger className="h-9 w-full sm:w-60 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {Array.from({ length: maxPrevMonths }, (_, i) => i + 1).map(n => (
+            {[1, 2, 3, 6, 12].map(n => (
               <SelectItem key={n} value={String(n)}>
                 {n === 1
                   ? `1 previous month  (${monthLabel(shiftMonth(currYM, -1), true)})`
                   : `${n} months  (${monthLabel(shiftMonth(currYM, -n), true)} → ${monthLabel(shiftMonth(currYM, -1), true)})`}
               </SelectItem>
             ))}
-            <SelectItem value="all">All time ({maxPrevMonths + 1} months)</SelectItem>
           </SelectContent>
         </Select>
         <span className="text-xs text-muted-foreground">+ {monthLabel(currYM, true)} (current)</span>
@@ -389,7 +435,7 @@ export default function MonthlyComparisonPage() {
                     </th>
                     {months.map((ym, i) => {
                       const isCurr = ym === currYM;
-                      const cols = (hasBudgets ? 3 : 2) + (i > 0 ? 1 : 0); // budget+rec+exp [+balance] [+Δ%]
+                      const cols = perMonthCols + (i > 0 ? 1 : 0);
                       return (
                         <th
                           key={ym}

@@ -357,9 +357,9 @@ export function VehicleImportDialog({
   /* ================================================================== */
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
+      <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
         {/* ── Header ── */}
-        <div className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
+        <div className="vm-dialog-header shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
           <DialogTitle className="text-base font-semibold text-slate-900">{title}</DialogTitle>
           <DialogDescription className="mt-0.5 text-xs text-slate-500">
             Import records from an Excel (.xlsx) file with column mapping and per-row validation.
@@ -371,10 +371,10 @@ export function VehicleImportDialog({
         <div className="min-h-0 flex-1 overflow-y-auto">
           {/* ─── STEP 1: Upload ─── */}
           {step === 'upload' && (
-            <div className="p-6 space-y-5">
+            <div className="space-y-5 p-3 sm:p-6">
               <div
                 className={cn(
-                  'flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-14 text-center transition-colors',
+                  'flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-7 text-center transition-colors sm:p-14',
                   isDragging
                     ? 'border-emerald-400 bg-emerald-50'
                     : 'border-slate-200 bg-slate-50/60 hover:border-emerald-300 hover:bg-slate-50'
@@ -398,7 +398,7 @@ export function VehicleImportDialog({
 
               {/* Expected columns + template */}
               <div className="rounded-xl border border-slate-200 bg-white/70 p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div className="mb-3 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Expected Columns</p>
                   <button
                     onClick={() => void downloadTemplate()}
@@ -431,7 +431,7 @@ export function VehicleImportDialog({
 
           {/* ─── STEP 2: Map Columns ─── */}
           {step === 'map' && (
-            <div className="p-6 space-y-4">
+            <div className="space-y-4 p-3 sm:p-6">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{fileName}</p>
@@ -450,7 +450,7 @@ export function VehicleImportDialog({
 
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white/80">
                 {/* Table header */}
-                <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-4 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
+                <div className="hidden grid-cols-[1fr_1fr_auto] items-center gap-4 border-b border-slate-100 bg-slate-50 px-4 py-2.5 sm:grid">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Expected Field</span>
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Your Column</span>
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Status</span>
@@ -461,7 +461,7 @@ export function VehicleImportDialog({
                     const mapped = columnMap[field.key] || '';
                     const isAutoMapped = !!mapped;
                     return (
-                      <div key={field.key} className="grid grid-cols-[1fr_1fr_auto] items-center gap-4 px-4 py-2.5">
+                      <div key={field.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-3 sm:grid-cols-[1fr_1fr_auto] sm:gap-4 sm:px-4 sm:py-2.5">
                         <div>
                           <span className="text-sm text-slate-700">{field.label}</span>
                           {field.required && <span className="ml-1 text-[10px] font-medium text-rose-500">required</span>}
@@ -473,7 +473,7 @@ export function VehicleImportDialog({
                             setColumnMap((prev) => ({ ...prev, [field.key]: val === SKIP ? '' : val }))
                           }
                         >
-                          <SelectTrigger className="h-8 border-slate-200 bg-white text-sm">
+                          <SelectTrigger className="col-span-2 h-11 border-slate-200 bg-white text-sm sm:col-span-1 sm:h-8">
                             <SelectValue placeholder="— Skip this field —" />
                           </SelectTrigger>
                           <SelectContent>
@@ -512,7 +512,7 @@ export function VehicleImportDialog({
 
           {/* ─── STEP 3: Preview & Validate ─── */}
           {step === 'preview' && (
-            <div className="p-6 space-y-4">
+            <div className="space-y-4 p-3 sm:p-6">
               {/* Summary bar */}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -634,9 +634,9 @@ export function VehicleImportDialog({
 
           {/* ─── STEP 4: Summary ─── */}
           {step === 'summary' && summary && (
-            <div className="p-6 space-y-5">
+            <div className="space-y-5 p-3 sm:p-6">
               {/* Stat tiles */}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-2 min-[380px]:grid-cols-3 sm:gap-4">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
                   <p className="text-3xl font-bold text-slate-800">{summary.total}</p>
                   <p className="mt-1 text-xs text-slate-500">Rows Processed</p>
@@ -701,12 +701,12 @@ export function VehicleImportDialog({
         </div>
 
         {/* ── Footer ── */}
-        <div className="shrink-0 flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-4">
+        <div className="vm-dialog-footer shrink-0 flex flex-col gap-2 border-t border-slate-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6 sm:py-4">
           <Button variant="ghost" onClick={handleClose} disabled={isImporting} className="text-slate-500">
             {step === 'summary' ? 'Close' : 'Cancel'}
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto">
             {/* Import progress */}
             {isImporting && (
               <span className="text-xs text-slate-500">

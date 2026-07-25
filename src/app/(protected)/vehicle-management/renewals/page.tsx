@@ -311,15 +311,15 @@ export default function RenewalsHubPage() {
   }, [items, filter, dueSoon, expired, categoryFilter, query]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 sm:space-y-5">
       {/* ── Header ── */}
       <Card className="relative overflow-hidden vm-panel-strong vm-reveal">
         <div className="absolute inset-0 bg-gradient-to-r from-rose-500/10 via-orange-500/5 to-amber-500/10 animate-bb-gradient" />
         <div className="electric-scan-line top-8" />
-        <CardHeader className="relative">
+        <CardHeader className="relative px-3 py-4 sm:px-6 sm:py-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="text-2xl tracking-tight flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-xl tracking-tight sm:text-2xl">
                 <RefreshCw className="h-6 w-6 text-rose-500" />
                 Renewals Hub
               </CardTitle>
@@ -327,10 +327,10 @@ export default function RenewalsHubPage() {
                 Consolidated view of all expired and due-soon compliance items across the fleet.
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto">
               <Link
                 href="/vehicle-management/vehicle-health"
-                className="flex items-center gap-1.5 rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700 hover:bg-cyan-100 transition-colors"
+                className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-center text-xs font-semibold text-cyan-700 transition-colors hover:bg-cyan-100 sm:min-h-0"
               >
                 <Activity className="h-3.5 w-3.5" />
                 Health Dashboard
@@ -339,7 +339,7 @@ export default function RenewalsHubPage() {
                 variant="outline"
                 onClick={load}
                 disabled={isLoading}
-                className="w-fit gap-2 bg-white/80 hover:bg-white"
+                className="w-full gap-2 bg-white/80 hover:bg-white sm:w-fit"
               >
                 <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
                 Refresh
@@ -347,18 +347,18 @@ export default function RenewalsHubPage() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="relative grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-rose-100/80 bg-white/80 p-4 shadow-sm">
+        <CardContent className="relative grid grid-cols-3 gap-2 px-3 pb-4 sm:gap-3 sm:px-6 sm:pb-6">
+          <div className="rounded-xl border border-rose-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
             <p className="text-xs text-muted-foreground">Total Alerts</p>
             <p className="mt-1 text-2xl font-semibold">{isLoading ? '...' : items.length}</p>
           </div>
-          <div className="rounded-xl border border-rose-100/80 bg-white/80 p-4 shadow-sm">
+          <div className="rounded-xl border border-rose-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
             <p className="text-xs text-muted-foreground">Expired</p>
             <p className="mt-1 text-2xl font-semibold text-rose-600">
               {isLoading ? '...' : expired.length}
             </p>
           </div>
-          <div className="rounded-xl border border-amber-100/80 bg-white/80 p-4 shadow-sm">
+          <div className="rounded-xl border border-amber-100/80 bg-white/80 p-3 shadow-sm sm:p-4">
             <p className="text-xs text-muted-foreground">Due Within 30 Days</p>
             <p className="mt-1 text-2xl font-semibold text-amber-600">
               {isLoading ? '...' : dueSoon.length}
@@ -370,7 +370,7 @@ export default function RenewalsHubPage() {
       {/* ── Filters ── */}
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-0.5 w-full bg-gradient-to-r from-rose-500 via-orange-400 to-amber-500" />
-        <CardContent className="flex flex-col gap-2 pt-4">
+        <CardContent className="flex flex-col gap-2 px-3 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-4">
           {/* Kind filter */}
           <div className="flex gap-1 overflow-x-auto pb-0.5">
             {(['all', 'expired', 'dueSoon'] as FilterTab[]).map((tab) => (
@@ -416,7 +416,7 @@ export default function RenewalsHubPage() {
             placeholder="Search vehicle, driver, details..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full sm:ml-auto sm:max-w-xs bg-white/80 border-white/70 focus-visible:ring-rose-400/40"
+            className="h-11 w-full border-white/70 bg-white/80 focus-visible:ring-rose-400/40 sm:ml-auto sm:h-10 sm:max-w-xs"
           />
         </CardContent>
       </Card>

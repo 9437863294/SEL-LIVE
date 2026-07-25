@@ -720,16 +720,16 @@ export default function GenericCrudPage({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <CardTitle className="tracking-tight">{title}</CardTitle>
             <CardDescription>{description}</CardDescription>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-            <Badge variant="outline" className="bg-white/70">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+            <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
               {rows.length} records
             </Badge>
             <Button variant="outline" onClick={loadRows} className="bg-white/80 hover:bg-white">
@@ -765,19 +765,19 @@ export default function GenericCrudPage({
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 px-3 pb-4 sm:px-6 sm:pb-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Input
               placeholder={`Search ${itemName.toLowerCase()}...`}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:max-w-xs"
+              className="h-11 w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:h-10 sm:max-w-xs"
             />
-            <div className="flex items-center gap-1 rounded-lg bg-white/50 p-1 border border-white/70 shadow-sm w-fit">
+            <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-white/70 bg-white/50 p-1 shadow-sm sm:w-fit">
               <button
                 onClick={() => setActiveTab('active')}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
+                  'flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all',
                   activeTab === 'active' ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-500 hover:bg-white/50 hover:text-slate-700'
                 )}
               >
@@ -787,7 +787,7 @@ export default function GenericCrudPage({
               <button
                 onClick={() => setActiveTab('history')}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all',
+                  'flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all',
                   activeTab === 'history' ? 'bg-white shadow-sm text-emerald-700' : 'text-slate-500 hover:bg-white/50 hover:text-slate-700'
                 )}
               >
@@ -897,10 +897,10 @@ export default function GenericCrudPage({
           setDialogOpen(true);
         }}
       >
-        <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
+        <DialogContent className="vm-mobile-dialog flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
 
           {/* ── Sticky header ─────────────────────────────────── */}
-          <div className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
+          <div className="vm-dialog-header shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
             {isRenewalMode && (
               <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
                 <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -920,7 +920,7 @@ export default function GenericCrudPage({
           </div>
 
           {/* ── Scrollable form body ───────────────────────────── */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto px-6 py-5">
             <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
               <div className="mb-3 rounded-md border border-slate-200 bg-slate-100/90 px-3 py-1.5 text-xs font-semibold text-slate-700">
                 General Info
@@ -954,7 +954,7 @@ export default function GenericCrudPage({
                         <label
                           htmlFor={`file-field-${field.key}`}
                           className={cn(
-                            'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm transition-colors',
+                            'flex h-11 w-full cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm transition-colors sm:h-9',
                             fileState[field.key]
                               ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
                               : 'border-dashed border-slate-300 bg-slate-50 text-muted-foreground hover:border-emerald-400 hover:bg-emerald-50/60'
@@ -992,7 +992,7 @@ export default function GenericCrudPage({
                         value={formState[field.key] || undefined}
                         onValueChange={(value) => setFormState((prev) => ({ ...prev, [field.key]: value }))}
                       >
-                        <SelectTrigger className="h-9 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400">
+                        <SelectTrigger className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400 sm:h-9">
                           <SelectValue placeholder={`Select ${field.label.toLowerCase()}`} />
                         </SelectTrigger>
                         <SelectContent>
@@ -1010,7 +1010,7 @@ export default function GenericCrudPage({
                         value={formState[field.key] ?? ''}
                         onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
                         placeholder={field.placeholder}
-                        className="h-9 border-slate-200 bg-white text-[13px] transition-colors focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/50"
+                        className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/50 sm:h-9"
                       />
                     )}
                   </div>
@@ -1021,17 +1021,17 @@ export default function GenericCrudPage({
           </div>
 
           {/* ── Sticky footer ─────────────────────────────────── */}
-          <div className="shrink-0 border-t border-slate-100 bg-slate-50/70 px-6 py-3.5">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
+          <div className="vm-dialog-footer shrink-0 border-t border-slate-100 bg-slate-50/95 px-6 py-3.5">
+            <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:justify-between sm:gap-3">
+              <p className="col-span-2 text-xs text-muted-foreground sm:col-span-1">
                 <span className="text-rose-500">*</span> Required fields
               </p>
-              <div className="flex items-center gap-2">
+              <div className="col-span-2 grid grid-cols-2 items-center gap-2 sm:col-span-1 sm:flex">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setDialogOpen(false)}
-                  className="bg-white hover:bg-slate-50"
+                  className="h-11 bg-white hover:bg-slate-50 sm:h-9"
                 >
                   Cancel
                 </Button>
@@ -1039,7 +1039,7 @@ export default function GenericCrudPage({
                   size="sm"
                   onClick={submitForm}
                   disabled={isSaving}
-                  className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60"
+                  className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60 sm:h-9"
                 >
                   {isSaving ? (
                     <>

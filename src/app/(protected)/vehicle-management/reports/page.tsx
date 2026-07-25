@@ -101,7 +101,7 @@ export default function VehicleReportsHubPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="vm-report-page space-y-3 sm:space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
         <CardHeader>
@@ -115,14 +115,14 @@ export default function VehicleReportsHubPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
         {REPORTS.map((report) => {
           const Icon = report.icon;
           return (
             <Link key={report.href} href={report.href} className="group block">
               <Card className="vm-panel h-full overflow-hidden transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md">
                 <div className={`h-1 w-full bg-gradient-to-r ${report.color}`} />
-                <CardHeader className="pb-2">
+                <CardHeader className="p-3 pb-2 sm:p-6 sm:pb-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${report.iconBg}`}>
                       <Icon className="h-5 w-5" />
@@ -133,7 +133,7 @@ export default function VehicleReportsHubPage() {
                   </div>
                   <CardTitle className="mt-3 text-base">{report.title}</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="hidden sm:block">
                   <p className="text-sm leading-relaxed text-muted-foreground">{report.description}</p>
                   <div className="mt-4 flex items-center gap-1 text-sm font-medium text-indigo-600 transition-all duration-150 group-hover:gap-2">
                     Open Report <span>→</span>

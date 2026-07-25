@@ -158,23 +158,30 @@ export const useDepartmentOptions = () => {
   return { rows, options, map, isLoading };
 };
 
-export const useCurrentDriverProfile = () => {
+export const useCurrentDriverProfile = (enabled = true) => {
   const { user } = useAuth();
   const [driver, setDriver] = useState<Record<string, any> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
-      if (!user?.id) {
+      if (!enabled || !user?.id) {
         setDriver(null);
         setIsLoading(false);
         return;
       }
       setIsLoading(true);
       try {
-        const byLinkedUser = await getDocs(
-          query(collection(db, VEHICLE_COLLECTIONS.driver), where('linkedUserId', '==', user.id))
-        );
+        const [byLinkedUser, byMobile] = await Promise.all([
+          getDocs(
+            query(collection(db, VEHICLE_COLLECTIONS.driver), where('linkedUserId', '==', user.id))
+          ),
+          user.mobile
+            ? getDocs(
+                query(collection(db, VEHICLE_COLLECTIONS.driver), where('mobileNumber', '==', user.mobile))
+              )
+            : Promise.resolve(null),
+        ]);
         if (!byLinkedUser.empty) {
           const doc = byLinkedUser.docs[0];
           setDriver({ id: doc.id, ...doc.data() });
@@ -182,10 +189,7 @@ export const useCurrentDriverProfile = () => {
         }
 
         if (user.mobile) {
-          const byMobile = await getDocs(
-            query(collection(db, VEHICLE_COLLECTIONS.driver), where('mobileNumber', '==', user.mobile))
-          );
-          if (!byMobile.empty) {
+          if (byMobile && !byMobile.empty) {
             const doc = byMobile.docs[0];
             setDriver({ id: doc.id, ...doc.data() });
             return;
@@ -213,7 +217,7 @@ export const useCurrentDriverProfile = () => {
     };
 
     load();
-  }, [user?.id, user?.mobile]);
+  }, [enabled, user?.id, user?.mobile]);
 
   return { driver, isLoading };
 };

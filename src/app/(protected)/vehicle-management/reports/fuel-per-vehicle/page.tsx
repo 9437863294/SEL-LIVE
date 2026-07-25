@@ -155,10 +155,10 @@ export default function FuelPerVehicleReportPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="vm-report-page space-y-3 sm:space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-cyan-500 to-sky-500" />
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:px-6 sm:py-6 md:flex-row md:items-center md:justify-between">
           <div>
             <Link
               href="/vehicle-management/reports"
@@ -194,7 +194,7 @@ export default function FuelPerVehicleReportPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
         <Card className="vm-panel overflow-hidden">
           <div className="h-1 w-full bg-gradient-to-r from-cyan-500/80 to-sky-500/80" />
           <CardHeader className="pb-2">

@@ -135,15 +135,15 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
   }
 
   return (
-    <div className="relative w-full px-3 py-4 sm:px-6 lg:px-8">
+    <div className="vm-module-root relative w-full px-2 py-2 sm:px-6 sm:py-4 lg:px-8">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl vm-gradient-atmosphere" />
       <div className="pointer-events-none absolute -z-10 left-[8%] top-[8%] h-56 w-56 rounded-full bg-cyan-300/20 blur-3xl vm-orb-a" />
       <div className="pointer-events-none absolute -z-10 right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-blue-300/20 blur-3xl vm-orb-b" />
 
       {/* Mobile header */}
-      <div className="mb-3 lg:hidden">
+      <div className="mb-2 sm:mb-3 lg:hidden">
         <Card className="vm-panel-strong">
-          <CardContent className="flex items-center gap-3 px-3 py-2.5">
+          <CardContent className="flex items-center gap-2 px-2.5 py-2 sm:gap-3 sm:px-3 sm:py-2.5">
             {/* Menu button — left side */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>

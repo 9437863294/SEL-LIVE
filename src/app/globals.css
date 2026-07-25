@@ -423,6 +423,88 @@ main {
 
 /* ─── Mobile: compact vm-panel card padding ──────────────────────── */
 @media (max-width: 640px) {
+  .vm-module-root {
+    overflow-x: clip;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+  .vm-module-root h1,
+  .vm-module-root h2 {
+    overflow-wrap: anywhere;
+  }
+  .vm-module-root button:not([role="switch"]),
+  .vm-module-root [role="button"]:not([role="switch"]),
+  .vm-module-root input,
+  .vm-module-root select {
+    min-height: 2.75rem;
+  }
+  .vm-module-root input[type="checkbox"],
+  .vm-module-root input[type="radio"],
+  .vm-module-root input[type="file"] {
+    min-height: 0;
+  }
+  .vm-module-root [role="tablist"] {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .vm-module-root [role="tablist"]::-webkit-scrollbar {
+    display: none;
+  }
+  .vm-module-root [role="tab"] {
+    min-height: 2.75rem;
+    white-space: nowrap;
+  }
+
+  .vm-report-page > .grid > .vm-panel > [class~="pb-2"] {
+    padding: 0.625rem 0.75rem 0.25rem;
+  }
+  .vm-report-page > .grid > .vm-panel > [class~="text-xs"][class~="text-muted-foreground"] {
+    padding: 0 0.75rem 0.625rem;
+    font-size: 0.625rem;
+    line-height: 0.875rem;
+  }
+  .vm-report-page > .grid > .vm-panel h3 {
+    font-size: 1rem;
+    line-height: 1.25rem;
+    overflow-wrap: anywhere;
+  }
+  .vm-report-page > .vm-panel > [class~="sm:hidden"] {
+    padding: 0.75rem;
+  }
+
+  .vm-mobile-dialog {
+    inset: 0 !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    transform: none !important;
+    border-radius: 0 !important;
+  }
+  .vm-mobile-dialog .vm-dialog-header {
+    padding: 1rem 3rem 0.75rem 1rem;
+  }
+  .vm-mobile-dialog .vm-dialog-body {
+    padding: 0.75rem;
+  }
+  .vm-mobile-dialog .vm-dialog-footer {
+    padding: 0.75rem 0.75rem calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+  .vm-mobile-dialog button,
+  .vm-mobile-dialog [role="button"],
+  .vm-mobile-dialog input,
+  .vm-mobile-dialog [role="combobox"] {
+    min-height: 2.75rem;
+  }
+  .vm-mobile-dialog input[type="checkbox"],
+  .vm-mobile-dialog input[type="radio"],
+  .vm-mobile-dialog input[type="file"] {
+    min-height: 0;
+  }
+
   /* Reduce ShadCN default CardHeader/CardContent p-6 inside vm-panel */
   .vm-panel [class~="p-6"],
   .vm-panel-strong [class~="p-6"] {

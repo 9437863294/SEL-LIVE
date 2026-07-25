@@ -9,6 +9,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { BarChart3, Download, Loader2, Target, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
@@ -19,8 +20,10 @@ const MODULE = 'Site Account Statement';
 interface ProjectStat {
   id: string;
   name: string;
+  openingBalance: number;
   totalReceived: number;
   totalExpenses: number;
+  closingBalance: number;
   balance: number;
   totalBudget: number;
   budgetUsedPct: number;
@@ -41,6 +44,25 @@ export default function ProjectSummaryPage() {
   const [loading,   setLoading]   = useState(true);
   const [exporting, setExporting] = useState(false);
   const [search,    setSearch]    = useState('');
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [selectedMonthNumber, setSelectedMonthNumber] = useState('');
+  const [dateFrom,  setDateFrom]  = useState('');
+  const [dateTo,    setDateTo]    = useState('');
+  const [budgetFilter, setBudgetFilter] = useState<'all' | 'budgeted' | 'unbudgeted' | 'over'>('all');
+
+  const applyMonthRange = (year: string, month: string) => {
+    setSelectedYear(year);
+    setSelectedMonthNumber(month);
+    if (!year || !month) {
+      setDateFrom('');
+      setDateTo('');
+      return;
+    }
+    const lastDay = new Date(Number(year), Number(month), 0).getDate();
+    const ym = `${year}-${month}`;
+    setDateFrom(`${ym}-01`);
+    setDateTo(`${ym}-${String(lastDay).padStart(2, '0')}`);
+  };
 
   useEffect(() => {
     if (!isAuthLoading) void loadAll();
@@ -73,32 +95,55 @@ export default function ProjectSummaryPage() {
 
   const stats = useMemo<ProjectStat[]>(() => {
     return visibleProjects.map(proj => {
-      const received    = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-      const spent       = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+      const projectPayments = payments.filter(p => p.projectId === proj.id);
+      const projectExpenses = expenses.filter(e => e.projectId === proj.id);
+      const openingReceipts = dateFrom
+        ? projectPayments.filter(p => p.receiptDate < dateFrom).reduce((s, p) => s + (p.receivedAmount || 0), 0)
+        : 0;
+      const openingExpenses = dateFrom
+        ? projectExpenses.filter(e => e.expenseDate < dateFrom).reduce((s, e) => s + (e.expenseAmount || 0), 0)
+        : 0;
+      const openingBalance = openingReceipts - openingExpenses;
+      const received = projectPayments
+        .filter(p => (!dateFrom || p.receiptDate >= dateFrom) && (!dateTo || p.receiptDate <= dateTo))
+        .reduce((s, p) => s + (p.receivedAmount || 0), 0);
+      const spent = projectExpenses
+        .filter(e => (!dateFrom || e.expenseDate >= dateFrom) && (!dateTo || e.expenseDate <= dateTo))
+        .reduce((s, e) => s + (e.expenseAmount || 0), 0);
       const budget      = budgets.find(b => b.projectId === proj.id && b.budgetType === 'total');
       const totalBudget = budget?.budgetAmount ?? 0;
       return {
         id: proj.id, name: proj.projectName,
-        totalReceived: received, totalExpenses: spent, balance: received - spent,
+        openingBalance,
+        totalReceived: received,
+        totalExpenses: spent,
+        closingBalance: openingBalance + received - spent,
+        balance: openingBalance + received - spent,
         totalBudget,
         budgetUsedPct:   totalBudget > 0 ? (spent / totalBudget) * 100 : 0,
         budgetRemaining: totalBudget > 0 ? totalBudget - spent : 0,
       };
     });
-  }, [visibleProjects, payments, expenses, budgets]);
+  }, [visibleProjects, payments, expenses, budgets, dateFrom, dateTo]);
 
-  const filtered = useMemo(
-    () => stats.filter(s => s.name.toLowerCase().includes(search.toLowerCase())),
-    [stats, search]
-  );
+  const filtered = useMemo(() => stats.filter(stat => {
+    if (!stat.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (budgetFilter === 'budgeted' && stat.totalBudget <= 0) return false;
+    if (budgetFilter === 'unbudgeted' && stat.totalBudget > 0) return false;
+    if (budgetFilter === 'over' && !(stat.totalBudget > 0 && stat.totalExpenses > stat.totalBudget)) return false;
+    return true;
+  }), [stats, search, budgetFilter]);
 
   const overallReceived   = useMemo(() => filtered.reduce((s, p) => s + p.totalReceived, 0),  [filtered]);
   const overallExpenses   = useMemo(() => filtered.reduce((s, p) => s + p.totalExpenses, 0),  [filtered]);
-  const overallBalance    = overallReceived - overallExpenses;
+  const overallOpening    = useMemo(() => filtered.reduce((s, p) => s + p.openingBalance, 0), [filtered]);
+  const overallClosing    = overallOpening + overallReceived - overallExpenses;
+  const overallBalance    = overallClosing;
   const overallBudget     = useMemo(() => filtered.reduce((s, p) => s + p.totalBudget, 0),    [filtered]);
   const budgetedCount     = useMemo(() => filtered.filter(p => p.totalBudget > 0).length,      [filtered]);
   const overBudgetCount   = useMemo(() => filtered.filter(p => p.totalBudget > 0 && p.totalExpenses > p.totalBudget).length, [filtered]);
   const overallBudgetUsed = overallBudget > 0 ? (overallExpenses / overallBudget) * 100 : 0;
+  const overallBudgetRemaining = overallBudget - overallExpenses;
 
   async function exportExcel() {
     setExporting(true);
@@ -107,6 +152,7 @@ export default function ProjectSummaryPage() {
       const ws = wb.addWorksheet('Project Summary');
       ws.columns = [
         { header: 'Project Name',           key: 'name',             width: 30 },
+        { header: 'Opening Balance',         key: 'openingBalance',   width: 20 },
         { header: 'Total Received (₹)',     key: 'totalReceived',    width: 20 },
         { header: 'Total Expenses (₹)',     key: 'totalExpenses',    width: 20 },
         { header: 'Balance (₹)',            key: 'balance',          width: 16 },
@@ -116,13 +162,13 @@ export default function ProjectSummaryPage() {
       ];
       ws.getRow(1).font = { bold: true };
       filtered.forEach(s => ws.addRow({
-        name: s.name, totalReceived: s.totalReceived, totalExpenses: s.totalExpenses, balance: s.balance,
+        name: s.name, openingBalance: s.openingBalance, totalReceived: s.totalReceived, totalExpenses: s.totalExpenses, balance: s.closingBalance,
         totalBudget: s.totalBudget || '—',
         budgetUsedPct: s.totalBudget > 0 ? `${s.budgetUsedPct.toFixed(1)}%` : '—',
         budgetRemaining: s.totalBudget > 0 ? s.budgetRemaining : '—',
       }));
       ws.addRow({
-        name: 'OVERALL TOTAL', totalReceived: overallReceived, totalExpenses: overallExpenses, balance: overallBalance,
+        name: 'OVERALL TOTAL', openingBalance: overallOpening, totalReceived: overallReceived, totalExpenses: overallExpenses, balance: overallClosing,
         totalBudget: overallBudget || '—',
         budgetUsedPct: overallBudget > 0 ? `${overallBudgetUsed.toFixed(1)}%` : '—',
         budgetRemaining: overallBudget > 0 ? overallBudget - overallExpenses : '—',
@@ -145,7 +191,7 @@ export default function ProjectSummaryPage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-base sm:text-lg font-bold text-slate-800">Overall Project Summary</h1>
-          <p className="text-sm text-muted-foreground">Total received, spent, and balance across all enabled projects</p>
+          <p className="text-sm text-muted-foreground">Budget, opening balance, receipts, expenses, closing balance, and utilization across all enabled projects</p>
         </div>
         {canExport && (
           <Button variant="outline" size="sm" onClick={exportExcel} disabled={exporting} className="gap-2">
@@ -157,9 +203,13 @@ export default function ProjectSummaryPage() {
 
       {/* Overall summary cards */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="rounded-xl border bg-emerald-50 px-4 py-3 text-center">
+          <p className="text-[10px] sm:text-xs text-muted-foreground">Total Budget</p>
+          <p className="text-sm font-bold text-emerald-700">{overallBudget > 0 ? formatINR(overallBudget) : '—'}</p>
+        </div>
         <div className="rounded-xl border bg-slate-50 px-4 py-3 text-center">
-          <p className="text-[10px] sm:text-xs text-muted-foreground">Total Projects</p>
-          <p className="text-sm font-bold text-slate-700">{filtered.length}</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground">Opening Balance</p>
+          <p className="text-sm font-bold text-slate-700">{formatINR(overallOpening)}</p>
         </div>
         <div className="rounded-xl border bg-blue-50 px-4 py-3 text-center">
           <p className="text-[10px] sm:text-xs text-muted-foreground">Total Received</p>
@@ -169,34 +219,119 @@ export default function ProjectSummaryPage() {
           <p className="text-[10px] sm:text-xs text-muted-foreground">Total Expenses</p>
           <p className="text-sm font-bold text-rose-700">{formatINR(overallExpenses)}</p>
         </div>
-        <div className={cn('rounded-xl border px-4 py-3 text-center', overallBalance >= 0 ? 'bg-emerald-50' : 'bg-destructive/10')}>
-          <p className="text-[10px] sm:text-xs text-muted-foreground">Total Balance</p>
-          <p className={cn('text-sm font-bold', overallBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>{formatINR(overallBalance)}</p>
-        </div>
       </div>
 
       {/* Budget summary */}
       {budgetedCount > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="rounded-xl border bg-emerald-50 px-4 py-3 text-center">
-            <p className="text-[10px] sm:text-xs text-muted-foreground">Total Budget</p>
-            <p className="text-sm font-bold text-emerald-700">{formatINR(overallBudget)}</p>
-            <p className="text-[10px] sm:text-[11px] text-muted-foreground">{budgetedCount} project{budgetedCount !== 1 ? 's' : ''} budgeted</p>
+          <div className={cn('rounded-xl border px-4 py-3 text-center', overallClosing >= 0 ? 'bg-indigo-50' : 'bg-destructive/10')}>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Closing Balance</p>
+            <p className={cn('text-sm font-bold', overallClosing >= 0 ? 'text-indigo-700' : 'text-destructive')}>{formatINR(overallClosing)}</p>
+            <p className="text-[10px] sm:text-[11px] text-muted-foreground">Opening + received − expenses</p>
           </div>
-          <div className="rounded-xl border bg-indigo-50 px-4 py-3 text-center">
+          <div className={cn('rounded-xl border px-4 py-3 text-center', overallBudgetRemaining >= 0 ? 'bg-teal-50' : 'bg-red-50')}>
+            <p className="text-[10px] sm:text-xs text-muted-foreground">Budget Remaining</p>
+            <p className={cn('text-sm font-bold', overallBudgetRemaining >= 0 ? 'text-teal-700' : 'text-destructive')}>{formatINR(overallBudgetRemaining)}</p>
+            <p className="text-[10px] sm:text-[11px] text-muted-foreground">Budget − expenses</p>
+          </div>
+          <div className={cn('rounded-xl border px-4 py-3 text-center', overallBudgetUsed >= 100 ? 'bg-red-50' : overallBudgetUsed >= 80 ? 'bg-amber-50' : 'bg-violet-50')}>
             <p className="text-[10px] sm:text-xs text-muted-foreground">Budget Used</p>
-            <p className="text-sm font-bold text-indigo-700">{overallBudgetUsed.toFixed(1)}%</p>
+            <p className={cn('text-sm font-bold', overallBudgetUsed >= 100 ? 'text-destructive' : overallBudgetUsed >= 80 ? 'text-amber-700' : 'text-violet-700')}>{overallBudgetUsed.toFixed(1)}%</p>
             <p className="text-[10px] sm:text-[11px] text-muted-foreground">{formatINR(overallExpenses)} of {formatINR(overallBudget)}</p>
-          </div>
-          <div className={cn('rounded-xl border px-4 py-3 text-center', overBudgetCount > 0 ? 'bg-red-50' : 'bg-slate-50')}>
-            <p className="text-[10px] sm:text-xs text-muted-foreground">Over Budget</p>
-            <p className={cn('text-sm font-bold', overBudgetCount > 0 ? 'text-destructive' : 'text-slate-500')}>{overBudgetCount}</p>
-            <p className="text-[10px] sm:text-[11px] text-muted-foreground">project{overBudgetCount !== 1 ? 's' : ''}</p>
           </div>
         </div>
       )}
 
-      <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects..." className="w-full sm:max-w-xs" />
+      <Card className="border-slate-200 bg-white/80">
+        <CardContent className="grid min-w-0 grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3 lg:items-end 2xl:grid-cols-[minmax(180px,1fr)_minmax(220px,1.1fr)_145px_145px_170px_auto]">
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-600">Project</label>
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects..." className="h-10 w-full" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-600">Month and year</label>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_88px] gap-1.5">
+              <Select value={selectedMonthNumber || undefined} onValueChange={month => applyMonthRange(selectedYear, month)}>
+                <SelectTrigger className="h-10 min-w-0 w-full bg-white">
+                  <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    ['01', 'January'], ['02', 'February'], ['03', 'March'], ['04', 'April'],
+                    ['05', 'May'], ['06', 'June'], ['07', 'July'], ['08', 'August'],
+                    ['09', 'September'], ['10', 'October'], ['11', 'November'], ['12', 'December'],
+                  ].map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={selectedYear} onValueChange={year => applyMonthRange(year, selectedMonthNumber)}>
+                <SelectTrigger className="h-10 min-w-0 w-full bg-white">
+                  <SelectValue placeholder="Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, index) => String(new Date().getFullYear() - index)).map(year => (
+                    <SelectItem key={year} value={year}>{year}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-600">From date</label>
+            <Input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={e => {
+                setSelectedMonthNumber('');
+                setDateFrom(e.target.value);
+              }}
+              className="h-10 min-w-0 w-full bg-white"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-600">To date</label>
+            <Input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={e => {
+                setSelectedMonthNumber('');
+                setDateTo(e.target.value);
+              }}
+              className="h-10 min-w-0 w-full bg-white"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-600">Budget status</label>
+            <Select value={budgetFilter} onValueChange={value => setBudgetFilter(value as typeof budgetFilter)}>
+              <SelectTrigger className="h-10 min-w-0 w-full bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                <SelectItem value="budgeted">Budgeted</SelectItem>
+                <SelectItem value="unbudgeted">No budget</SelectItem>
+                <SelectItem value="over">Over budget</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            variant="outline"
+            className="h-10"
+            disabled={!search && !selectedMonthNumber && !dateFrom && !dateTo && budgetFilter === 'all'}
+            onClick={() => {
+              setSearch('');
+              setSelectedMonthNumber('');
+              setSelectedYear(String(new Date().getFullYear()));
+              setDateFrom('');
+              setDateTo('');
+              setBudgetFilter('all');
+            }}
+          >
+            Clear filters
+          </Button>
+        </CardContent>
+      </Card>
 
       {filtered.length === 0 ? (
         <Card className="bg-white/80"><CardContent className="flex flex-col items-center gap-3 py-12">
@@ -207,11 +342,12 @@ export default function ProjectSummaryPage() {
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardContent className="p-0">
             <div className="overflow-auto overflow-x-auto max-h-[60vh]">
-              <table className="w-full min-w-[700px] text-sm">
+              <table className="w-full min-w-[1050px] text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">#</th>
                     <th className="px-4 py-2.5 text-left font-medium">Project Name</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Opening Balance</th>
                     <th className="px-4 py-2.5 text-right font-medium">
                       <span className="flex items-center justify-end gap-1"><TrendingUp className="h-3.5 w-3.5 text-blue-500" />Total Received</span>
                     </th>
@@ -219,13 +355,13 @@ export default function ProjectSummaryPage() {
                       <span className="flex items-center justify-end gap-1"><TrendingDown className="h-3.5 w-3.5 text-rose-500" />Total Expenses</span>
                     </th>
                     <th className="px-4 py-2.5 text-right font-medium">
-                      <span className="flex items-center justify-end gap-1"><Wallet className="h-3.5 w-3.5 text-emerald-500" />Balance</span>
+                      <span className="flex items-center justify-end gap-1"><Wallet className="h-3.5 w-3.5 text-indigo-500" />Closing Balance</span>
                     </th>
                     <th className="px-4 py-2.5 text-right font-medium">
                       <span className="flex items-center justify-end gap-1"><Target className="h-3.5 w-3.5 text-emerald-600" />Budget</span>
                     </th>
-                    <th className="px-4 py-2.5 text-right font-medium">Used %</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Remaining</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Budget Used %</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Budget Remaining</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -233,6 +369,7 @@ export default function ProjectSummaryPage() {
                     <tr key={stat.id} className="border-b hover:bg-muted/20 transition-colors">
                       <td className="px-4 py-2.5 text-muted-foreground">{idx + 1}</td>
                       <td className="px-4 py-2.5 font-medium">{stat.name}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-600">{formatINR(stat.openingBalance)}</td>
                       <td className="px-4 py-2.5 text-right text-blue-600">{formatINR(stat.totalReceived)}</td>
                       <td className="px-4 py-2.5 text-right text-rose-600">{formatINR(stat.totalExpenses)}</td>
                       <td className={cn('px-4 py-2.5 text-right font-semibold', stat.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
@@ -253,6 +390,7 @@ export default function ProjectSummaryPage() {
                 <tfoot>
                   <tr className="bg-muted/30 font-bold">
                     <td colSpan={2} className="px-4 py-2.5">Overall Total ({filtered.length} projects)</td>
+                    <td className="px-4 py-2.5 text-right">{formatINR(overallOpening)}</td>
                     <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(overallReceived)}</td>
                     <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(overallExpenses)}</td>
                     <td className={cn('px-4 py-2.5 text-right', overallBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>

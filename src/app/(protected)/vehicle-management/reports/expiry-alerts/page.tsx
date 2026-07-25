@@ -195,10 +195,10 @@ export default function ExpiryAlertsReportPage() {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="vm-report-page space-y-3 sm:space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-rose-500 to-red-600" />
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:px-6 sm:py-6 md:flex-row md:items-center md:justify-between">
           <div>
             <Link
               href="/vehicle-management/reports"
@@ -216,7 +216,7 @@ export default function ExpiryAlertsReportPage() {
               variant="outline"
               onClick={exportExcel}
               disabled={isExporting}
-              className="bg-white/80 hover:bg-white"
+              className="w-full bg-white/80 hover:bg-white md:w-auto"
             >
               <Download className="mr-2 h-4 w-4" />
               {isExporting ? 'Exporting...' : 'Export Excel'}
@@ -225,7 +225,7 @@ export default function ExpiryAlertsReportPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card className="vm-panel overflow-hidden">
           <div className="h-1 w-full bg-gradient-to-r from-red-600/90 to-rose-600/90" />
           <CardHeader className="pb-2">

@@ -145,10 +145,10 @@ export default function ProjectFuelCostReportPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="vm-report-page space-y-3 sm:space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-500" />
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:px-6 sm:py-6 md:flex-row md:items-center md:justify-between">
           <div>
             <Link
               href="/vehicle-management/reports"
@@ -184,7 +184,7 @@ export default function ProjectFuelCostReportPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
         <Card className="vm-panel overflow-hidden">
           <div className="h-1 w-full bg-gradient-to-r from-emerald-500/80 to-teal-500/80" />
           <CardHeader className="pb-2">

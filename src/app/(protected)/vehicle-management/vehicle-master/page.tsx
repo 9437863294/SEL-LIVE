@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, query as firestoreQuery, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
@@ -48,7 +48,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import ExcelJS from 'exceljs';
-import { Download, FileUp, Loader2 } from 'lucide-react';
+import { CarFront, Download, FileUp, Gauge, Loader2, MapPin, ShieldCheck } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
 const DRIVER_UNASSIGNED = '__unassigned__';
@@ -105,6 +105,8 @@ type VehicleRow = Record<string, any>;
 type VehicleFormState = Record<string, string>;
 
 const toText = (value: unknown) => (value === null || value === undefined ? '' : String(value));
+const normalizeVehicleNumber = (value: unknown) =>
+  String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 const buildInitialState = (): VehicleFormState => ({
   vehicleNumber: '',
@@ -195,6 +197,7 @@ export default function VehicleMasterPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [form, setForm] = useState<VehicleFormState>(buildInitialState());
+  const knownVehicleNumbersRef = useRef(new Set<string>());
 
   const loadRows = async () => {
     setIsLoading(true);
@@ -203,6 +206,9 @@ export default function VehicleMasterPage() {
       const data = snap.docs
         .map((entry): VehicleRow => ({ id: entry.id, ...(entry.data() as Record<string, any>) }))
         .sort((a, b) => String(a.vehicleNumber || '').localeCompare(String(b.vehicleNumber || '')));
+      knownVehicleNumbersRef.current = new Set(
+        data.map((row) => normalizeVehicleNumber(row.vehicleNumber || row.registrationNo)).filter(Boolean)
+      );
       setRows(data);
     } catch (error) {
       console.error('Failed to load vehicles', error);
@@ -345,7 +351,21 @@ export default function VehicleMasterPage() {
   ];
 
   const saveVehicleRow = async (row: Record<string, any>) => {
-    const vehicleNumber = String(row.vehicleNumber || '').toUpperCase().replace(/\s+/g, '');
+    const vehicleNumber = normalizeVehicleNumber(row.vehicleNumber);
+    if (!vehicleNumber) throw new Error('Vehicle number is required.');
+    if (knownVehicleNumbersRef.current.has(vehicleNumber)) {
+      throw new Error(`Vehicle ${vehicleNumber} already exists.`);
+    }
+    const duplicateSnap = await getDocs(
+      firestoreQuery(
+        collection(db, VEHICLE_COLLECTIONS.vehicleMaster),
+        where('vehicleNumber', '==', vehicleNumber)
+      )
+    );
+    if (!duplicateSnap.empty) {
+      knownVehicleNumbersRef.current.add(vehicleNumber);
+      throw new Error(`Vehicle ${vehicleNumber} already exists.`);
+    }
     await addDoc(collection(db, VEHICLE_COLLECTIONS.vehicleMaster), {
       vehicleId: toVehicleCode(Date.now() % 1000000),
       vehicleNumber,
@@ -373,6 +393,7 @@ export default function VehicleMasterPage() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    knownVehicleNumbersRef.current.add(vehicleNumber);
   };
 
   const openAdd = () => {
@@ -429,9 +450,38 @@ export default function VehicleMasterPage() {
 
     try {
       setIsSaving(true);
+      const normalizedVehicleNumber = normalizeVehicleNumber(form.vehicleNumber);
+      const existingLocalRow = rows.find(
+        (row) =>
+          String(row.id) !== String(editingRow?.id || '') &&
+          normalizeVehicleNumber(row.vehicleNumber || row.registrationNo) === normalizedVehicleNumber
+      );
+      if (existingLocalRow) {
+        toast({
+          title: 'Duplicate Vehicle',
+          description: `Vehicle ${normalizedVehicleNumber} already exists. Open the existing record to update it.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+      const duplicateSnap = await getDocs(
+        firestoreQuery(
+          collection(db, VEHICLE_COLLECTIONS.vehicleMaster),
+          where('vehicleNumber', '==', normalizedVehicleNumber)
+        )
+      );
+      const duplicateOnServer = duplicateSnap.docs.some((entry) => entry.id !== String(editingRow?.id || ''));
+      if (duplicateOnServer) {
+        toast({
+          title: 'Duplicate Vehicle',
+          description: `Vehicle ${normalizedVehicleNumber} is already registered.`,
+          variant: 'destructive',
+        });
+        return;
+      }
       const normalizedDriverId = form.assignedDriverId === DRIVER_UNASSIGNED ? '' : form.assignedDriverId;
       const basePayload: Record<string, any> = {
-        vehicleNumber: String(form.vehicleNumber || '').toUpperCase().replace(/\s+/g, ''),
+        vehicleNumber: normalizedVehicleNumber,
         vehicleType: form.vehicleType,
         vehicleCategory: form.vehicleCategory,
         brand: form.brand.trim(),
@@ -548,47 +598,47 @@ export default function VehicleMasterPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <CardTitle>Vehicle Master</CardTitle>
             <CardDescription>Manage complete vehicle profile and assignment details.</CardDescription>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-            <Badge variant="outline" className="bg-white/70">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+            <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
               {rows.length} records
             </Badge>
-            <Button variant="outline" onClick={() => void loadRows()} className="bg-white/80 hover:bg-white">
+            <Button variant="outline" onClick={() => void loadRows()} className="h-11 bg-white/80 hover:bg-white sm:h-10">
               Refresh
             </Button>
             {canExport && (
-              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting} className="bg-white/80 hover:bg-white">
+              <Button variant="outline" onClick={() => void exportExcel()} disabled={isExporting} className="h-11 bg-white/80 hover:bg-white sm:h-10">
                 {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                 {isExporting ? 'Exporting…' : 'Export'}
               </Button>
             )}
             {canImport && (
-              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="bg-white/80 hover:bg-white">
+              <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="h-11 bg-white/80 hover:bg-white sm:h-10">
                 <FileUp className="mr-2 h-4 w-4" /> Import
               </Button>
             )}
             <Button
               onClick={openAdd}
               disabled={!canAdd}
-              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700"
+              className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700 sm:h-10"
             >
               Add Vehicle
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 px-3 pb-4 sm:px-6 sm:pb-6">
           <Input
             placeholder="Search vehicle..."
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="max-w-xs border-slate-200 bg-white focus-visible:ring-emerald-400/40"
+            className="h-11 w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:h-10 sm:max-w-xs"
           />
           {/* Mobile card view */}
           <div className="space-y-2.5 sm:hidden">
@@ -705,27 +755,36 @@ export default function VehicleMasterPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
-          <div className="shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
-            <DialogTitle>{editingRow ? 'Edit Vehicle' : 'Add Vehicle'}</DialogTitle>
-            <DialogDescription>Fill all required details and save.</DialogDescription>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-              <div className="mb-3 rounded-md border border-slate-200 bg-slate-100/90 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                General Info
+        <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-slate-50 p-0 shadow-2xl sm:left-1/2 sm:top-1/2 sm:h-[90vh] sm:max-h-[900px] sm:w-[calc(100vw-3rem)] sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border">
+          <div className="shrink-0 border-b border-slate-200 bg-white px-4 pb-3 pt-4 pr-12 sm:px-7 sm:pb-4 sm:pt-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 shadow-sm sm:h-11 sm:w-11">
+                <CarFront className="h-5 w-5 text-white" />
               </div>
+              <div className="min-w-0">
+                <DialogTitle className="text-lg text-slate-900 sm:text-xl">
+                  {editingRow ? 'Edit Vehicle Profile' : 'Register New Vehicle'}
+                </DialogTitle>
+                <DialogDescription className="mt-0.5 text-xs sm:text-sm">
+                  Fields marked <span className="font-semibold text-rose-500">*</span> are required
+                </DialogDescription>
+              </div>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-7 sm:py-5">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start lg:gap-4">
+              <FormSection className="lg:col-span-2" icon={<CarFront className="h-4 w-4" />} title="Vehicle identity" description="Registration and manufacturing details" tone="emerald">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 <Field label="Vehicle Number *">
-                  <Input value={form.vehicleNumber} onChange={(e) => setField('vehicleNumber', e.target.value)} className="h-9" />
+                  <Input value={form.vehicleNumber} onChange={(e) => setField('vehicleNumber', normalizeVehicleNumber(e.target.value))} autoCapitalize="characters" placeholder="e.g. MH12AB1234" className="h-11 uppercase tracking-wide sm:h-9" />
                 </Field>
                 <SelectField label="Vehicle Type *" value={form.vehicleType} onValueChange={(v) => setField('vehicleType', v)} options={vehicleTypeOptions} />
                 <SelectField label="Vehicle Category *" value={form.vehicleCategory} onValueChange={(v) => setField('vehicleCategory', v)} options={vehicleCategoryOptions} />
                 <Field label="Brand *">
-                  <Input value={form.brand} onChange={(e) => setField('brand', e.target.value)} className="h-9" />
+                  <Input value={form.brand} onChange={(e) => setField('brand', e.target.value)} placeholder="Manufacturer" className="h-9" />
                 </Field>
                 <Field label="Model *">
-                  <Input value={form.model} onChange={(e) => setField('model', e.target.value)} className="h-9" />
+                  <Input value={form.model} onChange={(e) => setField('model', e.target.value)} placeholder="Model name" className="h-9" />
                 </Field>
                 <Field label="Year Of Manufacture *">
                   <Input value={form.yearOfManufacture} onChange={(e) => setField('yearOfManufacture', e.target.value)} type="number" className="h-9" />
@@ -737,6 +796,11 @@ export default function VehicleMasterPage() {
                 <Field label="Engine Number *">
                   <Input value={form.engineNumber} onChange={(e) => setField('engineNumber', e.target.value)} className="h-9" />
                 </Field>
+              </div>
+              </FormSection>
+
+              <FormSection icon={<Gauge className="h-4 w-4" />} title="Ownership & usage" description="Purchase, odometer and operating state" tone="blue">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <SelectField label="Ownership Type *" value={form.ownershipType} onValueChange={(v) => setField('ownershipType', v)} options={ownershipTypeOptions} />
                 <Field label="Purchase Date">
                   <Input value={form.purchaseDate} onChange={(e) => setField('purchaseDate', e.target.value)} type="date" className="h-9" />
@@ -745,12 +809,23 @@ export default function VehicleMasterPage() {
                   <Input value={form.purchaseValue} onChange={(e) => setField('purchaseValue', e.target.value)} type="number" className="h-9" />
                 </Field>
                 <SelectField label="Current Status" value={form.currentStatus} onValueChange={(v) => setField('currentStatus', v)} options={currentStatusOptions} />
+                <Field label="Current Odometer (KM) *">
+                  <Input value={form.currentOdometerKm} onChange={(e) => setField('currentOdometerKm', e.target.value)} type="number" min="0" className="h-9" />
+                </Field>
+                <SelectField label="Vehicle Status *" value={form.vehicleStatus} onValueChange={(v) => setField('vehicleStatus', v)} options={vehicleStatusOptions} />
+              </div>
+              </FormSection>
+
+              <FormSection icon={<MapPin className="h-4 w-4" />} title="Assignment" description="Connect this vehicle to its working team" tone="violet">
+              <div className="grid grid-cols-1 gap-2">
                 <SelectField label="Assigned Department" value={form.assignedDepartmentId} onValueChange={(v) => setField('assignedDepartmentId', v)} options={departmentOptions} />
                 <SelectField label="Assigned Project" value={form.assignedProjectId} onValueChange={(v) => setField('assignedProjectId', v)} options={projectOptions} />
                 <SelectField label="Assigned Driver" value={form.assignedDriverId} onValueChange={(v) => setField('assignedDriverId', v)} options={driverOptions} />
-                <Field label="Current Odometer (KM) *">
-                  <Input value={form.currentOdometerKm} onChange={(e) => setField('currentOdometerKm', e.target.value)} type="number" className="h-9" />
-                </Field>
+              </div>
+              </FormSection>
+
+              <FormSection className="lg:col-span-2" icon={<ShieldCheck className="h-4 w-4" />} title="Compliance & notes" description="Control documents and add useful notes" tone="amber">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 <SelectField
                   label="Compliance Rule Mode *"
                   value={form.complianceRuleMode}
@@ -769,20 +844,20 @@ export default function VehicleMasterPage() {
                     <SelectField label="Permit Required" value={form.requirePermit} onValueChange={(v) => setField('requirePermit', v)} options={yesNoOptions} />
                   </>
                 )}
-                <SelectField label="Vehicle Status *" value={form.vehicleStatus} onValueChange={(v) => setField('vehicleStatus', v)} options={vehicleStatusOptions} />
                 <Field label="Remarks" className="md:col-span-2 xl:col-span-3">
-                  <Textarea value={form.remarks} onChange={(e) => setField('remarks', e.target.value)} className="min-h-[84px]" />
+                  <Textarea value={form.remarks} onChange={(e) => setField('remarks', e.target.value)} placeholder="Add any useful vehicle notes…" className="min-h-[84px] resize-none" />
                 </Field>
               </div>
+              </FormSection>
             </div>
           </div>
-          <DialogFooter className="shrink-0 border-t border-slate-100 bg-slate-50/70 px-6 py-3.5">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+          <DialogFooter className="grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 sm:flex sm:px-7 sm:py-4">
+            <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-11 sm:h-10">
               Cancel
             </Button>
-            <Button onClick={() => void submit()} disabled={isSaving} className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700">
+            <Button onClick={() => void submit()} disabled={isSaving} className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700 sm:h-10">
               {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-              {editingRow ? 'Update' : 'Save'}
+              {editingRow ? 'Update Vehicle' : 'Register Vehicle'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -817,6 +892,44 @@ export default function VehicleMasterPage() {
   );
 }
 
+function FormSection({
+  icon,
+  title,
+  description,
+  tone,
+  className,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  tone: 'emerald' | 'blue' | 'violet' | 'amber';
+  className?: string;
+  children: ReactNode;
+}) {
+  const tones = {
+    emerald: 'bg-emerald-50 text-emerald-700',
+    blue: 'bg-blue-50 text-blue-700',
+    violet: 'bg-violet-50 text-violet-700',
+    amber: 'bg-amber-50 text-amber-700',
+  };
+
+  return (
+    <section className={cn('overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]', className)}>
+      <div className="flex items-center gap-2.5 border-b border-slate-100 px-3 py-2.5 sm:px-4">
+        <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', tones[tone])}>
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold leading-tight text-slate-800">{title}</h3>
+          <p className="mt-0.5 text-[11px] leading-tight text-slate-500">{description}</p>
+        </div>
+      </div>
+      <div className="p-2.5 sm:p-3">{children}</div>
+    </section>
+  );
+}
+
 function Field({
   label,
   className,
@@ -829,7 +942,7 @@ function Field({
   return (
     <div
       className={cn(
-        'space-y-1 rounded-md border border-slate-200 bg-white px-2.5 py-2 transition-all hover:border-emerald-200 focus-within:border-emerald-300 focus-within:ring-1 focus-within:ring-emerald-200/70',
+        'space-y-1 rounded-md border border-slate-200 bg-white px-2.5 py-2 transition-all hover:border-emerald-200 focus-within:border-emerald-300 focus-within:ring-1 focus-within:ring-emerald-200/70 [&_input]:h-11 sm:[&_input]:h-9',
         className
       )}
     >
@@ -855,7 +968,7 @@ function SelectField({
   return (
     <Field label={label} className={className}>
       <Select value={value || undefined} onValueChange={onValueChange}>
-        <SelectTrigger className="h-9 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400">
+        <SelectTrigger className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400 sm:h-9">
           <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
         </SelectTrigger>
         <SelectContent>
@@ -869,5 +982,3 @@ function SelectField({
     </Field>
   );
 }
-
-

@@ -54,11 +54,22 @@ const moduleDescriptions: Record<string, string> = {
 export default function ModuleDashboard() {
   const { modules, addModule, updateModule, updateModuleOrder, isLoading } = useModules();
   const { can, isLoading: authLoading } = useAuthorization();
-  const { driver, isLoading: driverProfileLoading } = useCurrentDriverProfile();
+  const hasDriverPermission =
+    can('View Module', 'Driver Management') ||
+    can('View', 'Driver Management.Driver Mobile Hub') ||
+    can('View', 'Driver Management.Employee Trip Log') ||
+    can('Add', 'Driver Management.Employee Trip Log') ||
+    can('Edit', 'Driver Management.Employee Trip Log') ||
+    can('View', 'Vehicle Management.Driver Mobile') ||
+    can('View', 'Vehicle Management.Employee Trip Reimbursement') ||
+    can('Add', 'Vehicle Management.Employee Trip Reimbursement') ||
+    can('Edit', 'Vehicle Management.Employee Trip Reimbursement') ||
+    can('View', 'Vehicle Management.Driver Management');
+  const { driver } = useCurrentDriverProfile(!authLoading && !hasDriverPermission);
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null);
 
   const allModules = useMemo(() => {
-    if (isLoading || authLoading || driverProfileLoading) {
+    if (isLoading || authLoading) {
       return [];
     }
 
@@ -67,16 +78,7 @@ export default function ModuleDashboard() {
     const availableModuleNames = Object.keys(permissionModules).filter(moduleName => {
         if (moduleName === 'Driver Management') {
           return (
-            can('View Module', moduleName) ||
-            can('View', 'Driver Management.Driver Mobile Hub') ||
-            can('View', 'Driver Management.Employee Trip Log') ||
-            can('Add', 'Driver Management.Employee Trip Log') ||
-            can('Edit', 'Driver Management.Employee Trip Log') ||
-            can('View', 'Vehicle Management.Driver Mobile') ||
-            can('View', 'Vehicle Management.Employee Trip Reimbursement') ||
-            can('Add', 'Vehicle Management.Employee Trip Reimbursement') ||
-            can('Edit', 'Vehicle Management.Employee Trip Reimbursement') ||
-            can('View', 'Vehicle Management.Driver Management') ||
+            hasDriverPermission ||
             isAssignedDriverWithVehicle
           );
         }
@@ -101,7 +103,7 @@ export default function ModuleDashboard() {
 
     return [...visibleSavedModules, ...newModules];
 
-  }, [modules, isLoading, can, authLoading, driverProfileLoading, driver?.id, driver?.assignedVehicleId, driver?.assignedVehicleNumber]);
+  }, [modules, isLoading, can, authLoading, hasDriverPermission, driver?.id, driver?.assignedVehicleId, driver?.assignedVehicleNumber]);
 
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>, id: string) => {
@@ -136,7 +138,7 @@ export default function ModuleDashboard() {
   return (
     <div className="flex flex-col gap-6 h-full p-3 sm:p-4 md:p-6">
        <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4" onDragOver={handleDragOver}>
-        {isLoading || authLoading || driverProfileLoading ? (
+        {isLoading || authLoading ? (
             Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} className="h-24 sm:h-28 rounded-xl" />
             ))

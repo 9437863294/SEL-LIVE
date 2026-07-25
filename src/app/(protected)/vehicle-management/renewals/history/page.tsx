@@ -235,15 +235,15 @@ export default function RenewalHistoryPage() {
   }, [records, categoryFilter, query]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 sm:space-y-5">
       {/* ── Header ── */}
       <Card className="relative overflow-hidden vm-panel-strong vm-reveal">
         <div className="absolute inset-0 bg-gradient-to-r from-slate-500/10 via-zinc-400/5 to-gray-500/10 animate-bb-gradient" />
         <div className="electric-scan-line top-8" />
-        <CardHeader className="relative">
+        <CardHeader className="relative px-3 py-4 sm:px-6 sm:py-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="text-2xl tracking-tight flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-xl tracking-tight sm:text-2xl">
                 <History className="h-6 w-6 text-slate-600" />
                 Renewal History
               </CardTitle>
@@ -255,14 +255,14 @@ export default function RenewalHistoryPage() {
               variant="outline"
               onClick={load}
               disabled={isLoading}
-              className="w-fit gap-2 bg-white/80 hover:bg-white"
+              className="w-full gap-2 bg-white/80 hover:bg-white sm:w-fit"
             >
               <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
               Refresh
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="relative grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <CardContent className="relative grid grid-cols-3 gap-2 px-3 pb-4 sm:gap-3 sm:px-6 sm:pb-6">
           <div className="rounded-xl border border-slate-100/80 bg-white/80 p-4 shadow-sm">
             <p className="text-xs text-muted-foreground">Total Expired Records</p>
             <p className="mt-1 text-2xl font-semibold text-rose-600">
@@ -283,14 +283,14 @@ export default function RenewalHistoryPage() {
       {/* ── Filters ── */}
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-0.5 w-full bg-gradient-to-r from-slate-400 via-zinc-400 to-gray-400" />
-        <CardContent className="flex flex-col gap-3 pt-4 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="flex flex-wrap gap-2">
+        <CardContent className="flex flex-col gap-3 px-3 pb-4 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6 sm:pb-6 sm:pt-4">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setCategoryFilter(cat)}
                 className={cn(
-                  'rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
+                  'shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200',
                   categoryFilter === cat
                     ? 'bg-slate-800 text-white shadow-sm'
                     : 'bg-white/80 text-muted-foreground hover:bg-white border border-white/70'
@@ -309,7 +309,7 @@ export default function RenewalHistoryPage() {
             placeholder="Search by vehicle, driver, detail or date..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full sm:ml-auto sm:max-w-xs bg-white/80 border-white/70 focus-visible:ring-slate-400/40"
+            className="h-11 w-full border-white/70 bg-white/80 focus-visible:ring-slate-400/40 sm:ml-auto sm:h-10 sm:max-w-xs"
           />
         </CardContent>
       </Card>

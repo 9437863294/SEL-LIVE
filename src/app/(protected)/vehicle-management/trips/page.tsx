@@ -253,20 +253,20 @@ export default function TripManagementPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <CardTitle className="tracking-tight">Trip Management</CardTitle>
             <CardDescription>
               Monitor driver trips, live locations, and completed ride history.
             </CardDescription>
           </div>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             {/* Status filter */}
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as StatusFilter)}>
-              <SelectTrigger className="w-full bg-white/85 sm:w-40">
+              <SelectTrigger className="h-11 w-full bg-white/85 sm:h-10 sm:w-40">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -283,7 +283,7 @@ export default function TripManagementPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search driver, vehicle…"
-                className="pl-8 bg-white/85"
+                className="h-11 bg-white/85 pl-8 sm:h-10"
               />
               {searchQuery && (
                 <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2">
@@ -296,14 +296,14 @@ export default function TripManagementPage() {
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full bg-white/85 sm:w-40"
+              className="h-11 w-full bg-white/85 sm:h-10 sm:w-40"
               title="From date"
             />
             <Input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="w-full bg-white/85 sm:w-40"
+              className="h-11 w-full bg-white/85 sm:h-10 sm:w-40"
               title="To date"
             />
             {(dateFrom || dateTo || searchQuery || statusFilter !== 'All') && (
@@ -311,7 +311,7 @@ export default function TripManagementPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => { setStatusFilter('All'); setSearchQuery(''); setDateFrom(''); setDateTo(''); }}
-                className="text-xs"
+                className="w-full text-xs sm:w-auto"
               >
                 <X className="mr-1 h-3 w-3" /> Clear
               </Button>
@@ -338,7 +338,7 @@ export default function TripManagementPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4">
         <Card className="vm-panel">
           <CardHeader className="pb-2">
             <CardDescription>Total Trips</CardDescription>
