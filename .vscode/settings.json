@@ -1,4 +1,6 @@
 {
   "workbench.startupEditor": "readme",
-  "java.configuration.updateBuildConfiguration": "interactive"
+  "java.configuration.updateBuildConfiguration": "interactive",
+  "git.path": "C:\\Program Files\\Git\\cmd\\git.exe",
+  "git.autorefresh": true
 }

@@ -619,15 +619,18 @@ export default function SiteAccountDashboardPage() {
 
   // Filters for admin overview
   const [filterSearch, setFilterSearch] = useState('');
-  const [filterFY, setFilterFY] = useState(() => fyLabel(currentFYStart()));
-  const [filterMonth, setFilterMonth] = useState(() => currentMonthStr());
+  const [filterFY, setFilterFY] = useState('all');
+  const [filterMonth, setFilterMonth] = useState('');
   const [filterBudgetStatus, setFilterBudgetStatus] = useState('all');
 
   // Reset month when FY changes
   useEffect(() => {
+    if (filterFY === 'all') {
+      setFilterMonth('');
+      return;
+    }
     const fyMonths = getFYMonths(parseInt(filterFY.split('-')[0]));
-    const cur = currentMonthStr();
-    setFilterMonth(fyMonths.includes(cur) ? cur : '');
+    setFilterMonth(current => fyMonths.includes(current) ? current : '');
   }, [filterFY]);
 
   // Derive available FYs from monthly budget records
@@ -638,10 +641,14 @@ export default function SiteAccountDashboardPage() {
       const s = m >= 4 ? y : y - 1;
       fySet.add(fyLabel(s));
     });
+    expenses.filter(e => e.expenseDate).forEach(e => {
+      const [y, m] = e.expenseDate.split('-').map(Number);
+      fySet.add(fyLabel(m >= 4 ? y : y - 1));
+    });
     const cur = fyLabel(currentFYStart());
     if (!fySet.has(cur)) fySet.add(cur);
     return Array.from(fySet).sort().reverse();
-  }, [budgets]);
+  }, [budgets, expenses]);
 
   // Admin summary numbers
   const totalReceived = useMemo(() => payments.reduce((s, p) => s + (p.receivedAmount || 0), 0), [payments]);
@@ -649,37 +656,47 @@ export default function SiteAccountDashboardPage() {
   const totalBalance = totalReceived - totalExpenses;
 
   const projectStats = useMemo(() => {
-    const fyStartYear = parseInt(filterFY.split('-')[0]);
-    const fyMonths = getFYMonths(fyStartYear);
-    const activeMonths = filterMonth ? [filterMonth] : fyMonths;
+    const selectedMonths = filterFY === 'all'
+      ? null
+      : filterMonth
+        ? [filterMonth]
+        : getFYMonths(parseInt(filterFY.split('-')[0]));
     return enabledProjects.map(proj => {
-      const received = payments.filter(p => p.projectId === proj.id).reduce((s, p) => s + (p.receivedAmount || 0), 0);
-      const spent = expenses.filter(e => e.projectId === proj.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-      // Budget and period-spent scoped to active months
-      const totalBudget = budgets
-        .filter(b => b.projectId === proj.id && b.budgetType === 'monthly' && b.period && activeMonths.includes(b.period))
-        .reduce((s, b) => s + b.budgetAmount, 0);
-      const periodSpent = expenses
-        .filter(e => e.projectId === proj.id && activeMonths.includes(e.expenseDate?.slice(0, 7) ?? ''))
-        .reduce((s, e) => s + (e.expenseAmount || 0), 0);
-      return { id: proj.id, name: proj.projectName, received, expenses: spent, balance: received - spent, totalBudget, periodSpent, budgetUsedPct: totalBudget > 0 ? (periodSpent / totalBudget) * 100 : 0 };
-    }).sort((a, b) => b.balance - a.balance);
-  }, [enabledProjects, payments, expenses, budgets, filterFY, filterMonth]);
+      const cumulativeExpenses = expenses
+        .filter(e => e.projectId === proj.id && (
+          selectedMonths === null || selectedMonths.includes(e.expenseDate?.slice(0, 7) ?? '')
+        ))
+        .reduce((sum, expense) => sum + (expense.expenseAmount || 0), 0);
+      const plannedBudget = budgets
+        .filter(b => b.projectId === proj.id && b.budgetType === 'total')
+        .reduce((sum, budget) => sum + (budget.budgetAmount || 0), 0);
+      const balanceFund = plannedBudget - cumulativeExpenses;
+      return {
+        id: proj.id,
+        name: proj.projectName,
+        plannedBudget,
+        cumulativeExpenses,
+        cumulativeUsedPct: plannedBudget > 0 ? (cumulativeExpenses / plannedBudget) * 100 : 0,
+        balanceFund,
+        balanceFundPct: plannedBudget > 0 ? (balanceFund / plannedBudget) * 100 : 0,
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }, [enabledProjects, expenses, budgets, filterFY, filterMonth]);
 
   const filteredProjectStats = useMemo(() => projectStats.filter(stat => {
     if (filterSearch && !stat.name.toLowerCase().includes(filterSearch.toLowerCase())) return false;
-    if (filterBudgetStatus === 'over' && !(stat.totalBudget > 0 && stat.expenses > stat.totalBudget)) return false;
-    if (filterBudgetStatus === 'ok' && !(stat.totalBudget > 0 && stat.expenses <= stat.totalBudget)) return false;
-    if (filterBudgetStatus === 'none' && stat.totalBudget > 0) return false;
+    if (filterBudgetStatus === 'over' && !(stat.plannedBudget > 0 && stat.cumulativeExpenses > stat.plannedBudget)) return false;
+    if (filterBudgetStatus === 'ok' && !(stat.plannedBudget > 0 && stat.cumulativeExpenses <= stat.plannedBudget)) return false;
+    if (filterBudgetStatus === 'none' && stat.plannedBudget > 0) return false;
     return true;
   }), [projectStats, filterSearch, filterBudgetStatus]);
 
   // FY budget total for stat card
-  const totalFYBudget = useMemo(() => projectStats.reduce((s, p) => s + p.totalBudget, 0), [projectStats]);
+  const totalFYBudget = useMemo(() => projectStats.reduce((s, p) => s + p.plannedBudget, 0), [projectStats]);
 
-  const highestExpense = useMemo(() => [...projectStats].sort((a, b) => b.expenses - a.expenses)[0], [projectStats]);
-  const lowBalance = useMemo(() => projectStats.filter(p => p.balance < 10000), [projectStats]);
-  const overBudget = useMemo(() => projectStats.filter(p => p.totalBudget > 0 && p.expenses > p.totalBudget), [projectStats]);
+  const highestExpense = useMemo(() => [...projectStats].sort((a, b) => b.cumulativeExpenses - a.cumulativeExpenses)[0], [projectStats]);
+  const lowBalance = useMemo(() => projectStats.filter(p => p.balanceFund < 10000), [projectStats]);
+  const overBudget = useMemo(() => projectStats.filter(p => p.plannedBudget > 0 && p.cumulativeExpenses > p.plannedBudget), [projectStats]);
 
   if (isAuthLoading || loading) {
     return (
@@ -751,7 +768,7 @@ export default function SiteAccountDashboardPage() {
             />
             <StatCard
               icon={Target}
-              label={filterMonth ? `Budget (${monthLabel(filterMonth)})` : `FY ${filterFY} Budget`}
+              label={filterFY === 'all' ? 'All Time Planned Budget' : filterMonth ? `Budget (${monthLabel(filterMonth)})` : `FY ${filterFY} Budget`}
               value={totalFYBudget > 0 ? formatINR(totalFYBudget) : '—'}
               colorClass="text-indigo-600"
             />
@@ -780,18 +797,23 @@ export default function SiteAccountDashboardPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="all">All Time</SelectItem>
                     {availableFYs.map(fy => (
                       <SelectItem key={fy} value={fy}>FY {fy}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={filterMonth || '_all_'} onValueChange={v => setFilterMonth(v === '_all_' ? '' : v)}>
+                <Select
+                  value={filterMonth || '_all_'}
+                  onValueChange={v => setFilterMonth(v === '_all_' ? '' : v)}
+                  disabled={filterFY === 'all'}
+                >
                   <SelectTrigger className="h-8 text-xs w-[110px]">
                     <SelectValue placeholder="All Months" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="_all_">All Months</SelectItem>
-                    {getFYMonths(parseInt(filterFY.split('-')[0])).map(m => (
+                    {(filterFY === 'all' ? [] : getFYMonths(parseInt(filterFY.split('-')[0]))).map(m => (
                       <SelectItem key={m} value={m}>
                         {monthLabel(m)}{m === currentMonthStr() ? ' ·' : ''}
                       </SelectItem>
@@ -833,43 +855,25 @@ export default function SiteAccountDashboardPage() {
                     <thead className="sticky top-0 z-10">
                       <tr className="border-b bg-slate-100">
                         <th className="px-4 py-2 text-left font-medium">Project</th>
-                        <th className="px-4 py-2 text-right font-medium">Received</th>
-                        <th className="px-4 py-2 text-right font-medium">Expenses</th>
-                        <th className="px-4 py-2 text-right font-medium">Balance</th>
-                        <th className="px-4 py-2 text-right font-medium">Budget</th>
-                        <th className="px-4 py-2 text-right font-medium">Used %</th>
+                        <th className="px-4 py-2 text-right font-medium">Total Planned Budget</th>
+                        <th className="px-4 py-2 text-right font-medium">Cumulative Project Expense</th>
+                        <th className="px-4 py-2 text-right font-medium">Cumulative Project Used %</th>
+                        <th className="px-4 py-2 text-right font-medium">Balance Fund</th>
+                        <th className="px-4 py-2 text-right font-medium">Balance Fund %</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredProjectStats.map(stat => (
                         <tr key={stat.id} className="border-b hover:bg-muted/20 transition-colors">
                           <td className="px-4 py-2 font-medium">{stat.name}</td>
-                          <td className="px-4 py-2 text-right text-blue-600">{formatINR(stat.received)}</td>
-                          <td className="px-4 py-2 text-right text-rose-600">{formatINR(stat.expenses)}</td>
-                          <td className={cn('px-4 py-2 text-right font-semibold', stat.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
-                            {formatINR(stat.balance)}
-                          </td>
-                          <td className="px-4 py-2 text-right text-emerald-700 text-sm">
-                            {stat.totalBudget > 0 ? formatINR(stat.totalBudget) : <span className="text-muted-foreground">—</span>}
-                          </td>
-                          <td className={cn('px-4 py-2 text-right text-sm font-medium', stat.totalBudget > 0 && stat.budgetUsedPct >= 100 ? 'text-destructive' : stat.totalBudget > 0 && stat.budgetUsedPct >= 80 ? 'text-amber-600' : 'text-slate-500')}>
-                            {stat.totalBudget > 0 ? `${stat.budgetUsedPct.toFixed(1)}%` : <span className="text-muted-foreground">—</span>}
-                          </td>
+                          <td className="px-4 py-2 text-right">{formatINR(stat.plannedBudget)}</td>
+                          <td className="px-4 py-2 text-right">{formatINR(stat.cumulativeExpenses)}</td>
+                          <td className="px-4 py-2 text-right">{stat.plannedBudget > 0 ? `${stat.cumulativeUsedPct.toFixed(2)}%` : '—'}</td>
+                          <td className="px-4 py-2 text-right">{formatINR(stat.balanceFund)}</td>
+                          <td className="px-4 py-2 text-right">{stat.plannedBudget > 0 ? `${stat.balanceFundPct.toFixed(2)}%` : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot>
-                      <tr className="bg-muted/30 font-semibold">
-                        <td className="px-4 py-2">Total</td>
-                        <td className="px-4 py-2 text-right text-blue-700">{formatINR(totalReceived)}</td>
-                        <td className="px-4 py-2 text-right text-rose-700">{formatINR(totalExpenses)}</td>
-                        <td className={cn('px-4 py-2 text-right', totalBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
-                          {formatINR(totalBalance)}
-                        </td>
-                        <td />
-                        <td />
-                      </tr>
-                    </tfoot>
                   </table>
                 </div>
               )}

@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { BarChart3, Download, Loader2, Target, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { BarChart3, Download, Loader2, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const MODULE = 'Site Account Statement';
@@ -156,22 +156,13 @@ export default function ProjectSummaryPage() {
         { header: 'Total Received (₹)',     key: 'totalReceived',    width: 20 },
         { header: 'Total Expenses (₹)',     key: 'totalExpenses',    width: 20 },
         { header: 'Balance (₹)',            key: 'balance',          width: 16 },
-        { header: 'Total Budget (₹)',       key: 'totalBudget',      width: 18 },
-        { header: 'Budget Used (%)',         key: 'budgetUsedPct',    width: 16 },
-        { header: 'Budget Remaining (₹)',   key: 'budgetRemaining',  width: 20 },
       ];
       ws.getRow(1).font = { bold: true };
       filtered.forEach(s => ws.addRow({
         name: s.name, openingBalance: s.openingBalance, totalReceived: s.totalReceived, totalExpenses: s.totalExpenses, balance: s.closingBalance,
-        totalBudget: s.totalBudget || '—',
-        budgetUsedPct: s.totalBudget > 0 ? `${s.budgetUsedPct.toFixed(1)}%` : '—',
-        budgetRemaining: s.totalBudget > 0 ? s.budgetRemaining : '—',
       }));
       ws.addRow({
         name: 'OVERALL TOTAL', openingBalance: overallOpening, totalReceived: overallReceived, totalExpenses: overallExpenses, balance: overallClosing,
-        totalBudget: overallBudget || '—',
-        budgetUsedPct: overallBudget > 0 ? `${overallBudgetUsed.toFixed(1)}%` : '—',
-        budgetRemaining: overallBudget > 0 ? overallBudget - overallExpenses : '—',
       }).font = { bold: true };
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
@@ -342,7 +333,7 @@ export default function ProjectSummaryPage() {
         <Card className="bg-white/80 backdrop-blur-sm">
           <CardContent className="p-0">
             <div className="overflow-auto overflow-x-auto max-h-[60vh]">
-              <table className="w-full min-w-[1050px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-slate-100">
                     <th className="px-4 py-2.5 text-left font-medium">#</th>
@@ -357,11 +348,6 @@ export default function ProjectSummaryPage() {
                     <th className="px-4 py-2.5 text-right font-medium">
                       <span className="flex items-center justify-end gap-1"><Wallet className="h-3.5 w-3.5 text-indigo-500" />Closing Balance</span>
                     </th>
-                    <th className="px-4 py-2.5 text-right font-medium">
-                      <span className="flex items-center justify-end gap-1"><Target className="h-3.5 w-3.5 text-emerald-600" />Budget</span>
-                    </th>
-                    <th className="px-4 py-2.5 text-right font-medium">Budget Used %</th>
-                    <th className="px-4 py-2.5 text-right font-medium">Budget Remaining</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -375,15 +361,6 @@ export default function ProjectSummaryPage() {
                       <td className={cn('px-4 py-2.5 text-right font-semibold', stat.balance >= 0 ? 'text-emerald-600' : 'text-destructive')}>
                         {formatINR(stat.balance)}
                       </td>
-                      <td className="px-4 py-2.5 text-right text-emerald-700">
-                        {stat.totalBudget > 0 ? formatINR(stat.totalBudget) : <span className="text-muted-foreground text-xs">—</span>}
-                      </td>
-                      <td className={cn('px-4 py-2.5 text-right font-medium', stat.totalBudget > 0 && stat.budgetUsedPct >= 100 ? 'text-destructive' : stat.totalBudget > 0 && stat.budgetUsedPct >= 80 ? 'text-amber-600' : 'text-slate-500')}>
-                        {stat.totalBudget > 0 ? `${stat.budgetUsedPct.toFixed(1)}%` : <span className="text-muted-foreground text-xs">—</span>}
-                      </td>
-                      <td className={cn('px-4 py-2.5 text-right', stat.totalBudget > 0 && stat.budgetRemaining < 0 ? 'text-destructive' : 'text-slate-600')}>
-                        {stat.totalBudget > 0 ? formatINR(stat.budgetRemaining) : <span className="text-muted-foreground text-xs">—</span>}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -396,9 +373,6 @@ export default function ProjectSummaryPage() {
                     <td className={cn('px-4 py-2.5 text-right', overallBalance >= 0 ? 'text-emerald-700' : 'text-destructive')}>
                       {formatINR(overallBalance)}
                     </td>
-                    <td className="px-4 py-2.5 text-right text-emerald-700">{overallBudget > 0 ? formatINR(overallBudget) : '—'}</td>
-                    <td className="px-4 py-2.5 text-right">{overallBudget > 0 ? `${overallBudgetUsed.toFixed(1)}%` : '—'}</td>
-                    <td className="px-4 py-2.5 text-right">{overallBudget > 0 ? formatINR(overallBudget - overallExpenses) : '—'}</td>
                   </tr>
                 </tfoot>
               </table>
