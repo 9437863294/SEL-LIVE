@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { compareCreatedAtDesc, formatVehicleTimestamp } from '@/lib/vehicle-management';
 import {
   Dialog,
   DialogContent,
@@ -238,6 +239,7 @@ export default function GenericCrudPage({
           return defaultSort.direction === 'asc' ? compare : -compare;
         });
       }
+      mapped.sort(compareCreatedAtDesc);
       setRows(mapped);
     } catch (error) {
       console.error(`Failed to load ${collectionName}`, error);
@@ -817,6 +819,10 @@ export default function GenericCrudPage({
                         </span>
                       </div>
                     ))}
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Created Time</span>
+                      <span className="max-w-[58%] text-right text-sm font-medium text-slate-700">{formatVehicleTimestamp(row.createdAt)}</span>
+                    </div>
                   </div>
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                     <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="flex-1 bg-white/80 h-10">
@@ -843,6 +849,7 @@ export default function GenericCrudPage({
                       {columns.map((column) => (
                         <TableHead key={column.key}>{column.label}</TableHead>
                       ))}
+                      <TableHead>Created Time</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -850,7 +857,7 @@ export default function GenericCrudPage({
                     {isLoading ? (
                       Array.from({ length: 4 }).map((_, idx) => (
                         <TableRow key={idx}>
-                          <TableCell colSpan={columns.length + 1}>
+                          <TableCell colSpan={columns.length + 2}>
                             <Skeleton className="h-8 w-full" />
                           </TableCell>
                         </TableRow>
@@ -865,6 +872,7 @@ export default function GenericCrudPage({
                                 : toDisplay(row[column.key])}
                             </TableCell>
                           ))}
+                          <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
                           <TableCell className="space-x-2 text-right">
                             <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="bg-white/80">
                               Edit

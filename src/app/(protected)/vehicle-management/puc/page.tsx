@@ -15,7 +15,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
-import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -113,7 +113,7 @@ export default function PucManagementPage() {
       const snap = await getDocs(collection(db, VEHICLE_COLLECTIONS.puc));
       const data = snap.docs
         .map((entry): PucRow => ({ id: entry.id, ...(entry.data() as Record<string, any>) }))
-        .sort((a, b) => String(a.expiryDate || '').localeCompare(String(b.expiryDate || '')));
+        .sort(compareCreatedAtDesc);
       setRows(data);
     } catch (error) {
       console.error('Failed to load puc rows', error);
@@ -504,6 +504,7 @@ export default function PucManagementPage() {
                   <TableHead>Alert</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Compliance</TableHead>
+                  <TableHead>Created Time</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -511,7 +512,7 @@ export default function PucManagementPage() {
                 {isLoading ? (
                   Array.from({ length: 4 }).map((_, index) => (
                     <TableRow key={index}>
-                      <TableCell colSpan={8}>
+                      <TableCell colSpan={9}>
                         <Skeleton className="h-8 w-full" />
                       </TableCell>
                     </TableRow>
@@ -526,6 +527,7 @@ export default function PucManagementPage() {
                       <TableCell>{row.alertStage || '-'}</TableCell>
                       <TableCell>{row.pucStatus || '-'}</TableCell>
                       <TableCell>{row.complianceStatus || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
                       <TableCell className="space-x-2 text-right">
                         <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit}>
                           Edit
@@ -711,4 +713,3 @@ function SelectField({
     </Field>
   );
 }
-

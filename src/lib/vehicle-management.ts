@@ -28,6 +28,33 @@ export const DEFAULT_TRACKING_SETTINGS = {
 
 export const toVehicleCode = (seed: number) => `VEH-${String(seed).padStart(6, '0')}`;
 
+export const getVehicleTimestampMillis = (value: any): number => {
+  if (!value) return 0;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  if (typeof value?.seconds === 'number') return value.seconds * 1000;
+  const millis = new Date(value).getTime();
+  return Number.isNaN(millis) ? 0 : millis;
+};
+
+export const compareCreatedAtDesc = (a: Record<string, any>, b: Record<string, any>): number =>
+  getVehicleTimestampMillis(b.createdAt) - getVehicleTimestampMillis(a.createdAt);
+
+export const formatVehicleTimestamp = (value: any): string => {
+  if (!value) return '-';
+  const date = value instanceof Date
+    ? value
+    : typeof value?.toDate === 'function'
+      ? value.toDate()
+      : typeof value?.seconds === 'number'
+        ? new Date(value.seconds * 1000)
+        : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('en-IN', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+};
+
 export const ALERT_STAGE_LABELS: Record<string, string> = {
   Missing: 'Missing',
   Expired: 'Expired',

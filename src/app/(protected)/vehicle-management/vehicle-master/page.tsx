@@ -10,7 +10,7 @@ import {
   useProjectOptions,
   useVehicleTypeOptions,
 } from '@/components/vehicle-management/hooks';
-import { getVehicleComplianceRequirements, toVehicleCode, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, formatVehicleTimestamp, getVehicleComplianceRequirements, toVehicleCode, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -205,7 +205,7 @@ export default function VehicleMasterPage() {
       const snap = await getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster));
       const data = snap.docs
         .map((entry): VehicleRow => ({ id: entry.id, ...(entry.data() as Record<string, any>) }))
-        .sort((a, b) => String(a.vehicleNumber || '').localeCompare(String(b.vehicleNumber || '')));
+        .sort(compareCreatedAtDesc);
       knownVehicleNumbersRef.current = new Set(
         data.map((row) => normalizeVehicleNumber(row.vehicleNumber || row.registrationNo)).filter(Boolean)
       );
@@ -707,6 +707,7 @@ export default function VehicleMasterPage() {
                   <TableHead>Fuel</TableHead>
                   <TableHead>Docs Health</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Created Time</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -714,7 +715,7 @@ export default function VehicleMasterPage() {
                 {isLoading ? (
                   Array.from({ length: 4 }).map((_, index) => (
                     <TableRow key={index}>
-                      <TableCell colSpan={10}>
+                      <TableCell colSpan={11}>
                         <Skeleton className="h-8 w-full" />
                       </TableCell>
                     </TableRow>
@@ -731,6 +732,7 @@ export default function VehicleMasterPage() {
                       <TableCell>{row.fuelType || '-'}</TableCell>
                       <TableCell>{row.documentHealthStatus || '-'}</TableCell>
                       <TableCell>{row.vehicleStatus || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
                       <TableCell className="space-x-2 text-right">
                         <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit}>
                           Edit

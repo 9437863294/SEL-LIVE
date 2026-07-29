@@ -8,6 +8,8 @@ import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
   computeTripDistanceKmFromPoints,
+  compareCreatedAtDesc,
+  formatVehicleTimestamp,
   TripLocationPoint,
   VEHICLE_COLLECTIONS,
 } from '@/lib/vehicle-management';
@@ -60,9 +62,7 @@ export default function TripManagementPage() {
       const snap = await getDocs(collection(db, VEHICLE_COLLECTIONS.trips));
       const rows: Record<string, any>[] = snap.docs
         .map<Record<string, any>>((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) =>
-          String(b.startTimeIso || '').localeCompare(String(a.startTimeIso || ''))
-        );
+        .sort(compareCreatedAtDesc);
       setTrips(rows);
     } catch (error) {
       console.error('Failed to load trip management data', error);
@@ -454,6 +454,7 @@ export default function TripManagementPage() {
                     <TableHead>Points</TableHead>
                     <TableHead>Start Address</TableHead>
                     <TableHead>End Address</TableHead>
+                    <TableHead>Created Time</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -489,10 +490,11 @@ export default function TripManagementPage() {
                           <TableCell>{Number(trip.totalPoints || 0)}</TableCell>
                           <TableCell className="max-w-[280px] truncate">{String(trip.startAddress || '-')}</TableCell>
                           <TableCell className="max-w-[280px] truncate">{String(trip.endAddress || '-')}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(trip.createdAt)}</TableCell>
                         </TableRow>,
                         isSelected ? (
                           <TableRow key={`${String(trip.id)}-details`} className="bg-cyan-50/50 hover:bg-cyan-50/50">
-                            <TableCell colSpan={10} className="space-y-3">
+                            <TableCell colSpan={11} className="space-y-3">
                               <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                                 <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">
                                   Driver: <span className="font-medium">{trip.driverName || '-'}</span>

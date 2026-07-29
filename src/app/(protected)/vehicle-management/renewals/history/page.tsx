@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, formatVehicleTimestamp, getVehicleTimestampMillis, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -43,6 +43,7 @@ interface HistoryRecord {
   status: string;
   complianceStatus: string;
   createdAt: string;
+  createdAtMillis: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -176,11 +177,7 @@ export default function RenewalHistoryPage() {
             // Only include expired records in history
             if (meta.complianceStatus !== 'Expired') return;
             const daysExpired = getDaysExpired(rawDate);
-            const rawCreated = data['createdAt'];
-            let createdAt = '';
-            if (rawCreated?.seconds) {
-              createdAt = new Date(rawCreated.seconds * 1000).toLocaleDateString('en-IN');
-            }
+            const createdAt = formatVehicleTimestamp(data['createdAt']);
             collected.push({
               id: `${source.collection}-${entry.id}`,
               category: source.category,
@@ -191,6 +188,7 @@ export default function RenewalHistoryPage() {
               status: String(data[source.statusKey] || '—'),
               complianceStatus: meta.complianceStatus,
               createdAt,
+              createdAtMillis: getVehicleTimestampMillis(data['createdAt']),
             });
           });
         } catch (err) {
@@ -199,12 +197,7 @@ export default function RenewalHistoryPage() {
       })
     );
 
-    // Sort by most recently expired (highest daysExpired first for oldest, or by expiryDate desc)
-    collected.sort((a, b) => {
-      const da = new Date(a.expiryDate).getTime();
-      const db2 = new Date(b.expiryDate).getTime();
-      return db2 - da; // Most recently expired at top
-    });
+    collected.sort((a, b) => b.createdAtMillis - a.createdAtMillis);
 
     setRecords(collected);
     setIsLoading(false);
@@ -389,7 +382,7 @@ export default function RenewalHistoryPage() {
                         <TableHead>Expiry Date</TableHead>
                         <TableHead>Days Expired</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Added On</TableHead>
+                        <TableHead>Created Time</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>

@@ -15,7 +15,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
-import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -140,7 +140,7 @@ export default function InsuranceManagementPage() {
       const snap = await getDocs(collection(db, VEHICLE_COLLECTIONS.insurance));
       const data = snap.docs
         .map((entry): InsuranceRow => ({ id: entry.id, ...(entry.data() as Record<string, any>) }))
-        .sort((a, b) => String(a.expiryDate || '').localeCompare(String(b.expiryDate || '')));
+        .sort(compareCreatedAtDesc);
       setRows(data);
     } catch (error) {
       console.error('Failed to load insurance rows', error);
@@ -549,6 +549,7 @@ export default function InsuranceManagementPage() {
                   <TableHead>Alert</TableHead>
                   <TableHead>Renewal Status</TableHead>
                   <TableHead>Compliance</TableHead>
+                  <TableHead>Created Time</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -556,7 +557,7 @@ export default function InsuranceManagementPage() {
                 {isLoading ? (
                   Array.from({ length: 4 }).map((_, index) => (
                     <TableRow key={index}>
-                      <TableCell colSpan={8}>
+                      <TableCell colSpan={9}>
                         <Skeleton className="h-8 w-full" />
                       </TableCell>
                     </TableRow>
@@ -571,6 +572,7 @@ export default function InsuranceManagementPage() {
                       <TableCell>{row.alertStage || '-'}</TableCell>
                       <TableCell>{row.renewalStatus || '-'}</TableCell>
                       <TableCell>{row.complianceStatus || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
                       <TableCell className="space-x-2 text-right">
                         <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit}>
                           Edit
