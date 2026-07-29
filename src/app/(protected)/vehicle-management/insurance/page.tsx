@@ -53,8 +53,17 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import ExcelJS from 'exceljs';
-import { Download, ExternalLink, FileUp, Loader2, Upload } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, ExternalLink, FileUp, Loader2, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
 type InsuranceRow = Record<string, any>;
@@ -598,7 +607,13 @@ export default function InsuranceManagementPage() {
                 General Info
               </div>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                <SelectField label="Vehicle Number *" value={form.vehicleId} onValueChange={(v) => setField('vehicleId', v)} options={vehicleOptions} />
+                <SearchableSelectField
+                  label="Vehicle Number *"
+                  value={form.vehicleId}
+                  onValueChange={(v) => setField('vehicleId', v)}
+                  options={vehicleOptions}
+                  searchPlaceholder="Type to search vehicle number..."
+                />
                 <Field label="Insurance Company *">
                   <Input value={form.insuranceCompany} onChange={(e) => setField('insuranceCompany', e.target.value)} className="h-9" />
                 </Field>
@@ -758,3 +773,75 @@ function SelectField({
   );
 }
 
+function SearchableSelectField({
+  label,
+  value,
+  onValueChange,
+  options,
+  searchPlaceholder,
+  className,
+}: {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  searchPlaceholder: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedOption = options.find((option) => option.value === value);
+
+  return (
+    <Field label={label} className={className}>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            aria-label={label}
+            className="h-9 w-full justify-between border-slate-200 bg-white px-3 text-[13px] font-normal"
+          >
+            <span className={cn('truncate', !selectedOption && 'text-muted-foreground')}>
+              {selectedOption?.label || `Select ${label.replace(/\s*\*$/, '').toLowerCase()}`}
+            </span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-[--radix-popover-trigger-width] p-0"
+          onOpenAutoFocus={(event) => event.preventDefault()}
+        >
+          <Command>
+            <CommandInput autoFocus placeholder={searchPlaceholder} />
+            <CommandList>
+              <CommandEmpty>No vehicle found.</CommandEmpty>
+              <CommandGroup>
+                {options.map((option) => (
+                  <CommandItem
+                    key={option.value}
+                    value={option.label}
+                    onSelect={() => {
+                      onValueChange(option.value);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        'mr-2 h-4 w-4',
+                        value === option.value ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    {option.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </Field>
+  );
+}
