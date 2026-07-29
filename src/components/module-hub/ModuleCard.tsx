@@ -104,6 +104,8 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/chat-system';
       case 'Loan':
         return '/loan';
+      case 'Recurring Payments':
+        return '/recurring-payments';
       case 'LC Module':
         return '/lc-module';
       case 'LC Management':

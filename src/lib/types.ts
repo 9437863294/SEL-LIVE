@@ -45,6 +45,8 @@ export interface User {
     font?: string;
     sessionDuration?: number;
   };
+  organizationId?: string;
+  organizationName?: string;
 }
 
 export interface SavedUser {

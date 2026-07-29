@@ -1,6 +1,6 @@
 
 import type { Role, Department } from '@/lib/types';
-import { permissionModules } from '@/lib/types';
+import { permissionModules } from '@/lib/permissions';
 
 
 // This function should ideally fetch departments from Firestore if they are dynamic.

@@ -3,6 +3,10 @@
     {
       "path": "/api/workflow/check-escalations",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/recurring-payments/generate",
+      "schedule": "15 0 * * *"
     }
   ]
 }

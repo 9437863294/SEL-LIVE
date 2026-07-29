@@ -95,6 +95,16 @@ export const permissionModules = {
     'Loan Details': ['View', 'Update EMI'],
     'Reports': ['View'],
   },
+  'Recurring Payments': {
+    'View Module': [],
+    'Dashboard': ['View'],
+    'Payments': ['View', 'Add', 'Edit', 'Approve', 'Record Payment'],
+    'Recurring Masters': ['View', 'Add', 'Edit', 'Delete'],
+    'Vendors': ['View', 'Add', 'Edit'],
+    'Categories': ['View', 'Add', 'Edit'],
+    'Reports': ['View', 'Export'],
+    'Settings': ['View', 'Edit', 'View Workflow', 'Edit Workflow'],
+  },
   'LC Management': {
     'View Module': [],
     'Dashboard': ['View'],
