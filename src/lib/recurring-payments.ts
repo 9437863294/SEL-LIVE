@@ -9,7 +9,48 @@ export const RP_COLLECTIONS = {
   notificationRules: 'recurringPaymentNotificationRules',
   notificationQueue: 'recurringPaymentNotificationQueue',
   settings: 'recurringPaymentSettings',
+  transactions: 'transactions',
+  auditLogs: 'auditLogs',
+  comments: 'comments',
+  documents: 'documents',
+  approvals: 'approvals',
+  automationLogs: 'recurringPaymentAutomationLogs',
 } as const;
+
+export type PaymentMode = 'NEFT' | 'RTGS' | 'IMPS' | 'UPI' | 'Cheque' | 'Cash' | 'Credit Card' | 'Auto-debit' | 'Bank Transfer' | 'Other';
+
+export interface PaymentTransaction {
+  id: string;
+  organizationId: string;
+  paymentId: string;
+  paymentDate: string;
+  amount: number;
+  mode: PaymentMode;
+  bankAccount: string;
+  transactionReference: string;
+  chequeNumber?: string;
+  tdsAmount: number;
+  gstAmount: number;
+  deductionAmount: number;
+  adjustmentAmount: number;
+  remarks?: string;
+  receiptUrl?: string;
+  paidBy: string;
+  paidByName: string;
+  createdAt: Timestamp;
+}
+
+export interface RecurringPaymentAuditLog {
+  id: string;
+  organizationId: string;
+  paymentId: string;
+  action: string;
+  summary: string;
+  userId: string;
+  userName: string;
+  metadata?: Record<string, unknown>;
+  createdAt: Timestamp;
+}
 
 export interface ApprovalRule {
   id: string;
@@ -114,9 +155,9 @@ export const DEFAULT_PAYMENT_CATEGORIES = [
   'Professional Fees', 'Statutory Payment',
 ];
 
-export type PaymentStatus = 'Scheduled' | 'Generated' | 'Awaiting Bill' | 'Bill Received' | 'Under Verification' |
+export type PaymentStatus = 'Draft' | 'Scheduled' | 'Generated' | 'Awaiting Bill' | 'Bill Received' | 'Under Verification' |
   'Pending Approval' | 'Approved' | 'Payment Processing' | 'Partially Paid' | 'Paid' | 'Closed' |
-  'Rejected' | 'Disputed' | 'Payment Failed' | 'On Hold' | 'Waived' | 'Cancelled' | 'Overdue';
+  'Returned for Correction' | 'Rejected' | 'Disputed' | 'Payment Failed' | 'Paid Receipt Pending' | 'On Hold' | 'Waived' | 'Cancelled' | 'Overdue';
 
 export interface RecurringPaymentMaster {
   id: string;
@@ -129,15 +170,50 @@ export interface RecurringPaymentMaster {
   vendorName: string;
   description?: string;
   accountNumber?: string;
-  frequency: 'Weekly' | 'Monthly' | 'Bi-monthly' | 'Quarterly' | 'Half-yearly' | 'Yearly' | 'Custom';
+  branchName?: string;
+  projectName?: string;
+  departmentId?: string;
+  department?: string;
+  internalReference?: string;
+  costCentre?: string;
+  ledger?: string;
+  budgetHead?: string;
+  frequency: 'Weekly' | 'Monthly' | 'Bi-monthly' | 'Quarterly' | 'Half-yearly' | 'Yearly' | 'Renewable' | 'Custom';
   amountType: 'Fixed' | 'Variable' | 'Estimated';
   amount: number;
   maximumAmount?: number;
+  taxAmount?: number;
+  tdsApplicable?: boolean;
+  gstApplicable?: boolean;
+  securityDeposit?: number;
   dueDay: number;
+  billingCycle?: string;
+  generationDateRule?: string;
+  dueDateRule?: 'Fixed day of month' | 'Days after bill date' | 'Days after generation date' | 'Last working day' | 'Custom date logic';
+  gracePeriodDays?: number;
+  autoGenerationEnabled?: boolean;
+  generateBeforeDueDays?: number;
+  varianceTolerancePercent?: number;
   startDate: string;
   endDate?: string;
   assignedTo?: string;
-  status: 'Active' | 'Inactive';
+  assignedToName?: string;
+  backupAssignedTo?: string;
+  verifierId?: string;
+  approverId?: string;
+  accountsProcessorId?: string;
+  escalationAuthorityId?: string;
+  approvalConfiguration?: 'Default rule' | 'Custom rule' | 'No approval' | 'Bill amount based';
+  customApprovalRuleId?: string;
+  highVarianceAdditionalApproval?: boolean;
+  notificationRuleId?: string;
+  reminderRecipients?: string[];
+  escalationRecipients?: string[];
+  notificationChannels?: string[];
+  customIntervalDays?: number;
+  categoryDetails?: Record<string, string | number | boolean>;
+  masterDocuments?: Array<{ reference: string; fileName: string; fileType: string; fileSize: number; documentType: string; uploadedBy: string; uploadedAt: Timestamp; version: number }>;
+  status: 'Draft' | 'Active' | 'Inactive' | 'Paused';
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   deleted?: boolean;
@@ -148,6 +224,19 @@ export interface PaymentObligation {
   organizationId: string;
   masterId: string;
   cycleKey: string;
+  branchId?: string;
+  branchName?: string;
+  projectId?: string;
+  projectName?: string;
+  departmentId?: string;
+  costCentre?: string;
+  ledger?: string;
+  amountType?: RecurringPaymentMaster['amountType'];
+  department?: string;
+  description?: string;
+  priority?: 'Low' | 'Normal' | 'High' | 'Critical';
+  sourceType?: 'Recurring' | 'Manual';
+  accountNumber?: string;
   title: string;
   category: string;
   vendorName: string;
@@ -155,22 +244,140 @@ export interface PaymentObligation {
   billingPeriodEnd: string;
   dueDate: string;
   expectedAmount: number;
+  maximumAmount?: number;
   billAmount?: number;
   paidAmount: number;
+  settledAmount?: number;
+  outstandingAmount?: number;
   status: PaymentStatus;
   assignedTo?: string;
   generatedAutomatically: boolean;
   transactionReference?: string;
   paymentDate?: string;
+  billNumber?: string;
+  billDate?: string;
+  billReceivedDate?: string;
+  taxAmount?: number;
+  tdsAmount?: number;
+  deductionAmount?: number;
+  adjustmentAmount?: number;
+  netPayableAmount?: number;
+  approvedAmount?: number;
+  verifierId?: string;
+  approverId?: string;
+  accountsProcessorId?: string;
+  variancePercent?: number;
+  varianceWarning?: boolean;
+  varianceBaseline?: number;
+  varianceComparisons?: { previous?: number; average3?: number; average6?: number; estimated?: number; maximum?: number };
+  amountLimitExceeded?: boolean;
+  approvalRuleId?: string | null;
+  approvalMode?: 'Sequential' | 'Parallel' | null;
+  approvalLevels?: string[];
+  currentApprovalLevel?: number;
+  approvalCompletedBy?: string[];
+  finalAccountsVerification?: boolean;
   workflowStatus?: 'Scheduled' | 'In Progress' | 'Completed' | 'Rejected';
   stage?: string;
   currentStepId?: string | null;
   assignees?: string[];
   workflowDeadline?: Timestamp | null;
   workflowStartedAt?: Timestamp;
+  stepEnteredAt?: Timestamp;
+  documentReferences?: Array<{ stepId: string; action: string; reference: string; addedBy: string; addedAt: Timestamp; category?: string; fileType?: string; version?: number }>;
   workflowHistory?: RecurringWorkflowHistoryEntry[];
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+}
+
+export interface RecurringCycle {
+  key: string;
+  label: string;
+  billingPeriodStart: string;
+  billingPeriodEnd: string;
+  dueDate: string;
+}
+
+const padDatePart = (value: number) => String(value).padStart(2, '0');
+
+export function recurringDateOnly(date: Date) {
+  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
+}
+
+function localDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function isoWeek(date: Date) {
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  return { year: utc.getUTCFullYear(), week: Math.ceil((((utc.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7) };
+}
+
+/**
+ * Returns the billing cycle containing `asOf`. The cycle key is stable, so both
+ * browser and cron generation can safely use organization + master + cycle.
+ */
+export function buildRecurringCycle(master: Pick<RecurringPaymentMaster, 'frequency' | 'startDate' | 'endDate' | 'dueDay' | 'customIntervalDays'>, asOf = new Date()): RecurringCycle | null {
+  const today = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
+  const masterStart = localDate(master.startDate);
+  const masterEnd = master.endDate ? localDate(master.endDate) : null;
+  if (today < masterStart || (masterEnd && today > masterEnd)) return null;
+
+  let nominalStart: Date;
+  let nominalEnd: Date;
+  let key: string;
+
+  if (master.frequency === 'Weekly') {
+    const weekday = today.getDay() || 7;
+    nominalStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - weekday + 1);
+    nominalEnd = new Date(nominalStart.getFullYear(), nominalStart.getMonth(), nominalStart.getDate() + 6);
+    const week = isoWeek(nominalStart);
+    key = `${week.year}-W${padDatePart(week.week)}`;
+  } else if (master.frequency === 'Renewable') {
+    const elapsedMonths = Math.max(0, (today.getFullYear() - masterStart.getFullYear()) * 12 + today.getMonth() - masterStart.getMonth());
+    const cycleNumber = Math.floor(elapsedMonths / 12);
+    nominalStart = new Date(masterStart.getFullYear() + cycleNumber, masterStart.getMonth(), masterStart.getDate());
+    if (today < nominalStart) nominalStart = new Date(nominalStart.getFullYear() - 1, nominalStart.getMonth(), nominalStart.getDate());
+    nominalEnd = new Date(nominalStart.getFullYear() + 1, nominalStart.getMonth(), nominalStart.getDate() - 1);
+    key = `R${nominalStart.getFullYear()}-${padDatePart(nominalStart.getMonth() + 1)}-${padDatePart(nominalStart.getDate())}`;
+  } else if (master.frequency === 'Custom') {
+    const interval = Math.max(1, Number(master.customIntervalDays || 30));
+    const elapsed = Math.max(0, Math.floor((today.getTime() - masterStart.getTime()) / 86_400_000));
+    const cycleNumber = Math.floor(elapsed / interval);
+    nominalStart = new Date(masterStart.getFullYear(), masterStart.getMonth(), masterStart.getDate() + cycleNumber * interval);
+    nominalEnd = new Date(nominalStart.getFullYear(), nominalStart.getMonth(), nominalStart.getDate() + interval - 1);
+    key = `C${String(cycleNumber + 1).padStart(4, '0')}-${recurringDateOnly(nominalStart)}`;
+  } else {
+    const months = master.frequency === 'Bi-monthly' ? 2 : master.frequency === 'Quarterly' ? 3 : master.frequency === 'Half-yearly' ? 6 : master.frequency === 'Yearly' ? 12 : 1;
+    const monthIndex = today.getFullYear() * 12 + today.getMonth();
+    const bucket = Math.floor(monthIndex / months) * months;
+    nominalStart = new Date(Math.floor(bucket / 12), bucket % 12, 1);
+    nominalEnd = new Date(nominalStart.getFullYear(), nominalStart.getMonth() + months, 0);
+    const suffix = months === 1 ? '' : `-${months}M`;
+    key = `${nominalStart.getFullYear()}-${padDatePart(nominalStart.getMonth() + 1)}${suffix}`;
+  }
+
+  const periodStart = nominalStart < masterStart ? masterStart : nominalStart;
+  const periodEnd = masterEnd && nominalEnd > masterEnd ? masterEnd : nominalEnd;
+  if (periodStart > periodEnd) return null;
+  const spanDays = Math.max(1, Math.round((periodEnd.getTime() - periodStart.getTime()) / 86_400_000) + 1);
+  const dueOffset = Math.min(spanDays - 1, Math.max(0, Number(master.dueDay || 1) - 1));
+  const due = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate() + dueOffset);
+
+  return {
+    key,
+    label: master.frequency === 'Weekly'
+      ? `Week ${isoWeek(nominalStart).week}, ${isoWeek(nominalStart).year}`
+      : ['Custom', 'Renewable'].includes(master.frequency)
+        ? `${recurringDateOnly(periodStart)} to ${recurringDateOnly(periodEnd)}`
+        : nominalStart.toLocaleString('en-IN', { month: 'short', year: 'numeric' }),
+    billingPeriodStart: recurringDateOnly(periodStart),
+    billingPeriodEnd: recurringDateOnly(periodEnd),
+    dueDate: recurringDateOnly(due),
+  };
 }
 
 export const currency = (value: number) => new Intl.NumberFormat('en-IN', {
@@ -178,7 +385,12 @@ export const currency = (value: number) => new Intl.NumberFormat('en-IN', {
 }).format(value || 0);
 
 export function effectiveStatus(payment: PaymentObligation): PaymentStatus {
-  if (!['Paid', 'Closed', 'Cancelled', 'Waived'].includes(payment.status) && new Date(payment.dueDate) < new Date(new Date().toDateString())) return 'Overdue';
+  if (!['Paid', 'Closed', 'Cancelled', 'Waived'].includes(payment.status)) {
+    const due = new Date(`${payment.dueDate}T00:00:00`);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (due < today) return 'Overdue';
+  }
   return payment.status;
 }
 

@@ -1,2 +1,2 @@
-import RecurringPaymentsWorkspace from '@/components/recurring-payments/workspace';
-export default function Page(){return <RecurringPaymentsWorkspace view="payments"/>}
+import RecurringPaymentRegister from '@/components/recurring-payments/payment-register';
+export default function Page(){return <RecurringPaymentRegister/>}

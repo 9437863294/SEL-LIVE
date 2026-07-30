@@ -1,2 +1,2 @@
-import RecurringPaymentsWorkspace from '@/components/recurring-payments/workspace';
-export default function Page(){return <RecurringPaymentsWorkspace view="categories"/>}
+import CategoryManagement from '@/components/recurring-payments/category-management';
+export default function Page(){return <CategoryManagement/>}

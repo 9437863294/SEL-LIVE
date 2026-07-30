@@ -1,20 +1,31 @@
 import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
-import { DEFAULT_RECURRING_WORKFLOW, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
+import { buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateOnly = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 function resolveAssignees(step: RecurringWorkflowStep, payment: Record<string, unknown>): string[] {
   if (step.assignmentType === 'Payment-owner') return payment.assignedTo ? [String(payment.assignedTo)] : [];
-  if (step.assignmentType === 'User-based') return (step.assignedTo as string[]).filter(Boolean);
+  if (step.assignmentType === 'User-based') {
+    const configured = (step.assignedTo as string[]).filter(Boolean);
+    if (configured.length) return configured;
+    const name = step.name.toLowerCase();
+    if (name.includes('verification') && payment.verifierId) return [String(payment.verifierId)];
+    if (name.includes('approval') && payment.approverId) return [String(payment.approverId)];
+    if ((name.includes('processing') || name.includes('receipt') || name.includes('closure')) && payment.accountsProcessorId) return [String(payment.accountsProcessorId)];
+    return [];
+  }
   const amount = Number(payment.billAmount || payment.expectedAmount || 0);
   const match = (step.assignedTo as Array<{minAmount:number;maxAmount:number|null;userId:string;alternativeUserId?:string}>).find(rule => amount >= Number(rule.minAmount || 0) && amount <= (rule.maxAmount == null ? Number.POSITIVE_INFINITY : Number(rule.maxAmount)));
-  return match ? [match.userId, match.alternativeUserId].filter(Boolean) as string[] : [];
+  if (match) return [match.userId, match.alternativeUserId].filter(Boolean) as string[];
+  if (step.name.toLowerCase().includes('approval') && payment.approverId) return [String(payment.approverId)];
+  return [];
 }
 
 export async function GET(request: Request) {
+  const runStartedAt = Date.now();
   const secret = process.env.CRON_SECRET;
   if (secret && request.headers.get('authorization') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -22,29 +33,33 @@ export async function GET(request: Request) {
 
   const db = getFirebaseAdminFirestore();
   const now = new Date();
-  const cycle = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const targetOrganizationId = String(request.headers.get('x-recurring-organization') || '').trim();
   const masters = await db.collection('recurringPaymentMasters').where('status', '==', 'Active').get();
+  const masterDocs = targetOrganizationId
+    ? masters.docs.filter(item => String(item.data().organizationId || 'default') === targetOrganizationId)
+    : masters.docs;
   let generated = 0;
   let skipped = 0;
   let disabled = 0;
   let remindersQueued = 0;
   let workflowTriggered = 0;
 
-  for (const masterDoc of masters.docs) {
-    const master = masterDoc.data();
-    if (master.deleted) continue;
+  for (const masterDoc of masterDocs) {
+    const master = { id: masterDoc.id, ...masterDoc.data() } as RecurringPaymentMaster;
+    if (master.deleted || master.autoGenerationEnabled === false) continue;
     const organizationId = String(master.organizationId || 'default');
     const settingsRef = db.collection('recurringPaymentSettings').doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_'));
     const settings = (await settingsRef.get()).data();
     if (settings?.automation?.enabled === false) { disabled++; continue; }
     const generationDay = Math.min(28, Math.max(1, Number(settings?.automation?.generationDay || 1)));
-    if (now.getDate() < generationDay) { skipped++; continue; }
-    const cycleKey = `${organizationId}_${masterDoc.id}_${cycle}`;
+    const cycle = buildRecurringCycle(master, now);
+    if (!cycle) { skipped++; continue; }
+    const cycleStart = new Date(`${cycle.billingPeriodStart}T00:00:00`);
+    const startsThisMonth = cycleStart.getFullYear() === now.getFullYear() && cycleStart.getMonth() === now.getMonth();
+    if (!['Weekly', 'Custom'].includes(master.frequency) && startsThisMonth && now.getDate() < generationDay) { skipped++; continue; }
+    const cycleKey = `${organizationId}_${masterDoc.id}_${cycle.key}`;
     const paymentRef = db.collection('paymentObligations').doc(cycleKey.replace(/[^a-zA-Z0-9_-]/g, '_'));
     if ((await paymentRef.get()).exists) { skipped++; continue; }
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    const due = new Date(now.getFullYear(), now.getMonth(), Math.min(28, Math.max(1, Number(master.dueDay || 1))));
     const approvalRules = await db.collection('recurringPaymentApprovalRules')
       .where('organizationId', '==', organizationId).where('active', '==', true).get();
     const amount = Number(master.amount || 0);
@@ -52,21 +67,28 @@ export async function GET(request: Request) {
       const data = rule as Record<string, unknown>;
       const min = Number(data.minAmount || 0);
       const max = data.maxAmount == null ? Number.POSITIVE_INFINITY : Number(data.maxAmount);
-      return amount >= min && amount <= max && (!data.category || data.category === master.category) && (!data.project || data.project === master.projectId);
+      return amount >= min && amount <= max && (!data.category || data.category === master.category) && (!data.project || data.project === master.projectId || data.project === master.projectName);
     });
     await paymentRef.create({
       organizationId, masterId: masterDoc.id, cycleKey,
-      title: `${master.title} — ${now.toLocaleString('en-IN', { month: 'long', year: 'numeric' })}`,
+      branchId: master.branchId || '', branchName: master.branchName || '',
+      projectId: master.projectId || '', projectName: master.projectName || '',
+      departmentId: master.departmentId || '', department: master.department || '',
+      costCentre: master.costCentre || '', ledger: master.ledger || '', amountType: master.amountType,
+      title: `${master.title} — ${cycle.label}`,
       category: master.category, vendorName: master.vendorName,
-      billingPeriodStart: dateOnly(start), billingPeriodEnd: dateOnly(end), dueDate: dateOnly(due),
-      expectedAmount: amount, paidAmount: 0,
+      billingPeriodStart: cycle.billingPeriodStart, billingPeriodEnd: cycle.billingPeriodEnd, dueDate: cycle.dueDate,
+      expectedAmount: amount, maximumAmount: Number(master.maximumAmount || 0), paidAmount: 0, settledAmount: 0, outstandingAmount: amount,
       status: 'Scheduled', workflowStatus: 'Scheduled', stage: 'Scheduled',
       currentStepId: null, assignees: [], workflowHistory: [],
       approvalRuleId: matchedRule?.id || null,
       approvalMode: matchedRule ? (matchedRule as Record<string, unknown>).mode : null,
       approvalLevels: matchedRule ? (matchedRule as Record<string, unknown>).approvers : [],
       currentApprovalLevel: matchedRule ? 1 : 0,
-      assignedTo: master.assignedTo || '', generatedAutomatically: true,
+      approvalCompletedBy: [],
+      finalAccountsVerification: matchedRule ? (matchedRule as Record<string, unknown>).finalAccountsVerification !== false : true,
+      assignedTo: master.assignedTo || '', verifierId: master.verifierId || '', approverId: master.approverId || '',
+      accountsProcessorId: master.accountsProcessorId || '', generatedAutomatically: true,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
     });
     generated++;
@@ -74,12 +96,15 @@ export async function GET(request: Request) {
 
   // Move scheduled obligations into the configured workflow at the activation threshold.
   const openPayments = await db.collection('paymentObligations').get();
+  const openPaymentDocs = targetOrganizationId
+    ? openPayments.docs.filter(item => String(item.data().organizationId || 'default') === targetOrganizationId)
+    : openPayments.docs;
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const workflowSnap = await db.collection('workflows').doc('recurring-payments-workflow').get();
   const workflow = (workflowSnap.data()?.steps || DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
   const firstStep = workflow[0];
   if (firstStep) {
-    for (const paymentDoc of openPayments.docs) {
+    for (const paymentDoc of openPaymentDocs) {
       const payment = paymentDoc.data();
       if (payment.currentStepId || ['Paid','Closed','Cancelled','Waived','Rejected'].includes(payment.status) || !payment.dueDate) continue;
       const organizationId = String(payment.organizationId || 'default');
@@ -110,7 +135,7 @@ export async function GET(request: Request) {
   }
 
   // Build an idempotent daily reminder queue from each organization's saved rule.
-  for (const paymentDoc of openPayments.docs) {
+  for (const paymentDoc of openPaymentDocs) {
     const payment = paymentDoc.data();
     if (['Paid','Closed','Cancelled','Waived'].includes(payment.status) || !payment.dueDate) continue;
     const organizationId = String(payment.organizationId || 'default');
@@ -146,5 +171,35 @@ export async function GET(request: Request) {
     }
     remindersQueued++;
   }
-  return NextResponse.json({ ok: true, cycle, checked: masters.size, generated, skipped, automationDisabled: disabled, workflowTriggered, remindersQueued });
+  const result = { ok: true, runDate: dateOnly(now), checked: masterDocs.length, generated, skipped, automationDisabled: disabled, workflowTriggered, remindersQueued };
+  await db.collection('recurringPaymentAutomationLogs').add({ organizationId: targetOrganizationId || 'all', jobName: targetOrganizationId ? 'Manual organization automation run' : 'Daily recurring payment generation', startedAt: Timestamp.fromMillis(runStartedAt), completedAt: FieldValue.serverTimestamp(), recordsProcessed: masterDocs.length, successCount: generated + workflowTriggered + remindersQueued, failureCount: 0, status: 'Completed', result, createdAt: FieldValue.serverTimestamp() }).catch(() => undefined);
+  return NextResponse.json(result);
+}
+
+export async function POST(request: Request) {
+  try {
+    const authorization = request.headers.get('authorization') || '';
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+    if (!token) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    const decoded = await getFirebaseAdminAuth().verifyIdToken(token);
+    const db = getFirebaseAdminFirestore();
+    let userSnapshot = await db.collection('users').doc(decoded.uid).get();
+    if (!userSnapshot.exists && decoded.email) {
+      const byEmail = await db.collection('users').where('email', '==', decoded.email.toLowerCase()).limit(1).get();
+      if (!byEmail.empty) userSnapshot = byEmail.docs[0];
+    }
+    const roleName = String(userSnapshot.data()?.role || '');
+    const roleSnapshot = await db.collection('roles').where('name', '==', roleName).limit(1).get();
+    const permissions = roleSnapshot.docs[0]?.data()?.permissions || {};
+    const settingsPermissions = permissions?.['Recurring Payments']?.Settings || permissions?.['Recurring Payments.Settings'] || [];
+    const allowed = Array.isArray(settingsPermissions) && (settingsPermissions.includes('Manage Automation') || settingsPermissions.includes('Edit'));
+    if (!allowed) return NextResponse.json({ error: 'Manage Automation permission required' }, { status: 403 });
+    const organizationId = String(userSnapshot.data()?.organizationId || 'default');
+    const headers = new Headers(request.headers);
+    if (process.env.CRON_SECRET) headers.set('authorization', `Bearer ${process.env.CRON_SECRET}`);
+    headers.set('x-recurring-organization', organizationId);
+    return GET(new Request(request.url, { method: 'GET', headers }));
+  } catch {
+    return NextResponse.json({ error: 'Manual generation could not be authorized' }, { status: 401 });
+  }
 }
