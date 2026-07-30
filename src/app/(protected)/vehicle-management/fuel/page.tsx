@@ -35,7 +35,7 @@ export default function FuelManagementPage() {
 
   const fields = useMemo<CrudFieldConfig[]>(
     () => [
-      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, options: vehicleOptions },
+      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, searchable: true, options: vehicleOptions },
       { key: 'fuelDate', label: 'Date', type: 'date', required: true },
       {
         key: 'fillType',
@@ -49,10 +49,10 @@ export default function FuelManagementPage() {
         ],
         defaultValue: 'Full Tank',
       },
-      { key: 'quantityLiters', label: 'Quantity (Liters)', type: 'number', required: true },
-      { key: 'ratePerUnit', label: 'Rate Per Liter (₹)', type: 'number', required: true },
-      { key: 'odometerReadingKm', label: 'Current Odometer (KM)', type: 'number', required: true, step: '1' },
-      { key: 'previousOdometerReadingKm', label: 'Previous Odometer (KM)', type: 'number', step: '1' },
+      { key: 'quantityLiters', label: 'Quantity (Liters)', type: 'number', required: true, min: 0.01 },
+      { key: 'ratePerUnit', label: 'Rate Per Liter (₹)', type: 'number', required: true, min: 0.01 },
+      { key: 'odometerReadingKm', label: 'Current Odometer (KM)', type: 'number', required: true, step: '1', min: 0 },
+      { key: 'previousOdometerReadingKm', label: 'Previous Odometer (KM)', type: 'number', step: '1', min: 0 },
       { key: 'fuelStationName', label: 'Fuel Station Name', type: 'text', required: true },
       { key: 'fuelStationCity', label: 'City / Location', type: 'text' },
       { key: 'billNumber', label: 'Bill / Receipt Number', type: 'text' },
@@ -111,6 +111,9 @@ export default function FuelManagementPage() {
         const rate = Number(payload.ratePerUnit || 0);
         const currentOdometer = Number(payload.odometerReadingKm || 0);
         const previousOdometer = Number(payload.previousOdometerReadingKm || 0);
+        if (previousOdometer > 0 && currentOdometer < previousOdometer) {
+          throw new Error('Current odometer cannot be lower than the previous odometer.');
+        }
         const distance = currentOdometer > previousOdometer ? currentOdometer - previousOdometer : 0;
         const totalAmount = quantity * rate;
 

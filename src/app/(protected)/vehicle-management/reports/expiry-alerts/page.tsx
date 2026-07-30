@@ -98,6 +98,7 @@ export default function ExpiryAlertsReportPage() {
       refGetter: (r: Record<string, any>) => string
     ) => {
       collection.forEach((r) => {
+        if (r.isArchived === true || r.renewalStatus === 'Renewed') return;
         const expiryDate = String(r[expiryKey] || '');
         const meta = computeRenewalMeta(expiryDate);
         const parsedDate = expiryDate ? new Date(`${expiryDate}T00:00:00`) : null;

@@ -1,10 +1,10 @@
 'use client';
 
 import { useMemo } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, limit, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components/vehicle-management/generic-crud-page';
 import { useUserOptions, useVehicleOptions } from '@/components/vehicle-management/hooks';
-import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { db } from '@/lib/firebase';
 import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
@@ -28,9 +28,9 @@ const columns: CrudColumnConfig[] = [
 
 export default function DriverManagementPage() {
   const { can } = useAuthorization();
-  const { log } = useActivityLogger('Vehicle Management');
   const { options: vehicleOptionsRaw, map: vehicleMap } = useVehicleOptions();
   const { options: userOptions, map: userMap, mobileToUserId } = useUserOptions();
+  const { prefill, renewingFromId } = useRenewalPrefill();
   const canView =
     can('View', 'Vehicle Management.Driver Management') ||
     can('Add', 'Vehicle Management.Driver Management') ||
@@ -63,6 +63,7 @@ export default function DriverManagementPage() {
         key: 'linkedUserId',
         label: 'Linked App User',
         type: 'select',
+        searchable: true,
         options: userOptions,
         placeholder: 'Select app user (optional)',
       },
@@ -86,7 +87,7 @@ export default function DriverManagementPage() {
           { value: 'Unknown', label: 'Unknown' },
         ],
       },
-      { key: 'experienceYears', label: 'Experience (Years)', type: 'number', step: '1' },
+      { key: 'experienceYears', label: 'Experience (Years)', type: 'number', step: '1', min: 0, max: 60 },
       { key: 'licenseNumber', label: 'License Number', type: 'text', required: true },
       {
         key: 'licenseClass',
@@ -104,7 +105,7 @@ export default function DriverManagementPage() {
       },
       { key: 'licenseExpiryDate', label: 'License Expiry Date', type: 'date', required: true },
       { key: 'address', label: 'Address', type: 'textarea', required: true },
-      { key: 'assignedVehicleId', label: 'Assigned Vehicle', type: 'select', options: vehicleOptions },
+      { key: 'assignedVehicleId', label: 'Assigned Vehicle', type: 'select', searchable: true, options: vehicleOptions },
       {
         key: 'ownVehicleNumber',
         label: 'Own Vehicle Number',
@@ -182,7 +183,21 @@ export default function DriverManagementPage() {
       canExport={canExport}
       exportFileName="driver-management"
       defaultSort={{ key: 'driverName', direction: 'asc' }}
+      onAfterFetch={(rows) => rows.map((row) => {
+        const meta = computeRenewalMeta(String(row.licenseExpiryDate || ''));
+        return { ...row, licenseAlertStage: meta.alertStage, licenseComplianceStatus: meta.complianceStatus };
+      })}
+      initialPrefill={prefill}
+      renewingFromId={renewingFromId}
       onBeforeSave={(payload, currentRow) => {
+        const mobileNumber = normalizeMobile(String(payload.mobileNumber || ''));
+        if (mobileNumber.length !== 10) {
+          throw new Error('Mobile Number must contain exactly 10 digits.');
+        }
+        const emergencyNumber = normalizeMobile(String(payload.emergencyContactNumber || ''));
+        if (emergencyNumber && emergencyNumber.length !== 10) {
+          throw new Error('Emergency Contact Number must contain exactly 10 digits.');
+        }
         const rawAssignedVehicleId = String(payload.assignedVehicleId || '');
         const isOwnVehicle =
           rawAssignedVehicleId === OWN_VEHICLE_OPTION ||
@@ -190,6 +205,13 @@ export default function DriverManagementPage() {
             String(currentRow?.vehicleAssignmentMode || '') === 'Own Vehicle');
         const assignedVehicleId = isOwnVehicle ? OWN_VEHICLE_OPTION : rawAssignedVehicleId;
         const vehicle = vehicleMap[assignedVehicleId];
+        if (
+          !isOwnVehicle &&
+          vehicle?.assignedDriverId &&
+          String(vehicle.assignedDriverId) !== String(currentRow?.id || '')
+        ) {
+          throw new Error(`${vehicle.vehicleNumber || 'This vehicle'} is already assigned to another driver.`);
+        }
         const meta = computeRenewalMeta(String(payload.licenseExpiryDate || ''));
         const mobileKey = normalizeMobile(String(payload.mobileNumber || ''));
         let linkedUserId = String(payload.linkedUserId || '').trim();
@@ -213,6 +235,8 @@ export default function DriverManagementPage() {
         const linkedUser = userMap[linkedUserId] || null;
         return {
           ...payload,
+          mobileNumber,
+          emergencyContactNumber: emergencyNumber,
           assignedVehicleId,
           linkedUserId,
           linkedUserName: linkedUser?.name || '',
@@ -228,10 +252,44 @@ export default function DriverManagementPage() {
           licenseComplianceStatus: meta.complianceStatus,
         };
       }}
-      onAfterDelete={async ({ row }) => {
-        await log('Delete Driver', { driverName: row?.driverName, driverId: row?.id });
+      onBeforeDelete={async ({ row }) => {
+        const driverId = String(row?.id || '');
+        const relatedSources = [
+          VEHICLE_COLLECTIONS.trips,
+          VEHICLE_COLLECTIONS.fuel,
+          VEHICLE_COLLECTIONS.driverDailyStatus,
+        ];
+        const snapshots = await Promise.all(
+          relatedSources.map((collectionName) =>
+            getDocs(query(collection(db, collectionName), where('driverId', '==', driverId), limit(1)))
+          )
+        );
+        if (snapshots.some((snapshot) => !snapshot.empty)) {
+          throw new Error('This driver has linked trip, fuel, or daily logs. Set the driver status to Inactive instead of deleting the history.');
+        }
       }}
-      onAfterSave={async ({ id, payload, previousRow }) => {
+      onAfterDelete={async ({ row }) => {
+        const assignedVehicleId = String(row?.assignedVehicleId || '');
+        if (assignedVehicleId && assignedVehicleId !== OWN_VEHICLE_OPTION) {
+          await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, assignedVehicleId), {
+            assignedDriverId: '',
+            assignedDriverName: '',
+          });
+          await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {
+            vehicleId: assignedVehicleId,
+            vehicleNumber: String(row?.assignedVehicleNumber || ''),
+            previousDriverId: String(row?.id || ''),
+            previousDriverName: String(row?.driverName || ''),
+            driverId: '',
+            driverName: '',
+            action: 'Driver Removed',
+            source: 'Driver Master',
+            eventDate: new Date().toISOString(),
+            createdAt: serverTimestamp(),
+          });
+        }
+      }}
+      onAfterSave={async ({ id, payload, previousRow, renewalSourceId }) => {
         const nextVehicleIdRaw = String(payload.assignedVehicleId || '');
         const previousVehicleIdRaw = String(previousRow?.assignedVehicleId || '');
         const nextVehicleId = nextVehicleIdRaw === OWN_VEHICLE_OPTION ? '' : nextVehicleIdRaw;
@@ -244,6 +302,18 @@ export default function DriverManagementPage() {
             assignedDriverId: '',
             assignedDriverName: '',
           });
+          await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {
+            vehicleId: previousVehicleId,
+            vehicleNumber: String(previousRow?.assignedVehicleNumber || ''),
+            previousDriverId: id,
+            previousDriverName: driverName,
+            driverId: '',
+            driverName: '',
+            action: 'Unassigned',
+            source: 'Driver Master',
+            eventDate: new Date().toISOString(),
+            createdAt: serverTimestamp(),
+          });
         }
 
         if (nextVehicleId) {
@@ -251,12 +321,34 @@ export default function DriverManagementPage() {
             assignedDriverId: id,
             assignedDriverName: driverName,
           });
-        }
-
-        if (previousRow) {
-          await log('Edit Driver', { driverName, driverId: id });
-        } else {
-          await log('Add Driver', { driverName, driverId: id });
+          if (previousVehicleId !== nextVehicleId) {
+            await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {
+              vehicleId: nextVehicleId,
+              vehicleNumber: String(payload.assignedVehicleNumber || ''),
+              previousDriverId: '',
+              previousDriverName: '',
+              driverId: id,
+              driverName,
+              action: 'Assigned',
+              source: 'Driver Master',
+              eventDate: new Date().toISOString(),
+              createdAt: serverTimestamp(),
+            });
+          }
+          if (renewalSourceId) {
+            await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {
+              vehicleId: nextVehicleId,
+              vehicleNumber: String(payload.assignedVehicleNumber || ''),
+              previousDriverId: renewalSourceId,
+              previousDriverName: driverName,
+              driverId: id,
+              driverName,
+              action: 'Driver License Renewed',
+              source: 'Renewals Hub',
+              eventDate: new Date().toISOString(),
+              createdAt: serverTimestamp(),
+            });
+          }
         }
       }}
     />

@@ -13,6 +13,7 @@ export const VEHICLE_COLLECTIONS = {
   settings: 'vehicleManagementSettings',
   driverDailyStatus: 'vehicleManagementDriverDailyStatus',
   driver: 'vehicleManagementDriver',
+  driverAssignments: 'vehicleManagementDriverAssignments',
   documents: 'vehicleManagementDocuments',
 } as const;
 
@@ -27,6 +28,9 @@ export const DEFAULT_TRACKING_SETTINGS = {
 };
 
 export const toVehicleCode = (seed: number) => `VEH-${String(seed).padStart(6, '0')}`;
+
+export const normalizeVehicleRegistration = (value: unknown): string =>
+  String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export const getVehicleTimestampMillis = (value: any): number => {
   if (!value) return 0;
@@ -53,6 +57,19 @@ export const formatVehicleTimestamp = (value: any): string => {
   return date.toLocaleString('en-IN', {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
+};
+
+export const getVehicleDateRangeError = (
+  startDate: unknown,
+  endDate: unknown,
+  startLabel = 'Start date',
+  endLabel = 'End date'
+): string | null => {
+  if (!startDate || !endDate) return null;
+  const start = new Date(`${String(startDate).slice(0, 10)}T00:00:00`);
+  const end = new Date(`${String(endDate).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return end < start ? `${endLabel} cannot be earlier than ${startLabel.toLowerCase()}.` : null;
 };
 
 export const ALERT_STAGE_LABELS: Record<string, string> = {

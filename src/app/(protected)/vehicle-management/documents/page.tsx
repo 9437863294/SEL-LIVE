@@ -5,7 +5,7 @@ import { syncVehicleComplianceStatus } from '@/components/vehicle-management/com
 import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components/vehicle-management/generic-crud-page';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
@@ -31,7 +31,7 @@ export default function DocumentManagementPage() {
 
   const fields = useMemo<CrudFieldConfig[]>(
     () => [
-      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, options: vehicleOptions },
+      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, searchable: true, options: vehicleOptions },
       {
         key: 'documentType',
         label: 'Document Type',
@@ -79,7 +79,14 @@ export default function DocumentManagementPage() {
       canExport={canExport}
       exportFileName="document-management"
       defaultSort={{ key: 'expiryDate', direction: 'asc' }}
+      onAfterFetch={(rows) => rows.map((row) => {
+        const hasExpiry = Boolean(row.expiryDate);
+        const meta = computeRenewalMeta(String(row.expiryDate || ''));
+        return { ...row, status: hasExpiry ? meta.complianceStatus : 'Not Applicable', alertStage: hasExpiry ? meta.alertStage : 'Not Applicable', complianceStatus: hasExpiry ? meta.complianceStatus : 'Not Applicable' };
+      })}
       onBeforeSave={(payload) => {
+        const dateError = getVehicleDateRangeError(payload.issueDate, payload.expiryDate, 'Issue date', 'Expiry date');
+        if (dateError) throw new Error(dateError);
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const hasExpiry = Boolean(payload.expiryDate);
         const meta = computeRenewalMeta(String(payload.expiryDate || ''));
@@ -95,6 +102,10 @@ export default function DocumentManagementPage() {
       }}
       onAfterSave={async ({ payload }) => {
         const vehicleId = String(payload.vehicleId || '');
+        if (vehicleId) await syncVehicleComplianceStatus(vehicleId);
+      }}
+      onAfterDelete={async ({ row }) => {
+        const vehicleId = String(row.vehicleId || '');
         if (vehicleId) await syncVehicleComplianceStatus(vehicleId);
       }}
     />

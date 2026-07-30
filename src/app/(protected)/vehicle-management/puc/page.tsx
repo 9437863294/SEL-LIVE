@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   addDoc,
@@ -15,7 +16,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
-import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -51,10 +52,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import ExcelJS from 'exceljs';
-import { Download, ExternalLink, FileCheck2, FileUp, Loader2, Upload } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, ExternalLink, FileCheck2, FileUp, History, Loader2, RefreshCw, Search, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
+import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 
 type PucRow = Record<string, any>;
 type PucForm = Record<string, string>;
@@ -84,7 +87,7 @@ const mapRowToState = (row: PucRow): PucForm => ({
 export default function PucManagementPage() {
   const { toast } = useToast();
   const { can } = useAuthorization();
-  const { options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
+  const { rows: vehicleRows, options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
   const { prefill, renewingFromId } = useRenewalPrefill();
 
   const canView = can('View', 'Vehicle Management.PUC Management');
@@ -97,6 +100,7 @@ export default function PucManagementPage() {
   const [rows, setRows] = useState<PucRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<PucRow | null>(null);
   const [deleteRow, setDeleteRow] = useState<PucRow | null>(null);
@@ -105,14 +109,25 @@ export default function PucManagementPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [form, setForm] = useState<PucForm>(buildInitialState());
   const [file, setFile] = useState<File | null>(null);
+  const [isRenewalMode, setIsRenewalMode] = useState(false);
   const prefillApplied = useRef(false);
+  const importedVehicleIdsRef = useRef(new Set<string>());
 
   const loadRows = async () => {
     setIsLoading(true);
     try {
       const snap = await getDocs(collection(db, VEHICLE_COLLECTIONS.puc));
       const data = snap.docs
-        .map((entry): PucRow => ({ id: entry.id, ...(entry.data() as Record<string, any>) }))
+        .map((entry): PucRow => {
+          const row: PucRow = { id: entry.id, ...(entry.data() as Record<string, any>) };
+          const meta = computeRenewalMeta(String(row.expiryDate || ''));
+          return {
+            ...row,
+            alertStage: meta.alertStage,
+            complianceStatus: meta.complianceStatus,
+            pucStatus: meta.complianceStatus === 'Missing' ? 'Expired' : meta.complianceStatus,
+          };
+        })
         .sort(compareCreatedAtDesc);
       setRows(data);
     } catch (error) {
@@ -129,22 +144,38 @@ export default function PucManagementPage() {
   }, []);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'history') setActiveTab('history');
+  }, []);
+
+  useEffect(() => {
     if (!prefill || prefillApplied.current || !canAdd) return;
+    if (renewingFromId && isLoading) return;
+    const renewalSource = renewingFromId
+      ? rows.find((row) => String(row.id) === String(renewingFromId)) || null
+      : null;
+    if (renewingFromId && !renewalSource) {
+      prefillApplied.current = true;
+      toast({ title: 'Renewal Record Not Found', description: 'The original PUC certificate could not be loaded.', variant: 'destructive' });
+      return;
+    }
     prefillApplied.current = true;
-    const next = buildInitialState();
+    const next = renewalSource ? mapRowToState(renewalSource) : buildInitialState();
+    next.certificateDocumentUrl = '';
     Object.entries(prefill).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') next[key] = String(value);
     });
     setEditingRow(null);
     setForm(next);
     setFile(null);
+    setIsRenewalMode(true);
     setDialogOpen(true);
-  }, [canAdd, prefill]);
+  }, [canAdd, isLoading, prefill, renewingFromId, rows, toast]);
 
   const filteredRows = useMemo(() => {
+    const base = rows.filter((row) => activeTab === 'history' ? row.isArchived === true : row.isArchived !== true);
     const term = query.trim().toLowerCase();
-    if (!term) return rows;
-    return rows.filter((row) =>
+    if (!term) return base;
+    return base.filter((row) =>
       [
         row.vehicleNumber,
         row.pucCertificateNumber,
@@ -157,7 +188,20 @@ export default function PucManagementPage() {
         .map((value) => String(value || '').toLowerCase())
         .some((value) => value.includes(term))
     );
-  }, [query, rows]);
+  }, [activeTab, query, rows]);
+  const pucPagination = useVehicleTablePagination(filteredRows);
+
+  const currentCount = useMemo(() => rows.filter((row) => row.isArchived !== true).length, [rows]);
+  const historyCount = rows.length - currentCount;
+
+  const getRenewalHref = (row: PucRow) => {
+    const params = new URLSearchParams({
+      renew: String(row.id || ''),
+      vid: String(row.vehicleId || ''),
+      vnum: String(row.vehicleNumber || ''),
+    });
+    return `/vehicle-management/puc?${params.toString()}`;
+  };
 
   const exportExcel = async () => {
     if (!canExport || isExporting) return;
@@ -214,8 +258,16 @@ export default function PucManagementPage() {
   ];
 
   const savePucRow = async (row: Record<string, any>) => {
+    const importedVehicleNumber = normalizeVehicleRegistration(row.vehicleNumber);
+    const matchedVehicle = vehicleRows.find((vehicle) =>
+      normalizeVehicleRegistration(vehicle.vehicleNumber || vehicle.registrationNo) === importedVehicleNumber
+    );
+    if (!matchedVehicle) throw new Error(`Vehicle ${row.vehicleNumber || ''} was not found in Vehicle Master.`);
+    const dateError = getVehicleDateRangeError(row.issueDate, row.expiryDate, 'Issue date', 'Expiry date');
+    if (dateError) throw new Error(dateError);
     const meta = computeRenewalMeta(String(row.expiryDate || ''));
     await addDoc(collection(db, VEHICLE_COLLECTIONS.puc), {
+      vehicleId: matchedVehicle.id,
       vehicleNumber: String(row.vehicleNumber || '').trim(),
       pucCertificateNumber: String(row.pucCertificateNumber || '').trim(),
       testingCenterName: String(row.testingCenterName || '').trim(),
@@ -228,6 +280,7 @@ export default function PucManagementPage() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    importedVehicleIdsRef.current.add(String(matchedVehicle.id));
   };
 
   const openAdd = () => {
@@ -235,6 +288,7 @@ export default function PucManagementPage() {
     setEditingRow(null);
     setForm(buildInitialState());
     setFile(null);
+    setIsRenewalMode(false);
     setDialogOpen(true);
   };
 
@@ -243,6 +297,7 @@ export default function PucManagementPage() {
     setEditingRow(row);
     setForm(mapRowToState(row));
     setFile(null);
+    setIsRenewalMode(false);
     setDialogOpen(true);
   };
 
@@ -275,6 +330,15 @@ export default function PucManagementPage() {
     const amountPaid = Number(form.amountPaid || 0);
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) {
       toast({ title: 'Validation Error', description: 'Amount Paid is invalid.', variant: 'destructive' });
+      return;
+    }
+    const dateError = getVehicleDateRangeError(form.issueDate, form.expiryDate, 'Issue date', 'Expiry date');
+    if (dateError) {
+      toast({ title: 'Validation Error', description: dateError, variant: 'destructive' });
+      return;
+    }
+    if (file && file.size > 10 * 1024 * 1024) {
+      toast({ title: 'Validation Error', description: 'PUC certificate must be smaller than 10 MB.', variant: 'destructive' });
       return;
     }
 
@@ -311,25 +375,29 @@ export default function PucManagementPage() {
         complianceStatus: meta.complianceStatus,
       };
 
+      let savedId = '';
       if (editingRow) {
+        savedId = String(editingRow.id);
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.puc, String(editingRow.id)), {
           ...payload,
           updatedAt: serverTimestamp(),
         });
       } else {
-        await addDoc(collection(db, VEHICLE_COLLECTIONS.puc), {
+        const created = await addDoc(collection(db, VEHICLE_COLLECTIONS.puc), {
           ...payload,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        savedId = created.id;
       }
 
       if (form.vehicleId) await syncVehicleComplianceStatus(String(form.vehicleId));
 
-      if (!editingRow && renewingFromId) {
+      if (!editingRow && isRenewalMode && renewingFromId) {
         try {
           await updateDoc(doc(db, VEHICLE_COLLECTIONS.puc, renewingFromId), {
             renewalStatus: 'Renewed',
+            renewedById: savedId,
             renewedAt: serverTimestamp(),
             isArchived: true,
           });
@@ -344,6 +412,7 @@ export default function PucManagementPage() {
       });
       setDialogOpen(false);
       setEditingRow(null);
+      setIsRenewalMode(false);
       setFile(null);
       setForm(buildInitialState());
       await loadRows();
@@ -417,12 +486,25 @@ export default function PucManagementPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3 px-3 pb-4 sm:px-6 sm:pb-6">
-          <Input
-            placeholder="Search PUC..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="h-11 w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:h-10 sm:max-w-xs"
-          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Vehicle, certificate or testing center..."
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="h-11 w-full border-slate-200 bg-white pl-9 focus-visible:ring-emerald-400/40 sm:h-10"
+              />
+            </div>
+            <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 sm:w-fit">
+              <button type="button" onClick={() => setActiveTab('current')} className={cn('flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all', activeTab === 'current' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+                <FileCheck2 className="h-3.5 w-3.5" />Current <span className="text-[10px] opacity-70">{currentCount}</span>
+              </button>
+              <button type="button" onClick={() => setActiveTab('history')} className={cn('flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all', activeTab === 'history' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+                <History className="h-3.5 w-3.5" />History <span className="text-[10px] opacity-70">{historyCount}</span>
+              </button>
+            </div>
+          </div>
           {/* Mobile card list — visible only on small screens */}
           <div className="space-y-2.5 sm:hidden">
             {isLoading ? (
@@ -434,7 +516,7 @@ export default function PucManagementPage() {
                 No records found.
               </div>
             ) : (
-              filteredRows.map((row) => (
+              pucPagination.paginatedRows.map((row) => (
                 <div key={row.id} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
@@ -448,9 +530,9 @@ export default function PucManagementPage() {
                           'shrink-0 text-[10px]',
                           row.alertStage === 'Expired'
                             ? 'border-rose-300 bg-rose-50 text-rose-700'
-                            : row.alertStage === 'Critical'
+                            : row.alertStage === 'Due Today'
                             ? 'border-orange-300 bg-orange-50 text-orange-700'
-                            : row.alertStage === 'Warning'
+                            : ['7d', '15d', '30d'].includes(String(row.alertStage))
                             ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
                             : 'border-emerald-300 bg-emerald-50 text-emerald-700'
                         )}
@@ -478,8 +560,9 @@ export default function PucManagementPage() {
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-                    <button onClick={() => openEdit(row)} disabled={!canEdit} className="flex-1 h-10 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700 disabled:opacity-50">Edit</button>
-                    <button onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10 rounded-md bg-rose-500 text-sm font-medium text-white disabled:opacity-50">Delete</button>
+                    {activeTab === 'current' && canAdd && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
+                    {canEdit && <button onClick={() => openEdit(row)} className="h-10 flex-1 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700">Edit</button>}
+                    {canDelete && <button onClick={() => setDeleteRow(row)} className="h-10 flex-1 rounded-md bg-rose-500 text-sm font-medium text-white">Delete</button>}
                   </div>
                 </div>
               ))
@@ -518,7 +601,7 @@ export default function PucManagementPage() {
                     </TableRow>
                   ))
                 ) : (
-                  filteredRows.map((row) => (
+                  pucPagination.paginatedRows.map((row) => (
                     <TableRow key={String(row.id)} className="hover:bg-emerald-50/70">
                       <TableCell>{row.vehicleNumber || '-'}</TableCell>
                       <TableCell>{row.pucCertificateNumber || '-'}</TableCell>
@@ -530,12 +613,13 @@ export default function PucManagementPage() {
                       <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
                       <TableCell className="w-[160px] text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit} className="h-8 px-3">
+                          {activeTab === 'current' && canAdd && <Link href={getRenewalHref(row)}><Button size="sm" className="h-8 bg-amber-500 px-3 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
+                          {canEdit && <Button size="sm" variant="outline" onClick={() => openEdit(row)} className="h-8 px-3">
                             Edit
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="h-8 px-3">
+                          </Button>}
+                          {canDelete && <Button size="sm" variant="destructive" onClick={() => setDeleteRow(row)} className="h-8 px-3">
                             Delete
-                          </Button>
+                          </Button>}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -546,23 +630,30 @@ export default function PucManagementPage() {
           </div>
           )}
           </div>
+          <VehicleTablePagination
+            currentPage={pucPagination.currentPage}
+            totalPages={pucPagination.totalPages}
+            totalRows={filteredRows.length}
+            pageSize={pucPagination.pageSize}
+            onPageChange={pucPagination.setCurrentPage}
+          />
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
         <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-6 py-5 pr-12">
+          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><FileCheck2 className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1">
-                {renewingFromId && !editingRow && <span className="mb-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Renewing Existing Certificate</span>}
-                <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit PUC Certificate' : renewingFromId ? 'Renew PUC Certificate' : 'Add PUC Certificate'}</DialogTitle>
+                {isRenewalMode && renewingFromId && !editingRow && <span className="mb-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Renewing Existing Certificate</span>}
+                <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit PUC Certificate' : isRenewalMode && renewingFromId ? 'Renew PUC Certificate' : 'Add PUC Certificate'}</DialogTitle>
                 <DialogDescription className="mt-0.5">Certificate number, testing details, validity, readings, and document.</DialogDescription>
               </div>
               <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Certificate</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Document</span></div>
             </div>
           </div>
-          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-6 py-5">
+          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-3 py-3 sm:px-6 sm:py-5">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
                 <div><p className="text-sm font-semibold text-slate-800">Certificate Information</p><p className="text-xs text-muted-foreground">Select the vehicle and enter the latest emission certificate details.</p></div>
@@ -625,10 +716,10 @@ export default function PucManagementPage() {
               </div>
             </div>
           </div>
-          <DialogFooter className="vm-dialog-footer shrink-0 border-t border-slate-200 bg-white px-6 py-4 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)] sm:justify-between">
+          <DialogFooter className="vm-dialog-footer shrink-0 border-t border-slate-200 bg-white px-3 py-3 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)] sm:px-6 sm:py-4 sm:justify-between">
             <p className="hidden text-xs text-muted-foreground sm:block">Review certificate dates and vehicle before saving.</p>
             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-10 bg-white">
+            <Button variant="outline" onClick={() => { setDialogOpen(false); setIsRenewalMode(false); }} className="h-10 bg-white">
               Cancel
             </Button>
             <Button onClick={() => void submit()} disabled={isSaving} className="h-10 bg-gradient-to-r from-emerald-500 to-teal-600 px-5 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700">
@@ -663,7 +754,12 @@ export default function PucManagementPage() {
         title="Import PUC Records"
         fields={PUC_IMPORT_FIELDS}
         onSaveRow={savePucRow}
-        onImportComplete={() => void loadRows()}
+        onImportComplete={() => {
+          const vehicleIds = Array.from(importedVehicleIdsRef.current);
+          importedVehicleIdsRef.current.clear();
+          void Promise.all(vehicleIds.map((vehicleId) => syncVehicleComplianceStatus(vehicleId)));
+          void loadRows();
+        }}
       />
     </div>
   );
@@ -704,20 +800,34 @@ function SelectField({
   options: Array<{ value: string; label: string }>;
   className?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
   return (
     <Field label={label} className={className}>
-      <Select value={value || undefined} onValueChange={onValueChange}>
-        <SelectTrigger className="h-9 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400">
-          <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button type="button" variant="outline" role="combobox" aria-expanded={open} className="h-9 w-full justify-between border-slate-200 bg-white px-3 text-[13px] font-normal">
+            <span className={cn('truncate text-left', !selected && 'text-muted-foreground')}>{selected?.label || `Select ${label.toLowerCase()}`}</span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Type vehicle number to search..." />
+            <CommandList>
+              <CommandEmpty>No vehicle found.</CommandEmpty>
+              <CommandGroup>
+                {options.map((option) => (
+                  <CommandItem key={option.value} value={`${option.label} ${option.value}`} onSelect={() => { onValueChange(option.value); setOpen(false); }}>
+                    <Check className={cn('mr-2 h-4 w-4', value === option.value ? 'opacity-100' : 'opacity-0')} />
+                    <span className="truncate">{option.label}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
     </Field>
   );
 }

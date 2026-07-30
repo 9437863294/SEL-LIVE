@@ -37,7 +37,7 @@ const sections = [
   { href: '/vehicle-management',                label: 'Overview',        resource: '',                          icon: Gauge,       color: 'text-cyan-600',    bg: 'bg-cyan-50',    group: 'core' },
   { href: '/vehicle-management/renewals',       label: 'Renewals Hub',    resource: '',                          icon: RefreshCw,   color: 'text-rose-600',    bg: 'bg-rose-50',    group: 'core' },
   { href: '/vehicle-management/renewals/history', label: 'Renewal History', resource: '',                        icon: History,     color: 'text-slate-600',   bg: 'bg-slate-50',   group: 'core' },
-  { href: '/vehicle-management/vehicle-health', label: 'Vehicle Health',  resource: '',                          icon: Activity,    color: 'text-emerald-600', bg: 'bg-emerald-50', group: 'core' },
+  { href: '/vehicle-management/vehicle-health', label: 'Vehicle Health',  resource: 'Vehicle Master',            icon: Activity,    color: 'text-emerald-600', bg: 'bg-emerald-50', group: 'core' },
   { href: '/vehicle-management/vehicle-master', label: 'Vehicle Master',  resource: 'Vehicle Master',            icon: CarFront,    color: 'text-blue-600',    bg: 'bg-blue-50',    group: 'fleet' },
   { href: '/vehicle-management/insurance',      label: 'Insurance',       resource: 'Insurance Management',     icon: Shield,      color: 'text-violet-600',  bg: 'bg-violet-50',  group: 'compliance' },
   { href: '/vehicle-management/puc',            label: 'PUC',             resource: 'PUC Management',            icon: Leaf,        color: 'text-green-600',   bg: 'bg-green-50',   group: 'compliance' },
@@ -52,6 +52,13 @@ const sections = [
   { href: '/vehicle-management/reports',        label: 'Reports',         resource: 'Reports',                   icon: BarChart3,   color: 'text-indigo-600',  bg: 'bg-indigo-50',  group: 'ops' },
   { href: '/vehicle-management/settings',       label: 'Settings',        resource: 'Settings',                  icon: Settings,    color: 'text-slate-600',   bg: 'bg-slate-50',   group: 'ops' },
 ];
+
+const groupLabels: Record<string, string> = {
+  core: 'Command Center',
+  fleet: 'Fleet',
+  compliance: 'Compliance',
+  ops: 'Operations & Reports',
+};
 
 export default function VehicleManagementLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -76,6 +83,9 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
     if (can('Edit', `Vehicle Management.${item.resource}`)) return true;
     return false;
   });
+  const currentSection = [...availableSections]
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => safePathname === item.href || (item.href !== '/vehicle-management' && safePathname.startsWith(item.href)));
 
   const navigationLinks = (onNavigate?: () => void) => {
     let lastGroup = '';
@@ -84,12 +94,16 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
         safePathname === item.href ||
         (item.href !== '/vehicle-management' && safePathname.startsWith(item.href));
       const Icon = item.icon;
-      const showDivider = item.group !== lastGroup && lastGroup !== '';
+      const showGroupTitle = item.group !== lastGroup;
       lastGroup = item.group;
 
       return (
         <div key={item.href}>
-          {showDivider && <div className="my-1 h-px bg-white/40" />}
+          {showGroupTitle && (
+            <p className="px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 first:pt-1">
+              {groupLabels[item.group] || item.group}
+            </p>
+          )}
           <Link
             href={item.href}
             onClick={onNavigate}
@@ -177,7 +191,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold tracking-tight leading-tight truncate">Vehicle Management</p>
-                <p className="text-[11px] text-muted-foreground leading-tight">Command Center</p>
+                <p className="truncate text-[11px] leading-tight text-muted-foreground">{currentSection?.label || 'Command Center'}</p>
               </div>
             </div>
           </CardContent>
@@ -206,7 +220,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
           </Card>
         </aside>
 
-        <main className="min-w-0 vm-reveal">{children}</main>
+        <main className="min-w-0 w-full overflow-x-hidden vm-reveal">{children}</main>
       </div>
     </div>
   );

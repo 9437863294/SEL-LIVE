@@ -489,7 +489,9 @@ export function VehicleImportDialog({
                               <CheckCircle2 className={cn('h-4 w-4', isAutoMapped ? 'text-emerald-400' : 'text-slate-300')} />
                             </span>
                           ) : field.required ? (
-                            <AlertTriangle className="h-4 w-4 text-amber-400" title="Required — please map this column" />
+                            <span title="Required — please map this column" aria-label="Required field is not mapped">
+                              <AlertTriangle className="h-4 w-4 text-amber-400" />
+                            </span>
                           ) : (
                             <span className="text-xs text-slate-300">–</span>
                           )}

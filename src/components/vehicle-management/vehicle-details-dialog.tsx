@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Clock, ExternalLink, History, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { computeRenewalMeta, formatVehicleTimestamp, getVehicleTimestampMillis, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useAuthorization } from '@/hooks/useAuthorization';
 
 type Row = Record<string, any>;
 
@@ -54,9 +55,23 @@ export function VehicleDetailsDialog({
   onOpenChange: (open: boolean) => void;
   canRenewInsurance: boolean;
 }) {
+  const { can } = useAuthorization();
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<Record<string, Row[]>>({});
   const [selectedSection, setSelectedSection] = useState('All');
+  const [loadError, setLoadError] = useState('');
+  const access = useMemo(() => ({
+    insurance: can('View', 'Vehicle Management.Insurance Management') || can('Add', 'Vehicle Management.Insurance Management') || can('Edit', 'Vehicle Management.Insurance Management'),
+    puc: can('View', 'Vehicle Management.PUC Management') || can('Add', 'Vehicle Management.PUC Management') || can('Edit', 'Vehicle Management.PUC Management'),
+    fitness: can('View', 'Vehicle Management.Fitness Certificate Management') || can('Add', 'Vehicle Management.Fitness Certificate Management') || can('Edit', 'Vehicle Management.Fitness Certificate Management'),
+    roadTax: can('View', 'Vehicle Management.Road Tax Management') || can('Add', 'Vehicle Management.Road Tax Management') || can('Edit', 'Vehicle Management.Road Tax Management'),
+    permit: can('View', 'Vehicle Management.Permit Management') || can('Add', 'Vehicle Management.Permit Management') || can('Edit', 'Vehicle Management.Permit Management'),
+    documents: can('View', 'Vehicle Management.Document Management') || can('Add', 'Vehicle Management.Document Management') || can('Edit', 'Vehicle Management.Document Management'),
+    maintenance: can('View', 'Vehicle Management.Maintenance Management') || can('Add', 'Vehicle Management.Maintenance Management') || can('Edit', 'Vehicle Management.Maintenance Management'),
+    fuel: can('View', 'Vehicle Management.Fuel Management') || can('Add', 'Vehicle Management.Fuel Management') || can('Edit', 'Vehicle Management.Fuel Management'),
+    trips: can('View', 'Vehicle Management.Trip Management') || can('Add', 'Vehicle Management.Trip Management') || can('Edit', 'Vehicle Management.Trip Management'),
+    driver: can('View', 'Vehicle Management.Driver Management') || can('Add', 'Vehicle Management.Driver Management') || can('Edit', 'Vehicle Management.Driver Management'),
+  }), [can]);
 
   useEffect(() => {
     if (!open || !vehicle) return;
@@ -64,100 +79,119 @@ export function VehicleDetailsDialog({
     let cancelled = false;
     const load = async () => {
       setLoading(true);
+      setLoadError('');
       try {
         const sources = [
-          VEHICLE_COLLECTIONS.insurance,
-          VEHICLE_COLLECTIONS.puc,
-          VEHICLE_COLLECTIONS.fitness,
-          VEHICLE_COLLECTIONS.roadTax,
-          VEHICLE_COLLECTIONS.permit,
-          VEHICLE_COLLECTIONS.documents,
-          VEHICLE_COLLECTIONS.maintenance,
-          VEHICLE_COLLECTIONS.fuel,
-          VEHICLE_COLLECTIONS.trips,
-          VEHICLE_COLLECTIONS.driverDailyStatus,
-          VEHICLE_COLLECTIONS.driver,
-        ];
-        const snapshots = await Promise.all(sources.map((name) => getDocs(collection(db, name))));
-        if (cancelled) return;
+          { name: VEHICLE_COLLECTIONS.insurance, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.insurance },
+          { name: VEHICLE_COLLECTIONS.puc, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.puc },
+          { name: VEHICLE_COLLECTIONS.fitness, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.fitness },
+          { name: VEHICLE_COLLECTIONS.roadTax, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.roadTax },
+          { name: VEHICLE_COLLECTIONS.permit, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.permit },
+          { name: VEHICLE_COLLECTIONS.documents, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.documents },
+          { name: VEHICLE_COLLECTIONS.maintenance, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.maintenance },
+          { name: VEHICLE_COLLECTIONS.fuel, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.fuel },
+          { name: VEHICLE_COLLECTIONS.trips, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.trips },
+          { name: VEHICLE_COLLECTIONS.driverDailyStatus, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.driver },
+          { name: VEHICLE_COLLECTIONS.driverAssignments, idField: 'vehicleId', numberField: 'vehicleNumber', allowed: access.driver },
+          { name: VEHICLE_COLLECTIONS.driver, idField: 'assignedVehicleId', numberField: 'assignedVehicleNumber', allowed: access.driver },
+        ].filter((source) => source.allowed);
         const vehicleId = String(vehicle.id || '');
-        const vehicleNumber = String(vehicle.vehicleNumber || vehicle.registrationNo || '').toLowerCase();
+        const vehicleNumber = String(vehicle.vehicleNumber || vehicle.registrationNo || '');
+        const sourceRows = await Promise.all(sources.map(async (source) => {
+          const lookups = [
+            getDocs(query(collection(db, source.name), where(source.idField, '==', vehicleId))),
+          ];
+          if (vehicleNumber) {
+            lookups.push(getDocs(query(collection(db, source.name), where(source.numberField, '==', vehicleNumber))));
+          }
+          const snapshots = await Promise.all(lookups);
+          const byId = new Map<string, Row>();
+          snapshots.forEach((snapshot) => snapshot.docs.forEach((entry) => {
+            byId.set(entry.id, { id: entry.id, ...(entry.data() as Row) });
+          }));
+          return { name: source.name, rows: Array.from(byId.values()) };
+        }));
+        if (cancelled) return;
         const next: Record<string, Row[]> = {};
-        sources.forEach((name, index) => {
-          next[name] = snapshots[index].docs
-            .map((entry): Row => ({ id: entry.id, ...(entry.data() as Row) }))
-            .filter((row) =>
-              String(row.vehicleId || '') === vehicleId ||
-              String(row.assignedVehicleId || '') === vehicleId ||
-              String(row.vehicleNumber || row.registrationNo || row.assignedVehicleNumber || '').toLowerCase() === vehicleNumber
-            )
+        sourceRows.forEach((source) => {
+          next[source.name] = source.rows
             .sort((a, b) => getVehicleTimestampMillis(b.createdAt) - getVehicleTimestampMillis(a.createdAt));
         });
         setRecords(next);
+      } catch (error) {
+        console.error('Failed to load vehicle history', error);
+        if (!cancelled) setLoadError('Unable to load all vehicle history. Please try again.');
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
     void load();
     return () => { cancelled = true; };
-  }, [open, vehicle]);
+  }, [access, open, vehicle]);
 
   const sections = useMemo<ComplianceSection[]>(() => [
-    { title: 'Insurance', href: '/vehicle-management/insurance', rows: records[VEHICLE_COLLECTIONS.insurance] || [], referenceKeys: ['policyNumber', 'insuranceCompany'], expiryKeys: ['expiryDate'] },
-    { title: 'PUC', href: '/vehicle-management/puc', rows: records[VEHICLE_COLLECTIONS.puc] || [], referenceKeys: ['pucCertificateNumber', 'testingCenterName'], expiryKeys: ['expiryDate'] },
-    { title: 'Fitness', href: '/vehicle-management/fitness', rows: records[VEHICLE_COLLECTIONS.fitness] || [], referenceKeys: ['fitnessCertificateNumber', 'rtoName'], expiryKeys: ['expiryDate'] },
-    { title: 'Road Tax', href: '/vehicle-management/road-tax', rows: records[VEHICLE_COLLECTIONS.roadTax] || [], referenceKeys: ['receiptNumber', 'taxType'], expiryKeys: ['validTill', 'expiryDate'] },
-    { title: 'Permit', href: '/vehicle-management/permit', rows: records[VEHICLE_COLLECTIONS.permit] || [], referenceKeys: ['permitNumber', 'permitType'], expiryKeys: ['validTill', 'expiryDate'] },
-    { title: 'Documents', href: '/vehicle-management/documents', rows: records[VEHICLE_COLLECTIONS.documents] || [], referenceKeys: ['documentNumber', 'documentType'], expiryKeys: ['expiryDate'] },
-  ], [records]);
+    access.insurance && { title: 'Insurance', href: '/vehicle-management/insurance', rows: records[VEHICLE_COLLECTIONS.insurance] || [], referenceKeys: ['policyNumber', 'insuranceCompany'], expiryKeys: ['expiryDate'] },
+    access.puc && { title: 'PUC', href: '/vehicle-management/puc', rows: records[VEHICLE_COLLECTIONS.puc] || [], referenceKeys: ['pucCertificateNumber', 'testingCenterName'], expiryKeys: ['expiryDate'] },
+    access.fitness && { title: 'Fitness', href: '/vehicle-management/fitness', rows: records[VEHICLE_COLLECTIONS.fitness] || [], referenceKeys: ['fitnessCertificateNumber', 'rtoName'], expiryKeys: ['expiryDate'] },
+    access.roadTax && { title: 'Road Tax', href: '/vehicle-management/road-tax', rows: records[VEHICLE_COLLECTIONS.roadTax] || [], referenceKeys: ['receiptNumber', 'taxType'], expiryKeys: ['validTill', 'expiryDate'] },
+    access.permit && { title: 'Permit', href: '/vehicle-management/permit', rows: records[VEHICLE_COLLECTIONS.permit] || [], referenceKeys: ['permitNumber', 'permitType'], expiryKeys: ['validTill', 'expiryDate'] },
+    access.documents && { title: 'Documents', href: '/vehicle-management/documents', rows: records[VEHICLE_COLLECTIONS.documents] || [], referenceKeys: ['documentNumber', 'documentType'], expiryKeys: ['expiryDate'] },
+  ].filter(Boolean) as ComplianceSection[], [access, records]);
 
   const activitySections = useMemo<ActivitySection[]>(() => [
-    {
+    access.driver && {
       title: 'Driver Assignment History',
       href: '/vehicle-management/driver',
-      rows: records[VEHICLE_COLLECTIONS.driver] || [],
-      dateKeys: ['joiningDate', 'assignedDate'],
-      detail: (row) => `${row.driverName || '-'} · ${row.mobileNumber || '-'} · License ${row.licenseNumber || '-'}`,
-      metrics: (row) => `${row.experienceYears || 0} years experience · Blood ${row.bloodGroup || '-'}`,
-      statusKeys: ['status'],
+      rows: [
+        ...(records[VEHICLE_COLLECTIONS.driverAssignments] || []),
+        ...(records[VEHICLE_COLLECTIONS.driver] || []),
+      ],
+      dateKeys: ['eventDate', 'joiningDate', 'assignedDate'],
+      detail: (row: Row) => row.action
+        ? `${row.driverName || row.previousDriverName || 'No driver'} · ${row.source || 'Assignment update'}`
+        : `${row.driverName || '-'} · ${row.mobileNumber || '-'} · License ${row.licenseNumber || '-'}`,
+      metrics: (row: Row) => row.action
+        ? `${row.previousDriverName ? `Previous: ${row.previousDriverName} · ` : ''}${row.vehicleNumber || '-'}`
+        : `${row.experienceYears || 0} years experience · Blood ${row.bloodGroup || '-'}`,
+      statusKeys: ['action', 'status'],
     },
-    {
+    access.driver && {
       title: 'Driver Daily Logs',
       href: '/vehicle-management/driver-mobile/daily-status',
       rows: records[VEHICLE_COLLECTIONS.driverDailyStatus] || [],
       dateKeys: ['statusDate'],
-      detail: (row) => `${row.driverName || '-'} · ${row.routeSummary || 'No route summary'}`,
-      metrics: (row) => `${Number(row.totalDistanceKm || 0).toFixed(1)} km · ${row.totalTrips || 0} trips`,
+      detail: (row: Row) => `${row.driverName || '-'} · ${row.routeSummary || 'No route summary'}`,
+      metrics: (row: Row) => `${Number(row.totalDistanceKm || 0).toFixed(1)} km · ${row.totalTrips || 0} trips`,
       statusKeys: ['runningStatus'],
     },
-    {
+    access.trips && {
       title: 'Trip Logs',
       href: '/vehicle-management/trips',
       rows: records[VEHICLE_COLLECTIONS.trips] || [],
       dateKeys: ['startTimeIso', 'startDate'],
-      detail: (row) => `${row.driverName || '-'} · ${row.startAddress || '-'} → ${row.endAddress || '-'}`,
-      metrics: (row) => `${Number(row.totalDistanceKm || 0).toFixed(2)} km · ${Number(row.totalPoints || 0)} points`,
+      detail: (row: Row) => `${row.driverName || '-'} · ${row.startAddress || '-'} → ${row.endAddress || '-'}`,
+      metrics: (row: Row) => `${Number(row.totalDistanceKm || 0).toFixed(2)} km · ${Number(row.totalPoints || 0)} points`,
       statusKeys: ['tripStatus'],
     },
-    {
+    access.maintenance && {
       title: 'Maintenance History',
       href: '/vehicle-management/maintenance',
       rows: records[VEHICLE_COLLECTIONS.maintenance] || [],
       dateKeys: ['serviceDate', 'serviceDoneDate'],
-      detail: (row) => `${row.maintenanceType || '-'} · ${row.garageName || '-'} · ${row.workDescription || ''}`,
-      metrics: (row) => `₹${Number(row.totalCost || 0).toLocaleString('en-IN')} · Odometer ${Number(row.odometerReadingKm || 0).toLocaleString('en-IN')} km`,
+      detail: (row: Row) => `${row.maintenanceType || '-'} · ${row.garageName || '-'} · ${row.workDescription || ''}`,
+      metrics: (row: Row) => `₹${Number(row.totalCost || 0).toLocaleString('en-IN')} · Odometer ${Number(row.odometerReadingKm || 0).toLocaleString('en-IN')} km`,
       statusKeys: ['approvalStatus'],
     },
-    {
+    access.fuel && {
       title: 'Fuel Logs',
       href: '/vehicle-management/fuel',
       rows: records[VEHICLE_COLLECTIONS.fuel] || [],
       dateKeys: ['fuelDate'],
-      detail: (row) => `${row.fillType || '-'} · ${row.fuelStationName || '-'} · ${row.billNumber || 'No bill number'}`,
-      metrics: (row) => `${Number(row.quantityLiters || 0).toFixed(2)} L · ₹${Number(row.totalAmount || 0).toLocaleString('en-IN')} · ${row.mileageKmPerLiter || '-'} km/L`,
+      detail: (row: Row) => `${row.fillType || '-'} · ${row.fuelStationName || '-'} · ${row.billNumber || 'No bill number'}`,
+      metrics: (row: Row) => `${Number(row.quantityLiters || 0).toFixed(2)} L · ₹${Number(row.totalAmount || 0).toLocaleString('en-IN')} · ${row.mileageKmPerLiter || '-'} km/L`,
       statusKeys: ['fuelStatus'],
     },
-  ], [records]);
+  ].filter(Boolean) as ActivitySection[], [access, records]);
 
   const sectionButtons = useMemo(() => [
     { title: 'All', count: sections.reduce((total, section) => total + section.rows.length, 0) + activitySections.reduce((total, section) => total + section.rows.length, 0) },
@@ -217,6 +251,8 @@ export function VehicleDetailsDialog({
 
           {loading ? (
             <div className="flex items-center justify-center gap-2 rounded-xl border bg-white py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /> Loading compliance records...</div>
+          ) : loadError ? (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-6 text-center text-sm text-rose-700">{loadError}</div>
           ) : sections.filter((section) => selectedSection === 'All' || selectedSection === section.title).map((section) => (
             <section key={section.title} className="overflow-hidden rounded-xl border bg-white">
               <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-3">
@@ -232,7 +268,7 @@ export function VehicleDetailsDialog({
             </section>
           ))}
 
-          {!loading && activitySections.filter((section) => selectedSection === 'All' || selectedSection === section.title).map((section) => (
+          {!loading && !loadError && activitySections.filter((section) => selectedSection === 'All' || selectedSection === section.title).map((section) => (
             <section key={section.title} className="overflow-hidden rounded-xl border bg-white">
               <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-3">
                 <div className="flex items-center gap-2"><h3 className="font-semibold">{section.title}</h3><Badge variant="outline">{section.rows.length} log{section.rows.length === 1 ? '' : 's'}</Badge></div>

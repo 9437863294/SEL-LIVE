@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDocs, query as firestoreQuery, serverTimestamp, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, limit, query as firestoreQuery, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import {
@@ -50,6 +50,7 @@ import {
 import ExcelJS from 'exceljs';
 import { CarFront, Download, FileUp, Gauge, Loader2, MapPin, ShieldCheck } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
+import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 import { VehicleDetailsDialog } from '@/components/vehicle-management/vehicle-details-dialog';
 
 const DRIVER_UNASSIGNED = '__unassigned__';
@@ -246,6 +247,7 @@ export default function VehicleMasterPage() {
         .some((value) => value.includes(term))
     );
   }, [query, rows]);
+  const vehiclePagination = useVehicleTablePagination(filteredRows);
 
   const exportExcel = async () => {
     if (!canExport || isExporting) return;
@@ -553,6 +555,20 @@ export default function VehicleMasterPage() {
           assignedVehicleNumber: String(basePayload.vehicleNumber || ''),
         });
       }
+      if (previousDriverId !== nextDriverId) {
+        await addDoc(collection(db, VEHICLE_COLLECTIONS.driverAssignments), {
+          vehicleId: savedId,
+          vehicleNumber: String(basePayload.vehicleNumber || ''),
+          previousDriverId,
+          previousDriverName: String(editingRow?.assignedDriverName || ''),
+          driverId: nextDriverId,
+          driverName: String(basePayload.assignedDriverName || ''),
+          action: nextDriverId ? (previousDriverId ? 'Reassigned' : 'Assigned') : 'Unassigned',
+          source: 'Vehicle Master',
+          eventDate: new Date().toISOString(),
+          createdAt: serverTimestamp(),
+        });
+      }
 
       if (editingRow) {
         await log('Edit Vehicle', { vehicleNumber: form.vehicleNumber, vehicleId: editingRow?.id });
@@ -578,6 +594,38 @@ export default function VehicleMasterPage() {
   const confirmDelete = async () => {
     if (!deleteRow) return;
     try {
+      const vehicleId = String(deleteRow.id);
+      const relatedSources = [
+        { name: 'insurance', collectionName: VEHICLE_COLLECTIONS.insurance, field: 'vehicleId' },
+        { name: 'PUC', collectionName: VEHICLE_COLLECTIONS.puc, field: 'vehicleId' },
+        { name: 'fitness', collectionName: VEHICLE_COLLECTIONS.fitness, field: 'vehicleId' },
+        { name: 'road tax', collectionName: VEHICLE_COLLECTIONS.roadTax, field: 'vehicleId' },
+        { name: 'permit', collectionName: VEHICLE_COLLECTIONS.permit, field: 'vehicleId' },
+        { name: 'maintenance', collectionName: VEHICLE_COLLECTIONS.maintenance, field: 'vehicleId' },
+        { name: 'fuel', collectionName: VEHICLE_COLLECTIONS.fuel, field: 'vehicleId' },
+        { name: 'trip', collectionName: VEHICLE_COLLECTIONS.trips, field: 'vehicleId' },
+        { name: 'document', collectionName: VEHICLE_COLLECTIONS.documents, field: 'vehicleId' },
+        { name: 'driver assignment', collectionName: VEHICLE_COLLECTIONS.driver, field: 'assignedVehicleId' },
+        { name: 'assignment history', collectionName: VEHICLE_COLLECTIONS.driverAssignments, field: 'vehicleId' },
+      ];
+      const references = await Promise.all(
+        relatedSources.map(async (source) => ({
+          name: source.name,
+          snapshot: await getDocs(
+            firestoreQuery(collection(db, source.collectionName), where(source.field, '==', vehicleId), limit(1))
+          ),
+        }))
+      );
+      const linked = references.filter((result) => !result.snapshot.empty).map((result) => result.name);
+      if (linked.length > 0) {
+        toast({
+          title: 'Vehicle Has Linked History',
+          description: `Deletion is blocked to preserve ${linked.slice(0, 3).join(', ')} records. Mark the vehicle Sold, Scrapped, or Inactive instead.`,
+          variant: 'destructive',
+        });
+        setDeleteRow(null);
+        return;
+      }
       await deleteDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, String(deleteRow.id)));
       await log('Delete Vehicle', { vehicleNumber: deleteRow?.vehicleNumber, vehicleId: deleteRow?.id });
       toast({ title: 'Deleted', description: 'Vehicle deleted successfully.' });
@@ -652,7 +700,7 @@ export default function VehicleMasterPage() {
                 No vehicle records found.
               </div>
             ) : (
-              filteredRows.map((row) => (
+              vehiclePagination.paginatedRows.map((row) => (
                 <div key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="cursor-pointer rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
@@ -724,7 +772,7 @@ export default function VehicleMasterPage() {
                     </TableRow>
                   ))
                 ) : (
-                  filteredRows.map((row) => (
+                  vehiclePagination.paginatedRows.map((row) => (
                     <TableRow key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="h-14 cursor-pointer hover:bg-emerald-50/70">
                       <TableCell className="whitespace-nowrap font-medium">{row.vehicleId || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap font-semibold text-slate-800">{row.vehicleNumber || '-'}</TableCell>
@@ -759,6 +807,13 @@ export default function VehicleMasterPage() {
             </table>
           </div>
           )}
+          <VehicleTablePagination
+            currentPage={vehiclePagination.currentPage}
+            totalPages={vehiclePagination.totalPages}
+            totalRows={filteredRows.length}
+            pageSize={vehiclePagination.pageSize}
+            onPageChange={vehiclePagination.setCurrentPage}
+          />
         </CardContent>
       </Card>
 

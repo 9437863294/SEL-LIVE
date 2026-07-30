@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
@@ -20,7 +20,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Tag, Trash2, X } from 'lucide-react';
+import { BatteryCharging, LocateFixed, Plus, Radio, RotateCcw, Save, Settings2, Tag, X } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 
 type TrackingSettings = {
   driverLocationUpdateIntervalSec: number;
@@ -33,8 +34,6 @@ const intervalOptions = [
   { value: 30, label: 'Every 30 seconds' },
   { value: 60, label: 'Every 1 minute' },
 ];
-
-const yesNoValue = (value: boolean) => (value ? 'yes' : 'no');
 
 export default function VehicleManagementSettingsPage() {
   const { can } = useAuthorization();
@@ -57,10 +56,13 @@ export default function VehicleManagementSettingsPage() {
   const [newTypeName, setNewTypeName] = useState('');
   const [typesSaving, setTypesSaving] = useState(false);
   const typesInitialized = useRef(false);
+  const savedSettings = useRef<TrackingSettings | null>(null);
+  const savedTypes = useRef<string[]>([]);
 
   useEffect(() => {
     if (!typesLoading && !typesInitialized.current) {
       setLocalTypes(liveTypes);
+      savedTypes.current = [...liveTypes];
       typesInitialized.current = true;
     }
   }, [liveTypes, typesLoading]);
@@ -71,13 +73,19 @@ export default function VehicleManagementSettingsPage() {
       try {
         const ref = doc(db, VEHICLE_COLLECTIONS.settings, VEHICLE_SETTINGS_DOC_ID);
         const snap = await getDoc(ref);
-        if (!snap.exists()) { setIsLoading(false); return; }
+        if (!snap.exists()) {
+          savedSettings.current = { ...settings };
+          setIsLoading(false);
+          return;
+        }
         const data = snap.data() as Record<string, any>;
-        setSettings({
+        const loaded = {
           driverLocationUpdateIntervalSec: Number(data.driverLocationUpdateIntervalSec || DEFAULT_TRACKING_SETTINGS.driverLocationUpdateIntervalSec),
           enableSnapToRoadHint: Boolean(data.enableSnapToRoadHint),
           allowBackgroundTrackingHint: data.allowBackgroundTrackingHint !== false,
-        });
+        };
+        setSettings(loaded);
+        savedSettings.current = loaded;
       } catch {
         toast({ title: 'Error', description: 'Unable to load vehicle tracking settings.', variant: 'destructive' });
       } finally {
@@ -96,6 +104,7 @@ export default function VehicleManagementSettingsPage() {
         { ...settings, updatedAt: serverTimestamp() },
         { merge: true }
       );
+      savedSettings.current = { ...settings };
       toast({ title: 'Saved', description: 'Tracking settings updated successfully.' });
     } catch {
       toast({ title: 'Error', description: 'Unable to save tracking settings.', variant: 'destructive' });
@@ -128,6 +137,7 @@ export default function VehicleManagementSettingsPage() {
         { types: localTypes, updatedAt: serverTimestamp() },
         { merge: true }
       );
+      savedTypes.current = [...localTypes];
       toast({ title: 'Saved', description: 'Vehicle types updated successfully.' });
     } catch {
       toast({ title: 'Error', description: 'Unable to save vehicle types.', variant: 'destructive' });
@@ -139,6 +149,15 @@ export default function VehicleManagementSettingsPage() {
   const resetTypesToDefault = () => {
     setLocalTypes([...DEFAULT_VEHICLE_TYPES]);
   };
+
+  const resetTrackingToDefault = () => {
+    setSettings({ ...DEFAULT_TRACKING_SETTINGS });
+  };
+
+  const trackingDirty = savedSettings.current
+    ? JSON.stringify(settings) !== JSON.stringify(savedSettings.current)
+    : false;
+  const typesDirty = JSON.stringify(localTypes) !== JSON.stringify(savedTypes.current);
 
   if (!canView) {
     return (
@@ -163,193 +182,77 @@ export default function VehicleManagementSettingsPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-indigo-500 via-sky-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader>
-          <CardTitle className="tracking-tight">Vehicle Settings</CardTitle>
-          <CardDescription>
-            Manage vehicle types and trip tracking configuration.
-          </CardDescription>
+        <CardHeader className="flex flex-row items-start gap-3 p-4 sm:p-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><Settings2 className="h-5 w-5" /></div>
+          <div className="min-w-0 flex-1"><CardTitle className="text-lg tracking-tight">Vehicle Settings</CardTitle><CardDescription className="mt-0.5 text-xs">Configure master vehicle types and driver trip-tracking behaviour.</CardDescription></div>
+          {!canEdit && <Badge variant="outline" className="bg-slate-50 text-slate-600">View only</Badge>}
         </CardHeader>
       </Card>
 
-      {/* Vehicle Types */}
-      <Card className="vm-panel overflow-hidden">
-        <div className="h-0.5 w-full bg-gradient-to-r from-violet-500 to-purple-600" />
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <div className="rounded-lg bg-violet-100 p-1.5">
-              <Tag className="h-4 w-4 text-violet-600" />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
+        <Card className="vm-panel overflow-hidden">
+          <div className="h-0.5 w-full bg-gradient-to-r from-violet-500 to-purple-600" />
+          <CardHeader className="border-b border-slate-100 p-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-violet-100 p-2"><Tag className="h-4 w-4 text-violet-600" /></div>
+              <div className="flex-1"><CardTitle className="text-base">Vehicle Type Setup</CardTitle><CardDescription className="mt-0.5 text-xs">Controls the Vehicle Type dropdown in Vehicle Master.</CardDescription></div>
+              <Badge variant="outline" className="bg-white">{localTypes.length} types</Badge>
             </div>
-            <div>
-              <CardTitle className="text-base">Vehicle Types</CardTitle>
-              <CardDescription className="text-xs mt-0.5">
-                These types appear in the Vehicle Type dropdown when adding or editing vehicles.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Current types */}
-          <div className="min-h-[80px] rounded-lg border border-border/60 bg-muted/20 p-3">
-            {localTypes.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No vehicle types defined. Add one below or reset to defaults.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {localTypes.map((type) => (
-                  <Badge
-                    key={type}
-                    variant="secondary"
-                    className="gap-1.5 pl-2.5 pr-1.5 py-1 text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100"
-                  >
-                    {type}
-                    {canEdit && (
-                      <button
-                        onClick={() => removeType(type)}
-                        className="rounded-full hover:bg-violet-200 p-0.5 transition-colors"
-                        title={`Remove ${type}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
+          </CardHeader>
+          <CardContent className="space-y-4 p-4">
+            <div className="min-h-[118px] rounded-xl border border-violet-100 bg-violet-50/30 p-3">
+              {localTypes.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">No vehicle types configured.</p> : (
+                <div className="flex flex-wrap gap-2">{localTypes.map((type) => (
+                  <Badge key={type} variant="secondary" className="gap-1.5 border border-violet-200 bg-white py-1 pl-2.5 pr-1.5 text-xs font-medium text-violet-700">
+                    {type}{canEdit && <button type="button" onClick={() => removeType(type)} className="rounded-full p-0.5 transition-colors hover:bg-violet-100" aria-label={`Remove ${type}`}><X className="h-3 w-3" /></button>}
                   </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Add new type */}
-          {canEdit && (
-            <div className="flex gap-2">
-              <Input
-                value={newTypeName}
-                onChange={(e) => setNewTypeName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addType()}
-                placeholder="e.g. Excavator, Crane, Tractor..."
-                className="bg-white/85 flex-1"
-                maxLength={40}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={addType}
-                disabled={!newTypeName.trim()}
-                className="gap-1.5 border-violet-200 text-violet-700 hover:bg-violet-50"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add
-              </Button>
+                ))}</div>
+              )}
             </div>
-          )}
 
-          {/* Actions */}
-          {canEdit && (
-            <div className="flex items-center gap-2 pt-1">
-              <Button
-                onClick={saveTypes}
-                disabled={typesSaving}
-                className="flex-1 bg-gradient-to-r from-violet-500 to-purple-600 text-white"
-              >
-                {typesSaving ? 'Saving...' : 'Save Vehicle Types'}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={resetTypesToDefault}
-                className="gap-1.5 text-muted-foreground"
-                title="Reset to default types"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Reset
-              </Button>
+            <div className="space-y-1.5"><Label htmlFor="new-vehicle-type" className="text-xs font-semibold">Add Vehicle Type</Label><div className="flex gap-2"><Input id="new-vehicle-type" value={newTypeName} onChange={(event) => setNewTypeName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addType(); }} placeholder="Example: Excavator" disabled={!canEdit} maxLength={40} className="bg-white" /><Button type="button" variant="outline" onClick={addType} disabled={!canEdit || !newTypeName.trim()} className="border-violet-200 text-violet-700"><Plus className="mr-1.5 h-4 w-4" />Add</Button></div></div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <Button type="button" variant="ghost" onClick={resetTypesToDefault} disabled={!canEdit} className="text-slate-600"><RotateCcw className="mr-1.5 h-4 w-4" />Restore Defaults</Button>
+              <Button onClick={saveTypes} disabled={!canEdit || typesSaving || !typesDirty} className="bg-gradient-to-r from-violet-500 to-purple-600 text-white"><Save className="mr-1.5 h-4 w-4" />{typesSaving ? 'Saving...' : typesDirty ? 'Save Vehicle Types' : 'Types Saved'}</Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      {/* Tracking Settings */}
-      <Card className="vm-panel overflow-hidden">
-        <div className="h-0.5 w-full bg-gradient-to-r from-indigo-500 to-cyan-600" />
-        <CardHeader>
-          <CardTitle className="text-base">Trip Tracking Console</CardTitle>
-          <CardDescription className="text-xs">
-            Control how frequently driver trip location is pushed during active trips.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Location Update Interval</Label>
-            <Select
-              value={String(settings.driverLocationUpdateIntervalSec)}
-              onValueChange={(value) =>
-                setSettings((prev) => ({ ...prev, driverLocationUpdateIntervalSec: Number(value) }))
-              }
-            >
-              <SelectTrigger className="bg-white/85">
-                <SelectValue placeholder="Select update interval" />
-              </SelectTrigger>
-              <SelectContent>
-                {intervalOptions.map((item) => (
-                  <SelectItem key={item.value} value={String(item.value)}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <Card className="vm-panel overflow-hidden">
+          <div className="h-0.5 w-full bg-gradient-to-r from-indigo-500 to-cyan-600" />
+          <CardHeader className="border-b border-slate-100 p-4">
+            <div className="flex items-start gap-3"><div className="rounded-lg bg-cyan-100 p-2"><Radio className="h-4 w-4 text-cyan-700" /></div><div className="flex-1"><CardTitle className="text-base">Trip Tracking Setup</CardTitle><CardDescription className="mt-0.5 text-xs">Applied when the driver starts a tracked trip.</CardDescription></div>{trackingDirty && <Badge className="bg-amber-500 text-white">Unsaved</Badge>}</div>
+          </CardHeader>
+          <CardContent className="space-y-3 p-4">
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex items-start gap-3"><div className="rounded-lg bg-indigo-50 p-2 text-indigo-600"><LocateFixed className="h-4 w-4" /></div><div className="min-w-0 flex-1"><Label className="font-semibold">Location Update Interval</Label><p className="mt-0.5 text-xs text-muted-foreground">How often the driver app records location during a trip.</p><Select disabled={!canEdit} value={String(settings.driverLocationUpdateIntervalSec)} onValueChange={(value) => setSettings((prev) => ({ ...prev, driverLocationUpdateIntervalSec: Number(value) }))}><SelectTrigger className="mt-3 bg-slate-50"><SelectValue /></SelectTrigger><SelectContent>{intervalOptions.map((item) => <SelectItem key={item.value} value={String(item.value)}>{item.label}</SelectItem>)}</SelectContent></Select></div></div>
+            </div>
 
-          <div className="space-y-2">
-            <Label>Road Snapping Hint</Label>
-            <Select
-              value={yesNoValue(settings.enableSnapToRoadHint)}
-              onValueChange={(value) =>
-                setSettings((prev) => ({ ...prev, enableSnapToRoadHint: value === 'yes' }))
-              }
-            >
-              <SelectTrigger className="bg-white/85">
-                <SelectValue placeholder="Select option" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="yes">Enabled</SelectItem>
-                <SelectItem value="no">Disabled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            <SettingSwitch icon={<LocateFixed className="h-4 w-4" />} title="Road Snapping Hint" description="Suggest matching captured points to the nearest road." checked={settings.enableSnapToRoadHint} disabled={!canEdit} onCheckedChange={(checked) => setSettings((prev) => ({ ...prev, enableSnapToRoadHint: checked }))} />
+            <SettingSwitch icon={<BatteryCharging className="h-4 w-4" />} title="Background Tracking Hint" description="Allow location tracking while the driver app is in the background." checked={settings.allowBackgroundTrackingHint} disabled={!canEdit} onCheckedChange={(checked) => setSettings((prev) => ({ ...prev, allowBackgroundTrackingHint: checked }))} />
 
-          <div className="space-y-2">
-            <Label>Background Tracking Hint</Label>
-            <Select
-              value={yesNoValue(settings.allowBackgroundTrackingHint)}
-              onValueChange={(value) =>
-                setSettings((prev) => ({ ...prev, allowBackgroundTrackingHint: value === 'yes' }))
-              }
-            >
-              <SelectTrigger className="bg-white/85">
-                <SelectValue placeholder="Select option" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="yes">Allowed</SelectItem>
-                <SelectItem value="no">Restricted</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            <div className="rounded-xl border border-cyan-100 bg-cyan-50/70 p-3 text-xs leading-relaxed text-cyan-900">The driver app reads these settings before tracking starts. Shorter intervals improve route detail but use more battery and mobile data.</div>
 
-          <div className="rounded-xl border border-cyan-100 bg-cyan-50/70 p-3 text-sm text-cyan-900">
-            Driver app reads this configuration before tracking starts. For high-frequency mode, keep battery impact in mind.
-          </div>
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <Button type="button" variant="ghost" onClick={resetTrackingToDefault} disabled={!canEdit} className="text-slate-600"><RotateCcw className="mr-1.5 h-4 w-4" />Restore Defaults</Button>
+              <Button onClick={save} disabled={!canEdit || isSaving || !trackingDirty} className="bg-gradient-to-r from-indigo-500 to-cyan-600 text-white"><Save className="mr-1.5 h-4 w-4" />{isSaving ? 'Saving...' : trackingDirty ? 'Save Tracking Settings' : 'Settings Saved'}</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
 
-          <div className="md:col-span-2">
-            <Button
-              onClick={save}
-              disabled={!canEdit || isSaving}
-              className="w-full bg-gradient-to-r from-indigo-500 to-cyan-600 text-white"
-            >
-              {isSaving ? 'Saving...' : 'Save Tracking Settings'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+function SettingSwitch({ icon, title, description, checked, disabled, onCheckedChange }: { icon: ReactNode; title: string; description: string; checked: boolean; disabled: boolean; onCheckedChange: (checked: boolean) => void }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+      <div className="rounded-lg bg-cyan-50 p-2 text-cyan-700">{icon}</div>
+      <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-slate-800">{title}</p><p className="text-xs text-muted-foreground">{description}</p></div>
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} className="data-[state=checked]:bg-cyan-600" />
     </div>
   );
 }

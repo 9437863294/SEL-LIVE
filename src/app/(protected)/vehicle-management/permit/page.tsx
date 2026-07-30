@@ -6,7 +6,7 @@ import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
@@ -31,7 +31,7 @@ export default function PermitManagementPage() {
 
   const fields = useMemo<CrudFieldConfig[]>(
     () => [
-      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, options: vehicleOptions },
+      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, searchable: true, options: vehicleOptions },
       {
         key: 'isMandatory',
         label: 'Mandatory for Vehicle',
@@ -62,7 +62,7 @@ export default function PermitManagementPage() {
       { key: 'validFrom', label: 'Valid From', type: 'date', required: true },
       { key: 'validTill', label: 'Valid Till', type: 'date', required: true },
       { key: 'issuingAuthority', label: 'Issuing Authority', type: 'text', required: true },
-      { key: 'amountPaid', label: 'Amount Paid', type: 'number', required: true },
+      { key: 'amountPaid', label: 'Amount Paid', type: 'number', required: true, min: 0 },
       { key: 'permitDocumentUrl', label: 'Document Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -85,9 +85,16 @@ export default function PermitManagementPage() {
       canExport={canExport}
       exportFileName="permit-management"
       defaultSort={{ key: 'validTill', direction: 'asc' }}
+      onAfterFetch={(rows) => rows.map((row) => {
+        const mandatory = String(row.isMandatory || 'Yes') === 'Yes';
+        const meta = mandatory ? computeRenewalMeta(String(row.validTill || '')) : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' };
+        return { ...row, alertStage: meta.alertStage, complianceStatus: meta.complianceStatus, permitStatus: mandatory ? (meta.complianceStatus === 'Expired' ? 'Expired' : 'Valid') : 'Not Applicable' };
+      })}
       initialPrefill={prefill}
       renewingFromId={renewingFromId}
       onBeforeSave={(payload) => {
+        const dateError = getVehicleDateRangeError(payload.validFrom, payload.validTill, 'Valid-from date', 'Valid-till date');
+        if (dateError) throw new Error(dateError);
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const mandatory = String(payload.isMandatory || 'Yes') === 'Yes';
         const meta = mandatory ? computeRenewalMeta(String(payload.validTill || '')) : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' };
@@ -102,6 +109,10 @@ export default function PermitManagementPage() {
       }}
       onAfterSave={async ({ payload }) => {
         const vehicleId = String(payload.vehicleId || '');
+        if (vehicleId) await syncVehicleComplianceStatus(vehicleId);
+      }}
+      onAfterDelete={async ({ row }) => {
+        const vehicleId = String(row.vehicleId || '');
         if (vehicleId) await syncVehicleComplianceStatus(vehicleId);
       }}
     />

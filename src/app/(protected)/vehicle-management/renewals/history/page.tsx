@@ -29,6 +29,7 @@ import {
   User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -226,6 +227,7 @@ export default function RenewalHistoryPage() {
         r.expiryDate.includes(term)
     );
   }, [records, categoryFilter, query]);
+  const historyPagination = useVehicleTablePagination(filteredRecords);
 
   return (
     <div className="space-y-3 sm:space-y-5">
@@ -329,7 +331,7 @@ export default function RenewalHistoryPage() {
             <>
               {/* Mobile cards */}
               <div className="space-y-3 p-4 sm:hidden">
-                {filteredRecords.map((rec) => (
+                {historyPagination.paginatedRows.map((rec) => (
                   <div
                     key={rec.id}
                     className="rounded-xl border border-rose-100/80 bg-white/85 p-3 shadow-sm"
@@ -386,7 +388,7 @@ export default function RenewalHistoryPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredRecords.map((rec) => (
+                      {historyPagination.paginatedRows.map((rec) => (
                         <TableRow
                           key={rec.id}
                           className="hover:bg-rose-50/50 transition-colors"
@@ -428,11 +430,14 @@ export default function RenewalHistoryPage() {
                 )}
               </div>
 
-              {/* Footer count */}
-              <div className="border-t border-white/70 px-4 py-2.5 text-right text-xs text-muted-foreground">
-                Showing{' '}
-                <span className="font-semibold text-slate-700">{filteredRecords.length}</span> of{' '}
-                <span className="font-semibold text-slate-700">{records.length}</span> expired records
+              <div className="border-t border-white/70 px-4 py-2.5">
+                <VehicleTablePagination
+                  currentPage={historyPagination.currentPage}
+                  totalPages={historyPagination.totalPages}
+                  totalRows={filteredRecords.length}
+                  pageSize={historyPagination.pageSize}
+                  onPageChange={historyPagination.setCurrentPage}
+                />
               </div>
             </>
           )}

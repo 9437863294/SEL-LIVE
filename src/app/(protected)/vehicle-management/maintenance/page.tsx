@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components/vehicle-management/generic-crud-page';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
@@ -18,6 +18,21 @@ const columns: CrudColumnConfig[] = [
   { key: 'approvalStatus', label: 'Approval' },
 ];
 
+const getServiceDueAlert = (nextServiceDate: unknown) => {
+  if (!nextServiceDate) return '';
+  const today = new Date();
+  const target = new Date(String(nextServiceDate));
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  if (Number.isNaN(target.getTime())) return '';
+  const days = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (days < 0) return 'Overdue';
+  if (days === 0) return 'Due Today';
+  if (days <= 7) return '7 Days';
+  if (days <= 30) return '30 Days';
+  return 'Upcoming';
+};
+
 export default function MaintenanceManagementPage() {
   const { can } = useAuthorization();
   const { options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
@@ -30,7 +45,7 @@ export default function MaintenanceManagementPage() {
 
   const fields = useMemo<CrudFieldConfig[]>(
     () => [
-      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, options: vehicleOptions },
+      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, searchable: true, options: vehicleOptions },
       {
         key: 'maintenanceType',
         label: 'Maintenance Type',
@@ -53,16 +68,16 @@ export default function MaintenanceManagementPage() {
       },
       { key: 'serviceDate', label: 'Service Date', type: 'date', required: true },
       { key: 'serviceDoneDate', label: 'Service Completion Date', type: 'date' },
-      { key: 'odometerReadingKm', label: 'Odometer Reading (KM)', type: 'number', required: true, step: '1' },
+      { key: 'odometerReadingKm', label: 'Odometer Reading (KM)', type: 'number', required: true, step: '1', min: 0 },
       { key: 'garageName', label: 'Garage / Workshop Name', type: 'text', required: true },
       { key: 'garageContactNumber', label: 'Garage Contact', type: 'text' },
       { key: 'workDescription', label: 'Work Description', type: 'textarea', required: true },
       { key: 'partsReplaced', label: 'Parts Replaced', type: 'textarea' },
-      { key: 'labourCost', label: 'Labour Cost (₹)', type: 'number', required: true },
-      { key: 'partsCost', label: 'Parts Cost (₹)', type: 'number', required: true },
-      { key: 'otherCharges', label: 'Other Charges (₹)', type: 'number', defaultValue: '0' },
+      { key: 'labourCost', label: 'Labour Cost (₹)', type: 'number', required: true, min: 0 },
+      { key: 'partsCost', label: 'Parts Cost (₹)', type: 'number', required: true, min: 0 },
+      { key: 'otherCharges', label: 'Other Charges (₹)', type: 'number', defaultValue: '0', min: 0 },
       { key: 'nextServiceDate', label: 'Next Service Due Date', type: 'date' },
-      { key: 'nextServiceKm', label: 'Next Service Due KM', type: 'number', step: '1' },
+      { key: 'nextServiceKm', label: 'Next Service Due KM', type: 'number', step: '1', min: 0 },
       { key: 'invoiceNumber', label: 'Invoice Number', type: 'text' },
       { key: 'jobCardNumber', label: 'Job Card Number', type: 'text' },
       { key: 'invoiceDocumentUrl', label: 'Invoice Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
@@ -101,7 +116,12 @@ export default function MaintenanceManagementPage() {
       canExport={canExport}
       exportFileName="maintenance-management"
       defaultSort={{ key: 'serviceDate', direction: 'desc' }}
+      onAfterFetch={(rows) => rows.map((row) => ({ ...row, nextServiceDueAlert: getServiceDueAlert(row.nextServiceDate) }))}
       onBeforeSave={(payload) => {
+        const completionError = getVehicleDateRangeError(payload.serviceDate, payload.serviceDoneDate, 'Service date', 'Completion date');
+        if (completionError) throw new Error(completionError);
+        const nextServiceError = getVehicleDateRangeError(payload.serviceDate, payload.nextServiceDate, 'Service date', 'Next service date');
+        if (nextServiceError) throw new Error(nextServiceError);
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const labourCost = Number(payload.labourCost || 0);
         const partsCost = Number(payload.partsCost || 0);
@@ -119,20 +139,7 @@ export default function MaintenanceManagementPage() {
         }
 
         // Next-service due alert
-        const nextServiceDate = String(payload.nextServiceDate || '');
-        let nextServiceDueAlert = '';
-        if (nextServiceDate) {
-          const today = new Date();
-          const target = new Date(nextServiceDate);
-          today.setHours(0, 0, 0, 0);
-          target.setHours(0, 0, 0, 0);
-          const days = Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          if (days < 0) nextServiceDueAlert = 'Overdue';
-          else if (days === 0) nextServiceDueAlert = 'Due Today';
-          else if (days <= 7) nextServiceDueAlert = '7 Days';
-          else if (days <= 30) nextServiceDueAlert = '30 Days';
-          else nextServiceDueAlert = 'Upcoming';
-        }
+        const nextServiceDueAlert = getServiceDueAlert(payload.nextServiceDate);
 
         return {
           ...payload,

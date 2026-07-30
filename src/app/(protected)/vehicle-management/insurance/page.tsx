@@ -16,7 +16,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
-import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -66,6 +66,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import ExcelJS from 'exceljs';
 import { Check, ChevronsUpDown, Download, ExternalLink, FileUp, History, Loader2, RefreshCw, RotateCcw, Search, ShieldCheck, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
+import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 
 type InsuranceRow = Record<string, any>;
 type InsuranceForm = Record<string, string>;
@@ -121,7 +122,7 @@ export default function InsuranceManagementPage() {
   const { toast } = useToast();
   const { log } = useActivityLogger('Vehicle Management');
   const { can } = useAuthorization();
-  const { options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
+  const { rows: vehicleRows, options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
   const { prefill, renewingFromId } = useRenewalPrefill();
 
   const canView = can('View', 'Vehicle Management.Insurance Management');
@@ -146,14 +147,31 @@ export default function InsuranceManagementPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [form, setForm] = useState<InsuranceForm>(buildInitialState());
   const [file, setFile] = useState<File | null>(null);
+  const [isRenewalMode, setIsRenewalMode] = useState(false);
   const prefillApplied = useRef(false);
+  const importedVehicleIdsRef = useRef(new Set<string>());
 
   const loadRows = async () => {
     setIsLoading(true);
     try {
       const snap = await getDocs(collection(db, VEHICLE_COLLECTIONS.insurance));
       const data = snap.docs
-        .map((entry): InsuranceRow => ({ id: entry.id, ...(entry.data() as Record<string, any>) }))
+        .map((entry): InsuranceRow => {
+          const row: InsuranceRow = { id: entry.id, ...(entry.data() as Record<string, any>) };
+          const meta = computeRenewalMeta(String(row.expiryDate || ''));
+          return {
+            ...row,
+            alertStage: meta.alertStage,
+            complianceStatus: meta.complianceStatus,
+            renewalStatus: row.isArchived || row.renewalStatus === 'Renewed'
+              ? 'Renewed'
+              : meta.alertStage === 'Expired'
+                ? 'Overdue'
+                : ['Due Today', '7d', '15d', '30d'].includes(meta.alertStage)
+                  ? 'Due Soon'
+                  : 'Not Due',
+          };
+        })
         .sort(compareCreatedAtDesc);
       setRows(data);
     } catch (error) {
@@ -175,16 +193,27 @@ export default function InsuranceManagementPage() {
 
   useEffect(() => {
     if (!prefill || prefillApplied.current || !canAdd) return;
+    if (renewingFromId && isLoading) return;
+    const renewalSource = renewingFromId
+      ? rows.find((row) => String(row.id) === String(renewingFromId)) || null
+      : null;
+    if (renewingFromId && !renewalSource) {
+      prefillApplied.current = true;
+      toast({ title: 'Renewal Record Not Found', description: 'The original insurance policy could not be loaded.', variant: 'destructive' });
+      return;
+    }
     prefillApplied.current = true;
-    const next = buildInitialState();
+    const next = renewalSource ? mapRowToState(renewalSource) : buildInitialState();
+    next.policyDocumentUrl = '';
     Object.entries(prefill).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') next[key] = String(value);
     });
     setEditingRow(null);
     setForm(next);
     setFile(null);
+    setIsRenewalMode(true);
     setDialogOpen(true);
-  }, [canAdd, prefill]);
+  }, [canAdd, isLoading, prefill, renewingFromId, rows, toast]);
 
   const filteredRows = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -223,6 +252,7 @@ export default function InsuranceManagementPage() {
         .some((value) => value.includes(term));
     });
   }, [activeTab, expiryFilter, policyTypeFilter, query, rows, statusFilter]);
+  const insurancePagination = useVehicleTablePagination(filteredRows);
 
   const currentCount = useMemo(() => rows.filter((row) => row.isArchived !== true).length, [rows]);
   const historyCount = useMemo(() => rows.filter((row) => row.isArchived === true).length, [rows]);
@@ -311,8 +341,16 @@ export default function InsuranceManagementPage() {
   ];
 
   const saveInsuranceRow = async (row: Record<string, any>) => {
+    const importedVehicleNumber = normalizeVehicleRegistration(row.vehicleNumber);
+    const matchedVehicle = vehicleRows.find((vehicle) =>
+      normalizeVehicleRegistration(vehicle.vehicleNumber || vehicle.registrationNo) === importedVehicleNumber
+    );
+    if (!matchedVehicle) throw new Error(`Vehicle ${row.vehicleNumber || ''} was not found in Vehicle Master.`);
+    const dateError = getVehicleDateRangeError(row.startDate, row.expiryDate, 'Start date', 'Expiry date');
+    if (dateError) throw new Error(dateError);
     const meta = computeRenewalMeta(String(row.expiryDate || ''));
     await addDoc(collection(db, VEHICLE_COLLECTIONS.insurance), {
+      vehicleId: matchedVehicle.id,
       vehicleNumber: String(row.vehicleNumber || '').trim(),
       insuranceCompany: String(row.insuranceCompany || '').trim(),
       policyNumber: String(row.policyNumber || '').trim(),
@@ -329,6 +367,7 @@ export default function InsuranceManagementPage() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    importedVehicleIdsRef.current.add(String(matchedVehicle.id));
   };
 
   const openAdd = () => {
@@ -336,6 +375,7 @@ export default function InsuranceManagementPage() {
     setEditingRow(null);
     setForm(buildInitialState());
     setFile(null);
+    setIsRenewalMode(false);
     setDialogOpen(true);
   };
 
@@ -344,6 +384,7 @@ export default function InsuranceManagementPage() {
     setEditingRow(row);
     setForm(mapRowToState(row));
     setFile(null);
+    setIsRenewalMode(false);
     setDialogOpen(true);
   };
 
@@ -377,6 +418,19 @@ export default function InsuranceManagementPage() {
     const premium = Number(form.premiumAmount || 0);
     if (!Number.isFinite(premium) || premium <= 0) {
       toast({ title: 'Validation Error', description: 'Premium Amount is invalid.', variant: 'destructive' });
+      return;
+    }
+    const dateError = getVehicleDateRangeError(form.startDate, form.expiryDate, 'Start date', 'Expiry date');
+    if (dateError) {
+      toast({ title: 'Validation Error', description: dateError, variant: 'destructive' });
+      return;
+    }
+    if (form.idvValue && (!Number.isFinite(Number(form.idvValue)) || Number(form.idvValue) < 0)) {
+      toast({ title: 'Validation Error', description: 'IDV Value must be a valid positive amount.', variant: 'destructive' });
+      return;
+    }
+    if (file && file.size > 10 * 1024 * 1024) {
+      toast({ title: 'Validation Error', description: 'Insurance document must be smaller than 10 MB.', variant: 'destructive' });
       return;
     }
 
@@ -422,25 +476,29 @@ export default function InsuranceManagementPage() {
         complianceStatus: meta.complianceStatus,
       };
 
+      let savedId = '';
       if (editingRow) {
+        savedId = String(editingRow.id);
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.insurance, String(editingRow.id)), {
           ...payload,
           updatedAt: serverTimestamp(),
         });
       } else {
-        await addDoc(collection(db, VEHICLE_COLLECTIONS.insurance), {
+        const created = await addDoc(collection(db, VEHICLE_COLLECTIONS.insurance), {
           ...payload,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        savedId = created.id;
       }
 
       if (form.vehicleId) await syncVehicleComplianceStatus(String(form.vehicleId));
 
-      if (!editingRow && renewingFromId) {
+      if (!editingRow && isRenewalMode && renewingFromId) {
         try {
           await updateDoc(doc(db, VEHICLE_COLLECTIONS.insurance, renewingFromId), {
             renewalStatus: 'Renewed',
+            renewedById: savedId,
             renewedAt: serverTimestamp(),
             isArchived: true,
           });
@@ -461,6 +519,7 @@ export default function InsuranceManagementPage() {
       });
       setDialogOpen(false);
       setEditingRow(null);
+      setIsRenewalMode(false);
       setFile(null);
       setForm(buildInitialState());
       await loadRows();
@@ -583,7 +642,7 @@ export default function InsuranceManagementPage() {
                 No records found.
               </div>
             ) : (
-              filteredRows.map((row) => (
+              insurancePagination.paginatedRows.map((row) => (
                 <div key={row.id} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
                   {/* Top: vehicle number + alert badge */}
                   <div className="mb-3 flex items-start justify-between gap-2">
@@ -653,7 +712,7 @@ export default function InsuranceManagementPage() {
                     </TableRow>
                   ))
                 ) : (
-                  filteredRows.map((row) => (
+                  insurancePagination.paginatedRows.map((row) => (
                     <TableRow key={String(row.id)} className="transition-colors hover:bg-emerald-50/60">
                       <TableCell className="font-semibold text-slate-800">{row.vehicleNumber || '-'}</TableCell>
                       <TableCell>{row.insuranceCompany || '-'}</TableCell>
@@ -686,23 +745,30 @@ export default function InsuranceManagementPage() {
           </div>
           )}
           </div>
+          <VehicleTablePagination
+            currentPage={insurancePagination.currentPage}
+            totalPages={insurancePagination.totalPages}
+            totalRows={filteredRows.length}
+            pageSize={insurancePagination.pageSize}
+            onPageChange={insurancePagination.setCurrentPage}
+          />
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
         <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-6 py-5 pr-12">
+          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><ShieldCheck className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1">
-                {renewingFromId && !editingRow && <span className="mb-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Renewing Existing Policy</span>}
-                <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit Insurance Policy' : renewingFromId ? 'Renew Insurance Policy' : 'Add Insurance Policy'}</DialogTitle>
+                {isRenewalMode && renewingFromId && !editingRow && <span className="mb-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Renewing Existing Policy</span>}
+                <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit Insurance Policy' : isRenewalMode && renewingFromId ? 'Renew Insurance Policy' : 'Add Insurance Policy'}</DialogTitle>
                 <DialogDescription className="mt-0.5">Policy information, coverage dates, value, agent, and document.</DialogDescription>
               </div>
               <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Policy Details</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Document</span></div>
             </div>
           </div>
-          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-6 py-5">
+          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-3 py-3 sm:px-6 sm:py-5">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
                 <div><p className="text-sm font-semibold text-slate-800">Policy Information</p><p className="text-xs text-muted-foreground">Select the vehicle and enter the latest insurance details.</p></div>
@@ -781,10 +847,10 @@ export default function InsuranceManagementPage() {
               </div>
             </div>
           </div>
-          <DialogFooter className="vm-dialog-footer shrink-0 border-t border-slate-200 bg-white px-6 py-4 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)] sm:justify-between">
+          <DialogFooter className="vm-dialog-footer shrink-0 border-t border-slate-200 bg-white px-3 py-3 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)] sm:px-6 sm:py-4 sm:justify-between">
             <p className="hidden text-xs text-muted-foreground sm:block">Review policy dates and vehicle before saving.</p>
             <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-            <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-10 bg-white">
+            <Button variant="outline" onClick={() => { setDialogOpen(false); setIsRenewalMode(false); }} className="h-10 bg-white">
               Cancel
             </Button>
             <Button onClick={() => void submit()} disabled={isSaving} className="h-10 bg-gradient-to-r from-emerald-500 to-teal-600 px-5 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700">
@@ -819,7 +885,13 @@ export default function InsuranceManagementPage() {
         title="Import Insurance Records"
         fields={INSURANCE_IMPORT_FIELDS}
         onSaveRow={saveInsuranceRow}
-        onImportComplete={() => { void loadRows(); void log('Import Insurance', {}); }}
+        onImportComplete={() => {
+          const vehicleIds = Array.from(importedVehicleIdsRef.current);
+          importedVehicleIdsRef.current.clear();
+          void Promise.all(vehicleIds.map((vehicleId) => syncVehicleComplianceStatus(vehicleId)));
+          void loadRows();
+          void log('Import Insurance', { vehicleCount: vehicleIds.length });
+        }}
       />
     </div>
   );

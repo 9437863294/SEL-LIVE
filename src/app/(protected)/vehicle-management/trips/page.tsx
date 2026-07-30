@@ -14,6 +14,7 @@ import {
   VEHICLE_COLLECTIONS,
 } from '@/lib/vehicle-management';
 import TripMapView from '@/components/vehicle-management/trip-map-view';
+import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -132,6 +133,7 @@ export default function TripManagementPage() {
     if (dateTo) rows = rows.filter((t) => String(t.startTimeIso || '') <= `${dateTo}T23:59:59`);
     return rows;
   }, [statusFilter, searchQuery, dateFrom, dateTo, trips]);
+  const tripPagination = useVehicleTablePagination(filteredTrips);
 
   const selectedTrip = useMemo(
     () => trips.find((trip) => String(trip.id) === selectedTripId) || null,
@@ -377,7 +379,7 @@ export default function TripManagementPage() {
                 No trips found.
               </div>
             ) : (
-              filteredTrips.map((trip) => (
+              tripPagination.paginatedRows.map((trip) => (
                 <div
                   key={String(trip.id)}
                   onClick={() => setSelectedTripId((current) => current === String(trip.id) ? '' : String(trip.id))}
@@ -458,7 +460,7 @@ export default function TripManagementPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredTrips.map((trip) => {
+                  {tripPagination.paginatedRows.map((trip) => {
                     const isSelected = selectedTripId === String(trip.id);
                     return (
                       [
@@ -532,6 +534,13 @@ export default function TripManagementPage() {
               </table>
             </div>
             )}
+          <VehicleTablePagination
+            currentPage={tripPagination.currentPage}
+            totalPages={tripPagination.totalPages}
+            totalRows={filteredTrips.length}
+            pageSize={tripPagination.pageSize}
+            onPageChange={tripPagination.setCurrentPage}
+          />
         </CardContent>
       </Card>
     </div>

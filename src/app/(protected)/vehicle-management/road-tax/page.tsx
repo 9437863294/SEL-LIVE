@@ -6,7 +6,7 @@ import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
@@ -32,7 +32,7 @@ export default function RoadTaxManagementPage() {
 
   const fields = useMemo<CrudFieldConfig[]>(
     () => [
-      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, options: vehicleOptions },
+      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, searchable: true, options: vehicleOptions },
       {
         key: 'taxType',
         label: 'Tax Type',
@@ -62,8 +62,8 @@ export default function RoadTaxManagementPage() {
       },
       { key: 'paymentDate', label: 'Payment Date', type: 'date', required: true },
       { key: 'validTill', label: 'Valid Till', type: 'date', required: true },
-      { key: 'amountPaid', label: 'Amount Paid', type: 'number', required: true },
-      { key: 'penaltyAmount', label: 'Penalty Amount', type: 'number', defaultValue: '0' },
+      { key: 'amountPaid', label: 'Amount Paid', type: 'number', required: true, min: 0 },
+      { key: 'penaltyAmount', label: 'Penalty Amount', type: 'number', defaultValue: '0', min: 0 },
       { key: 'receiptNumber', label: 'Receipt Number', type: 'text', required: true },
       { key: 'receiptDocumentUrl', label: 'Receipt Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
       {
@@ -100,9 +100,15 @@ export default function RoadTaxManagementPage() {
       canExport={canExport}
       exportFileName="road-tax-management"
       defaultSort={{ key: 'validTill', direction: 'asc' }}
+      onAfterFetch={(rows) => rows.map((row) => {
+        const meta = computeRenewalMeta(String(row.validTill || ''));
+        return { ...row, alertStage: meta.alertStage, complianceStatus: meta.complianceStatus === 'Expired' ? 'Overdue' : meta.complianceStatus, roadTaxStatus: meta.complianceStatus === 'Expired' ? 'Overdue' : 'Paid' };
+      })}
       initialPrefill={prefill}
       renewingFromId={renewingFromId}
       onBeforeSave={(payload) => {
+        const dateError = getVehicleDateRangeError(payload.paymentDate, payload.validTill, 'Payment date', 'Valid-till date');
+        if (dateError) throw new Error(dateError);
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const meta = computeRenewalMeta(String(payload.validTill || ''));
         const amountPaid = Number(payload.amountPaid || 0);
@@ -118,6 +124,10 @@ export default function RoadTaxManagementPage() {
       }}
       onAfterSave={async ({ payload }) => {
         const vehicleId = String(payload.vehicleId || '');
+        if (vehicleId) await syncVehicleComplianceStatus(vehicleId);
+      }}
+      onAfterDelete={async ({ row }) => {
+        const vehicleId = String(row.vehicleId || '');
         if (vehicleId) await syncVehicleComplianceStatus(vehicleId);
       }}
     />

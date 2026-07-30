@@ -134,7 +134,11 @@ const isCategoryApplicable = (vehicle: Record<string, any>, category: string) =>
 
 export default function VehicleHealthPage() {
   const { can } = useAuthorization();
-  const canView = can('View', 'Vehicle Management.Vehicle Master') || can('View', 'Vehicle Management.Overview');
+  const canView =
+    can('View', 'Vehicle Management.Vehicle Master') ||
+    can('Add', 'Vehicle Management.Vehicle Master') ||
+    can('Edit', 'Vehicle Management.Vehicle Master') ||
+    can('View', 'Vehicle Management.Overview');
 
   const [isLoading, setIsLoading] = useState(true);
   const [vehicleHealthList, setVehicleHealthList] = useState<VehicleHealth[]>([]);
@@ -158,6 +162,7 @@ export default function VehicleHealthPage() {
           const byVehicle: Record<string, { expiryDate: string; status: string; _sortStamp: number }> = {};
           snap.docs.forEach((d) => {
             const data = d.data();
+            if (data.isArchived === true || data.renewalStatus === 'Renewed') return;
             const vid = String(data[cat.vehicleIdField] || '');
             if (!vid) return;
 
@@ -211,13 +216,19 @@ export default function VehicleHealthPage() {
 
       // Load latest fuel per vehicle
       const fuelSnap = await getDocs(collection(db, VEHICLE_COLLECTIONS.fuel));
-      const lastFuel: Record<string, number> = {};
+      const latestFuel: Record<string, { mileage: number; stamp: number }> = {};
       fuelSnap.docs.forEach((d) => {
         const data = d.data();
         const vid = String(data.vehicleId || '');
         const mileage = Number(data.mileageKmPerLiter || 0);
-        if (!lastFuel[vid] && mileage > 0) lastFuel[vid] = mileage;
+        const fuelDateStamp = new Date(String(data.fuelDate || '')).getTime();
+        const createdStamp = typeof data.createdAt?.seconds === 'number' ? Number(data.createdAt.seconds) * 1000 : 0;
+        const stamp = Number.isNaN(fuelDateStamp) ? createdStamp : fuelDateStamp;
+        if (mileage > 0 && (!latestFuel[vid] || stamp >= latestFuel[vid].stamp)) {
+          latestFuel[vid] = { mileage, stamp };
+        }
       });
+      const lastFuel = Object.fromEntries(Object.entries(latestFuel).map(([vehicleId, value]) => [vehicleId, value.mileage]));
 
       // Compute per-vehicle health score
       const list: VehicleHealth[] = vehicles.map((v) => {

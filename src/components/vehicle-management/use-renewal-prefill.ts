@@ -31,7 +31,10 @@ export function useRenewalPrefill(): RenewalPrefill {
     const prefill: Record<string, string> = {};
 
     // vehicleId → pre-selects the vehicle dropdown
-    if (vid) prefill.vehicleId = vid;
+    if (vid) {
+      prefill.vehicleId = vid;
+      prefill.assignedVehicleId = vid;
+    }
     // vehicleNumber → display fallback (read-only computed field)
     if (vnum) prefill.vehicleNumber = vnum;
     // driverName → for Driver License renewal

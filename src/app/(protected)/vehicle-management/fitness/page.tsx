@@ -6,7 +6,7 @@ import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
@@ -31,7 +31,7 @@ export default function FitnessManagementPage() {
 
   const fields = useMemo<CrudFieldConfig[]>(
     () => [
-      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, options: vehicleOptions },
+      { key: 'vehicleId', label: 'Vehicle Number', type: 'select', required: true, searchable: true, options: vehicleOptions },
       {
         key: 'isMandatory',
         label: 'Mandatory for Vehicle',
@@ -46,7 +46,7 @@ export default function FitnessManagementPage() {
       { key: 'issueDate', label: 'Issue Date', type: 'date', required: true },
       { key: 'expiryDate', label: 'Expiry Date', type: 'date', required: true },
       { key: 'rtoName', label: 'RTO Name', type: 'text', required: true },
-      { key: 'amountPaid', label: 'Amount Paid', type: 'number', required: true },
+      { key: 'amountPaid', label: 'Amount Paid', type: 'number', required: true, min: 0 },
       { key: 'certificateDocumentUrl', label: 'Document Upload', type: 'file', required: true, accept: '.pdf,.jpg,.jpeg,.png,.webp' },
       { key: 'remarks', label: 'Remarks', type: 'textarea' },
     ],
@@ -69,9 +69,16 @@ export default function FitnessManagementPage() {
       canExport={canExport}
       exportFileName="fitness-management"
       defaultSort={{ key: 'expiryDate', direction: 'asc' }}
+      onAfterFetch={(rows) => rows.map((row) => {
+        const mandatory = String(row.isMandatory || 'Yes') === 'Yes';
+        const meta = mandatory ? computeRenewalMeta(String(row.expiryDate || '')) : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' };
+        return { ...row, alertStage: meta.alertStage, complianceStatus: meta.complianceStatus, fitnessStatus: mandatory ? meta.complianceStatus : 'Not Applicable' };
+      })}
       initialPrefill={prefill}
       renewingFromId={renewingFromId}
       onBeforeSave={(payload) => {
+        const dateError = getVehicleDateRangeError(payload.issueDate, payload.expiryDate, 'Issue date', 'Expiry date');
+        if (dateError) throw new Error(dateError);
         const vehicle = vehicleMap[String(payload.vehicleId)];
         const mandatory = String(payload.isMandatory || 'Yes') === 'Yes';
         const meta = mandatory
@@ -92,6 +99,10 @@ export default function FitnessManagementPage() {
       }}
       onAfterSave={async ({ payload }) => {
         const vehicleId = String(payload.vehicleId || '');
+        if (vehicleId) await syncVehicleComplianceStatus(vehicleId);
+      }}
+      onAfterDelete={async ({ row }) => {
+        const vehicleId = String(row.vehicleId || '');
         if (vehicleId) await syncVehicleComplianceStatus(vehicleId);
       }}
     />

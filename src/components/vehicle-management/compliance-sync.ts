@@ -52,6 +52,7 @@ export const syncVehicleComplianceStatus = async (vehicleId: string) => {
     let latestStamp = 0;
     snapshot.docs.forEach((entry) => {
       const data = entry.data() as Record<string, any>;
+      if (data.isArchived === true || data.renewalStatus === 'Renewed') return;
       const expiry =
         check.expiryKeys
           .map((key) => String(data[key] || '').trim())

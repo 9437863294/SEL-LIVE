@@ -25,8 +25,10 @@ import {
   ScrollText,
   Shield,
   Timer,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -109,6 +111,16 @@ const SOURCES = [
     detailKeys: ['documentType', 'documentNumber'],
     href: '/vehicle-management/documents',
     permission: 'Document Management',
+  },
+  {
+    category: 'Driver License',
+    icon: User,
+    collection: VEHICLE_COLLECTIONS.driver,
+    dateKeys: ['licenseExpiryDate'],
+    nameKeys: ['driverName', 'assignedVehicleNumber'],
+    detailKeys: ['licenseNumber', 'licenseClass'],
+    href: '/vehicle-management/driver',
+    permission: 'Driver Management',
   },
 ] as const;
 
@@ -246,7 +258,7 @@ export default function RenewalsHubPage() {
                 .map((key) => String(data[key] || '').trim())
                 .find((value) => value.length > 0) || '—';
 
-            if (data.vehicleId) params.set('vid', String(data.vehicleId));
+            if (data.vehicleId || data.assignedVehicleId) params.set('vid', String(data.vehicleId || data.assignedVehicleId));
             if (resolvedName && resolvedName !== '—') params.set('vnum', resolvedName);
             if (data.driverName) params.set('dname', String(data.driverName));
             
@@ -309,6 +321,7 @@ export default function RenewalsHubPage() {
         i.details.toLowerCase().includes(term)
     );
   }, [items, filter, dueSoon, expired, categoryFilter, query]);
+  const renewalPagination = useVehicleTablePagination(filteredItems);
 
   return (
     <div className="space-y-3 sm:space-y-5">
@@ -442,7 +455,7 @@ export default function RenewalsHubPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {filteredItems.map((item) => {
+          {renewalPagination.paginatedRows.map((item) => {
             const Icon = item.categoryIcon;
             const gradient = categoryGradients[item.category] ?? 'from-slate-500/20 to-gray-500/20';
             return (
@@ -534,6 +547,16 @@ export default function RenewalsHubPage() {
             );
           })}
         </div>
+      )}
+
+      {!isLoading && filteredItems.length > 0 && (
+        <VehicleTablePagination
+          currentPage={renewalPagination.currentPage}
+          totalPages={renewalPagination.totalPages}
+          totalRows={filteredItems.length}
+          pageSize={renewalPagination.pageSize}
+          onPageChange={renewalPagination.setCurrentPage}
+        />
       )}
 
       {/* ── Legend ── */}

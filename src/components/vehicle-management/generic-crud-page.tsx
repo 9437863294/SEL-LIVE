@@ -7,7 +7,23 @@ import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import ExcelJS from 'exceljs';
-import { AlertTriangle, Download, ExternalLink, FilePlus2, Loader2, Upload, History, List } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
+  Download,
+  ExternalLink,
+  FilePlus2,
+  History,
+  List,
+  Loader2,
+  RefreshCw,
+  Search,
+  Upload,
+  X,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,6 +60,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { useActivityLogger } from '@/hooks/useActivityLogger';
 
 export type CrudFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file';
 
@@ -57,6 +83,11 @@ export interface CrudFieldConfig {
   options?: Array<{ value: string; label: string }>;
   step?: string;
   accept?: string;
+  searchable?: boolean;
+  helperText?: string;
+  min?: number;
+  max?: number;
+  maxFileSizeMb?: number;
   showWhen?: (context: {
     formState: Record<string, string>;
     editingRow: Record<string, any> | null;
@@ -99,7 +130,73 @@ interface GenericCrudPageProps {
     mode: 'create' | 'update';
     payload: Record<string, any>;
     previousRow: Record<string, any> | null;
+    renewalSourceId?: string;
   }) => Promise<void> | void;
+  onAfterDelete?: (args: {
+    row: Record<string, any>;
+  }) => Promise<void> | void;
+  onBeforeDelete?: (args: {
+    row: Record<string, any>;
+  }) => Promise<void> | void;
+}
+
+const DEFAULT_PAGE_SIZE = 25;
+
+function SearchableSelect({
+  value,
+  options,
+  placeholder,
+  onValueChange,
+}: {
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  placeholder: string;
+  onValueChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="h-11 w-full justify-between border-slate-200 bg-white px-3 text-[13px] font-normal sm:h-9"
+        >
+          <span className={cn('truncate text-left', !selected && 'text-muted-foreground')}>
+            {selected?.label || placeholder}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
+          <CommandList>
+            <CommandEmpty>No matching option found.</CommandEmpty>
+            <CommandGroup>
+              {options.map((option) => (
+                <CommandItem
+                  key={option.value}
+                  value={`${option.label} ${option.value}`}
+                  onSelect={() => {
+                    onValueChange(option.value);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn('mr-2 h-4 w-4', value === option.value ? 'opacity-100' : 'opacity-0')} />
+                  <span className="truncate">{option.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 const toDisplay = (value: any) => {
@@ -157,7 +254,7 @@ const buildInitialForm = (fields: CrudFieldConfig[], row: Record<string, any> | 
       next[field.key] = field.defaultValue;
       return;
     }
-    if (!row && field.type === 'select' && field.options && field.options.length > 0) {
+    if (!row && field.type === 'select' && !field.searchable && field.options && field.options.length > 0) {
       next[field.key] = field.options[0].value;
       return;
     }
@@ -196,12 +293,16 @@ export default function GenericCrudPage({
   onBeforeSave,
   onAfterFetch,
   onAfterSave,
+  onAfterDelete,
+  onBeforeDelete,
 }: GenericCrudPageProps) {
   const searchParams = useSearchParams();
   const initialTab = searchParams?.get('tab') === 'history' ? 'history' : 'active';
 
   const { toast } = useToast();
+  const { log } = useActivityLogger('Vehicle Management');
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'history'>(initialTab);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -214,6 +315,8 @@ export default function GenericCrudPage({
   const [formState, setFormState] = useState<Record<string, string>>(buildInitialForm(fields, null));
   const [fileState, setFileState] = useState<Record<string, File | null>>({});
   const [isRenewalMode, setIsRenewalMode] = useState(false);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const prefillApplied = useRef(false);
 
@@ -222,6 +325,7 @@ export default function GenericCrudPage({
 
   const loadRows = async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const snap = await getDocs(collection(db, collectionName));
       let mapped: Record<string, any>[] = snap.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
@@ -243,6 +347,7 @@ export default function GenericCrudPage({
       setRows(mapped);
     } catch (error) {
       console.error(`Failed to load ${collectionName}`, error);
+      setLoadError(`Unable to load ${itemName.toLowerCase()} records.`);
       toast({
         title: 'Error',
         description: `Unable to load ${itemName.toLowerCase()} records.`,
@@ -261,8 +366,24 @@ export default function GenericCrudPage({
   // Auto-open Add dialog when initialPrefill is provided (Renew Now flow)
   useEffect(() => {
     if (!initialPrefill || prefillApplied.current || !canAdd) return;
+    if (renewingFromId && isLoading) return;
+    const renewalSource = renewingFromId
+      ? rows.find((row) => String(row.id) === String(renewingFromId)) || null
+      : null;
+    if (renewingFromId && !renewalSource) {
+      prefillApplied.current = true;
+      toast({
+        title: 'Renewal Record Not Found',
+        description: 'The original record could not be loaded. Open the Renewals Hub and try again.',
+        variant: 'destructive',
+      });
+      return;
+    }
     prefillApplied.current = true;
-    const merged = buildInitialForm(fields, null);
+    const merged = buildInitialForm(fields, renewalSource);
+    fields.forEach((field) => {
+      if (field.type === 'file') merged[field.key] = '';
+    });
     Object.entries(initialPrefill).forEach(([k, v]) => {
       if (v !== undefined && v !== '') merged[k] = v;
     });
@@ -271,8 +392,7 @@ export default function GenericCrudPage({
     setFileState({});
     setIsRenewalMode(true);
     setDialogOpen(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPrefill, canAdd]);
+  }, [canAdd, fields, initialPrefill, isLoading, renewingFromId, rows, toast]);
 
   const filteredRows = useMemo(() => {
     let base = rows;
@@ -284,10 +404,30 @@ export default function GenericCrudPage({
 
     const term = query.trim().toLowerCase();
     if (!term) return base;
-    return base.filter((row) =>
-      columns.some((column) => toDisplay(row[column.key]).toLowerCase().includes(term))
+    const searchableKeys = Array.from(
+      new Set([...columns.map((column) => column.key), ...fields.map((field) => field.key)])
     );
-  }, [rows, columns, query, activeTab]);
+    return base.filter((row) =>
+      searchableKeys.some((key) => toDisplay(row[key]).toLowerCase().includes(term))
+    );
+  }, [rows, columns, fields, query, activeTab]);
+
+  const activeCount = useMemo(() => rows.filter((row) => row.isArchived !== true).length, [rows]);
+  const historyCount = rows.length - activeCount;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / DEFAULT_PAGE_SIZE));
+  const paginatedRows = useMemo(
+    () => filteredRows.slice((currentPage - 1) * DEFAULT_PAGE_SIZE, currentPage * DEFAULT_PAGE_SIZE),
+    [currentPage, filteredRows]
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setExpandedRowId(null);
+  }, [activeTab, query]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const triggerImport = () => {
     if (!allowImport || isImporting) return;
@@ -514,6 +654,9 @@ export default function GenericCrudPage({
         title: 'Import Complete',
         description: `Imported ${imported} record(s).${extra}`,
       });
+      if (imported > 0) {
+        void log(`Import ${itemName}`, { collectionName, imported, skipped });
+      }
     } catch (error: any) {
       console.error(`Failed to import ${collectionName}`, error);
       toast({
@@ -532,6 +675,7 @@ export default function GenericCrudPage({
     setEditingRow(null);
     setFormState(buildInitialForm(fields, null));
     setFileState({});
+    setIsRenewalMode(false);
     setDialogOpen(true);
   };
 
@@ -599,6 +743,22 @@ export default function GenericCrudPage({
             });
             return;
           }
+          if (field.min !== undefined && parsed < field.min) {
+            toast({
+              title: 'Validation Error',
+              description: `${field.label} must be at least ${field.min}.`,
+              variant: 'destructive',
+            });
+            return;
+          }
+          if (field.max !== undefined && parsed > field.max) {
+            toast({
+              title: 'Validation Error',
+              description: `${field.label} must not exceed ${field.max}.`,
+              variant: 'destructive',
+            });
+            return;
+          }
           payload[field.key] = parsed;
         }
       } else {
@@ -614,6 +774,10 @@ export default function GenericCrudPage({
       for (const field of fileFields) {
         const file = fileState[field.key];
         if (!file) continue;
+        const maxFileSizeMb = field.maxFileSizeMb ?? 10;
+        if (file.size > maxFileSizeMb * 1024 * 1024) {
+          throw new Error(`${field.label} must be smaller than ${maxFileSizeMb} MB.`);
+        }
         const safeName = file.name.replace(/\s+/g, '-');
         const rowKey = editingRow?.id || `new-${Date.now()}`;
         const uploadRef = ref(
@@ -650,6 +814,7 @@ export default function GenericCrudPage({
             mode,
             payload: payloadWithUploads,
             previousRow: editingRow,
+            renewalSourceId: mode === 'create' && isRenewalMode ? renewingFromId : undefined,
           });
         } catch (error) {
           console.error(`Post-save hook failed for ${collectionName}`, error);
@@ -660,6 +825,16 @@ export default function GenericCrudPage({
           });
         }
       }
+
+      void log(`${mode === 'create' ? 'Add' : 'Edit'} ${itemName}`, {
+        collectionName,
+        recordId: savedId,
+        reference:
+          payloadWithUploads.vehicleNumber ||
+          payloadWithUploads.driverName ||
+          payloadWithUploads.documentNumber ||
+          '',
+      });
 
       // Renewal flow: archive the old expired record
       if (mode === 'create' && isRenewalMode && renewingFromId) {
@@ -681,11 +856,11 @@ export default function GenericCrudPage({
       setFormState(buildInitialForm(fields, null));
       setFileState({});
       loadRows();
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Failed to save ${collectionName}`, error);
       toast({
         title: 'Error',
-        description: `Unable to save ${itemName.toLowerCase()}.`,
+        description: error?.message || `Unable to save ${itemName.toLowerCase()}.`,
         variant: 'destructive',
       });
     } finally {
@@ -696,15 +871,32 @@ export default function GenericCrudPage({
   const confirmDelete = async () => {
     if (!deleteRow) return;
     try {
+      if (onBeforeDelete) await onBeforeDelete({ row: deleteRow });
       await deleteDoc(doc(db, collectionName, deleteRow.id as string));
-      toast({ title: 'Deleted', description: `${itemName} deleted successfully.` });
+      let cleanupFailed = false;
+      if (onAfterDelete) {
+        try {
+          await onAfterDelete({ row: deleteRow });
+        } catch (error) {
+          console.error(`Post-delete hook failed for ${collectionName}`, error);
+          cleanupFailed = true;
+        }
+      }
+      void log(`Delete ${itemName}`, {
+        collectionName,
+        recordId: deleteRow.id,
+        reference: deleteRow.vehicleNumber || deleteRow.driverName || deleteRow.documentNumber || '',
+      });
+      toast(cleanupFailed
+        ? { title: 'Deleted With Warning', description: `${itemName} was deleted, but a related cleanup failed.`, variant: 'destructive' }
+        : { title: 'Deleted', description: `${itemName} deleted successfully.` });
       setDeleteRow(null);
       loadRows();
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Failed to delete ${collectionName}`, error);
       toast({
         title: 'Error',
-        description: `Unable to delete ${itemName.toLowerCase()}.`,
+        description: error?.message || `Unable to delete ${itemName.toLowerCase()}.`,
         variant: 'destructive',
       });
     }
@@ -732,9 +924,10 @@ export default function GenericCrudPage({
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
-              {rows.length} records
+              {filteredRows.length === rows.length ? `${rows.length} records` : `${filteredRows.length} of ${rows.length}`}
             </Badge>
-            <Button variant="outline" onClick={loadRows} className="bg-white/80 hover:bg-white">
+            <Button type="button" variant="outline" onClick={loadRows} disabled={isLoading} className="bg-white/80 hover:bg-white">
+              <RefreshCw className={cn('mr-2 h-4 w-4', isLoading && 'animate-spin')} />
               Refresh
             </Button>
             {allowExport && (
@@ -758,25 +951,43 @@ export default function GenericCrudPage({
                 </Button>
               </>
             )}
-            <Button
-              onClick={openAddDialog}
-              disabled={!canAdd}
-              className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_16px_36px_-22px_rgba(5,150,105,0.72)] hover:from-emerald-600 hover:to-teal-700"
-            >
-              Add {itemName}
-            </Button>
+            {canAdd && (
+              <Button
+                type="button"
+                onClick={openAddDialog}
+                className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_16px_36px_-22px_rgba(5,150,105,0.72)] hover:from-emerald-600 hover:to-teal-700"
+              >
+                Add {itemName}
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-3 px-3 pb-4 sm:px-6 sm:pb-6">
+          {loadError && (
+            <div className="flex flex-col gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 sm:flex-row sm:items-center sm:justify-between">
+              <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />{loadError}</span>
+              <Button type="button" size="sm" variant="outline" onClick={loadRows} className="border-rose-200 bg-white text-rose-700">Try Again</Button>
+            </div>
+          )}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Input
-              placeholder={`Search ${itemName.toLowerCase()}...`}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="h-11 w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:h-10 sm:max-w-xs"
-            />
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                aria-label={`Search ${itemName.toLowerCase()} records`}
+                placeholder={`Search all ${itemName.toLowerCase()} fields...`}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="h-11 w-full border-slate-200 bg-white pl-9 pr-9 focus-visible:ring-emerald-400/40 sm:h-10"
+              />
+              {query && (
+                <button type="button" onClick={() => setQuery('')} aria-label="Clear search" className="absolute right-2 top-1/2 rounded-md p-1 text-muted-foreground hover:bg-slate-100 hover:text-slate-800 -translate-y-1/2">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
             <div className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-white/70 bg-white/50 p-1 shadow-sm sm:w-fit">
               <button
+                type="button"
                 onClick={() => setActiveTab('active')}
                 className={cn(
                   'flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all',
@@ -784,9 +995,10 @@ export default function GenericCrudPage({
                 )}
               >
                 <List className="h-3.5 w-3.5" />
-                Active
+                Active <span className="text-[10px] opacity-70">{activeCount}</span>
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('history')}
                 className={cn(
                   'flex min-h-10 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-all',
@@ -794,7 +1006,7 @@ export default function GenericCrudPage({
                 )}
               >
                 <History className="h-3.5 w-3.5" />
-                History
+                History <span className="text-[10px] opacity-70">{historyCount}</span>
               </button>
             </div>
           </div>
@@ -806,10 +1018,14 @@ export default function GenericCrudPage({
                 {emptyMessage}
               </div>
             ) : (
-              filteredRows.map((row) => (
-                <div key={row.id as string} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+              paginatedRows.map((row) => {
+                const rowId = String(row.id);
+                const isExpanded = expandedRowId === rowId;
+                const mobileColumns = isExpanded ? columns : columns.slice(0, 4);
+                return (
+                <div key={rowId} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm transition-transform active:scale-[0.99]">
                   <div className="space-y-2.5">
-                    {columns.map((column) => (
+                    {mobileColumns.map((column) => (
                       <div key={column.key} className="flex items-start justify-between gap-2">
                         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
                           {column.label}
@@ -823,17 +1039,24 @@ export default function GenericCrudPage({
                       <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Created Time</span>
                       <span className="max-w-[58%] text-right text-sm font-medium text-slate-700">{formatVehicleTimestamp(row.createdAt)}</span>
                     </div>
+                    {columns.length > 4 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRowId(isExpanded ? null : rowId)}
+                        className="w-full rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                      >
+                        {isExpanded ? 'Show Less' : `View ${columns.length - 4} More Details`}
+                      </button>
+                    )}
                   </div>
-                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-                    <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="flex-1 bg-white/80 h-10">
-                      Edit
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10">
-                      Delete
-                    </Button>
-                  </div>
+                  {(canEdit || canDelete) && (
+                    <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                      {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-10 flex-1 bg-white/80">Edit</Button>}
+                      {canDelete && <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} className="h-10 flex-1">Delete</Button>}
+                    </div>
+                  )}
                 </div>
-              ))
+              );})
             )}
           </div>
           <div className="hidden sm:block">
@@ -850,20 +1073,20 @@ export default function GenericCrudPage({
                         <TableHead key={column.key}>{column.label}</TableHead>
                       ))}
                       <TableHead>Created Time</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      {(canEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {isLoading ? (
                       Array.from({ length: 4 }).map((_, idx) => (
                         <TableRow key={idx}>
-                          <TableCell colSpan={columns.length + 2}>
+                          <TableCell colSpan={columns.length + 1 + (canEdit || canDelete ? 1 : 0)}>
                             <Skeleton className="h-8 w-full" />
                           </TableCell>
                         </TableRow>
                       ))
                     ) : (
-                      filteredRows.map((row) => (
+                      paginatedRows.map((row) => (
                         <TableRow key={row.id as string} className="transition-colors hover:bg-emerald-50/70">
                           {columns.map((column) => (
                             <TableCell key={column.key}>
@@ -873,16 +1096,16 @@ export default function GenericCrudPage({
                             </TableCell>
                           ))}
                           <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
-                          <TableCell className="w-[160px] text-right">
+                          {(canEdit || canDelete) && <TableCell className="w-[160px] text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="h-8 bg-white/80 px-3">
+                              {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-8 bg-white/80 px-3">
                                 Edit
-                              </Button>
-                              <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="h-8 px-3">
+                              </Button>}
+                              {canDelete && <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} className="h-8 px-3">
                                 Delete
-                              </Button>
+                              </Button>}
                             </div>
-                          </TableCell>
+                          </TableCell>}
                         </TableRow>
                       ))
                     )}
@@ -891,6 +1114,22 @@ export default function GenericCrudPage({
               </div>
             )}
           </div>
+          {!isLoading && filteredRows.length > 0 && (
+            <div className="flex flex-col gap-2 rounded-lg border border-white/70 bg-white/60 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-muted-foreground">
+                Showing {(currentPage - 1) * DEFAULT_PAGE_SIZE + 1}–{Math.min(currentPage * DEFAULT_PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
+              </p>
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage === 1} className="h-8 bg-white">
+                  <ChevronLeft className="mr-1 h-4 w-4" />Previous
+                </Button>
+                <span className="min-w-16 text-center text-xs font-semibold text-slate-600">{currentPage} / {totalPages}</span>
+                <Button type="button" variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages} className="h-8 bg-white">
+                  Next<ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -900,6 +1139,7 @@ export default function GenericCrudPage({
           if (!open) {
             setDialogOpen(false);
             setEditingRow(null);
+            setIsRenewalMode(false);
             setFormState(buildInitialForm(fields, null));
             setFileState({});
             return;
@@ -910,7 +1150,7 @@ export default function GenericCrudPage({
         <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
 
           {/* ── Sticky header ─────────────────────────────────── */}
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-6 py-5 pr-12">
+          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20">
                 <FilePlus2 className="h-5 w-5" />
@@ -941,7 +1181,7 @@ export default function GenericCrudPage({
           </div>
 
           {/* ── Scrollable form body ───────────────────────────── */}
-          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-6 py-5">
+          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-3 py-3 sm:px-6 sm:py-5">
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
                 <div><p className="text-sm font-semibold text-slate-800">Record Information</p><p className="text-xs text-muted-foreground">Enter accurate details for this record.</p></div>
@@ -1009,6 +1249,13 @@ export default function GenericCrudPage({
                           </a>
                         )}
                       </div>
+                    ) : field.type === 'select' && field.searchable ? (
+                      <SearchableSelect
+                        value={formState[field.key] || ''}
+                        options={field.options || []}
+                        placeholder={`Select ${field.label}`}
+                        onValueChange={(value) => setFormState((prev) => ({ ...prev, [field.key]: value }))}
+                      />
                     ) : field.type === 'select' ? (
                       <Select
                         value={formState[field.key] || undefined}
@@ -1029,12 +1276,15 @@ export default function GenericCrudPage({
                       <Input
                         type={field.type === 'number' ? 'number' : field.type}
                         step={field.type === 'number' ? field.step || '0.01' : undefined}
+                        min={field.type === 'number' ? field.min : undefined}
+                        max={field.type === 'number' ? field.max : undefined}
                         value={formState[field.key] ?? ''}
                         onChange={(e) => setFormState((prev) => ({ ...prev, [field.key]: e.target.value }))}
                         placeholder={field.placeholder}
                         className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus-visible:border-emerald-400 focus-visible:ring-1 focus-visible:ring-emerald-400/50 sm:h-9"
                       />
                     )}
+                    {field.helperText && <p className="text-[11px] leading-snug text-muted-foreground">{field.helperText}</p>}
                   </div>
                 );
               })}
@@ -1043,7 +1293,7 @@ export default function GenericCrudPage({
           </div>
 
           {/* ── Sticky footer ─────────────────────────────────── */}
-          <div className="vm-dialog-footer shrink-0 border-t border-slate-200 bg-white px-6 py-4 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)]">
+          <div className="vm-dialog-footer shrink-0 border-t border-slate-200 bg-white px-3 py-3 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)] sm:px-6 sm:py-4">
             <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:justify-between sm:gap-3">
               <p className="col-span-2 text-xs text-muted-foreground sm:col-span-1">
                 <span className="text-rose-500">*</span> Required fields
@@ -1052,7 +1302,13 @@ export default function GenericCrudPage({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setDialogOpen(false)}
+                  onClick={() => {
+                    setDialogOpen(false);
+                    setEditingRow(null);
+                    setIsRenewalMode(false);
+                    setFormState(buildInitialForm(fields, null));
+                    setFileState({});
+                  }}
                   className="h-11 bg-white hover:bg-slate-50 sm:h-9"
                 >
                   Cancel
