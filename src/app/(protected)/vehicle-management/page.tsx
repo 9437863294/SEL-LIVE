@@ -350,25 +350,25 @@ export default function VehicleManagementOverviewPage() {
             <Link key={item.href} href={item.href} className="block h-full min-w-0" aria-label={`Open ${item.label}`}>
               <Card
                 className={cn(
-                  'group relative h-full min-w-0 overflow-hidden vm-panel transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_24px_50px_-32px_rgba(14,116,205,0.55)]',
+                  'group relative h-full min-h-[4.75rem] min-w-0 overflow-hidden vm-panel transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_24px_50px_-32px_rgba(14,116,205,0.55)]',
                   'vm-reveal cursor-pointer active:scale-[0.98]'
                 )}
                 style={{ animationDelay: `${Math.min(idx * 45, 240)}ms` }}
               >
                 <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-br opacity-80', item.gradient)} />
-                <CardHeader className="relative flex flex-row items-center gap-2 p-2 sm:block sm:p-3">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100 sm:mb-2 sm:h-8 sm:w-8">
-                    <Icon className="h-3 w-3 text-cyan-700 transition-transform duration-300 group-hover:scale-110 sm:h-4 sm:w-4" />
+                <CardHeader className="relative flex h-full min-w-0 flex-row items-start gap-2 p-2.5 lg:block lg:p-3">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100 lg:mb-2 lg:h-8 lg:w-8">
+                    <Icon className="h-3.5 w-3.5 text-cyan-700 transition-transform duration-300 group-hover:scale-110 lg:h-4 lg:w-4" />
                   </div>
-                  <div className="min-w-0">
-                    <CardTitle className="line-clamp-2 text-sm leading-tight sm:text-sm">{item.label}</CardTitle>
-                    <span className="mt-0.5 block text-[11px] text-muted-foreground sm:hidden">
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="line-clamp-2 break-words pr-0.5 text-[13px] leading-[1.15] sm:text-sm">{item.label}</CardTitle>
+                    <span className="mt-1 block text-[11px] leading-none text-muted-foreground lg:hidden">
                       {isLoading ? '…' : `${counts[item.collection] ?? 0} records`}
                     </span>
                   </div>
-                  <CardDescription className="mt-1 hidden line-clamp-1 text-[11px] sm:block">{item.description}</CardDescription>
+                  <CardDescription className="mt-1 hidden line-clamp-1 text-[11px] lg:block">{item.description}</CardDescription>
                 </CardHeader>
-                <CardContent className="relative hidden px-3 pb-3 sm:block">
+                <CardContent className="relative hidden px-3 pb-3 lg:block">
                   {isLoading ? (
                     <Skeleton className="h-4 w-14" />
                   ) : (
