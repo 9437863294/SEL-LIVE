@@ -398,3 +398,4 @@ export function maskAccount(value?: string) {
   if (!value) return '';
   return value.length <= 4 ? value : `${'•'.repeat(Math.min(8, value.length - 4))}${value.slice(-4)}`;
 }
+  

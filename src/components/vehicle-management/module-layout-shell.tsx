@@ -135,7 +135,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
   }
 
   return (
-    <div className="vm-module-root relative w-full px-2 py-2 sm:px-6 sm:py-4 lg:px-8">
+    <div className="vm-module-root relative w-full px-2 py-2 sm:px-6 sm:py-4 lg:px-8 [&_table]:min-w-max [&_table_th]:whitespace-nowrap [&_table_td]:whitespace-nowrap">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl vm-gradient-atmosphere" />
       <div className="pointer-events-none absolute -z-10 left-[8%] top-[8%] h-56 w-56 rounded-full bg-cyan-300/20 blur-3xl vm-orb-a" />
       <div className="pointer-events-none absolute -z-10 right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-blue-300/20 blur-3xl vm-orb-b" />

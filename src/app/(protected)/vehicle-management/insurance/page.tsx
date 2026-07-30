@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import {
   addDoc,
   collection,
@@ -63,7 +64,7 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import ExcelJS from 'exceljs';
-import { Check, ChevronsUpDown, Download, ExternalLink, FileUp, Loader2, Upload } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, ExternalLink, FileUp, History, Loader2, RefreshCw, RotateCcw, Search, ShieldCheck, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 
 type InsuranceRow = Record<string, any>;
@@ -107,6 +108,15 @@ const mapRowToState = (row: InsuranceRow): InsuranceForm => ({
   remarks: String(row.remarks || ''),
 });
 
+const insuranceAlertClass = (stage: string) =>
+  cn(
+    'whitespace-nowrap border text-xs font-semibold',
+    stage === 'Expired' && 'border-rose-200 bg-rose-50 text-rose-700',
+    ['Due Today', '7d', '15d', '30d'].includes(stage) && 'border-amber-200 bg-amber-50 text-amber-700',
+    stage === 'Not Due' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    stage === 'Missing' && 'border-slate-200 bg-slate-100 text-slate-600'
+  );
+
 export default function InsuranceManagementPage() {
   const { toast } = useToast();
   const { log } = useActivityLogger('Vehicle Management');
@@ -124,6 +134,10 @@ export default function InsuranceManagementPage() {
   const [rows, setRows] = useState<InsuranceRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'current' | 'history'>('current');
+  const [policyTypeFilter, setPolicyTypeFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [expiryFilter, setExpiryFilter] = useState('All');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<InsuranceRow | null>(null);
   const [deleteRow, setDeleteRow] = useState<InsuranceRow | null>(null);
@@ -156,6 +170,10 @@ export default function InsuranceManagementPage() {
   }, []);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'history') setActiveTab('history');
+  }, []);
+
+  useEffect(() => {
     if (!prefill || prefillApplied.current || !canAdd) return;
     prefillApplied.current = true;
     const next = buildInitialState();
@@ -170,9 +188,29 @@ export default function InsuranceManagementPage() {
 
   const filteredRows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return rows;
-    return rows.filter((row) =>
-      [
+    const base = rows.filter((row) => activeTab === 'history' ? row.isArchived === true : row.isArchived !== true);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return base.filter((row) => {
+      if (policyTypeFilter !== 'All' && String(row.policyType || '') !== policyTypeFilter) return false;
+      const alert = String(row.alertStage || '');
+      if (statusFilter === 'Valid' && !['Not Due'].includes(alert)) return false;
+      if (statusFilter === 'Due Soon' && !['Due Today', '7d', '15d', '30d'].includes(alert)) return false;
+      if (statusFilter === 'Expired' && alert !== 'Expired') return false;
+      if (statusFilter === 'Missing' && alert !== 'Missing') return false;
+
+      if (expiryFilter !== 'All') {
+        const expiry = row.expiryDate ? new Date(`${row.expiryDate}T00:00:00`) : null;
+        if (!expiry || Number.isNaN(expiry.getTime())) return false;
+        const days = Math.ceil((expiry.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+        if (expiryFilter === 'This Month' && (expiry.getMonth() !== today.getMonth() || expiry.getFullYear() !== today.getFullYear())) return false;
+        if (expiryFilter === 'Next 30 Days' && (days < 0 || days > 30)) return false;
+        if (expiryFilter === 'Next 90 Days' && (days < 0 || days > 90)) return false;
+        if (expiryFilter === 'This Year' && expiry.getFullYear() !== today.getFullYear()) return false;
+      }
+
+      if (!term) return true;
+      return [
         row.vehicleNumber,
         row.insuranceCompany,
         row.policyNumber,
@@ -182,9 +220,29 @@ export default function InsuranceManagementPage() {
         row.complianceStatus,
       ]
         .map((value) => String(value || '').toLowerCase())
-        .some((value) => value.includes(term))
-    );
-  }, [query, rows]);
+        .some((value) => value.includes(term));
+    });
+  }, [activeTab, expiryFilter, policyTypeFilter, query, rows, statusFilter]);
+
+  const currentCount = useMemo(() => rows.filter((row) => row.isArchived !== true).length, [rows]);
+  const historyCount = useMemo(() => rows.filter((row) => row.isArchived === true).length, [rows]);
+  const attentionCount = useMemo(() => rows.filter((row) => row.isArchived !== true && ['Expired', 'Due Today', '7d', '15d', '30d'].includes(String(row.alertStage || ''))).length, [rows]);
+
+  const resetFilters = () => {
+    setQuery('');
+    setPolicyTypeFilter('All');
+    setStatusFilter('All');
+    setExpiryFilter('All');
+  };
+
+  const getRenewalHref = (row: InsuranceRow) => {
+    const params = new URLSearchParams({
+      renew: String(row.id),
+      vid: String(row.vehicleId || ''),
+      vnum: String(row.vehicleNumber || ''),
+    });
+    return `/vehicle-management/insurance?${params.toString()}`;
+  };
 
   const exportExcel = async () => {
     if (!canExport || isExporting) return;
@@ -445,9 +503,14 @@ export default function InsuranceManagementPage() {
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
         <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
-          <div>
-            <CardTitle>Insurance Management</CardTitle>
-            <CardDescription>Track policy details, expiry, and renewal status.</CardDescription>
+          <div className="flex items-start gap-3">
+            <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 sm:flex">
+              <ShieldCheck className="h-6 w-6" />
+            </div>
+            <div>
+              <CardTitle>Insurance Management</CardTitle>
+              <CardDescription>Manage current policies, renewals, expiry status, and policy history.</CardDescription>
+            </div>
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
@@ -476,13 +539,39 @@ export default function InsuranceManagementPage() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3 px-3 pb-4 sm:px-6 sm:pb-6">
-          <Input
-            placeholder="Search insurance..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            className="h-11 w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:h-10 sm:max-w-xs"
-          />
+        <CardContent className="space-y-4 px-3 pb-4 sm:px-6 sm:pb-6">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Current</p><p className="text-xl font-bold text-emerald-800">{currentCount}</p></div>
+            <div className="rounded-xl border border-amber-100 bg-amber-50/70 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Needs Attention</p><p className="text-xl font-bold text-amber-800">{attentionCount}</p></div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">History</p><p className="text-xl font-bold text-slate-700">{historyCount}</p></div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+            <div className="mb-3 flex w-full rounded-lg border border-slate-200 bg-slate-100 p-1 sm:w-fit">
+              <button type="button" onClick={() => setActiveTab('current')} className={cn('flex-1 rounded-md px-4 py-2 text-xs font-semibold transition-colors sm:flex-none', activeTab === 'current' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>Current Policies <span className="ml-1 text-[10px] opacity-70">{currentCount}</span></button>
+              <button type="button" onClick={() => setActiveTab('history')} className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-md px-4 py-2 text-xs font-semibold transition-colors sm:flex-none', activeTab === 'history' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}><History className="h-3.5 w-3.5" />History <span className="text-[10px] opacity-70">{historyCount}</span></button>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="relative sm:col-span-2 xl:col-span-1">
+                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Vehicle, policy or company..." value={query} onChange={(event) => setQuery(event.target.value)} className="h-10 bg-white pl-9" />
+              </div>
+              <Select value={policyTypeFilter} onValueChange={setPolicyTypeFilter}>
+                <SelectTrigger className="h-10 bg-white"><SelectValue placeholder="Policy type" /></SelectTrigger>
+                <SelectContent><SelectItem value="All">All Policy Types</SelectItem>{policyTypeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="h-10 bg-white"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectContent>{['All', 'Valid', 'Due Soon', 'Expired', 'Missing'].map((status) => <SelectItem key={status} value={status}>{status === 'All' ? 'All Statuses' : status}</SelectItem>)}</SelectContent>
+              </Select>
+              <Select value={expiryFilter} onValueChange={setExpiryFilter}>
+                <SelectTrigger className="h-10 bg-white"><SelectValue placeholder="Expiry period" /></SelectTrigger>
+                <SelectContent>{['All', 'This Month', 'Next 30 Days', 'Next 90 Days', 'This Year'].map((period) => <SelectItem key={period} value={period}>{period === 'All' ? 'All Expiry Dates' : period}</SelectItem>)}</SelectContent>
+              </Select>
+              <Button type="button" variant="outline" onClick={resetFilters} className="h-10 bg-white"><RotateCcw className="mr-2 h-4 w-4" />Reset</Button>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Showing {filteredRows.length} of {activeTab === 'current' ? currentCount : historyCount} policies</p>
+          </div>
           {/* Mobile card list — visible only on small screens */}
           <div className="space-y-2.5 sm:hidden">
             {isLoading ? (
@@ -502,7 +591,7 @@ export default function InsuranceManagementPage() {
                       <p className="text-sm font-semibold text-slate-800">{row.vehicleNumber || '-'}</p>
                       <p className="text-xs text-muted-foreground">{row.insuranceCompany || '-'}</p>
                     </div>
-                    <Badge variant="outline" className="shrink-0 text-xs bg-white/70">
+                    <Badge variant="outline" className={insuranceAlertClass(String(row.alertStage || ''))}>
                       {row.alertStage || '-'}
                     </Badge>
                   </div>
@@ -523,6 +612,7 @@ export default function InsuranceManagementPage() {
                   </div>
                   {/* Action buttons */}
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                    {activeTab === 'current' && canAdd && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
                     <button onClick={() => openEdit(row)} disabled={!canEdit} className="flex-1 h-10 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700 disabled:opacity-50 active:bg-slate-50">Edit</button>
                     <button onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10 rounded-md bg-rose-500 text-sm font-medium text-white disabled:opacity-50 active:bg-rose-600">Delete</button>
                   </div>
@@ -538,7 +628,7 @@ export default function InsuranceManagementPage() {
               No records found.
             </div>
           ) : (
-          <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
+          <div className="min-h-[320px] overflow-auto rounded-xl border border-slate-200 bg-white h-[calc(100vh-500px)]">
             <table className="w-full caption-bottom text-sm">
               <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                 <TableRow>
@@ -564,27 +654,29 @@ export default function InsuranceManagementPage() {
                   ))
                 ) : (
                   filteredRows.map((row) => (
-                    <TableRow key={String(row.id)} className="hover:bg-emerald-50/70">
-                      <TableCell>{row.vehicleNumber || '-'}</TableCell>
+                    <TableRow key={String(row.id)} className="transition-colors hover:bg-emerald-50/60">
+                      <TableCell className="font-semibold text-slate-800">{row.vehicleNumber || '-'}</TableCell>
                       <TableCell>{row.insuranceCompany || '-'}</TableCell>
                       <TableCell>{row.policyNumber || '-'}</TableCell>
                       <TableCell>{row.expiryDate || '-'}</TableCell>
-                      <TableCell>{row.alertStage || '-'}</TableCell>
+                      <TableCell><Badge variant="outline" className={insuranceAlertClass(String(row.alertStage || ''))}>{row.alertStage || '-'}</Badge></TableCell>
                       <TableCell>{row.renewalStatus || '-'}</TableCell>
                       <TableCell>{row.complianceStatus || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
-                      <TableCell className="space-x-2 text-right">
-                        <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteRow(row)}
-                          disabled={!canDelete}
-                        >
-                          Delete
-                        </Button>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {activeTab === 'current' && canAdd && (
+                            <Link href={getRenewalHref(row)}>
+                              <Button size="sm" className="h-8 bg-amber-500 px-3 text-white hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button>
+                            </Link>
+                          )}
+                          <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit} className="h-8 px-3">
+                            Edit
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="h-8 px-3">
+                            Delete
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -598,15 +690,23 @@ export default function InsuranceManagementPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="vm-mobile-dialog flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
-          <div className="vm-dialog-header shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
-            <DialogTitle>{editingRow ? 'Edit Insurance' : 'Add Insurance'}</DialogTitle>
-            <DialogDescription>Enter policy details and upload the policy file.</DialogDescription>
+        <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
+          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-6 py-5 pr-12">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><ShieldCheck className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1">
+                {renewingFromId && !editingRow && <span className="mb-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Renewing Existing Policy</span>}
+                <DialogTitle className="text-lg text-slate-900">{editingRow ? 'Edit Insurance Policy' : renewingFromId ? 'Renew Insurance Policy' : 'Add Insurance Policy'}</DialogTitle>
+                <DialogDescription className="mt-0.5">Policy information, coverage dates, value, agent, and document.</DialogDescription>
+              </div>
+              <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Policy Details</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Document</span></div>
+            </div>
           </div>
-          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-              <div className="mb-3 rounded-md border border-slate-200 bg-slate-100/90 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                General Info
+          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-6 py-5">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+                <div><p className="text-sm font-semibold text-slate-800">Policy Information</p><p className="text-xs text-muted-foreground">Select the vehicle and enter the latest insurance details.</p></div>
+                <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-600">* Required</span>
               </div>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 <SearchableSelectField
@@ -681,14 +781,17 @@ export default function InsuranceManagementPage() {
               </div>
             </div>
           </div>
-          <DialogFooter className="vm-dialog-footer shrink-0 border-t border-slate-100 bg-slate-50/95 px-6 py-3.5">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+          <DialogFooter className="vm-dialog-footer shrink-0 border-t border-slate-200 bg-white px-6 py-4 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)] sm:justify-between">
+            <p className="hidden text-xs text-muted-foreground sm:block">Review policy dates and vehicle before saving.</p>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+            <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-10 bg-white">
               Cancel
             </Button>
-            <Button onClick={() => void submit()} disabled={isSaving} className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700">
+            <Button onClick={() => void submit()} disabled={isSaving} className="h-10 bg-gradient-to-r from-emerald-500 to-teal-600 px-5 text-white shadow-sm hover:from-emerald-600 hover:to-teal-700">
               {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               {editingRow ? 'Update' : 'Save'}
             </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -734,7 +837,7 @@ function Field({
   return (
     <div
       className={cn(
-        'space-y-1 rounded-md border border-slate-200 bg-white px-2.5 py-2 transition-all hover:border-emerald-200 focus-within:border-emerald-300 focus-within:ring-1 focus-within:ring-emerald-200/70',
+        'space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 transition-all hover:border-emerald-200 hover:bg-white focus-within:border-emerald-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-emerald-100',
         className
       )}
     >

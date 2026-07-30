@@ -50,6 +50,7 @@ import {
 import ExcelJS from 'exceljs';
 import { CarFront, Download, FileUp, Gauge, Loader2, MapPin, ShieldCheck } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
+import { VehicleDetailsDialog } from '@/components/vehicle-management/vehicle-details-dialog';
 
 const DRIVER_UNASSIGNED = '__unassigned__';
 
@@ -184,6 +185,7 @@ export default function VehicleMasterPage() {
   const canAdd = can('Add', 'Vehicle Management.Vehicle Master');
   const canEdit = can('Edit', 'Vehicle Management.Vehicle Master');
   const canDelete = can('Delete', 'Vehicle Management.Vehicle Master');
+  const canRenewInsurance = can('Add', 'Vehicle Management.Insurance Management');
   const canExport = can('Export', 'Vehicle Management.Vehicle Master') || canView;
   const canImport = can('Import', 'Vehicle Management.Vehicle Master') || canAdd;
 
@@ -197,6 +199,7 @@ export default function VehicleMasterPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [form, setForm] = useState<VehicleFormState>(buildInitialState());
+  const [detailsVehicle, setDetailsVehicle] = useState<VehicleRow | null>(null);
   const knownVehicleNumbersRef = useRef(new Set<string>());
 
   const loadRows = async () => {
@@ -650,7 +653,7 @@ export default function VehicleMasterPage() {
               </div>
             ) : (
               filteredRows.map((row) => (
-                <div key={String(row.id)} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+                <div key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="cursor-pointer rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{row.vehicleNumber || '-'}</p>
@@ -681,8 +684,8 @@ export default function VehicleMasterPage() {
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-                    <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit} className="flex-1 h-10 bg-white/80">Edit</Button>
-                    <Button size="sm" variant="destructive" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10">Delete</Button>
+                    <Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="flex-1 h-10 bg-white/80">Edit</Button>
+                    <Button size="sm" variant="destructive" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="flex-1 h-10">Delete</Button>
                   </div>
                 </div>
               ))
@@ -695,9 +698,9 @@ export default function VehicleMasterPage() {
             </div>
           ) : (
           <div className="hidden sm:block overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-230px)]">
-            <table className="w-full caption-bottom text-sm">
+            <table className="min-w-[1420px] w-full caption-bottom text-sm">
               <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                <TableRow>
+                <TableRow className="[&_th]:whitespace-nowrap">
                   <TableHead>Vehicle ID</TableHead>
                   <TableHead>Vehicle Number</TableHead>
                   <TableHead>Type</TableHead>
@@ -722,29 +725,32 @@ export default function VehicleMasterPage() {
                   ))
                 ) : (
                   filteredRows.map((row) => (
-                    <TableRow key={String(row.id)} className="hover:bg-emerald-50/70">
-                      <TableCell>{row.vehicleId || '-'}</TableCell>
-                      <TableCell>{row.vehicleNumber || '-'}</TableCell>
-                      <TableCell>{row.vehicleType || '-'}</TableCell>
-                      <TableCell>{row.assignedDepartmentName || '-'}</TableCell>
-                      <TableCell>{row.assignedProjectName || '-'}</TableCell>
-                      <TableCell>{row.assignedDriverName || '-'}</TableCell>
-                      <TableCell>{row.fuelType || '-'}</TableCell>
-                      <TableCell>{row.documentHealthStatus || '-'}</TableCell>
-                      <TableCell>{row.vehicleStatus || '-'}</TableCell>
+                    <TableRow key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="h-14 cursor-pointer hover:bg-emerald-50/70">
+                      <TableCell className="whitespace-nowrap font-medium">{row.vehicleId || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap font-semibold text-slate-800">{row.vehicleNumber || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{row.vehicleType || '-'}</TableCell>
+                      <TableCell className="max-w-[180px] truncate whitespace-nowrap" title={String(row.assignedDepartmentName || '')}>{row.assignedDepartmentName || '-'}</TableCell>
+                      <TableCell className="max-w-[240px] truncate whitespace-nowrap" title={String(row.assignedProjectName || '')}>{row.assignedProjectName || '-'}</TableCell>
+                      <TableCell className="max-w-[180px] truncate whitespace-nowrap" title={String(row.assignedDriverName || '')}>{row.assignedDriverName || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{row.fuelType || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{row.documentHealthStatus || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{row.vehicleStatus || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
-                      <TableCell className="space-x-2 text-right">
-                        <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setDeleteRow(row)}
-                          disabled={!canDelete}
-                        >
-                          Delete
-                        </Button>
+                      <TableCell className="w-[160px] whitespace-nowrap text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-8 bg-white px-3">
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }}
+                            disabled={!canDelete}
+                            className="h-8 px-3"
+                          >
+                            Delete
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -758,12 +764,12 @@ export default function VehicleMasterPage() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-slate-50 p-0 shadow-2xl sm:left-1/2 sm:top-1/2 sm:h-[90vh] sm:max-h-[900px] sm:w-[calc(100vw-3rem)] sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border">
-          <div className="shrink-0 border-b border-slate-200 bg-white px-4 pb-3 pt-4 pr-12 sm:px-7 sm:pb-4 sm:pt-5">
+          <div className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 pb-3 pt-4 pr-12 sm:px-7 sm:py-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 shadow-sm sm:h-11 sm:w-11">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20 sm:h-11 sm:w-11">
                 <CarFront className="h-5 w-5 text-white" />
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <DialogTitle className="text-lg text-slate-900 sm:text-xl">
                   {editingRow ? 'Edit Vehicle Profile' : 'Register New Vehicle'}
                 </DialogTitle>
@@ -771,6 +777,7 @@ export default function VehicleMasterPage() {
                   Fields marked <span className="font-semibold text-rose-500">*</span> are required
                 </DialogDescription>
               </div>
+              <div className="hidden items-center gap-1.5 sm:flex"><span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Identity</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Assignment</span><span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Compliance</span></div>
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-7 sm:py-5">
@@ -853,7 +860,8 @@ export default function VehicleMasterPage() {
               </FormSection>
             </div>
           </div>
-          <DialogFooter className="grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 sm:flex sm:px-7 sm:py-4">
+          <DialogFooter className="grid shrink-0 grid-cols-2 gap-2 border-t border-slate-200 bg-white px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)] sm:flex sm:items-center sm:px-7 sm:py-4">
+            <p className="col-span-2 mr-auto hidden text-xs text-muted-foreground sm:block">Review identity, assignment, and compliance settings before saving.</p>
             <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-11 sm:h-10">
               Cancel
             </Button>
@@ -889,6 +897,12 @@ export default function VehicleMasterPage() {
         fields={VEHICLE_IMPORT_FIELDS}
         onSaveRow={saveVehicleRow}
         onImportComplete={() => { void loadRows(); void log('Import Vehicles', {}); }}
+      />
+      <VehicleDetailsDialog
+        vehicle={detailsVehicle}
+        open={!!detailsVehicle}
+        onOpenChange={(open) => { if (!open) setDetailsVehicle(null); }}
+        canRenewInsurance={canRenewInsurance}
       />
     </div>
   );
@@ -944,7 +958,7 @@ function Field({
   return (
     <div
       className={cn(
-        'space-y-1 rounded-md border border-slate-200 bg-white px-2.5 py-2 transition-all hover:border-emerald-200 focus-within:border-emerald-300 focus-within:ring-1 focus-within:ring-emerald-200/70 [&_input]:h-11 sm:[&_input]:h-9',
+        'space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 transition-all hover:border-emerald-200 hover:bg-white focus-within:border-emerald-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-emerald-100 [&_input]:h-11 sm:[&_input]:h-9',
         className
       )}
     >

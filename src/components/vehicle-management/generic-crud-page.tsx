@@ -7,7 +7,7 @@ import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import ExcelJS from 'exceljs';
-import { AlertTriangle, Download, ExternalLink, Loader2, Upload, History, List } from 'lucide-react';
+import { AlertTriangle, Download, ExternalLink, FilePlus2, Loader2, Upload, History, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -873,13 +873,15 @@ export default function GenericCrudPage({
                             </TableCell>
                           ))}
                           <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
-                          <TableCell className="space-x-2 text-right">
-                            <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="bg-white/80">
-                              Edit
-                            </Button>
-                            <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} disabled={!canDelete}>
-                              Delete
-                            </Button>
+                          <TableCell className="w-[160px] text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} disabled={!canEdit} className="h-8 bg-white/80 px-3">
+                                Edit
+                              </Button>
+                              <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="h-8 px-3">
+                                Delete
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -905,10 +907,15 @@ export default function GenericCrudPage({
           setDialogOpen(true);
         }}
       >
-        <DialogContent className="vm-mobile-dialog flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
+        <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
 
           {/* ── Sticky header ─────────────────────────────────── */}
-          <div className="vm-dialog-header shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
+          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-6 py-5 pr-12">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20">
+                <FilePlus2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
             {isRenewalMode && (
               <div className="mb-2.5 inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
                 <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -917,7 +924,7 @@ export default function GenericCrudPage({
                 Renewing Expired Record
               </div>
             )}
-            <DialogTitle className="text-base font-semibold leading-snug">
+            <DialogTitle className="text-lg font-semibold leading-snug text-slate-900">
               {editingRow ? `Edit ${itemName}` : isRenewalMode ? `Renew ${itemName}` : `Add ${itemName}`}
             </DialogTitle>
             <DialogDescription className="mt-0.5 text-sm text-muted-foreground">
@@ -925,13 +932,20 @@ export default function GenericCrudPage({
                 ? 'Pre-filled from the expired record — update the dates and upload the new document.'
                 : 'Fill in the required fields below and save.'}
             </DialogDescription>
+              </div>
+              <div className="hidden items-center gap-1.5 sm:flex">
+                <span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Details</span>
+                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">Review & Save</span>
+              </div>
+            </div>
           </div>
 
           {/* ── Scrollable form body ───────────────────────────── */}
-          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto px-6 py-5">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-              <div className="mb-3 rounded-md border border-slate-200 bg-slate-100/90 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                General Info
+          <div className="vm-dialog-body min-h-0 flex-1 overflow-y-auto bg-slate-50/80 px-6 py-5">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+                <div><p className="text-sm font-semibold text-slate-800">Record Information</p><p className="text-xs text-muted-foreground">Enter accurate details for this record.</p></div>
+                <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-600">* Required</span>
               </div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
               {fields.map((field) => {
@@ -941,7 +955,7 @@ export default function GenericCrudPage({
                   <div
                     key={field.key}
                     className={cn(
-                      'space-y-1 rounded-md border border-slate-200 bg-white px-2.5 py-2 transition-all hover:border-emerald-200 focus-within:border-emerald-300 focus-within:ring-1 focus-within:ring-emerald-200/70',
+                      'space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 transition-all hover:border-emerald-200 hover:bg-white focus-within:border-emerald-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-emerald-100',
                       isWideField && 'md:col-span-2 xl:col-span-3'
                     )}
                   >
@@ -1029,7 +1043,7 @@ export default function GenericCrudPage({
           </div>
 
           {/* ── Sticky footer ─────────────────────────────────── */}
-          <div className="vm-dialog-footer shrink-0 border-t border-slate-100 bg-slate-50/95 px-6 py-3.5">
+          <div className="vm-dialog-footer shrink-0 border-t border-slate-200 bg-white px-6 py-4 shadow-[0_-10px_30px_-25px_rgba(15,23,42,0.5)]">
             <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:justify-between sm:gap-3">
               <p className="col-span-2 text-xs text-muted-foreground sm:col-span-1">
                 <span className="text-rose-500">*</span> Required fields
