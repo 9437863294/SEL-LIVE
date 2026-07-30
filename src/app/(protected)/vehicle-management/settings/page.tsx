@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -20,7 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { BatteryCharging, LocateFixed, Plus, Radio, RotateCcw, Save, Settings2, Tag, X } from 'lucide-react';
+import { BatteryCharging, GitBranch, LocateFixed, Plus, Radio, RotateCcw, Save, Settings2, Tag, X } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
 type TrackingSettings = {
@@ -190,6 +191,17 @@ export default function VehicleManagementSettingsPage() {
           {!canEdit && <Badge variant="outline" className="bg-slate-50 text-slate-600">View only</Badge>}
         </CardHeader>
       </Card>
+
+      <Link href="/vehicle-management/settings/insurance-workflow" className="block">
+        <Card className="vm-panel cursor-pointer overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-md">
+          <div className="h-0.5 bg-gradient-to-r from-violet-500 via-indigo-500 to-cyan-500" />
+          <CardContent className="flex items-center gap-3 p-4">
+            <div className="rounded-xl bg-violet-100 p-2.5 text-violet-700"><GitBranch className="h-5 w-5" /></div>
+            <div className="min-w-0 flex-1"><p className="font-semibold text-slate-900">Insurance Expiry Workflow</p><p className="text-xs text-muted-foreground">Configure dynamic stages, user or role assignment, premium-based approvals, TAT and escalation.</p></div>
+            <Badge variant="outline" className="hidden bg-white sm:inline-flex">Open Setup</Badge>
+          </CardContent>
+        </Card>
+      </Link>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
         <Card className="vm-panel overflow-hidden">

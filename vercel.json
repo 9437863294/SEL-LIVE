@@ -7,6 +7,10 @@
     {
       "path": "/api/recurring-payments/generate",
       "schedule": "15 0 * * *"
+    },
+    {
+      "path": "/api/vehicle-management/insurance-workflow",
+      "schedule": "30 0 * * *"
     }
   ]
 }

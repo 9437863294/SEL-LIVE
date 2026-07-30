@@ -15,6 +15,8 @@ export type RenewalPrefill = {
   prefill: Record<string, string> | undefined;
   /** Firestore doc ID of the old expired record to archive after save */
   renewingFromId: string | undefined;
+  /** Optional insurance workflow case closed after a successful renewal save. */
+  workflowCaseId: string | undefined;
 };
 
 export function useRenewalPrefill(): RenewalPrefill {
@@ -25,8 +27,9 @@ export function useRenewalPrefill(): RenewalPrefill {
     const vid = searchParams?.get('vid') || '';
     const vnum = searchParams?.get('vnum') || '';
     const dname = searchParams?.get('dname') || '';
+    const workflowCaseId = searchParams?.get('case') || '';
 
-    if (!renew) return { prefill: undefined, renewingFromId: undefined };
+    if (!renew) return { prefill: undefined, renewingFromId: undefined, workflowCaseId: workflowCaseId || undefined };
 
     const prefill: Record<string, string> = {};
 
@@ -40,6 +43,6 @@ export function useRenewalPrefill(): RenewalPrefill {
     // driverName → for Driver License renewal
     if (dname) prefill.driverName = dname;
 
-    return { prefill, renewingFromId: renew };
+    return { prefill, renewingFromId: renew, workflowCaseId: workflowCaseId || undefined };
   }, [searchParams]);
 }

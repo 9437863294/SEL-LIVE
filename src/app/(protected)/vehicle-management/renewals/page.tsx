@@ -59,7 +59,7 @@ const SOURCES = [
     dateKeys: ['expiryDate', 'validTill', 'endDate'],
     nameKeys: ['vehicleNumber', 'registrationNo', 'vehicleRegNo'],
     detailKeys: ['policyNumber', 'insuranceCompany'],
-    href: '/vehicle-management/insurance',
+    href: '/vehicle-management/insurance/workflow',
     permission: 'Insurance Management',
   },
   {

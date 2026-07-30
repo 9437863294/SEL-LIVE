@@ -4,11 +4,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   serverTimestamp,
+  Timestamp,
   updateDoc,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -16,6 +19,8 @@ import { db, storage } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { createUserNotification } from '@/lib/notifications';
 import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -120,10 +125,11 @@ const insuranceAlertClass = (stage: string) =>
 
 export default function InsuranceManagementPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { log } = useActivityLogger('Vehicle Management');
   const { can } = useAuthorization();
   const { rows: vehicleRows, options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
-  const { prefill, renewingFromId } = useRenewalPrefill();
+  const { prefill, renewingFromId, workflowCaseId } = useRenewalPrefill();
 
   const canView = can('View', 'Vehicle Management.Insurance Management');
   const canAdd = can('Add', 'Vehicle Management.Insurance Management');
@@ -266,12 +272,7 @@ export default function InsuranceManagementPage() {
   };
 
   const getRenewalHref = (row: InsuranceRow) => {
-    const params = new URLSearchParams({
-      renew: String(row.id),
-      vid: String(row.vehicleId || ''),
-      vnum: String(row.vehicleNumber || ''),
-    });
-    return `/vehicle-management/insurance?${params.toString()}`;
+    return `/vehicle-management/insurance/workflow?insuranceId=${encodeURIComponent(String(row.id))}`;
   };
 
   const exportExcel = async () => {
@@ -504,6 +505,62 @@ export default function InsuranceManagementPage() {
           });
         } catch (error) {
           console.error('Unable to archive renewed insurance row', error);
+        }
+      }
+
+      if (!editingRow && workflowCaseId) {
+        try {
+          const caseRef = doc(db, VEHICLE_COLLECTIONS.insuranceWorkflowCases, workflowCaseId);
+          const caseSnapshot = await getDoc(caseRef);
+          if (caseSnapshot.exists()) {
+            const caseData = caseSnapshot.data() as Record<string, any>;
+            const completedAt = Timestamp.now();
+            const historyEntry = {
+              action: 'Policy Activated',
+              comment: `Renewed policy ${form.policyNumber.trim()} saved and activated.`,
+              userId: user?.id || '',
+              userName: user?.name || user?.email || 'User',
+              stepId: 'activation',
+              stepName: 'Policy Activation',
+              timestamp: completedAt,
+            };
+            await updateDoc(caseRef, {
+              status: 'Completed',
+              currentStepName: 'Completed',
+              currentStepIndex: Number(caseData.totalSteps || 0),
+              renewedInsuranceId: savedId,
+              workflowDeadline: null,
+              completedAt,
+              updatedAt: completedAt,
+              history: arrayUnion(historyEntry),
+            });
+            await addDoc(collection(db, VEHICLE_COLLECTIONS.insuranceWorkflowActivities), {
+              caseId: workflowCaseId,
+              insuranceId: renewingFromId || '',
+              vehicleId: form.vehicleId,
+              vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
+              action: historyEntry.action,
+              comment: historyEntry.comment,
+              userId: historyEntry.userId,
+              userName: historyEntry.userName,
+              stepId: historyEntry.stepId,
+              stepName: historyEntry.stepName,
+              createdAt: serverTimestamp(),
+            });
+            await Promise.all((Array.isArray(caseData.assigneeIds) ? caseData.assigneeIds : []).map((userId: string) => createUserNotification(userId, {
+              type: 'workflow_complete',
+              title: 'Insurance renewal completed',
+              body: `${vehicle?.vehicleNumber || form.policyNumber} policy is active`,
+              module: 'insurance',
+              itemId: workflowCaseId,
+              itemRef: form.policyNumber,
+              stepName: 'Policy Activation',
+              link: `/vehicle-management/insurance/workflow?case=${workflowCaseId}`,
+            }).catch(() => undefined)));
+          }
+        } catch (error) {
+          console.error('Unable to close insurance workflow case', error);
+          toast({ title: 'Policy saved', description: 'The policy was saved, but the workflow case could not be closed. Open the workflow and retry.', variant: 'destructive' });
         }
       }
 

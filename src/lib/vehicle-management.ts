@@ -15,6 +15,8 @@ export const VEHICLE_COLLECTIONS = {
   driver: 'vehicleManagementDriver',
   driverAssignments: 'vehicleManagementDriverAssignments',
   documents: 'vehicleManagementDocuments',
+  insuranceWorkflowCases: 'vehicleManagementInsuranceWorkflowCases',
+  insuranceWorkflowActivities: 'vehicleManagementInsuranceWorkflowActivities',
 } as const;
 
 export const VEHICLE_SETTINGS_DOC_ID = 'trackingConfig';

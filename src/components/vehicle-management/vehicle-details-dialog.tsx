@@ -17,6 +17,7 @@ type Row = Record<string, any>;
 type ComplianceSection = {
   title: string;
   href: string;
+  renewalHref?: string;
   rows: Row[];
   referenceKeys: string[];
   expiryKeys: string[];
@@ -130,7 +131,7 @@ export function VehicleDetailsDialog({
   }, [access, open, vehicle]);
 
   const sections = useMemo<ComplianceSection[]>(() => [
-    access.insurance && { title: 'Insurance', href: '/vehicle-management/insurance', rows: records[VEHICLE_COLLECTIONS.insurance] || [], referenceKeys: ['policyNumber', 'insuranceCompany'], expiryKeys: ['expiryDate'] },
+    access.insurance && { title: 'Insurance', href: '/vehicle-management/insurance', renewalHref: '/vehicle-management/insurance/workflow', rows: records[VEHICLE_COLLECTIONS.insurance] || [], referenceKeys: ['policyNumber', 'insuranceCompany'], expiryKeys: ['expiryDate'] },
     access.puc && { title: 'PUC', href: '/vehicle-management/puc', rows: records[VEHICLE_COLLECTIONS.puc] || [], referenceKeys: ['pucCertificateNumber', 'testingCenterName'], expiryKeys: ['expiryDate'] },
     access.fitness && { title: 'Fitness', href: '/vehicle-management/fitness', rows: records[VEHICLE_COLLECTIONS.fitness] || [], referenceKeys: ['fitnessCertificateNumber', 'rtoName'], expiryKeys: ['expiryDate'] },
     access.roadTax && { title: 'Road Tax', href: '/vehicle-management/road-tax', rows: records[VEHICLE_COLLECTIONS.roadTax] || [], referenceKeys: ['receiptNumber', 'taxType'], expiryKeys: ['validTill', 'expiryDate'] },
@@ -262,7 +263,7 @@ export function VehicleDetailsDialog({
               {section.rows.length === 0 ? <p className="px-4 py-6 text-sm text-muted-foreground">No records available.</p> : (
                 <div className="overflow-x-auto"><table className="w-full text-sm"><TableHeader><TableRow><TableHead>Reference</TableHead><TableHead>Expiry</TableHead><TableHead>Compliance</TableHead><TableHead>Record</TableHead><TableHead>Created Time</TableHead>{section.title === 'Insurance' && <TableHead className="text-right">Action</TableHead>}</TableRow></TableHeader>
                   <TableBody>{section.rows.map((row) => { const expiry = firstValue(row, section.expiryKeys); const meta = computeRenewalMeta(expiry === '-' ? '' : expiry); return (
-                    <TableRow key={String(row.id)}><TableCell className="font-medium">{firstValue(row, section.referenceKeys)}</TableCell><TableCell>{expiry}</TableCell><TableCell><Badge variant={meta.alertStage === 'Expired' ? 'destructive' : 'outline'}>{meta.alertStage}</Badge></TableCell><TableCell>{row.isArchived ? <Badge variant="secondary"><History className="mr-1 h-3 w-3" />History</Badge> : <Badge className="bg-emerald-600">Current</Badge>}</TableCell><TableCell className="whitespace-nowrap"><Clock className="mr-1 inline h-3.5 w-3.5" />{formatVehicleTimestamp(row.createdAt)}</TableCell>{section.title === 'Insurance' && <TableCell className="text-right">{!row.isArchived && canRenewInsurance ? <Link href={renewalHref(section.href, row, vehicle)}><Button size="sm" className="bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link> : '-'}</TableCell>}</TableRow>
+                    <TableRow key={String(row.id)}><TableCell className="font-medium">{firstValue(row, section.referenceKeys)}</TableCell><TableCell>{expiry}</TableCell><TableCell><Badge variant={meta.alertStage === 'Expired' ? 'destructive' : 'outline'}>{meta.alertStage}</Badge></TableCell><TableCell>{row.isArchived ? <Badge variant="secondary"><History className="mr-1 h-3 w-3" />History</Badge> : <Badge className="bg-emerald-600">Current</Badge>}</TableCell><TableCell className="whitespace-nowrap"><Clock className="mr-1 inline h-3.5 w-3.5" />{formatVehicleTimestamp(row.createdAt)}</TableCell>{section.title === 'Insurance' && <TableCell className="text-right">{!row.isArchived && canRenewInsurance ? <Link href={renewalHref(section.renewalHref || section.href, row, vehicle)}><Button size="sm" className="bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link> : '-'}</TableCell>}</TableRow>
                   );})}</TableBody></table></div>
               )}
             </section>
