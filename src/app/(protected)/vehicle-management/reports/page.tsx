@@ -52,13 +52,13 @@ const REPORTS = [
   },
   {
     href: '/vehicle-management/reports/expiry-alerts',
-    title: 'Expiry Alert Center',
+    title: 'Expiry-wise Report',
     description:
       'All compliance alerts — expired, due today, and within 7/15/30 days across insurance, PUC, fitness, road tax, permit, and driver licenses.',
     icon: AlertTriangle,
     color: 'from-rose-500 to-red-600',
     iconBg: 'bg-rose-50 text-rose-600',
-    scope: 'Fleet-wide',
+    scope: 'Month / Year',
     scopeColor: 'bg-slate-100 text-slate-600',
   },
   {

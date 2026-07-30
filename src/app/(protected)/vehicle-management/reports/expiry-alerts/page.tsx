@@ -4,12 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import { collection, getDocs } from 'firebase/firestore';
-import { AlertTriangle, ChevronLeft, Download } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, Download, RotateCcw, Search } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import {
   ALERT_STAGE_LABELS,
   computeRenewalMeta,
-  getAlertPriority,
   VEHICLE_COLLECTIONS,
 } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -18,8 +17,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const ALL_MODULES = ['All', 'Insurance', 'PUC', 'Fitness', 'Road Tax', 'Permit', 'Documents', 'Driver License'] as const;
+const STATUS_OPTIONS = ['All', 'Expired', 'Due Today', 'Due Within 30 Days', 'Future', 'Missing Date'] as const;
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const;
 
 type AlertRow = {
   module: string;
@@ -28,6 +34,9 @@ type AlertRow = {
   expiryDate: string;
   alertStage: string;
   complianceStatus: string;
+  daysToExpiry: number | null;
+  expiryMonth: number | null;
+  expiryYear: number | null;
 };
 
 export default function ExpiryAlertsReportPage() {
@@ -38,6 +47,10 @@ export default function ExpiryAlertsReportPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [moduleFilter, setModuleFilter] = useState<string>('All');
+  const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [monthFilter, setMonthFilter] = useState<string>('All');
+  const [yearFilter, setYearFilter] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState('');
   const [insuranceRows, setInsuranceRows] = useState<Record<string, any>[]>([]);
   const [pucRows, setPucRows] = useState<Record<string, any>[]>([]);
   const [fitnessRows, setFitnessRows] = useState<Record<string, any>[]>([]);
@@ -87,7 +100,13 @@ export default function ExpiryAlertsReportPage() {
       collection.forEach((r) => {
         const expiryDate = String(r[expiryKey] || '');
         const meta = computeRenewalMeta(expiryDate);
-        if (!['Expired', 'Due Today', '7d', '15d', '30d', 'Missing'].includes(meta.alertStage)) return;
+        const parsedDate = expiryDate ? new Date(`${expiryDate}T00:00:00`) : null;
+        const validDate = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const daysToExpiry = validDate
+          ? Math.ceil((validDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+          : null;
         rows.push({
           module,
           vehicleNumber: String(r.vehicleNumber || r.assignedVehicleNumber || 'Unknown'),
@@ -95,6 +114,9 @@ export default function ExpiryAlertsReportPage() {
           expiryDate,
           alertStage: meta.alertStage,
           complianceStatus: meta.complianceStatus,
+          daysToExpiry,
+          expiryMonth: validDate ? validDate.getMonth() + 1 : null,
+          expiryYear: validDate ? validDate.getFullYear() : null,
         });
       });
     };
@@ -108,15 +130,34 @@ export default function ExpiryAlertsReportPage() {
     push('Driver License', driverRows, 'licenseExpiryDate', (r) => String(r.licenseNumber || '-'));
 
     return rows.sort((a, b) => {
-      const p = getAlertPriority(a.alertStage) - getAlertPriority(b.alertStage);
-      return p !== 0 ? p : String(a.expiryDate).localeCompare(String(b.expiryDate));
+      if (!a.expiryDate) return 1;
+      if (!b.expiryDate) return -1;
+      return a.expiryDate.localeCompare(b.expiryDate);
     });
   }, [insuranceRows, pucRows, fitnessRows, roadTaxRows, permitRows, documentRows, driverRows]);
 
-  const filteredAlerts = useMemo(
-    () => (moduleFilter === 'All' ? allAlerts : allAlerts.filter((r) => r.module === moduleFilter)),
-    [allAlerts, moduleFilter]
-  );
+  const availableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years = new Set<number>([currentYear, currentYear + 1, currentYear + 2, currentYear + 3]);
+    allAlerts.forEach((row) => row.expiryYear && years.add(row.expiryYear));
+    return Array.from(years).sort((a, b) => a - b);
+  }, [allAlerts]);
+
+  const filteredAlerts = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase();
+    return allAlerts.filter((row) => {
+      if (moduleFilter !== 'All' && row.module !== moduleFilter) return false;
+      if (monthFilter !== 'All' && row.expiryMonth !== Number(monthFilter)) return false;
+      if (yearFilter !== 'All' && row.expiryYear !== Number(yearFilter)) return false;
+      if (statusFilter === 'Expired' && (row.daysToExpiry === null || row.daysToExpiry >= 0)) return false;
+      if (statusFilter === 'Due Today' && row.daysToExpiry !== 0) return false;
+      if (statusFilter === 'Due Within 30 Days' && (row.daysToExpiry === null || row.daysToExpiry < 0 || row.daysToExpiry > 30)) return false;
+      if (statusFilter === 'Future' && (row.daysToExpiry === null || row.daysToExpiry <= 30)) return false;
+      if (statusFilter === 'Missing Date' && row.daysToExpiry !== null) return false;
+      if (term && !`${row.vehicleNumber} ${row.reference} ${row.module}`.toLowerCase().includes(term)) return false;
+      return true;
+    });
+  }, [allAlerts, moduleFilter, monthFilter, searchQuery, statusFilter, yearFilter]);
 
   const expiredCount = useMemo(
     () => allAlerts.filter((r) => r.alertStage === 'Expired').length,
@@ -130,6 +171,18 @@ export default function ExpiryAlertsReportPage() {
     () => allAlerts.filter((r) => ['7d', '15d', '30d'].includes(r.alertStage)).length,
     [allAlerts]
   );
+  const futureCount = useMemo(
+    () => allAlerts.filter((r) => r.daysToExpiry !== null && r.daysToExpiry > 30).length,
+    [allAlerts]
+  );
+
+  const resetFilters = () => {
+    setModuleFilter('All');
+    setStatusFilter('All');
+    setMonthFilter('All');
+    setYearFilter('All');
+    setSearchQuery('');
+  };
 
   const exportExcel = async () => {
     if (!canExport || isExporting) return;
@@ -144,9 +197,14 @@ export default function ExpiryAlertsReportPage() {
         { header: 'Expiry Date', key: 'expiryDate', width: 16 },
         { header: 'Alert Stage', key: 'alertStage', width: 16 },
         { header: 'Compliance Status', key: 'complianceStatus', width: 20 },
+        { header: 'Days to Expiry', key: 'daysToExpiry', width: 18 },
       ];
       filteredAlerts.forEach((r) =>
-        ws.addRow({ ...r, alertStage: ALERT_STAGE_LABELS[r.alertStage] || r.alertStage })
+        ws.addRow({
+          ...r,
+          alertStage: ALERT_STAGE_LABELS[r.alertStage] || r.alertStage,
+          daysToExpiry: r.daysToExpiry === null ? 'Missing Date' : r.daysToExpiry,
+        })
       );
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
@@ -207,9 +265,9 @@ export default function ExpiryAlertsReportPage() {
               <ChevronLeft className="h-3.5 w-3.5" /> Back to Reports
             </Link>
             <CardTitle className="flex items-center gap-2 tracking-tight">
-              <AlertTriangle className="h-4 w-4 text-rose-500" /> Expiry Alert Center
+              <AlertTriangle className="h-4 w-4 text-rose-500" /> Expiry-wise Report
             </CardTitle>
-            <CardDescription>All compliance expiry alerts fleet-wide across all document types.</CardDescription>
+            <CardDescription>Review expired, upcoming, and future compliance expiries month-wise and year-wise.</CardDescription>
           </div>
           {canExport && (
             <Button
@@ -225,7 +283,7 @@ export default function ExpiryAlertsReportPage() {
         </CardHeader>
       </Card>
 
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-4">
         <Card className="vm-panel overflow-hidden">
           <div className="h-1 w-full bg-gradient-to-r from-red-600/90 to-rose-600/90" />
           <CardHeader className="pb-2">
@@ -250,7 +308,54 @@ export default function ExpiryAlertsReportPage() {
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">Within 30 days</CardContent>
         </Card>
+        <Card className="vm-panel overflow-hidden">
+          <div className="h-1 w-full bg-gradient-to-r from-sky-500/80 to-blue-500/80" />
+          <CardHeader className="pb-2">
+            <CardDescription>Future</CardDescription>
+            <CardTitle className="text-xl text-sky-600">{futureCount}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">More than 30 days ahead</CardContent>
+        </Card>
       </div>
+
+      <Card className="vm-panel-strong">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Report Filters</CardTitle>
+          <CardDescription>Select any future month and year to plan renewals in advance.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="relative sm:col-span-2 xl:col-span-1">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Vehicle or reference..."
+              className="pl-9"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger><SelectValue placeholder="Expiry status" /></SelectTrigger>
+            <SelectContent>{STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent>
+          </Select>
+          <Select value={monthFilter} onValueChange={setMonthFilter}>
+            <SelectTrigger><SelectValue placeholder="Expiry month" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Months</SelectItem>
+              {MONTHS.map((month, index) => <SelectItem key={month} value={String(index + 1)}>{month}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={yearFilter} onValueChange={setYearFilter}>
+            <SelectTrigger><SelectValue placeholder="Expiry year" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="All">All Years</SelectItem>
+              {availableYears.map((year) => <SelectItem key={year} value={String(year)}>{year}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={resetFilters} className="bg-white/80">
+            <RotateCcw className="mr-2 h-4 w-4" /> Reset Filters
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Module filter tabs */}
       <div className="flex flex-wrap gap-2">
@@ -277,14 +382,14 @@ export default function ExpiryAlertsReportPage() {
       <Card className="vm-panel-strong">
         <CardHeader>
           <CardTitle className="text-base">
-            {moduleFilter === 'All' ? 'All Compliance Alerts' : `${moduleFilter} Alerts`}
+            {moduleFilter === 'All' ? 'All Expiry Records' : `${moduleFilter} Expiries`}
           </CardTitle>
           <CardDescription>{filteredAlerts.length} alert{filteredAlerts.length !== 1 ? 's' : ''} found</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 sm:hidden">
           {filteredAlerts.length === 0 ? (
             <div className="rounded-lg border border-white/70 bg-white/80 px-3 py-6 text-center text-muted-foreground">
-              No active compliance alerts.
+              No expiry records match the selected filters.
             </div>
           ) : (
             filteredAlerts.map((item, idx) => (
@@ -302,6 +407,10 @@ export default function ExpiryAlertsReportPage() {
                     <span className="font-medium">{item.vehicleNumber}</span>
                   </div>
                   <div className="flex justify-between">
+                    <span className="text-muted-foreground">Time Remaining</span>
+                    <span>{item.daysToExpiry === null ? '-' : item.daysToExpiry < 0 ? `${Math.abs(item.daysToExpiry)} days overdue` : `${item.daysToExpiry} days`}</span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-muted-foreground">Reference</span>
                     <span>{item.reference}</span>
                   </div>
@@ -317,7 +426,7 @@ export default function ExpiryAlertsReportPage() {
         <CardContent className="hidden sm:block p-0">
           {filteredAlerts.length === 0 ? (
             <div className="rounded-lg border border-white/70 bg-white/80 px-4 py-10 text-center text-muted-foreground">
-              No active compliance alerts.
+              No expiry records match the selected filters.
             </div>
           ) : (
             <div className="overflow-auto rounded-lg border border-white/70 bg-white/80 h-[calc(100vh-420px)]">
@@ -330,6 +439,7 @@ export default function ExpiryAlertsReportPage() {
                     <TableHead>Expiry Date</TableHead>
                     <TableHead>Alert Stage</TableHead>
                     <TableHead>Compliance</TableHead>
+                    <TableHead>Time Remaining</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -344,6 +454,9 @@ export default function ExpiryAlertsReportPage() {
                       <TableCell>{item.expiryDate || '-'}</TableCell>
                       <TableCell>{alertBadge(item.alertStage)}</TableCell>
                       <TableCell>{item.complianceStatus}</TableCell>
+                      <TableCell className={item.daysToExpiry !== null && item.daysToExpiry < 0 ? 'font-medium text-rose-600' : ''}>
+                        {item.daysToExpiry === null ? '-' : item.daysToExpiry < 0 ? `${Math.abs(item.daysToExpiry)} days overdue` : item.daysToExpiry === 0 ? 'Today' : `${item.daysToExpiry} days`}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
