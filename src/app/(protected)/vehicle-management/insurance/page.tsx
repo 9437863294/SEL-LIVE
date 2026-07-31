@@ -69,7 +69,7 @@ import {
 } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import ExcelJS from 'exceljs';
-import { Check, ChevronsUpDown, Download, ExternalLink, FileUp, History, Loader2, RefreshCw, RotateCcw, Search, ShieldCheck, Upload } from 'lucide-react';
+import { Check, ChevronsUpDown, Download, ExternalLink, Eye, FileUp, History, Loader2, Pencil, RefreshCw, RotateCcw, Search, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 
@@ -147,6 +147,7 @@ export default function InsuranceManagementPage() {
   const [expiryFilter, setExpiryFilter] = useState('All');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<InsuranceRow | null>(null);
+  const [viewRow, setViewRow] = useState<InsuranceRow | null>(null);
   const [deleteRow, setDeleteRow] = useState<InsuranceRow | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -700,7 +701,7 @@ export default function InsuranceManagementPage() {
               </div>
             ) : (
               insurancePagination.paginatedRows.map((row) => (
-                <div key={row.id} className="rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
+                <div key={row.id} role="button" tabIndex={0} onClick={() => setViewRow(row)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setViewRow(row); } }} className="cursor-pointer rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm transition-transform active:scale-[0.99]">
                   {/* Top: vehicle number + alert badge */}
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
@@ -727,10 +728,11 @@ export default function InsuranceManagementPage() {
                     </div>
                   </div>
                   {/* Action buttons */}
-                  <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-                    {activeTab === 'current' && canAdd && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
-                    <button onClick={() => openEdit(row)} disabled={!canEdit} className="flex-1 h-10 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700 disabled:opacity-50 active:bg-slate-50">Edit</button>
-                    <button onClick={() => setDeleteRow(row)} disabled={!canDelete} className="flex-1 h-10 rounded-md bg-rose-500 text-sm font-medium text-white disabled:opacity-50 active:bg-rose-600">Delete</button>
+                  <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-slate-100 pt-3">
+                    {row.policyDocumentUrl && <Button type="button" size="icon" variant="outline" className="h-9 w-9 border-emerald-200 bg-emerald-50 text-emerald-700" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button>}
+                    {activeTab === 'current' && canAdd && <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}><Button type="button" size="icon" className="h-9 w-9 bg-amber-500 text-white hover:bg-amber-600" title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-4 w-4" /></Button></Link>}
+                    <Button type="button" size="icon" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-9 w-9 bg-white text-slate-700" title="Edit insurance" aria-label="Edit insurance"><Pencil className="h-4 w-4" /></Button>
+                    <Button type="button" size="icon" variant="outline" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="h-9 w-9 border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700" title="Delete insurance" aria-label="Delete insurance"><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </div>
               ))
@@ -756,6 +758,7 @@ export default function InsuranceManagementPage() {
                   <TableHead>Renewal Status</TableHead>
                   <TableHead>Compliance</TableHead>
                   <TableHead>Created Time</TableHead>
+                  <TableHead className="text-center">Document</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -763,14 +766,14 @@ export default function InsuranceManagementPage() {
                 {isLoading ? (
                   Array.from({ length: 4 }).map((_, index) => (
                     <TableRow key={index}>
-                      <TableCell colSpan={9}>
+                      <TableCell colSpan={10}>
                         <Skeleton className="h-8 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   insurancePagination.paginatedRows.map((row) => (
-                    <TableRow key={String(row.id)} className="transition-colors hover:bg-emerald-50/60">
+                    <TableRow key={String(row.id)} tabIndex={0} onClick={() => setViewRow(row)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setViewRow(row); } }} className="cursor-pointer transition-colors hover:bg-emerald-50/60 focus-visible:bg-emerald-50 focus-visible:outline-none">
                       <TableCell className="font-semibold text-slate-800">{row.vehicleNumber || '-'}</TableCell>
                       <TableCell>{row.insuranceCompany || '-'}</TableCell>
                       <TableCell>{row.policyNumber || '-'}</TableCell>
@@ -779,18 +782,19 @@ export default function InsuranceManagementPage() {
                       <TableCell>{row.renewalStatus || '-'}</TableCell>
                       <TableCell>{row.complianceStatus || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
+                      <TableCell className="text-center">{row.policyDocumentUrl ? <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button> : <span className="text-xs text-muted-foreground">-</span>}</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1">
                           {activeTab === 'current' && canAdd && (
-                            <Link href={getRenewalHref(row)}>
-                              <Button size="sm" className="h-8 bg-amber-500 px-3 text-white hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button>
+                            <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}>
+                              <Button type="button" size="icon" className="h-8 w-8 bg-amber-500 text-white hover:bg-amber-600" title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-3.5 w-3.5" /></Button>
                             </Link>
                           )}
-                          <Button size="sm" variant="outline" onClick={() => openEdit(row)} disabled={!canEdit} className="h-8 px-3">
-                            Edit
+                          <Button type="button" size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-8 w-8 text-slate-700 hover:bg-slate-100" title="Edit insurance" aria-label="Edit insurance">
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button size="sm" variant="destructive" onClick={() => setDeleteRow(row)} disabled={!canDelete} className="h-8 px-3">
-                            Delete
+                          <Button type="button" size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="h-8 w-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700" title="Delete insurance" aria-label="Delete insurance">
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </TableCell>
@@ -811,6 +815,45 @@ export default function InsuranceManagementPage() {
           />
         </CardContent>
       </Card>
+
+      <Dialog open={!!viewRow} onOpenChange={(open) => { if (!open) setViewRow(null); }}>
+        <DialogContent size="default" className="vm-mobile-dialog flex max-h-[88vh] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          {viewRow && <>
+            <DialogHeader className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 py-3 pr-12">
+              <DialogTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4 text-emerald-600" />{viewRow.vehicleNumber || 'Insurance Policy'}</DialogTitle>
+              <DialogDescription className="truncate text-xs">{viewRow.policyNumber || '-'} · {viewRow.insuranceCompany || '-'}</DialogDescription>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-3">
+              <div className="flex flex-wrap gap-1.5"><Badge variant="outline" className={insuranceAlertClass(String(viewRow.alertStage || ''))}>{viewRow.alertStage || '-'}</Badge><Badge variant="outline" className="bg-white">{viewRow.renewalStatus || '-'}</Badge><Badge variant="outline" className="bg-white">{viewRow.complianceStatus || '-'}</Badge></div>
+              <section className="rounded-xl border bg-white p-3 shadow-sm">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Policy Details</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <InsuranceDetail label="Vehicle Number" value={viewRow.vehicleNumber || '-'} />
+                  <InsuranceDetail label="Policy Number" value={viewRow.policyNumber || '-'} />
+                  <InsuranceDetail label="Policy Type" value={viewRow.policyType || '-'} />
+                  <InsuranceDetail label="Insurance Company" value={viewRow.insuranceCompany || '-'} />
+                  <InsuranceDetail label="Start Date" value={viewRow.startDate || '-'} />
+                  <InsuranceDetail label="Expiry Date" value={viewRow.expiryDate || '-'} />
+                  <InsuranceDetail label="Premium Amount" value={formatInsuranceCurrency(viewRow.premiumAmount)} />
+                  <InsuranceDetail label="IDV Value" value={formatInsuranceCurrency(viewRow.idvValue)} />
+                  <InsuranceDetail label="Created Time" value={formatVehicleTimestamp(viewRow.createdAt)} />
+                </div>
+              </section>
+              <section className="rounded-xl border bg-white p-3 shadow-sm">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Agent & Document</p>
+                <div className="grid grid-cols-2 gap-2"><InsuranceDetail label="Agent Name" value={viewRow.agentName || '-'} /><InsuranceDetail label="Agent Contact" value={viewRow.agentContact || '-'} /></div>
+                {viewRow.policyDocumentUrl ? <a href={String(viewRow.policyDocumentUrl)} target="_blank" rel="noreferrer" className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"><span className="flex min-w-0 items-center gap-2"><Eye className="h-4 w-4 shrink-0" /><span className="truncate">View uploaded policy document</span></span><ExternalLink className="h-3.5 w-3.5 shrink-0" /></a> : <div className="mt-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">No policy document uploaded.</div>}
+              </section>
+              {viewRow.remarks && <section className="rounded-xl border bg-white p-3 shadow-sm"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Remarks</p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-700">{viewRow.remarks}</p></section>}
+            </div>
+            <DialogFooter className="shrink-0 border-t bg-white px-3 py-2">
+              <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => setViewRow(null)}>Close</Button>
+              {activeTab === 'current' && canAdd && <Link href={getRenewalHref(viewRow)}><Button type="button" size="sm" className="h-8 bg-amber-500 text-white hover:bg-amber-600"><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Renew</Button></Link>}
+              {canEdit && <Button type="button" size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700" onClick={() => { const row = viewRow; setViewRow(null); openEdit(row); }}><Pencil className="mr-1.5 h-3.5 w-3.5" />Edit</Button>}
+            </DialogFooter>
+          </>}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
         <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
@@ -952,6 +995,17 @@ export default function InsuranceManagementPage() {
       />
     </div>
   );
+}
+
+function formatInsuranceCurrency(value: unknown) {
+  if (value === '' || value === null || value === undefined) return '-';
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '-';
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+}
+
+function InsuranceDetail({ label, value }: { label: string; value: ReactNode }) {
+  return <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><div className="mt-0.5 truncate text-xs font-medium text-slate-700" title={typeof value === 'string' ? value : undefined}>{value}</div></div>;
 }
 
 function Field({

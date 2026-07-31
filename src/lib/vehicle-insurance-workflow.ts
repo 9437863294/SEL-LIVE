@@ -83,6 +83,8 @@ export interface InsuranceRenewalCase {
     stepId: string;
     stepName: string;
     reference: string;
+    fileName?: string;
+    contentType?: string;
     addedBy: string;
     addedAt: Timestamp;
   }>;
