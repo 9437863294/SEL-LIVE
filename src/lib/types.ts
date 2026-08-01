@@ -1,10 +1,9 @@
-
-import { Timestamp } from 'firebase/firestore';
-import { z } from 'zod';
+import { Timestamp } from "firebase/firestore";
+import { z } from "zod";
 
 /** ---------- Shared small types used below ---------- **/
 
-export type UploadRequirement = 'Required' | 'Optional' | 'Not Required';
+export type UploadRequirement = "Required" | "Optional" | "Not Required";
 
 export interface AssignedTo {
   primary: string;
@@ -36,7 +35,7 @@ export interface User {
   email: string;
   mobile: string;
   role: string;
-  status: 'Active' | 'Inactive';
+  status: "Active" | "Inactive";
   photoURL?: string;
   isOnline?: boolean;
   lastSeen?: Timestamp;
@@ -54,15 +53,15 @@ export interface SavedUser {
   name: string;
   email: string;
   photoURL: string;
-  pin?: string;        // 4-digit PIN for quick device sign-in
-  password?: string;   // Base64-encoded password (not secure - consider alternatives)
+  pin?: string; // 4-digit PIN for quick device sign-in
+  password?: string; // Base64-encoded password (not secure - consider alternatives)
 }
 
 export interface Department {
   id: string;
   name: string;
   head: string;
-  status: 'Active' | 'Inactive';
+  status: "Active" | "Inactive";
 }
 
 export interface Signature {
@@ -79,13 +78,13 @@ export interface Project {
   projectDivision: string;
   location: string;
   siteInCharge: string;
-  status: 'Active' | 'Inactive';
+  status: "Active" | "Inactive";
   billingRequired?: boolean;
   stockManagementRequired?: boolean;
   woNo?: string;
   signatures?: Signature[];
   projectDescription?: string;
-};
+}
 
 export interface Site {
   id: string;
@@ -100,224 +99,488 @@ export interface Role {
 }
 
 export const permissionModules = {
-  'Module Hub': ['View Module', 'Create', 'Edit', 'Delete'],
-  'Fixed Deposit Management': {
-    'View Module': [],
-    'Dashboard': ['View', 'Export'],
-    'FD Register': ['View', 'Add', 'Edit', 'Delete', 'Export'],
-    'Maturity Calendar': ['View'],
-    'Available FDs': ['View', 'Assign'],
-    'Assignments': ['View', 'Add', 'Approve', 'Reject', 'Release', 'Replace'],
-    'Renewals': ['View', 'Request', 'Approve', 'Reject', 'Complete'],
-    'Closures': ['View', 'Request', 'Approve', 'Reject', 'Complete'],
-    'Releases': ['View', 'Request', 'Approve', 'Reject'],
-    'Replacements': ['View', 'Request', 'Approve', 'Reject', 'Complete'],
-    'Documents': ['View', 'Upload', 'Archive', 'Download'],
-    'Approvals': ['View', 'Approve', 'Reject', 'Return'],
-    'Reports': ['View', 'Export'],
-    'Import & Reconciliation': ['View', 'Import', 'Export Exceptions'],
-    'Settings': ['View', 'Edit'],
+  "Module Hub": ["View Module", "Create", "Edit", "Delete"],
+  "Fixed Deposit Management": {
+    "View Module": [],
+    Dashboard: ["View", "Export"],
+    "FD Register": ["View", "Add", "Edit", "Delete", "Export"],
+    "Maturity Calendar": ["View"],
+    "Available FDs": ["View", "Assign"],
+    Assignments: ["View", "Add", "Approve", "Reject", "Release", "Replace"],
+    Renewals: ["View", "Request", "Approve", "Reject", "Complete"],
+    Closures: ["View", "Request", "Approve", "Reject", "Complete"],
+    Releases: ["View", "Request", "Approve", "Reject"],
+    Replacements: ["View", "Request", "Approve", "Reject", "Complete"],
+    Documents: ["View", "Upload", "Archive", "Download"],
+    Approvals: ["View", "Approve", "Reject", "Return"],
+    Reports: ["View", "Export"],
+    "Import & Reconciliation": ["View", "Import", "Export Exceptions"],
+    Settings: ["View", "Edit"],
   },
-  'Chat System': {
-    'View Module': [],
-    'Conversations': ['View', 'Send'],
-    'Groups': ['Create'],
+  "Chat System": {
+    "View Module": [],
+    Conversations: ["View", "Send"],
+    Groups: ["Create"],
   },
-  'Site Fund Requisition': [
-    'View Module', 'Create Requisition', 'Edit Requisition', 'Delete Requisition',
-    'Approve Request', 'Reject Request', 'View Dashboard', 'View History',
-    'Revise Request', 'View Settings', 'View Summary', 'View Planned vs Actual',
-    'View All'
+  "Site Fund Requisition": [
+    "View Module",
+    "Create Requisition",
+    "Edit Requisition",
+    "Delete Requisition",
+    "Approve Request",
+    "Reject Request",
+    "View Dashboard",
+    "View History",
+    "Revise Request",
+    "View Settings",
+    "View Summary",
+    "View Planned vs Actual",
+    "View All",
   ],
-  'Site Fund Requisition 2': {
-    'View Module': [],
-    'Requests': ['View', 'New Request', 'Edit', 'Delete','View All'],
-    'Reports': {
-        'View': [],
-        'Site Fund Summary': ['View'],
+  "Site Fund Requisition 2": {
+    "View Module": [],
+    Requests: ["View", "New Request", "Edit", "Delete", "View All"],
+    Reports: {
+      View: [],
+      "Site Fund Summary": ["View"],
     },
-    'Settings': ['View', 'Edit Workflow','View Workflow'],
+    Settings: ["View", "Edit Workflow", "View Workflow"],
   },
-  'Site Fund Request': {
-    'View Module': [],
-    'Dashboard': ['View'],
-    'Requests': ['View', 'Add', 'Edit', 'Delete', 'Approve', 'Reject', 'View All'],
-    'Reports': ['View', 'Export'],
-    'Settings': ['View', 'Edit', 'View Workflow', 'Edit Workflow'],
-  },
-  'Daily Requisition': {
-    'View Module': [],
-    'Entry Sheet': ['View', 'Add', 'Edit', 'Delete', 'View Checklist', 'Export', 'Cancel'],
-    'Receiving at Finance': ['View', 'Mark as Received', 'Return to Pending', 'Reject', 'Cancel'],
-    'GST & TDS Verification': ['View', 'Verify', 'Re-verify', 'Return to Pending', 'Send for Payment'],
-    'Processed for Payment': ['View', 'Mark as Received for Payment', 'Approve'],
-    'Manage Documents': ['View', 'Upload', 'Download', 'Mark as Missing', 'Not Required', 'Move to Pending'],
-    'Settings': ['View', 'Edit Serial Nos', 'Edit User Rights', 'View Workflow', 'Edit Workflow'],
-    'Reports': ['View', 'Export'],
-  },
-  'Billing Recon': {
-    'View Module': [],
-    'BOQ': ['View', 'Import', 'Add Manual', 'Clear BOQ', 'Delete Items'],
-    'JMC': ['View', 'Create Work Order', 'Create JMC Entry', 'View Log', 'Delete JMC', 'View Certified JMC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
-    'MVAC': ['View', 'Create Work Order', 'Create MVAC Entry', 'View Log', 'Delete MVAC', 'View Certified MVAC', 'View Settings', 'Edit Settings', 'Edit Serial Nos',"View Reports"],
-    'Billing': ['View', 'Create Bill', 'Proforma/Advance Bill', 'Edit Bill', 'Delete Bill', 'View Settings', 'Edit Settings'],
-    'Combined Log': ['View'],
-  },
-  'Subcontractors Management': {
-    'View Module': [],
-    'Manage Subcontractors': ['View', 'Add', 'Edit', 'Delete'],
-    'Work Order': ['View', 'Create', 'Edit', 'Delete'],
-    'Billing': [
-      'View',
-      'Create Bill',
-      'Proforma/Advance Bill',
-      'View Log',
-      'Edit Bill',
-      'Delete Bill',
-      'View Settings',
-      'Edit Settings'
+  "Site Fund Request": {
+    "View Module": [],
+    Dashboard: ["View"],
+    Requests: [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Approve",
+      "Reject",
+      "View All",
     ],
-    'Reports': {
-        'View': [],
-        'Work Order Progress': ['View'],
-        'Billing Summary': ['View'],
+    Reports: ["View", "Export"],
+    Settings: ["View", "Edit", "View Workflow", "Edit Workflow"],
+  },
+  "Daily Requisition": {
+    "View Module": [],
+    "Entry Sheet": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "View Checklist",
+      "Export",
+      "Cancel",
+    ],
+    "Receiving at Finance": [
+      "View",
+      "Mark as Received",
+      "Return to Pending",
+      "Reject",
+      "Cancel",
+    ],
+    "GST & TDS Verification": [
+      "View",
+      "Verify",
+      "Re-verify",
+      "Return to Pending",
+      "Send for Payment",
+    ],
+    "Processed for Payment": [
+      "View",
+      "Mark as Received for Payment",
+      "Approve",
+    ],
+    "Manage Documents": [
+      "View",
+      "Upload",
+      "Download",
+      "Mark as Missing",
+      "Not Required",
+      "Move to Pending",
+    ],
+    Settings: [
+      "View",
+      "Edit Serial Nos",
+      "Edit User Rights",
+      "View Workflow",
+      "Edit Workflow",
+    ],
+    Reports: ["View", "Export"],
+  },
+  "Billing Recon": {
+    "View Module": [],
+    BOQ: ["View", "Import", "Add Manual", "Clear BOQ", "Delete Items"],
+    JMC: [
+      "View",
+      "Create Work Order",
+      "Create JMC Entry",
+      "View Log",
+      "Delete JMC",
+      "View Certified JMC",
+      "View Settings",
+      "Edit Settings",
+      "Edit Serial Nos",
+      "View Reports",
+    ],
+    MVAC: [
+      "View",
+      "Create Work Order",
+      "Create MVAC Entry",
+      "View Log",
+      "Delete MVAC",
+      "View Certified MVAC",
+      "View Settings",
+      "Edit Settings",
+      "Edit Serial Nos",
+      "View Reports",
+    ],
+    Billing: [
+      "View",
+      "Create Bill",
+      "Proforma/Advance Bill",
+      "Edit Bill",
+      "Delete Bill",
+      "View Settings",
+      "Edit Settings",
+    ],
+    "Combined Log": ["View"],
+  },
+  "Subcontractors Management": {
+    "View Module": [],
+    "Manage Subcontractors": ["View", "Add", "Edit", "Delete"],
+    "Work Order": ["View", "Create", "Edit", "Delete"],
+    Billing: [
+      "View",
+      "Create Bill",
+      "Proforma/Advance Bill",
+      "View Log",
+      "Edit Bill",
+      "Delete Bill",
+      "View Settings",
+      "Edit Settings",
+    ],
+    Reports: {
+      View: [],
+      "Work Order Progress": ["View"],
+      "Billing Summary": ["View"],
     },
   },
-  'Bank Balance': {
-    'View Module': [],
-    'Accounts': ['View', 'Add', 'Edit', 'Delete'],
-    'DP Management': ['View', 'Add', 'Delete'],
-    'Opening Utilization': ['View', 'Edit'],
-    'Daily Log': ['View'],
-    'Interest Rate': ['View', 'Add', 'Delete'],
-    'Monthly Interest': ['View', 'Edit'],
-    'Payment Entry Settings': ['View', 'Edit'],
-    'Expenses': ['View', 'Add', 'Delete'],
-    'Receipts': ['View', 'Add', 'Delete'],
-    'Internal Transaction': ['View', 'Add', 'Edit', 'Delete'],
-    'Reports': ['View'],
+  "Bank Balance": {
+    "View Module": [],
+    Accounts: ["View", "Add", "Edit", "Delete"],
+    "DP Management": ["View", "Add", "Delete"],
+    "Opening Utilization": ["View", "Edit"],
+    "Daily Log": ["View"],
+    "Interest Rate": ["View", "Add", "Delete"],
+    "Monthly Interest": ["View", "Edit"],
+    "Payment Entry Settings": ["View", "Edit"],
+    Expenses: ["View", "Add", "Delete"],
+    Receipts: ["View", "Add", "Delete"],
+    "Internal Transaction": ["View", "Add", "Edit", "Delete"],
+    Reports: ["View"],
   },
-  'Expenses': {
-    'View Module': [],
-    'Departments': ['View', 'Create', 'Edit'],
-    'Expense Requests': ['View All'],
-    'Reports': ['View'],
-    'Settings': ['View', 'Edit Serial Nos', 'Manage Accounts'],
+  Expenses: {
+    "View Module": [],
+    Departments: ["View", "Create", "Edit"],
+    "Expense Requests": ["View All"],
+    Reports: ["View"],
+    Settings: ["View", "Edit Serial Nos", "Manage Accounts"],
   },
-  'Loan': {
-    'View Module': [],
-    'Dashboard': ['View'],
-    'Add Loan': ['Create'],
-    'Loan Details': ['View', 'Update EMI'],
-    'Reports': ['View'],
+  Loan: {
+    "View Module": [],
+    Dashboard: ["View"],
+    "Add Loan": ["Create"],
+    "Loan Details": ["View", "Update EMI"],
+    Reports: ["View"],
   },
-  'Letter of Credit Management': {
-    'View Module': [],
-    'Dashboard': ['View', 'Export'],
-    'LC Requests': ['View', 'Add', 'Edit', 'Delete', 'Submit', 'Cancel', 'Export'],
-    'LC Register': ['View', 'Edit', 'Export'],
-    'Pending Approvals': ['View', 'Approve', 'Reject', 'Return', 'Put On Hold'],
-    'LC Opening': ['View', 'Add', 'Edit', 'Submit to Bank', 'Open'],
-    'Hundis & Bills': ['View', 'Add', 'Edit', 'Verify', 'Accept', 'Reject'],
-    'Shipment & Documents': ['View', 'Add', 'Edit', 'Upload', 'Verify', 'Resolve Discrepancy'],
-    'Payment Due Calendar': ['View', 'Export'],
-    'Payment Processing': ['View', 'Add', 'Edit', 'Approve', 'Record Payment', 'Reverse'],
-    'LC Amendments': ['View', 'Add', 'Edit', 'Approve', 'Submit to Bank', 'Complete'],
-    'Vendor Settlement': ['View', 'Add', 'Edit', 'Close'],
-    'Client Recovery': ['View', 'Add', 'Edit', 'Record Receipt', 'Write Off'],
-    'Margin & FD Linkage': ['View', 'Assign', 'Reserve', 'Release', 'Override'],
-    'LC Closure': ['View', 'Request', 'Approve', 'Complete', 'Cancel'],
-    'Reports': ['View', 'Export'],
-    'Import & Reconciliation': ['View', 'Import', 'Export Exceptions', 'Activate'],
-    'Settings': ['View', 'Edit'],
+  "Letter of Credit Management": {
+    "View Module": [],
+    Dashboard: ["View", "Export"],
+    "LC Requests": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Submit",
+      "Cancel",
+      "Export",
+    ],
+    "LC Register": ["View", "Edit", "Export"],
+    "Pending Approvals": ["View", "Approve", "Reject", "Return", "Put On Hold"],
+    "LC Opening": ["View", "Add", "Edit", "Submit to Bank", "Open"],
+    "Hundis & Bills": ["View", "Add", "Edit", "Verify", "Accept", "Reject"],
+    "Shipment & Documents": [
+      "View",
+      "Add",
+      "Edit",
+      "Upload",
+      "Verify",
+      "Resolve Discrepancy",
+    ],
+    "Payment Due Calendar": ["View", "Export"],
+    "Payment Processing": [
+      "View",
+      "Add",
+      "Edit",
+      "Approve",
+      "Record Payment",
+      "Reverse",
+    ],
+    "LC Amendments": [
+      "View",
+      "Add",
+      "Edit",
+      "Approve",
+      "Submit to Bank",
+      "Complete",
+    ],
+    "Vendor Settlement": ["View", "Add", "Edit", "Close"],
+    "Client Recovery": ["View", "Add", "Edit", "Record Receipt", "Write Off"],
+    "Margin & FD Linkage": ["View", "Assign", "Reserve", "Release", "Override"],
+    "LC Closure": ["View", "Request", "Approve", "Complete", "Cancel"],
+    Reports: ["View", "Export"],
+    "Import & Reconciliation": [
+      "View",
+      "Import",
+      "Export Exceptions",
+      "Activate",
+    ],
+    Settings: ["View", "Edit"],
   },
-  'Insurance': {
-    'View Module': [],
-    'Personal Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History'],
-    'Project Insurance': ['View', 'Add', 'Edit', 'Delete', 'Renew', 'View History', 'Mark as Not Required'],
-    'Premium Due': ['View'],
-    'Maturity Due': ['View'],
-    'My Tasks': ['View'],
-    'Reports': ['View Reports'],
-    'Settings': ['View'],
-    'Settings.Holders': ['View', 'Add', 'Edit', 'Delete'],
-    'Settings.Companies': ['View', 'Add', 'Edit', 'Delete'],
-    'Settings.Categories': ['View', 'Add', 'Edit', 'Delete'],
-    'Settings.Assets': ['View', 'Add', 'Edit', 'Delete'],
+  "Bank Guarantee Management": {
+    "View Module": [],
+    Dashboard: ["View", "Export"],
+    "BG Requests": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Submit",
+      "Cancel",
+      "Export",
+    ],
+    "BG Register": ["View", "Edit", "Export"],
+    "Pending Approvals": ["View", "Approve", "Reject", "Return", "Put On Hold"],
+    "BG Issuance": ["View", "Add", "Edit", "Submit to Bank", "Issue"],
+    "Extension & Amendment": [
+      "View",
+      "Add",
+      "Edit",
+      "Approve",
+      "Submit to Bank",
+      "Complete",
+    ],
+    "Expiry Calendar": ["View", "Record Decision", "Export"],
+    "Original BG Movement": ["View", "Add", "Edit", "Record Return"],
+    "Beneficiary Acknowledgement": ["View", "Add", "Edit", "Complete"],
+    "Document Management": ["View", "Upload", "Archive", "Download"],
+    "Invocation & Claims": [
+      "View",
+      "Add",
+      "Edit",
+      "Approve Settlement",
+      "Close",
+    ],
+    "Cancellation & Release": [
+      "View",
+      "Request",
+      "Approve",
+      "Submit to Bank",
+      "Complete",
+      "Cancel",
+    ],
+    "Margin & FD Linkage": ["View", "Assign", "Reserve", "Release", "Override"],
+    "Commission Reconciliation": [
+      "View",
+      "Add",
+      "Edit",
+      "Reconcile",
+      "Record Refund",
+    ],
+    Reports: ["View", "Export"],
+    "Import & Reconciliation": [
+      "View",
+      "Import",
+      "Export Exceptions",
+      "Activate",
+    ],
+    Settings: [
+      "View",
+      "Edit",
+      "Manage Beneficiaries",
+      "Manage Contracts",
+      "Manage Limits",
+    ],
   },
-   'Employee': {
-    'View Module': [],
-    'Manage': ['View', 'Add', 'Edit', 'Delete'],
-    'Sync': ['Sync from GreytHR'],
-    'Categories': ['View'],
-    'Position Details': ['View'],
-    'Salary': ['View', 'Sync'],
+  Insurance: {
+    "View Module": [],
+    "Personal Insurance": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Renew",
+      "View History",
+    ],
+    "Project Insurance": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Renew",
+      "View History",
+      "Mark as Not Required",
+    ],
+    "Premium Due": ["View"],
+    "Maturity Due": ["View"],
+    "My Tasks": ["View"],
+    Reports: ["View Reports"],
+    Settings: ["View"],
+    "Settings.Holders": ["View", "Add", "Edit", "Delete"],
+    "Settings.Companies": ["View", "Add", "Edit", "Delete"],
+    "Settings.Categories": ["View", "Add", "Edit", "Delete"],
+    "Settings.Assets": ["View", "Add", "Edit", "Delete"],
   },
-  'Vehicle Management': {
-    'View Module': [],
-    'Vehicle Master': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Insurance Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'PUC Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Fitness Certificate Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Road Tax Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Permit Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Maintenance Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Fuel Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Trip Management': ['View', 'Add', 'Edit', 'Delete', 'Export'],
-    'Driver Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Employee Trip Reimbursement': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Approve'],
-    'Document Management': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export'],
-    'Driver Mobile': ['View'],
-    'Driver Mobile Trip': ['View', 'Add', 'Edit'],
-    'Driver Mobile Fuel': ['View', 'Add', 'Edit', 'Delete'],
-    'Driver Daily Status': ['View', 'Add', 'Edit', 'Delete'],
-    'Settings': ['View', 'Edit'],
-    'Reports': ['View', 'Export'],
+  Employee: {
+    "View Module": [],
+    Manage: ["View", "Add", "Edit", "Delete"],
+    Sync: ["Sync from GreytHR"],
+    Categories: ["View"],
+    "Position Details": ["View"],
+    Salary: ["View", "Sync"],
   },
-  'Driver Management': {
-    'View Module': [],
-    'Driver Mobile Hub': ['View'],
-    'Assigned Vehicle Details': ['View'],
-    'Driver Fuel': ['View', 'Add', 'Edit', 'Delete'],
-    'Driver Daily Status': ['View', 'Add', 'Edit', 'Delete'],
-    'Driver Trips': ['View', 'Add', 'Edit'],
-    'Employee Trip Log': ['View', 'Add', 'Edit', 'Delete', 'Import', 'Export', 'Approve'],
-    'Trip Management': ['View', 'Add', 'Edit', 'Delete', 'Export'],
+  "Vehicle Management": {
+    "View Module": [],
+    "Vehicle Master": ["View", "Add", "Edit", "Delete", "Import", "Export"],
+    "Insurance Management": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Import",
+      "Export",
+    ],
+    "PUC Management": ["View", "Add", "Edit", "Delete", "Import", "Export"],
+    "Fitness Certificate Management": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Import",
+      "Export",
+    ],
+    "Road Tax Management": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Import",
+      "Export",
+    ],
+    "Permit Management": ["View", "Add", "Edit", "Delete", "Import", "Export"],
+    "Maintenance Management": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Import",
+      "Export",
+    ],
+    "Fuel Management": ["View", "Add", "Edit", "Delete", "Import", "Export"],
+    "Trip Management": ["View", "Add", "Edit", "Delete", "Export"],
+    "Driver Management": ["View", "Add", "Edit", "Delete", "Import", "Export"],
+    "Employee Trip Reimbursement": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Import",
+      "Export",
+      "Approve",
+    ],
+    "Document Management": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Import",
+      "Export",
+    ],
+    "Driver Mobile": ["View"],
+    "Driver Mobile Trip": ["View", "Add", "Edit"],
+    "Driver Mobile Fuel": ["View", "Add", "Edit", "Delete"],
+    "Driver Daily Status": ["View", "Add", "Edit", "Delete"],
+    Settings: ["View", "Edit"],
+    Reports: ["View", "Export"],
   },
-  'Store & Stock Management': {
-    'View Module': [],
-    'Projects': ['View Dashboard', 'View Inventory', 'View Transactions', 'View Conversions', 'View BOM', 'View BOQ', 'View Reports', 'View AI Forecast'],
-    'Settings': ['View', 'Edit'],
+  "Driver Management": {
+    "View Module": [],
+    "Driver Mobile Hub": ["View"],
+    "Assigned Vehicle Details": ["View"],
+    "Driver Fuel": ["View", "Add", "Edit", "Delete"],
+    "Driver Daily Status": ["View", "Add", "Edit", "Delete"],
+    "Driver Trips": ["View", "Add", "Edit"],
+    "Employee Trip Log": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Import",
+      "Export",
+      "Approve",
+    ],
+    "Trip Management": ["View", "Add", "Edit", "Delete", "Export"],
   },
-  'Site Account Statement': {
-    'View Module': [],
-    'All Projects': ['View'],
-    'Dashboard': ['View'],
-    'Payments': ['View', 'Add', 'Edit', 'Delete', 'Export'],
-    'Expenses': ['View', 'Add', 'Edit', 'Delete', 'Export'],
-    'Budget': ['View', 'Add', 'Edit', 'Delete', 'Export'],
-    'Tender Budget': ['View', 'Add', 'Edit', 'Delete'],
-    'Tender Forecast': ['View', 'Add', 'Edit'],
-    'Expense Categories': ['View', 'Add', 'Edit', 'Delete'],
-    'Project Settings': ['View', 'Add', 'Edit', 'Delete'],
-    'Budget Alerts': ['View', 'Edit'],
-    'Reports': ['View', 'Export'],
+  "Store & Stock Management": {
+    "View Module": [],
+    Projects: [
+      "View Dashboard",
+      "View Inventory",
+      "View Transactions",
+      "View Conversions",
+      "View BOM",
+      "View BOQ",
+      "View Reports",
+      "View AI Forecast",
+    ],
+    Settings: ["View", "Edit"],
   },
-  'Settings': {
-    'View Module': [],
-    'Manage Department': ['View', 'Add', 'Edit', 'Delete'],
-    'Manage Project': ['View', 'Add', 'Edit', 'Delete'],
-    'Employee Management': ['View', 'Add', 'Edit', 'Delete', 'Sync from GreytHR'],
-    'User Management': ['View', 'Add', 'Edit', 'Delete', 'Switch User'],
-    'Role Management': ['View', 'Add', 'Edit', 'Delete'],
-    'Working Hrs': ['View', 'Edit'],
-    'Serial No. Config': ['View', 'Edit'],
-    'Appearance': ['View', 'Edit'],
-    'Email Authorization': ['View', 'Send Request', 'Revoke'],
-    'Login Expiry': ['View', 'Edit'],
-    'Session Management': ['View', 'Delete'],
-    'Location Tracking': ['View', 'Edit'],
-    'Audit Logs': ['View'],
+  "Site Account Statement": {
+    "View Module": [],
+    "All Projects": ["View"],
+    Dashboard: ["View"],
+    Payments: ["View", "Add", "Edit", "Delete", "Export"],
+    Expenses: ["View", "Add", "Edit", "Delete", "Export"],
+    Budget: ["View", "Add", "Edit", "Delete", "Export"],
+    "Tender Budget": ["View", "Add", "Edit", "Delete"],
+    "Tender Forecast": ["View", "Add", "Edit"],
+    "Expense Categories": ["View", "Add", "Edit", "Delete"],
+    "Project Settings": ["View", "Add", "Edit", "Delete"],
+    "Budget Alerts": ["View", "Edit"],
+    Reports: ["View", "Export"],
+  },
+  Settings: {
+    "View Module": [],
+    "Manage Department": ["View", "Add", "Edit", "Delete"],
+    "Manage Project": ["View", "Add", "Edit", "Delete"],
+    "Employee Management": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Sync from GreytHR",
+    ],
+    "User Management": ["View", "Add", "Edit", "Delete", "Switch User"],
+    "Role Management": ["View", "Add", "Edit", "Delete"],
+    "Working Hrs": ["View", "Edit"],
+    "Serial No. Config": ["View", "Edit"],
+    Appearance: ["View", "Edit"],
+    "Email Authorization": ["View", "Send Request", "Revoke"],
+    "Login Expiry": ["View", "Edit"],
+    "Session Management": ["View", "Delete"],
+    "Location Tracking": ["View", "Edit"],
+    "Audit Logs": ["View"],
   },
 };
 
@@ -340,7 +603,7 @@ export interface Requisition {
   stepEnteredAt?: Timestamp;
   /** Set by the escalation checker to prevent duplicate notifications */
   escalationNotifiedStepId?: string;
-  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
+  status: "Pending" | "In Progress" | "Completed" | "Rejected" | "Needs Review";
   stage: string;
   currentStepId: string | null;
   assignees: string[];
@@ -371,17 +634,17 @@ export interface ActionLog {
  * - Role/Project/Department-based => assignedTo: Record<id, AssignedTo>
  */
 export type WorkflowAssignmentType =
-  | 'User-based'
-  | 'Role-based'
-  | 'Project-based'
-  | 'Department-based'
-  | 'Amount-based';
+  | "User-based"
+  | "Role-based"
+  | "Project-based"
+  | "Department-based"
+  | "Amount-based";
 
 export interface WorkflowStepBase {
   id: string;
   name: string;
   tat: number; // in hours
-  actions: (string | ActionConfig)[];   // <-- widened
+  actions: (string | ActionConfig)[]; // <-- widened
   upload: UploadRequirement;
   /** Instructions shown to the assignee when this step is active */
   description?: string;
@@ -394,26 +657,31 @@ export interface WorkflowStepBase {
 }
 
 export interface WorkflowStepUser extends WorkflowStepBase {
-  assignmentType: 'User-based';
+  assignmentType: "User-based";
   assignedTo: string[]; // [primary, alternative?]
 }
 
 export interface WorkflowStepMapped extends WorkflowStepBase {
-  assignmentType: 'Role-based' | 'Project-based' | 'Department-based';
+  assignmentType: "Role-based" | "Project-based" | "Department-based";
   assignedTo: Record<string, AssignedTo>;
 }
 
 export interface AmountBasedCondition {
-    id: string;
-    type: 'Below' | 'Between' | 'Above';
-    amount1: number;
-    amount2?: number;
-    userId: string;
-    alternativeUserId?: string;
+  id: string;
+  type: "Below" | "Between" | "Above";
+  amount1: number;
+  amount2?: number;
+  userId: string;
+  alternativeUserId?: string;
 }
 
-
-export type WorkflowStep = WorkflowStepUser | WorkflowStepMapped | (WorkflowStepBase & { assignmentType: 'Amount-based', assignedTo: AmountBasedCondition[] });
+export type WorkflowStep =
+  | WorkflowStepUser
+  | WorkflowStepMapped
+  | (WorkflowStepBase & {
+      assignmentType: "Amount-based";
+      assignedTo: AmountBasedCondition[];
+    });
 
 /** ---------- Serial number config ---------- **/
 
@@ -471,7 +739,14 @@ export interface DailyRequisitionEntry {
   netAmount: number;
   createdAt: Timestamp;
   // GST/TDS Fields
-  status: 'Pending' | 'Received' | 'Verified' | 'Cancelled' | 'Needs Review' | 'Received for Payment' | 'Paid';
+  status:
+    | "Pending"
+    | "Received"
+    | "Verified"
+    | "Cancelled"
+    | "Needs Review"
+    | "Received for Payment"
+    | "Paid";
   receivedAt?: Timestamp;
   receivedById?: string;
   verifiedAt?: Timestamp;
@@ -484,7 +759,7 @@ export interface DailyRequisitionEntry {
   verificationNotes?: string;
   gstNo?: string;
   // Document Status
-  documentStatus: 'Pending' | 'Uploaded' | 'Missing' | 'Not Required';
+  documentStatus: "Pending" | "Uploaded" | "Missing" | "Not Required";
   documentStatusUpdatedAt?: Timestamp;
   documentStatusUpdatedById?: string;
   attachments?: Attachment[];
@@ -499,17 +774,17 @@ export interface ColumnPref {
   names: Record<string, string>;
   sort: {
     key: string;
-    direction: 'asc' | 'desc';
+    direction: "asc" | "desc";
   };
 }
 
 export interface UserSettings {
   columnPreferences?: {
     [pageKey: string]: ColumnPref | undefined;
-  },
+  };
   pivotPreferences?: {
-    [pageKey: string]: PivotConfig
-  }
+    [pageKey: string]: PivotConfig;
+  };
 }
 
 export interface PivotConfig {
@@ -522,7 +797,7 @@ export interface PivotConfig {
 
 export interface ContactPerson {
   id: string;
-  type: 'Project' | 'Billing' | 'Accounts' | 'Other';
+  type: "Project" | "Billing" | "Accounts" | "Other";
   name: string;
   title: string;
   mobile: string;
@@ -531,7 +806,7 @@ export interface ContactPerson {
 
 export interface Subcontractor {
   id: string;
-  status: 'Active' | 'Inactive';
+  status: "Active" | "Inactive";
   projectId: string;
   legalName: string;
   dbaName: string;
@@ -545,7 +820,6 @@ export interface Subcontractor {
   ifscCode: string;
   contacts: ContactPerson[];
 }
-
 
 export interface BoqItem {
   id: string;
@@ -573,7 +847,13 @@ export interface MvacEntry {
   mvacDate: string;
   items: MvacItem[];
   createdAt: Timestamp;
-  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Certified' | 'Cancelled';
+  status:
+    | "Pending"
+    | "In Progress"
+    | "Completed"
+    | "Rejected"
+    | "Certified"
+    | "Cancelled";
   stage: string;
   currentStepId: string | null;
   assignees: string[];
@@ -600,7 +880,13 @@ export interface JmcEntry {
   jmcDate: string;
   items: JmcItem[];
   createdAt: Timestamp;
-  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Certified' | 'Cancelled';
+  status:
+    | "Pending"
+    | "In Progress"
+    | "Completed"
+    | "Rejected"
+    | "Certified"
+    | "Cancelled";
   stage: string;
   currentStepId: string | null;
   assignees: string[];
@@ -639,7 +925,7 @@ export interface WorkOrder {
   totalAmount: number;
   items: WorkOrderItem[];
   date: string;
-  status: 'Active' | 'Completed' | 'Cancelled';
+  status: "Active" | "Completed" | "Cancelled";
 }
 
 export interface BillItem {
@@ -657,7 +943,6 @@ export interface BillItem {
   subItems?: SubItem[];
 }
 
-
 export interface Bill {
   id: string;
   projectId: string;
@@ -670,20 +955,26 @@ export interface Bill {
   subcontractorName?: string;
   items: BillItem[];
   subtotal: number;
-  gstType: 'percentage' | 'manual';
+  gstType: "percentage" | "manual";
   gstPercentage: number | null;
   gstAmount: number;
   grossAmount: number;
-  retentionType: 'percentage' | 'manual';
+  retentionType: "percentage" | "manual";
   retentionPercentage: number | null;
   retentionAmount: number;
   otherDeduction: number;
-  advanceDeductions?: { id: string; reference: string; amount: number; deductionType: 'amount' | 'percentage'; deductionValue: number; }[];
+  advanceDeductions?: {
+    id: string;
+    reference: string;
+    amount: number;
+    deductionType: "amount" | "percentage";
+    deductionValue: number;
+  }[];
   totalDeductions: number;
   netPayable: number;
   totalAmount: number;
   createdAt: any;
-  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
+  status: "Pending" | "In Progress" | "Completed" | "Rejected";
   stage: string;
   currentStepId: string | null;
   assignees: string[];
@@ -694,31 +985,30 @@ export interface Bill {
   retentionClaimed?: boolean;
 }
 
-
 export interface ProformaBill {
-    id: string;
-    proformaNo: string;
-    date: string;
-    workOrderId: string;
-    workOrderNo: string;
-    subcontractorId: string;
-    subcontractorName: string;
-    items: (Omit<BillItem, 'billedQty'> & { billedQty: number })[];
-    subtotal: number;
-    payablePercentage: number;
-    payableAmount: number;
-    createdAt: any;
-    projectId: string;
-    projectName?: string;
-    approvalCopyUrl?: string;
+  id: string;
+  proformaNo: string;
+  date: string;
+  workOrderId: string;
+  workOrderNo: string;
+  subcontractorId: string;
+  subcontractorName: string;
+  items: (Omit<BillItem, "billedQty"> & { billedQty: number })[];
+  subtotal: number;
+  payablePercentage: number;
+  payableAmount: number;
+  createdAt: any;
+  projectId: string;
+  projectName?: string;
+  approvalCopyUrl?: string;
 
-    // Workflow fields
-    status?: 'Pending' | 'In Progress' | 'Completed' | 'Rejected';
-    stage?: string;
-    currentStepId?: string | null;
-    assignees?: string[];
-    history?: ActionLog[];
-    deadline?: Timestamp | null;
+  // Workflow fields
+  status?: "Pending" | "In Progress" | "Completed" | "Rejected";
+  stage?: string;
+  currentStepId?: string | null;
+  assignees?: string[];
+  history?: ActionLog[];
+  deadline?: Timestamp | null;
 }
 
 /** ---------- Insurance ---------- **/
@@ -735,13 +1025,13 @@ export interface PolicyHolder {
 export interface InsuranceCompany {
   id: string;
   name: string;
-  status: 'Active' | 'Inactive';
+  status: "Active" | "Inactive";
 }
 
 export interface PolicyCategory {
   id: string;
   name: string;
-  status: 'Active' | 'Inactive';
+  status: "Active" | "Inactive";
 }
 
 export interface InsurancePolicy {
@@ -756,7 +1046,7 @@ export interface InsurancePolicy {
   date_of_comm: Timestamp | null;
   date_of_maturity: Timestamp | null;
   last_premium_date: Timestamp | null;
-  payment_type: 'Monthly' | 'Quarterly' | 'Yearly' | 'One-Time';
+  payment_type: "Monthly" | "Quarterly" | "Yearly" | "One-Time";
   auto_debit: boolean;
   due_date: Timestamp | null;
   last_renewed_at?: Timestamp;
@@ -793,7 +1083,7 @@ export interface Email {
 export interface EmailAuthorization {
   id: string;
   email: string;
-  status: 'Pending' | 'Authorized';
+  status: "Pending" | "Authorized";
   createdAt: string;
 }
 
@@ -804,8 +1094,8 @@ export interface BankAccount {
   bankName: string;
   shortName: string;
   accountNumber: string;
-  accountType: 'Current Account' | 'Cash Credit';
-  status: 'Active' | 'Inactive';
+  accountType: "Current Account" | "Cash Credit";
+  status: "Active" | "Inactive";
   branch: string;
   ifsc: string;
   openingBalance?: number;
@@ -838,7 +1128,7 @@ export interface BankExpense {
   accountId: string;
   description: string;
   amount: number;
-  type: 'Debit' | 'Credit';
+  type: "Debit" | "Credit";
   isContra: boolean;
   contraId?: string;
   paymentRequestRefNo?: string;
@@ -866,7 +1156,7 @@ export interface MonthlyInterestData {
   [accountId: string]: {
     projected: number;
     actual: number;
-  }
+  };
 }
 
 /** ---------- Calendar / Schedule ---------- **/
@@ -898,7 +1188,7 @@ export interface LcEntry {
   bankCalculation: number;
   difference: number;
   fdMargin: number;
-  status: 'Opened' | 'Closed' | 'Amended';
+  status: "Opened" | "Closed" | "Amended";
   createdAt: any;
   poUrl?: string;
   applicationUrl?: string;
@@ -909,7 +1199,7 @@ export type SalaryDetail = {
   itemName: string;
   description: string;
   amount: number;
-  type: 'INCOME' | 'DEDUCT' | 'Others';
+  type: "INCOME" | "DEDUCT" | "Others";
 };
 
 export interface SalarySyncLog {
@@ -924,7 +1214,7 @@ export interface Employee {
   phone: string;
   department: string;
   designation: string;
-  status: 'Active' | 'Inactive';
+  status: "Active" | "Inactive";
   grossSalary?: number;
   netSalary?: number;
   salaryDetails?: SalaryDetail[];
@@ -990,9 +1280,9 @@ export { CreateExpenseRequestInputSchema, CreateExpenseRequestOutputSchema };
 
 export interface Chat {
   id: string;
-  type: 'one-to-one' | 'group';
+  type: "one-to-one" | "group";
   members: string[];
-  memberDetails: { id: string; name: string; photoURL: string; }[];
+  memberDetails: { id: string; name: string; photoURL: string }[];
   groupName?: string;
   groupDescription?: string;
   groupPhotoURL?: string;
@@ -1011,7 +1301,7 @@ export interface Message {
   senderId: string;
   timestamp: Timestamp;
   readBy: string[];
-  type: 'text' | 'image' | 'video' | 'audio' | 'document' | 'event';
+  type: "text" | "image" | "video" | "audio" | "document" | "event";
   content?: string;
   mediaUrl?: string;
   fileName?: string;
@@ -1031,18 +1321,18 @@ export interface EventDetails {
 export interface InsuredAsset {
   id: string;
   name: string;
-  type: 'Project' | 'Property';
+  type: "Project" | "Property";
   projectId?: string;
   location: string;
   description: string;
-  status: 'Active' | 'Inactive';
+  status: "Active" | "Inactive";
 }
 
 export interface ProjectInsurancePolicy {
   id: string;
   assetId: string;
   assetName: string;
-  assetType: 'Project' | 'Property';
+  assetType: "Project" | "Property";
   policy_no: string;
   insurance_company: string;
   policy_category: string;
@@ -1052,7 +1342,7 @@ export interface ProjectInsurancePolicy {
   insured_until: Timestamp | null;
   tenure_years: number;
   tenure_months: number;
-  status: 'Active' | 'Close' | 'Not Required' | 'Expired';
+  status: "Active" | "Close" | "Not Required" | "Expired";
   attachments?: Attachment[];
 }
 
@@ -1077,10 +1367,10 @@ export interface InsuranceTask {
   policyNo: string;
   insuredPerson: string;
   dueDate: Timestamp;
-  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Needs Review';
+  status: "Pending" | "In Progress" | "Completed" | "Rejected" | "Needs Review";
   assignees: string[];
   createdAt: Timestamp;
-  taskType: 'Premium Due' | 'Maturity Due';
+  taskType: "Premium Due" | "Maturity Due";
   currentStepId: string | null;
   currentStage: string;
   deadline: Timestamp | null;
@@ -1100,7 +1390,7 @@ export interface EMI {
   interest: number;
   paidAmount: number;
   closingPrincipal: number;
-  status: 'Paid' | 'Pending' | 'Overdue';
+  status: "Paid" | "Pending" | "Overdue";
   paidAt?: Timestamp;
   paidById?: string;
   expenseRequestNo?: string;
@@ -1117,9 +1407,9 @@ export interface Loan {
   startDate: string;
   endDate: string;
   linkedBank: string;
-  loanType: 'Loan' | 'Investment';
+  loanType: "Loan" | "Investment";
   totalPaid: number;
-  status: 'Active' | 'Closed' | 'Pre-closure Pending';
+  status: "Active" | "Closed" | "Pre-closure Pending";
   createdAt: Timestamp;
   finalInterestOnClosure?: number;
   otherChargesOnClosure?: number;
@@ -1132,14 +1422,14 @@ export interface Vehicle {
   registrationNo: string;
   vehicleType: string;
   brandModel: string;
-  fuelType: 'Diesel' | 'Petrol' | 'CNG' | 'Electric' | 'Hybrid' | 'Other';
+  fuelType: "Diesel" | "Petrol" | "CNG" | "Electric" | "Hybrid" | "Other";
   assignedDriver: string;
   currentOdometer: number;
   insuranceExpiryDate?: string;
   fitnessExpiryDate?: string;
   permitExpiryDate?: string;
   pucExpiryDate?: string;
-  status: 'Active' | 'In Maintenance' | 'Inactive';
+  status: "Active" | "In Maintenance" | "Inactive";
   notes?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
@@ -1220,8 +1510,14 @@ export interface InventoryLog {
   date: Timestamp;
   itemId: string;
   itemName: string;
-  itemType: 'Main' | 'Sub';
-  transactionType: 'Goods Receipt' | 'Goods Issue' | 'Return' | 'Transfer' | 'Adjustment' | 'Conversion';
+  itemType: "Main" | "Sub";
+  transactionType:
+    | "Goods Receipt"
+    | "Goods Issue"
+    | "Return"
+    | "Transfer"
+    | "Adjustment"
+    | "Conversion";
   quantity: number;
   availableQuantity: number;
   unit: string;
@@ -1239,8 +1535,8 @@ export interface InventoryLog {
     invoiceNumber?: string;
     invoiceDate?: string | null;
     invoiceAmount?: number | null;
-    invoiceFileUrls?: { name: string, url: string }[];
-    transporterDocUrls?: { name: string, url: string }[];
+    invoiceFileUrls?: { name: string; url: string }[];
+    transporterDocUrls?: { name: string; url: string }[];
     vehicleNo?: string;
     waybillNo?: string;
     lrNo?: string;

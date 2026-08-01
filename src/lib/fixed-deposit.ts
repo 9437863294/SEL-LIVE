@@ -15,6 +15,7 @@ export const FD_COLLECTIONS = {
   notifications: "userNotifications",
   snapshots: "fdMonthlySnapshots",
   lc: "lettersOfCredit",
+  bg: "bankGuarantees",
 } as const;
 
 export const FD_SETTINGS_PATH = ["settings", "fixedDeposit"] as const;
@@ -179,7 +180,12 @@ export interface FixedDeposit {
   approvedBy?: string;
   approvedByName?: string;
   approvedAt?: Timestamp;
-  workflowStage?: "DRAFT" | "FINANCE_VERIFICATION" | "AUTHORIZED_APPROVAL" | "BANK_CONFIRMATION" | "COMPLETED";
+  workflowStage?:
+    | "DRAFT"
+    | "FINANCE_VERIFICATION"
+    | "AUTHORIZED_APPROVAL"
+    | "BANK_CONFIRMATION"
+    | "COMPLETED";
   currentAssigneeIds?: string[];
   holdReason?: string;
   reopenedAt?: Timestamp;
@@ -275,7 +281,13 @@ export interface FDRenewal {
   approvedByName?: string;
   approvedAt?: Timestamp;
   assignmentsTransferred: boolean;
-  status: "REQUESTED" | "PENDING_APPROVAL" | "SUBMITTED_TO_BANK" | "RENEWED" | "REJECTED" | "CANCELLED";
+  status:
+    | "REQUESTED"
+    | "PENDING_APPROVAL"
+    | "SUBMITTED_TO_BANK"
+    | "RENEWED"
+    | "REJECTED"
+    | "CANCELLED";
   remarks?: string;
   createdBy: string;
   createdByName: string;
@@ -302,7 +314,15 @@ export interface FDClosure {
   bankReference?: string;
   activeAssignmentCount: number;
   blockingAssignmentAmount: number;
-  status: "REQUESTED" | "PENDING_APPROVAL" | "SUBMITTED_TO_BANK" | "BANK_CONFIRMED" | "AMOUNT_RECEIVED" | "COMPLETED" | "REJECTED" | "CANCELLED";
+  status:
+    | "REQUESTED"
+    | "PENDING_APPROVAL"
+    | "SUBMITTED_TO_BANK"
+    | "BANK_CONFIRMED"
+    | "AMOUNT_RECEIVED"
+    | "COMPLETED"
+    | "REJECTED"
+    | "CANCELLED";
   approvalId?: string;
   approvalNote?: string;
   supportingDocumentUrl?: string;
@@ -329,7 +349,13 @@ export interface FDReleaseRequest {
   bankConfirmationReference?: string;
   supportingDocumentUrl?: string;
   authorizedOverride: boolean;
-  status: "REQUESTED" | "PENDING_APPROVAL" | "APPROVED" | "COMPLETED" | "REJECTED" | "CANCELLED";
+  status:
+    | "REQUESTED"
+    | "PENDING_APPROVAL"
+    | "APPROVED"
+    | "COMPLETED"
+    | "REJECTED"
+    | "CANCELLED";
   approvalId?: string;
   createdBy: string;
   createdByName: string;
@@ -351,7 +377,15 @@ export interface FDReplacementRequest {
   replacementAmount: number;
   reason: string;
   bankConfirmationReference?: string;
-  status: "REQUESTED" | "PENDING_APPROVAL" | "APPROVED" | "NEW_ASSIGNMENT_ACTIVE" | "BANK_CONFIRMED" | "COMPLETED" | "REJECTED" | "CANCELLED";
+  status:
+    | "REQUESTED"
+    | "PENDING_APPROVAL"
+    | "APPROVED"
+    | "NEW_ASSIGNMENT_ACTIVE"
+    | "BANK_CONFIRMED"
+    | "COMPLETED"
+    | "REJECTED"
+    | "CANCELLED";
   approvalId?: string;
   newAssignmentId?: string;
   createdBy: string;
@@ -398,7 +432,16 @@ export interface FDAuditEntry {
   id: string;
   organizationId: string;
   module: "Fixed Deposit Management";
-  recordType: "FD" | "ASSIGNMENT" | "RENEWAL" | "CLOSURE" | "RELEASE" | "REPLACEMENT" | "DOCUMENT" | "SETTINGS" | "IMPORT";
+  recordType:
+    | "FD"
+    | "ASSIGNMENT"
+    | "RENEWAL"
+    | "CLOSURE"
+    | "RELEASE"
+    | "REPLACEMENT"
+    | "DOCUMENT"
+    | "SETTINGS"
+    | "IMPORT";
   recordId: string;
   fdId?: string;
   action: string;
@@ -418,7 +461,8 @@ export interface FDApprovalRecord {
   id: string;
   organizationId: string;
   module: "Fixed Deposit Management";
-  recordType: "FD" | "ASSIGNMENT" | "RENEWAL" | "CLOSURE" | "RELEASE" | "REPLACEMENT";
+  recordType:
+    "FD" | "ASSIGNMENT" | "RENEWAL" | "CLOSURE" | "RELEASE" | "REPLACEMENT";
   recordId: string;
   fdId?: string;
   amount: number;
@@ -426,7 +470,13 @@ export interface FDApprovalRecord {
   requestedByName: string;
   requestedAt: Timestamp;
   requiredRole: string;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "RETURNED" | "ON_HOLD" | "DOCUMENTS_REQUESTED";
+  status:
+    | "PENDING"
+    | "APPROVED"
+    | "REJECTED"
+    | "RETURNED"
+    | "ON_HOLD"
+    | "DOCUMENTS_REQUESTED";
   decidedBy?: string;
   decidedByName?: string;
   decidedAt?: Timestamp;
@@ -496,9 +546,24 @@ export const DEFAULT_FD_SETTINGS: FixedDepositSettings = {
   ],
   notificationChannels: { inApp: true, email: false, push: false },
   approvalRules: [
-    { id: "finance-manager", minimumAmount: 0, maximumAmount: 1_000_000, approverRole: "Finance Manager" },
-    { id: "director-finance", minimumAmount: 1_000_000.01, maximumAmount: 5_000_000, approverRole: "Director Finance" },
-    { id: "managing-director", minimumAmount: 5_000_000.01, maximumAmount: null, approverRole: "Managing Director" },
+    {
+      id: "finance-manager",
+      minimumAmount: 0,
+      maximumAmount: 1_000_000,
+      approverRole: "Finance Manager",
+    },
+    {
+      id: "director-finance",
+      minimumAmount: 1_000_000.01,
+      maximumAmount: 5_000_000,
+      approverRole: "Director Finance",
+    },
+    {
+      id: "managing-director",
+      minimumAmount: 5_000_000.01,
+      maximumAmount: null,
+      approverRole: "Managing Director",
+    },
   ],
   projectAccess: {},
 };
@@ -546,7 +611,9 @@ export interface FixedDepositDraft {
   remarks: string;
 }
 
-export const blankFixedDeposit = (settings = DEFAULT_FD_SETTINGS): FixedDepositDraft => ({
+export const blankFixedDeposit = (
+  settings = DEFAULT_FD_SETTINGS,
+): FixedDepositDraft => ({
   referenceNumber: "",
   fdNumber: "",
   bankId: "",
@@ -628,7 +695,11 @@ export const calculateAvailableAmount = (
   bgUtilized: number,
   lcUtilized: number,
   reserved: number,
-) => Math.max(0, Number((eligibleValue - bgUtilized - lcUtilized - reserved).toFixed(2)));
+) =>
+  Math.max(
+    0,
+    Number((eligibleValue - bgUtilized - lcUtilized - reserved).toFixed(2)),
+  );
 
 export const ACTIVE_FD_STATUSES: FDStatus[] = [
   "ACTIVE",
@@ -655,7 +726,10 @@ export const RESERVED_ASSIGNMENT_STATUSES: FDAssignmentStatus[] = [
   "PENDING_APPROVAL",
 ];
 
-export const isActiveFd = (fd: Pick<FixedDeposit, "status" | "maturityDate">, asOn = new Date()) => {
+export const isActiveFd = (
+  fd: Pick<FixedDeposit, "status" | "maturityDate">,
+  asOn = new Date(),
+) => {
   if (!ACTIVE_FD_STATUSES.includes(fd.status)) return false;
   const maturity = toDate(fd.maturityDate);
   if (!maturity) return true;
@@ -666,18 +740,28 @@ export const isActiveFd = (fd: Pick<FixedDeposit, "status" | "maturityDate">, as
 };
 
 export const assignmentOutstanding = (
-  assignment: Pick<FDAssignment, "assignmentAmount" | "releasedAmount" | "activeAmount">,
-) => Math.max(
-  0,
-  Number(
-    (Number(assignment.activeAmount) ||
-      Number(assignment.assignmentAmount || 0) - Number(assignment.releasedAmount || 0)).toFixed(2),
-  ),
-);
+  assignment: Pick<
+    FDAssignment,
+    "assignmentAmount" | "releasedAmount" | "activeAmount"
+  >,
+) =>
+  Math.max(
+    0,
+    Number(
+      (
+        Number(assignment.activeAmount) ||
+        Number(assignment.assignmentAmount || 0) -
+          Number(assignment.releasedAmount || 0)
+      ).toFixed(2),
+    ),
+  );
 
-export const financialYearForDate = (value?: Timestamp | Date | string | null) => {
+export const financialYearForDate = (
+  value?: Timestamp | Date | string | null,
+) => {
   const date = toDate(value) || new Date();
-  const startYear = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+  const startYear =
+    date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
   return `${startYear}-${String(startYear + 1).slice(-2)}`;
 };
 
@@ -698,16 +782,31 @@ export const calculateMaturity = (input: {
   const annualRate = Math.max(0, input.annualRate || 0) / 100;
   let maturityAmount = principal;
   if (input.method === "MANUAL" || input.method === "BANK_PROVIDED") {
-    maturityAmount = Math.max(principal, input.manualMaturityAmount || principal);
+    maturityAmount = Math.max(
+      principal,
+      input.manualMaturityAmount || principal,
+    );
   } else if (input.method === "SIMPLE") {
     maturityAmount = principal * (1 + annualRate * years);
   } else {
-    const compounds = input.frequency === "Monthly" ? 12 : input.frequency === "Quarterly" ? 4 : input.frequency === "Half-yearly" ? 2 : 1;
-    maturityAmount = principal * Math.pow(1 + annualRate / compounds, compounds * years);
+    const compounds =
+      input.frequency === "Monthly"
+        ? 12
+        : input.frequency === "Quarterly"
+          ? 4
+          : input.frequency === "Half-yearly"
+            ? 2
+            : 1;
+    maturityAmount =
+      principal * Math.pow(1 + annualRate / compounds, compounds * years);
   }
   maturityAmount = Number(maturityAmount.toFixed(2));
-  const expectedInterest = Number(Math.max(0, maturityAmount - principal).toFixed(2));
-  const expectedTds = Number((expectedInterest * ((input.tdsPercentage || 0) / 100)).toFixed(2));
+  const expectedInterest = Number(
+    Math.max(0, maturityAmount - principal).toFixed(2),
+  );
+  const expectedTds = Number(
+    (expectedInterest * ((input.tdsPercentage || 0) / 100)).toFixed(2),
+  );
   return {
     expectedInterest,
     maturityAmount,
@@ -717,8 +816,27 @@ export const calculateMaturity = (input: {
 };
 
 export const deriveOperationalStatus = (fd: FixedDeposit): FDStatus => {
-  if (["ON_HOLD", "CANCELLED", "REPLACED", "PREMATURELY_CLOSED", "CLOSED", "RENEWED"].includes(fd.status)) return fd.status;
-  if (["DRAFT", "PENDING_APPROVAL", "APPROVED", "RENEWAL_PENDING", "CLOSURE_PENDING"].includes(fd.status)) return fd.status;
+  if (
+    [
+      "ON_HOLD",
+      "CANCELLED",
+      "REPLACED",
+      "PREMATURELY_CLOSED",
+      "CLOSED",
+      "RENEWED",
+    ].includes(fd.status)
+  )
+    return fd.status;
+  if (
+    [
+      "DRAFT",
+      "PENDING_APPROVAL",
+      "APPROVED",
+      "RENEWAL_PENDING",
+      "CLOSURE_PENDING",
+    ].includes(fd.status)
+  )
+    return fd.status;
   const remaining = daysUntil(fd.maturityDate);
   if (remaining !== null && remaining < 0) return "MATURED";
   if (fd.availableAmount <= 0) return "FULLY_UTILIZED";
