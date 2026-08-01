@@ -11,6 +11,10 @@
     {
       "path": "/api/vehicle-management/insurance-workflow",
       "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/fixed-deposit/daily-controls",
+      "schedule": "45 0 * * *"
     }
   ]
 }

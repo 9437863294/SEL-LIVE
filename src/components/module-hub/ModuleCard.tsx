@@ -106,10 +106,10 @@ export default function ModuleCard({ module, isDragging, ...props }: ModuleCardP
         return '/loan';
       case 'Recurring Payments':
         return '/recurring-payments';
-      case 'LC Module':
-        return '/lc-module';
-      case 'LC Management':
-        return '/lc-management';
+      case 'Letter of Credit Management':
+        return '/letter-of-credit';
+      case 'Fixed Deposit Management':
+        return '/fixed-deposit';
       case 'Insurance':
         return '/insurance';
       case 'Store & Stock Management':

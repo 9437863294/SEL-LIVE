@@ -167,19 +167,25 @@ function PasswordInput({
 // ─── Fancy digital clock ──────────────────────────────────────────────────────
 
 function DigitalClock() {
-  const [now, setNow] = useState(() => new Date());
+  // Server rendering and the browser's first hydration pass must produce the
+  // same text. Start with a deterministic placeholder, then enable the live
+  // clock after the component has mounted in the browser.
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  const hh   = String(now.getHours()).padStart(2, '0');
-  const mm   = String(now.getMinutes()).padStart(2, '0');
-  const ss   = String(now.getSeconds()).padStart(2, '0');
-  const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
-  const date = now.toLocaleDateString('en-IN', {
-    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
-  });
+  const hh   = now ? String(now.getHours()).padStart(2, '0') : '--';
+  const mm   = now ? String(now.getMinutes()).padStart(2, '0') : '--';
+  const ss   = now ? String(now.getSeconds()).padStart(2, '0') : '--';
+  const ampm = now ? (now.getHours() >= 12 ? 'PM' : 'AM') : '\u00a0';
+  const date = now
+    ? now.toLocaleDateString('en-IN', {
+        weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+      })
+    : '\u00a0';
 
   const glow  = '0 0 12px rgba(34,211,238,0.9), 0 0 32px rgba(34,211,238,0.45), 0 0 64px rgba(34,211,238,0.2)';
   const dimGlow = '0 0 8px rgba(34,211,238,0.5)';
@@ -247,6 +253,12 @@ function DigitalClock() {
 
     </div>
   );
+}
+
+function CurrentYear() {
+  const [year, setYear] = useState<number | null>(null);
+  useEffect(() => setYear(new Date().getFullYear()), []);
+  return <>{year ?? '\u00a0\u00a0\u00a0\u00a0'}</>;
 }
 
 // ─── main component ────────────────────────────────────────────────────────────
@@ -943,7 +955,7 @@ export function LoginPageContent() {
               {renderContent()}
             </div>
             <p className="mt-8 text-center text-[11px] text-slate-500/70">
-              &copy; {new Date().getFullYear()} Siddhartha Engineering Limited · All rights reserved
+              &copy; <CurrentYear /> Siddhartha Engineering Limited · All rights reserved
             </p>
           </div>
         </div>

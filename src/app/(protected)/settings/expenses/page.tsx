@@ -35,8 +35,8 @@ const settingsItems = [
   { 
     icon: Users, 
     title: 'User Role Configuration', 
-    description: 'Assign users to specific roles within each department.',
-    href: '#' // This will link to the new page once created
+    description: 'Configure module permissions and assign access through roles.',
+    href: '/settings/role-management'
   },
 ];
 

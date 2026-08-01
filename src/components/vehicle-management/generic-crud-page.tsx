@@ -114,6 +114,8 @@ interface GenericCrudPageProps {
   canImport?: boolean;
   canExport?: boolean;
   exportFileName?: string;
+  /** Storage root used for file fields. Defaults to the historical vehicle-management path. */
+  uploadPathPrefix?: string;
   defaultSort?: { key: string; direction: 'asc' | 'desc' };
   emptyMessage?: string;
   /** Pre-fill values when opening Add dialog (used by Renewals Hub "Renew Now" flow) */
@@ -286,6 +288,7 @@ export default function GenericCrudPage({
   canImport,
   canExport,
   exportFileName,
+  uploadPathPrefix = 'vehicle-management',
   defaultSort,
   emptyMessage = 'No records found.',
   initialPrefill,
@@ -782,7 +785,7 @@ export default function GenericCrudPage({
         const rowKey = editingRow?.id || `new-${Date.now()}`;
         const uploadRef = ref(
           storage,
-          `vehicle-management/${collectionName}/${rowKey}/${Date.now()}-${safeName}`
+          `${uploadPathPrefix}/${collectionName}/${rowKey}/${Date.now()}-${safeName}`
         );
         await uploadBytes(uploadRef, file);
         payloadWithUploads[field.key] = await getDownloadURL(uploadRef);

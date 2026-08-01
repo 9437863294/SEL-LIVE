@@ -113,7 +113,7 @@ export default function EditRolePage() {
     const [isLoading, setIsLoading] = useState(true);
 
     const [permissionQuery, setPermissionQuery] = useState('');
-    const [openModules, setOpenModules] = useState<string[]>([]);
+    const [openModules, setOpenModules] = useState<string[]>(['Fixed Deposit Management', 'Letter of Credit Management']);
 
     useEffect(() => {
         if (!roleId) return;

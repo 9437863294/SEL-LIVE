@@ -1,0 +1,2 @@
+import FDReplacementWorkspace from '@/components/fixed-deposit/replacement-workspace';
+export default async function FDReplacePage({ params, searchParams }: { params: Promise<{ fdId: string }>; searchParams: Promise<{ assignmentId?: string }> }) { const [{ fdId }, query] = await Promise.all([params, searchParams]); return <FDReplacementWorkspace oldFdId={fdId} initialAssignmentId={query.assignmentId || ''} />; }

@@ -112,7 +112,7 @@ export default function AddRolePage() {
     const [isLoading, setIsLoading] = useState(true);
 
     const [permissionQuery, setPermissionQuery] = useState('');
-    const [openModules, setOpenModules] = useState<string[]>([]);
+    const [openModules, setOpenModules] = useState<string[]>(['Fixed Deposit Management', 'Letter of Credit Management']);
 
     useEffect(() => {
         const fetchDeptsAndProjects = async () => {
