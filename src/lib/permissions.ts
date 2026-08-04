@@ -517,6 +517,19 @@ export const permissionModules = {
     ],
     Settings: ["View", "Edit"],
   },
+  "Project Management": {
+    "View Module": [],
+    BOQ: ["View", "Import", "Add Manual"],
+    Indent: ["View", "Add", "Delete"],
+    RFQ: ["View", "Add", "Send", "Enter Quote", "Award"],
+    "Purchase Orders": ["View", "Add", "Delete", "Issue", "Receive", "Cancel"],
+    "Project Mappings": ["View", "Add", "Edit", "Delete"],
+    Settings: ["View", "Edit"],
+  },
+  "Vendor Management": {
+    "View Module": [],
+    Vendors: ["View", "Add", "Edit", "Delete"],
+  },
   "Site Account Statement": {
     "View Module": [],
     "All Projects": ["View"],

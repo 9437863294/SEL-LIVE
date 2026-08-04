@@ -11,6 +11,7 @@ import {
   CreditCard,
   Edit,
   FileText,
+  FolderKanban,
   GitMerge,
   GripVertical,
   Landmark,
@@ -20,6 +21,7 @@ import {
   Settings,
   Shield,
   ShieldCheck,
+  ShoppingCart,
   Trash2,
   Truck,
   User,
@@ -54,6 +56,7 @@ const moduleIconComponents: Record<string, LucideIconType> = {
   Coins,
   CreditCard,
   FileText,
+  FolderKanban,
   GitMerge,
   Landmark,
   MessageSquare,
@@ -62,6 +65,7 @@ const moduleIconComponents: Record<string, LucideIconType> = {
   Settings,
   Shield,
   ShieldCheck,
+  ShoppingCart,
   Truck,
   User,
   Users,
@@ -92,6 +96,10 @@ export default function ModuleCard({
     switch (moduleTitle) {
       case "Subcontractors Management":
         return "/subcontractors-management/all";
+      case "Project Management":
+        return "/project-management";
+      case "Vendor Management":
+        return "/vendor-management";
       case "Site Fund Requisition":
         return "/site-fund-requisition-2";
       case "Site Fund Request":

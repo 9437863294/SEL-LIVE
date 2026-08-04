@@ -1,13 +1,14 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo, Fragment, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
 import Link from 'next/link';
-import ExcelJS from 'exceljs';
+import { useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
+  Calculator,
   Trash2,
-  Download,
+  ListPlus,
   Loader2,
   Settings,
   ArrowUpDown,
@@ -21,8 +22,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, query, updateDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
@@ -48,9 +50,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import type { FabricationBomItem, JmcEntry, UserSettings, Bill, Project, MvacEntry, MvacItem } from '@/lib/types';
+import type { FabricationBomItem, JmcEntry, Bill, Project, MvacEntry } from '@/lib/types';
+import {
+  BOQ_COLUMN_SETTINGS_COLLECTION,
+  BOQ_COLUMN_SETTINGS_DOC,
+  mergeBoqColumns,
+} from '@/lib/project-management-boq-columns';
 import BoqItemDetailsDialog from '@/components/billing-recon/BoqItemDetailsDialog';
-import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
@@ -68,6 +74,12 @@ export type BoqItem = {
   'QTY'?: number | string;
   'Unit Rate'?: number | string;
   'Total Amount'?: number | string;
+  'Budget Price'?: number | string;
+  'F&I %'?: number | string;
+  'F&I Price'?: number | string;
+  'Total Budget Price'?: number | string;
+  'Start Date'?: string;
+  'End Date'?: string;
   'Scope 1'?: string;
   'Scope 2'?: string;
   'Category 1'?: string;
@@ -98,6 +110,12 @@ const baseTableHeaders = [
     'JMC/MVAC Executed Qty',
     'JMC/MVAC Certified Qty',
     'JMC/MVAC Amount',
+    'Budget Price',
+    'F&I %',
+    'F&I Price',
+    'Total Budget Price',
+    'Start Date',
+    'End Date',
 ] as const;
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
@@ -105,9 +123,40 @@ const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replac
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
+const toDateInputValue = (value: unknown) => {
+  if (typeof value === 'string') {
+    const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    return match?.[1] ?? '';
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  if (value && typeof value === 'object' && 'toDate' in value && typeof (value as any).toDate === 'function') {
+    return toDateInputValue((value as any).toDate());
+  }
+  return '';
+};
+
+const formatBoqDate = (value: unknown) => {
+  const normalized = toDateInputValue(value);
+  if (!normalized) return typeof value === 'string' && value.trim() ? value : 'N/A';
+  const date = new Date(`${normalized}T00:00:00`);
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
 export default function ViewBoqPage() {
   const { toast } = useToast();
-  const { project: projectSlug } = useParams() as { project: string };
+  const { can } = useAuthorization();
+  const canAddManual = can('Add Manual', 'Project Management.BOQ');
+  const searchParams = useSearchParams();
+  const mappingId = searchParams?.get('project') ?? '';
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -119,6 +168,8 @@ export default function ViewBoqPage() {
   const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [projectSlug, setProjectSlug] = useState('');
+  const [globalProjectId, setGlobalProjectId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
@@ -145,6 +196,12 @@ export default function ViewBoqPage() {
           'JMC/MVAC Certified Qty',
           'JMC/MVAC Amount',
           'Total Amount',
+          'Budget Price',
+          'F&I %',
+          'F&I Price',
+          'Total Budget Price',
+          'Start Date',
+          'End Date',
         ].includes(h as string),
       }),
       {} as Record<string, boolean>
@@ -167,13 +224,81 @@ export default function ViewBoqPage() {
   const [editingItem, setEditingItem] = useState<BoqItem | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const isInitialMount = useRef(true);
+  useEffect(() => {
+    if (!isClient) return;
 
-  /** SETTINGS KEY **/
-  const settingsKey = useMemo(() => {
-    if (!projectSlug) return '';
-    return `boqTable:${projectSlug}`;
-  }, [projectSlug]);
+    const resolveMappedProject = async () => {
+      if (!mappingId) {
+        setIsLoading(false);
+        toast({
+          title: 'Select a project',
+          description: 'Choose a Project Management project before opening BOQ Costing.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      try {
+        const mappingSnapshot = await getDoc(doc(db, 'projectManagementProjects', mappingId));
+        if (!mappingSnapshot.exists()) throw new Error('Project mapping not found');
+
+        const mapping = mappingSnapshot.data() as {
+          globalProjectId?: string;
+          globalProjectName?: string;
+        };
+        if (!mapping.globalProjectId) throw new Error('Global project is not mapped');
+
+        const globalProjectSnapshot = await getDoc(doc(db, 'projects', mapping.globalProjectId));
+        const globalProjectName =
+          (globalProjectSnapshot.data()?.projectName as string | undefined) ??
+          mapping.globalProjectName;
+        if (!globalProjectName) throw new Error('Mapped global project not found');
+
+        setProjectSlug(slugify(globalProjectName));
+        setGlobalProjectId(mapping.globalProjectId);
+      } catch (error) {
+        console.error(error);
+        setIsLoading(false);
+        toast({
+          title: 'Unable to open project',
+          description: 'The selected project mapping could not be resolved.',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void resolveMappedProject();
+  }, [isClient, mappingId, toast]);
+
+  useEffect(() => {
+    const loadColumnConfiguration = async () => {
+      try {
+        const settingsSnapshot = await getDoc(
+          doc(db, BOQ_COLUMN_SETTINGS_COLLECTION, BOQ_COLUMN_SETTINGS_DOC),
+        );
+        const configuredColumns = mergeBoqColumns(
+          settingsSnapshot.data()?.columns,
+        );
+        const costingColumns = configuredColumns.filter(
+          (column) => column.showInCosting,
+        );
+
+        setColumnOrder(costingColumns.map((column) => column.key));
+        setColumnVisibility(
+          Object.fromEntries(costingColumns.map((column) => [column.key, true])),
+        );
+        setColumnNames(
+          Object.fromEntries(
+            configuredColumns.map((column) => [column.key, column.label]),
+          ),
+        );
+      } catch (error) {
+        console.error('Failed to load BOQ column configuration:', error);
+      }
+    };
+
+    void loadColumnConfiguration();
+  }, []);
 
   /** NORMALIZE KEYS **/
   const normalizeKey = (obj: Record<string, unknown>, targetKey: string): string | undefined => {
@@ -196,20 +321,17 @@ export default function ViewBoqPage() {
 
   /** FETCH DATA **/
   const fetchProjectAndBoq = useCallback(async () => {
-    if (!projectSlug) return;
+    if (!globalProjectId) return;
     setIsLoading(true);
     try {
-      const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
-      const projectData = projectsSnapshot.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
-        .find((p) => slugify((p as any).projectName || '') === projectSlug);
-
-      if (!projectData) {
+      const projectSnapshot = await getDoc(doc(db, 'projects', globalProjectId));
+      if (!projectSnapshot.exists()) {
         throw new Error('Project not found');
       }
+      const projectData = { id: projectSnapshot.id, ...(projectSnapshot.data() as any) } as Project;
       setCurrentProject(projectData);
 
-      const projectId = (projectData as any).id;
+      const projectId = globalProjectId;
 
       // BOQ items
       const boqSnapshot = await getDocs(query(collection(db, 'projects', projectId, 'boqItems')));
@@ -253,7 +375,7 @@ export default function ViewBoqPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [projectSlug, toast]);
+  }, [globalProjectId, projectSlug, toast]);
 
   useEffect(() => {
     if (isClient) fetchProjectAndBoq();
@@ -388,6 +510,19 @@ export default function ViewBoqPage() {
       : 'N/A';
   };
 
+  const getBudgetValues = (item: BoqItem) => {
+    const parsedBudgetPrice = parsedNumber(item['Budget Price']);
+    const parsedFiPercentage = parsedNumber(item['F&I %']);
+    const parsedQuantity = parsedNumber(item['QTY']);
+    const budgetPrice = Number.isFinite(parsedBudgetPrice) ? parsedBudgetPrice : 0;
+    const fiPercentage = Number.isFinite(parsedFiPercentage) ? parsedFiPercentage : 0;
+    const quantity = Number.isFinite(parsedQuantity) ? parsedQuantity : 0;
+    const fiPrice = Math.round(((budgetPrice * fiPercentage) / 100) * 100) / 100;
+    const totalBudgetPrice = Math.round(budgetPrice * quantity * 100) / 100;
+
+    return { budgetPrice, fiPercentage, fiPrice, totalBudgetPrice };
+  };
+
   /** SORT **/
   const sortedBoqItems = useMemo(() => {
     const sorted = [...filteredBoqItems];
@@ -405,6 +540,10 @@ export default function ViewBoqPage() {
         const val = Number.isFinite(rate) ? certified * (rate as number) : NaN;
         return Number.isFinite(val) ? val : 0;
       }
+      if (key === 'Budget Price') return getBudgetValues(item).budgetPrice;
+      if (key === 'F&I %') return getBudgetValues(item).fiPercentage;
+      if (key === 'F&I Price') return getBudgetValues(item).fiPrice;
+      if (key === 'Total Budget Price') return getBudgetValues(item).totalBudgetPrice;
 
       const raw = (item as any)[key];
       const num = parsedNumber(raw);
@@ -451,22 +590,65 @@ export default function ViewBoqPage() {
 
   const handleOpenEditDialog = (e: React.MouseEvent, item: BoqItem) => {
     e.stopPropagation();
-    setEditingItem({ ...item });
+    const { fiPrice, totalBudgetPrice } = getBudgetValues(item);
+    setEditingItem({
+      ...item,
+      'F&I Price': fiPrice,
+      'Total Budget Price': totalBudgetPrice,
+      'Start Date': toDateInputValue(item['Start Date']),
+      'End Date': toDateInputValue(item['End Date']),
+    });
     setIsEditDialogOpen(true);
   };
 
   const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!editingItem) return;
     const { name, value } = e.target;
-    setEditingItem((prev) => (prev ? { ...prev, [name]: value } : null));
+    setEditingItem((prev) => {
+      if (!prev) return null;
+      const next = { ...prev, [name]: value };
+      if (name === 'Budget Price' || name === 'F&I %' || name === 'QTY') {
+        const { fiPrice, totalBudgetPrice } = getBudgetValues(next);
+        next['F&I Price'] = fiPrice;
+        next['Total Budget Price'] = totalBudgetPrice;
+      }
+      return next;
+    });
   };
 
   const handleSaveChanges = async () => {
     if (!editingItem || !currentProject) return;
+
+    const startDate = String(editingItem['Start Date'] ?? '').trim();
+    const endDate = String(editingItem['End Date'] ?? '').trim();
+    if (Boolean(startDate) !== Boolean(endDate)) {
+      toast({
+        title: 'Complete the item timeline',
+        description: 'Select both the start date and end date for this BOQ item.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (startDate && endDate && endDate < startDate) {
+      toast({
+        title: 'Invalid item timeline',
+        description: 'The BOQ item end date cannot be before its start date.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const itemRef = doc(db, 'projects', (currentProject as any).id, 'boqItems', editingItem.id);
-      const { id, ...payload } = editingItem;
+      const { fiPrice, totalBudgetPrice } = getBudgetValues(editingItem);
+      const { id, ...payload } = {
+        ...editingItem,
+        'F&I Price': fiPrice,
+        'Total Budget Price': totalBudgetPrice,
+        'Start Date': startDate,
+        'End Date': endDate,
+      };
       await updateDoc(itemRef, payload as any);
       toast({ title: 'Success', description: 'BOQ item updated.' });
       setIsEditDialogOpen(false);
@@ -538,76 +720,6 @@ export default function ViewBoqPage() {
     }
   };
 
-  /** EXPORT **/
-  const handleExportItems = async () => {
-    if (!sortedBoqItems.length) return;
-    try {
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet('BOQ Items');
-      ws.columns = visibleHeaders.map((header) => ({
-        header: columnNames[header] || header,
-        key: header,
-        width: Math.max(12, (columnNames[header] || header).length + 2),
-      }));
-
-      sortedBoqItems.forEach((item) => {
-        const scope1 = getScope1(item);
-        const scope2 = getScope2(item);
-        const boqSlNo = getBoqSlNo(item);
-        const { executed, certified } = getQuantities(scope1, scope2, boqSlNo);
-
-        const row: Record<string, unknown> = {};
-        visibleHeaders.forEach((header) => {
-          if (header === 'JMC/MVAC Executed Qty') {
-            row[header] = executed;
-          } else if (header === 'JMC/MVAC Certified Qty') {
-            row[header] = certified;
-          } else if (header === 'JMC/MVAC Amount') {
-            const rate = parsedNumber(item['Unit Rate']);
-            row[header] = Number.isFinite(rate) ? certified * (rate as number) : 0;
-          } else if (header === 'Total Amount') {
-            const explicit = parsedNumber(item[header]);
-            if (Number.isFinite(explicit)) {
-              row[header] = explicit;
-            } else {
-              const qty = parsedNumber(item['QTY']);
-              const rate = parsedNumber(item['Unit Rate']);
-              row[header] = Number.isFinite(qty) && Number.isFinite(rate) ? qty * rate : '';
-            }
-          } else {
-            const raw = item[header];
-            row[header] = typeof raw === 'string' || typeof raw === 'number' ? raw : '';
-          }
-        });
-        ws.addRow(row);
-      });
-
-      ws.getRow(1).font = { bold: true };
-      ws.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE5E7EB' },
-      };
-
-      const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `boq_${projectSlug}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      toast({ title: 'Export complete', description: `${sortedBoqItems.length} item(s) exported.` });
-    } catch (error) {
-      console.error('Export failed:', error);
-      toast({ title: 'Export Failed', description: 'Could not generate the Excel file.', variant: 'destructive' });
-    }
-  };
-
-  const allMvacItems = useMemo(() => mvacEntries.flatMap((entry) => entry.items ?? []), [mvacEntries]);
-
   const dialogFields: (keyof BoqItem)[] = [
     'Project Name',
     'Sub-Division',
@@ -624,6 +736,12 @@ export default function ViewBoqPage() {
     'QTY',
     'Unit Rate',
     'Total Amount',
+    'Budget Price',
+    'F&I %',
+    'F&I Price',
+    'Total Budget Price',
+    'Start Date',
+    'End Date',
   ];
 
   const selectAllState: CheckedState = allSelected ? true : someSelected ? 'indeterminate' : false;
@@ -633,15 +751,26 @@ export default function ViewBoqPage() {
       {/* Header */}
       <div className="py-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Link href={`/billing-recon/${projectSlug}/boq`}>
+          <Link href={`/project-management/boq?project=${encodeURIComponent(mappingId)}`}>
             <Button variant="ghost" size="icon" aria-label="Back">
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
+            <Calculator className="h-4 w-4 text-white" />
+          </div>
           <h1 className="text-xl font-bold">View BOQ</h1>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {canAddManual && (
+            <Link href={`/project-management/boq/add?project=${encodeURIComponent(mappingId)}`}>
+              <Button variant="outline">
+                <ListPlus className="mr-2 h-4 w-4" /> Add Items
+              </Button>
+            </Link>
+          )}
+
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -678,10 +807,6 @@ export default function ViewBoqPage() {
 
           <Button variant="secondary" onClick={clearFilters}>
             Clear Filters
-          </Button>
-
-          <Button variant="outline" onClick={handleExportItems} disabled={sortedBoqItems.length === 0}>
-            <Download className="mr-2 h-4 w-4" /> Export
           </Button>
 
           {selectedItemIds.length > 0 && (
@@ -885,7 +1010,20 @@ export default function ViewBoqPage() {
                                   }
                                 } else {
                                   const raw = item[header];
-                                  if (header === 'Total Amount') {
+                                  if (
+                                    header === 'Budget Price' ||
+                                    header === 'F&I %' ||
+                                    header === 'F&I Price' ||
+                                    header === 'Total Budget Price'
+                                  ) {
+                                    const budgetValues = getBudgetValues(item);
+                                    if (header === 'Budget Price') display = fmtNum(budgetValues.budgetPrice);
+                                    if (header === 'F&I %') display = `${fmtNum(budgetValues.fiPercentage)}%`;
+                                    if (header === 'F&I Price') display = fmtNum(budgetValues.fiPrice);
+                                    if (header === 'Total Budget Price') display = fmtNum(budgetValues.totalBudgetPrice);
+                                  } else if (header === 'Start Date' || header === 'End Date') {
+                                    display = formatBoqDate(raw);
+                                  } else if (header === 'Total Amount') {
                                     const explicit = parsedNumber(raw);
                                     if (Number.isFinite(explicit)) {
                                       display = fmtNum(explicit);
@@ -993,7 +1131,17 @@ export default function ViewBoqPage() {
                           name={String(key)}
                           value={(editingItem as any)[key] ?? ''}
                           onChange={handleEditFormChange}
-                          readOnly={key === 'Project Name'}
+                          type={
+                            ['Start Date', 'End Date'].includes(String(key))
+                              ? 'date'
+                              : ['Budget Price', 'F&I %', 'F&I Price', 'Total Budget Price'].includes(String(key))
+                                ? 'number'
+                                : 'text'
+                          }
+                          step={['Budget Price', 'F&I %'].includes(String(key)) ? '0.01' : undefined}
+                          min={key === 'End Date' ? String(editingItem['Start Date'] ?? '') || undefined : undefined}
+                          max={key === 'Start Date' ? String(editingItem['End Date'] ?? '') || undefined : undefined}
+                          readOnly={key === 'Project Name' || key === 'F&I Price' || key === 'Total Budget Price'}
                       />
                   </div>
               ))}

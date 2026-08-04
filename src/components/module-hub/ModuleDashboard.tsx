@@ -27,6 +27,8 @@ const moduleIcons: Record<string, string> = {
   Insurance: "Shield",
   "Store & Stock Management": "Package",
   "Subcontractors Management": "Users",
+  "Project Management": "FolderKanban",
+  "Vendor Management": "ShoppingCart",
   Employee: "User",
   "Vehicle Management": "Truck",
   "Driver Management": "User",
@@ -54,6 +56,8 @@ const moduleDescriptions: Record<string, string> = {
   "Store & Stock Management": "Manage inventory and stock levels.",
   "Subcontractors Management":
     "Manage subcontractors, work orders, and billing.",
+  "Project Management": "Plan and manage projects.",
+  "Vendor Management": "Manage vendors and purchase orders.",
   Employee: "Manage employee information and records.",
   "Vehicle Management": "Manage fleet, trips, fuel usage, and maintenance.",
   "Driver Management":
