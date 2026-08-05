@@ -41,7 +41,12 @@ export default function AutomationOperations() {
       const response = await fetch('/api/recurring-payments/generate', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Automation failed');
-      toast({ title: 'Organization automation completed', description: `Generated ${result.generated}, triggered ${result.workflowTriggered}, and queued ${result.remindersQueued} reminder(s).` });
+      toast({
+        title: 'Organization automation completed',
+        description: `Generated ${result.generated}, triggered ${result.workflowTriggered}, and queued ${result.remindersQueued} reminder(s).`
+          + (result.assigneeMissing ? ` ${result.assigneeMissing} payment(s) could not enter their workflow — no assignee configured. Check the audit log on each.` : ''),
+        variant: result.assigneeMissing ? 'destructive' : undefined,
+      });
     } catch (error) {
       toast({ title: 'Automation run failed', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
     } finally {

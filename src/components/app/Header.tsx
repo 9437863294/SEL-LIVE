@@ -71,7 +71,7 @@ export default function Header() {
   const { can } = useAuthorization();
   
   const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
-  const [budgetAlerts, setBudgetAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -149,17 +149,21 @@ export default function Header() {
 
     fetchSupportingDataAndTasks();
 
-    // Listen for unread budget alerts for this user
+    // Listen for unread notifications for this user — budget alerts as well as recurring
+    // payment workflow/reminder notifications (an owner's payment entering their workflow
+    // queue, or a due-date reminder). Without including these types here, an owner had no way
+    // to see a generated recurring payment via the bell at all, even once it was correctly
+    // assigned to them.
     const alertQuery = query(
       collection(db, 'userNotifications'),
       where('userId', '==', user.id),
-      where('type', '==', 'budget_alert'),
+      where('type', 'in', ['budget_alert', 'recurring_payment_workflow', 'recurring_payment_reminder']),
       where('read', '==', false),
       orderBy('createdAt', 'desc'),
       limit(20)
     );
     const unsubscribeAlerts = onSnapshot(alertQuery, snap => {
-      setBudgetAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, () => {});
     unsubscribes.push(unsubscribeAlerts);
 
@@ -317,7 +321,7 @@ export default function Header() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
                     <Bell className="h-5 w-5" />
-                    {(pendingTasks.length + budgetAlerts.length) > 0 && (
+                    {(pendingTasks.length + alerts.length) > 0 && (
                       <span className="absolute top-1 right-1 flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
@@ -346,10 +350,10 @@ export default function Header() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuLabel>Budget Alerts ({budgetAlerts.length})</DropdownMenuLabel>
+                  <DropdownMenuLabel>Notifications ({alerts.length})</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  {budgetAlerts.length > 0 ? (
-                    budgetAlerts.map(alert => (
+                  {alerts.length > 0 ? (
+                    alerts.map(alert => (
                       <DropdownMenuItem
                         key={alert.id}
                         onSelect={() => {
@@ -358,7 +362,11 @@ export default function Header() {
                         }}
                       >
                         <div className="flex items-start gap-2 w-full">
-                          <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${(alert.pctUsed ?? 0) >= 100 ? 'text-red-500' : 'text-amber-500'}`} />
+                          {alert.type === 'budget_alert' ? (
+                            <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${(alert.pctUsed ?? 0) >= 100 ? 'text-red-500' : 'text-amber-500'}`} />
+                          ) : (
+                            <Bell className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
+                          )}
                           <div className="flex flex-col min-w-0">
                             <span className="font-semibold truncate">{alert.title}</span>
                             <span className="text-xs text-muted-foreground line-clamp-2">{alert.body}</span>
@@ -368,7 +376,7 @@ export default function Header() {
                     ))
                   ) : (
                     <DropdownMenuItem disabled>
-                      <p className="text-sm text-muted-foreground">No budget alerts.</p>
+                      <p className="text-sm text-muted-foreground">No notifications.</p>
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>

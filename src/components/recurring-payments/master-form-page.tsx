@@ -351,6 +351,7 @@ export default function RecurringMasterFormPage({
                 amount: Number(draft.amount || 0),
                 maximumAmount: Number(draft.maximumAmount || 0),
                 assignedTo: draft.assignedTo,
+                backupAssignedTo: draft.backupAssignedTo,
                 verifierId: draft.verifierId,
                 approverId: draft.approverId,
                 accountsProcessorId: draft.accountsProcessorId,

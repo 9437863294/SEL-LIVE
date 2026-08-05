@@ -250,6 +250,7 @@ export interface PaymentObligation {
   outstandingAmount?: number;
   status: PaymentStatus;
   assignedTo?: string;
+  backupAssignedTo?: string;
   generatedAutomatically: boolean;
   transactionReference?: string;
   paymentDate?: string;
@@ -439,6 +440,7 @@ export interface GeneratedObligationInput {
   amount: number;
   maximumAmount?: number;
   assignedTo?: string;
+  backupAssignedTo?: string;
   verifierId?: string;
   approverId?: string;
   accountsProcessorId?: string;
@@ -482,6 +484,7 @@ export function buildPaymentObligationFields(input: GeneratedObligationInput) {
     settledAmount: 0,
     outstandingAmount: input.amount,
     assignedTo: input.assignedTo || '',
+    backupAssignedTo: input.backupAssignedTo || '',
     verifierId: input.verifierId || '',
     approverId: input.approverId || '',
     accountsProcessorId: input.accountsProcessorId || '',
@@ -500,4 +503,45 @@ export function buildPaymentObligationFields(input: GeneratedObligationInput) {
     generatedAutomatically: input.generatedAutomatically,
   };
 }
-  
+
+type AssigneeResolutionPayment = Pick<PaymentObligation,
+  'assignedTo' | 'backupAssignedTo' | 'verifierId' | 'approverId' | 'accountsProcessorId' |
+  'billAmount' | 'expectedAmount' | 'approvalLevels' | 'approvalMode' | 'approvalCompletedBy' | 'currentApprovalLevel'>;
+
+/**
+ * Resolves which user id(s) a workflow step's task should be assigned to for a given payment
+ * obligation, based on the step's configured assignment type — and, for approval steps, the
+ * approval rule already matched onto the obligation, which takes priority over the step's own
+ * amount ranges. Shared by the automated workflow-activation route (moving a "Scheduled"
+ * obligation into its first step) and the client "advance to next step" action, so both agree
+ * on exactly who a step belongs to and both benefit from the same fallbacks (e.g. falling back
+ * to a master's backup assignee when no primary owner is resolvable).
+ */
+export function resolveAssignees(step: RecurringWorkflowStep, payment: AssigneeResolutionPayment): string[] {
+  if (step.name.toLowerCase().includes('approval') && payment.approvalLevels?.length) {
+    if (payment.approvalMode === 'Parallel') {
+      const completed = payment.approvalCompletedBy || [];
+      return payment.approvalLevels.filter(userId => !completed.includes(userId));
+    }
+    return [payment.approvalLevels[Math.max(0, Number(payment.currentApprovalLevel || 1) - 1)]].filter(Boolean);
+  }
+  if (step.assignmentType === 'Payment-owner') {
+    if (payment.assignedTo) return [payment.assignedTo];
+    if (payment.backupAssignedTo) return [payment.backupAssignedTo];
+    return [];
+  }
+  if (step.assignmentType === 'User-based') {
+    const configured = (step.assignedTo as string[]).filter(Boolean);
+    if (configured.length) return configured;
+    const name = step.name.toLowerCase();
+    if (name.includes('verification') && payment.verifierId) return [payment.verifierId];
+    if (name.includes('approval') && payment.approverId) return [payment.approverId];
+    if ((name.includes('processing') || name.includes('receipt') || name.includes('closure')) && payment.accountsProcessorId) return [payment.accountsProcessorId];
+    return [];
+  }
+  const amount = Number(payment.billAmount || payment.expectedAmount || 0);
+  const match = (step.assignedTo as RecurringAmountAssignee[]).find(rule => amount >= Number(rule.minAmount || 0) && amount <= (rule.maxAmount == null ? Number.POSITIVE_INFINITY : Number(rule.maxAmount)));
+  if (match) return [match.userId, match.alternativeUserId].filter(Boolean) as string[];
+  if (step.name.toLowerCase().includes('approval') && payment.approverId) return [payment.approverId];
+  return [];
+}

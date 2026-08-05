@@ -23,9 +23,9 @@ import { useToast } from '@/hooks/use-toast';
 import {
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
+  resolveAssignees,
   type PaymentMode,
   type PaymentObligation,
-  type RecurringAmountAssignee,
   type RecurringPaymentSettings,
   type RecurringWorkflowHistoryEntry,
   type RecurringWorkflowStep,
@@ -67,31 +67,6 @@ function stepStatus(step?: RecurringWorkflowStep): PaymentObligation['status'] {
   if (name.includes('processing')) return 'Payment Processing';
   if (name.includes('receipt') || name.includes('closure')) return 'Paid';
   return 'Generated';
-}
-
-function resolveAssignees(step: RecurringWorkflowStep, payment: PaymentObligation): string[] {
-  if (step.name.toLowerCase().includes('approval') && payment.approvalLevels?.length) {
-    if (payment.approvalMode === 'Parallel') {
-      const completed = payment.approvalCompletedBy || [];
-      return payment.approvalLevels.filter(userId => !completed.includes(userId));
-    }
-    return [payment.approvalLevels[Math.max(0, Number(payment.currentApprovalLevel || 1) - 1)]].filter(Boolean);
-  }
-  if (step.assignmentType === 'Payment-owner') return payment.assignedTo ? [payment.assignedTo] : [];
-  if (step.assignmentType === 'User-based') {
-    const configured = (step.assignedTo as string[]).filter(Boolean);
-    if (configured.length) return configured;
-    const name = step.name.toLowerCase();
-    if (name.includes('verification') && payment.verifierId) return [payment.verifierId];
-    if (name.includes('approval') && payment.approverId) return [payment.approverId];
-    if ((name.includes('processing') || name.includes('receipt') || name.includes('closure')) && payment.accountsProcessorId) return [payment.accountsProcessorId];
-    return [];
-  }
-  const amount = Number(payment.billAmount || payment.expectedAmount || 0);
-  const rule = (step.assignedTo as RecurringAmountAssignee[]).find(item => amount >= item.minAmount && amount <= (item.maxAmount ?? Number.POSITIVE_INFINITY));
-  if (rule) return [rule.userId, rule.alternativeUserId].filter(Boolean) as string[];
-  if (step.name.toLowerCase().includes('approval') && payment.approverId) return [payment.approverId];
-  return [];
 }
 
 export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageId: string }) {

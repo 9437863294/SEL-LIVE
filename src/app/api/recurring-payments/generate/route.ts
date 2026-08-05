@@ -1,28 +1,10 @@
 import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
-import { buildPaymentObligationFields, buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, type ApprovalRule, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { buildPaymentObligationFields, buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, resolveAssignees, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateOnly = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-
-function resolveAssignees(step: RecurringWorkflowStep, payment: Record<string, unknown>): string[] {
-  if (step.assignmentType === 'Payment-owner') return payment.assignedTo ? [String(payment.assignedTo)] : [];
-  if (step.assignmentType === 'User-based') {
-    const configured = (step.assignedTo as string[]).filter(Boolean);
-    if (configured.length) return configured;
-    const name = step.name.toLowerCase();
-    if (name.includes('verification') && payment.verifierId) return [String(payment.verifierId)];
-    if (name.includes('approval') && payment.approverId) return [String(payment.approverId)];
-    if ((name.includes('processing') || name.includes('receipt') || name.includes('closure')) && payment.accountsProcessorId) return [String(payment.accountsProcessorId)];
-    return [];
-  }
-  const amount = Number(payment.billAmount || payment.expectedAmount || 0);
-  const match = (step.assignedTo as Array<{minAmount:number;maxAmount:number|null;userId:string;alternativeUserId?:string}>).find(rule => amount >= Number(rule.minAmount || 0) && amount <= (rule.maxAmount == null ? Number.POSITIVE_INFINITY : Number(rule.maxAmount)));
-  if (match) return [match.userId, match.alternativeUserId].filter(Boolean) as string[];
-  if (step.name.toLowerCase().includes('approval') && payment.approverId) return [String(payment.approverId)];
-  return [];
-}
 
 export async function GET(request: Request) {
   const runStartedAt = Date.now();
@@ -44,6 +26,7 @@ export async function GET(request: Request) {
   let disabled = 0;
   let remindersQueued = 0;
   let workflowTriggered = 0;
+  let assigneeMissing = 0;
 
   for (const masterDoc of masterDocs) {
     const master = { id: masterDoc.id, ...masterDoc.data() } as RecurringPaymentMaster;
@@ -83,7 +66,8 @@ export async function GET(request: Request) {
         costCentre: master.costCentre, ledger: master.ledger, amountType: master.amountType,
         accountNumber: master.accountNumber,
         amount, maximumAmount: master.maximumAmount,
-        assignedTo: master.assignedTo, verifierId: master.verifierId, approverId: master.approverId,
+        assignedTo: master.assignedTo, backupAssignedTo: master.backupAssignedTo,
+        verifierId: master.verifierId, approverId: master.approverId,
         accountsProcessorId: master.accountsProcessorId, approvalRule: matchedRule,
       }),
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
@@ -101,7 +85,7 @@ export async function GET(request: Request) {
   const firstStep = workflow[0];
   if (firstStep) {
     for (const paymentDoc of openPaymentDocs) {
-      const payment = paymentDoc.data();
+      const payment = paymentDoc.data() as PaymentObligation;
       if (payment.currentStepId || ['Paid','Closed','Cancelled','Waived','Rejected'].includes(payment.status) || !payment.dueDate) continue;
       const organizationId = String(payment.organizationId || 'default');
       const settings = (await db.collection('recurringPaymentSettings').doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')).get()).data();
@@ -110,7 +94,19 @@ export async function GET(request: Request) {
       const daysUntilDue = Math.round((due.getTime() - today.getTime()) / 86_400_000);
       if (daysUntilDue > activationDays) continue;
       const assignees = resolveAssignees(firstStep, payment);
-      if (!assignees.length) continue;
+      if (!assignees.length) {
+        // Don't fail silently: without this, a payment with no resolvable owner (missing
+        // assignedTo/backupAssignedTo, or a "User-based" step with no user configured) sits in
+        // "Scheduled" forever with zero signal to anyone that it never reached a workflow queue.
+        assigneeMissing++;
+        await paymentDoc.ref.collection('auditLogs').add({
+          organizationId, paymentId: paymentDoc.id,
+          action: 'Workflow activation skipped',
+          summary: `No assignee could be resolved for step "${firstStep.name}" — check the master's assigned owner/backup assignee or the step's configured users.`,
+          userId: 'system', userName: 'Automation', createdAt: FieldValue.serverTimestamp(),
+        }).catch(() => undefined);
+        continue;
+      }
       await paymentDoc.ref.update({
         status: firstStep.name.toLowerCase().includes('bill') ? 'Awaiting Bill' : 'In Progress',
         workflowStatus: 'In Progress', stage: firstStep.name, currentStepId: firstStep.id,
@@ -167,8 +163,8 @@ export async function GET(request: Request) {
     }
     remindersQueued++;
   }
-  const result = { ok: true, runDate: dateOnly(now), checked: masterDocs.length, generated, skipped, automationDisabled: disabled, workflowTriggered, remindersQueued };
-  await db.collection('recurringPaymentAutomationLogs').add({ organizationId: targetOrganizationId || 'all', jobName: targetOrganizationId ? 'Manual organization automation run' : 'Daily recurring payment generation', startedAt: Timestamp.fromMillis(runStartedAt), completedAt: FieldValue.serverTimestamp(), recordsProcessed: masterDocs.length, successCount: generated + workflowTriggered + remindersQueued, failureCount: 0, status: 'Completed', result, createdAt: FieldValue.serverTimestamp() }).catch(() => undefined);
+  const result = { ok: true, runDate: dateOnly(now), checked: masterDocs.length, generated, skipped, automationDisabled: disabled, workflowTriggered, assigneeMissing, remindersQueued };
+  await db.collection('recurringPaymentAutomationLogs').add({ organizationId: targetOrganizationId || 'all', jobName: targetOrganizationId ? 'Manual organization automation run' : 'Daily recurring payment generation', startedAt: Timestamp.fromMillis(runStartedAt), completedAt: FieldValue.serverTimestamp(), recordsProcessed: masterDocs.length, successCount: generated + workflowTriggered + remindersQueued, failureCount: assigneeMissing, status: 'Completed', result, createdAt: FieldValue.serverTimestamp() }).catch(() => undefined);
   return NextResponse.json(result);
 }
 

@@ -232,6 +232,7 @@ export default function RecurringMasterDetailPage({
         amount,
         maximumAmount: master.maximumAmount,
         assignedTo: master.assignedTo,
+        backupAssignedTo: master.backupAssignedTo,
         verifierId: master.verifierId,
         approverId: master.approverId,
         accountsProcessorId: master.accountsProcessorId,
