@@ -64,9 +64,11 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
       const previousBank = bankSnapshot(originalVendor);
       const nextBank = bankSnapshot(vendor);
       const bankChanged = vendorId && JSON.stringify(previousBank) !== JSON.stringify(nextBank);
+      // Omit `id` rather than setting it to `undefined` — Firestore's set()/update() rejects
+      // any field whose value is `undefined`.
+      const { id: _vendorId, ...vendorFields } = vendor;
       const payload = {
-        ...vendor,
-        id: undefined,
+        ...vendorFields,
         organizationId,
         name: vendor.name?.trim(),
         updatedAt: serverTimestamp(),

@@ -188,6 +188,11 @@ export default function RecurringMasterFormPage({
         : can("Add", "Recurring Payments.Recurring Masters"))
     )
       return;
+    // React nulls out the SyntheticEvent's currentTarget once the handler yields (e.g. at an
+    // `await`), so the form element must be captured synchronously here rather than read from
+    // `event.currentTarget` later — otherwise `new FormData(...)` below throws
+    // "parameter 1 is not of type 'HTMLFormElement'".
+    const formElement = event.currentTarget;
     const native = event.nativeEvent as SubmitEvent;
     const intent =
       (native.submitter as HTMLButtonElement | null)?.value || "draft";
@@ -241,7 +246,7 @@ export default function RecurringMasterFormPage({
       const masterRef = masterId
         ? doc(db, RP_COLLECTIONS.masters, masterId)
         : doc(collection(db, RP_COLLECTIONS.masters));
-      const form = new FormData(event.currentTarget);
+      const form = new FormData(formElement);
       const documents = await uploadDocuments(form, masterRef.id);
       const owner = users.find((item) => item.id === draft.assignedTo);
       const status: RecurringPaymentMaster["status"] =
@@ -252,9 +257,11 @@ export default function RecurringMasterFormPage({
         projectId: draft.projectId,
         projectName: draft.projectName,
       });
+      // Omit `id` rather than setting it to `undefined` — Firestore's set()/update() rejects
+      // any field whose value is `undefined`.
+      const { id: _draftId, ...draftFields } = draft;
       const payload = {
-        ...draft,
-        id: undefined,
+        ...draftFields,
         organizationId,
         organizationName: user.organizationName || "",
         amount: Number(draft.amount || 0),
