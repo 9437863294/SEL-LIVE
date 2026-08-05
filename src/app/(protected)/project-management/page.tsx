@@ -8,6 +8,7 @@ import {
   Building2,
   ClipboardList,
   FileSearch,
+  FileStack,
   FolderKanban,
   ListChecks,
   Settings,
@@ -63,6 +64,7 @@ export default function ProjectManagementPage() {
   const canViewRfq = can("View", `${MODULE_NAME}.RFQ`) || canViewBoq;
   const canViewPurchaseOrders =
     can("View", `${MODULE_NAME}.Purchase Orders`) || canViewRfq;
+  const canViewMdl = can("View", `${MODULE_NAME}.MDL`) || canViewBoq;
   const canViewSettings = can("View", `${MODULE_NAME}.Settings`);
   const selectedProjectId = searchParams?.get("project") ?? "";
 
@@ -145,6 +147,16 @@ export default function ProjectManagementPage() {
         : "Create and track purchase orders against vendors.",
       icon: ShoppingCart,
       gradient: "from-emerald-500 to-teal-600",
+    },
+    {
+      show: Boolean(selectedProject && canViewMdl),
+      href: `/project-management/mdl?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+      title: "MDL",
+      description: selectedProject
+        ? `Track drawing submissions & approvals for ${selectedProject.projectName}.`
+        : "Master Drawing List — track drawing submission and approval.",
+      icon: FileStack,
+      gradient: "from-sky-500 to-blue-600",
     },
     {
       show: canViewSettings,

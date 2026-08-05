@@ -1,7 +1,7 @@
 export const BOQ_COLUMN_SETTINGS_COLLECTION = "projectManagementSettings";
 export const BOQ_COLUMN_SETTINGS_DOC = "boqColumns";
 
-export type BoqColumnDataType = "text" | "number" | "percentage" | "date";
+export type BoqColumnDataType = "text" | "number" | "percentage" | "date" | "yesno";
 
 export type BoqColumnConfig = {
   key: string;
@@ -22,6 +22,8 @@ const costingDefaults = new Set([
   "JMC/MVAC Executed Qty",
   "JMC/MVAC Certified Qty",
   "JMC/MVAC Amount",
+  "Indent Qty",
+  "PO Qty",
   "Total Amount",
   "Budget Price",
   "F&I %",
@@ -29,6 +31,8 @@ const costingDefaults = new Set([
   "Total Budget Price",
   "Start Date",
   "End Date",
+  "MDL",
+  "MDL Status",
 ]);
 
 const operationalDefaults = new Set([
@@ -38,8 +42,12 @@ const operationalDefaults = new Set([
   "QTY",
   "JMC/MVAC Executed Qty",
   "JMC/MVAC Certified Qty",
+  "Indent Qty",
+  "PO Qty",
   "Start Date",
   "End Date",
+  "MDL",
+  "MDL Status",
 ]);
 
 const standardColumnKeys = [
@@ -61,12 +69,16 @@ const standardColumnKeys = [
   "JMC/MVAC Executed Qty",
   "JMC/MVAC Certified Qty",
   "JMC/MVAC Amount",
+  "Indent Qty",
+  "PO Qty",
   "Budget Price",
   "F&I %",
   "F&I Price",
   "Total Budget Price",
   "Start Date",
   "End Date",
+  "MDL",
+  "MDL Status",
 ];
 
 const numberColumnKeys = new Set([
@@ -76,6 +88,8 @@ const numberColumnKeys = new Set([
   "JMC/MVAC Executed Qty",
   "JMC/MVAC Certified Qty",
   "JMC/MVAC Amount",
+  "Indent Qty",
+  "PO Qty",
   "Budget Price",
   "F&I Price",
   "Total Budget Price",
@@ -83,7 +97,10 @@ const numberColumnKeys = new Set([
 
 const dateColumnKeys = new Set(["Start Date", "End Date"]);
 
+const yesNoColumnKeys = new Set(["MDL"]);
+
 export function getDefaultBoqColumnDataType(key: string): BoqColumnDataType {
+  if (yesNoColumnKeys.has(key)) return "yesno";
   if (key === "F&I %") return "percentage";
   if (dateColumnKeys.has(key) || /(?:^|\s)date(?:$|\s)/i.test(key)) return "date";
   if (numberColumnKeys.has(key)) return "number";
@@ -99,10 +116,13 @@ export function normalizeBoqColumnDataType(
   return value === "text" ||
     value === "number" ||
     value === "percentage" ||
-    value === "date"
+    value === "date" ||
+    value === "yesno"
     ? value
     : getDefaultBoqColumnDataType(key);
 }
+
+export const YES_NO_OPTIONS = ["Yes", "No"] as const;
 
 export const DEFAULT_BOQ_COLUMNS: BoqColumnConfig[] = standardColumnKeys.map(
   (key, order) => ({

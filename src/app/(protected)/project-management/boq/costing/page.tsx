@@ -55,7 +55,10 @@ import {
   BOQ_COLUMN_SETTINGS_COLLECTION,
   BOQ_COLUMN_SETTINGS_DOC,
   mergeBoqColumns,
+  YES_NO_OPTIONS,
 } from '@/lib/project-management-boq-columns';
+import { PO_COLLECTION, type PurchaseOrder } from '@/lib/purchase-orders';
+import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing } from '@/lib/mdl';
 import BoqItemDetailsDialog from '@/components/billing-recon/BoqItemDetailsDialog';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -91,6 +94,17 @@ export type BoqItem = {
   [key: string]: any;
 };
 
+type IndentLineItem = {
+  boqItemId: string;
+  requestedQty: number | string;
+};
+
+type IndentRecord = {
+  id: string;
+  status: string;
+  items: IndentLineItem[];
+};
+
 const baseTableHeaders = [
     'Project Name',
     'Sub-Division',
@@ -110,6 +124,8 @@ const baseTableHeaders = [
     'JMC/MVAC Executed Qty',
     'JMC/MVAC Certified Qty',
     'JMC/MVAC Amount',
+    'Indent Qty',
+    'PO Qty',
     'Budget Price',
     'F&I %',
     'F&I Price',
@@ -167,6 +183,9 @@ export default function ViewBoqPage() {
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [indents, setIndents] = useState<IndentRecord[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [mdlDrawings, setMdlDrawings] = useState<MdlDrawing[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projectSlug, setProjectSlug] = useState('');
   const [globalProjectId, setGlobalProjectId] = useState('');
@@ -195,6 +214,8 @@ export default function ViewBoqPage() {
           'JMC/MVAC Executed Qty',
           'JMC/MVAC Certified Qty',
           'JMC/MVAC Amount',
+          'Indent Qty',
+          'PO Qty',
           'Total Amount',
           'Budget Price',
           'F&I %',
@@ -359,16 +380,22 @@ export default function ViewBoqPage() {
         .filter(Boolean) as BoqItem[];
       setBoqItems(items);
 
-      // JMC / MVAC / Bills
-      const [jmcSnapshot, mvacSnapshot, billsSnapshot] = await Promise.all([
+      // JMC / MVAC / Bills / Indents / Purchase Orders / MDL Drawings
+      const [jmcSnapshot, mvacSnapshot, billsSnapshot, indentSnapshot, poSnapshot, mdlSnapshot] = await Promise.all([
         getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
         getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
         getDocs(collection(db, 'projects', projectId, 'bills')),
+        getDocs(collection(db, 'projects', projectId, 'indents')),
+        getDocs(collection(db, 'projects', projectId, PO_COLLECTION)),
+        getDocs(collection(db, 'projects', projectId, MDL_COLLECTION)),
       ]);
 
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
       setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
       setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+      setIndents(indentSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as IndentRecord)));
+      setPurchaseOrders(poSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as PurchaseOrder)));
+      setMdlDrawings(mdlSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MdlDrawing)));
     } catch (error) {
       console.error(error);
       toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
@@ -415,6 +442,40 @@ export default function ViewBoqPage() {
     return map;
   }, [mvacEntries]);
   
+  /** PRE-AGGREGATE INDENT/PO QUANTITIES BY BOQ ITEM ID **/
+  const indentQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const indent of indents) {
+      if (['Rejected', 'Cancelled'].includes(indent.status)) continue;
+      for (const it of indent.items ?? []) {
+        if (!it.boqItemId) continue;
+        map.set(it.boqItemId, (map.get(it.boqItemId) ?? 0) + Number(it.requestedQty || 0));
+      }
+    }
+    return map;
+  }, [indents]);
+
+  const poQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const po of purchaseOrders) {
+      if (po.status === 'Cancelled') continue;
+      for (const it of po.items ?? []) {
+        if (!it.boqItemId) continue;
+        map.set(it.boqItemId, (map.get(it.boqItemId) ?? 0) + Number(it.qty || 0));
+      }
+    }
+    return map;
+  }, [purchaseOrders]);
+
+  const mdlStatusByBoqItemId = useMemo(() => {
+    const map = new Map<string, MdlDrawing['status']>();
+    for (const drawing of mdlDrawings) {
+      if (!drawing.boqItemId) continue;
+      map.set(drawing.boqItemId, drawing.status ?? 'Pending');
+    }
+    return map;
+  }, [mdlDrawings]);
+
   const getQuantities = useCallback(
     (scope1: string, scope2: string, boqSlNo: string) => {
       const key = compositeKey(scope1, scope2, boqSlNo);
@@ -540,6 +601,12 @@ export default function ViewBoqPage() {
         const val = Number.isFinite(rate) ? certified * (rate as number) : NaN;
         return Number.isFinite(val) ? val : 0;
       }
+      if (key === 'Indent Qty') return indentQtyByBoqItemId.get(item.id) ?? 0;
+      if (key === 'PO Qty') return poQtyByBoqItemId.get(item.id) ?? 0;
+      if (key === 'MDL Status') {
+        const isMdl = String(item.MDL ?? '').trim().toLowerCase() === 'yes';
+        return isMdl ? mdlStatusByBoqItemId.get(item.id) ?? 'Pending' : '';
+      }
       if (key === 'Budget Price') return getBudgetValues(item).budgetPrice;
       if (key === 'F&I %') return getBudgetValues(item).fiPercentage;
       if (key === 'F&I Price') return getBudgetValues(item).fiPrice;
@@ -579,7 +646,7 @@ export default function ViewBoqPage() {
     }
 
     return sorted;
-  }, [filteredBoqItems, sortKey, sortDirection, getQuantities]);
+  }, [filteredBoqItems, sortKey, sortDirection, getQuantities, indentQtyByBoqItemId, poQtyByBoqItemId, mdlStatusByBoqItemId]);
 
   /** ROW ACTIONS **/
   const handleRowClick = (item: BoqItem) => {
@@ -742,6 +809,7 @@ export default function ViewBoqPage() {
     'Total Budget Price',
     'Start Date',
     'End Date',
+    'MDL',
   ];
 
   const selectAllState: CheckedState = allSelected ? true : someSelected ? 'indeterminate' : false;
@@ -876,10 +944,10 @@ export default function ViewBoqPage() {
       {/* Table */}
       <div className="flex-1 min-h-0">
         <div className="h-full border rounded-lg flex flex-col min-w-0">
-          <div className="relative flex-1 min-h-0 w-full overflow-auto">
+          <div className="relative flex-1 min-h-0 w-full">
             <TooltipProvider>
-              <div className="min-w-max">
-                <Table className="text-sm">
+              <div className="h-full">
+                <Table className="text-sm" containerClassName="h-full overflow-auto">
                   <TableHeader>
                     <TableRow>
                       {/* Sticky selection cell */}
@@ -1008,6 +1076,27 @@ export default function ViewBoqPage() {
                                     const val = Number.isFinite(rate) ? certified * (rate as number) : 0;
                                     display = fmtNum(val);
                                   }
+                                } else if (header === 'Indent Qty') {
+                                  display = fmtNum(indentQtyByBoqItemId.get(item.id) ?? 0);
+                                } else if (header === 'PO Qty') {
+                                  display = fmtNum(poQtyByBoqItemId.get(item.id) ?? 0);
+                                } else if (header === 'MDL Status') {
+                                  const isMdl = String(item.MDL ?? '').trim().toLowerCase() === 'yes';
+                                  if (!isMdl) {
+                                    display = <span className="text-muted-foreground">—</span>;
+                                  } else {
+                                    const status = mdlStatusByBoqItemId.get(item.id) ?? 'Pending';
+                                    display = (
+                                      <span
+                                        className={cn(
+                                          'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+                                          mdlOverallStatusStyles[status],
+                                        )}
+                                      >
+                                        {status}
+                                      </span>
+                                    );
+                                  }
                                 } else {
                                   const raw = item[header];
                                   if (
@@ -1125,24 +1214,43 @@ export default function ViewBoqPage() {
           <div className="py-4 grid grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto">
               {editingItem && dialogFields.map((key: keyof BoqItem) => (
                   <div className="space-y-1" key={key}>
-                      <Label htmlFor={`edit-${String(key)}`}>{String(key)}</Label>
-                      <Input
-                          id={`edit-${String(key)}`}
-                          name={String(key)}
-                          value={(editingItem as any)[key] ?? ''}
-                          onChange={handleEditFormChange}
-                          type={
-                            ['Start Date', 'End Date'].includes(String(key))
-                              ? 'date'
-                              : ['Budget Price', 'F&I %', 'F&I Price', 'Total Budget Price'].includes(String(key))
-                                ? 'number'
-                                : 'text'
+                      <Label htmlFor={`edit-${String(key)}`}>
+                        {String(key)}
+                        {key === 'MDL' && <span className="font-normal text-muted-foreground"> (Master Drawing List)</span>}
+                      </Label>
+                      {key === 'MDL' ? (
+                        <Select
+                          value={String((editingItem as any)[key] ?? '')}
+                          onValueChange={(value) =>
+                            setEditingItem((prev) => (prev ? { ...prev, MDL: value } : null))
                           }
-                          step={['Budget Price', 'F&I %'].includes(String(key)) ? '0.01' : undefined}
-                          min={key === 'End Date' ? String(editingItem['Start Date'] ?? '') || undefined : undefined}
-                          max={key === 'Start Date' ? String(editingItem['End Date'] ?? '') || undefined : undefined}
-                          readOnly={key === 'Project Name' || key === 'F&I Price' || key === 'Total Budget Price'}
-                      />
+                        >
+                          <SelectTrigger id="edit-MDL"><SelectValue placeholder="Select..." /></SelectTrigger>
+                          <SelectContent>
+                            {YES_NO_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>{option}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                            id={`edit-${String(key)}`}
+                            name={String(key)}
+                            value={(editingItem as any)[key] ?? ''}
+                            onChange={handleEditFormChange}
+                            type={
+                              ['Start Date', 'End Date'].includes(String(key))
+                                ? 'date'
+                                : ['Budget Price', 'F&I %', 'F&I Price', 'Total Budget Price'].includes(String(key))
+                                  ? 'number'
+                                  : 'text'
+                            }
+                            step={['Budget Price', 'F&I %'].includes(String(key)) ? '0.01' : undefined}
+                            min={key === 'End Date' ? String(editingItem['Start Date'] ?? '') || undefined : undefined}
+                            max={key === 'Start Date' ? String(editingItem['End Date'] ?? '') || undefined : undefined}
+                            readOnly={key === 'Project Name' || key === 'F&I Price' || key === 'Total Budget Price'}
+                        />
+                      )}
                   </div>
               ))}
           </div>

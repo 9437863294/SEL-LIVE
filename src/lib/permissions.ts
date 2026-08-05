@@ -523,6 +523,7 @@ export const permissionModules = {
     Indent: ["View", "Add", "Delete"],
     RFQ: ["View", "Add", "Send", "Enter Quote", "Award"],
     "Purchase Orders": ["View", "Add", "Delete", "Issue", "Receive", "Cancel"],
+    MDL: ["View", "Edit"],
     "Project Mappings": ["View", "Add", "Edit", "Delete"],
     Settings: ["View", "Edit"],
   },

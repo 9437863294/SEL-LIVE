@@ -352,6 +352,7 @@ export default function ProjectManagementBoqSettingsPage() {
                 <SelectItem value="number">Number</SelectItem>
                 <SelectItem value="percentage">Percentage (0–100)</SelectItem>
                 <SelectItem value="date">Date</SelectItem>
+                <SelectItem value="yesno">Yes/No</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -442,6 +443,7 @@ export default function ProjectManagementBoqSettingsPage() {
                             <SelectItem value="number">Number</SelectItem>
                             <SelectItem value="percentage">Percentage (0–100)</SelectItem>
                             <SelectItem value="date">Date</SelectItem>
+                            <SelectItem value="yesno">Yes/No</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>

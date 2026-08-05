@@ -105,6 +105,9 @@ const NON_IMPORTABLE_COLUMN_KEYS = new Set([
   'JMC/MVAC Executed Qty',
   'JMC/MVAC Certified Qty',
   'JMC/MVAC Amount',
+  'Indent Qty',
+  'PO Qty',
+  'MDL Status',
   'F&I Price',
   'Total Budget Price',
 ]);
@@ -147,6 +150,7 @@ const BASE_IMPORT_FIELDS: ImportField[] = [
   { key: 'F&I %', label: 'F&I %', type: 'percentage', aliases: ['F&I Percentage', 'FI %'] },
   { key: 'Start Date', label: 'Start Date', type: 'date', hint: 'YYYY-MM-DD or DD/MM/YYYY' },
   { key: 'End Date', label: 'End Date', type: 'date', hint: 'YYYY-MM-DD or DD/MM/YYYY' },
+  { key: 'MDL', label: 'MDL', type: 'yesno', hint: 'Master Drawing List — Yes or No' },
 ];
 
 const BASE_IMPORT_FIELDS_BY_KEY = new Map(
@@ -176,6 +180,7 @@ const SAMPLE_ROWS: Array<Record<string, string | number>> = [
     'Total Budget Price': 230000,
     'Start Date': '2026-08-10',
     'End Date': '2026-08-25',
+    MDL: 'Yes',
   },
   {
     'Project Name': 'Sample Project',
@@ -199,6 +204,7 @@ const SAMPLE_ROWS: Array<Record<string, string | number>> = [
     'Total Budget Price': 100000,
     'Start Date': '2026-08-15',
     'End Date': '2026-09-05',
+    MDL: 'No',
   },
 ];
 
@@ -425,7 +431,13 @@ export default function ImportBoqPage() {
   const templateHeaders = useMemo(
     () =>
       configuredColumns
-        .filter((column) => !column.key.startsWith('JMC/MVAC '))
+        .filter(
+          (column) =>
+            !column.key.startsWith('JMC/MVAC ') &&
+            column.key !== 'Indent Qty' &&
+            column.key !== 'PO Qty' &&
+            column.key !== 'MDL Status',
+        )
         .map((column) => column.key),
     [configuredColumns],
   );
@@ -623,6 +635,7 @@ export default function ImportBoqPage() {
       let notes = field.hint ?? '';
       if (field.type === 'number') notes = `${notes}${notes ? '. ' : ''}Must be a non-negative number.`;
       if (field.type === 'percentage') notes = 'Percentage from 0 to 100.';
+      if (field.type === 'yesno') notes = 'Enter Yes or No.';
       if (field.key === 'Start Date') notes = 'Optional, but Start Date and End Date must be supplied together.';
       if (field.key === 'End Date') notes = 'Must be on or after Start Date.';
       instructions.addRow({
@@ -743,6 +756,22 @@ export default function ImportBoqPage() {
           }
           if (field.type === 'percentage' && parsed.valid && parsed.value > 100) {
             errors.push(`${field.label} cannot be greater than 100.`);
+          }
+          return;
+        }
+
+        if (field.type === 'yesno') {
+          const text = cellValueToString(rawValue).trim().toLowerCase();
+          if (!text) {
+            data[field.key] = '';
+            if (field.required) errors.push(`${field.label} is required.`);
+          } else if (['yes', 'y', 'true', '1'].includes(text)) {
+            data[field.key] = 'Yes';
+          } else if (['no', 'n', 'false', '0'].includes(text)) {
+            data[field.key] = 'No';
+          } else {
+            data[field.key] = cellValueToString(rawValue);
+            errors.push(`${field.label} must be Yes or No.`);
           }
           return;
         }

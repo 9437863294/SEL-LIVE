@@ -35,6 +35,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -43,6 +50,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { YES_NO_OPTIONS } from "@/lib/project-management-boq-columns";
 
 const BOQ_PERMISSION = "Project Management.BOQ";
 
@@ -76,6 +84,7 @@ type LineForm = {
   fiPercentage: string;
   startDate: string;
   endDate: string;
+  mdl: string;
 };
 
 type StagedRow = Record<string, string | number> & {
@@ -88,6 +97,7 @@ type StagedRow = Record<string, string | number> & {
   "Budget Price": number;
   "F&I Price": number;
   "Total Budget Price": number;
+  MDL: string;
 };
 
 const emptySticky = (): StickyForm => ({
@@ -113,6 +123,7 @@ const emptyLine = (): LineForm => ({
   fiPercentage: "",
   startDate: "",
   endDate: "",
+  mdl: "No",
 });
 
 const toNumber = (value: unknown) => {
@@ -294,6 +305,7 @@ export default function AddBoqItemsPage() {
       "Total Budget Price": totalBudgetPrice,
       "Start Date": line.startDate,
       "End Date": line.endDate,
+      MDL: line.mdl,
     };
 
     setRows((current) => [...current, row]);
@@ -486,6 +498,17 @@ export default function AddBoqItemsPage() {
               <Label htmlFor="end-date">End Date</Label>
               <Input id="end-date" type="date" value={line.endDate} min={line.startDate || undefined} onChange={(e) => setLine((c) => ({ ...c, endDate: e.target.value }))} />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="mdl">MDL <span className="font-normal text-muted-foreground">(Master Drawing List)</span></Label>
+              <Select value={line.mdl} onValueChange={(mdl) => setLine((c) => ({ ...c, mdl }))}>
+                <SelectTrigger id="mdl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {YES_NO_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={option}>{option}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <Button onClick={handleAddRow}>
@@ -518,6 +541,7 @@ export default function AddBoqItemsPage() {
                     <TableHead>Total Amount</TableHead>
                     <TableHead>Budget Price</TableHead>
                     <TableHead>Total Budget Price</TableHead>
+                    <TableHead>MDL</TableHead>
                     <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
@@ -531,6 +555,7 @@ export default function AddBoqItemsPage() {
                       <TableCell className="whitespace-nowrap font-medium">{formatCurrency(toNumber(row["Total Amount"]))}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatCurrency(toNumber(row["Budget Price"]))}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatCurrency(toNumber(row["Total Budget Price"]))}</TableCell>
+                      <TableCell>{row.MDL || "—"}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" onClick={() => handleRemoveRow(row.__key)} aria-label={`Remove ${row.Description}`}>
                           <Trash2 className="h-4 w-4 text-destructive" />
