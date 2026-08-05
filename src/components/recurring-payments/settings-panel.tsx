@@ -430,7 +430,9 @@ export default function RecurringPaymentSettingsPanel({
               </CardTitle>
               <CardDescription>
                 The daily cron checks these settings before generating
-                organization + master + cycle records.
+                cycle records. Each master has its own "Generate before due
+                (days)" setting that controls exactly when its obligation is
+                created.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -444,30 +446,7 @@ export default function RecurringPaymentSettingsPanel({
                   }))
                 }
               />
-              <div className="grid gap-4 sm:grid-cols-3">
-                <SettingField
-                  label="Monthly generation day"
-                  help="1–28; create the cycle on or after this day"
-                >
-                  <Input
-                    type="number"
-                    min={1}
-                    max={28}
-                    value={settings.automation.generationDay}
-                    onChange={(e) =>
-                      setSettings((s) => ({
-                        ...s,
-                        automation: {
-                          ...s.automation,
-                          generationDay: Math.min(
-                            28,
-                            Math.max(1, Number(e.target.value)),
-                          ),
-                        },
-                      }))
-                    }
-                  />
-                </SettingField>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <SettingField
                   label="Workflow starts before due"
                   help="Days before due date; default is 7"

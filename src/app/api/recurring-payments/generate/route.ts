@@ -33,6 +33,7 @@ export async function GET(request: Request) {
 
   const db = getFirebaseAdminFirestore();
   const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const targetOrganizationId = String(request.headers.get('x-recurring-organization') || '').trim();
   const masters = await db.collection('recurringPaymentMasters').where('status', '==', 'Active').get();
   const masterDocs = targetOrganizationId
@@ -51,12 +52,17 @@ export async function GET(request: Request) {
     const settingsRef = db.collection('recurringPaymentSettings').doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_'));
     const settings = (await settingsRef.get()).data();
     if (settings?.automation?.enabled === false) { disabled++; continue; }
-    const generationDay = Math.min(28, Math.max(1, Number(settings?.automation?.generationDay || 1)));
     const cycle = buildRecurringCycle(master, now);
     if (!cycle) { skipped++; continue; }
-    const cycleStart = new Date(`${cycle.billingPeriodStart}T00:00:00`);
-    const startsThisMonth = cycleStart.getFullYear() === now.getFullYear() && cycleStart.getMonth() === now.getMonth();
-    if (!['Weekly', 'Custom'].includes(master.frequency) && startsThisMonth && now.getDate() < generationDay) { skipped++; continue; }
+    // Generate this cycle's obligation once its due date is within the master's own
+    // "generate before due date" lead time — a per-master days-before-due setting, not a
+    // fixed calendar day-of-month. If the cron missed earlier runs (automation was paused,
+    // etc.), the obligation still generates immediately rather than waiting for a full
+    // lead-time window that has already passed.
+    const generateBeforeDueDays = Math.min(90, Math.max(0, Number(master.generateBeforeDueDays ?? 7)));
+    const cycleDueDate = new Date(`${cycle.dueDate}T00:00:00`);
+    const daysUntilCycleDue = Math.round((cycleDueDate.getTime() - today.getTime()) / 86_400_000);
+    if (daysUntilCycleDue > generateBeforeDueDays) { skipped++; continue; }
     const cycleKey = `${organizationId}_${masterDoc.id}_${cycle.key}`;
     const paymentRef = db.collection('paymentObligations').doc(cycleKey.replace(/[^a-zA-Z0-9_-]/g, '_'));
     if ((await paymentRef.get()).exists) { skipped++; continue; }
@@ -90,7 +96,6 @@ export async function GET(request: Request) {
   const openPaymentDocs = targetOrganizationId
     ? openPayments.docs.filter(item => String(item.data().organizationId || 'default') === targetOrganizationId)
     : openPayments.docs;
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const workflowSnap = await db.collection('workflows').doc('recurring-payments-workflow').get();
   const workflow = (workflowSnap.data()?.steps || DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
   const firstStep = workflow[0];

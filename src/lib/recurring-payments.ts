@@ -118,7 +118,6 @@ export interface RecurringPaymentSettings {
   };
   automation: {
     enabled: boolean;
-    generationDay: number;
     workflowActivationDays: number;
     timezone: string;
     retryFailedNotifications: boolean;
@@ -140,7 +139,7 @@ export const DEFAULT_RECURRING_PAYMENT_SETTINGS: RecurringPaymentSettings = {
     daysBefore: [7, 3, 1, 0], daysAfter: [1], dailyOverdueEscalation: true,
     recipients: ['Assigned Employee', 'Accounts Team'],
   },
-  automation: { enabled: true, generationDay: 1, workflowActivationDays: 7, timezone: 'Asia/Kolkata', retryFailedNotifications: true },
+  automation: { enabled: true, workflowActivationDays: 7, timezone: 'Asia/Kolkata', retryFailedNotifications: true },
   controls: {
     lockClosedPayments: true, requireBillBeforeApproval: true,
     requireTransactionReference: true, allowAuthorizedReopen: false,
