@@ -34,7 +34,9 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
+  buildPaymentObligationFields,
   buildRecurringCycle,
+  matchApprovalRule,
   type ApprovalRule,
   type PaymentObligation,
   type RecurringPaymentMaster,
@@ -203,61 +205,38 @@ export default function RecurringMasterDetailPage({
       ),
     );
     const amount = Number(master.amount || 0);
-    const approvalRule = ruleSnapshot.docs
-      .map((item) => ({ id: item.id, ...item.data() }) as ApprovalRule)
-      .find(
-        (rule) =>
-          rule.active &&
-          amount >= Number(rule.minAmount || 0) &&
-          amount <=
-            (rule.maxAmount == null
-              ? Number.POSITIVE_INFINITY
-              : Number(rule.maxAmount)) &&
-          (!rule.category || rule.category === master.category) &&
-          (!rule.project ||
-            rule.project === master.projectId ||
-            rule.project === master.projectName),
-      );
+    const approvalRule = matchApprovalRule(
+      ruleSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as ApprovalRule),
+      { amount, category: master.category, projectId: master.projectId, projectName: master.projectName },
+    );
     await setDoc(paymentRef, {
-      organizationId,
-      masterId: master.id,
-      cycleKey,
-      sourceType: "Recurring",
-      title: `${master.title} — ${nextCycle.label}`,
-      category: master.category,
-      vendorName: master.vendorName,
-      branchName: master.branchName || "",
-      projectId: master.projectId || "",
-      projectName: master.projectName || "",
-      departmentId: master.departmentId || "",
-      department: master.department || "",
-      description: master.description || "",
-      accountNumber: master.accountNumber || "",
-      billingPeriodStart: nextCycle.billingPeriodStart,
-      billingPeriodEnd: nextCycle.billingPeriodEnd,
-      dueDate: nextCycle.dueDate,
-      expectedAmount: Number(master.amount || 0),
-      maximumAmount: Number(master.maximumAmount || 0),
-      paidAmount: 0,
-      settledAmount: 0,
-      outstandingAmount: Number(master.amount || 0),
-      assignedTo: master.assignedTo || "",
-      verifierId: master.verifierId || "",
-      approverId: master.approverId || "",
-      accountsProcessorId: master.accountsProcessorId || "",
-      approvalRuleId: approvalRule?.id || null,
-      approvalMode: approvalRule?.mode || null,
-      approvalLevels: approvalRule?.approvers || [],
-      currentApprovalLevel: approvalRule ? 1 : 0,
-      approvalCompletedBy: [],
-      finalAccountsVerification:
-        approvalRule?.finalAccountsVerification !== false,
-      status: "Scheduled",
-      workflowStatus: "Scheduled",
-      stage: "Scheduled",
-      currentStepId: null,
-      assignees: [],
-      generatedAutomatically: false,
+      ...buildPaymentObligationFields({
+        organizationId,
+        masterId: master.id,
+        cycle: nextCycle,
+        generatedAutomatically: false,
+        title: master.title,
+        category: master.category,
+        vendorName: master.vendorName,
+        branchId: master.branchId,
+        branchName: master.branchName,
+        projectId: master.projectId,
+        projectName: master.projectName,
+        departmentId: master.departmentId,
+        department: master.department,
+        costCentre: master.costCentre,
+        ledger: master.ledger,
+        amountType: master.amountType,
+        description: master.description,
+        accountNumber: master.accountNumber,
+        amount,
+        maximumAmount: master.maximumAmount,
+        assignedTo: master.assignedTo,
+        verifierId: master.verifierId,
+        approverId: master.approverId,
+        accountsProcessorId: master.accountsProcessorId,
+        approvalRule,
+      }),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });

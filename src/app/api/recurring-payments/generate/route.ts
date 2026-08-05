@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
-import { buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { buildPaymentObligationFields, buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, type ApprovalRule, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateOnly = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -63,32 +63,23 @@ export async function GET(request: Request) {
     const approvalRules = await db.collection('recurringPaymentApprovalRules')
       .where('organizationId', '==', organizationId).where('active', '==', true).get();
     const amount = Number(master.amount || 0);
-    const matchedRule = approvalRules.docs.map(rule => ({ id: rule.id, ...rule.data() })).find(rule => {
-      const data = rule as Record<string, unknown>;
-      const min = Number(data.minAmount || 0);
-      const max = data.maxAmount == null ? Number.POSITIVE_INFINITY : Number(data.maxAmount);
-      return amount >= min && amount <= max && (!data.category || data.category === master.category) && (!data.project || data.project === master.projectId || data.project === master.projectName);
-    });
+    const matchedRule = matchApprovalRule(
+      approvalRules.docs.map(rule => ({ id: rule.id, ...rule.data() }) as ApprovalRule),
+      { amount, category: master.category, projectId: master.projectId, projectName: master.projectName },
+    );
     await paymentRef.create({
-      organizationId, masterId: masterDoc.id, cycleKey,
-      branchId: master.branchId || '', branchName: master.branchName || '',
-      projectId: master.projectId || '', projectName: master.projectName || '',
-      departmentId: master.departmentId || '', department: master.department || '',
-      costCentre: master.costCentre || '', ledger: master.ledger || '', amountType: master.amountType,
-      title: `${master.title} — ${cycle.label}`,
-      category: master.category, vendorName: master.vendorName,
-      billingPeriodStart: cycle.billingPeriodStart, billingPeriodEnd: cycle.billingPeriodEnd, dueDate: cycle.dueDate,
-      expectedAmount: amount, maximumAmount: Number(master.maximumAmount || 0), paidAmount: 0, settledAmount: 0, outstandingAmount: amount,
-      status: 'Scheduled', workflowStatus: 'Scheduled', stage: 'Scheduled',
-      currentStepId: null, assignees: [], workflowHistory: [],
-      approvalRuleId: matchedRule?.id || null,
-      approvalMode: matchedRule ? (matchedRule as Record<string, unknown>).mode : null,
-      approvalLevels: matchedRule ? (matchedRule as Record<string, unknown>).approvers : [],
-      currentApprovalLevel: matchedRule ? 1 : 0,
-      approvalCompletedBy: [],
-      finalAccountsVerification: matchedRule ? (matchedRule as Record<string, unknown>).finalAccountsVerification !== false : true,
-      assignedTo: master.assignedTo || '', verifierId: master.verifierId || '', approverId: master.approverId || '',
-      accountsProcessorId: master.accountsProcessorId || '', generatedAutomatically: true,
+      ...buildPaymentObligationFields({
+        organizationId, masterId: masterDoc.id, cycle, generatedAutomatically: true,
+        title: master.title, category: master.category, vendorName: master.vendorName,
+        branchId: master.branchId, branchName: master.branchName,
+        projectId: master.projectId, projectName: master.projectName,
+        departmentId: master.departmentId, department: master.department,
+        costCentre: master.costCentre, ledger: master.ledger, amountType: master.amountType,
+        accountNumber: master.accountNumber,
+        amount, maximumAmount: master.maximumAmount,
+        assignedTo: master.assignedTo, verifierId: master.verifierId, approverId: master.approverId,
+        accountsProcessorId: master.accountsProcessorId, approvalRule: matchedRule,
+      }),
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
     });
     generated++;

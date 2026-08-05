@@ -398,4 +398,107 @@ export function maskAccount(value?: string) {
   if (!value) return '';
   return value.length <= 4 ? value : `${'•'.repeat(Math.min(8, value.length - 4))}${value.slice(-4)}`;
 }
+
+/**
+ * Finds the applicable approval rule for an amount/category/project combination.
+ * Shared by manual "generate now" actions (master-form-page, master-detail-page),
+ * the automated daily generation route, and manual payment creation so the same
+ * payment amount always resolves to the same approval path regardless of where
+ * the obligation was created from.
+ */
+export function matchApprovalRule(
+  rules: ApprovalRule[],
+  params: { amount: number; category?: string; projectId?: string; projectName?: string },
+): ApprovalRule | undefined {
+  return rules.find(rule =>
+    rule.active &&
+    params.amount >= Number(rule.minAmount || 0) &&
+    params.amount <= (rule.maxAmount == null ? Number.POSITIVE_INFINITY : Number(rule.maxAmount)) &&
+    (!rule.category || rule.category === params.category) &&
+    (!rule.project || rule.project === params.projectId || rule.project === params.projectName));
+}
+
+export interface GeneratedObligationInput {
+  organizationId: string;
+  masterId: string;
+  cycle: RecurringCycle;
+  generatedAutomatically: boolean;
+  title: string;
+  category: string;
+  vendorName: string;
+  branchId?: string;
+  branchName?: string;
+  projectId?: string;
+  projectName?: string;
+  departmentId?: string;
+  department?: string;
+  costCentre?: string;
+  ledger?: string;
+  amountType?: RecurringPaymentMaster['amountType'];
+  description?: string;
+  accountNumber?: string;
+  amount: number;
+  maximumAmount?: number;
+  assignedTo?: string;
+  verifierId?: string;
+  approverId?: string;
+  accountsProcessorId?: string;
+  approvalRule?: ApprovalRule;
+}
+
+/**
+ * Builds the full set of `PaymentObligation` fields generated from a recurring master for a
+ * given billing cycle. Used by the manual "generate now" actions and the automated daily
+ * generation route so both paths always produce an obligation with the same shape — the
+ * caller only needs to add `createdAt`/`updatedAt`, since the client SDK (`serverTimestamp()`)
+ * and firebase-admin SDK (`FieldValue.serverTimestamp()`) use different timestamp helpers.
+ */
+export function buildPaymentObligationFields(input: GeneratedObligationInput) {
+  const { cycle, approvalRule } = input;
+  return {
+    organizationId: input.organizationId,
+    masterId: input.masterId,
+    cycleKey: `${input.organizationId}_${input.masterId}_${cycle.key}`,
+    sourceType: 'Recurring' as const,
+    branchId: input.branchId || '',
+    branchName: input.branchName || '',
+    projectId: input.projectId || '',
+    projectName: input.projectName || '',
+    departmentId: input.departmentId || '',
+    department: input.department || '',
+    costCentre: input.costCentre || '',
+    ledger: input.ledger || '',
+    amountType: input.amountType,
+    title: `${input.title} — ${cycle.label}`,
+    category: input.category,
+    vendorName: input.vendorName,
+    description: input.description || '',
+    accountNumber: input.accountNumber || '',
+    billingPeriodStart: cycle.billingPeriodStart,
+    billingPeriodEnd: cycle.billingPeriodEnd,
+    dueDate: cycle.dueDate,
+    expectedAmount: input.amount,
+    maximumAmount: Number(input.maximumAmount || 0),
+    paidAmount: 0,
+    settledAmount: 0,
+    outstandingAmount: input.amount,
+    assignedTo: input.assignedTo || '',
+    verifierId: input.verifierId || '',
+    approverId: input.approverId || '',
+    accountsProcessorId: input.accountsProcessorId || '',
+    approvalRuleId: approvalRule?.id || null,
+    approvalMode: approvalRule?.mode || null,
+    approvalLevels: approvalRule?.approvers || [],
+    currentApprovalLevel: approvalRule ? 1 : 0,
+    approvalCompletedBy: [] as string[],
+    finalAccountsVerification: approvalRule?.finalAccountsVerification !== false,
+    status: 'Scheduled' as const,
+    workflowStatus: 'Scheduled' as const,
+    stage: 'Scheduled',
+    currentStepId: null,
+    assignees: [] as string[],
+    workflowHistory: [] as RecurringWorkflowHistoryEntry[],
+    generatedAutomatically: input.generatedAutomatically,
+  };
+}
   

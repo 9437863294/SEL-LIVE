@@ -228,8 +228,9 @@ export default function ManualPaymentForm() {
       const workflowSnapshot = await getDoc(
         doc(db, "workflows", "recurring-payments-workflow"),
       );
-      const workflow = (workflowSnapshot.data()?.steps ||
-        DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
+      const workflow = (workflowSnapshot.data()?.steps?.length
+        ? workflowSnapshot.data()?.steps
+        : DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
       const verificationStep =
         workflow.find((step) =>
           step.name.toLowerCase().includes("verification"),
@@ -281,7 +282,7 @@ export default function ManualPaymentForm() {
           fileType: document!.fileType,
           fileName: document!.fileName,
           fileSize: document!.fileSize,
-          version: 1 + index * 0,
+          version: index + 1,
         }));
       const status = intent === "submit" ? "Under Verification" : "Draft";
       const batch = writeBatch(db);

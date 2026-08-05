@@ -7,13 +7,12 @@ import {
   collection,
   doc,
   getDocs,
-  increment,
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   where,
-  writeBatch,
 } from "firebase/firestore";
 import {
   getDownloadURL,
@@ -87,7 +86,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useGlobalScopes } from "./use-global-scopes";
 
-type RegisterMode = "all" | "approvals";
 type Filters = {
   search: string;
   status: string;
@@ -114,11 +112,7 @@ const initialFilters: Filters = {
 };
 const finalStatuses = ["Paid", "Closed", "Cancelled", "Waived"];
 
-export default function RecurringPaymentRegister({
-  mode = "all",
-}: {
-  mode?: RegisterMode;
-}) {
+export default function RecurringPaymentRegister() {
   const router = useRouter();
   const { user, users } = useAuth();
   const { can } = useAuthorization();
@@ -178,14 +172,6 @@ export default function RecurringPaymentRegister({
     () =>
       normalized
         .filter((p) => {
-          if (
-            mode === "approvals" &&
-            !(
-              p.status === "Pending Approval" ||
-              p.stage?.toLowerCase().includes("approval")
-            )
-          )
-            return false;
           if (filters.status !== "all" && p.status !== filters.status)
             return false;
           if (filters.category !== "all" && p.category !== filters.category)
@@ -218,7 +204,7 @@ export default function RecurringPaymentRegister({
             .includes(filters.search.toLowerCase());
         })
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-    [normalized, filters, mode, activeProjects, activeDepartments],
+    [normalized, filters, activeProjects, activeDepartments],
   );
   const totals = useMemo(
     () => ({
@@ -277,7 +263,7 @@ export default function RecurringPaymentRegister({
     );
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `recurring-${mode}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `recurring-payments-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -295,15 +281,9 @@ export default function RecurringPaymentRegister({
             <p className="text-xs uppercase tracking-widest text-indigo-200">
               Finance operations
             </p>
-            <h1 className="text-2xl font-bold">
-              {mode === "approvals"
-                ? "Pending Approval Queue"
-                : "Payment Obligation Register"}
-            </h1>
+            <h1 className="text-2xl font-bold">Payment Obligation Register</h1>
             <p className="text-sm text-indigo-100">
-              {mode === "approvals"
-                ? "Verified bills requiring approval action"
-                : "Controlled register with workflow, documents, transactions and audit history"}
+              Controlled register with workflow, documents, transactions and audit history
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -311,7 +291,7 @@ export default function RecurringPaymentRegister({
               <Download className="mr-2 h-4 w-4" />
               Export register
             </Button>
-            {mode === "all" && can("Add", "Recurring Payments.Payments") && (
+            {can("Add", "Recurring Payments.Payments") && (
               <Link href="/recurring-payments/payments/new">
                 <Button className="bg-white text-indigo-900 hover:bg-indigo-50">
                   <Plus className="mr-2 h-4 w-4" />
@@ -466,11 +446,7 @@ export default function RecurringPaymentRegister({
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle>
-            {mode === "approvals"
-              ? "Bills awaiting approval"
-              : "All payment obligations"}
-          </CardTitle>
+          <CardTitle>All payment obligations</CardTitle>
           <CardDescription>{rows.length} matching record(s)</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -943,66 +919,69 @@ function TransactionDialog({
       }
       const appliedAmount =
         amount + tdsAmount + deductionAmount + adjustmentAmount;
-      const billAmount = payment.billAmount || payment.expectedAmount;
-      const newSettled =
-        (payment.settledAmount || payment.paidAmount) + appliedAmount;
-      const newStatus = newSettled >= billAmount ? "Paid" : "Partially Paid";
-      const batch = writeBatch(db);
+      const paymentDate = form.get("paymentDate");
+      const mode = form.get("mode");
+      const paymentRef = doc(db, RP_COLLECTIONS.payments, payment.id);
       const txRef = doc(txCollection);
-      batch.set(txRef, {
-        organizationId: payment.organizationId,
-        paymentId: payment.id,
-        paymentDate: form.get("paymentDate"),
-        amount,
-        mode: form.get("mode"),
-        bankAccount: form.get("bankAccount") || "",
-        transactionReference,
-        chequeNumber: form.get("chequeNumber") || "",
-        tdsAmount,
-        gstAmount,
-        deductionAmount,
-        adjustmentAmount,
-        remarks: form.get("remarks") || "",
-        receiptUrl,
-        paidBy: user.id,
-        paidByName: user.name,
-        createdAt: serverTimestamp(),
-      });
-      batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), {
-        paidAmount: increment(amount),
-        settledAmount: increment(appliedAmount),
-        outstandingAmount: Math.max(0, billAmount - newSettled),
-        status: newStatus,
-        paymentDate: form.get("paymentDate"),
-        transactionReference,
-        updatedAt: serverTimestamp(),
-      });
-      batch.set(
-        doc(
-          collection(
-            db,
-            RP_COLLECTIONS.payments,
-            payment.id,
-            RP_COLLECTIONS.auditLogs,
-          ),
+      const auditRef = doc(
+        collection(
+          db,
+          RP_COLLECTIONS.payments,
+          payment.id,
+          RP_COLLECTIONS.auditLogs,
         ),
-        {
-          organizationId: payment.organizationId,
+      );
+      // Read the payment inside the transaction so settledAmount/status/outstandingAmount
+      // are derived from a fresh value, not the possibly-stale `payment` prop — otherwise two
+      // near-simultaneous transactions could leave the totals and status out of sync.
+      const newStatus = await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(paymentRef);
+        if (!snapshot.exists()) throw new Error("Payment no longer exists.");
+        const current = { id: snapshot.id, ...snapshot.data() } as PaymentObligation;
+        const billAmount = current.billAmount || current.expectedAmount;
+        const newSettled =
+          (current.settledAmount || current.paidAmount || 0) + appliedAmount;
+        const newStatus: "Paid" | "Partially Paid" = newSettled >= billAmount ? "Paid" : "Partially Paid";
+        transaction.set(txRef, {
+          organizationId: current.organizationId,
+          paymentId: payment.id,
+          paymentDate,
+          amount,
+          mode,
+          bankAccount: form.get("bankAccount") || "",
+          transactionReference,
+          chequeNumber: form.get("chequeNumber") || "",
+          tdsAmount,
+          gstAmount,
+          deductionAmount,
+          adjustmentAmount,
+          remarks: form.get("remarks") || "",
+          receiptUrl,
+          paidBy: user.id,
+          paidByName: user.name,
+          createdAt: serverTimestamp(),
+        });
+        transaction.update(paymentRef, {
+          paidAmount: (current.paidAmount || 0) + amount,
+          settledAmount: newSettled,
+          outstandingAmount: Math.max(0, billAmount - newSettled),
+          status: newStatus,
+          paymentDate,
+          transactionReference,
+          updatedAt: serverTimestamp(),
+        });
+        transaction.set(auditRef, {
+          organizationId: current.organizationId,
           paymentId: payment.id,
           action: "Payment transaction recorded",
-          summary: `${currency(amount)} via ${form.get("mode")} (${transactionReference})`,
+          summary: `${currency(amount)} via ${mode} (${transactionReference})`,
           userId: user.id,
           userName: user.name,
-          metadata: {
-            amount,
-            appliedAmount,
-            mode: form.get("mode"),
-            transactionReference,
-          },
+          metadata: { amount, appliedAmount, mode, transactionReference },
           createdAt: serverTimestamp(),
-        },
-      );
-      await batch.commit();
+        });
+        return newStatus;
+      });
       toast({
         title: "Payment transaction recorded",
         description:

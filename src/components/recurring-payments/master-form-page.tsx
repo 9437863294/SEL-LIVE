@@ -34,8 +34,10 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
+  buildPaymentObligationFields,
   buildRecurringCycle,
   DEFAULT_PAYMENT_CATEGORIES,
+  matchApprovalRule,
   type ApprovalRule,
   type RecurringPaymentMaster,
   RP_COLLECTIONS,
@@ -244,19 +246,12 @@ export default function RecurringMasterFormPage({
       const owner = users.find((item) => item.id === draft.assignedTo);
       const status: RecurringPaymentMaster["status"] =
         intent === "draft" ? "Draft" : "Active";
-      const approvalRule = rules.find(
-        (rule) =>
-          rule.active &&
-          Number(draft.amount || 0) >= Number(rule.minAmount || 0) &&
-          Number(draft.amount || 0) <=
-            (rule.maxAmount == null
-              ? Number.POSITIVE_INFINITY
-              : Number(rule.maxAmount)) &&
-          (!rule.category || rule.category === draft.category) &&
-          (!rule.project ||
-            rule.project === draft.projectId ||
-            rule.project === draft.projectName),
-      );
+      const approvalRule = matchApprovalRule(rules, {
+        amount: Number(draft.amount || 0),
+        category: draft.category,
+        projectId: draft.projectId,
+        projectName: draft.projectName,
+      });
       const payload = {
         ...draft,
         id: undefined,
@@ -327,44 +322,33 @@ export default function RecurringMasterFormPage({
           batch.set(
             paymentRef,
             {
-              organizationId,
-              masterId: masterRef.id,
-              cycleKey,
-              sourceType: "Recurring",
-              title: `${draft.title} — ${cycle.label}`,
-              category: draft.category,
-              vendorName: draft.vendorName,
-              branchName: draft.branchName || "",
-              projectId: draft.projectId || "",
-              projectName: draft.projectName || "",
-              departmentId: draft.departmentId || "",
-              department: draft.department || "",
-              description: draft.description || "",
-              billingPeriodStart: cycle.billingPeriodStart,
-              billingPeriodEnd: cycle.billingPeriodEnd,
-              dueDate: cycle.dueDate,
-              expectedAmount: Number(draft.amount || 0),
-              maximumAmount: Number(draft.maximumAmount || 0),
-              paidAmount: 0,
-              settledAmount: 0,
-              outstandingAmount: Number(draft.amount || 0),
-              assignedTo: draft.assignedTo,
-              verifierId: draft.verifierId || "",
-              approverId: draft.approverId || "",
-              accountsProcessorId: draft.accountsProcessorId || "",
-              approvalRuleId: approvalRule?.id || null,
-              approvalMode: approvalRule?.mode || null,
-              approvalLevels: approvalRule?.approvers || [],
-              currentApprovalLevel: approvalRule ? 1 : 0,
-              approvalCompletedBy: [],
-              finalAccountsVerification:
-                approvalRule?.finalAccountsVerification !== false,
-              status: "Scheduled",
-              workflowStatus: "Scheduled",
-              stage: "Scheduled",
-              currentStepId: null,
-              assignees: [],
-              generatedAutomatically: false,
+              ...buildPaymentObligationFields({
+                organizationId,
+                masterId: masterRef.id,
+                cycle,
+                generatedAutomatically: false,
+                title: draft.title!,
+                category: draft.category!,
+                vendorName: draft.vendorName!,
+                branchId: draft.branchId,
+                branchName: draft.branchName,
+                projectId: draft.projectId,
+                projectName: draft.projectName,
+                departmentId: draft.departmentId,
+                department: draft.department,
+                costCentre: draft.costCentre,
+                ledger: draft.ledger,
+                amountType: draft.amountType,
+                description: draft.description,
+                accountNumber: draft.accountNumber,
+                amount: Number(draft.amount || 0),
+                maximumAmount: Number(draft.maximumAmount || 0),
+                assignedTo: draft.assignedTo,
+                verifierId: draft.verifierId,
+                approverId: draft.approverId,
+                accountsProcessorId: draft.accountsProcessorId,
+                approvalRule,
+              }),
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             },

@@ -7,9 +7,12 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
+  FileBarChart2,
+  GanttChart,
   Plus,
   ShieldAlert,
   ShoppingCart,
+  Table2,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -51,6 +54,7 @@ import {
 } from "@/lib/purchase-orders";
 import PoWorkplanCalendar from "@/components/project-management/po-calendar";
 import PoReports, { type PoBoqItemLite } from "@/components/project-management/po-reports";
+import PoGanttChart from "@/components/project-management/po-gantt";
 
 type ProjectMapping = {
   id: string;
@@ -215,14 +219,36 @@ export default function ProjectPurchaseOrdersPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="list" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="list">List</TabsTrigger>
-          <TabsTrigger value="calendar">Workplan Calendar</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
+      <Tabs defaultValue="list" orientation="vertical" className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+        <TabsList className="flex h-auto flex-row gap-1 overflow-x-auto bg-transparent p-0 lg:w-52 lg:shrink-0 lg:flex-col lg:items-stretch lg:overflow-visible">
+          <TabsTrigger
+            value="list"
+            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-none lg:w-full"
+          >
+            <Table2 className="h-4 w-4" /> List
+          </TabsTrigger>
+          <TabsTrigger
+            value="calendar"
+            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-none lg:w-full"
+          >
+            <CalendarDays className="h-4 w-4" /> Workplan Calendar
+          </TabsTrigger>
+          <TabsTrigger
+            value="gantt"
+            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-none lg:w-full"
+          >
+            <GanttChart className="h-4 w-4" /> Gantt Chart
+          </TabsTrigger>
+          <TabsTrigger
+            value="reports"
+            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-none lg:w-full"
+          >
+            <FileBarChart2 className="h-4 w-4" /> Reports
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="list">
+        <div className="min-w-0 flex-1 space-y-4">
+        <TabsContent value="list" className="mt-0">
           <Card className="overflow-hidden border-border/60">
             <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
             <CardHeader>
@@ -277,7 +303,7 @@ export default function ProjectPurchaseOrdersPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="calendar">
+        <TabsContent value="calendar" className="mt-0">
           {purchaseOrders.length ? (
             <PoWorkplanCalendar purchaseOrders={purchaseOrders} onSelectPo={goToPo} />
           ) : (
@@ -290,9 +316,22 @@ export default function ProjectPurchaseOrdersPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="reports">
+        <TabsContent value="gantt" className="mt-0">
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Purchase Order Gantt Chart</CardTitle>
+              <CardDescription>Each row is a purchase order; the bar spans its start to end date.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PoGanttChart purchaseOrders={purchaseOrders} onSelectPo={goToPo} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="reports" className="mt-0">
           <PoReports purchaseOrders={purchaseOrders} boqItemsById={boqItemsById} onSelectPo={goToPo} />
         </TabsContent>
+        </div>
       </Tabs>
     </main>
   );

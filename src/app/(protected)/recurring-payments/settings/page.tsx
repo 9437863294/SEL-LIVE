@@ -1,2 +1,2 @@
-import RecurringPaymentsWorkspace from '@/components/recurring-payments/workspace';
-export default function Page(){return <RecurringPaymentsWorkspace view="settings"/>}
+import RecurringSettingsRoutePage from '@/components/recurring-payments/settings-route-page';
+export default function Page(){return <RecurringSettingsRoutePage tab="approvals"/>}

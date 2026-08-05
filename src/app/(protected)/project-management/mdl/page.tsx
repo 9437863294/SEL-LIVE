@@ -5,13 +5,19 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  ArrowUpDown,
   CalendarDays,
+  FileBarChart2,
   FileStack,
+  GanttChart,
+  ListPlus,
   Loader2,
   Paperclip,
   Pencil,
   Plus,
+  Search,
   ShieldAlert,
+  Table2,
 } from "lucide-react";
 import {
   collection,
@@ -20,9 +26,11 @@ import {
   getDocs,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
@@ -43,8 +51,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -53,6 +63,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { CheckedState } from "@radix-ui/react-checkbox";
 import {
   Table,
   TableBody,
@@ -86,6 +97,7 @@ import {
 } from "@/lib/mdl";
 import MdlWorkplanCalendar from "@/components/project-management/mdl-calendar";
 import MdlReports from "@/components/project-management/mdl-reports";
+import MdlGanttChart from "@/components/project-management/mdl-gantt";
 
 type ProjectMapping = {
   id: string;
@@ -97,6 +109,7 @@ type ProjectMapping = {
 type BoqItem = {
   id: string;
   "BOQ SL No"?: string | number;
+  "ERP SL NO"?: string | number;
   Description?: string;
   "Scope 1"?: string;
   MDL?: string;
@@ -136,7 +149,7 @@ export default function MdlPage() {
   const canEdit = can("Edit", MDL_PERMISSION_RESOURCE);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
-  const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
   const [drawings, setDrawings] = useState<Record<string, MdlDrawing>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -144,6 +157,17 @@ export default function MdlPage() {
   const [form, setForm] = useState<EditForm>(emptyForm());
   const [pendingFiles, setPendingFiles] = useState<Partial<Record<MdlRevisionRound, File>>>({});
   const [visibleRounds, setVisibleRounds] = useState(1);
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [addSearch, setAddSearch] = useState("");
+  const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
+  const [isAddingToMdl, setIsAddingToMdl] = useState(false);
+  const [addFilters, setAddFilters] = useState<{ "Scope 1": string; "Scope 2": string; "Category 1": string }>({
+    "Scope 1": "all",
+    "Scope 2": "all",
+    "Category 1": "all",
+  });
+  const [addSortKey, setAddSortKey] = useState<"boqSlNo" | "erpSlNo" | "description" | null>(null);
+  const [addSortDirection, setAddSortDirection] = useState<"asc" | "desc">("asc");
 
   const loadData = useCallback(async () => {
     if (!mappingId) {
@@ -162,15 +186,8 @@ export default function MdlPage() {
         getDocs(collection(db, "projects", mappingData.globalProjectId, MDL_COLLECTION)),
       ]);
 
-      const mdlItems = boqSnapshot.docs
-        .map((d) => ({ id: d.id, ...d.data() }) as BoqItem)
-        .filter((item) => String(item.MDL ?? "").trim().toLowerCase() === "yes")
-        .sort((a, b) =>
-          String(a["BOQ SL No"] ?? "").localeCompare(String(b["BOQ SL No"] ?? ""), undefined, { numeric: true }),
-        );
-
       setMapping(mappingData);
-      setBoqItems(mdlItems);
+      setAllBoqItems(boqSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as BoqItem));
       setDrawings(
         Object.fromEntries(drawingSnapshot.docs.map((d) => [d.id, { id: d.id, ...d.data() } as MdlDrawing])),
       );
@@ -194,6 +211,91 @@ export default function MdlPage() {
     }
     void loadData();
   }, [canView, isAuthLoading, loadData]);
+
+  const sortByBoqSlNo = (a: BoqItem, b: BoqItem) =>
+    String(a["BOQ SL No"] ?? "").localeCompare(String(b["BOQ SL No"] ?? ""), undefined, { numeric: true });
+
+  const boqItems = useMemo(
+    () => allBoqItems.filter((item) => String(item.MDL ?? "").trim().toLowerCase() === "yes").sort(sortByBoqSlNo),
+    [allBoqItems],
+  );
+
+  const availableBoqItems = useMemo(
+    () => allBoqItems.filter((item) => String(item.MDL ?? "").trim().toLowerCase() !== "yes").sort(sortByBoqSlNo),
+    [allBoqItems],
+  );
+
+  const addFilterOptions = useMemo(() => {
+    let base = [...availableBoqItems];
+    const scope1Options = [...new Set(base.map((i) => String(i["Scope 1"] ?? "")).filter(Boolean))];
+    if (addFilters["Scope 1"] !== "all") base = base.filter((i) => String(i["Scope 1"] ?? "") === addFilters["Scope 1"]);
+    const scope2Options = [...new Set(base.map((i) => String(i["Scope 2"] ?? "")).filter(Boolean))];
+    if (addFilters["Scope 2"] !== "all") base = base.filter((i) => String(i["Scope 2"] ?? "") === addFilters["Scope 2"]);
+    const category1Options = [...new Set(base.map((i) => String(i["Category 1"] ?? "")).filter(Boolean))];
+    return { "Scope 1": scope1Options, "Scope 2": scope2Options, "Category 1": category1Options };
+  }, [availableBoqItems, addFilters]);
+
+  const handleAddFilterChange = (key: keyof typeof addFilters, value: string) => {
+    setAddFilters((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "Scope 1") {
+        next["Scope 2"] = "all";
+        next["Category 1"] = "all";
+      }
+      if (key === "Scope 2") next["Category 1"] = "all";
+      return next;
+    });
+    setSelectedToAdd(new Set());
+  };
+
+  const filteredAvailableBoqItems = useMemo(() => {
+    const query = addSearch.trim().toLowerCase();
+    let items = availableBoqItems.filter((item) => {
+      const scope1Match = addFilters["Scope 1"] === "all" || String(item["Scope 1"] ?? "") === addFilters["Scope 1"];
+      const scope2Match = addFilters["Scope 2"] === "all" || String(item["Scope 2"] ?? "") === addFilters["Scope 2"];
+      const category1Match = addFilters["Category 1"] === "all" || String(item["Category 1"] ?? "") === addFilters["Category 1"];
+      if (!(scope1Match && scope2Match && category1Match)) return false;
+      if (!query) return true;
+      return [item["BOQ SL No"], item["ERP SL NO"], item.Description, item["Scope 1"]].some((value) =>
+        String(value ?? "").toLowerCase().includes(query),
+      );
+    });
+
+    if (addSortKey) {
+      const dir = addSortDirection === "asc" ? 1 : -1;
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+      const valueFor = (item: BoqItem) => {
+        if (addSortKey === "boqSlNo") return item["BOQ SL No"];
+        if (addSortKey === "erpSlNo") return item["ERP SL NO"];
+        return item.Description;
+      };
+      items = [...items].sort((a, b) => collator.compare(String(valueFor(a) ?? ""), String(valueFor(b) ?? "")) * dir);
+    }
+
+    return items;
+  }, [availableBoqItems, addSearch, addFilters, addSortKey, addSortDirection]);
+
+  const addAllVisibleSelected = filteredAvailableBoqItems.length > 0 && filteredAvailableBoqItems.every((item) => selectedToAdd.has(item.id));
+  const addNoneVisibleSelected = filteredAvailableBoqItems.every((item) => !selectedToAdd.has(item.id));
+  const addSelectAllState: CheckedState = addAllVisibleSelected ? true : addNoneVisibleSelected ? false : "indeterminate";
+
+  const handleSelectAllToAdd = (checked: CheckedState) => {
+    setSelectedToAdd((current) => {
+      const next = new Set(current);
+      if (checked) filteredAvailableBoqItems.forEach((item) => next.add(item.id));
+      else filteredAvailableBoqItems.forEach((item) => next.delete(item.id));
+      return next;
+    });
+  };
+
+  const toggleAddSort = (key: "erpSlNo" | "boqSlNo" | "description") => {
+    if (addSortKey === key) {
+      setAddSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+    } else {
+      setAddSortKey(key);
+      setAddSortDirection("asc");
+    }
+  };
 
   const groups = useMemo(() => {
     const map = new Map<string, BoqItem[]>();
@@ -233,8 +335,39 @@ export default function MdlPage() {
   };
 
   const handleSelectMdlItem = (boqItemId: string) => {
-    const item = boqItems.find((candidate) => candidate.id === boqItemId);
+    const item = allBoqItems.find((candidate) => candidate.id === boqItemId);
     if (item) openEditDialog(item);
+  };
+
+  const toggleSelectedToAdd = (itemId: string, checked: boolean) => {
+    setSelectedToAdd((current) => {
+      const next = new Set(current);
+      if (checked) next.add(itemId);
+      else next.delete(itemId);
+      return next;
+    });
+  };
+
+  const handleMarkSelectedAsMdl = async () => {
+    if (!mapping || !selectedToAdd.size) return;
+    setIsAddingToMdl(true);
+    try {
+      await Promise.all(
+        Array.from(selectedToAdd).map((itemId) =>
+          updateDoc(doc(db, "projects", mapping.globalProjectId, "boqItems", itemId), { MDL: "Yes" }),
+        ),
+      );
+      toast({ title: `Marked ${selectedToAdd.size} item${selectedToAdd.size === 1 ? "" : "s"} as MDL required` });
+      setSelectedToAdd(new Set());
+      setAddSearch("");
+      setIsAddDialogOpen(false);
+      await loadData();
+    } catch (error) {
+      console.error("Failed to mark BOQ items for MDL:", error);
+      toast({ title: "Unable to update items", variant: "destructive" });
+    } finally {
+      setIsAddingToMdl(false);
+    }
   };
 
   const updateRevision = (round: MdlRevisionRound, changes: Partial<MdlRevision>) => {
@@ -362,31 +495,60 @@ export default function MdlPage() {
 
   return (
     <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-sm">
-          <FileStack className="h-5 w-5 text-white" />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+          </Button>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-sm">
+            <FileStack className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">MDL — Master Drawing List</h1>
+            <p className="text-sm text-muted-foreground">
+              Tracks drawing submission &amp; approval for every BOQ item marked MDL = Yes in {mapping.projectName}.
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold">MDL — Master Drawing List</h1>
-          <p className="text-sm text-muted-foreground">
-            Tracks drawing submission &amp; approval for every BOQ item marked MDL = Yes in {mapping.projectName}.
-          </p>
-        </div>
+        {canEdit && (
+          <Button onClick={() => setIsAddDialogOpen(true)}>
+            <ListPlus className="mr-2 h-4 w-4" /> Add BOQ Item
+          </Button>
+        )}
       </div>
 
-      <Tabs defaultValue="register" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="register">Register</TabsTrigger>
-          <TabsTrigger value="calendar">Workplan Calendar</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
+      <Tabs defaultValue="register" orientation="vertical" className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+        <TabsList className="flex h-auto flex-row gap-1 overflow-x-auto bg-transparent p-0 lg:w-52 lg:shrink-0 lg:flex-col lg:items-stretch lg:overflow-visible">
+          <TabsTrigger
+            value="register"
+            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700 data-[state=active]:shadow-none lg:w-full"
+          >
+            <Table2 className="h-4 w-4" /> Register
+          </TabsTrigger>
+          <TabsTrigger
+            value="calendar"
+            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700 data-[state=active]:shadow-none lg:w-full"
+          >
+            <CalendarDays className="h-4 w-4" /> Workplan Calendar
+          </TabsTrigger>
+          <TabsTrigger
+            value="gantt"
+            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700 data-[state=active]:shadow-none lg:w-full"
+          >
+            <GanttChart className="h-4 w-4" /> Gantt Chart
+          </TabsTrigger>
+          <TabsTrigger
+            value="reports"
+            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700 data-[state=active]:shadow-none lg:w-full"
+          >
+            <FileBarChart2 className="h-4 w-4" /> Reports
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="register" className="space-y-5">
+        <div className="min-w-0 flex-1 space-y-4">
+        <TabsContent value="register" className="mt-0 space-y-5">
           {groups.length ? (
             groups.map(([scope, items]) => (
               <Card key={scope} className="overflow-hidden border-border/60">
@@ -401,6 +563,7 @@ export default function MdlPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-12">SL NO</TableHead>
+                          <TableHead>BOQ SL No</TableHead>
                           <TableHead>Item Description</TableHead>
                           <TableHead>Doc No.</TableHead>
                           <TableHead>Drawing No.</TableHead>
@@ -421,6 +584,7 @@ export default function MdlPage() {
                           return (
                             <TableRow key={item.id}>
                               <TableCell>{index + 1}</TableCell>
+                              <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
                               <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>
                                 {String(item.Description ?? "—")}
                               </TableCell>
@@ -483,7 +647,7 @@ export default function MdlPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="calendar">
+        <TabsContent value="calendar" className="mt-0">
           {mdlRows.length ? (
             <MdlWorkplanCalendar rows={mdlRows} onSelectItem={handleSelectMdlItem} />
           ) : (
@@ -496,16 +660,32 @@ export default function MdlPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="reports">
+        <TabsContent value="gantt" className="mt-0">
+          <Card className="border-border/60">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Drawing Gantt Chart</CardTitle>
+              <CardDescription>Each row is a drawing; the bar spans its planned start to end date.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MdlGanttChart rows={mdlRows} onSelectItem={handleSelectMdlItem} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="reports" className="mt-0">
           <MdlReports rows={mdlRows} onSelectItem={handleSelectMdlItem} />
         </TabsContent>
+        </div>
       </Tabs>
 
       <Dialog open={!!editingBoqItem} onOpenChange={(open) => !open && setEditingBoqItem(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Drawing Details</DialogTitle>
-            <DialogDescription>{editingBoqItem?.Description}</DialogDescription>
+            <DialogDescription>
+              {editingBoqItem?.["BOQ SL No"] ? `BOQ SL No ${editingBoqItem["BOQ SL No"]} · ` : ""}
+              {editingBoqItem?.Description}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
@@ -669,6 +849,130 @@ export default function MdlPage() {
             <Button onClick={() => void handleSave()} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Pencil className="mr-2 h-4 w-4" />}
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isAddDialogOpen}
+        onOpenChange={(open) => {
+          setIsAddDialogOpen(open);
+          if (!open) {
+            setSelectedToAdd(new Set());
+            setAddSearch("");
+            setAddFilters({ "Scope 1": "all", "Scope 2": "all", "Category 1": "all" });
+            setAddSortKey(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Add BOQ Item to MDL</DialogTitle>
+            <DialogDescription>
+              Select BOQ items to mark as MDL required. This only flips the MDL flag — no other item data is changed.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <div className="mb-4 flex flex-col items-center gap-2 sm:flex-row">
+              <div className="relative w-full flex-grow">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by BOQ SL No, ERP SL No, or description..."
+                  aria-label="Search BOQ items"
+                  value={addSearch}
+                  onChange={(e) => setAddSearch(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
+
+              {(["Scope 1", "Scope 2", "Category 1"] as const).map((key) => {
+                const options = addFilterOptions[key];
+                if (!options.length) return null;
+                return (
+                  <Select key={key} value={addFilters[key]} onValueChange={(value) => handleAddFilterChange(key, value)}>
+                    <SelectTrigger className="w-full sm:w-[160px]">
+                      <SelectValue placeholder={`Filter by ${key}`} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All {key}s</SelectItem>
+                      {options.map((opt) => (
+                        <SelectItem key={`${key}-${opt}`} value={opt}>
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                );
+              })}
+            </div>
+
+            <ScrollArea className="h-96 rounded-md border">
+              <div className="p-1">
+                <div className="grid grid-cols-[auto_1fr_1fr_2fr] items-center bg-muted px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                  <div className="flex w-[50px] justify-center">
+                    <Checkbox aria-label="Select all" checked={addSelectAllState} onCheckedChange={handleSelectAllToAdd} />
+                  </div>
+                  <button type="button" className="flex cursor-pointer items-center text-left" onClick={() => toggleAddSort("erpSlNo")}>
+                    ERP Sl.No.{addSortKey === "erpSlNo" && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                  </button>
+                  <button type="button" className="flex cursor-pointer items-center text-left" onClick={() => toggleAddSort("boqSlNo")}>
+                    BOQ Sl.No.{addSortKey === "boqSlNo" && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                  </button>
+                  <button type="button" className="flex cursor-pointer items-center text-left" onClick={() => toggleAddSort("description")}>
+                    Description{addSortKey === "description" && <ArrowUpDown className="ml-1 h-3 w-3" />}
+                  </button>
+                </div>
+
+                {filteredAvailableBoqItems.length ? (
+                  filteredAvailableBoqItems.map((item) => {
+                    const rowChecked = selectedToAdd.has(item.id);
+                    return (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "grid grid-cols-[auto_1fr_1fr_2fr] items-center border-b p-2 last:border-b-0",
+                          rowChecked ? "bg-muted" : "hover:bg-muted/50",
+                        )}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleSelectedToAdd(item.id, !rowChecked)}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            toggleSelectedToAdd(item.id, !rowChecked);
+                          }
+                        }}
+                      >
+                        <div className="flex w-[50px] justify-center">
+                          <Checkbox
+                            aria-label={`Select ${String(item.Description ?? item["BOQ SL No"] ?? "item")}`}
+                            checked={rowChecked}
+                            onCheckedChange={(state) => toggleSelectedToAdd(item.id, state === true)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                        <div className="truncate pr-2">{String(item["ERP SL NO"] ?? "—")}</div>
+                        <div className="truncate pr-2">{String(item["BOQ SL No"] ?? "—")}</div>
+                        <div className="truncate pr-2">{String(item.Description ?? "Untitled item")}</div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="p-8 text-center text-muted-foreground">
+                    {availableBoqItems.length ? "No matching BOQ items." : "Every BOQ item is already marked MDL required."}
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <Button onClick={() => void handleMarkSelectedAsMdl()} disabled={!selectedToAdd.size || isAddingToMdl}>
+              {isAddingToMdl ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListPlus className="mr-2 h-4 w-4" />}
+              Mark {selectedToAdd.size} Selected Item{selectedToAdd.size === 1 ? "" : "s"}
             </Button>
           </DialogFooter>
         </DialogContent>
