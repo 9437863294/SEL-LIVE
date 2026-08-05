@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  CalendarDays,
   FileStack,
   Loader2,
   Paperclip,
@@ -61,6 +62,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   MDL_COLLECTION,
   MDL_OVERALL_STATUSES,
@@ -71,6 +73,7 @@ import {
   emptyRevisions,
   formatMdlDate,
   getLatestRevision,
+  isMdlOverdue,
   isRevisionRejected,
   mdlOverallStatusStyles,
   mdlRevisionStatusStyles,
@@ -79,7 +82,10 @@ import {
   type MdlRevision,
   type MdlRevisionRound,
   type MdlRevisionStatus,
+  type MdlRow,
 } from "@/lib/mdl";
+import MdlWorkplanCalendar from "@/components/project-management/mdl-calendar";
+import MdlReports from "@/components/project-management/mdl-reports";
 
 type ProjectMapping = {
   id: string;
@@ -100,7 +106,8 @@ type BoqItem = {
 type EditForm = {
   docNo: string;
   drawingNo: string;
-  plannedDate: string;
+  plannedStartDate: string;
+  plannedEndDate: string;
   revisions: MdlRevision[];
   approveDate: string;
   status: MdlOverallStatus;
@@ -110,7 +117,8 @@ type EditForm = {
 const emptyForm = (): EditForm => ({
   docNo: "",
   drawingNo: "",
-  plannedDate: "",
+  plannedStartDate: "",
+  plannedEndDate: "",
   revisions: emptyRevisions(),
   approveDate: "",
   status: "Pending",
@@ -196,6 +204,11 @@ export default function MdlPage() {
     return Array.from(map.entries());
   }, [boqItems]);
 
+  const mdlRows = useMemo<MdlRow[]>(
+    () => boqItems.map((item) => ({ item, drawing: drawings[item.id] })),
+    [boqItems, drawings],
+  );
+
   const openEditDialog = (item: BoqItem) => {
     const existing = drawings[item.id];
     const revisions =
@@ -205,7 +218,8 @@ export default function MdlPage() {
         ? {
             docNo: existing.docNo ?? "",
             drawingNo: existing.drawingNo ?? "",
-            plannedDate: existing.plannedDate ?? "",
+            plannedStartDate: existing.plannedStartDate ?? "",
+            plannedEndDate: existing.plannedEndDate ?? "",
             revisions,
             approveDate: existing.approveDate ?? "",
             status: existing.status ?? "Pending",
@@ -218,6 +232,11 @@ export default function MdlPage() {
     setEditingBoqItem(item);
   };
 
+  const handleSelectMdlItem = (boqItemId: string) => {
+    const item = boqItems.find((candidate) => candidate.id === boqItemId);
+    if (item) openEditDialog(item);
+  };
+
   const updateRevision = (round: MdlRevisionRound, changes: Partial<MdlRevision>) => {
     setForm((current) => ({
       ...current,
@@ -227,6 +246,23 @@ export default function MdlPage() {
 
   const handleSave = async () => {
     if (!mapping || !user || !editingBoqItem) return;
+
+    if (!form.plannedStartDate || !form.plannedEndDate) {
+      toast({
+        title: "Planned dates are required",
+        description: "Set both the planned start and end date before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (form.plannedEndDate < form.plannedStartDate) {
+      toast({
+        title: "Check the planned dates",
+        description: "Planned end date cannot be before the planned start date.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const missingUpload = form.revisions
       .slice(0, visibleRounds)
@@ -260,7 +296,8 @@ export default function MdlPage() {
         boqSlNo: String(editingBoqItem["BOQ SL No"] ?? ""),
         docNo: form.docNo.trim(),
         drawingNo: form.drawingNo.trim(),
-        plannedDate: form.plannedDate,
+        plannedStartDate: form.plannedStartDate,
+        plannedEndDate: form.plannedEndDate,
         revisions,
         approveDate: form.approveDate,
         status: form.status,
@@ -342,88 +379,127 @@ export default function MdlPage() {
         </div>
       </div>
 
-      {groups.length ? (
-        groups.map(([scope, items]) => (
-          <Card key={scope} className="overflow-hidden border-border/60">
-            <div className="h-1 w-full bg-gradient-to-r from-sky-500 to-blue-600" />
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{scope}</CardTitle>
-              <CardDescription>{items.length} drawing{items.length === 1 ? "" : "s"}</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">SL NO</TableHead>
-                      <TableHead>Item Description</TableHead>
-                      <TableHead>Doc No.</TableHead>
-                      <TableHead>Drawing No.</TableHead>
-                      <TableHead>Planned Date</TableHead>
-                      <TableHead>Current Stage</TableHead>
-                      <TableHead>Approve Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Remark</TableHead>
-                      <TableHead className="w-12" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((item, index) => {
-                      const drawing = drawings[item.id];
-                      const latest = drawing ? getLatestRevision(drawing.revisions ?? []) : null;
-                      return (
-                        <TableRow key={item.id}>
-                          <TableCell>{index + 1}</TableCell>
-                          <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>
-                            {String(item.Description ?? "—")}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{drawing?.docNo || "—"}</TableCell>
-                          <TableCell className="max-w-xs truncate" title={drawing?.drawingNo}>{drawing?.drawingNo || "—"}</TableCell>
-                          <TableCell className="whitespace-nowrap">{formatMdlDate(drawing?.plannedDate)}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {latest ? (
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${latest.status ? mdlRevisionStatusStyles[latest.status] : "bg-muted text-muted-foreground"}`}>
-                                {latest.round}{latest.status ? ` · ${latest.status}` : ""}
-                              </span>
-                            ) : "—"}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{formatMdlDate(drawing?.approveDate)}</TableCell>
-                          <TableCell>
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[drawing?.status ?? "Pending"]}`}>
-                              {drawing?.status ?? "Pending"}
-                            </span>
-                          </TableCell>
-                          <TableCell className="max-w-xs truncate" title={drawing?.remark}>{drawing?.remark || "—"}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" onClick={() => openEditDialog(item)} disabled={!canEdit} aria-label={`Edit ${item.Description}`}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
+      <Tabs defaultValue="register" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="register">Register</TabsTrigger>
+          <TabsTrigger value="calendar">Workplan Calendar</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="register" className="space-y-5">
+          {groups.length ? (
+            groups.map(([scope, items]) => (
+              <Card key={scope} className="overflow-hidden border-border/60">
+                <div className="h-1 w-full bg-gradient-to-r from-sky-500 to-blue-600" />
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">{scope}</CardTitle>
+                  <CardDescription>{items.length} drawing{items.length === 1 ? "" : "s"}</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">SL NO</TableHead>
+                          <TableHead>Item Description</TableHead>
+                          <TableHead>Doc No.</TableHead>
+                          <TableHead>Drawing No.</TableHead>
+                          <TableHead>Planned Start</TableHead>
+                          <TableHead>Planned End</TableHead>
+                          <TableHead>Current Stage</TableHead>
+                          <TableHead>Approve Date</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Remark</TableHead>
+                          <TableHead className="w-12" />
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        ))
-      ) : (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
-            <FileStack className="h-10 w-10 text-muted-foreground" />
-            <div>
-              <p className="font-medium">No MDL items yet</p>
-              <p className="text-sm text-muted-foreground">
-                Mark a BOQ item&apos;s MDL field as &quot;Yes&quot; and it will appear here automatically.
-              </p>
-            </div>
-            <Button variant="outline" asChild>
-              <Link href={`/project-management/boq/costing?project=${encodeURIComponent(mappingId)}`}>Open BOQ</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((item, index) => {
+                          const drawing = drawings[item.id];
+                          const latest = drawing ? getLatestRevision(drawing.revisions ?? []) : null;
+                          const overdue = isMdlOverdue(drawing);
+                          return (
+                            <TableRow key={item.id}>
+                              <TableCell>{index + 1}</TableCell>
+                              <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>
+                                {String(item.Description ?? "—")}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">{drawing?.docNo || "—"}</TableCell>
+                              <TableCell className="max-w-xs truncate" title={drawing?.drawingNo}>{drawing?.drawingNo || "—"}</TableCell>
+                              <TableCell className="whitespace-nowrap">{formatMdlDate(drawing?.plannedStartDate)}</TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                <span className={overdue ? "font-medium text-red-600" : ""}>
+                                  {formatMdlDate(drawing?.plannedEndDate)}
+                                </span>
+                                {overdue && (
+                                  <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                                    Overdue
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {latest ? (
+                                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${latest.status ? mdlRevisionStatusStyles[latest.status] : "bg-muted text-muted-foreground"}`}>
+                                    {latest.round}{latest.status ? ` · ${latest.status}` : ""}
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">{formatMdlDate(drawing?.approveDate)}</TableCell>
+                              <TableCell>
+                                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[drawing?.status ?? "Pending"]}`}>
+                                  {drawing?.status ?? "Pending"}
+                                </span>
+                              </TableCell>
+                              <TableCell className="max-w-xs truncate" title={drawing?.remark}>{drawing?.remark || "—"}</TableCell>
+                              <TableCell>
+                                <Button variant="ghost" size="icon" onClick={() => openEditDialog(item)} disabled={!canEdit} aria-label={`Edit ${item.Description}`}>
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
+                <FileStack className="h-10 w-10 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">No MDL items yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Mark a BOQ item&apos;s MDL field as &quot;Yes&quot; and it will appear here automatically.
+                  </p>
+                </div>
+                <Button variant="outline" asChild>
+                  <Link href={`/project-management/boq/costing?project=${encodeURIComponent(mappingId)}`}>Open BOQ</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="calendar">
+          {mdlRows.length ? (
+            <MdlWorkplanCalendar rows={mdlRows} onSelectItem={handleSelectMdlItem} />
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
+                <CalendarDays className="h-10 w-10 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Add drawings to the register to see them on the workplan calendar.</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="reports">
+          <MdlReports rows={mdlRows} onSelectItem={handleSelectMdlItem} />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={!!editingBoqItem} onOpenChange={(open) => !open && setEditingBoqItem(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
@@ -433,7 +509,7 @@ export default function MdlPage() {
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="doc-no">Doc No.</Label>
                 <Input id="doc-no" value={form.docNo} onChange={(e) => setForm((c) => ({ ...c, docNo: e.target.value }))} />
@@ -443,8 +519,25 @@ export default function MdlPage() {
                 <Input id="drawing-no" value={form.drawingNo} onChange={(e) => setForm((c) => ({ ...c, drawingNo: e.target.value }))} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="planned-date">Planned Date</Label>
-                <Input id="planned-date" type="date" value={form.plannedDate} onChange={(e) => setForm((c) => ({ ...c, plannedDate: e.target.value }))} />
+                <Label htmlFor="planned-start-date">Planned Start Date <span className="text-destructive">*</span></Label>
+                <Input
+                  id="planned-start-date"
+                  type="date"
+                  required
+                  value={form.plannedStartDate}
+                  onChange={(e) => setForm((c) => ({ ...c, plannedStartDate: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="planned-end-date">Planned End Date <span className="text-destructive">*</span></Label>
+                <Input
+                  id="planned-end-date"
+                  type="date"
+                  required
+                  min={form.plannedStartDate || undefined}
+                  value={form.plannedEndDate}
+                  onChange={(e) => setForm((c) => ({ ...c, plannedEndDate: e.target.value }))}
+                />
               </div>
             </div>
 

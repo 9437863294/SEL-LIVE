@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
+  CalendarDays,
   Plus,
   ShieldAlert,
   ShoppingCart,
@@ -38,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
@@ -47,6 +49,8 @@ import {
   type POStatus,
   type PurchaseOrder,
 } from "@/lib/purchase-orders";
+import PoWorkplanCalendar from "@/components/project-management/po-calendar";
+import PoReports, { type PoBoqItemLite } from "@/components/project-management/po-reports";
 
 type ProjectMapping = {
   id: string;
@@ -75,6 +79,7 @@ export default function ProjectPurchaseOrdersPage() {
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [boqItemsById, setBoqItemsById] = useState<Map<string, PoBoqItemLite>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"all" | POStatus>("all");
 
@@ -90,13 +95,17 @@ export default function ProjectPurchaseOrdersPage() {
       const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
 
-      const poSnapshot = await getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION));
+      const [poSnapshot, boqSnapshot] = await Promise.all([
+        getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
+      ]);
       const rows = poSnapshot.docs
         .map((d) => ({ id: d.id, ...d.data() }) as PurchaseOrder)
         .sort((a, b) => (b.poDate || "").localeCompare(a.poDate || ""));
 
       setMapping(mappingData);
       setPurchaseOrders(rows);
+      setBoqItemsById(new Map(boqSnapshot.docs.map((d) => [d.id, { id: d.id, ...d.data() } as PoBoqItemLite])));
     } catch (error) {
       console.error("Failed to load purchase orders:", error);
       toast({
@@ -122,6 +131,10 @@ export default function ProjectPurchaseOrdersPage() {
     () => (statusFilter === "all" ? purchaseOrders : purchaseOrders.filter((po) => po.status === statusFilter)),
     [purchaseOrders, statusFilter],
   );
+
+  const goToPo = (poId: string) => {
+    router.push(`/project-management/purchase-orders/${poId}?project=${encodeURIComponent(mappingId)}`);
+  };
 
   if (isAuthLoading || isLoading) {
     return (
@@ -202,62 +215,85 @@ export default function ProjectPurchaseOrdersPage() {
         </div>
       </div>
 
-      <Card className="overflow-hidden border-border/60">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
-        <CardHeader>
-          <CardTitle className="text-lg">All Purchase Orders</CardTitle>
-          <CardDescription>{filteredOrders.length} order{filteredOrders.length === 1 ? "" : "s"} shown.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>PO Number</TableHead>
-                  <TableHead>PO Date</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Source RFQ</TableHead>
-                  <TableHead>Items</TableHead>
-                  <TableHead>Total Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredOrders.length ? filteredOrders.map((po) => (
-                  <TableRow
-                    key={po.id}
-                    className="cursor-pointer"
-                    onClick={() => router.push(`/project-management/purchase-orders/${po.id}?project=${encodeURIComponent(mappingId)}`)}
-                  >
-                    <TableCell className="font-medium">{po.poNumber}</TableCell>
-                    <TableCell className="whitespace-nowrap">{formatDate(po.poDate)}</TableCell>
-                    <TableCell>{po.vendorName}</TableCell>
-                    <TableCell>{po.sourceRfqNumbers?.length ? po.sourceRfqNumbers.join(", ") : "—"}</TableCell>
-                    <TableCell>{po.items?.length ?? 0}</TableCell>
-                    <TableCell className="whitespace-nowrap font-medium">{formatCurrency(po.totalAmount)}</TableCell>
-                    <TableCell>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${poStatusStyles[po.status]}`}>
-                        {po.status}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                    </TableCell>
-                  </TableRow>
-                )) : (
-                  <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center">
-                      <p className="font-medium">No purchase orders found</p>
-                      <p className="mt-1 text-sm text-muted-foreground">Create one directly, or award RFQ items to a vendor.</p>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs defaultValue="list" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="list">List</TabsTrigger>
+          <TabsTrigger value="calendar">Workplan Calendar</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="list">
+          <Card className="overflow-hidden border-border/60">
+            <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
+            <CardHeader>
+              <CardTitle className="text-lg">All Purchase Orders</CardTitle>
+              <CardDescription>{filteredOrders.length} order{filteredOrders.length === 1 ? "" : "s"} shown.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>PO Number</TableHead>
+                      <TableHead>PO Date</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Source RFQ</TableHead>
+                      <TableHead>Items</TableHead>
+                      <TableHead>Total Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-10" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredOrders.length ? filteredOrders.map((po) => (
+                      <TableRow key={po.id} className="cursor-pointer" onClick={() => goToPo(po.id)}>
+                        <TableCell className="font-medium">{po.poNumber}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatDate(po.poDate)}</TableCell>
+                        <TableCell>{po.vendorName}</TableCell>
+                        <TableCell>{po.sourceRfqNumbers?.length ? po.sourceRfqNumbers.join(", ") : "—"}</TableCell>
+                        <TableCell>{po.items?.length ?? 0}</TableCell>
+                        <TableCell className="whitespace-nowrap font-medium">{formatCurrency(po.totalAmount)}</TableCell>
+                        <TableCell>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${poStatusStyles[po.status]}`}>
+                            {po.status}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        </TableCell>
+                      </TableRow>
+                    )) : (
+                      <TableRow>
+                        <TableCell colSpan={8} className="h-32 text-center">
+                          <p className="font-medium">No purchase orders found</p>
+                          <p className="mt-1 text-sm text-muted-foreground">Create one directly, or award RFQ items to a vendor.</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="calendar">
+          {purchaseOrders.length ? (
+            <PoWorkplanCalendar purchaseOrders={purchaseOrders} onSelectPo={goToPo} />
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
+                <CalendarDays className="h-10 w-10 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Create purchase orders with start/end dates to see them on the workplan calendar.</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="reports">
+          <PoReports purchaseOrders={purchaseOrders} boqItemsById={boqItemsById} onSelectPo={goToPo} />
+        </TabsContent>
+      </Tabs>
     </main>
   );
 }

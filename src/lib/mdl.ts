@@ -54,7 +54,8 @@ export interface MdlDrawing {
   boqSlNo: string;
   docNo: string;
   drawingNo: string;
-  plannedDate: string;
+  plannedStartDate: string;
+  plannedEndDate: string;
   revisions: MdlRevision[];
   approveDate: string;
   status: MdlOverallStatus;
@@ -63,6 +64,18 @@ export interface MdlDrawing {
   createdBy?: string;
   createdByName?: string;
   updatedAt?: unknown;
+}
+
+const MDL_CLOSED_STATUSES: MdlOverallStatus[] = ["Approved", "Approved with Comments"];
+
+// A drawing is overdue once its planned end date has passed without reaching an approved state.
+export function isMdlOverdue(drawing?: Pick<MdlDrawing, "plannedEndDate" | "status">, today: Date = new Date()): boolean {
+  if (!drawing?.plannedEndDate) return false;
+  if (MDL_CLOSED_STATUSES.includes(drawing.status)) return false;
+  const end = new Date(`${drawing.plannedEndDate}T00:00:00`);
+  if (Number.isNaN(end.getTime())) return false;
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return end.getTime() < startOfToday.getTime();
 }
 
 export const emptyRevisions = (): MdlRevision[] =>
@@ -112,4 +125,18 @@ export function countVisibleRevisions(revisions: MdlRevision[]): number {
     if (hasRevisionData(revisions[i])) count = Math.min(i + 2, revisions.length);
   }
   return count;
+}
+
+// Minimal shape the calendar/report views need from a BOQ item — the actual BOQ item
+// type carries many more fields, but it structurally satisfies this.
+export interface MdlBoqItem {
+  id: string;
+  Description?: string;
+  "Scope 1"?: string;
+  [key: string]: unknown;
+}
+
+export interface MdlRow {
+  item: MdlBoqItem;
+  drawing?: MdlDrawing;
 }

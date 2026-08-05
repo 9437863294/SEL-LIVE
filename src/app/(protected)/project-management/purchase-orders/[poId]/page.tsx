@@ -8,6 +8,7 @@ import {
   Ban,
   CheckCircle2,
   PackageCheck,
+  Pencil,
   ShieldAlert,
   ShoppingCart,
   Trash2,
@@ -37,6 +38,16 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Table,
   TableBody,
   TableCell,
@@ -50,6 +61,7 @@ import {
   PO_PERMISSION_RESOURCE,
   formatCurrency,
   formatQuantity,
+  isPoOverdue,
   poStatusStyles,
   type PurchaseOrder,
 } from "@/lib/purchase-orders";
@@ -82,11 +94,14 @@ export default function ProjectPurchaseOrderDetailPage() {
   const canReceive = can("Receive", PO_PERMISSION_RESOURCE);
   const canCancel = can("Cancel", PO_PERMISSION_RESOURCE);
   const canDelete = can("Delete", PO_PERMISSION_RESOURCE);
+  const canEditDates = can("Add", PO_PERMISSION_RESOURCE);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDatesDialogOpen, setIsDatesDialogOpen] = useState(false);
+  const [datesForm, setDatesForm] = useState({ startDate: "", endDate: "" });
 
   const loadPo = useCallback(async () => {
     if (!mappingId || !poId) {
@@ -122,6 +137,40 @@ export default function ProjectPurchaseOrderDetailPage() {
     }
     void loadPo();
   }, [canView, isAuthLoading, loadPo]);
+
+  const openDatesDialog = () => {
+    if (!po) return;
+    setDatesForm({ startDate: po.startDate ?? "", endDate: po.endDate ?? "" });
+    setIsDatesDialogOpen(true);
+  };
+
+  const handleSaveDates = async () => {
+    if (!mapping || !po) return;
+    if (!datesForm.startDate || !datesForm.endDate) {
+      toast({ title: "Both dates are required", variant: "destructive" });
+      return;
+    }
+    if (datesForm.endDate < datesForm.startDate) {
+      toast({ title: "End date cannot be before the start date", variant: "destructive" });
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      await updateDoc(doc(db, "projects", mapping.globalProjectId, PO_COLLECTION, po.id), {
+        startDate: datesForm.startDate,
+        endDate: datesForm.endDate,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Dates updated" });
+      setIsDatesDialogOpen(false);
+      await loadPo();
+    } catch (error) {
+      console.error("Failed to update purchase order dates:", error);
+      toast({ title: "Unable to update dates", variant: "destructive" });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const updateStatus = async (status: PurchaseOrder["status"]) => {
     if (!mapping || !po) return;
@@ -271,9 +320,25 @@ export default function ProjectPurchaseOrderDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">PO Date</p><p className="font-semibold">{formatDate(po.poDate)}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Delivery Date</p><p className="font-semibold">{formatDate(po.deliveryDate)}</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Start Date</p><p className="font-semibold">{formatDate(po.startDate)}</p></CardContent></Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">End Date</p>
+              {canEditDates && (
+                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={openDatesDialog} aria-label="Edit dates">
+                  <Pencil className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+            <p className={`font-semibold ${isPoOverdue(po) ? "text-red-600" : ""}`}>
+              {formatDate(po.endDate)}
+              {isPoOverdue(po) && <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">Overdue</span>}
+            </p>
+          </CardContent>
+        </Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Items</p><p className="font-semibold">{po.items?.length ?? 0}</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Amount</p><p className="font-semibold">{formatCurrency(po.totalAmount)}</p></CardContent></Card>
       </div>
@@ -329,6 +394,39 @@ export default function ProjectPurchaseOrderDetailPage() {
           <CheckCircle2 className="h-4 w-4" /> This purchase order has been fully received.
         </div>
       )}
+
+      <Dialog open={isDatesDialogOpen} onOpenChange={setIsDatesDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delivery Window</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="po-start-date">Start Date</Label>
+              <Input
+                id="po-start-date"
+                type="date"
+                value={datesForm.startDate}
+                onChange={(e) => setDatesForm((c) => ({ ...c, startDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="po-end-date">End Date</Label>
+              <Input
+                id="po-end-date"
+                type="date"
+                min={datesForm.startDate || undefined}
+                value={datesForm.endDate}
+                onChange={(e) => setDatesForm((c) => ({ ...c, endDate: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
+            <Button onClick={() => void handleSaveDates()} disabled={isUpdating}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

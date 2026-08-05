@@ -32,7 +32,8 @@ export interface PurchaseOrder {
   projectManagementProjectName?: string;
   projectId?: string;
   projectName?: string;
-  deliveryDate?: string;
+  startDate?: string;
+  endDate?: string;
   terms?: string;
   items: PurchaseOrderItem[];
   totalAmount: number;
@@ -73,3 +74,15 @@ export const poStatusStyles: Record<POStatus, string> = {
   Received: "bg-emerald-100 text-emerald-700",
   Cancelled: "bg-red-100 text-red-700",
 };
+
+const PO_CLOSED_STATUSES: POStatus[] = ["Received", "Cancelled"];
+
+// A PO is overdue once its planned end date has passed without being received (or cancelled).
+export function isPoOverdue(po?: Pick<PurchaseOrder, "endDate" | "status">, today: Date = new Date()): boolean {
+  if (!po?.endDate) return false;
+  if (PO_CLOSED_STATUSES.includes(po.status)) return false;
+  const end = new Date(`${po.endDate}T00:00:00`);
+  if (Number.isNaN(end.getTime())) return false;
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return end.getTime() < startOfToday.getTime();
+}

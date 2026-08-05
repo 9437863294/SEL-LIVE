@@ -161,7 +161,8 @@ export default function NewProjectPurchaseOrderPage() {
 
   const [poDate, setPoDate] = useState(today());
   const [vendorId, setVendorId] = useState("");
-  const [deliveryDate, setDeliveryDate] = useState("");
+  const [startDate, setStartDate] = useState(today());
+  const [endDate, setEndDate] = useState("");
   const [terms, setTerms] = useState("");
   const [selectedRfqItems, setSelectedRfqItems] = useState<Record<string, Selection>>({});
   const [selectedIndentItems, setSelectedIndentItems] = useState<Record<string, Selection>>({});
@@ -372,8 +373,12 @@ export default function NewProjectPurchaseOrderPage() {
       toast({ title: "Select the PO date", variant: "destructive" });
       return;
     }
-    if (deliveryDate && deliveryDate < poDate) {
-      toast({ title: "Delivery date cannot be before the PO date", variant: "destructive" });
+    if (!startDate || !endDate) {
+      toast({ title: "Start and end dates are required", variant: "destructive" });
+      return;
+    }
+    if (endDate < startDate) {
+      toast({ title: "End date cannot be before the start date", variant: "destructive" });
       return;
     }
 
@@ -481,7 +486,8 @@ export default function NewProjectPurchaseOrderPage() {
         projectManagementProjectName: mapping.projectName,
         projectId: mapping.globalProjectId,
         projectName: mapping.globalProjectName,
-        deliveryDate,
+        startDate,
+        endDate,
         terms: terms.trim(),
         items,
         totalAmount: computedTotal,
@@ -600,7 +606,7 @@ export default function NewProjectPurchaseOrderPage() {
           <CardDescription>For {mapping.projectName}. Select the vendor this purchase order is for.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
             <div className="space-y-2">
               <Label htmlFor="vendor">Vendor *</Label>
               <Select value={vendorId} onValueChange={setVendorId}>
@@ -622,8 +628,12 @@ export default function NewProjectPurchaseOrderPage() {
               <Input id="po-date" type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="delivery-date">Delivery Date</Label>
-              <Input id="delivery-date" type="date" value={deliveryDate} min={poDate || undefined} onChange={(e) => setDeliveryDate(e.target.value)} />
+              <Label htmlFor="start-date">Start Date *</Label>
+              <Input id="start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="end-date">End Date *</Label>
+              <Input id="end-date" type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
             </div>
           </div>
           <div className="mt-4 space-y-2">
