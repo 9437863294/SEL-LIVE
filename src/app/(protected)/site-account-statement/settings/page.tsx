@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { ClipboardList, Loader2, Settings, ShieldAlert, Tags } from 'lucide-react';
+import { ClipboardList, Loader2, Settings, ShieldAlert, SlidersHorizontal, Tags } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 function TabLoader() {
@@ -32,11 +32,16 @@ const TenderSetupTab = dynamic(() => import('../tender-budget/page'), {
   ssr: false,
 });
 
+const FieldControlTab = dynamic(() => import('./field-control/page'), {
+  loading: TabLoader,
+  ssr: false,
+});
+
 export default function SettingsPage() {
   return (
     <div className="space-y-4">
       <Tabs defaultValue="projects" className="space-y-4">
-        <TabsList className="h-10 grid w-full grid-cols-4 sm:inline-flex sm:w-auto">
+        <TabsList className="h-10 grid w-full grid-cols-5 sm:inline-flex sm:w-auto">
           <TabsTrigger value="projects" className="gap-1.5 text-xs sm:text-sm px-3">
             <Settings className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline">Project</span> Setup
@@ -52,6 +57,10 @@ export default function SettingsPage() {
           <TabsTrigger value="tender" className="gap-1.5 text-xs sm:text-sm px-3">
             <ClipboardList className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline">Tender</span> Setup
+          </TabsTrigger>
+          <TabsTrigger value="field-control" className="gap-1.5 text-xs sm:text-sm px-3">
+            <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">Field</span> Control
           </TabsTrigger>
         </TabsList>
 
@@ -69,6 +78,10 @@ export default function SettingsPage() {
 
         <TabsContent value="tender" className="mt-4">
           <TenderSetupTab />
+        </TabsContent>
+
+        <TabsContent value="field-control" className="mt-4">
+          <FieldControlTab />
         </TabsContent>
       </Tabs>
     </div>

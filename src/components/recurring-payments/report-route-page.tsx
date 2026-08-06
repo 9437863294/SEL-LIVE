@@ -6,6 +6,8 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
+  downloadCsv,
+  matchesScopeFilter,
   type PaymentObligation,
   RP_COLLECTIONS,
   currency,
@@ -48,12 +50,12 @@ const titles = {
     "Unpaid obligations past their due date",
   ],
   expenses: [
-    "Monthly Expense Summary",
-    "Expected, billed and paid recurring expenses",
+    "Expense Summary",
+    "Bills actually received against recurring obligations, by category and vendor",
   ],
   "cash-flow": [
     "Cash-Flow Forecast",
-    "Expected, confirmed, approved and overdue outflow",
+    "Expected, confirmed, approved and overdue outflow — including bills not yet received",
   ],
 } as const;
 export default function RecurringReportRoutePage({
@@ -61,7 +63,7 @@ export default function RecurringReportRoutePage({
 }: {
   kind: ReportKind;
 }) {
-  const { user } = useAuth();
+  const { user, users } = useAuth();
   const { can } = useAuthorization();
   const organizationId = user?.organizationId || "default";
   const { activeProjects, activeDepartments } = useGlobalScopes();
@@ -70,12 +72,15 @@ export default function RecurringReportRoutePage({
   const [filters, setFilters] = useState({
     from: "",
     to: "",
+    dateField: "dueDate" as "dueDate" | "billDate" | "paymentDate",
     category: "all",
     vendor: "all",
     status: "all",
     branch: "all",
     project: "all",
     department: "all",
+    owner: "all",
+    source: "all" as "all" | "Recurring" | "Manual",
     min: "",
     max: "",
   });
@@ -123,8 +128,13 @@ export default function RecurringReportRoutePage({
             ["Paid", "Closed", "Cancelled", "Waived"].includes(item.status)
           )
             return false;
-          if (filters.from && item.dueDate < filters.from) return false;
-          if (filters.to && item.dueDate > filters.to) return false;
+          // Expense Summary is about what's actually been billed, not what's merely scheduled —
+          // unlike Cash-Flow Forecast, exclude obligations that haven't received a bill yet.
+          if (kind === "expenses" && !item.billAmount) return false;
+          const dateValue = item[filters.dateField] as string | undefined;
+          if ((filters.from || filters.to) && !dateValue) return false;
+          if (filters.from && dateValue! < filters.from) return false;
+          if (filters.to && dateValue! > filters.to) return false;
           if (filters.category !== "all" && item.category !== filters.category)
             return false;
           if (filters.vendor !== "all" && item.vendorName !== filters.vendor)
@@ -134,20 +144,26 @@ export default function RecurringReportRoutePage({
           if (filters.branch !== "all" && item.branchName !== filters.branch)
             return false;
           if (
-            filters.project !== "all" &&
-            item.projectId !== filters.project &&
-            item.projectName !==
-              activeProjects.find((project) => project.id === filters.project)
-                ?.projectName
+            !matchesScopeFilter(
+              filters.project,
+              { id: item.projectId, name: item.projectName },
+              activeProjects.map((project) => ({ id: project.id, name: project.projectName })),
+            )
           )
             return false;
           if (
-            filters.department !== "all" &&
-            item.departmentId !== filters.department &&
-            item.department !==
-              activeDepartments.find(
-                (department) => department.id === filters.department,
-              )?.name
+            !matchesScopeFilter(
+              filters.department,
+              { id: item.departmentId, name: item.department },
+              activeDepartments.map((department) => ({ id: department.id, name: department.name })),
+            )
+          )
+            return false;
+          if (filters.owner !== "all" && item.assignedTo !== filters.owner)
+            return false;
+          if (
+            filters.source !== "all" &&
+            (item.sourceType || "Recurring") !== filters.source
           )
             return false;
           const amount = Number(item.billAmount || item.expectedAmount);
@@ -187,16 +203,22 @@ export default function RecurringReportRoutePage({
       ),
     ].sort();
   function exportCsv() {
-    const data = [
+    downloadCsv(
+      `recurring-${kind}-${today}.csv`,
       [
         "Payment ID",
         "Title",
         "Category",
         "Vendor",
+        "Owner",
+        "Source",
         "Branch",
         "Project",
         "Department",
+        "Bill No.",
         "Due Date",
+        "Bill Date",
+        "Payment Date",
         "Expected",
         "Bill",
         "Paid",
@@ -204,15 +226,20 @@ export default function RecurringReportRoutePage({
         "Status",
         "Confidence",
       ],
-      ...rows.map((item) => [
+      rows.map((item) => [
         item.id,
         item.title,
         item.category,
         item.vendorName,
+        users.find((entry) => entry.id === item.assignedTo)?.name || "",
+        item.sourceType || "Recurring",
         item.branchName || "",
         item.projectName || "",
         item.department || "",
+        item.billNumber || "",
         item.dueDate,
+        item.billDate || "",
+        item.paymentDate || "",
         item.expectedAmount,
         item.billAmount || "",
         item.paidAmount,
@@ -228,24 +255,7 @@ export default function RecurringReportRoutePage({
             ? "Fixed recurring"
             : "Estimated",
       ]),
-    ];
-    const blob = new Blob(
-      [
-        data
-          .map((row) =>
-            row
-              .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-              .join(","),
-          )
-          .join("\n"),
-      ],
-      { type: "text/csv" },
     );
-    const anchor = document.createElement("a");
-    anchor.href = URL.createObjectURL(blob);
-    anchor.download = `recurring-${kind}-${today}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(anchor.href);
   }
   if (loading)
     return (
@@ -286,23 +296,43 @@ export default function RecurringReportRoutePage({
           <CardTitle>Report filters</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Input
-            type="date"
-            value={filters.from}
-            onChange={(event) =>
+          <Select
+            value={filters.dateField}
+            onValueChange={(dateField) =>
               setFilters((current) => ({
                 ...current,
-                from: event.target.value,
+                dateField: dateField as typeof current.dateField,
               }))
             }
-          />
-          <Input
-            type="date"
-            value={filters.to}
-            onChange={(event) =>
-              setFilters((current) => ({ ...current, to: event.target.value }))
-            }
-          />
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="dueDate">Filter by due date</SelectItem>
+              <SelectItem value="billDate">Filter by bill date</SelectItem>
+              <SelectItem value="paymentDate">Filter by payment date</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              type="date"
+              value={filters.from}
+              onChange={(event) =>
+                setFilters((current) => ({
+                  ...current,
+                  from: event.target.value,
+                }))
+              }
+            />
+            <Input
+              type="date"
+              value={filters.to}
+              onChange={(event) =>
+                setFilters((current) => ({ ...current, to: event.target.value }))
+              }
+            />
+          </div>
           <Filter
             value={filters.category}
             label="All categories"
@@ -371,6 +401,42 @@ export default function RecurringReportRoutePage({
               ))}
             </SelectContent>
           </Select>
+          <Select
+            value={filters.owner}
+            onValueChange={(owner) =>
+              setFilters((current) => ({ ...current, owner }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="All owners" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All owners</SelectItem>
+              {users.map((entry) => (
+                <SelectItem value={entry.id} key={entry.id}>
+                  {entry.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={filters.source}
+            onValueChange={(source) =>
+              setFilters((current) => ({
+                ...current,
+                source: source as typeof current.source,
+              }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="All sources" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sources</SelectItem>
+              <SelectItem value="Recurring">Recurring (auto-generated)</SelectItem>
+              <SelectItem value="Manual">Manual entry</SelectItem>
+            </SelectContent>
+          </Select>
           <div className="grid grid-cols-2 gap-2">
             <Input
               type="number"
@@ -412,6 +478,7 @@ export default function RecurringReportRoutePage({
                   <TableHead>Date</TableHead>
                   <TableHead>Payment</TableHead>
                   <TableHead>Category / vendor</TableHead>
+                  <TableHead>Owner</TableHead>
                   <TableHead className="text-right">Expected</TableHead>
                   <TableHead className="text-right">Actual</TableHead>
                   <TableHead className="text-right">Outstanding</TableHead>
@@ -435,6 +502,9 @@ export default function RecurringReportRoutePage({
                       <p className="text-xs text-muted-foreground">
                         {item.vendorName}
                       </p>
+                    </TableCell>
+                    <TableCell>
+                      {users.find((entry) => entry.id === item.assignedTo)?.name || "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       {currency(item.expectedAmount)}
@@ -466,7 +536,7 @@ export default function RecurringReportRoutePage({
                 {!rows.length && (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="h-28 text-center text-muted-foreground"
                     >
                       No records match the report filters.

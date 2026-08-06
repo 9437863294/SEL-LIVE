@@ -44,9 +44,6 @@ import type {
   Project,
   Department,
   ActionConfig,
-  ExpenseRequest,
-  AccountHead,
-  SubAccountHead,
 } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useParams, useRouter } from 'next/navigation';
@@ -146,10 +143,6 @@ function statusBadgeClass(status?: string) {
   }
 }
 
-function hasDeptId(a: unknown): a is ActionConfig & { departmentId?: string } {
-  return typeof a === 'object' && a !== null && 'departmentId' in (a as any);
-}
-
 const slugify = (value: string): string =>
   value
     .toString()
@@ -181,11 +174,6 @@ export default function StagePage() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null); // <-- cache once
 
-  const [isConfirmExpenseOpen, setIsConfirmExpenseOpen] = useState(false);
-  const [expenseToCreate, setExpenseToCreate] = useState<any>(null);
-  const [isCreatingExpense, setIsCreatingExpense] = useState(false);
-  const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
-  const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
 
   const fetchTasks = useCallback(async () => {
@@ -226,20 +214,6 @@ export default function StagePage() {
       setDepartments(
         deptsSnap.docs.map(
           (d) => ({ id: d.id, ...d.data() } as Department)
-        )
-      );
-
-      const headsSnap = await getDocs(collection(db, 'accountHeads'));
-      setAccountHeads(
-        headsSnap.docs.map(
-          (d) => ({ id: d.id, ...(d.data() as any) } as AccountHead)
-        )
-      );
-
-      const subHeadsSnap = await getDocs(collection(db, 'subAccountHeads'));
-      setSubAccountHeads(
-        subHeadsSnap.docs.map(
-          (d) => ({ id: d.id, ...(d.data() as any) } as SubAccountHead)
         )
       );
 
@@ -300,61 +274,10 @@ export default function StagePage() {
 
     const actionName = typeof action === 'string' ? action : action.name;
 
-    if (actionName === 'Create Expense Request') {
-      const targetDepartmentId =
-        typeof action !== 'string' && hasDeptId(action)
-          ? action.departmentId
-          : undefined;
-      if (!targetDepartmentId) {
-        toast({
-          title: 'Config Error',
-          description: 'Department not specified for expense request.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const unsecuredLoanSubHead = subAccountHeads.find(
-        (sh) => sh.name.toLowerCase() === 'unsecured loan'
-      );
-      const defaultHead = unsecuredLoanSubHead
-        ? accountHeads.find((h) => h.id === unsecuredLoanSubHead.headId)?.name
-        : 'Liability';
-      let previewRequestNo = 'Generating...';
-
-      try {
-        const configRef = doc(db, 'departmentSerialConfigs', targetDepartmentId);
-        const configDoc = await getDoc(configRef);
-        if (configDoc.exists()) {
-          const configData = configDoc.data() as any;
-          const newIndex = configData.startingIndex;
-          const formattedIndex = String(newIndex).padStart(4, '0');
-          previewRequestNo = `${configData.prefix || ''}${
-            configData.format || ''
-          }${formattedIndex}${configData.suffix || ''}`;
-        } else {
-          previewRequestNo = 'Config not found';
-        }
-      } catch {
-        previewRequestNo = 'Error';
-      }
-
-      setExpenseToCreate({
-        departmentId: targetDepartmentId || '',
-        projectId: currentRequisition.projectId || '',
-        amount: currentRequisition.amount || 0,
-        partyName: currentRequisition.partyName || '',
-        description: currentRequisition.description || '',
-        headOfAccount: defaultHead || 'Liability',
-        subHeadOfAccount: unsecuredLoanSubHead?.name || 'Unsecured Loan',
-        remarks:
-          `Generated from Site Fund Requisition ${currentRequisition.requisitionId}` ||
-          '',
-        requestNo: previewRequestNo,
-      });
-      setIsConfirmExpenseOpen(true);
-      return;
-    }
+    // "Create Expense Request" needs the confirmation dialog (amount/head-of-account review
+    // before an expense record is created) — that flow lives entirely in
+    // ViewRequisitionDialog2, not here. Routing this action through the row-level dropdown
+    // (see renderTable) opens that dialog instead of calling handleAction directly.
 
     setIsActionLoading(taskId);
     try {
@@ -392,7 +315,6 @@ export default function StagePage() {
           'Complete',
           'Verified',
           'Update Approved Amount',
-          'Create Expense Request',
         ].includes(actionName);
 
         if (isCompletionAction) {
@@ -558,6 +480,16 @@ export default function StagePage() {
                                     key={actionName}
                                     onSelect={(e) => {
                                       e.preventDefault();
+                                      if (actionName === 'Create Expense Request') {
+                                        // This action needs the amount/head-of-account
+                                        // review dialog before an expense record is
+                                        // created — open the details dialog, which
+                                        // implements that flow, instead of acting
+                                        // immediately.
+                                        setSelectedRequisition(task);
+                                        setIsViewOpen(true);
+                                        return;
+                                      }
                                       handleAction(
                                         task.id,
                                         action

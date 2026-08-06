@@ -543,6 +543,7 @@ export const permissionModules = {
     "Expense Categories": ["View", "Add", "Edit", "Delete"],
     "Project Settings": ["View", "Add", "Edit", "Delete"],
     "Budget Alerts": ["View", "Edit"],
+    "Field Control": ["View", "Edit"],
     Reports: ["View", "Export"],
   },
   Settings: {

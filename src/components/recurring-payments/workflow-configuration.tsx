@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useAuthorization } from '@/hooks/useAuthorization';
 
-const ACTIONS = ['Submit Bill','Verify','Approve','Record Payment','Close','Return for Correction','Reject','Dispute','On Hold','Payment Failed'];
+const ACTIONS = ['Submit Bill','Verify','Approve','Record Payment','Close','Return for Correction','Reject','Dispute','On Hold','Payment Failed','Create Expense Request'];
 
 export default function RecurringWorkflowConfiguration() {
   const { toast }=useToast();

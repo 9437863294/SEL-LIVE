@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
+  addDoc, collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import {
-  formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASAttachment, type SASExpense, type SASPayment, type SASProject,
+  DEFAULT_PAYMENT_FIELD_CONTROL, formatINR, PAYMENT_FIELD_CONTROL_LABELS, PAYMENT_MODES,
+  SAS_COLLECTIONS, SAS_FIELD_CONTROL_DOC_ID,
+  type SASAttachment, type SASExpense, type SASFieldControlSettings, type SASPayment,
+  type SASPaymentFieldControl, type SASProject,
 } from '@/lib/site-account-statement';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -92,6 +94,13 @@ function AttachmentIcon({ type }: { type: string }) {
   return <File className="h-4 w-4 text-slate-400 shrink-0" />;
 }
 
+// Marks a field label as required/optional per the Field Control settings.
+function fieldMark(mandatory: boolean) {
+  return mandatory
+    ? <span className="text-destructive">*</span>
+    : <span className="text-muted-foreground text-xs font-normal">(optional)</span>;
+}
+
 function formatTimestamp(ts: any): string {
   if (!ts) return '—';
   const d: Date | null = ts?.toDate?.() ?? (ts?.seconds ? new Date(ts.seconds * 1000) : null);
@@ -120,6 +129,7 @@ export default function PaymentsPage() {
   const [projects,  setProjects]  = useState<SASProject[]>([]);
   const [payments,  setPayments]  = useState<SASPayment[]>([]);
   const [expenses,  setExpenses]  = useState<SASExpense[]>([]);
+  const [fieldControl, setFieldControl] = useState<SASPaymentFieldControl>(DEFAULT_PAYMENT_FIELD_CONTROL);
   const [loading,   setLoading]   = useState(true);
   const [saving,           setSaving]           = useState(false);
   const [uploading,        setUploading]        = useState(false);
@@ -149,14 +159,17 @@ export default function PaymentsPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, paySnap, expSnap] = await Promise.all([
+      const [pSnap, paySnap, expSnap, fieldControlSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.payments), orderBy('receiptDate', 'desc'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
+        getDoc(doc(db, SAS_COLLECTIONS.settings, SAS_FIELD_CONTROL_DOC_ID)),
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
       setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
+      const settingsData = fieldControlSnap.exists() ? (fieldControlSnap.data() as Partial<SASFieldControlSettings>) : null;
+      setFieldControl({ ...DEFAULT_PAYMENT_FIELD_CONTROL, ...(settingsData?.payment || {}) });
     } finally {
       setLoading(false);
     }
@@ -373,6 +386,8 @@ export default function PaymentsPage() {
   }
 
   async function handleSubmit() {
+    // Project, Receipt Date and Amount always stay mandatory — everything else
+    // (including the document upload) follows the Field Control settings.
     if (!form.projectId) {
       toast({ title: 'Validation', description: 'Select a project.', variant: 'destructive' });
       return;
@@ -384,6 +399,26 @@ export default function PaymentsPage() {
     const amount = Number(form.receivedAmount);
     if (!amount || amount <= 0) {
       toast({ title: 'Validation', description: 'Enter a valid amount.', variant: 'destructive' });
+      return;
+    }
+    if (fieldControl.paymentMode && !form.paymentMode) {
+      toast({ title: 'Validation', description: `${PAYMENT_FIELD_CONTROL_LABELS.paymentMode} is required.`, variant: 'destructive' });
+      return;
+    }
+    if (fieldControl.referenceNo && !form.referenceNo.trim()) {
+      toast({ title: 'Validation', description: `${PAYMENT_FIELD_CONTROL_LABELS.referenceNo} is required.`, variant: 'destructive' });
+      return;
+    }
+    if (fieldControl.receivedBy && !form.receivedBy.trim()) {
+      toast({ title: 'Validation', description: `${PAYMENT_FIELD_CONTROL_LABELS.receivedBy} is required.`, variant: 'destructive' });
+      return;
+    }
+    if (fieldControl.remarks && !form.remarks.trim()) {
+      toast({ title: 'Validation', description: `${PAYMENT_FIELD_CONTROL_LABELS.remarks} is required.`, variant: 'destructive' });
+      return;
+    }
+    if (fieldControl.attachment && pendingFiles.length + existingAttachments.length === 0) {
+      toast({ title: 'Validation', description: 'At least one document upload is required.', variant: 'destructive' });
       return;
     }
 
@@ -859,7 +894,7 @@ export default function PaymentsPage() {
               <Input type="number" min="0" value={form.receivedAmount} onChange={e => setField('receivedAmount', e.target.value)} placeholder="0" />
             </div>
             <div className="space-y-1.5">
-              <Label>Payment Mode</Label>
+              <Label>Payment Mode {fieldMark(fieldControl.paymentMode)}</Label>
               <Select value={form.paymentMode} onValueChange={v => setField('paymentMode', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -868,15 +903,15 @@ export default function PaymentsPage() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Reference No.</Label>
+              <Label>Reference No. {fieldMark(fieldControl.referenceNo)}</Label>
               <Input value={form.referenceNo} onChange={e => setField('referenceNo', e.target.value)} placeholder="Txn / UTR / Cheque No." />
             </div>
             <div className="col-span-2 space-y-1.5">
-              <Label>Received By</Label>
+              <Label>Received By {fieldMark(fieldControl.receivedBy)}</Label>
               <Input value={form.receivedBy} onChange={e => setField('receivedBy', e.target.value)} placeholder="Person who received the amount" />
             </div>
             <div className="col-span-2 space-y-1.5">
-              <Label>Remarks</Label>
+              <Label>Remarks {fieldMark(fieldControl.remarks)}</Label>
               <Textarea rows={2} value={form.remarks} onChange={e => setField('remarks', e.target.value)} placeholder="Additional notes" />
             </div>
 
@@ -884,7 +919,7 @@ export default function PaymentsPage() {
             <div className="col-span-2 space-y-2">
               <Label className="flex items-center gap-1.5">
                 <Paperclip className="h-3.5 w-3.5" />
-                Attachments
+                Upload Document {fieldMark(fieldControl.attachment)}
                 <span className="text-muted-foreground text-xs font-normal">— PDF, images, Word, Excel</span>
               </Label>
 

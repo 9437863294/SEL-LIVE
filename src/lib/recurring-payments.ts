@@ -254,6 +254,7 @@ export interface PaymentObligation {
   generatedAutomatically: boolean;
   transactionReference?: string;
   paymentDate?: string;
+  expenseRequestNo?: string;
   billNumber?: string;
   billDate?: string;
   billReceivedDate?: string;
@@ -397,6 +398,42 @@ export function effectiveStatus(payment: PaymentObligation): PaymentStatus {
 export function maskAccount(value?: string) {
   if (!value) return '';
   return value.length <= 4 ? value : `${'•'.repeat(Math.min(8, value.length - 4))}${value.slice(-4)}`;
+}
+
+/**
+ * Matches a scope filter (a project/department/branch Select driven by a global scope list)
+ * against a record that stores the scope both as an id and a denormalized name. Report filters
+ * across this module inconsistently matched on name only in some views and id-or-name in others
+ * — a scope entity renamed after a payment was generated would silently stop matching wherever
+ * the name-only shortcut was used. Every report/filter should go through this instead of
+ * re-deriving the comparison inline.
+ */
+export function matchesScopeFilter(
+  filterValue: string,
+  record: { id?: string; name?: string },
+  entries: Array<{ id: string; name: string }>,
+): boolean {
+  if (!filterValue || filterValue === 'all') return true;
+  if (record.id && record.id === filterValue) return true;
+  const selected = entries.find(entry => entry.id === filterValue);
+  return !!selected && !!record.name && record.name === selected.name;
+}
+
+/**
+ * Builds and downloads a CSV file from a header row and data rows. Every recurring-payments
+ * report/register reimplemented this same Blob-escaping-anchor sequence independently; centralizing
+ * it means a fix (escaping, MIME type, etc.) only has to happen once.
+ */
+export function downloadCsv(filename: string, header: string[], rows: Array<Array<string | number>>) {
+  const csv = [header, ...rows]
+    .map(row => row.map(value => `"${String(value ?? '').replaceAll('"', '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const anchor = document.createElement('a');
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(anchor.href);
 }
 
 /**

@@ -9,7 +9,12 @@ export const SAS_COLLECTIONS = {
   budgetAlertConfigs: 'siteAccountBudgetAlertConfigs',
   budgetAlertState:   'siteAccountBudgetAlertState',
   tenderBudgets:   'siteAccountTenderBudgets',
+  settings:        'siteAccountSettings',
 } as const;
+
+// Doc id (inside SAS_COLLECTIONS.settings) that stores the Add Expense / Add Receipt
+// mandatory-vs-optional field control configuration.
+export const SAS_FIELD_CONTROL_DOC_ID = 'fieldControl';
 
 export interface SASProject {
   id: string;
@@ -166,6 +171,80 @@ export const DEFAULT_EXPENSE_CATEGORIES = [
 ];
 
 export const PAYMENT_MODES = ['Cash', 'Bank', 'UPI', 'Other'] as const;
+
+// ── Field control (mandatory / optional) for Add Expense & Add Receipt forms ─────
+// Project, Date and Amount identify every record and always stay mandatory —
+// everything below (including the document upload) is admin-configurable from
+// Settings → Field Control.
+
+export interface SASExpenseFieldControl {
+  expenseCategory:    boolean;
+  expenseSubCategory: boolean;
+  expensedBy:         boolean;
+  paymentMode:        boolean;
+  vendorPartyName:    boolean;
+  billNo:             boolean;
+  narration:          boolean;
+  remarks:            boolean;
+  attachment:         boolean;
+}
+
+export interface SASPaymentFieldControl {
+  paymentMode: boolean;
+  referenceNo: boolean;
+  receivedBy:  boolean;
+  remarks:     boolean;
+  attachment:  boolean;
+}
+
+export interface SASFieldControlSettings {
+  expense: SASExpenseFieldControl;
+  payment: SASPaymentFieldControl;
+  updatedAt?: any;
+  updatedBy?: string;
+  updatedByName?: string;
+}
+
+// Mirrors current hardcoded behaviour, so nothing changes until an admin opts in.
+export const DEFAULT_EXPENSE_FIELD_CONTROL: SASExpenseFieldControl = {
+  expenseCategory:    true,
+  expenseSubCategory: false,
+  expensedBy:         true,
+  paymentMode:        false,
+  vendorPartyName:    false,
+  billNo:             false,
+  narration:          false,
+  remarks:            false,
+  attachment:         false,
+};
+
+export const DEFAULT_PAYMENT_FIELD_CONTROL: SASPaymentFieldControl = {
+  paymentMode: false,
+  referenceNo: false,
+  receivedBy:  false,
+  remarks:     false,
+  attachment:  false,
+};
+
+export const EXPENSE_FIELD_CONTROL_LABELS: Record<keyof SASExpenseFieldControl, string> = {
+  expenseCategory:    'Main Category',
+  expenseSubCategory: 'Sub-Category',
+  expensedBy:         'Expensed By',
+  paymentMode:        'Payment Mode',
+  vendorPartyName:    'Vendor / Party Name',
+  billNo:             'Bill No.',
+  narration:          'Narration',
+  remarks:            'Remarks',
+  attachment:         'Upload Document',
+};
+
+export const PAYMENT_FIELD_CONTROL_LABELS: Record<keyof SASPaymentFieldControl, string> = {
+  paymentMode: 'Payment Mode',
+  referenceNo: 'Reference No.',
+  receivedBy:  'Received By',
+  remarks:     'Remarks',
+  attachment:  'Upload Document',
+};
 
 export function formatINR(amount: number): string {
   return new Intl.NumberFormat('en-IN', {
