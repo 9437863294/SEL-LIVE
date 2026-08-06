@@ -47,6 +47,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 
 const PAYMENT_MODES: PaymentMode[] = ['NEFT', 'RTGS', 'IMPS', 'UPI', 'Cheque', 'Cash', 'Credit Card', 'Auto-debit', 'Bank Transfer', 'Other'];
+const BANK_ACCOUNT_REQUIRED_MODES: PaymentMode[] = ['NEFT', 'RTGS', 'IMPS', 'UPI', 'Auto-debit', 'Bank Transfer'];
 const FORWARD_ACTIONS = ['Submit Bill', 'Verify', 'Approve', 'Record Payment', 'Close'];
 const COMMENT_REQUIRED = ['Return for Correction', 'Reject', 'Dispute', 'On Hold', 'Payment Failed'];
 const VERIFICATION_CHECKLIST = [
@@ -155,9 +156,12 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     const currentOutstanding = Math.max(0, (selected.billAmount || selected.expectedAmount) - (selected.settledAmount || selected.paidAmount || 0));
     const checklistCount = form.getAll('verificationChecklist').length;
     if (action === 'Verify' && checklistCount !== VERIFICATION_CHECKLIST.length) return toast({ title: 'Complete the bill verification checklist', description: 'Every verification control must be confirmed before the bill can proceed.', variant: 'destructive' });
-    if (action === 'Record Payment' && (paymentAmount <= 0 || (settings.controls.requireTransactionReference && !transactionReference))) return toast({ title: 'Payment amount and transaction reference are required', variant: 'destructive' });
+    if (action === 'Record Payment' && paymentAmount <= 0) return toast({ title: 'Paid amount is required', variant: 'destructive' });
+    // A transaction reference is only meaningful for non-cash modes — a cash payment has no UTR
+    // or transaction number to record, so it's exempt from this setting regardless.
+    if (action === 'Record Payment' && paymentMode !== 'Cash' && settings.controls.requireTransactionReference && !transactionReference) return toast({ title: 'Transaction reference is required', variant: 'destructive' });
     if (action === 'Record Payment' && paymentMode === 'Cheque' && !chequeNumber) return toast({ title: 'Cheque number is required for cheque payments', variant: 'destructive' });
-    if (action === 'Record Payment' && ['NEFT', 'RTGS', 'IMPS', 'UPI', 'Auto-debit', 'Bank Transfer'].includes(paymentMode) && !bankAccount) return toast({ title: 'Bank account is required for electronic payments', variant: 'destructive' });
+    if (action === 'Record Payment' && BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode) && !bankAccount) return toast({ title: 'Bank account is required for electronic payments', variant: 'destructive' });
     const approvalDate = [...(selected.workflowHistory || [])].reverse().find(item => item.action === 'Approve')?.timestamp;
     const approvedOn = timestampDateOnly(approvalDate);
     if (action === 'Record Payment' && paymentDate && approvedOn && paymentDate < approvedOn) return toast({ title: 'Payment date cannot be before the approval date', variant: 'destructive' });
@@ -177,8 +181,13 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       let receiptUrl = '';
       if (action === 'Record Payment') {
         receiptUrl = await upload(form.get('receiptFile'), selected, 'transactions');
-        const duplicates = await getDocs(query(collection(db, RP_COLLECTIONS.payments, selected.id, RP_COLLECTIONS.transactions), where('transactionReference', '==', transactionReference)));
-        if (!duplicates.empty) throw new Error('This transaction reference has already been recorded.');
+        // Cash payments (and any other mode recorded without a reference) leave this blank —
+        // don't treat that shared empty string as a duplicate across separate cash instalments
+        // on the same bill.
+        if (transactionReference) {
+          const duplicates = await getDocs(query(collection(db, RP_COLLECTIONS.payments, selected.id, RP_COLLECTIONS.transactions), where('transactionReference', '==', transactionReference)));
+          if (!duplicates.empty) throw new Error('This transaction reference has already been recorded.');
+        }
       }
 
       const historicalBills = payments
@@ -393,6 +402,11 @@ function TaskTable({ rows, stage, onView, onAction }: { rows: PaymentObligation[
 }
 
 function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSubmit, working }: { payment: PaymentObligation | null; stage: RecurringWorkflowStep; action: string | null; canAct: boolean; onAction: (action: string | null) => void; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; working: boolean }) {
+  // Drives which of the mode-specific fields below (bank account / UTR / cheque number) are
+  // shown for "Record Payment" — a cash payment has none of these, so showing them unconditionally
+  // just confused whoever was recording the payment into thinking they were required.
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('NEFT');
+  useEffect(() => { setPaymentMode('NEFT'); }, [payment?.id, action]);
   if (!payment) return null;
   const outstanding = Math.max(0, (payment.billAmount || payment.expectedAmount) - (payment.settledAmount || payment.paidAmount || 0));
   return <Dialog open onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{payment.title}</DialogTitle><DialogDescription>{payment.vendorName} · {stage.name}</DialogDescription></DialogHeader>
@@ -402,7 +416,24 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
     {canAct && (!action ? <div className="flex flex-wrap gap-2 border-t pt-4">{stage.actions.map(item => <Button key={item} variant={['Reject', 'Payment Failed'].includes(item) ? 'destructive' : 'default'} onClick={() => onAction(item)}>{item}</Button>)}</div> : <form onSubmit={onSubmit} className="space-y-4 border-t pt-4"><p className="font-semibold">Action: {action}</p>
       {action === 'Submit Bill' && <div className="grid gap-3 sm:grid-cols-3"><Field label="Bill number"><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></Field><Field label="Bill received date"><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || new Date().toISOString().slice(0, 10)} required /></Field><Field label="Final bill amount"><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></Field></div>}
       {action === 'Verify' && <div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><p className="font-semibold">Bill verification checklist</p><p className="text-xs text-muted-foreground">Confirm every control. The completed checklist is captured in the audit record.</p></div><div className="grid gap-3 sm:grid-cols-2">{VERIFICATION_CHECKLIST.map(item => <label key={item} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-sm"><Checkbox name="verificationChecklist" value={item} required className="mt-0.5" /><span>{item}</span></label>)}</div></div>}
-      {action === 'Record Payment' && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><Field label="Payment date"><Input name="paymentDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></Field><Field label="Paid amount"><Input name="paymentAmount" type="number" min="0.01" step="0.01" max={outstanding || undefined} required /></Field><Field label="Payment mode"><Select name="mode" defaultValue="NEFT"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_MODES.map(mode => <SelectItem value={mode} key={mode}>{mode}</SelectItem>)}</SelectContent></Select></Field><Field label="Bank account"><Input name="bankAccount" /></Field><Field label="Transaction / UTR"><Input name="transactionReference" required /></Field><Field label="Cheque number"><Input name="chequeNumber" /></Field><Field label="TDS amount"><Input name="tdsAmount" type="number" min="0" defaultValue="0" /></Field><Field label="GST amount"><Input name="gstAmount" type="number" min="0" defaultValue="0" /></Field><Field label="Other deduction"><Input name="deductionAmount" type="number" min="0" defaultValue="0" /></Field><Field label="Adjustment"><Input name="adjustmentAmount" type="number" defaultValue="0" /></Field><Field label="Payment receipt"><Input name="receiptFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" /></Field></div>}
+      {action === 'Record Payment' && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Payment date"><Input name="paymentDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></Field>
+        <Field label="Paid amount"><Input name="paymentAmount" type="number" min="0.01" step="0.01" max={outstanding || undefined} required /></Field>
+        <Field label="Payment mode"><Select name="mode" value={paymentMode} onValueChange={value => setPaymentMode(value as PaymentMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_MODES.map(mode => <SelectItem value={mode} key={mode}>{mode}</SelectItem>)}</SelectContent></Select></Field>
+        {/* Bank account and UTR/transaction reference only apply once money actually moves
+            through a bank — a cash payment has neither, so they're hidden rather than shown
+            as fields nobody knows how to fill in. */}
+        {paymentMode !== 'Cash' && <Field label="Bank account"><Input name="bankAccount" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></Field>}
+        {paymentMode === 'Cheque' && <Field label="Cheque number"><Input name="chequeNumber" required /></Field>}
+        {paymentMode === 'Cash'
+          ? <Field label="Cash voucher / receipt no."><Input name="transactionReference" /></Field>
+          : <Field label="Transaction / UTR"><Input name="transactionReference" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></Field>}
+        <Field label="TDS amount"><Input name="tdsAmount" type="number" min="0" defaultValue="0" /></Field>
+        <Field label="GST amount"><Input name="gstAmount" type="number" min="0" defaultValue="0" /></Field>
+        <Field label="Other deduction"><Input name="deductionAmount" type="number" min="0" defaultValue="0" /></Field>
+        <Field label="Adjustment"><Input name="adjustmentAmount" type="number" defaultValue="0" /></Field>
+        <Field label="Payment receipt"><Input name="receiptFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" /></Field>
+      </div>}
       {stage.uploadRequired && !['Reject', 'On Hold', 'Dispute', 'Payment Failed', 'Return for Correction'].includes(action) && <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2"><Field label="Supporting document"><Input name="documentFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" /></Field><Field label="Or document reference"><Input name="documentReference" placeholder="URL or document number" /></Field></div>}
       <Field label={COMMENT_REQUIRED.includes(action) || (payment.varianceWarning && ['Verify', 'Approve'].includes(action)) ? 'Comment / justification *' : 'Comment'}><Textarea name="comment" placeholder="Add clear remarks for the audit trail" /></Field>
       <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => onAction(null)}>Back</Button><Button disabled={working}>{working && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirm {action}</Button></div>
