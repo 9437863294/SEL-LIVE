@@ -24,6 +24,7 @@ import {
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
   resolveAssignees,
+  stepStatus,
   type PaymentMode,
   type PaymentObligation,
   type RecurringPaymentSettings,
@@ -58,16 +59,6 @@ const VERIFICATION_CHECKLIST = [
   'Supporting documents are complete',
   'Variance and duplicate-payment risks are reviewed',
 ];
-
-function stepStatus(step?: RecurringWorkflowStep): PaymentObligation['status'] {
-  const name = step?.name.toLowerCase() || '';
-  if (name.includes('bill collection')) return 'Awaiting Bill';
-  if (name.includes('verification')) return 'Under Verification';
-  if (name.includes('approval')) return 'Pending Approval';
-  if (name.includes('processing')) return 'Payment Processing';
-  if (name.includes('receipt') || name.includes('closure')) return 'Paid';
-  return 'Generated';
-}
 
 export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageId: string }) {
   const { user } = useAuth();

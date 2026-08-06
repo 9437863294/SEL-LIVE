@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
-import { buildPaymentObligationFields, buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, resolveAssignees, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { buildPaymentObligationFields, buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, resolveAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateOnly = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -108,7 +108,7 @@ export async function GET(request: Request) {
         continue;
       }
       await paymentDoc.ref.update({
-        status: firstStep.name.toLowerCase().includes('bill') ? 'Awaiting Bill' : 'In Progress',
+        status: stepStatus(firstStep),
         workflowStatus: 'In Progress', stage: firstStep.name, currentStepId: firstStep.id,
         assignees, workflowStartedAt: FieldValue.serverTimestamp(), stepEnteredAt: FieldValue.serverTimestamp(),
         workflowDeadline: Timestamp.fromMillis(Date.now() + Math.max(1, firstStep.tat) * 3_600_000),

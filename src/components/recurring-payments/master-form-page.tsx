@@ -37,9 +37,12 @@ import {
   buildPaymentObligationFields,
   buildRecurringCycle,
   DEFAULT_PAYMENT_CATEGORIES,
+  DEFAULT_RECURRING_WORKFLOW,
   matchApprovalRule,
+  resolveWorkflowActivation,
   type ApprovalRule,
   type RecurringPaymentMaster,
+  type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
 import { Button } from "@/components/ui/button";
@@ -224,25 +227,9 @@ export default function RecurringMasterFormPage({
       });
     setSaving(true);
     try {
-      const duplicates = await getDocs(
-        query(
-          collection(db, RP_COLLECTIONS.masters),
-          where("organizationId", "==", organizationId),
-        ),
-      );
-      const duplicate = duplicates.docs.find(
-        (item) =>
-          item.id !== masterId &&
-          String(item.data().category) === draft.category &&
-          String(item.data().accountNumber || "").trim() &&
-          String(item.data().accountNumber).trim() ===
-            String(draft.accountNumber || "").trim() &&
-          !item.data().deleted,
-      );
-      if (duplicate)
-        throw new Error(
-          `A master with this category and account already exists (${duplicate.id}).`,
-        );
+      // Multiple masters may intentionally share the same category and account (e.g. several
+      // recurring "Rent" payments billed to the same account), so no duplicate check is applied
+      // here beyond the mandatory-field validation above.
       const masterRef = masterId
         ? doc(db, RP_COLLECTIONS.masters, masterId)
         : doc(collection(db, RP_COLLECTIONS.masters));
@@ -305,6 +292,7 @@ export default function RecurringMasterFormPage({
         newValue: { status, amount: netAmount, frequency: draft.frequency },
         createdAt: serverTimestamp(),
       });
+      let activationStage: string | null = null;
       if (intent === "generate") {
         const cycle = buildRecurringCycle(
           {
@@ -326,37 +314,61 @@ export default function RecurringMasterFormPage({
             RP_COLLECTIONS.payments,
             cycleKey.replace(/[^a-zA-Z0-9_-]/g, "_"),
           );
+          const obligationFields = buildPaymentObligationFields({
+            organizationId,
+            masterId: masterRef.id,
+            cycle,
+            generatedAutomatically: false,
+            title: draft.title!,
+            category: draft.category!,
+            vendorName: draft.vendorName!,
+            branchId: draft.branchId,
+            branchName: draft.branchName,
+            projectId: draft.projectId,
+            projectName: draft.projectName,
+            departmentId: draft.departmentId,
+            department: draft.department,
+            costCentre: draft.costCentre,
+            ledger: draft.ledger,
+            amountType: draft.amountType,
+            description: draft.description,
+            accountNumber: draft.accountNumber,
+            amount: Number(draft.amount || 0),
+            maximumAmount: Number(draft.maximumAmount || 0),
+            assignedTo: draft.assignedTo,
+            backupAssignedTo: draft.backupAssignedTo,
+            verifierId: draft.verifierId,
+            approverId: draft.approverId,
+            accountsProcessorId: draft.accountsProcessorId,
+            approvalRule,
+          });
+          // Don't leave this obligation stuck at "Scheduled" until the next automation run: if
+          // it's already due soon enough per the org's workflow-activation window, enter it into
+          // the first workflow step immediately, same as the daily automation job would.
+          const [settingsSnap, workflowSnap] = await Promise.all([
+            getDoc(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"))),
+            getDoc(doc(db, "workflows", "recurring-payments-workflow")),
+          ]);
+          const activationDays = Math.min(90, Math.max(0, Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7)));
+          const workflow = (workflowSnap.data()?.steps || DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
+          const activation = resolveWorkflowActivation(workflow[0], obligationFields, { activationDays, today: new Date() });
+          if (activation) activationStage = activation.stage;
           batch.set(
             paymentRef,
             {
-              ...buildPaymentObligationFields({
-                organizationId,
-                masterId: masterRef.id,
-                cycle,
-                generatedAutomatically: false,
-                title: draft.title!,
-                category: draft.category!,
-                vendorName: draft.vendorName!,
-                branchId: draft.branchId,
-                branchName: draft.branchName,
-                projectId: draft.projectId,
-                projectName: draft.projectName,
-                departmentId: draft.departmentId,
-                department: draft.department,
-                costCentre: draft.costCentre,
-                ledger: draft.ledger,
-                amountType: draft.amountType,
-                description: draft.description,
-                accountNumber: draft.accountNumber,
-                amount: Number(draft.amount || 0),
-                maximumAmount: Number(draft.maximumAmount || 0),
-                assignedTo: draft.assignedTo,
-                backupAssignedTo: draft.backupAssignedTo,
-                verifierId: draft.verifierId,
-                approverId: draft.approverId,
-                accountsProcessorId: draft.accountsProcessorId,
-                approvalRule,
-              }),
+              ...obligationFields,
+              ...(activation
+                ? {
+                    status: activation.status,
+                    workflowStatus: activation.workflowStatus,
+                    stage: activation.stage,
+                    currentStepId: activation.currentStepId,
+                    assignees: activation.assignees,
+                    workflowStartedAt: serverTimestamp(),
+                    stepEnteredAt: serverTimestamp(),
+                    workflowDeadline: Timestamp.fromMillis(activation.workflowDeadlineMs),
+                  }
+                : {}),
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             },
@@ -369,6 +381,12 @@ export default function RecurringMasterFormPage({
         title: masterId
           ? "Recurring master updated"
           : "Recurring master created",
+        description:
+          intent === "generate"
+            ? activationStage
+              ? `Current cycle generated and sent to ${activationStage} for action.`
+              : "Current cycle generated, but not due soon enough yet to enter the workflow — it'll activate automatically as the due date approaches."
+            : undefined,
       });
       router.push(`/recurring-payments/masters/${masterRef.id}`);
     } catch (error) {

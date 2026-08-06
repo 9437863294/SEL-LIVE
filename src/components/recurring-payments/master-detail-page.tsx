@@ -14,6 +14,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -36,10 +37,13 @@ import { useToast } from "@/hooks/use-toast";
 import {
   buildPaymentObligationFields,
   buildRecurringCycle,
+  DEFAULT_RECURRING_WORKFLOW,
   matchApprovalRule,
+  resolveWorkflowActivation,
   type ApprovalRule,
   type PaymentObligation,
   type RecurringPaymentMaster,
+  type RecurringWorkflowStep,
   RP_COLLECTIONS,
   currency,
   maskAccount,
@@ -209,39 +213,67 @@ export default function RecurringMasterDetailPage({
       ruleSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as ApprovalRule),
       { amount, category: master.category, projectId: master.projectId, projectName: master.projectName },
     );
+    const fields = buildPaymentObligationFields({
+      organizationId,
+      masterId: master.id,
+      cycle: nextCycle,
+      generatedAutomatically: false,
+      title: master.title,
+      category: master.category,
+      vendorName: master.vendorName,
+      branchId: master.branchId,
+      branchName: master.branchName,
+      projectId: master.projectId,
+      projectName: master.projectName,
+      departmentId: master.departmentId,
+      department: master.department,
+      costCentre: master.costCentre,
+      ledger: master.ledger,
+      amountType: master.amountType,
+      description: master.description,
+      accountNumber: master.accountNumber,
+      amount,
+      maximumAmount: master.maximumAmount,
+      assignedTo: master.assignedTo,
+      backupAssignedTo: master.backupAssignedTo,
+      verifierId: master.verifierId,
+      approverId: master.approverId,
+      accountsProcessorId: master.accountsProcessorId,
+      approvalRule,
+    });
+    // Don't leave this obligation stuck at "Scheduled" until the next automation run: if it's
+    // already due soon enough per the org's workflow-activation window, enter it into the first
+    // workflow step immediately, same as the daily automation job would.
+    const [settingsSnap, workflowSnap] = await Promise.all([
+      getDoc(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"))),
+      getDoc(doc(db, "workflows", "recurring-payments-workflow")),
+    ]);
+    const activationDays = Math.min(90, Math.max(0, Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7)));
+    const workflow = (workflowSnap.data()?.steps || DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
+    const activation = resolveWorkflowActivation(workflow[0], fields, { activationDays, today: new Date() });
     await setDoc(paymentRef, {
-      ...buildPaymentObligationFields({
-        organizationId,
-        masterId: master.id,
-        cycle: nextCycle,
-        generatedAutomatically: false,
-        title: master.title,
-        category: master.category,
-        vendorName: master.vendorName,
-        branchId: master.branchId,
-        branchName: master.branchName,
-        projectId: master.projectId,
-        projectName: master.projectName,
-        departmentId: master.departmentId,
-        department: master.department,
-        costCentre: master.costCentre,
-        ledger: master.ledger,
-        amountType: master.amountType,
-        description: master.description,
-        accountNumber: master.accountNumber,
-        amount,
-        maximumAmount: master.maximumAmount,
-        assignedTo: master.assignedTo,
-        backupAssignedTo: master.backupAssignedTo,
-        verifierId: master.verifierId,
-        approverId: master.approverId,
-        accountsProcessorId: master.accountsProcessorId,
-        approvalRule,
-      }),
+      ...fields,
+      ...(activation
+        ? {
+            status: activation.status,
+            workflowStatus: activation.workflowStatus,
+            stage: activation.stage,
+            currentStepId: activation.currentStepId,
+            assignees: activation.assignees,
+            workflowStartedAt: serverTimestamp(),
+            stepEnteredAt: serverTimestamp(),
+            workflowDeadline: Timestamp.fromMillis(activation.workflowDeadlineMs),
+          }
+        : {}),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    toast({ title: "Current payment cycle generated" });
+    toast({
+      title: "Current payment cycle generated",
+      description: activation
+        ? `Sent to ${activation.stage} for action.`
+        : "Not due soon enough yet to enter the workflow — it'll activate automatically as the due date approaches.",
+    });
     router.push(`/recurring-payments/payments/${paymentRef.id}`);
   }
 

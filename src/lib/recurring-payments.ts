@@ -545,3 +545,64 @@ export function resolveAssignees(step: RecurringWorkflowStep, payment: AssigneeR
   if (step.name.toLowerCase().includes('approval') && payment.approverId) return [payment.approverId];
   return [];
 }
+
+/**
+ * Maps a workflow step to the payment obligation status it represents while sitting at that
+ * step. Shared by workflow activation (server cron and client "Generate now" flows) and the
+ * client workflow-stage view, so a payment's status always agrees with which step it's actually
+ * on — note this only covers the 5 default step names; a custom step name that doesn't match any
+ * of these falls back to the generic 'Generated'.
+ */
+export function stepStatus(step?: RecurringWorkflowStep): PaymentStatus {
+  const name = step?.name.toLowerCase() || '';
+  if (name.includes('bill collection')) return 'Awaiting Bill';
+  if (name.includes('verification')) return 'Under Verification';
+  if (name.includes('approval')) return 'Pending Approval';
+  if (name.includes('processing')) return 'Payment Processing';
+  if (name.includes('receipt') || name.includes('closure')) return 'Paid';
+  return 'Generated';
+}
+
+export type WorkflowActivation = {
+  assignees: string[];
+  status: PaymentStatus;
+  workflowStatus: 'In Progress';
+  stage: string;
+  currentStepId: string;
+  workflowDeadlineMs: number;
+};
+
+/**
+ * Decides whether a payment obligation should enter the workflow's first step right now — i.e.
+ * its due date already falls inside the organization's configured activation window — and, if
+ * so, who it should be assigned to.
+ *
+ * This exists so a manually-generated obligation (the "Generate now" actions on the master form
+ * and master detail pages) doesn't sit at status "Scheduled" with no owner until the next daily
+ * automation run happens to pick it up — previously that was the *only* path that ever moved an
+ * obligation into a workflow step, so a master due soon enough to be actionable immediately
+ * still silently waited (up to 24h, or forever if nobody ever runs automation) before its owner
+ * could see it. Returns null when the obligation isn't due soon enough yet, or when no assignee
+ * can be resolved for the first step — callers should leave the obligation "Scheduled" in either
+ * case (the daily automation run will retry it, and will log an audit entry if it's the latter).
+ */
+export function resolveWorkflowActivation(
+  step: RecurringWorkflowStep | undefined,
+  payment: AssigneeResolutionPayment & { dueDate: string },
+  options: { activationDays: number; today: Date },
+): WorkflowActivation | null {
+  if (!step) return null;
+  const due = new Date(`${payment.dueDate}T00:00:00`);
+  const daysUntilDue = Math.round((due.getTime() - options.today.getTime()) / 86_400_000);
+  if (daysUntilDue > options.activationDays) return null;
+  const assignees = resolveAssignees(step, payment);
+  if (!assignees.length) return null;
+  return {
+    assignees,
+    status: stepStatus(step),
+    workflowStatus: 'In Progress',
+    stage: step.name,
+    currentStepId: step.id,
+    workflowDeadlineMs: Date.now() + Math.max(1, step.tat) * 3_600_000,
+  };
+}
