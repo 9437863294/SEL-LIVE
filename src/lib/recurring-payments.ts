@@ -19,6 +19,12 @@ export const RP_COLLECTIONS = {
 
 export type PaymentMode = 'NEFT' | 'RTGS' | 'IMPS' | 'UPI' | 'Cheque' | 'Cash' | 'Credit Card' | 'Auto-debit' | 'Bank Transfer' | 'Other';
 
+export const PAYMENT_MODES: PaymentMode[] = ['NEFT', 'RTGS', 'IMPS', 'UPI', 'Cheque', 'Cash', 'Credit Card', 'Auto-debit', 'Bank Transfer', 'Other'];
+/** Modes where a bank account/UTR is actually meaningful — a cash payment has neither. Shared by
+ * the "Record Payment" workflow action and the transaction edit dialog so both agree on which
+ * fields a given mode requires. */
+export const BANK_ACCOUNT_REQUIRED_MODES: PaymentMode[] = ['NEFT', 'RTGS', 'IMPS', 'UPI', 'Auto-debit', 'Bank Transfer'];
+
 export interface PaymentTransaction {
   id: string;
   organizationId: string;

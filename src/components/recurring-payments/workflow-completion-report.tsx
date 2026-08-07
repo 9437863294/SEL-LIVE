@@ -1,0 +1,450 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
+import { AlertTriangle, Download, History, Loader2, Printer } from "lucide-react";
+import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { useAuthorization } from "@/hooks/useAuthorization";
+import {
+  DEFAULT_RECURRING_WORKFLOW,
+  downloadCsv,
+  matchesScopeFilter,
+  RP_COLLECTIONS,
+  currency,
+  type PaymentObligation,
+  type RecurringWorkflowStep,
+} from "@/lib/recurring-payments";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useGlobalScopes } from "./use-global-scopes";
+
+// The workflow's own "moves it forward" and "sends it back / ends it" actions — used to decide
+// whether a workflowHistory entry represents a completed step, a rejection, or neither (e.g. "On
+// Hold" / "Dispute", which don't leave the step). Matches FORWARD_ACTIONS / COMMENT_REQUIRED in
+// professional-workflow-stage.tsx; kept here as a broader net since a custom workflow step name
+// doesn't change what these action labels mean.
+const COMPLETION_ACTIONS = ["Submit Bill", "Verify", "Approve", "Record Payment", "Close", "Create Expense Request"];
+const REJECTION_ACTIONS = ["Reject", "Return for Correction", "Payment Failed"];
+
+type StepStat = { total: number; completed: number; onTime: number; rejected: number };
+type StepReport = Record<string, Record<string, StepStat>>;
+type CompletionEvent = {
+  paymentId: string;
+  title: string;
+  vendorName: string;
+  stepName: string;
+  action: string;
+  userName: string;
+  comment: string;
+  timestamp: unknown;
+  onTime: boolean | null;
+};
+
+function toMillis(value: unknown): number {
+  const data = value as { toMillis?: () => number; seconds?: number } | null | undefined;
+  if (data?.toMillis) return data.toMillis();
+  if (data?.seconds) return data.seconds * 1000;
+  return 0;
+}
+
+function formatTimestamp(value: unknown): string {
+  const data = value as { toDate?: () => Date; seconds?: number } | null | undefined;
+  const date = data?.toDate ? data.toDate() : data?.seconds ? new Date(data.seconds * 1000) : null;
+  return date ? date.toLocaleString("en-IN") : "—";
+}
+
+function buildStepReport(
+  rows: PaymentObligation[],
+  workflow: RecurringWorkflowStep[],
+  users: Array<{ id: string; name: string }>,
+): { stepReport: StepReport; completions: CompletionEvent[] } {
+  const report: StepReport = {};
+  const completions: CompletionEvent[] = [];
+  const userMap = new Map(users.map(item => [item.id, item.name]));
+  const stepMap = new Map(workflow.map(step => [step.name, step]));
+  workflow.forEach(step => { report[step.name] = {}; });
+
+  const ensure = (stepName: string, userName: string) => {
+    report[stepName] ??= {};
+    report[stepName][userName] ??= { total: 0, completed: 0, onTime: 0, rejected: 0 };
+    return report[stepName][userName];
+  };
+
+  rows.forEach(payment => {
+    const history = payment.workflowHistory || [];
+    let previousTime = toMillis(payment.workflowStartedAt) || toMillis(payment.createdAt) || 0;
+    const countedTotal = new Set<string>();
+
+    history.forEach(entry => {
+      const userName = entry.userName || userMap.get(entry.userId) || "Unknown user";
+      const stat = ensure(entry.stepName, userName);
+      const key = `${entry.stepName}__${userName}`;
+      if (!countedTotal.has(key)) { stat.total++; countedTotal.add(key); }
+
+      const isCompletion = COMPLETION_ACTIONS.includes(entry.action);
+      const isRejection = REJECTION_ACTIONS.includes(entry.action);
+      const entryMillis = toMillis(entry.timestamp);
+      let onTime: boolean | null = null;
+
+      if (isCompletion) {
+        stat.completed++;
+        const step = stepMap.get(entry.stepName);
+        if (step && previousTime) {
+          onTime = entryMillis <= previousTime + step.tat * 3_600_000;
+          if (onTime) stat.onTime++;
+        }
+        completions.push({ paymentId: payment.id, title: payment.title, vendorName: payment.vendorName, stepName: entry.stepName, action: entry.action, userName, comment: entry.comment, timestamp: entry.timestamp, onTime });
+      } else if (isRejection) {
+        stat.rejected++;
+        completions.push({ paymentId: payment.id, title: payment.title, vendorName: payment.vendorName, stepName: entry.stepName, action: entry.action, userName, comment: entry.comment, timestamp: entry.timestamp, onTime: null });
+      }
+      if (isCompletion || isRejection) previousTime = entryMillis || previousTime;
+    });
+
+    // Still sitting at a step counts toward that step's workload even though it hasn't
+    // completed yet — otherwise "Total" would only ever reflect finished work.
+    if (payment.currentStepId) {
+      const currentStep = workflow.find(step => step.id === payment.currentStepId);
+      if (currentStep) {
+        (payment.assignees || []).forEach(userId => {
+          const userName = userMap.get(userId) || "Unassigned";
+          const stat = ensure(currentStep.name, userName);
+          const key = `${currentStep.name}__${userName}`;
+          if (!countedTotal.has(key)) { stat.total++; countedTotal.add(key); }
+        });
+      }
+    }
+  });
+
+  completions.sort((a, b) => toMillis(b.timestamp) - toMillis(a.timestamp));
+  return { stepReport: report, completions };
+}
+
+/**
+ * The recurring-payments analog of Site Fund Requisition's "Site Fund Summary" report — per-step,
+ * per-user workload/completion/on-time/rejection counts, plus (since payments already record an
+ * exact `workflowHistory` timestamp per action, unlike requisitions which had to reconstruct it) a
+ * literal timeline of every completion event: what finished, at which step, by whom, and exactly
+ * when.
+ */
+export default function WorkflowCompletionReport() {
+  const { user, users } = useAuth();
+  const { can } = useAuthorization();
+  const organizationId = user?.organizationId || "default";
+  const { activeProjects, activeDepartments } = useGlobalScopes();
+  const [payments, setPayments] = useState<PaymentObligation[]>([]);
+  const [workflow, setWorkflow] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({
+    year: "all",
+    month: "all",
+    project: "all",
+    department: "all",
+    category: "all",
+    owner: "all",
+  });
+
+  useEffect(() => {
+    getDoc(doc(db, "workflows", "recurring-payments-workflow")).then(snapshot => {
+      const steps = snapshot.data()?.steps as RecurringWorkflowStep[] | undefined;
+      if (steps?.length) setWorkflow(steps);
+    });
+    return onSnapshot(
+      query(collection(db, RP_COLLECTIONS.payments), where("organizationId", "==", organizationId)),
+      snapshot => {
+        setPayments(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentObligation)));
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+  }, [organizationId]);
+
+  const years = useMemo(
+    () => [...new Set(payments.map(item => item.dueDate?.slice(0, 4)).filter(Boolean))].sort().reverse(),
+    [payments],
+  );
+  const categories = useMemo(
+    () => [...new Set(payments.map(item => item.category).filter(Boolean))].sort(),
+    [payments],
+  );
+
+  const rows = useMemo(
+    () => payments.filter(item => {
+      if (filters.year !== "all" && item.dueDate?.slice(0, 4) !== filters.year) return false;
+      if (filters.month !== "all" && item.dueDate?.slice(5, 7) !== filters.month) return false;
+      if (filters.category !== "all" && item.category !== filters.category) return false;
+      if (filters.owner !== "all" && item.assignedTo !== filters.owner) return false;
+      if (!matchesScopeFilter(filters.project, { id: item.projectId, name: item.projectName }, activeProjects.map(project => ({ id: project.id, name: project.projectName })))) return false;
+      if (!matchesScopeFilter(filters.department, { id: item.departmentId, name: item.department }, activeDepartments.map(department => ({ id: department.id, name: department.name })))) return false;
+      return true;
+    }),
+    [payments, filters, activeProjects, activeDepartments],
+  );
+
+  const summary = useMemo(() => {
+    const totalAmount = rows.reduce((sum, item) => sum + Number(item.billAmount || item.expectedAmount || 0), 0);
+    const paidAmount = rows.reduce((sum, item) => sum + Number(item.paidAmount || 0), 0);
+    const outstanding = rows.reduce((sum, item) => sum + Math.max(0, Number(item.billAmount || item.expectedAmount || 0) - Number(item.settledAmount || item.paidAmount || 0)), 0);
+    const rejected = rows.filter(item => ["Rejected", "Disputed", "Payment Failed"].includes(item.status)).length;
+    return { total: rows.length, totalAmount, paidAmount, outstanding, rejected };
+  }, [rows]);
+
+  const { stepReport, completions } = useMemo(() => buildStepReport(rows, workflow, users), [rows, workflow, users]);
+
+  function exportCsv() {
+    downloadCsv(
+      `recurring-workflow-completions-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Completed At", "Payment", "Vendor", "Step", "Action", "By", "On Time", "Comment"],
+      completions.map(item => [
+        formatTimestamp(item.timestamp),
+        item.title,
+        item.vendorName,
+        item.stepName,
+        item.action,
+        item.userName,
+        item.onTime === null ? "—" : item.onTime ? "Yes" : "No",
+        item.comment || "",
+      ]),
+    );
+  }
+
+  if (loading)
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 className="h-7 w-7 animate-spin" />
+      </div>
+    );
+  if (!can("View", "Recurring Payments.Reports"))
+    return (
+      <Card>
+        <CardContent className="py-16 text-center">
+          <AlertTriangle className="mx-auto mb-3 h-9 w-9 text-amber-500" />
+          <p className="font-semibold text-muted-foreground">You don&apos;t have permission to view this report.</p>
+        </CardContent>
+      </Card>
+    );
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-0 bg-gradient-to-r from-cyan-800 to-indigo-900 text-white">
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Workflow Completion Summary</h1>
+            <p className="text-sm text-indigo-100">Totals, step-wise workload and on-time performance, and exactly what completed when</p>
+          </div>
+          <div className="flex gap-2 print:hidden">
+            {can("Export", "Recurring Payments.Reports") && (
+              <Button variant="secondary" onClick={exportCsv}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => window.print()}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print / PDF
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="print:hidden">
+        <CardHeader><CardTitle className="text-base">Filters</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <FilterField label="Year">
+            <Select value={filters.year} onValueChange={year => setFilters(current => ({ ...current, year }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All years</SelectItem>
+                {years.map(year => <SelectItem value={year} key={year}>{year}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </FilterField>
+          <FilterField label="Month">
+            <Select value={filters.month} onValueChange={month => setFilters(current => ({ ...current, month }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All months</SelectItem>
+                {Array.from({ length: 12 }, (_, index) => (
+                  <SelectItem value={String(index + 1).padStart(2, "0")} key={index}>
+                    {new Date(0, index).toLocaleString("en-IN", { month: "long" })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+          <FilterField label="Project">
+            <Select value={filters.project} onValueChange={project => setFilters(current => ({ ...current, project }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All projects" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                {activeProjects.map(project => <SelectItem value={project.id} key={project.id}>{project.projectName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </FilterField>
+          <FilterField label="Department">
+            <Select value={filters.department} onValueChange={department => setFilters(current => ({ ...current, department }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All departments" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {activeDepartments.map(department => <SelectItem value={department.id} key={department.id}>{department.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </FilterField>
+          <FilterField label="Category">
+            <Select value={filters.category} onValueChange={category => setFilters(current => ({ ...current, category }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All categories" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All categories</SelectItem>
+                {categories.map(category => <SelectItem value={category} key={category}>{category}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </FilterField>
+          <FilterField label="Owner">
+            <Select value={filters.owner} onValueChange={owner => setFilters(current => ({ ...current, owner }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All owners" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All owners</SelectItem>
+                {users.map(entry => <SelectItem value={entry.id} key={entry.id}>{entry.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </FilterField>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Metric label="Total payments" value={String(summary.total)} />
+        <Metric label="Total value" value={currency(summary.totalAmount)} />
+        <Metric label="Paid" value={currency(summary.paidAmount)} />
+        <Metric label="Outstanding" value={currency(summary.outstanding)} />
+        <Metric label="Rejected / failed" value={String(summary.rejected)} tone={summary.rejected ? "warn" : undefined} />
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold">Step-wise workload</h2>
+        <p className="text-sm text-muted-foreground">Who handled each step, how many they completed, and how many stayed within the step&apos;s TAT.</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {workflow.map(step => {
+          const stepData = stepReport[step.name];
+          const entries = stepData ? Object.entries(stepData).filter(([, stat]) => stat.total > 0) : [];
+          if (!entries.length) return null;
+          return (
+            <Card key={step.id}>
+              <CardHeader><CardTitle className="text-base">{step.name}</CardTitle></CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Done</TableHead>
+                      <TableHead className="text-right">On time</TableHead>
+                      <TableHead className="text-right">Rejected</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {entries.map(([userName, stat]) => (
+                      <TableRow key={userName}>
+                        <TableCell>{userName}</TableCell>
+                        <TableCell className="text-right">{stat.total}</TableCell>
+                        <TableCell className="text-right">{stat.completed}</TableCell>
+                        <TableCell className="text-right">{stat.onTime}</TableCell>
+                        <TableCell className="text-right">{stat.rejected || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          );
+        })}
+        {!workflow.some(step => stepReport[step.name] && Object.keys(stepReport[step.name]).length) && (
+          <p className="col-span-full py-10 text-center text-sm text-muted-foreground">No workflow activity matches the selected filters.</p>
+        )}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><History className="h-5 w-5" />Completion timeline</CardTitle>
+          <CardDescription>Every completed or rejected step, exactly when it happened — {completions.length} event(s)</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Completed at</TableHead>
+                  <TableHead>Payment</TableHead>
+                  <TableHead>Step</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead>On time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {completions.map((item, index) => (
+                  <TableRow key={`${item.paymentId}-${index}`}>
+                    <TableCell className="whitespace-nowrap">{formatTimestamp(item.timestamp)}</TableCell>
+                    <TableCell>
+                      <p className="font-medium">{item.title}</p>
+                      <p className="text-xs text-muted-foreground">{item.vendorName}</p>
+                    </TableCell>
+                    <TableCell>{item.stepName}</TableCell>
+                    <TableCell>
+                      <Badge variant={REJECTION_ACTIONS.includes(item.action) ? "destructive" : "outline"}>{item.action}</Badge>
+                    </TableCell>
+                    <TableCell>{item.userName}</TableCell>
+                    <TableCell>{item.onTime === null ? "—" : item.onTime ? "Yes" : "No"}</TableCell>
+                  </TableRow>
+                ))}
+                {!completions.length && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">No completed steps match the selected filters.</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="space-y-1"><Label className="text-xs font-medium text-muted-foreground">{label}</Label>{children}</div>;
+}
+function Metric({ label, value, tone }: { label: string; value: string; tone?: "warn" }) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className={`mt-1 text-xl font-bold ${tone === "warn" ? "text-amber-600" : ""}`}>{value}</p>
+      </CardContent>
+    </Card>
+  );
+}
