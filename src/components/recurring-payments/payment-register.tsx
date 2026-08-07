@@ -26,7 +26,6 @@ import {
   Download,
   ExternalLink,
   FileText,
-  Filter,
   IndianRupee,
   Loader2,
   Plus,
@@ -57,6 +56,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import CollapsibleFilterCard from "./collapsible-filter-card";
 import {
   Dialog,
   DialogContent,
@@ -168,6 +168,8 @@ export default function RecurringPaymentRegister() {
       [...new Set(normalized.map((x) => x.vendorName).filter(Boolean))].sort(),
     [normalized],
   );
+  const activeFilterCount = (Object.keys(initialFilters) as Array<keyof Filters>)
+    .filter((key) => filters[key] !== initialFilters[key]).length;
   const rows = useMemo(
     () =>
       normalized
@@ -328,14 +330,8 @@ export default function RecurringPaymentRegister() {
           tone="amber"
         />
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Filter className="h-4 w-4" />
-            Operational filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <CollapsibleFilterCard title="Operational filters" activeCount={activeFilterCount} onClear={() => setFilters(initialFilters)}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="relative sm:col-span-2">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
@@ -439,11 +435,8 @@ export default function RecurringPaymentRegister() {
               }
             />
           </div>
-          <Button variant="ghost" onClick={() => setFilters(initialFilters)}>
-            Clear filters
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleFilterCard>
       <Card>
         <CardHeader>
           <CardTitle>All payment obligations</CardTitle>

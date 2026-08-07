@@ -24,6 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import CollapsibleFilterCard from "./collapsible-filter-card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -151,6 +152,15 @@ function buildStepReport(
  * literal timeline of every completion event: what finished, at which step, by whom, and exactly
  * when.
  */
+const DEFAULT_FILTERS = {
+  year: "all",
+  month: "all",
+  project: "all",
+  department: "all",
+  category: "all",
+  owner: "all",
+};
+
 export default function WorkflowCompletionReport() {
   const { user, users } = useAuth();
   const { can } = useAuthorization();
@@ -159,14 +169,7 @@ export default function WorkflowCompletionReport() {
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [workflow, setWorkflow] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({
-    year: "all",
-    month: "all",
-    project: "all",
-    department: "all",
-    category: "all",
-    owner: "all",
-  });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   useEffect(() => {
     getDoc(doc(db, "workflows", "recurring-payments-workflow")).then(snapshot => {
@@ -204,6 +207,9 @@ export default function WorkflowCompletionReport() {
     }),
     [payments, filters, activeProjects, activeDepartments],
   );
+
+  const activeFilterCount = (Object.keys(DEFAULT_FILTERS) as Array<keyof typeof DEFAULT_FILTERS>)
+    .filter(key => filters[key] !== DEFAULT_FILTERS[key]).length;
 
   const summary = useMemo(() => {
     const totalAmount = rows.reduce((sum, item) => sum + Number(item.billAmount || item.expectedAmount || 0), 0);
@@ -271,9 +277,8 @@ export default function WorkflowCompletionReport() {
         </CardContent>
       </Card>
 
-      <Card className="print:hidden">
-        <CardHeader><CardTitle className="text-base">Filters</CardTitle></CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <FilterField label="Year">
             <Select value={filters.year} onValueChange={year => setFilters(current => ({ ...current, year }))}>
               <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
@@ -332,8 +337,8 @@ export default function WorkflowCompletionReport() {
               </SelectContent>
             </Select>
           </FilterField>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleFilterCard>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Metric label="Total payments" value={String(summary.total)} />

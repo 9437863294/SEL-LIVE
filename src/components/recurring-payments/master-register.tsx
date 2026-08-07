@@ -46,6 +46,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import CollapsibleFilterCard from "./collapsible-filter-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +73,12 @@ import {
 import { useGlobalScopes } from "./use-global-scopes";
 
 const ALL = "all";
+const DEFAULT_MASTER_FILTERS = {
+  status: ALL,
+  category: ALL,
+  frequency: ALL,
+  owner: ALL,
+};
 
 export default function RecurringMasterRegister() {
   const { user, users } = useAuth();
@@ -83,12 +90,10 @@ export default function RecurringMasterRegister() {
   const [rows, setRows] = useState<RecurringPaymentMaster[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({
-    status: ALL,
-    category: ALL,
-    frequency: ALL,
-    owner: ALL,
-  });
+  const [filters, setFilters] = useState(DEFAULT_MASTER_FILTERS);
+  const activeFilterCount = (search.trim() ? 1 : 0)
+    + (Object.keys(DEFAULT_MASTER_FILTERS) as Array<keyof typeof DEFAULT_MASTER_FILTERS>)
+      .filter((key) => filters[key] !== DEFAULT_MASTER_FILTERS[key]).length;
 
   useEffect(
     () =>
@@ -398,67 +403,73 @@ export default function RecurringMasterRegister() {
           }
         />
       </div>
+      <CollapsibleFilterCard
+        title="Search & filters"
+        activeCount={activeFilterCount}
+        onClear={() => { setSearch(""); setFilters(DEFAULT_MASTER_FILTERS); }}
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              className="pl-8"
+              placeholder="Search masters…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
+          <Filter
+            value={filters.status}
+            label="All statuses"
+            options={unique(rows.map((item) => item.status))}
+            onChange={(status) =>
+              setFilters((current) => ({ ...current, status }))
+            }
+          />
+          <Filter
+            value={filters.category}
+            label="All categories"
+            options={unique(rows.map((item) => item.category))}
+            onChange={(category) =>
+              setFilters((current) => ({ ...current, category }))
+            }
+          />
+          <Filter
+            value={filters.frequency}
+            label="All frequencies"
+            options={unique(rows.map((item) => item.frequency))}
+            onChange={(frequency) =>
+              setFilters((current) => ({ ...current, frequency }))
+            }
+          />
+          <Select
+            value={filters.owner}
+            onValueChange={(owner) =>
+              setFilters((current) => ({ ...current, owner }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="All owners" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All owners</SelectItem>
+              {users.map((item) => (
+                <SelectItem value={item.id} key={item.id}>
+                  {item.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </CollapsibleFilterCard>
       <Card>
         <CardHeader>
           <CardTitle>Master register</CardTitle>
           <CardDescription>
-            Search, filter and administer organization-scoped templates
+            {rows.length} organization-scoped template(s)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-8"
-                placeholder="Search masters…"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
-            <Filter
-              value={filters.status}
-              label="All statuses"
-              options={unique(rows.map((item) => item.status))}
-              onChange={(status) =>
-                setFilters((current) => ({ ...current, status }))
-              }
-            />
-            <Filter
-              value={filters.category}
-              label="All categories"
-              options={unique(rows.map((item) => item.category))}
-              onChange={(category) =>
-                setFilters((current) => ({ ...current, category }))
-              }
-            />
-            <Filter
-              value={filters.frequency}
-              label="All frequencies"
-              options={unique(rows.map((item) => item.frequency))}
-              onChange={(frequency) =>
-                setFilters((current) => ({ ...current, frequency }))
-              }
-            />
-            <Select
-              value={filters.owner}
-              onValueChange={(owner) =>
-                setFilters((current) => ({ ...current, owner }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="All owners" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL}>All owners</SelectItem>
-                {users.map((item) => (
-                  <SelectItem value={item.id} key={item.id}>
-                    {item.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>

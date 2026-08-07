@@ -53,8 +53,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import CollapsibleFilterCard from "./collapsible-filter-card";
 import { useGlobalScopes } from "./use-global-scopes";
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DEFAULT_FILTERS = {
+  category: "all",
+  vendor: "all",
+  status: "all",
+  owner: "all",
+  project: "all",
+  department: "all",
+};
 export default function AdvancedPaymentCalendar() {
   const { user, users } = useAuth();
   const { can } = useAuthorization();
@@ -66,14 +75,7 @@ export default function AdvancedPaymentCalendar() {
     () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
   const [selected, setSelected] = useState<PaymentObligation | null>(null);
-  const [filters, setFilters] = useState({
-    category: "all",
-    vendor: "all",
-    status: "all",
-    owner: "all",
-    project: "all",
-    department: "all",
-  });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
   useEffect(
     () =>
       onSnapshot(
@@ -149,6 +151,8 @@ export default function AdvancedPaymentCalendar() {
         payments.map((item) => String(item[key] || "")).filter(Boolean),
       ),
     ].sort();
+  const activeFilterCount = (Object.keys(DEFAULT_FILTERS) as Array<keyof typeof DEFAULT_FILTERS>)
+    .filter((key) => filters[key] !== DEFAULT_FILTERS[key]).length;
   const weekStart = useMemo(() => {
     const date = new Date();
     date.setDate(date.getDate() - date.getDay());
@@ -190,8 +194,8 @@ export default function AdvancedPaymentCalendar() {
           </div>
         </CardContent>
       </Card>
-      <Card>
-        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Filter
             value={filters.category}
             label="All categories"
@@ -270,8 +274,8 @@ export default function AdvancedPaymentCalendar() {
               ))}
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleFilterCard>
       <Tabs defaultValue="month">
         <TabsList>
           <TabsTrigger value="month">Monthly</TabsTrigger>

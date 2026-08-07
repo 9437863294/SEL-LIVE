@@ -9,8 +9,6 @@ import {
   FileCheck2,
   Loader2,
   Printer,
-  RotateCcw,
-  SlidersHorizontal,
   Target,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
@@ -33,6 +31,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import CollapsibleFilterCard from "./collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -332,23 +331,7 @@ export default function RecurringReportRoutePage({
           tone={outstanding > 0 ? (kind === "overdue" ? "critical" : "warning") : "good"}
         />
       </div>
-      <Card className="print:hidden">
-        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Filters</CardTitle>
-            {activeFilterCount > 0 && (
-              <Badge variant="secondary">{activeFilterCount} active</Badge>
-            )}
-          </div>
-          {activeFilterCount > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-              Clear filters
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
           <div className="space-y-1.5 border-b pb-3">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
@@ -575,8 +558,7 @@ export default function RecurringReportRoutePage({
               />
             </Field>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleFilterCard>
       <Card>
         <CardHeader>
           <CardTitle>{rows.length} report record(s)</CardTitle>

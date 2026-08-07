@@ -47,6 +47,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import CollapsibleFilterCard from "./collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -158,6 +159,13 @@ export default function ProfessionalRecurringDashboard() {
         .reverse(),
     [normalized],
   );
+  const defaultFilters = {
+    financialYear: financialYearFor(new Date()),
+    branch: "all", project: "all", department: "all", category: "all", status: "all",
+    from: "", to: "",
+  };
+  const activeFilterCount = (Object.keys(defaultFilters) as Array<keyof typeof defaultFilters>)
+    .filter((key) => filters[key] !== defaultFilters[key]).length;
   const visible = useMemo(
     () =>
       normalized.filter((payment) => {
@@ -443,6 +451,10 @@ export default function ProfessionalRecurringDashboard() {
               )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(defaultFilters)}>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             <FilterSelect
               value={organizationId}
@@ -506,8 +518,7 @@ export default function ProfessionalRecurringDashboard() {
               className="border-slate-200 bg-white/90 text-slate-700 shadow-sm"
             />
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleFilterCard>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {cards.map(({ label, items, icon: Icon, color, href }) => (

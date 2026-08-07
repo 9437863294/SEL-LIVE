@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import CollapsibleFilterCard from "./collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -47,19 +48,21 @@ import {
  * "how much did we pay by cheque this month" or "what moved through account X" had no report to
  * answer them from.
  */
+const DEFAULT_FILTERS = {
+  from: "",
+  to: "",
+  mode: "all",
+  bankAccount: "all",
+  paidBy: "all",
+};
+
 export default function PaymentModeReport() {
   const { user } = useAuth();
   const { can } = useAuthorization();
   const organizationId = user?.organizationId || "default";
   const [transactions, setTransactions] = useState<PaymentTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({
-    from: "",
-    to: "",
-    mode: "all",
-    bankAccount: "all",
-    paidBy: "all",
-  });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   useEffect(
     () =>
@@ -107,6 +110,9 @@ export default function PaymentModeReport() {
         .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate)),
     [transactions, filters],
   );
+
+  const activeFilterCount = (Object.keys(DEFAULT_FILTERS) as Array<keyof typeof DEFAULT_FILTERS>)
+    .filter((key) => filters[key] !== DEFAULT_FILTERS[key]).length;
 
   const total = rows.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const totalTds = rows.reduce((sum, item) => sum + Number(item.tdsAmount || 0), 0);
@@ -202,11 +208,8 @@ export default function PaymentModeReport() {
         <Metric label="GST" value={currency(totalGst)} />
         <Metric label="Other deductions / adjustments" value={currency(totalDeductions)} />
       </div>
-      <Card className="print:hidden">
-        <CardHeader>
-          <CardTitle>Report filters</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <Input
             type="date"
             value={filters.from}
@@ -271,8 +274,8 @@ export default function PaymentModeReport() {
               ))}
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
+        </div>
+      </CollapsibleFilterCard>
       <div className="grid gap-4 lg:grid-cols-2">
         <SummaryTable title="By payment mode" rows={byMode} />
         <SummaryTable title="By bank account" rows={byBank} />
