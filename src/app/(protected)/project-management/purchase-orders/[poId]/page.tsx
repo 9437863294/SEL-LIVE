@@ -21,6 +21,8 @@ import {
 import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, updateDoc } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { db, storage } from "@/lib/firebase";
+import { cn } from "@/lib/utils";
+import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing, type MdlOverallStatus } from "@/lib/mdl";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -105,6 +107,8 @@ export default function ProjectPurchaseOrderDetailPage() {
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [budgetPriceByBoqItemId, setBudgetPriceByBoqItemId] = useState<Map<string, number>>(new Map());
+  const [boqSlNoByBoqItemId, setBoqSlNoByBoqItemId] = useState<Map<string, string>>(new Map());
+  const [mdlStatusByBoqItemId, setMdlStatusByBoqItemId] = useState<Map<string, MdlOverallStatus>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDatesDialogOpen, setIsDatesDialogOpen] = useState(false);
@@ -124,13 +128,35 @@ export default function ProjectPurchaseOrderDetailPage() {
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
       setMapping(mappingData);
 
-      const [snapshot, boqSnapshot] = await Promise.all([
+      const [snapshot, boqSnapshot, mdlSnapshot] = await Promise.all([
         getDoc(doc(db, "projects", mappingData.globalProjectId, PO_COLLECTION, poId)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, MDL_COLLECTION)),
       ]);
       setBudgetPriceByBoqItemId(
         new Map(
           boqSnapshot.docs.map((d) => [d.id, toNumber((d.data() as Record<string, unknown>)["Budget Price"])]),
+        ),
+      );
+      setBoqSlNoByBoqItemId(
+        new Map(
+          boqSnapshot.docs.map((d) => [d.id, String((d.data() as Record<string, unknown>)["BOQ SL No"] ?? "")]),
+        ),
+      );
+      const mdlRequiredBoqItemIds = new Set(
+        boqSnapshot.docs
+          .filter((d) => String((d.data() as Record<string, unknown>).MDL ?? "").trim().toLowerCase() === "yes")
+          .map((d) => d.id),
+      );
+      const drawingsByBoqItemId = new Map(
+        mdlSnapshot.docs.map((d) => [d.id, { id: d.id, ...d.data() } as MdlDrawing]),
+      );
+      setMdlStatusByBoqItemId(
+        new Map(
+          Array.from(mdlRequiredBoqItemIds).map((boqItemId) => [
+            boqItemId,
+            drawingsByBoqItemId.get(boqItemId)?.status ?? "Pending",
+          ]),
         ),
       );
       if (!snapshot.exists()) {
@@ -409,6 +435,7 @@ export default function ProjectPurchaseOrderDetailPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>BOQ SL No</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Unit</TableHead>
                   <TableHead>BOQ Qty</TableHead>
@@ -419,13 +446,17 @@ export default function ProjectPurchaseOrderDetailPage() {
                   <TableHead>Total Budget Price</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Source RFQ</TableHead>
+                  <TableHead>MDL Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(po.items ?? []).map((item, index) => {
                   const budgetPrice = item.boqItemId ? budgetPriceByBoqItemId.get(item.boqItemId) ?? 0 : 0;
+                  const boqSlNo = item.boqItemId ? boqSlNoByBoqItemId.get(item.boqItemId) : "";
+                  const mdlStatus = item.boqItemId ? mdlStatusByBoqItemId.get(item.boqItemId) : undefined;
                   return (
                     <TableRow key={index}>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{boqSlNo || "—"}</TableCell>
                       <TableCell className="max-w-md">{item.description}</TableCell>
                       <TableCell>{item.unit || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{typeof item.boqQty === "number" ? formatQuantity(item.boqQty) : "—"}</TableCell>
@@ -436,6 +467,15 @@ export default function ProjectPurchaseOrderDetailPage() {
                       <TableCell className="text-muted-foreground">{formatCurrency(budgetPrice * item.qty)}</TableCell>
                       <TableCell className="font-medium">{formatCurrency(item.amount)}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{item.sourceRfqNumber || "—"}</TableCell>
+                      <TableCell>
+                        {mdlStatus ? (
+                          <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[mdlStatus])}>
+                            {mdlStatus}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}

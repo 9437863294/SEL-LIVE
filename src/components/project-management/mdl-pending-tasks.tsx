@@ -62,6 +62,8 @@ export default function MdlPendingTasks({
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">SL NO</TableHead>
+                  <TableHead>BOQ SL No</TableHead>
                   <TableHead className="min-w-[200px]">Item</TableHead>
                   <TableHead>PO Number</TableHead>
                   <TableHead>Vendor</TableHead>
@@ -72,10 +74,12 @@ export default function MdlPendingTasks({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pendingRows.map(({ item, drawing, po }) => {
+                {pendingRows.map(({ item, drawing, po }, index) => {
                   const overdue = isMdlOverdue(drawing);
                   return (
                     <TableRow key={item.id} className="cursor-pointer" onClick={() => onSelectItem(item.id)}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
                       <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>
                         {String(item.Description ?? "—")}
                       </TableCell>

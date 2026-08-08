@@ -25,6 +25,8 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { cn } from "@/lib/utils";
+import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing } from "@/lib/mdl";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
@@ -156,6 +158,9 @@ export default function NewProjectPurchaseOrderPage() {
   const [indents, setIndents] = useState<IndentRecord[]>([]);
   const [existingPurchaseOrders, setExistingPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [mdlRequiredBoqItemIds, setMdlRequiredBoqItemIds] = useState<Set<string>>(new Set());
+  const [mdlDrawingsByBoqItemId, setMdlDrawingsByBoqItemId] = useState<Map<string, MdlDrawing>>(new Map());
+  const [forceNewMdlReview, setForceNewMdlReview] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [expandedRfqs, setExpandedRfqs] = useState<Set<string>>(new Set());
@@ -214,13 +219,14 @@ export default function NewProjectPurchaseOrderPage() {
         const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
         if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
 
-        const [projectSnapshot, vendorSnapshot, rfqSnapshot, indentSnapshot, boqSnapshot, poSnapshot] = await Promise.all([
+        const [projectSnapshot, vendorSnapshot, rfqSnapshot, indentSnapshot, boqSnapshot, poSnapshot, mdlSnapshot] = await Promise.all([
           getDoc(doc(db, "projects", mappingData.globalProjectId)),
           getDocs(collection(db, VENDOR_COLLECTIONS.vendors)),
           getDocs(collection(db, "projects", mappingData.globalProjectId, RFQ_COLLECTION)),
           getDocs(collection(db, "projects", mappingData.globalProjectId, "indents")),
           getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
           getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, MDL_COLLECTION)),
         ]);
         const globalProjectName =
           (projectSnapshot.data()?.projectName as string | undefined) ?? mappingData.globalProjectName;
@@ -256,6 +262,16 @@ export default function NewProjectPurchaseOrderPage() {
         setExpandedIndents(new Set(indentRows.map((i) => i.id)));
         setBoqItems(boqSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as BoqItem));
         setExistingPurchaseOrders(poSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as PurchaseOrder));
+        setMdlRequiredBoqItemIds(
+          new Set(
+            boqSnapshot.docs
+              .filter((d) => String((d.data() as Record<string, unknown>).MDL ?? "").trim().toLowerCase() === "yes")
+              .map((d) => d.id),
+          ),
+        );
+        setMdlDrawingsByBoqItemId(
+          new Map(mdlSnapshot.docs.map((d) => [d.id, { id: d.id, ...d.data() } as MdlDrawing])),
+        );
       } catch (error) {
         console.error("Failed to load data for new purchase order:", error);
         toast({
@@ -294,7 +310,12 @@ export default function NewProjectPurchaseOrderPage() {
 
   // Purchase orders are raised for supply items only — the BOQ picker is scoped to Scope 2 = Supply.
   const supplyBoqItems = useMemo(
-    () => boqItems.filter((item) => String(item["Scope 2"] ?? "").trim().toLowerCase() === "supply"),
+    () =>
+      boqItems
+        .filter((item) => String(item["Scope 2"] ?? "").trim().toLowerCase() === "supply")
+        .sort((a, b) =>
+          String(a["ERP SL NO"] ?? "").localeCompare(String(b["ERP SL NO"] ?? ""), undefined, { numeric: true }),
+        ),
     [boqItems],
   );
 
@@ -370,6 +391,43 @@ export default function NewProjectPurchaseOrderPage() {
     changes: Partial<Selection>,
   ) => {
     setter((current) => ({ ...current, [key]: { ...current[key], ...changes } }));
+  };
+
+  const toggleForceNewMdlReview = (boqItemId: string, checked: boolean) => {
+    setForceNewMdlReview((current) => {
+      const next = new Set(current);
+      if (checked) next.add(boqItemId);
+      else next.delete(boqItemId);
+      return next;
+    });
+  };
+
+  // An already-approved MDL drawing doesn't need another review by default — placing a PO
+  // for it leaves it alone. The checkbox is only an escape hatch for the rare case where this
+  // particular order does need a fresh drawing look despite the earlier approval.
+  const renderMdlCell = (boqItemId?: string) => {
+    if (!boqItemId || !mdlRequiredBoqItemIds.has(boqItemId)) {
+      return <span className="text-xs text-muted-foreground">—</span>;
+    }
+    const status = mdlDrawingsByBoqItemId.get(boqItemId)?.status ?? "Pending";
+    const isApproved = status === "Approved" || status === "Approved with Comments";
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", mdlOverallStatusStyles[status])}>
+          {status}
+        </span>
+        {isApproved && (
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <Checkbox
+              className="h-3.5 w-3.5"
+              checked={forceNewMdlReview.has(boqItemId)}
+              onCheckedChange={(checked) => toggleForceNewMdlReview(boqItemId, checked === true)}
+            />
+            Request new review
+          </label>
+        )}
+      </div>
+    );
   };
 
   const findRfqItem = (rfqId: string, rfqItemId: string) => rfqs.find((r) => r.id === rfqId)?.items.find((i) => i.rfqItemId === rfqItemId) ?? null;
@@ -511,8 +569,9 @@ export default function NewProjectPurchaseOrderPage() {
       const involvedRfqNumbers = Array.from(new Set(rfqSourcedItems.map((item) => item.sourceRfqNumber!)));
 
       const poRef = doc(collection(db, "projects", mapping.globalProjectId, PO_COLLECTION));
+      const poNumber = generatePoNumber(poDate, poRef.id);
       await setDoc(poRef, {
-        poNumber: generatePoNumber(poDate, poRef.id),
+        poNumber,
         poDate,
         vendorId: selectedVendor.id,
         vendorName: selectedVendor.vendorName,
@@ -561,6 +620,28 @@ export default function NewProjectPurchaseOrderPage() {
           );
         }),
       );
+
+      // MDL is already approved by default → no new review is forced. Only items explicitly
+      // flagged (and still present on this PO) get their drawing status reopened for review.
+      const boqItemIdsInThisPo = new Set(items.map((item) => item.boqItemId).filter(Boolean) as string[]);
+      const forcedReviewIds = Array.from(forceNewMdlReview).filter((id) => boqItemIdsInThisPo.has(id));
+      if (forcedReviewIds.length) {
+        const note = `Re-review requested via PO ${poNumber} (${poDate}).`;
+        await Promise.all(
+          forcedReviewIds.map((boqItemId) => {
+            const existingRemark = mdlDrawingsByBoqItemId.get(boqItemId)?.remark;
+            return setDoc(
+              doc(db, "projects", mapping.globalProjectId, MDL_COLLECTION, boqItemId),
+              {
+                status: "Pending",
+                remark: existingRemark ? `${existingRemark}\n\n${note}` : note,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
+          }),
+        );
+      }
 
       toast({ title: "Purchase order created" });
       router.push(`/project-management/purchase-orders/${poRef.id}?project=${encodeURIComponent(mappingId)}`);
@@ -923,6 +1004,7 @@ export default function NewProjectPurchaseOrderPage() {
                   <TableHead>Rate</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Source</TableHead>
+                  <TableHead>MDL</TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -947,6 +1029,7 @@ export default function NewProjectPurchaseOrderPage() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap font-medium">{formatCurrency(lineAmount(sel))}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{rfq.rfqNumber}</TableCell>
+                      <TableCell>{renderMdlCell(item.boqItemId)}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" onClick={() => toggleRfqItem(rfqId, item, null, false)} aria-label="Remove item">
                           <Trash2 className="h-4 w-4 text-destructive" />
@@ -976,6 +1059,7 @@ export default function NewProjectPurchaseOrderPage() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap font-medium">{formatCurrency(lineAmount(sel))}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{indent.indentNumber}</TableCell>
+                      <TableCell>{renderMdlCell(item.boqItemId)}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" onClick={() => toggleIndentItem(indentId, item, false)} aria-label="Remove item">
                           <Trash2 className="h-4 w-4 text-destructive" />
@@ -1002,6 +1086,7 @@ export default function NewProjectPurchaseOrderPage() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap font-medium">{formatCurrency(lineAmount(sel))}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">BOQ</TableCell>
+                      <TableCell>{renderMdlCell(boqItemId)}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" onClick={() => toggleBoqItem(item, false)} aria-label="Remove item">
                           <Trash2 className="h-4 w-4 text-destructive" />
@@ -1029,6 +1114,7 @@ export default function NewProjectPurchaseOrderPage() {
                     </TableCell>
                     <TableCell className="whitespace-nowrap font-medium">{formatCurrency(manualLineAmount(row))}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">Manual</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">—</TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" onClick={() => removeManualRow(row.rowId)} aria-label="Remove row">
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -1039,7 +1125,7 @@ export default function NewProjectPurchaseOrderPage() {
 
                 {!hasAnyItems && (
                   <TableRow>
-                    <TableCell colSpan={9} className="h-20 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={10} className="h-20 text-center text-sm text-muted-foreground">
                       No items added yet.
                     </TableCell>
                   </TableRow>

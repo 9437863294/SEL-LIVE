@@ -48,6 +48,7 @@ export default function PrintPurchaseOrderPage() {
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [projectName, setProjectName] = useState("");
   const [budgetPriceByBoqItemId, setBudgetPriceByBoqItemId] = useState<Map<string, number>>(new Map());
+  const [boqSlNoByBoqItemId, setBoqSlNoByBoqItemId] = useState<Map<string, string>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -83,6 +84,11 @@ export default function PrintPurchaseOrderPage() {
         setBudgetPriceByBoqItemId(
           new Map(
             boqSnapshot.docs.map((d) => [d.id, toNumber((d.data() as Record<string, unknown>)["Budget Price"])]),
+          ),
+        );
+        setBoqSlNoByBoqItemId(
+          new Map(
+            boqSnapshot.docs.map((d) => [d.id, String((d.data() as Record<string, unknown>)["BOQ SL No"] ?? "")]),
           ),
         );
       } catch (err) {
@@ -149,6 +155,7 @@ export default function PrintPurchaseOrderPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="border-black text-center">Sl. No.</TableHead>
+                  <TableHead className="border-black text-center">BOQ SL No</TableHead>
                   <TableHead className="border-black text-center">Description</TableHead>
                   <TableHead className="border-black text-center">Unit</TableHead>
                   <TableHead className="border-black text-center">Qty</TableHead>
@@ -161,9 +168,11 @@ export default function PrintPurchaseOrderPage() {
               <TableBody>
                 {(po.items ?? []).map((item, index) => {
                   const budgetPrice = item.boqItemId ? budgetPriceByBoqItemId.get(item.boqItemId) ?? 0 : 0;
+                  const boqSlNo = item.boqItemId ? boqSlNoByBoqItemId.get(item.boqItemId) : "";
                   return (
                     <TableRow key={index}>
                       <TableCell className="text-center border-black">{index + 1}</TableCell>
+                      <TableCell className="text-center border-black">{boqSlNo || "—"}</TableCell>
                       <TableCell className="border-black">{item.description}</TableCell>
                       <TableCell className="text-center border-black">{item.unit || "—"}</TableCell>
                       <TableCell className="text-right border-black">{formatQuantity(item.qty)}</TableCell>
