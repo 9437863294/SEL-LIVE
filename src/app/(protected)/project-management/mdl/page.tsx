@@ -11,6 +11,7 @@ import {
   FileStack,
   GanttChart,
   ListPlus,
+  ListTodo,
   Loader2,
   Paperclip,
   Pencil,
@@ -73,7 +74,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   MDL_COLLECTION,
   MDL_OVERALL_STATUSES,
@@ -95,9 +96,12 @@ import {
   type MdlRevisionStatus,
   type MdlRow,
 } from "@/lib/mdl";
+import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
 import MdlWorkplanCalendar from "@/components/project-management/mdl-calendar";
 import MdlReports from "@/components/project-management/mdl-reports";
 import MdlGanttChart from "@/components/project-management/mdl-gantt";
+import MdlPendingTasks, { type PoPlacement } from "@/components/project-management/mdl-pending-tasks";
+import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 
 type ProjectMapping = {
   id: string;
@@ -151,6 +155,7 @@ export default function MdlPage() {
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
   const [drawings, setDrawings] = useState<Record<string, MdlDrawing>>({});
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [editingBoqItem, setEditingBoqItem] = useState<BoqItem | null>(null);
@@ -181,9 +186,10 @@ export default function MdlPage() {
       const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
 
-      const [boqSnapshot, drawingSnapshot] = await Promise.all([
+      const [boqSnapshot, drawingSnapshot, poSnapshot] = await Promise.all([
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", mappingData.globalProjectId, MDL_COLLECTION)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
       ]);
 
       setMapping(mappingData);
@@ -191,6 +197,7 @@ export default function MdlPage() {
       setDrawings(
         Object.fromEntries(drawingSnapshot.docs.map((d) => [d.id, { id: d.id, ...d.data() } as MdlDrawing])),
       );
+      setPurchaseOrders(poSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as PurchaseOrder));
     } catch (error) {
       console.error("Failed to load MDL drawings:", error);
       toast({
@@ -310,6 +317,24 @@ export default function MdlPage() {
     () => boqItems.map((item) => ({ item, drawing: drawings[item.id] })),
     [boqItems, drawings],
   );
+
+  // Which BOQ items have an active (non-cancelled) purchase order placed against them —
+  // that's the trigger for a drawing becoming a "pending task".
+  const poInfoByBoqItemId = useMemo(() => {
+    const map = new Map<string, PoPlacement>();
+    for (const po of purchaseOrders) {
+      if (po.status === "Cancelled") continue;
+      for (const item of po.items ?? []) {
+        if (!item.boqItemId) continue;
+        const entry = map.get(item.boqItemId) ?? { poNumbers: [], vendorNames: [], latestPoDate: "" };
+        if (!entry.poNumbers.includes(po.poNumber)) entry.poNumbers.push(po.poNumber);
+        if (po.vendorName && !entry.vendorNames.includes(po.vendorName)) entry.vendorNames.push(po.vendorName);
+        if (po.poDate > entry.latestPoDate) entry.latestPoDate = po.poDate;
+        map.set(item.boqItemId, entry);
+      }
+    }
+    return map;
+  }, [purchaseOrders]);
 
   const openEditDialog = (item: BoqItem) => {
     const existing = drawings[item.id];
@@ -519,35 +544,23 @@ export default function MdlPage() {
         )}
       </div>
 
-      <Tabs defaultValue="register" orientation="vertical" className="flex flex-col gap-4 lg:flex-row lg:gap-6">
-        <TabsList className="flex h-auto flex-row gap-1 overflow-x-auto bg-transparent p-0 lg:w-52 lg:shrink-0 lg:flex-col lg:items-stretch lg:overflow-visible">
-          <TabsTrigger
-            value="register"
-            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700 data-[state=active]:shadow-none lg:w-full"
-          >
-            <Table2 className="h-4 w-4" /> Register
-          </TabsTrigger>
-          <TabsTrigger
-            value="calendar"
-            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700 data-[state=active]:shadow-none lg:w-full"
-          >
-            <CalendarDays className="h-4 w-4" /> Workplan Calendar
-          </TabsTrigger>
-          <TabsTrigger
-            value="gantt"
-            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700 data-[state=active]:shadow-none lg:w-full"
-          >
-            <GanttChart className="h-4 w-4" /> Gantt Chart
-          </TabsTrigger>
-          <TabsTrigger
-            value="reports"
-            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700 data-[state=active]:shadow-none lg:w-full"
-          >
-            <FileBarChart2 className="h-4 w-4" /> Reports
-          </TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="pending" orientation="vertical" className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+        <SidebarTabsList
+          items={[
+            { value: "pending", label: "Pending Tasks", icon: ListTodo },
+            { value: "register", label: "Register", icon: Table2 },
+            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays },
+            { value: "gantt", label: "Gantt Chart", icon: GanttChart },
+            { value: "reports", label: "Reports", icon: FileBarChart2 },
+          ]}
+          activeClassName="data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700"
+        />
 
         <div className="min-w-0 flex-1 space-y-4">
+        <TabsContent value="pending" className="mt-0">
+          <MdlPendingTasks rows={mdlRows} poInfoByBoqItemId={poInfoByBoqItemId} onSelectItem={handleSelectMdlItem} />
+        </TabsContent>
+
         <TabsContent value="register" className="mt-0 space-y-5">
           {groups.length ? (
             groups.map(([scope, items]) => (

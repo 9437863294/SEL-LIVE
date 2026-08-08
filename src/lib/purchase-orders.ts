@@ -35,6 +35,9 @@ export interface PurchaseOrder {
   startDate?: string;
   endDate?: string;
   terms?: string;
+  approvedDocumentUrl?: string;
+  approvedDocumentName?: string;
+  approvedDocumentPath?: string;
   items: PurchaseOrderItem[];
   totalAmount: number;
   status: POStatus;

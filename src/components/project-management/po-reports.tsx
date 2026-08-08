@@ -31,8 +31,15 @@ import {
 
 export type PoBoqItemLite = {
   id: string;
+  "ERP SL NO"?: string | number;
+  "BOQ SL No"?: string | number;
   Description?: string;
+  Unit?: string;
+  QTY?: string | number;
+  "Unit Rate"?: string | number;
+  "Total Amount"?: string | number;
   "Scope 1"?: string;
+  "Scope 2"?: string;
   "Budget Price"?: string | number;
 };
 

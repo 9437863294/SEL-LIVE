@@ -9,6 +9,7 @@ import {
   CalendarDays,
   FileBarChart2,
   GanttChart,
+  PackageSearch,
   Plus,
   ShieldAlert,
   ShoppingCart,
@@ -42,25 +43,39 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
   PO_STATUSES,
   formatCurrency,
   poStatusStyles,
+  toNumber,
   type POStatus,
   type PurchaseOrder,
 } from "@/lib/purchase-orders";
 import PoWorkplanCalendar from "@/components/project-management/po-calendar";
 import PoReports, { type PoBoqItemLite } from "@/components/project-management/po-reports";
 import PoGanttChart from "@/components/project-management/po-gantt";
+import PoBoqItemsTable from "@/components/project-management/po-boq-items";
+import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 
 type ProjectMapping = {
   id: string;
   projectName: string;
   globalProjectId: string;
   globalProjectName: string;
+};
+
+type IndentLineItem = {
+  boqItemId: string;
+  requestedQty: number | string;
+};
+
+type IndentRecord = {
+  id: string;
+  status: string;
+  items: IndentLineItem[];
 };
 
 const formatDate = (value?: string) => {
@@ -84,6 +99,7 @@ export default function ProjectPurchaseOrdersPage() {
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [boqItemsById, setBoqItemsById] = useState<Map<string, PoBoqItemLite>>(new Map());
+  const [indents, setIndents] = useState<IndentRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"all" | POStatus>("all");
 
@@ -99,9 +115,10 @@ export default function ProjectPurchaseOrdersPage() {
       const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
 
-      const [poSnapshot, boqSnapshot] = await Promise.all([
+      const [poSnapshot, boqSnapshot, indentSnapshot] = await Promise.all([
         getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, "indents")),
       ]);
       const rows = poSnapshot.docs
         .map((d) => ({ id: d.id, ...d.data() }) as PurchaseOrder)
@@ -110,6 +127,11 @@ export default function ProjectPurchaseOrdersPage() {
       setMapping(mappingData);
       setPurchaseOrders(rows);
       setBoqItemsById(new Map(boqSnapshot.docs.map((d) => [d.id, { id: d.id, ...d.data() } as PoBoqItemLite])));
+      setIndents(
+        indentSnapshot.docs
+          .map((d) => ({ id: d.id, ...d.data() }) as IndentRecord)
+          .filter((indent) => !["Rejected", "Cancelled"].includes(indent.status)),
+      );
     } catch (error) {
       console.error("Failed to load purchase orders:", error);
       toast({
@@ -135,6 +157,37 @@ export default function ProjectPurchaseOrdersPage() {
     () => (statusFilter === "all" ? purchaseOrders : purchaseOrders.filter((po) => po.status === statusFilter)),
     [purchaseOrders, statusFilter],
   );
+
+  const supplyBoqItems = useMemo(
+    () =>
+      Array.from(boqItemsById.values())
+        .filter((item) => String(item["Scope 2"] ?? "").trim().toLowerCase() === "supply")
+        .sort((a, b) => String(a["BOQ SL No"] ?? "").localeCompare(String(b["BOQ SL No"] ?? ""), undefined, { numeric: true })),
+    [boqItemsById],
+  );
+
+  const indentQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const indent of indents) {
+      for (const item of indent.items ?? []) {
+        if (!item.boqItemId) continue;
+        map.set(item.boqItemId, (map.get(item.boqItemId) ?? 0) + toNumber(item.requestedQty));
+      }
+    }
+    return map;
+  }, [indents]);
+
+  const poQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const po of purchaseOrders) {
+      if (po.status === "Cancelled") continue;
+      for (const item of po.items ?? []) {
+        if (!item.boqItemId) continue;
+        map.set(item.boqItemId, (map.get(item.boqItemId) ?? 0) + toNumber(item.qty));
+      }
+    }
+    return map;
+  }, [purchaseOrders]);
 
   const goToPo = (poId: string) => {
     router.push(`/project-management/purchase-orders/${poId}?project=${encodeURIComponent(mappingId)}`);
@@ -220,32 +273,16 @@ export default function ProjectPurchaseOrdersPage() {
       </div>
 
       <Tabs defaultValue="list" orientation="vertical" className="flex flex-col gap-4 lg:flex-row lg:gap-6">
-        <TabsList className="flex h-auto flex-row gap-1 overflow-x-auto bg-transparent p-0 lg:w-52 lg:shrink-0 lg:flex-col lg:items-stretch lg:overflow-visible">
-          <TabsTrigger
-            value="list"
-            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-none lg:w-full"
-          >
-            <Table2 className="h-4 w-4" /> List
-          </TabsTrigger>
-          <TabsTrigger
-            value="calendar"
-            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-none lg:w-full"
-          >
-            <CalendarDays className="h-4 w-4" /> Workplan Calendar
-          </TabsTrigger>
-          <TabsTrigger
-            value="gantt"
-            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-none lg:w-full"
-          >
-            <GanttChart className="h-4 w-4" /> Gantt Chart
-          </TabsTrigger>
-          <TabsTrigger
-            value="reports"
-            className="shrink-0 justify-start gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-muted-foreground data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700 data-[state=active]:shadow-none lg:w-full"
-          >
-            <FileBarChart2 className="h-4 w-4" /> Reports
-          </TabsTrigger>
-        </TabsList>
+        <SidebarTabsList
+          items={[
+            { value: "list", label: "List", icon: Table2 },
+            { value: "boq-items", label: "BOQ Items", icon: PackageSearch },
+            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays },
+            { value: "gantt", label: "Gantt Chart", icon: GanttChart },
+            { value: "reports", label: "Reports", icon: FileBarChart2 },
+          ]}
+          activeClassName="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700"
+        />
 
         <div className="min-w-0 flex-1 space-y-4">
         <TabsContent value="list" className="mt-0">
@@ -301,6 +338,14 @@ export default function ProjectPurchaseOrdersPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="boq-items" className="mt-0">
+          <PoBoqItemsTable
+            items={supplyBoqItems}
+            indentQtyByBoqItemId={indentQtyByBoqItemId}
+            poQtyByBoqItemId={poQtyByBoqItemId}
+          />
         </TabsContent>
 
         <TabsContent value="calendar" className="mt-0">

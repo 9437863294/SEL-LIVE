@@ -7,15 +7,20 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle2,
+  FileUp,
+  Loader2,
+  Paperclip,
   PackageCheck,
   Pencil,
+  Printer,
   ShieldAlert,
   ShoppingCart,
   Trash2,
   Truck,
 } from "lucide-react";
-import { deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, updateDoc } from "firebase/firestore";
+import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
+import { db, storage } from "@/lib/firebase";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -63,6 +68,7 @@ import {
   formatQuantity,
   isPoOverdue,
   poStatusStyles,
+  toNumber,
   type PurchaseOrder,
 } from "@/lib/purchase-orders";
 
@@ -98,10 +104,12 @@ export default function ProjectPurchaseOrderDetailPage() {
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [po, setPo] = useState<PurchaseOrder | null>(null);
+  const [budgetPriceByBoqItemId, setBudgetPriceByBoqItemId] = useState<Map<string, number>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDatesDialogOpen, setIsDatesDialogOpen] = useState(false);
   const [datesForm, setDatesForm] = useState({ startDate: "", endDate: "" });
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
 
   const loadPo = useCallback(async () => {
     if (!mappingId || !poId) {
@@ -116,7 +124,15 @@ export default function ProjectPurchaseOrderDetailPage() {
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
       setMapping(mappingData);
 
-      const snapshot = await getDoc(doc(db, "projects", mappingData.globalProjectId, PO_COLLECTION, poId));
+      const [snapshot, boqSnapshot] = await Promise.all([
+        getDoc(doc(db, "projects", mappingData.globalProjectId, PO_COLLECTION, poId)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
+      ]);
+      setBudgetPriceByBoqItemId(
+        new Map(
+          boqSnapshot.docs.map((d) => [d.id, toNumber((d.data() as Record<string, unknown>)["Budget Price"])]),
+        ),
+      );
       if (!snapshot.exists()) {
         setPo(null);
         return;
@@ -169,6 +185,36 @@ export default function ProjectPurchaseOrderDetailPage() {
       toast({ title: "Unable to update dates", variant: "destructive" });
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handlePrint = () => {
+    if (!mapping) return;
+    window.open(`/project-management/purchase-orders/${poId}/print?project=${encodeURIComponent(mapping.id)}`, "_blank");
+  };
+
+  const handleUploadApprovedDocument = async (file: File | null) => {
+    if (!file || !mapping || !po) return;
+    setIsUploadingDocument(true);
+    try {
+      const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
+      const path = `project-management/purchase-orders/${mapping.globalProjectId}/${po.id}/approved-${Date.now()}-${safeName}`;
+      const target = storageRef(storage, path);
+      await uploadBytes(target, file);
+      const approvedDocumentUrl = await getDownloadURL(target);
+      await updateDoc(doc(db, "projects", mapping.globalProjectId, PO_COLLECTION, po.id), {
+        approvedDocumentUrl,
+        approvedDocumentName: file.name,
+        approvedDocumentPath: path,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Approved document uploaded" });
+      await loadPo();
+    } catch (error) {
+      console.error("Failed to upload approved document:", error);
+      toast({ title: "Unable to upload document", variant: "destructive" });
+    } finally {
+      setIsUploadingDocument(false);
     }
   };
 
@@ -269,6 +315,9 @@ export default function ProjectPurchaseOrderDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" /> Print for Approval
+          </Button>
           {po.status === "Draft" && canIssue && (
             <Button onClick={() => void updateStatus("Issued")} disabled={isUpdating}>
               <Truck className="mr-2 h-4 w-4" /> Mark as Issued
@@ -366,23 +415,30 @@ export default function ProjectPurchaseOrderDetailPage() {
                   <TableHead>Indent Qty</TableHead>
                   <TableHead>PO Qty</TableHead>
                   <TableHead>Rate</TableHead>
+                  <TableHead>Budget Price</TableHead>
+                  <TableHead>Total Budget Price</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Source RFQ</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(po.items ?? []).map((item, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="max-w-md">{item.description}</TableCell>
-                    <TableCell>{item.unit || "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{typeof item.boqQty === "number" ? formatQuantity(item.boqQty) : "—"}</TableCell>
-                    <TableCell className="text-muted-foreground">{typeof item.indentQty === "number" ? formatQuantity(item.indentQty) : "—"}</TableCell>
-                    <TableCell>{formatQuantity(item.qty)}</TableCell>
-                    <TableCell>{formatCurrency(item.rate)}</TableCell>
-                    <TableCell className="font-medium">{formatCurrency(item.amount)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{item.sourceRfqNumber || "—"}</TableCell>
-                  </TableRow>
-                ))}
+                {(po.items ?? []).map((item, index) => {
+                  const budgetPrice = item.boqItemId ? budgetPriceByBoqItemId.get(item.boqItemId) ?? 0 : 0;
+                  return (
+                    <TableRow key={index}>
+                      <TableCell className="max-w-md">{item.description}</TableCell>
+                      <TableCell>{item.unit || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{typeof item.boqQty === "number" ? formatQuantity(item.boqQty) : "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{typeof item.indentQty === "number" ? formatQuantity(item.indentQty) : "—"}</TableCell>
+                      <TableCell>{formatQuantity(item.qty)}</TableCell>
+                      <TableCell>{formatCurrency(item.rate)}</TableCell>
+                      <TableCell className="text-muted-foreground">{formatCurrency(budgetPrice)}</TableCell>
+                      <TableCell className="text-muted-foreground">{formatCurrency(budgetPrice * item.qty)}</TableCell>
+                      <TableCell className="font-medium">{formatCurrency(item.amount)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{item.sourceRfqNumber || "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -394,6 +450,40 @@ export default function ProjectPurchaseOrderDetailPage() {
           <CheckCircle2 className="h-4 w-4" /> This purchase order has been fully received.
         </div>
       )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Approved Document</CardTitle>
+          <CardDescription>
+            Print this PO for approval, get it signed, then upload the signed copy here for the record.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-3 pt-0">
+          {po.approvedDocumentUrl && (
+            <a
+              href={po.approvedDocumentUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-3 py-1.5 text-sm font-medium text-primary underline-offset-2 hover:underline"
+            >
+              <Paperclip className="h-4 w-4" /> {po.approvedDocumentName || "View uploaded document"}
+            </a>
+          )}
+          <Button variant="outline" size="sm" asChild disabled={isUploadingDocument}>
+            <label className="cursor-pointer">
+              {isUploadingDocument ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4" />}
+              {po.approvedDocumentUrl ? "Replace Document" : "Upload Approved Document"}
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                className="sr-only"
+                disabled={isUploadingDocument}
+                onChange={(e) => void handleUploadApprovedDocument(e.target.files?.[0] ?? null)}
+              />
+            </label>
+          </Button>
+        </CardContent>
+      </Card>
 
       <Dialog open={isDatesDialogOpen} onOpenChange={setIsDatesDialogOpen}>
         <DialogContent>

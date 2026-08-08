@@ -64,6 +64,7 @@ import {
   formatQuantity,
   generatePoNumber,
   toNumber,
+  type PurchaseOrder,
   type PurchaseOrderItem,
 } from "@/lib/purchase-orders";
 import { RFQ_COLLECTION, RFQ_QUOTES_SUBCOLLECTION, type RfqItem, type RfqQuote, type RfqStatus } from "@/lib/rfq";
@@ -108,6 +109,7 @@ type BoqItem = {
   QTY?: string | number;
   "Budget Price"?: string | number;
   "Unit Rate"?: string | number;
+  "Scope 2"?: string;
   [key: string]: unknown;
 };
 
@@ -152,6 +154,7 @@ export default function NewProjectPurchaseOrderPage() {
   const [rfqs, setRfqs] = useState<RfqWithItems[]>([]);
   const [quotesByRfq, setQuotesByRfq] = useState<Record<string, RfqQuote[]>>({});
   const [indents, setIndents] = useState<IndentRecord[]>([]);
+  const [existingPurchaseOrders, setExistingPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -174,6 +177,29 @@ export default function NewProjectPurchaseOrderPage() {
     [boqItems],
   );
 
+  const indentQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const indent of indents) {
+      for (const item of indent.items ?? []) {
+        if (!item.boqItemId) continue;
+        map.set(item.boqItemId, (map.get(item.boqItemId) ?? 0) + toNumber(item.requestedQty));
+      }
+    }
+    return map;
+  }, [indents]);
+
+  const poQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const po of existingPurchaseOrders) {
+      if (po.status === "Cancelled") continue;
+      for (const item of po.items ?? []) {
+        if (!item.boqItemId) continue;
+        map.set(item.boqItemId, (map.get(item.boqItemId) ?? 0) + toNumber(item.qty));
+      }
+    }
+    return map;
+  }, [existingPurchaseOrders]);
+
   useEffect(() => {
     if (isAuthLoading || !canAdd || !mappingId) {
       setIsLoading(false);
@@ -188,12 +214,13 @@ export default function NewProjectPurchaseOrderPage() {
         const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
         if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
 
-        const [projectSnapshot, vendorSnapshot, rfqSnapshot, indentSnapshot, boqSnapshot] = await Promise.all([
+        const [projectSnapshot, vendorSnapshot, rfqSnapshot, indentSnapshot, boqSnapshot, poSnapshot] = await Promise.all([
           getDoc(doc(db, "projects", mappingData.globalProjectId)),
           getDocs(collection(db, VENDOR_COLLECTIONS.vendors)),
           getDocs(collection(db, "projects", mappingData.globalProjectId, RFQ_COLLECTION)),
           getDocs(collection(db, "projects", mappingData.globalProjectId, "indents")),
           getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
         ]);
         const globalProjectName =
           (projectSnapshot.data()?.projectName as string | undefined) ?? mappingData.globalProjectName;
@@ -228,6 +255,7 @@ export default function NewProjectPurchaseOrderPage() {
         setIndents(indentRows);
         setExpandedIndents(new Set(indentRows.map((i) => i.id)));
         setBoqItems(boqSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as BoqItem));
+        setExistingPurchaseOrders(poSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as PurchaseOrder));
       } catch (error) {
         console.error("Failed to load data for new purchase order:", error);
         toast({
@@ -264,14 +292,21 @@ export default function NewProjectPurchaseOrderPage() {
       .filter((entry) => entry.items.length > 0);
   }, [rfqs, quotesByRfq, vendorId]);
 
+  // Purchase orders are raised for supply items only — the BOQ picker is scoped to Scope 2 = Supply.
+  const supplyBoqItems = useMemo(
+    () => boqItems.filter((item) => String(item["Scope 2"] ?? "").trim().toLowerCase() === "supply"),
+    [boqItems],
+  );
+
   const filteredBoqItems = useMemo(() => {
     const q = boqSearch.trim().toLowerCase();
-    if (!q) return boqItems;
-    return boqItems.filter((item) =>
+    if (!q) return supplyBoqItems;
+    return supplyBoqItems.filter((item) =>
+      String(item["ERP SL NO"] ?? "").toLowerCase().includes(q) ||
       String(item["BOQ SL No"] ?? "").toLowerCase().includes(q) ||
       String(item.Description ?? "").toLowerCase().includes(q),
     );
-  }, [boqItems, boqSearch]);
+  }, [supplyBoqItems, boqSearch]);
 
   const toggleRfqExpanded = (rfqId: string) => {
     setExpandedRfqs((current) => {
@@ -676,25 +711,48 @@ export default function NewProjectPurchaseOrderPage() {
                         <span className="text-xs text-muted-foreground">({items.length} quoted item{items.length === 1 ? "" : "s"} available)</span>
                       </div>
                       {isExpanded && (
-                        <div className="divide-y">
-                          {items.map((item) => {
-                            const key = rfqItemKey(rfq.id, item.rfqItemId);
-                            const quotedRate = quote?.items.find((qi) => qi.rfqItemId === item.rfqItemId)?.rate ?? 0;
-                            const boqQty = boqQtyByItemId[item.boqItemId];
-                            return (
-                              <label key={key} className="flex flex-wrap items-center gap-3 px-4 py-2 hover:bg-muted/30 cursor-pointer">
-                                <Checkbox
-                                  checked={key in selectedRfqItems}
-                                  onCheckedChange={(checked) => toggleRfqItem(rfq.id, item, quote, checked === true)}
-                                />
-                                <span className="w-20 shrink-0 text-xs text-muted-foreground">{item.boqSlNo || "—"}</span>
-                                <span className="min-w-[160px] flex-1 truncate text-sm">{item.description}</span>
-                                <span className="shrink-0 text-xs text-muted-foreground">BOQ: {typeof boqQty === "number" ? formatQuantity(boqQty) : "—"}</span>
-                                <span className="shrink-0 text-xs text-muted-foreground">Indent: {formatQuantity(item.qty)} {item.unit}</span>
-                                <span className="shrink-0 text-xs font-medium text-foreground">{formatCurrency(quotedRate)}</span>
-                              </label>
-                            );
-                          })}
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-10" />
+                                <TableHead>BOQ SL No</TableHead>
+                                <TableHead className="min-w-[200px]">Description</TableHead>
+                                <TableHead>Unit</TableHead>
+                                <TableHead>BOQ Qty</TableHead>
+                                <TableHead>RFQ Qty</TableHead>
+                                <TableHead>Quoted Rate</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {items.map((item) => {
+                                const key = rfqItemKey(rfq.id, item.rfqItemId);
+                                const quotedRate = quote?.items.find((qi) => qi.rfqItemId === item.rfqItemId)?.rate ?? 0;
+                                const boqQty = boqQtyByItemId[item.boqItemId];
+                                const checked = key in selectedRfqItems;
+                                return (
+                                  <TableRow
+                                    key={key}
+                                    className="cursor-pointer"
+                                    onClick={() => toggleRfqItem(rfq.id, item, quote, !checked)}
+                                  >
+                                    <TableCell onClick={(e) => e.stopPropagation()}>
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(value) => toggleRfqItem(rfq.id, item, quote, value === true)}
+                                      />
+                                    </TableCell>
+                                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{item.boqSlNo || "—"}</TableCell>
+                                    <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
+                                    <TableCell>{item.unit || "—"}</TableCell>
+                                    <TableCell className="text-muted-foreground">{typeof boqQty === "number" ? formatQuantity(boqQty) : "—"}</TableCell>
+                                    <TableCell>{formatQuantity(item.qty)}</TableCell>
+                                    <TableCell className="font-medium">{formatCurrency(quotedRate)}</TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
                         </div>
                       )}
                     </div>
@@ -720,23 +778,45 @@ export default function NewProjectPurchaseOrderPage() {
                       <span className="text-xs text-muted-foreground">({indent.items.length} item{indent.items.length === 1 ? "" : "s"})</span>
                     </div>
                     {isExpanded && (
-                      <div className="divide-y">
-                        {indent.items.map((item) => {
-                          const key = indentItemKey(indent.id, item.boqItemId);
-                          const boqQty = boqQtyByItemId[item.boqItemId];
-                          return (
-                            <label key={key} className="flex flex-wrap items-center gap-3 px-4 py-2 hover:bg-muted/30 cursor-pointer">
-                              <Checkbox
-                                checked={key in selectedIndentItems}
-                                onCheckedChange={(checked) => toggleIndentItem(indent.id, item, checked === true)}
-                              />
-                              <span className="w-20 shrink-0 text-xs text-muted-foreground">{item.boqSlNo || "—"}</span>
-                              <span className="min-w-[160px] flex-1 truncate text-sm">{item.description}</span>
-                              <span className="shrink-0 text-xs text-muted-foreground">BOQ: {typeof boqQty === "number" ? formatQuantity(boqQty) : "—"}</span>
-                              <span className="shrink-0 text-xs text-muted-foreground">Indent: {formatQuantity(item.requestedQty)} {item.unit}</span>
-                            </label>
-                          );
-                        })}
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-10" />
+                              <TableHead>BOQ SL No</TableHead>
+                              <TableHead className="min-w-[200px]">Description</TableHead>
+                              <TableHead>Unit</TableHead>
+                              <TableHead>BOQ Qty</TableHead>
+                              <TableHead>Indent Qty</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {indent.items.map((item) => {
+                              const key = indentItemKey(indent.id, item.boqItemId);
+                              const boqQty = boqQtyByItemId[item.boqItemId];
+                              const checked = key in selectedIndentItems;
+                              return (
+                                <TableRow
+                                  key={key}
+                                  className="cursor-pointer"
+                                  onClick={() => toggleIndentItem(indent.id, item, !checked)}
+                                >
+                                  <TableCell onClick={(e) => e.stopPropagation()}>
+                                    <Checkbox
+                                      checked={checked}
+                                      onCheckedChange={(value) => toggleIndentItem(indent.id, item, value === true)}
+                                    />
+                                  </TableCell>
+                                  <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{item.boqSlNo || "—"}</TableCell>
+                                  <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
+                                  <TableCell>{item.unit || "—"}</TableCell>
+                                  <TableCell className="text-muted-foreground">{typeof boqQty === "number" ? formatQuantity(boqQty) : "—"}</TableCell>
+                                  <TableCell>{formatQuantity(item.requestedQty)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
                       </div>
                     )}
                   </div>
@@ -754,24 +834,68 @@ export default function NewProjectPurchaseOrderPage() {
             <TabsContent value="boq" className="space-y-3 pt-3">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search BOQ SL No or description..." className="pl-8" value={boqSearch} onChange={(e) => setBoqSearch(e.target.value)} />
+                <Input placeholder="Search ERP SL No, BOQ SL No or description..." className="pl-8" value={boqSearch} onChange={(e) => setBoqSearch(e.target.value)} />
               </div>
-              <div className="max-h-80 overflow-y-auto rounded-lg border">
-                <div className="divide-y">
-                  {filteredBoqItems.length ? filteredBoqItems.map((item) => (
-                    <label key={item.id} className="flex flex-wrap items-center gap-3 px-4 py-2 hover:bg-muted/30 cursor-pointer">
-                      <Checkbox
-                        checked={item.id in selectedBoqItems}
-                        onCheckedChange={(checked) => toggleBoqItem(item, checked === true)}
-                      />
-                      <span className="w-20 shrink-0 text-xs text-muted-foreground">{String(item["BOQ SL No"] ?? "—")}</span>
-                      <span className="min-w-[160px] flex-1 truncate text-sm">{String(item.Description ?? "")}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">BOQ: {formatQuantity(toNumber(item.QTY))} {String(item.Unit ?? "")}</span>
-                    </label>
-                  )) : (
-                    <div className="p-6 text-center text-sm text-muted-foreground">No BOQ items match your search.</div>
-                  )}
-                </div>
+              <p className="text-xs text-muted-foreground">Showing Scope 2 = Supply items only.</p>
+              <div className="max-h-96 overflow-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10" />
+                      <TableHead>ERP SL No</TableHead>
+                      <TableHead>BOQ SL No</TableHead>
+                      <TableHead className="min-w-[200px]">Description</TableHead>
+                      <TableHead>Units</TableHead>
+                      <TableHead>QTY</TableHead>
+                      <TableHead>Unit Rate</TableHead>
+                      <TableHead>Budget Price</TableHead>
+                      <TableHead>Total Budget Price</TableHead>
+                      <TableHead>Total Amount</TableHead>
+                      <TableHead>Indent Qty</TableHead>
+                      <TableHead>PO Qty</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredBoqItems.length ? filteredBoqItems.map((item) => {
+                      const qty = toNumber(item.QTY);
+                      const rate = toNumber(item["Unit Rate"]);
+                      const budgetPrice = toNumber(item["Budget Price"]);
+                      const totalAmount = toNumber(item["Total Amount"]) || qty * rate;
+                      const totalBudgetPrice = qty * budgetPrice;
+                      return (
+                        <TableRow
+                          key={item.id}
+                          className="cursor-pointer"
+                          onClick={() => toggleBoqItem(item, !(item.id in selectedBoqItems))}
+                        >
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={item.id in selectedBoqItems}
+                              onCheckedChange={(checked) => toggleBoqItem(item, checked === true)}
+                            />
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{String(item["ERP SL NO"] ?? "—")}</TableCell>
+                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{String(item["BOQ SL No"] ?? "—")}</TableCell>
+                          <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>{String(item.Description ?? "—")}</TableCell>
+                          <TableCell>{String(item.Unit ?? "—")}</TableCell>
+                          <TableCell>{formatQuantity(qty)}</TableCell>
+                          <TableCell>{formatCurrency(rate)}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatCurrency(budgetPrice)}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatCurrency(totalBudgetPrice)}</TableCell>
+                          <TableCell className="font-medium">{formatCurrency(totalAmount)}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatQuantity(indentQtyByBoqItemId.get(item.id) ?? 0)}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatQuantity(poQtyByBoqItemId.get(item.id) ?? 0)}</TableCell>
+                        </TableRow>
+                      );
+                    }) : (
+                      <TableRow>
+                        <TableCell colSpan={12} className="h-24 text-center text-sm text-muted-foreground">
+                          No Scope 2 = Supply BOQ items match your search.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
               <p className="text-xs text-muted-foreground">
                 Bypasses the indent step entirely. Enter the quantity to order in the items table below.

@@ -22,7 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, writeBatch, doc, query, updateDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, writeBatch, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -63,7 +63,6 @@ import BoqItemDetailsDialog from '@/components/billing-recon/BoqItemDetailsDialo
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
-import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
 
@@ -246,52 +245,6 @@ export default function ViewBoqPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!isClient) return;
-
-    const resolveMappedProject = async () => {
-      if (!mappingId) {
-        setIsLoading(false);
-        toast({
-          title: 'Select a project',
-          description: 'Choose a Project Management project before opening BOQ Costing.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      try {
-        const mappingSnapshot = await getDoc(doc(db, 'projectManagementProjects', mappingId));
-        if (!mappingSnapshot.exists()) throw new Error('Project mapping not found');
-
-        const mapping = mappingSnapshot.data() as {
-          globalProjectId?: string;
-          globalProjectName?: string;
-        };
-        if (!mapping.globalProjectId) throw new Error('Global project is not mapped');
-
-        const globalProjectSnapshot = await getDoc(doc(db, 'projects', mapping.globalProjectId));
-        const globalProjectName =
-          (globalProjectSnapshot.data()?.projectName as string | undefined) ??
-          mapping.globalProjectName;
-        if (!globalProjectName) throw new Error('Mapped global project not found');
-
-        setProjectSlug(slugify(globalProjectName));
-        setGlobalProjectId(mapping.globalProjectId);
-      } catch (error) {
-        console.error(error);
-        setIsLoading(false);
-        toast({
-          title: 'Unable to open project',
-          description: 'The selected project mapping could not be resolved.',
-          variant: 'destructive',
-        });
-      }
-    };
-
-    void resolveMappedProject();
-  }, [isClient, mappingId, toast]);
-
-  useEffect(() => {
     const loadColumnConfiguration = async () => {
       try {
         const settingsSnapshot = await getDoc(
@@ -340,22 +293,52 @@ export default function ViewBoqPage() {
     return typeof v === 'string' ? v.trim() : '';
   };
 
-  /** FETCH DATA **/
+  /** FETCH DATA **
+   * Resolves the project mapping, then fires every other read (project doc, BOQ items, JMC,
+   * MVAC, bills, indents, POs, MDL drawings) in a single parallel batch — this used to be
+   * 3-4 sequential round-trips (including fetching the project doc twice), which is the
+   * biggest single contributor to this page feeling slow to load.
+   */
   const fetchProjectAndBoq = useCallback(async () => {
-    if (!globalProjectId) return;
+    if (!mappingId) {
+      setIsLoading(false);
+      toast({
+        title: 'Select a project',
+        description: 'Choose a Project Management project before opening BOQ Costing.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsLoading(true);
     try {
-      const projectSnapshot = await getDoc(doc(db, 'projects', globalProjectId));
-      if (!projectSnapshot.exists()) {
-        throw new Error('Project not found');
-      }
+      const mappingSnapshot = await getDoc(doc(db, 'projectManagementProjects', mappingId));
+      if (!mappingSnapshot.exists()) throw new Error('Project mapping not found');
+      const mapping = mappingSnapshot.data() as { globalProjectId?: string; globalProjectName?: string };
+      if (!mapping.globalProjectId) throw new Error('Global project is not mapped');
+      const projectId = mapping.globalProjectId;
+
+      const [projectSnapshot, boqSnapshot, jmcSnapshot, mvacSnapshot, billsSnapshot, indentSnapshot, poSnapshot, mdlSnapshot] =
+        await Promise.all([
+          getDoc(doc(db, 'projects', projectId)),
+          getDocs(collection(db, 'projects', projectId, 'boqItems')),
+          getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
+          getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
+          getDocs(collection(db, 'projects', projectId, 'bills')),
+          getDocs(collection(db, 'projects', projectId, 'indents')),
+          getDocs(collection(db, 'projects', projectId, PO_COLLECTION)),
+          getDocs(collection(db, 'projects', projectId, MDL_COLLECTION)),
+        ]);
+
+      if (!projectSnapshot.exists()) throw new Error('Project not found');
       const projectData = { id: projectSnapshot.id, ...(projectSnapshot.data() as any) } as Project;
+      const globalProjectName = (projectData as any).projectName ?? mapping.globalProjectName;
+      if (!globalProjectName) throw new Error('Mapped global project not found');
+      const slug = slugify(globalProjectName);
+
       setCurrentProject(projectData);
+      setProjectSlug(slug);
+      setGlobalProjectId(projectId);
 
-      const projectId = globalProjectId;
-
-      // BOQ items
-      const boqSnapshot = await getDocs(query(collection(db, 'projects', projectId, 'boqItems')));
       const items: BoqItem[] = boqSnapshot.docs
         .map((d) => {
           const data = d.data() as Record<string, unknown> | undefined;
@@ -373,22 +356,12 @@ export default function ViewBoqPage() {
             ...(boqKey ? { 'BOQ SL No': (data as any)[boqKey] } : {}),
             ...(altBoqKey ? { 'SL. No.': (data as any)[altBoqKey] } : {}),
             ...(bom ? { bom } : {}),
-            projectSlug, // <-- stamp slug on each item for the details dialog
+            projectSlug: slug, // <-- stamp slug on each item for the details dialog
           };
           return result;
         })
         .filter(Boolean) as BoqItem[];
       setBoqItems(items);
-
-      // JMC / MVAC / Bills / Indents / Purchase Orders / MDL Drawings
-      const [jmcSnapshot, mvacSnapshot, billsSnapshot, indentSnapshot, poSnapshot, mdlSnapshot] = await Promise.all([
-        getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
-        getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
-        getDocs(collection(db, 'projects', projectId, 'bills')),
-        getDocs(collection(db, 'projects', projectId, 'indents')),
-        getDocs(collection(db, 'projects', projectId, PO_COLLECTION)),
-        getDocs(collection(db, 'projects', projectId, MDL_COLLECTION)),
-      ]);
 
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
       setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
@@ -398,14 +371,18 @@ export default function ViewBoqPage() {
       setMdlDrawings(mdlSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MdlDrawing)));
     } catch (error) {
       console.error(error);
-      toast({ title: 'Error', description: 'Failed to fetch BOQ items.', variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to fetch BOQ items.',
+        variant: 'destructive',
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [globalProjectId, projectSlug, toast]);
+  }, [mappingId, toast]);
 
   useEffect(() => {
-    if (isClient) fetchProjectAndBoq();
+    if (isClient) void fetchProjectAndBoq();
   }, [fetchProjectAndBoq, isClient]);
 
   /** PRE-AGGREGATE EXECUTED/CERTIFIED COUNTS (fast lookups) **/
@@ -945,7 +922,6 @@ export default function ViewBoqPage() {
       <div className="flex-1 min-h-0">
         <div className="h-full border rounded-lg flex flex-col min-w-0">
           <div className="relative flex-1 min-h-0 w-full">
-            <TooltipProvider>
               <div className="h-full">
                 <Table className="text-sm" containerClassName="h-full overflow-auto">
                   <TableHeader>
@@ -1020,6 +996,7 @@ export default function ViewBoqPage() {
                         const scope1 = getScope1(item);
                         const scope2 = getScope2(item);
                         const boqSlNo = getBoqSlNo(item);
+                        const budgetValues = getBudgetValues(item);
 
                         return (
                           <Fragment key={item.id}>
@@ -1105,7 +1082,6 @@ export default function ViewBoqPage() {
                                     header === 'F&I Price' ||
                                     header === 'Total Budget Price'
                                   ) {
-                                    const budgetValues = getBudgetValues(item);
                                     if (header === 'Budget Price') display = fmtNum(budgetValues.budgetPrice);
                                     if (header === 'F&I %') display = `${fmtNum(budgetValues.fiPercentage)}%`;
                                     if (header === 'F&I Price') display = fmtNum(budgetValues.fiPrice);
@@ -1133,17 +1109,11 @@ export default function ViewBoqPage() {
                                 const shouldTruncate = ['Description', 'Category 1', 'Category 2', 'Category 3'].includes(
                                   header
                                 );
+                                const titleText = typeof display === 'string' || typeof display === 'number' ? String(display) : undefined;
 
                                 return (
                                   <TableCell key={`${item.id}-${header}`} className={cn(shouldTruncate && 'max-w-xs')}>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <p className="truncate">{display}</p>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p className="max-w-md">{display as any}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
+                                    <p className="truncate" title={titleText}>{display}</p>
                                   </TableCell>
                                 );
                               })}
@@ -1197,7 +1167,6 @@ export default function ViewBoqPage() {
                   </TableBody>
                 </Table>
               </div>
-            </TooltipProvider>
           </div>
         </div>
       </div>
