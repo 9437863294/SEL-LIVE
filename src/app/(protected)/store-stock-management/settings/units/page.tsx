@@ -2,8 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -80,21 +79,21 @@ export default function ManageUnitsPage() {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-            <Link href="/store-stock-management/settings">
-                <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6"/></Button>
-            </Link>
-            <div>
-                <h1 className="text-xl font-bold">Manage Units of Measurement</h1>
-                <p className="text-sm text-muted-foreground">Add or remove units for stock items.</p>
-            </div>
+    <div className="mx-auto w-full max-w-3xl space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-sky-600">Transaction configuration</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight">Units of Measurement</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Manage the measurement units available to stock and BOQ items.</p>
          </div>
         <Button onClick={() => setIsDialogOpen(true)}><Plus className="mr-2 h-4 w-4"/> Add Unit</Button>
       </div>
 
-      <Card>
+      <Card className="border-slate-200/80 shadow-sm">
+        <CardHeader>
+          <CardTitle>Unit master</CardTitle>
+          <CardDescription>{units.length} unit{units.length === 1 ? '' : 's'} currently available.</CardDescription>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>

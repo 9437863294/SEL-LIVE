@@ -74,7 +74,7 @@ type Preset = keyof typeof BUCKET_PRESETS;
 export default function AgeingReportPage() {
     const { toast } = useToast();
     const params = useParams();
-    const projectSlug = params.project as string;
+    const projectSlug = (params?.project as string) || '';
     const [inventoryLogs, setInventoryLogs] = useState<InventoryLog[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activePreset, setActivePreset] = useState<Preset>('monthly');

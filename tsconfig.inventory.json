@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/lib/inventory.ts",
+    "src/lib/inventory-client.ts",
+    "src/app/api/inventory/route.ts",
+    "src/components/store-stock-management/InventoryModuleShell.tsx",
+    "src/components/store-stock-management/SettingsModuleShell.tsx",
+    "src/app/(protected)/store-stock-management/inventory/**/*.tsx",
+    "src/app/(protected)/store-stock-management/[project]/page.tsx",
+    "src/app/(protected)/store-stock-management/page.tsx",
+    "src/app/(protected)/store-stock-management/settings/**/*.tsx"
+  ],
+  "exclude": ["node_modules"]
+}

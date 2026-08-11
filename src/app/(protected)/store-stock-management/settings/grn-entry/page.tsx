@@ -2,8 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Save, Loader2 } from 'lucide-react';
+import { Save, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
@@ -95,16 +94,12 @@ export default function GrnEntrySettingsPage() {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/store-stock-management/settings">
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-          </Link>
-          <div>
-            <h1 className="text-xl font-bold">GRN Entry Settings</h1>
-            <p className="text-sm text-muted-foreground">Customize your Goods Receipt Note form.</p>
-          </div>
+    <div className="mx-auto w-full max-w-3xl space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-600">Transaction configuration</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">GRN Entry Settings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Choose the information users must provide when creating a Goods Receipt Note.</p>
         </div>
         <Button onClick={handleSaveMandatoryFields} disabled={isSaving}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
@@ -112,7 +107,7 @@ export default function GrnEntrySettingsPage() {
         </Button>
       </div>
       
-      <Card>
+      <Card className="border-slate-200/80 shadow-sm">
           <CardHeader>
             <CardTitle>Mandatory Fields</CardTitle>
             <CardDescription>Select which fields are required when creating a GRN.</CardDescription>

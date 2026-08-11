@@ -534,6 +534,24 @@ export const permissionModules = {
   },
   "Store & Stock Management": {
     "View Module": [],
+    Inventory: [
+      "View Inventory",
+      "View Cost",
+      "Create Receipt",
+      "Post Receipt",
+      "Create Issue",
+      "Post Issue",
+      "Create Transfer",
+      "Approve Transfer",
+      "Dispatch Transfer",
+      "Receive Transfer",
+      "Perform Stock Adjustment",
+      "Perform Stock Count",
+      "Approve Stock Count",
+      "View Reports",
+      "Allow Negative Inventory",
+      "Manage All",
+    ],
     Projects: [
       "View Dashboard",
       "View Inventory",
@@ -544,7 +562,7 @@ export const permissionModules = {
       "View Reports",
       "View AI Forecast",
     ],
-    Settings: ["View", "Edit"],
+    Settings: ["View", "Edit", "Manage Projects", "Manage Properties", "Create Item", "Edit Item", "Create Location", "Edit Location"],
   },
   "Project Management": {
     "View Module": [],

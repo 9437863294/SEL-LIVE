@@ -17,7 +17,7 @@ import { ConversionDialog } from '@/components/store-stock-management/Conversion
 export default function ConversionsPage() {
   const { toast } = useToast();
   const params = useParams();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
   const [items, setItems] = useState<BoqItem[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);

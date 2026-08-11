@@ -30,7 +30,7 @@ const getItemDescription = (item: BoqItem): string => {
 
 export default function AiForecastPage() {
   const params = useParams();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
   const { toast } = useToast();
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);

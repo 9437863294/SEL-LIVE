@@ -79,7 +79,7 @@ export interface TransactionSummary {
 export default function TransactionsPage() {
   const params = useParams();
   const router = useRouter();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
   const [transactions, setTransactions] = useState<InventoryLog[]>([]);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -598,63 +598,12 @@ export default function TransactionsPage() {
                           {summary.transactionType === 'Goods Receipt' ? new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(summary.remainingValue) : 'N/A'}
                         </TableCell>
                         <TableCell className="text-right">
-                          <AlertDialog>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                 <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                 <DropdownMenuItem onSelect={() => handleViewDetails(summary)}>
-                                    <Eye className="mr-2 h-4 w-4" /> View
-                                 </DropdownMenuItem>
-                                 <TooltipProvider>
-                                  <Tooltip>
-                                      <TooltipTrigger asChild>
-                                          <div>
-                                              <DropdownMenuItem
-                                                  onSelect={() => handleEditTransaction(summary)}
-                                                  disabled={!canEditTransaction || summary.transactionType === 'Goods Issue' || (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0))}
-                                              >
-                                                  <Edit className="mr-2 h-4 w-4" /> Edit
-                                              </DropdownMenuItem>
-                                          </div>
-                                      </TooltipTrigger>
-                                      {summary.transactionType === 'Goods Issue' ? (
-                                          <TooltipContent>
-                                              <p>Edit not supported for Goods Issue.</p>
-                                          </TooltipContent>
-                                      ) : (summary.transactionType === 'Goods Receipt' && summary.items.some(item => item.issuedQuantity > 0)) && (
-                                          <TooltipContent>
-                                              <p>Cannot edit GRN after items have been issued.</p>
-                                          </TooltipContent>
-                                      )}
-                                  </Tooltip>
-                                 </TooltipProvider>
-
-                                 <DropdownMenuSeparator />
-                                 <AlertDialogTrigger asChild>
-                                   <DropdownMenuItem className="text-destructive" disabled={!canDeleteTransaction}>
-                                      <Trash2 className="mr-2 h-4 w-4" /> Delete
-                                   </DropdownMenuItem>
-                                 </AlertDialogTrigger>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                      This action is irreversible. Deleting a transaction will permanently alter your inventory records. Are you sure you want to continue?
-                                  </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDeleteTransaction(summary)} disabled={isDeleting}>
-                                      {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}
-                                      Delete
-                                  </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                          <div className="inline-flex items-center gap-2">
+                            <Badge variant="outline">Legacy · read only</Badge>
+                            <Button variant="ghost" size="sm" onClick={() => handleViewDetails(summary)}>
+                              <Eye className="mr-2 h-4 w-4" /> View
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                        {expandedRows.has(summary.id) && (

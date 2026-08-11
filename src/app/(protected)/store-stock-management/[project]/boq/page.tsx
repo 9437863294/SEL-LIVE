@@ -61,7 +61,7 @@ function BoqCard({ item }: BoqCardProps) {
 
 export default function BoqPage() {
   const params = useParams();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
   const { can, isLoading } = useAuthorization();
   
   const boqItems = [

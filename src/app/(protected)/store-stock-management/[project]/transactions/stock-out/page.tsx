@@ -101,7 +101,7 @@ export default function StockOutPage() {
   const { toast } = useToast();
   const router = useRouter();
   const params = useParams();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
 
   const [isSaving, setIsSaving] = useState(false);
   const [availableItems, setAvailableItems] = useState<InventoryLog[]>([]);

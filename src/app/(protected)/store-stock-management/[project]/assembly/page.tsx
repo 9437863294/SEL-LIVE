@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 
 export default function AssemblyPage() {
   const params = useParams();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
   const { toast } = useToast();
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);

@@ -2,8 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -131,23 +130,24 @@ export default function ManageProjectsAndSitesPage() {
   }
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/store-stock-management/settings">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Manage Projects</h1>
+    <div className="mx-auto w-full max-w-7xl space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-600">Project structure</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">Projects</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Maintain project identity, site code, division, location, and operational status.</p>
         </div>
         <Button onClick={() => openProjectDialog('add')}>
             <Plus className="mr-2 h-4 w-4" /> Add Project
         </Button>
       </div>
 
-       <Card>
-        <CardContent className="p-0">
+       <Card className="border-slate-200/80 shadow-sm">
+        <CardHeader>
+          <CardTitle>Project master</CardTitle>
+          <CardDescription>{projects.length} project{projects.length === 1 ? '' : 's'} configured for store and stock workflows.</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -169,7 +169,7 @@ export default function ManageProjectsAndSitesPage() {
                     <TableCell className="font-semibold">{project.projectName}</TableCell>
                     <TableCell>{project.siteCode}</TableCell>
                     <TableCell>{project.location}</TableCell>
-                    <TableCell><Badge>{project.status}</Badge></TableCell>
+                    <TableCell><Badge variant={project.status === 'Active' ? 'default' : 'secondary'}>{project.status}</Badge></TableCell>
                     <TableCell className="text-right">
                        <Button variant="outline" size="sm" onClick={() => openProjectDialog('edit', project)}><Edit className="mr-2 h-4 w-4" />Edit</Button>
                         <AlertDialog>

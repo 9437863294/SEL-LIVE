@@ -100,7 +100,7 @@ export default function StockInPage() {
   const { toast } = useToast();
   const router = useRouter();
   const params = useParams();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
 
   const [isSaving, setIsSaving] = useState(false);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
@@ -746,5 +746,3 @@ export default function StockInPage() {
     </>
   );
 }
-
-    

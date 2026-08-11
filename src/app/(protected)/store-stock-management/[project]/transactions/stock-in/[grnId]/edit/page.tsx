@@ -98,8 +98,8 @@ export default function EditStockInPage() {
   const { toast } = useToast();
   const router = useRouter();
   const params = useParams();
-  const projectSlug = params.project as string;
-  const grnId = params.grnId as string;
+  const projectSlug = (params?.project as string) || '';
+  const grnId = (params?.grnId as string) || '';
 
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -228,6 +228,13 @@ export default function EditStockInPage() {
   }, [currentProject, toast]);
 
   const onSubmit = async (data: GrnFormValues) => {
+    toast({
+      title: 'Posted GRNs are read-only',
+      description: 'Create a return, adjustment, or reversal document instead of changing historical stock.',
+      variant: 'destructive',
+    });
+    return;
+    /* Legacy mutation retained below for reference during migration; it is intentionally unreachable.
     setIsSaving(true);
     const batch = writeBatch(db);
 
@@ -268,6 +275,7 @@ export default function EditStockInPage() {
     } finally {
       setIsSaving(false);
     }
+    */
   };
   
     const getItemDescription = (item: BoqItem | FabricationBomItem) => {
@@ -411,9 +419,9 @@ export default function EditStockInPage() {
                         <p className="text-muted-foreground">Editing GRN: {form.getValues('grnNo')}</p>
                     </div>
                 </div>
-                <Button type="submit" disabled={isSaving}>
-                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Save className="mr-2 h-4 w-4" />}
-                    Update Transaction
+                <Button type="button" disabled title="Posted inventory documents cannot be edited">
+                    <Save className="mr-2 h-4 w-4" />
+                    Posted · Read only
                 </Button>
             </div>
 
@@ -505,5 +513,3 @@ export default function EditStockInPage() {
     </Form>
   );
 }
-
-    

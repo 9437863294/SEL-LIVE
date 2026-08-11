@@ -31,7 +31,7 @@ export default function AddBoqItemPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const params = useParams();
-  const projectSlug = params.project as string;
+  const projectSlug = (params?.project as string) || '';
   const [boqItem, setBoqItem] = useState(initialBoqItem);
   const [isSaving, setIsSaving] = useState(false);
   const [projectName, setProjectName] = useState('');

@@ -40,7 +40,7 @@ interface InventoryItem {
 
 export default function InventoryPage() {
     const params = useParams();
-    const projectSlug = params.project as string;
+    const projectSlug = (params?.project as string) || '';
     const { toast } = useToast();
 
     const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
