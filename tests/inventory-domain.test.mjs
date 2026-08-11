@@ -4,7 +4,9 @@ import {
   DOCUMENT_PREFIX,
   availableStock,
   inventoryBalanceId,
+  maxBuildablePacks,
   movingWeightedAverage,
+  packBuildRequirements,
 } from '../src/lib/inventory.ts';
 import {
   calculateProjectStockDashboard,
@@ -33,6 +35,24 @@ test('required inventory document prefixes are stable', () => {
   assert.equal(DOCUMENT_PREFIX['Goods Issue'], 'GIS');
   assert.equal(DOCUMENT_PREFIX['Stock Transfer'], 'STR');
   assert.equal(DOCUMENT_PREFIX['Physical Count'], 'STK');
+  assert.equal(DOCUMENT_PREFIX['Pack Assembly'], 'ASM');
+});
+
+test('pack requirements scale every component for the requested build quantity', () => {
+  const requirements = packBuildRequirements([
+    { itemId: 'A', quantity: 5 },
+    { itemId: 'B', quantity: 2 },
+  ], 3);
+  assert.deepEqual(requirements.map(({ itemId, requiredQuantity }) => ({ itemId, requiredQuantity })), [
+    { itemId: 'A', requiredQuantity: 15 },
+    { itemId: 'B', requiredQuantity: 6 },
+  ]);
+});
+
+test('pack availability is limited by the scarcest component', () => {
+  const available = new Map([['A', 26], ['B', 9]]);
+  assert.equal(maxBuildablePacks([{ itemId: 'A', quantity: 5 }, { itemId: 'B', quantity: 2 }], available), 4);
+  assert.equal(maxBuildablePacks([], available), 0);
 });
 
 test('project dashboard uses current receipt-layer availability without subtracting issues twice', () => {

@@ -517,6 +517,7 @@ export const permissionModules = {
       "Dispatch Transfer",
       "Receive Transfer",
       "Perform Stock Adjustment",
+      "Build Pack",
       "Perform Stock Count",
       "Approve Stock Count",
       "View Reports",

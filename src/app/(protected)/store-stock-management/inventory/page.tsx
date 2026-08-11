@@ -103,6 +103,7 @@ export default function InventoryDashboardPage() {
           <p className="text-muted-foreground">Item- and location-wise stock derived from posted ledger movements.</p>
         </div>
         <div className="flex gap-2">
+          <Button asChild variant="outline"><Link href="/store-stock-management/inventory/item-wise">Item-wise inventory</Link></Button>
           <Button asChild variant="outline"><Link href="/store-stock-management/inventory/transfers">New transfer</Link></Button>
           <Button asChild><Link href="/store-stock-management/inventory/movements">Post movement</Link></Button>
         </div>
@@ -118,7 +119,7 @@ export default function InventoryDashboardPage() {
 
       <Card>
         <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div><CardTitle>Network stock</CardTitle><CardDescription>Click an item to see availability at every authorized location.</CardDescription></div>
+          <div><CardTitle>Item-wise network stock</CardTitle><CardDescription>Click an item to see availability at every authorized location.</CardDescription></div>
           <div className="relative w-full sm:w-80"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search code, item, category…" className="pl-9" /></div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -169,4 +170,3 @@ function Metric({ title, value, icon: Icon, active }: { title: string; value: st
 function DashboardSkeleton() {
   return <div className="space-y-6"><Skeleton className="h-10 w-72" /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-28" />)}</div><Skeleton className="h-96" /></div>;
 }
-

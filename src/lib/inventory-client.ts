@@ -7,6 +7,8 @@ export async function inventoryCommand<T = Record<string, unknown>>(payload: Rec
     'saveItem',
     'saveLocation',
     'setInventoryScopeStatus',
+    'postMovement',
+    'buildPack',
   ].includes(String(payload.action || ''));
 
   // Local development intentionally has no Firebase Admin service-account key.

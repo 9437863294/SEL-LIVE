@@ -19,6 +19,14 @@ export type InventoryLocationType =
   | 'Quarantine'
   | 'Scrap';
 
+export interface InventoryPackComponent {
+  itemId: string;
+  quantity: number;
+  itemCode?: string;
+  itemName?: string;
+  unit?: string;
+}
+
 export type InventoryDocumentStatus =
   | 'Draft'
   | 'Submitted'
@@ -42,6 +50,7 @@ export type InventoryDocumentType =
   | 'Damaged Stock'
   | 'Lost Stock'
   | 'Write-Off'
+  | 'Pack Assembly'
   | 'Stock Transfer'
   | 'Physical Count';
 
@@ -80,6 +89,7 @@ export interface InventoryItem {
   attachmentUrl?: string;
   notes?: string;
   legacyBoqItemId?: string;
+  packList?: InventoryPackComponent[];
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -117,6 +127,8 @@ export interface InventoryBalance {
   quantityReturnedOut: number;
   adjustmentIn: number;
   adjustmentOut: number;
+  assemblyIn?: number;
+  assemblyOut?: number;
   reservedQuantity: number;
   onHandQuantity: number;
   availableQuantity: number;
@@ -149,6 +161,12 @@ export interface InventoryDocumentLine {
   condition?: 'Good' | 'Used but Reusable' | 'Damaged' | 'Scrap';
   remarks?: string;
   boqItemId?: string;
+  lineRole?: 'Output' | 'Component';
+  parentPackItemId?: string;
+  parentPackItemCode?: string;
+  parentPackItemName?: string;
+  packQuantity?: number;
+  componentQuantityPerPack?: number;
 }
 
 export interface InventoryDocument {
@@ -177,6 +195,10 @@ export interface InventoryDocument {
   purpose?: string;
   remarks?: string;
   vehicleDetails?: string;
+  mainItemId?: string;
+  mainItemCode?: string;
+  mainItemName?: string;
+  buildQuantity?: number;
   lines: InventoryDocumentLine[];
   createdBy: string;
   createdByName?: string;
@@ -217,6 +239,8 @@ export interface StockLedgerEntry {
   requesterId?: string;
   referenceDocument?: string;
   remarks?: string;
+  parentPackItemId?: string;
+  packQuantity?: number;
   createdBy: string;
   approvedBy?: string;
   postedBy: string;
@@ -261,6 +285,7 @@ export const DOCUMENT_PREFIX: Record<InventoryDocumentType, string> = {
   'Damaged Stock': 'DMG',
   'Lost Stock': 'LST',
   'Write-Off': 'WOF',
+  'Pack Assembly': 'ASM',
   'Stock Transfer': 'STR',
   'Physical Count': 'STK',
 };
@@ -298,10 +323,30 @@ export const movingWeightedAverage = (
   return ((currentQuantity * currentAverage) + (incomingQuantity * incomingRate)) / nextQuantity;
 };
 
+export const packBuildRequirements = (
+  packList: InventoryPackComponent[] = [],
+  buildQuantity = 1,
+) => packList.map((component) => ({
+  ...component,
+  requiredQuantity: Number(component.quantity || 0) * Number(buildQuantity || 0),
+}));
+
+export const maxBuildablePacks = (
+  packList: InventoryPackComponent[] = [],
+  availableByItem: ReadonlyMap<string, number>,
+) => {
+  if (!packList.length) return 0;
+  const limits = packList.map((component) => {
+    const quantityPerPack = Number(component.quantity || 0);
+    if (quantityPerPack <= 0) return 0;
+    return Math.floor(Math.max(0, Number(availableByItem.get(component.itemId) || 0)) / quantityPerPack);
+  });
+  return Math.max(0, Math.min(...limits));
+};
+
 export const asDateInput = (value: Date = new Date()) => {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, '0');
   const day = String(value.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
-
