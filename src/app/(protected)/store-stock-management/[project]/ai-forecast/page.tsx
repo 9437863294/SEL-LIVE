@@ -55,7 +55,7 @@ export default function AiForecastPage() {
             }
             setCurrentProject(projectData);
 
-            const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+            const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
             const inventoryQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectData.id));
             
             const [boqSnapshot, inventorySnapshot] = await Promise.all([

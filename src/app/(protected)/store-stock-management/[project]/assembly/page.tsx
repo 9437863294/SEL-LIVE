@@ -24,6 +24,7 @@ export default function AssemblyPage() {
   const projectSlug = params.project as string;
   const { toast } = useToast();
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<BoqItem | null>(null);
@@ -49,6 +50,7 @@ export default function AssemblyPage() {
             setIsLoading(false);
             return;
         }
+        setCurrentProject(projectData);
 
         const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
         const boqSnapshot = await getDocs(boqQuery);
@@ -317,11 +319,12 @@ export default function AssemblyPage() {
           </CardContent>
         </Card>
       </div>
-      {selectedItem && (
+      {selectedItem && currentProject && (
         <BomDialog
           isOpen={isDialogOpen}
           onOpenChange={setIsDialogOpen}
           mainItem={selectedItem}
+          projectId={currentProject.id}
           onSaveSuccess={fetchBoqItems}
         />
       )}

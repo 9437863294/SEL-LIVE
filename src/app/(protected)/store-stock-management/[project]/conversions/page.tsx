@@ -6,10 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { Settings } from 'lucide-react';
-import type { BoqItem } from '@/lib/types';
+import type { BoqItem, Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useParams } from 'next/navigation';
 import { ConversionDialog } from '@/components/store-stock-management/ConversionDialog';
@@ -19,6 +19,7 @@ export default function ConversionsPage() {
   const params = useParams();
   const projectSlug = params.project as string;
   const [items, setItems] = useState<BoqItem[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<BoqItem | null>(null);
@@ -27,8 +28,19 @@ export default function ConversionsPage() {
     if (!projectSlug) return;
     setIsLoading(true);
     try {
-      const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
-      const itemsSnapshot = await getDocs(q);
+      const projectsQuery = query(collection(db, 'projects'));
+      const projectsSnapshot = await getDocs(projectsQuery);
+      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+      const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+
+      if (!projectData) {
+        toast({ title: "Error", description: "Project not found.", variant: "destructive" });
+        setIsLoading(false);
+        return;
+      }
+      setCurrentProject(projectData);
+
+      const itemsSnapshot = await getDocs(query(collection(db, 'projects', projectData.id, 'boqItems')));
       const itemsData = itemsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
       setItems(itemsData);
     } catch (error) {
@@ -37,7 +49,7 @@ export default function ConversionsPage() {
     }
     setIsLoading(false);
   };
-  
+
   useEffect(() => {
     fetchItems();
   }, [projectSlug, toast]);
@@ -108,11 +120,12 @@ export default function ConversionsPage() {
           </CardContent>
         </Card>
       </div>
-      {selectedItem && (
+      {selectedItem && currentProject && (
         <ConversionDialog
           isOpen={isDialogOpen}
           onOpenChange={setIsDialogOpen}
           item={selectedItem}
+          projectId={currentProject.id}
           onSaveSuccess={fetchItems}
         />
       )}

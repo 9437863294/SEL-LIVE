@@ -105,8 +105,29 @@ export default function EditStockInPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
-  
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+
   const [grnSchema, setGrnSchema] = useState(() => generateGrnSchema({}));
+
+  useEffect(() => {
+    const fetchProject = async () => {
+      if (!projectSlug) return;
+      try {
+        const projectsQuery = query(collection(db, 'projects'));
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        if (projectData) {
+          setCurrentProject(projectData);
+        } else {
+          toast({ title: 'Error', description: 'Project not found.', variant: 'destructive' });
+        }
+      } catch (error) {
+        console.error('Error fetching project:', error);
+      }
+    };
+    fetchProject();
+  }, [projectSlug, toast]);
 
   useEffect(() => {
       const fetchSettings = async () => {
@@ -135,10 +156,11 @@ export default function EditStockInPage() {
   });
 
   useEffect(() => {
+    if (!currentProject) return;
     const fetchGrnData = async () => {
       setIsLoading(true);
       try {
-        const q = query(collection(db, 'inventoryLogs'), where('details.grnNo', '==', grnId), where('projectId', '==', projectSlug));
+        const q = query(collection(db, 'inventoryLogs'), where('details.grnNo', '==', grnId), where('projectId', '==', currentProject.id));
         const snapshot = await getDocs(q);
         
         if (snapshot.empty) {
@@ -185,16 +207,14 @@ export default function EditStockInPage() {
     };
 
     fetchGrnData();
-  }, [grnId, projectSlug, router, toast, form]);
+  }, [grnId, currentProject, router, toast, form]);
 
    useEffect(() => {
+    if (!currentProject) return;
     const fetchBoq = async () => {
-      if (!projectSlug) return;
       setIsLoadingItems(true);
       try {
-        const q = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
-        const unitsSnap = await getDocs(collection(db, 'units'));
-        
+        const q = query(collection(db, 'projects', currentProject.id, 'boqItems'));
         const boqSnapshot = await getDocs(q);
         const boqData = boqSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BoqItem));
         setBoqItems(boqData);
@@ -205,7 +225,7 @@ export default function EditStockInPage() {
       setIsLoadingItems(false);
     };
     fetchBoq();
-  }, [projectSlug, toast]);
+  }, [currentProject, toast]);
 
   const onSubmit = async (data: GrnFormValues) => {
     setIsSaving(true);

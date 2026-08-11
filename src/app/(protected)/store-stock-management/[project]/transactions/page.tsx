@@ -119,7 +119,7 @@ export default function TransactionsPage() {
         setCurrentProject(projectData);
 
         const transactionsQuery = query(collection(db, 'inventoryLogs'), where('projectId', '==', projectData.id));
-        const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+        const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
 
         const [transactionsSnap, boqSnap] = await Promise.all([
             getDocs(transactionsQuery),

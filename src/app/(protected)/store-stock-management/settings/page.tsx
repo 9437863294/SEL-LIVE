@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
-import { Construction, Ruler, ArrowLeft, FilePen, MapPin } from 'lucide-react';
+import { Construction, Ruler, ArrowLeft, FilePen, MapPin, ToggleLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
@@ -19,13 +19,19 @@ interface SettingsCardProps {
 }
 
 const settingsItemsBase = [
-  { 
+  {
+    icon: ToggleLeft,
+    text: 'Stock Management Status',
+    href: '/store-stock-management/settings/stock-status',
+    description: 'Enable or disable a project for Store & Stock Management.'
+  },
+  {
     icon: Construction,
     text: 'Manage Projects',
-    href: '/store-stock-management/settings/projects', 
+    href: '/store-stock-management/settings/projects',
     description: 'Configure project details and settings.'
   },
-  { 
+  {
     icon: MapPin, 
     text: 'Manage Sites', 
     href: '/store-stock-management/settings/sites', 

@@ -146,7 +146,7 @@ export default function StockOutPage() {
               collection(db, 'inventoryLogs'),
               where('projectId', '==', projectData.id)
             );
-            const boqQuery = query(collection(db, 'boqItems'), where('projectSlug', '==', projectSlug));
+            const boqQuery = query(collection(db, 'projects', projectData.id, 'boqItems'));
 
             const [inventorySnapshot, boqSnapshot] = await Promise.all([
               getDocs(inventoryQuery),

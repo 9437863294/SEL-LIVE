@@ -26,10 +26,11 @@ interface ConversionDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   item: BoqItem;
+  projectId: string;
   onSaveSuccess: () => void;
 }
 
-export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: ConversionDialogProps) {
+export function ConversionDialog({ isOpen, onOpenChange, item, projectId, onSaveSuccess }: ConversionDialogProps) {
   const { toast } = useToast();
   const [conversions, setConversions] = useState<(Conversion)[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -101,7 +102,7 @@ export function ConversionDialog({ isOpen, onOpenChange, item, onSaveSuccess }: 
         return;
       }
       
-      await updateDoc(doc(db, 'boqItems', item.id), { conversions: conversionsToSave });
+      await updateDoc(doc(db, 'projects', projectId, 'boqItems', item.id), { conversions: conversionsToSave });
       toast({ title: 'Success', description: 'Conversions saved successfully.' });
       onSaveSuccess();
       onOpenChange(false);

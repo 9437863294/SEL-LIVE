@@ -39,10 +39,11 @@ interface BomDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   mainItem: BoqItem;
+  projectId: string;
   onSaveSuccess: () => void;
 }
 
-export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: BomDialogProps) {
+export function BomDialog({ isOpen, onOpenChange, mainItem, projectId, onSaveSuccess }: BomDialogProps) {
   const { toast } = useToast();
   const [bomItems, setBomItems] = useState<(Omit<FabricationBomItem, 'id'> & { id: string })[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -112,7 +113,7 @@ export function BomDialog({ isOpen, onOpenChange, mainItem, onSaveSuccess }: Bom
     setIsSaving(true);
     try {
       const bomToSave = bomItems.map(({ id, ...rest }) => rest);
-      await updateDoc(doc(db, 'boqItems', mainItem.id), { bom: bomToSave });
+      await updateDoc(doc(db, 'projects', projectId, 'boqItems', mainItem.id), { bom: bomToSave });
       toast({ title: 'Success', description: 'Bill of Materials saved successfully.' });
       onSaveSuccess();
       onOpenChange(false);

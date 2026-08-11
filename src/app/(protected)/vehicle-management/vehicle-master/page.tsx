@@ -10,7 +10,7 @@ import {
   useProjectOptions,
   useVehicleTypeOptions,
 } from '@/components/vehicle-management/hooks';
-import { compareCreatedAtDesc, formatVehicleTimestamp, getVehicleComplianceRequirements, toVehicleCode, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, toVehicleCode, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -169,6 +169,33 @@ const mapRowToState = (row: VehicleRow): VehicleFormState => ({
 const requiresManualRules = (form: VehicleFormState) =>
   String(form.complianceRuleMode || '').toLowerCase() === 'manual';
 
+type ComplianceLookup = { expiryDate: string; status: string };
+
+// Compliance records (insurance/PUC/fitness/road tax/permit) are linked to a vehicle via
+// its Firestore document id (`vehicleId` on the compliance doc), not the human-readable
+// VEH-xxxxxx code stored on the vehicle master row. For each vehicle we keep only the
+// current (non-archived, non-renewed) record with the latest expiry.
+const buildLatestComplianceMap = (
+  docsData: Record<string, any>[],
+  expiryKeys: string[]
+): Map<string, ComplianceLookup> => {
+  const map = new Map<string, ComplianceLookup & { stamp: number }>();
+  docsData.forEach((data) => {
+    if (data.isArchived === true || data.renewalStatus === 'Renewed') return;
+    const vehicleId = String(data.vehicleId || '');
+    if (!vehicleId) return;
+    const expiryDate =
+      expiryKeys.map((key) => String(data[key] || '').trim()).find((value) => value.length > 0) || '';
+    const meta = computeRenewalMeta(expiryDate);
+    const stamp = expiryDate && !Number.isNaN(new Date(expiryDate).getTime()) ? new Date(expiryDate).getTime() : 0;
+    const existing = map.get(vehicleId);
+    if (!existing || stamp >= existing.stamp) {
+      map.set(vehicleId, { expiryDate, status: meta.complianceStatus, stamp });
+    }
+  });
+  return map;
+};
+
 export default function VehicleMasterPage() {
   const { toast } = useToast();
   const { log } = useActivityLogger('Vehicle Management');
@@ -253,6 +280,19 @@ export default function VehicleMasterPage() {
     if (!canExport || isExporting) return;
     setIsExporting(true);
     try {
+      const [insSnap, pucSnap, fitSnap, rtSnap, permSnap] = await Promise.all([
+        getDocs(collection(db, VEHICLE_COLLECTIONS.insurance)),
+        getDocs(collection(db, VEHICLE_COLLECTIONS.puc)),
+        getDocs(collection(db, VEHICLE_COLLECTIONS.fitness)),
+        getDocs(collection(db, VEHICLE_COLLECTIONS.roadTax)),
+        getDocs(collection(db, VEHICLE_COLLECTIONS.permit)),
+      ]);
+      const insuranceMap = buildLatestComplianceMap(insSnap.docs.map((d) => d.data()), ['expiryDate']);
+      const pucMap = buildLatestComplianceMap(pucSnap.docs.map((d) => d.data()), ['expiryDate']);
+      const fitnessMap = buildLatestComplianceMap(fitSnap.docs.map((d) => d.data()), ['expiryDate']);
+      const roadTaxMap = buildLatestComplianceMap(rtSnap.docs.map((d) => d.data()), ['validTill']);
+      const permitMap = buildLatestComplianceMap(permSnap.docs.map((d) => d.data()), ['validTill']);
+
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Vehicle Master');
       ws.columns = [
@@ -281,9 +321,25 @@ export default function VehicleMasterPage() {
         { header: 'Driver', key: 'assignedDriverName', width: 20 },
         { header: 'Current Status', key: 'currentStatus', width: 16 },
         { header: 'Vehicle Status', key: 'vehicleStatus', width: 16 },
+        { header: 'Insurance Status', key: 'insuranceStatus', width: 16 },
+        { header: 'Insurance Expiry Date', key: 'insuranceExpiryDate', width: 18 },
+        { header: 'PUC Status', key: 'pucStatus', width: 14 },
+        { header: 'PUC Expiry Date', key: 'pucExpiryDate', width: 16 },
+        { header: 'Fitness Status', key: 'fitnessStatus', width: 14 },
+        { header: 'Fitness Expiry Date', key: 'fitnessExpiryDate', width: 18 },
+        { header: 'Road Tax Status', key: 'roadTaxStatus', width: 14 },
+        { header: 'Road Tax Valid Till', key: 'roadTaxValidTill', width: 18 },
+        { header: 'Permit Status', key: 'permitStatus', width: 14 },
+        { header: 'Permit Valid Till', key: 'permitValidTill', width: 18 },
         { header: 'Remarks', key: 'remarks', width: 28 },
       ];
       filteredRows.forEach(row => {
+        const requirements = getVehicleComplianceRequirements(row);
+        const insurance = insuranceMap.get(String(row.id || ''));
+        const puc = pucMap.get(String(row.id || ''));
+        const fitness = fitnessMap.get(String(row.id || ''));
+        const roadTax = roadTaxMap.get(String(row.id || ''));
+        const permit = permitMap.get(String(row.id || ''));
         ws.addRow({
           vehicleId: row.vehicleId || '',
           vehicleNumber: row.vehicleNumber || '',
@@ -310,6 +366,16 @@ export default function VehicleMasterPage() {
           assignedDriverName: row.assignedDriverName || '',
           currentStatus: row.currentStatus || '',
           vehicleStatus: row.vehicleStatus || '',
+          insuranceStatus: requirements.insurance ? (insurance?.status || 'Missing') : 'Not Applicable',
+          insuranceExpiryDate: insurance?.expiryDate || '',
+          pucStatus: requirements.puc ? (puc?.status || 'Missing') : 'Not Applicable',
+          pucExpiryDate: puc?.expiryDate || '',
+          fitnessStatus: requirements.fitness ? (fitness?.status || 'Missing') : 'Not Applicable',
+          fitnessExpiryDate: fitness?.expiryDate || '',
+          roadTaxStatus: requirements.roadTax ? (roadTax?.status || 'Missing') : 'Not Applicable',
+          roadTaxValidTill: roadTax?.expiryDate || '',
+          permitStatus: requirements.permit ? (permit?.status || 'Missing') : 'Not Applicable',
+          permitValidTill: permit?.expiryDate || '',
           remarks: row.remarks || '',
         });
       });

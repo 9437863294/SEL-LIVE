@@ -35,6 +35,7 @@ export default function AddBoqItemPage() {
   const [boqItem, setBoqItem] = useState(initialBoqItem);
   const [isSaving, setIsSaving] = useState(false);
   const [projectName, setProjectName] = useState('');
+  const [projectId, setProjectId] = useState<string | null>(null);
 
 
   useEffect(() => {
@@ -44,9 +45,10 @@ export default function AddBoqItemPage() {
       const projectsSnapshot = await getDocs(projectsQuery);
       const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
-      
+
       if (projectData) {
         setProjectName(projectData.projectName);
+        setProjectId(projectData.id);
         setBoqItem(prev => ({ ...prev, 'Project': projectData.projectName }));
       }
     };
@@ -64,6 +66,10 @@ export default function AddBoqItemPage() {
         toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive'});
         return;
     }
+    if (!projectId) {
+        toast({ title: 'Error', description: 'Project not found.', variant: 'destructive'});
+        return;
+    }
     setIsSaving(true);
     // Basic validation
     if (!boqItem['Sl No'] || !boqItem['Description']) {
@@ -75,10 +81,9 @@ export default function AddBoqItemPage() {
         setIsSaving(false);
         return;
     }
-    
+
     try {
-        const docData = {...boqItem, projectSlug: projectSlug};
-        await addDoc(collection(db, 'boqItems'), docData);
+        await addDoc(collection(db, 'projects', projectId, 'boqItems'), boqItem);
 
         await logUserActivity({
             userId: user.id,

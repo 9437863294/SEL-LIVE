@@ -255,7 +255,6 @@ export default function ImportBoqPage() {
       const nowMeta = {
         createdAt: serverTimestamp(),
         createdBy: user.id,
-        projectSlug: projectSlug, // Use the slug from the URL
         source: 'excel_import',
         fileName: file?.name ?? null,
       };
@@ -266,7 +265,7 @@ export default function ImportBoqPage() {
       }));
 
       const chunks = chunk(items, MAX_BATCH_WRITES);
-      const boqCollectionRef = collection(db, 'boqItems');
+      const boqCollectionRef = collection(db, 'projects', currentProject.id, 'boqItems');
 
       for (let i = 0; i < chunks.length; i++) {
         const batch = writeBatch(db);
