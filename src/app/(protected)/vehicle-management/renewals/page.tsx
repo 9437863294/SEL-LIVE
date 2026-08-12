@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { computeRenewalMeta, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, getVehicleComplianceRequirements, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -61,6 +61,7 @@ const SOURCES = [
     detailKeys: ['policyNumber', 'insuranceCompany'],
     href: '/vehicle-management/insurance/workflow',
     permission: 'Insurance Management',
+    requirementKey: 'insurance' as const,
   },
   {
     category: 'PUC',
@@ -71,6 +72,7 @@ const SOURCES = [
     detailKeys: ['pucCertificateNumber', 'testingCenterName'],
     href: '/vehicle-management/puc',
     permission: 'PUC Management',
+    requirementKey: 'puc' as const,
   },
   {
     category: 'Fitness',
@@ -81,6 +83,7 @@ const SOURCES = [
     detailKeys: ['fitnessCertificateNumber', 'rtoName'],
     href: '/vehicle-management/fitness',
     permission: 'Fitness Certificate Management',
+    requirementKey: 'fitness' as const,
   },
   {
     category: 'Road Tax',
@@ -91,6 +94,7 @@ const SOURCES = [
     detailKeys: ['receiptNumber', 'taxType', 'totalAmountPaid', 'amountPaid'],
     href: '/vehicle-management/road-tax',
     permission: 'Road Tax Management',
+    requirementKey: 'roadTax' as const,
   },
   {
     category: 'Permits',
@@ -101,6 +105,7 @@ const SOURCES = [
     detailKeys: ['permitNumber', 'permitType'],
     href: '/vehicle-management/permit',
     permission: 'Permit Management',
+    requirementKey: 'permit' as const,
   },
   {
     category: 'Documents',
@@ -111,6 +116,8 @@ const SOURCES = [
     detailKeys: ['documentType', 'documentNumber'],
     href: '/vehicle-management/documents',
     permission: 'Document Management',
+    // Not covered by getVehicleComplianceRequirements — always evaluated as-is.
+    requirementKey: null,
   },
   {
     category: 'Driver License',
@@ -121,6 +128,7 @@ const SOURCES = [
     detailKeys: ['licenseNumber', 'licenseClass'],
     href: '/vehicle-management/driver',
     permission: 'Driver Management',
+    requirementKey: null,
   },
 ] as const;
 
@@ -223,6 +231,16 @@ export default function RenewalsHubPage() {
     setIsLoading(true);
     const collected: RenewalItem[] = [];
 
+    // Needed to skip categories that don't even apply to a vehicle (e.g. insurance/PUC/
+    // fitness/road tax/permit for a Sold/Scrapped vehicle, or a manual "not required" flag).
+    let vehicleMap: Record<string, Record<string, any>> = {};
+    try {
+      const vehicleSnap = await getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster));
+      vehicleMap = Object.fromEntries(vehicleSnap.docs.map((entry) => [entry.id, entry.data()]));
+    } catch (err) {
+      console.error('Renewals: failed to load vehicles for requirement filtering', err);
+    }
+
     await Promise.all(
       SOURCES.map(async (source) => {
         if (!canViewSource(source.permission)) return;
@@ -230,10 +248,21 @@ export default function RenewalsHubPage() {
           const snap = await getDocs(collection(db, source.collection));
           snap.docs.forEach((entry) => {
             const data = entry.data() as Record<string, any>;
-            
+
             // Skip archived or already renewed items
             if (data.isArchived === true || data.renewalStatus === 'Renewed') return;
-            
+
+            // Skip categories not required for this vehicle (Sold/Scrapped, or manually
+            // turned off) — a stale expiry date on an old record shouldn't surface as a
+            // renewal alert once the vehicle no longer needs that compliance type.
+            if (source.requirementKey) {
+              const vehicle = vehicleMap[String(data.vehicleId || data.assignedVehicleId || '')];
+              if (vehicle) {
+                const required: VehicleComplianceRequirements = getVehicleComplianceRequirements(vehicle);
+                if (!required[source.requirementKey]) return;
+              }
+            }
+
             const rawDate =
               source.dateKeys
                 .map((key) => String(data[key] || '').trim())

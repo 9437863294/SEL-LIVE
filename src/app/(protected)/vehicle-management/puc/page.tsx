@@ -575,7 +575,7 @@ export default function PucManagementPage() {
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-                    {activeTab === 'current' && canAdd && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
+                    {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
                     {canEdit && <button onClick={() => openEdit(row)} className="h-10 flex-1 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700">Edit</button>}
                     {canDelete && <button onClick={() => setDeleteRow(row)} className="h-10 flex-1 rounded-md bg-rose-500 text-sm font-medium text-white">Delete</button>}
                   </div>
@@ -628,7 +628,7 @@ export default function PucManagementPage() {
                       <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
                       <TableCell className="w-[160px] text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {activeTab === 'current' && canAdd && <Link href={getRenewalHref(row)}><Button size="sm" className="h-8 bg-amber-500 px-3 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
+                          {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)}><Button size="sm" className="h-8 bg-amber-500 px-3 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
                           {canEdit && <Button size="sm" variant="outline" onClick={() => openEdit(row)} className="h-8 px-3">
                             Edit
                           </Button>}

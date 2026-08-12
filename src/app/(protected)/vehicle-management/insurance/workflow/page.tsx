@@ -39,7 +39,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { createUserNotification } from '@/lib/notifications';
-import { formatVehicleTimestamp, getVehicleTimestampMillis, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleTimestampMillis, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import {
   DEFAULT_INSURANCE_WORKFLOW_CONFIG,
   INSURANCE_WORKFLOW_CONFIG_DOC_ID,
@@ -98,29 +98,36 @@ export default function InsuranceWorkflowPage() {
   const [supportingDocument, setSupportingDocument] = useState<File | null>(null);
   const [proposedPremiumText, setProposedPremiumText] = useState('');
   const [reassignUserId, setReassignUserId] = useState('');
+  const [vehicleMap, setVehicleMap] = useState<Record<string, Record<string, any>>>({});
   const autoScanStarted = useRef(false);
 
   const activeUsers = useMemo(() => users.filter((item) => item.status !== 'Inactive'), [users]);
   const userMap = useMemo(() => Object.fromEntries(activeUsers.map((item) => [item.id, item])), [activeUsers]);
 
   const loadCases = useCallback(async () => {
-    const [caseSnapshot, configSnapshot] = await Promise.all([
+    const [caseSnapshot, configSnapshot, vehicleSnapshot] = await Promise.all([
       getDocs(collection(db, VEHICLE_COLLECTIONS.insuranceWorkflowCases)),
       getDoc(doc(db, VEHICLE_COLLECTIONS.settings, INSURANCE_WORKFLOW_CONFIG_DOC_ID)),
+      getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster)),
     ]);
     const nextConfig = normalizeInsuranceWorkflowConfig(configSnapshot.exists() ? configSnapshot.data() as Partial<InsuranceWorkflowConfig> : null);
     const nextCases = caseSnapshot.docs
       .map((item) => ({ id: item.id, ...item.data() } as InsuranceRenewalCase))
       .sort((a, b) => getVehicleTimestampMillis(b.createdAt) - getVehicleTimestampMillis(a.createdAt));
+    // Needed so a vehicle that's since been marked Sold/Scrapped (or had insurance manually
+    // turned off) never gets a new case created for it, and existing cases can be excluded
+    // from escalation below.
+    const nextVehicleMap = Object.fromEntries(vehicleSnapshot.docs.map((item) => [item.id, item.data()]));
     setConfig(nextConfig);
     setCases(nextCases);
+    setVehicleMap(nextVehicleMap);
     if (targetCaseId && nextCases.some((item) => item.id === targetCaseId)) {
       setSelectedCaseId(targetCaseId);
     } else if (targetInsuranceId) {
       const matching = nextCases.find((item) => item.insuranceId === targetInsuranceId && !TERMINAL_STATUSES.includes(item.status));
       if (matching) setSelectedCaseId(matching.id);
     }
-    return { nextConfig, nextCases };
+    return { nextConfig, nextCases, nextVehicleMap };
   }, [targetCaseId, targetInsuranceId]);
 
   useEffect(() => {
@@ -163,7 +170,7 @@ export default function InsuranceWorkflowPage() {
     if (!canManage || isScanning) return '';
     setIsScanning(true);
     try {
-      const [{ nextConfig, nextCases }, insuranceSnapshot] = await Promise.all([
+      const [{ nextConfig, nextCases, nextVehicleMap }, insuranceSnapshot] = await Promise.all([
         loadCases(),
         getDocs(collection(db, VEHICLE_COLLECTIONS.insurance)),
       ]);
@@ -180,6 +187,8 @@ export default function InsuranceWorkflowPage() {
         if (specificInsuranceId && insuranceDoc.id !== specificInsuranceId) continue;
         const row = insuranceDoc.data() as Record<string, any>;
         if (row.isArchived === true || row.renewalStatus === 'Renewed' || existingInsuranceIds.has(insuranceDoc.id)) continue;
+        const vehicle = nextVehicleMap[String(row.vehicleId || '')];
+        if (vehicle && !getVehicleComplianceRequirements(vehicle).insurance) continue;
         const daysToExpiry = insuranceDaysUntil(String(row.expiryDate || ''));
         if (!Number.isFinite(daysToExpiry) || (!specificInsuranceId && daysToExpiry > maxTriggerDays)) continue;
         const firstStep = nextConfig.steps[0];
@@ -432,7 +441,13 @@ export default function InsuranceWorkflowPage() {
 
   const runEscalations = async () => {
     if (!canManage || isWorking) return;
-    const overdueCases = cases.filter((item) => INSURANCE_WORKFLOW_OPEN_STATUSES.includes(item.status) && insuranceWorkflowDeadlineMeta(item.workflowDeadline).overdue);
+    const overdueCases = cases.filter((item) => {
+      if (!INSURANCE_WORKFLOW_OPEN_STATUSES.includes(item.status) || !insuranceWorkflowDeadlineMeta(item.workflowDeadline).overdue) return false;
+      const vehicle = vehicleMap[String(item.vehicleId || '')];
+      // Don't escalate a case whose vehicle no longer requires insurance (Sold/Scrapped, etc.).
+      if (vehicle && !getVehicleComplianceRequirements(vehicle).insurance) return false;
+      return true;
+    });
     if (!overdueCases.length) return toast({ title: 'No overdue stages', description: 'All active cases are within TAT.' });
     setIsWorking(true);
     try {

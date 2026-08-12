@@ -11,7 +11,7 @@ import {
   normalizeInsuranceWorkflowConfig,
   resolveInsuranceWorkflowAssignment,
 } from '@/lib/vehicle-insurance-workflow';
-import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { getVehicleComplianceRequirements, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import type { User } from '@/lib/types';
 
 export async function GET(request: Request) {
@@ -23,14 +23,18 @@ export async function GET(request: Request) {
   const db = getFirebaseAdminFirestore();
   const now = new Date();
   const nowTimestamp = Timestamp.fromDate(now);
-  const [configSnapshot, userSnapshot, insuranceSnapshot, caseSnapshot] = await Promise.all([
+  const [configSnapshot, userSnapshot, insuranceSnapshot, caseSnapshot, vehicleSnapshot] = await Promise.all([
     db.collection(VEHICLE_COLLECTIONS.settings).doc(INSURANCE_WORKFLOW_CONFIG_DOC_ID).get(),
     db.collection('users').get(),
     db.collection(VEHICLE_COLLECTIONS.insurance).get(),
     db.collection(VEHICLE_COLLECTIONS.insuranceWorkflowCases).get(),
+    db.collection(VEHICLE_COLLECTIONS.vehicleMaster).get(),
   ]);
   const config = normalizeInsuranceWorkflowConfig(configSnapshot.exists ? configSnapshot.data() : DEFAULT_INSURANCE_WORKFLOW_CONFIG);
   const users = userSnapshot.docs.map((item) => ({ id: item.id, ...item.data() } as User));
+  // Needed so Sold/Scrapped vehicles (or ones with insurance manually turned off) never get a
+  // renewal case created/escalated just because their old policy has a past expiry date.
+  const vehicleMap = new Map(vehicleSnapshot.docs.map((item) => [item.id, item.data()]));
   const maxTriggerDays = Math.max(...config.triggerDays);
   let created = 0;
   let escalated = 0;
@@ -41,6 +45,8 @@ export async function GET(request: Request) {
     for (const insuranceDoc of insuranceSnapshot.docs) {
       const policy = insuranceDoc.data();
       if (policy.isArchived === true || policy.renewalStatus === 'Renewed') { skipped++; continue; }
+      const vehicle = vehicleMap.get(String(policy.vehicleId || ''));
+      if (vehicle && !getVehicleComplianceRequirements(vehicle).insurance) { skipped++; continue; }
       const daysToExpiry = insuranceDaysUntil(String(policy.expiryDate || ''), now);
       if (!Number.isFinite(daysToExpiry) || daysToExpiry > maxTriggerDays) { skipped++; continue; }
       const caseRef = db.collection(VEHICLE_COLLECTIONS.insuranceWorkflowCases).doc(insuranceDoc.id);
@@ -118,6 +124,26 @@ export async function GET(request: Request) {
   for (const caseDoc of caseSnapshot.docs) {
     const caseRow = caseDoc.data();
     if (!INSURANCE_WORKFLOW_OPEN_STATUSES.includes(caseRow.status) || !caseRow.workflowDeadline?.toDate) continue;
+    // The vehicle may have been marked Sold/Scrapped (or insurance manually turned off)
+    // after this case was opened — stop escalating/reminding and close it out instead.
+    const caseVehicle = vehicleMap.get(String(caseRow.vehicleId || ''));
+    if (caseVehicle && !getVehicleComplianceRequirements(caseVehicle).insurance) {
+      await caseDoc.ref.update({
+        status: 'Closed',
+        history: FieldValue.arrayUnion({
+          action: 'Auto-Closed',
+          comment: 'Insurance is no longer required for this vehicle.',
+          userId: 'system',
+          userName: 'Daily Expiry Monitor',
+          stepId: String(caseRow.currentStepId || ''),
+          stepName: String(caseRow.currentStepName || ''),
+          timestamp: nowTimestamp,
+        }),
+        updatedAt: nowTimestamp,
+      });
+      skipped++;
+      continue;
+    }
     const deadline = caseRow.workflowDeadline.toDate();
     if (deadline >= now) {
       const hoursRemaining = (deadline.getTime() - now.getTime()) / 3_600_000;

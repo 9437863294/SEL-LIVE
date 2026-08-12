@@ -382,6 +382,17 @@ export default function GenericCrudPage({
       });
       return;
     }
+    // The linked vehicle may no longer require this compliance type (Sold/Scrapped, or
+    // manually turned off) — `onAfterFetch` already marks such rows "Not Applicable", so
+    // don't pop a renewal dialog for a stray/bookmarked/notification `?renew=` link.
+    if (renewalSource && renewalSource.alertStage === 'Not Applicable') {
+      prefillApplied.current = true;
+      toast({
+        title: 'Renewal Not Required',
+        description: 'This compliance record is no longer required for its vehicle.',
+      });
+      return;
+    }
     prefillApplied.current = true;
     const merged = buildInitialForm(fields, renewalSource);
     fields.forEach((field) => {

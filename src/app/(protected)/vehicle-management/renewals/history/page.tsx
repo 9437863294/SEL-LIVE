@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { computeRenewalMeta, formatVehicleTimestamp, getVehicleTimestampMillis, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleTimestampMillis, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -60,6 +60,7 @@ const SOURCES = [
     detailKey: 'policyNumber',
     statusKey: 'renewalStatus',
     permission: 'Insurance Management',
+    requirementKey: 'insurance' as const,
   },
   {
     category: 'PUC',
@@ -70,6 +71,7 @@ const SOURCES = [
     detailKey: 'pucCertificateNumber',
     statusKey: 'pucStatus',
     permission: 'PUC Management',
+    requirementKey: 'puc' as const,
   },
   {
     category: 'Fitness',
@@ -80,6 +82,7 @@ const SOURCES = [
     detailKey: 'fitnessNumber',
     statusKey: 'fitnessStatus',
     permission: 'Fitness Certificate Management',
+    requirementKey: 'fitness' as const,
   },
   {
     category: 'Road Tax',
@@ -90,6 +93,7 @@ const SOURCES = [
     detailKey: 'taxAmount',
     statusKey: 'roadTaxStatus',
     permission: 'Road Tax Management',
+    requirementKey: 'roadTax' as const,
   },
   {
     category: 'Permit',
@@ -100,6 +104,7 @@ const SOURCES = [
     detailKey: 'permitNumber',
     statusKey: 'permitStatus',
     permission: 'Permit Management',
+    requirementKey: 'permit' as const,
   },
   {
     category: 'Driver License',
@@ -110,6 +115,7 @@ const SOURCES = [
     detailKey: 'licenseNumber',
     statusKey: 'licenseComplianceStatus',
     permission: 'Driver Management',
+    requirementKey: null,
   },
 ] as const;
 
@@ -165,6 +171,16 @@ export default function RenewalHistoryPage() {
     setIsLoading(true);
     const collected: HistoryRecord[] = [];
 
+    // Needed to skip categories that don't even apply to a vehicle anymore (Sold/Scrapped,
+    // or manually turned off) so their old expired record doesn't linger in this archive.
+    let vehicleMap: Record<string, Record<string, any>> = {};
+    try {
+      const vehicleSnap = await getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster));
+      vehicleMap = Object.fromEntries(vehicleSnap.docs.map((entry) => [entry.id, entry.data()]));
+    } catch (err) {
+      console.error('Renewal History: failed to load vehicles for requirement filtering', err);
+    }
+
     await Promise.all(
       SOURCES.map(async (source) => {
         if (!canViewSource(source.permission)) return;
@@ -172,6 +188,13 @@ export default function RenewalHistoryPage() {
           const snap = await getDocs(collection(db, source.collection));
           snap.docs.forEach((entry) => {
             const data = entry.data() as Record<string, any>;
+            if (source.requirementKey) {
+              const vehicle = vehicleMap[String(data.vehicleId || data.assignedVehicleId || '')];
+              if (vehicle) {
+                const required: VehicleComplianceRequirements = getVehicleComplianceRequirements(vehicle);
+                if (!required[source.requirementKey]) return;
+              }
+            }
             const rawDate = String(data[source.dateKey] || '');
             if (!rawDate) return;
             const meta = computeRenewalMeta(rawDate);
