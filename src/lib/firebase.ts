@@ -1,7 +1,7 @@
 
 // Import the functions you need from the SDKs you need
 import { initializeApp, getApp, getApps } from "firebase/app";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore, type Firestore } from "firebase/firestore";
 import { getDatabase, type Database } from "firebase/database";
 import {
   browserLocalPersistence,
@@ -31,8 +31,24 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Use getFirestore() for robust initialization
-const db: Firestore = getFirestore(app);
+// Initialize Firestore with auto-detected long polling. This makes the SDK
+// fall back to plain long-polling XHR when the default streaming WebChannel
+// connection is blocked or mangled (common on corporate proxies/VPNs/AV/ad
+// blockers), which otherwise surfaces as "Could not reach Cloud Firestore
+// backend" and drops the client into offline mode.
+const createFirestore = (): Firestore => {
+  try {
+    return initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true,
+    });
+  } catch (error) {
+    // Firestore was already initialized for this app (e.g. Fast Refresh) -
+    // reuse the existing instance instead of throwing.
+    return getFirestore(app);
+  }
+};
+
+const db: Firestore = createFirestore();
 const realtimeDb: Database = getDatabase(app);
 
 const createAuth = (): Auth => {
