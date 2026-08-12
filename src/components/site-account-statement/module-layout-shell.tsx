@@ -98,7 +98,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
       can('View', `${MODULE}.${s.resource}`) ||
       can('Add',  `${MODULE}.${s.resource}`)
     )) ||
-    ['Budget Alerts', 'Expense Categories'].some(r =>
+    ['Budget Alerts', 'Expense Categories', 'Total Budget', 'FY Budget', 'Monthly Budget', 'Category Budget'].some(r =>
       can('View', `${MODULE}.${r}`) ||
       can('Add',  `${MODULE}.${r}`) ||
       can('Edit', `${MODULE}.${r}`)
@@ -123,6 +123,15 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
     // Settings: requires explicit Settings-family RBAC
     if (item.href === '/site-account-statement/settings') {
       return ['Project Settings', 'Expense Categories', 'Budget Alerts', 'Tender Budget'].some(r =>
+        can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
+      );
+    }
+
+    // Site Fund Budget: role management is granular (Total / FY / Monthly / Category
+    // Budget), so the nav link shows up if the role has ANY of those, not just the
+    // coarse "Budget" resource.
+    if (item.href === '/site-account-statement/budget') {
+      return ['Budget', 'Total Budget', 'FY Budget', 'Monthly Budget', 'Category Budget'].some(r =>
         can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
       );
     }

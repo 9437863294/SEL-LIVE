@@ -253,9 +253,7 @@ export default function SiteFundBudgetPage() {
     [projects, user?.id, canViewAll]
   );
 
-  const isAltUser        = useMemo(() => !canViewAll && visibleProjects.some(p => p.altUserId === user?.id), [canViewAll, visibleProjects, user?.id]);
-  const effectiveCanAdd  = canAdd  || isAltUser;
-  const effectiveCanEdit = canEdit || isAltUser;
+  const isAltUser = useMemo(() => !canViewAll && visibleProjects.some(p => p.altUserId === user?.id), [canViewAll, visibleProjects, user?.id]);
 
   // ── Per-budget-type permissions ───────────────────────────────────────────────
   // Role management is granular per budget level (Total / FY / Monthly / Category).
@@ -916,7 +914,9 @@ export default function SiteFundBudgetPage() {
     return <div className="space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>;
   }
 
-  if (!canView && !canAdd && !canEdit) {
+  const hasAnyBudgetAccess = canView || canAdd || canEdit ||
+    [totalPerm, fyPerm, monthlyPerm, categoryPerm].some(p => p.view || p.add || p.edit || p.del);
+  if (!hasAnyBudgetAccess) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border bg-card py-20 gap-3 text-center">
         <ShieldAlert className="h-11 w-11 text-destructive" />
