@@ -203,11 +203,17 @@ export default function SiteExpensesPage() {
     setLoading(true);
     setPrePeriodExpenseSum(null);
     try {
-      // Scoped expense fetch — only the visible date window (fast)
+      // Scoped expense fetch — only the visible date window (fast).
+      // Skip whichever bound is empty — an empty `to` means "All Time" (no upper bound), and
+      // a literal where('expenseDate', '<=', '') would match nothing since every real date
+      // string sorts after ''.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const constraints: any[] = [];
+      if (from) constraints.push(where('expenseDate', '>=', from));
+      if (to)   constraints.push(where('expenseDate', '<=', to));
       const expSnap = await getDocs(query(
         collection(db, SAS_COLLECTIONS.expenses),
-        where('expenseDate', '>=', from),
-        where('expenseDate', '<=', to),
+        ...constraints,
         orderBy('expenseDate', 'desc'),
       ));
       setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
@@ -284,10 +290,11 @@ export default function SiteExpensesPage() {
     [perProjectBalance, filterProject]
   );
 
-  // All-time expenses for the selected project (correct figure for Available Balance).
+  // Cumulative expenses for the selected project, through the end of the selected period
+  // (correct figure for the list-view Available Balance below — not a true all-time total).
   // In period mode: pre-period aggregate + project's expenses within the period.
   // In all-time mode: expenses state already contains every record, so use filterProjectBalance.spent directly.
-  const filterProjectAllTimeExpenses = useMemo(() => {
+  const filterProjectExpensesToDate = useMemo(() => {
     if (!filterProject || !filterProjectBalance) return null;
     if (!filterFrom || prePeriodExpenseSum === null) {
       // All-time mode — loadPeriodData fetched every record
@@ -298,6 +305,18 @@ export default function SiteExpensesPage() {
       .reduce((s, e) => s + (e.expenseAmount || 0), 0);
     return prePeriodExpenseSum + periodForProject;
   }, [filterProject, filterProjectBalance, filterFrom, prePeriodExpenseSum, expenses]);
+
+  // Cumulative receipts for the selected project, through the end of the selected period.
+  // `payments` already holds every payment ever recorded (loaded once, unfiltered), so this
+  // is a simple local filter — no extra Firestore round-trip needed. Falls back to the true
+  // all-time total when no period end is set (the "All Time" view).
+  const filterProjectReceivedToDate = useMemo(() => {
+    if (!filterProject || !filterProjectBalance) return null;
+    if (!filterTo) return filterProjectBalance.received;
+    return payments
+      .filter(p => p.projectId === filterProject && p.receiptDate <= filterTo)
+      .reduce((s, p) => s + (p.receivedAmount || 0), 0);
+  }, [filterProject, filterProjectBalance, filterTo, payments]);
 
   // ── Opening / closing balance for the filtered period ────────────────────────
 
@@ -857,45 +876,51 @@ export default function SiteExpensesPage() {
         </div>
       </div>
 
-      {/* Opening / Closing balance strip */}
+      {/* Opening / Closing balance strip — scoped to the selected period only */}
       {openingBalance !== null && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="flex items-center gap-2.5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
-            <Wallet className="h-4 w-4 shrink-0 text-emerald-600" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wide">Opening Balance</p>
-              <p className={`text-sm font-bold leading-tight ${openingBalance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
-                {formatINR(openingBalance)}
-              </p>
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Cash Flow — {monthLabel} (this period only)
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="flex items-center gap-2.5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+              <Wallet className="h-4 w-4 shrink-0 text-emerald-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wide">Opening Balance <span className="font-normal opacity-70">(Period)</span></p>
+                <p className={`text-sm font-bold leading-tight ${openingBalance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                  {formatINR(openingBalance)}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5">
-            <TrendingUp className="h-4 w-4 shrink-0 text-blue-600" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-blue-600 uppercase tracking-wide">Receipts</p>
-              <p className="text-sm font-bold text-blue-700 leading-tight">{formatINR(periodReceipts)}</p>
+            <div className="flex items-center gap-2.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5">
+              <TrendingUp className="h-4 w-4 shrink-0 text-blue-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-blue-600 uppercase tracking-wide">Receipts <span className="font-normal opacity-70">(Period)</span></p>
+                <p className="text-sm font-bold text-blue-700 leading-tight">{formatINR(periodReceipts)}</p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
-            <TrendingDown className="h-4 w-4 shrink-0 text-rose-600" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-rose-600 uppercase tracking-wide">Expenses ({filtered.length})</p>
-              <p className="text-sm font-bold text-rose-700 leading-tight">{formatINR(totalFiltered)}</p>
+            <div className="flex items-center gap-2.5 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
+              <TrendingDown className="h-4 w-4 shrink-0 text-rose-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-rose-600 uppercase tracking-wide">Expenses <span className="font-normal opacity-70">(Period)</span> · {filtered.length}</p>
+                <p className="text-sm font-bold text-rose-700 leading-tight">{formatINR(totalFiltered)}</p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5">
-            <Receipt className="h-4 w-4 shrink-0 text-indigo-600" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-indigo-600 uppercase tracking-wide">Closing Balance</p>
-              <p className={`text-sm font-bold leading-tight ${(closingBalance ?? 0) >= 0 ? 'text-indigo-700' : 'text-destructive'}`}>
-                {closingBalance !== null ? formatINR(closingBalance) : '—'}
-              </p>
+            <div className="flex items-center gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5">
+              <Receipt className="h-4 w-4 shrink-0 text-indigo-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-indigo-600 uppercase tracking-wide">Closing Balance <span className="font-normal opacity-70">(Period)</span></p>
+                <p className={`text-sm font-bold leading-tight ${(closingBalance ?? 0) >= 0 ? 'text-indigo-700' : 'text-destructive'}`}>
+                  {closingBalance !== null ? formatINR(closingBalance) : '—'}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Summary bar */}
+      {/* Summary bar — cumulative project totals through the end of the selected period
+         (or true all-time totals when "All Time" is selected) */}
       <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-rose-50 px-4 py-2.5">
         <Receipt className="h-4 w-4 shrink-0 text-rose-600" />
         <span className="text-sm font-medium text-rose-700">
@@ -904,13 +929,19 @@ export default function SiteExpensesPage() {
         {filterProjectBalance !== undefined && (
           <>
             <span className="h-4 w-px bg-rose-200" />
-            <span className="text-xs text-blue-600 font-medium">Received: {formatINR(filterProjectBalance.received)}</span>
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+              Project Totals ({filterTo ? `through ${filterTo}` : 'All Time'}):
+            </span>
+            <span className="text-xs text-blue-600 font-medium">
+              Received: {formatINR(filterProjectReceivedToDate ?? filterProjectBalance.received)}
+            </span>
             <span className="text-xs text-rose-600 font-medium">
-              Expenses: {formatINR(filterProjectAllTimeExpenses ?? filterProjectBalance.spent)}
+              Expenses: {formatINR(filterProjectExpensesToDate ?? filterProjectBalance.spent)}
             </span>
             {(() => {
-              const spent = filterProjectAllTimeExpenses ?? filterProjectBalance.spent;
-              const bal = filterProjectBalance.received - spent;
+              const received = filterProjectReceivedToDate ?? filterProjectBalance.received;
+              const spent    = filterProjectExpensesToDate ?? filterProjectBalance.spent;
+              const bal = received - spent;
               return (
                 <span className={`text-xs font-bold ${bal >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
                   Available Balance: {formatINR(bal)}

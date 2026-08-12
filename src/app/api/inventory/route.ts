@@ -210,6 +210,17 @@ const buildPackSchema = z.object({
   remarks: z.string().max(2000).optional(),
 });
 
+const unbuildPackSchema = z.object({
+  action: z.literal('unbuildPack'),
+  clientRequestId: z.string().min(8).max(200),
+  transactionDate: dateOnly,
+  locationId: z.string().min(1),
+  mainItemId: z.string().min(1),
+  unbuildQuantity: z.coerce.number().int().positive().max(1000000),
+  referenceDocument: z.string().max(240).optional(),
+  remarks: z.string().max(2000).optional(),
+});
+
 const scopeStatusSchema = z.object({
   action: z.literal('setInventoryScopeStatus'),
   scope: z.enum(['Project', 'Property']),
@@ -227,6 +238,7 @@ const requestSchema = z.union([
   submitCountSchema,
   postCountSchema,
   buildPackSchema,
+  unbuildPackSchema,
   scopeStatusSchema,
 ]);
 
@@ -321,6 +333,7 @@ function requirePermission(context: RequestContext, action: string, options?: { 
   const list = permissionList(context, options?.settings ? 'Settings' : 'Inventory') || [];
   const allowed = list.includes(action)
     || list.includes('Manage All')
+    || (action === 'Unbuild Pack' && list.includes('Build Pack'))
     || (options?.settings && list.includes('Edit'))
     || (options?.legacyTransaction && hasLegacyTransactionAccess(context));
   if (!allowed) throw new InventoryApiError(`${action} permission is required.`, 403);
@@ -1017,6 +1030,294 @@ async function buildPack(context: RequestContext, payload: z.infer<typeof buildP
   });
 }
 
+async function unbuildPack(context: RequestContext, payload: z.infer<typeof unbuildPackSchema>) {
+  requirePermission(context, 'Unbuild Pack');
+  const firestore = db();
+  const documentRef = firestore.collection(INVENTORY_COLLECTIONS.documents).doc();
+  const requestRef = idempotencyRef(context, payload.clientRequestId);
+  const locationRef = firestore.collection(INVENTORY_COLLECTIONS.locations).doc(payload.locationId);
+  const mainItemRef = firestore.collection(INVENTORY_COLLECTIONS.items).doc(payload.mainItemId);
+  const mainBalanceRef = firestore.collection(INVENTORY_COLLECTIONS.balances)
+    .doc(inventoryBalanceId(context.organizationId, payload.locationId, payload.mainItemId));
+
+  return firestore.runTransaction(async (transaction) => {
+    const [requestSnapshot, locationSnapshot, mainItemSnapshot, mainBalanceSnapshot] = await Promise.all([
+      transaction.get(requestRef),
+      transaction.get(locationRef),
+      transaction.get(mainItemRef),
+      transaction.get(mainBalanceRef),
+    ]);
+    if (requestSnapshot.exists) return { ...requestSnapshot.data(), duplicate: true };
+    if (!locationSnapshot.exists) throw new InventoryApiError('Inventory location not found.', 404);
+    assertLocationAccess(context, locationSnapshot.data()!);
+    if (!mainItemSnapshot.exists || mainItemSnapshot.data()?.active === false) {
+      throw new InventoryApiError('The selected main item is missing or inactive.', 404);
+    }
+
+    const location = locationSnapshot.data()!;
+    const mainItem = mainItemSnapshot.data()!;
+    if (String(mainItem.organizationId || 'default') !== context.organizationId) {
+      throw new InventoryApiError('The main item is outside your organization.', 403);
+    }
+    if (mainItem.classification === 'Non-inventory') {
+      throw new InventoryApiError('The main item is classified as non-inventory.');
+    }
+    if (mainItem.serialTracking || mainItem.batchTracking || mainItem.expiryTracking) {
+      throw new InventoryApiError('Tracked main items require serial/batch capture and cannot currently be unbuilt.');
+    }
+    const packList = Array.isArray(mainItem.packList) ? mainItem.packList : [];
+    if (!packList.length) throw new InventoryApiError('The selected main item does not have a pack list.');
+    if (new Set(packList.map((component) => String(component.itemId || ''))).size !== packList.length) {
+      throw new InventoryApiError('The main item pack list contains duplicate sub-items.');
+    }
+    if (packList.some((component) => component.itemId === mainItemSnapshot.id)) {
+      throw new InventoryApiError('The main item cannot contain itself as a sub-item.');
+    }
+
+    const currentMainBalance = mainBalanceSnapshot.exists
+      ? mainBalanceSnapshot.data()!
+      : emptyBalance(context.organizationId, payload.locationId, payload.mainItemId);
+    const currentMainOnHand = Number(currentMainBalance.onHandQuantity || 0);
+    const currentMainReserved = Number(currentMainBalance.reservedQuantity || 0);
+    if (payload.unbuildQuantity > currentMainOnHand - currentMainReserved) {
+      throw new InventoryApiError(
+        `${mainItem.itemName}: unbuild ${payload.unbuildQuantity}, available ${Math.max(0, currentMainOnHand - currentMainReserved)}.`,
+      );
+    }
+
+    const requirements = packBuildRequirements(packList, payload.unbuildQuantity);
+    const componentItemRefs = requirements.map((component) => firestore.collection(INVENTORY_COLLECTIONS.items).doc(component.itemId));
+    const componentBalanceRefs = requirements.map((component) => firestore.collection(INVENTORY_COLLECTIONS.balances)
+      .doc(inventoryBalanceId(context.organizationId, payload.locationId, component.itemId)));
+    const componentItemSnapshots = await transaction.getAll(...componentItemRefs);
+    const componentBalanceSnapshots = await transaction.getAll(...componentBalanceRefs);
+    const documentNumber = await nextDocumentNumber(
+      transaction,
+      context.organizationId,
+      'Pack Disassembly',
+      payload.transactionDate,
+    );
+    const mainUnitCost = Number(currentMainBalance.averageCost || mainItem.costRate || 0);
+    const totalRecoveredValue = mainUnitCost * payload.unbuildQuantity;
+    const recoveryWeights = requirements.map((requirement, index) => {
+      const componentItem = componentItemSnapshots[index].data() || {};
+      const componentBalance = componentBalanceSnapshots[index].data() || {};
+      const baseRate = Number(componentBalance.averageCost || componentItem.costRate || 0);
+      return Number(requirement.requiredQuantity || 0) * baseRate;
+    });
+    const totalWeight = recoveryWeights.reduce((sum, weight) => sum + weight, 0);
+    const totalRecoveredQuantity = requirements.reduce(
+      (sum, requirement) => sum + Number(requirement.requiredQuantity || 0),
+      0,
+    );
+    const componentLines: InventoryDocumentLine[] = [];
+
+    requirements.forEach((requirement, index) => {
+      const itemSnapshot = componentItemSnapshots[index];
+      if (!itemSnapshot.exists || itemSnapshot.data()?.active === false) {
+        throw new InventoryApiError('One of the pack sub-items is missing or inactive.');
+      }
+      const item = itemSnapshot.data()!;
+      if (String(item.organizationId || 'default') !== context.organizationId) {
+        throw new InventoryApiError('A pack sub-item is outside your organization.', 403);
+      }
+      if (item.classification === 'Non-inventory') {
+        throw new InventoryApiError(`${item.itemName} is classified as non-inventory.`);
+      }
+      if (item.serialTracking || item.batchTracking || item.expiryTracking) {
+        throw new InventoryApiError(`${item.itemName} uses serial, batch, or expiry tracking and requires tracked disassembly input.`);
+      }
+
+      const recoveredQuantity = Number(requirement.requiredQuantity || 0);
+      if (recoveredQuantity <= 0) throw new InventoryApiError(`${item.itemName} has an invalid pack quantity.`);
+      const balanceSnapshot = componentBalanceSnapshots[index];
+      const current = balanceSnapshot.exists
+        ? balanceSnapshot.data()!
+        : emptyBalance(context.organizationId, payload.locationId, requirement.itemId);
+      const currentOnHand = Number(current.onHandQuantity || 0);
+      const currentReserved = Number(current.reservedQuantity || 0);
+      const currentAverage = Number(current.averageCost || item.costRate || 0);
+      const recoveredValue = totalWeight > 0
+        ? totalRecoveredValue * (recoveryWeights[index] / totalWeight)
+        : totalRecoveredQuantity > 0
+          ? totalRecoveredValue * (recoveredQuantity / totalRecoveredQuantity)
+          : 0;
+      const recoveredRate = recoveredQuantity > 0 ? recoveredValue / recoveredQuantity : 0;
+      const nextOnHand = currentOnHand + recoveredQuantity;
+      const nextAverage = movingWeightedAverage(currentOnHand, currentAverage, recoveredQuantity, recoveredRate);
+      transaction.set(componentBalanceRefs[index], {
+        ...current,
+        organizationId: context.organizationId,
+        itemId: requirement.itemId,
+        locationId: payload.locationId,
+        assemblyIn: Number(current.assemblyIn || 0) + recoveredQuantity,
+        onHandQuantity: nextOnHand,
+        availableQuantity: nextOnHand - currentReserved,
+        averageCost: nextAverage,
+        inventoryValue: nextOnHand * nextAverage,
+        version: Number(current.version || 0) + 1,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      const lineId = `R${index + 1}`;
+      componentLines.push({
+        id: lineId,
+        itemId: itemSnapshot.id,
+        itemCode: String(item.itemCode || ''),
+        itemName: String(item.itemName || ''),
+        description: String(item.description || ''),
+        unit: String(item.unit || ''),
+        quantity: recoveredQuantity,
+        unitCost: recoveredRate,
+        lineRole: 'Recovered Component',
+        parentPackItemId: payload.mainItemId,
+        parentPackItemCode: String(mainItem.itemCode || ''),
+        parentPackItemName: String(mainItem.itemName || ''),
+        packQuantity: payload.unbuildQuantity,
+        componentQuantityPerPack: Number(requirement.quantity || 0),
+      });
+      transaction.set(firestore.collection(INVENTORY_COLLECTIONS.ledger).doc(`${documentRef.id}_${lineId}`), clean({
+        organizationId: context.organizationId,
+        transactionDate: payload.transactionDate,
+        documentId: documentRef.id,
+        documentNumber,
+        transactionType: 'Pack Disassembly',
+        status: 'Posted',
+        itemId: itemSnapshot.id,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        locationId: payload.locationId,
+        locationName: location.locationName,
+        destinationLocationId: payload.locationId,
+        quantityIn: recoveredQuantity,
+        quantityOut: 0,
+        unit: item.unit,
+        costRate: recoveredRate,
+        totalValue: recoveredValue,
+        balanceAfter: nextOnHand,
+        projectId: location.projectId,
+        propertyId: location.propertyId,
+        referenceDocument: payload.referenceDocument,
+        remarks: payload.remarks || `Recovered from ${payload.unbuildQuantity} ${mainItem.unit || ''} of ${mainItem.itemName}`,
+        parentPackItemId: payload.mainItemId,
+        packQuantity: payload.unbuildQuantity,
+        createdBy: context.userId,
+        postedBy: context.userId,
+        postingDate: FieldValue.serverTimestamp(),
+      }));
+    });
+
+    const nextMainOnHand = currentMainOnHand - payload.unbuildQuantity;
+    transaction.set(mainBalanceRef, {
+      ...currentMainBalance,
+      organizationId: context.organizationId,
+      itemId: payload.mainItemId,
+      locationId: payload.locationId,
+      assemblyOut: Number(currentMainBalance.assemblyOut || 0) + payload.unbuildQuantity,
+      onHandQuantity: nextMainOnHand,
+      availableQuantity: nextMainOnHand - currentMainReserved,
+      inventoryValue: nextMainOnHand * mainUnitCost,
+      version: Number(currentMainBalance.version || 0) + 1,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    const mainLine: InventoryDocumentLine = {
+      id: 'MAIN',
+      itemId: payload.mainItemId,
+      itemCode: String(mainItem.itemCode || ''),
+      itemName: String(mainItem.itemName || ''),
+      description: String(mainItem.description || ''),
+      unit: String(mainItem.unit || ''),
+      quantity: payload.unbuildQuantity,
+      unitCost: mainUnitCost,
+      lineRole: 'Disassembled',
+      packQuantity: payload.unbuildQuantity,
+    };
+    transaction.set(firestore.collection(INVENTORY_COLLECTIONS.ledger).doc(`${documentRef.id}_MAIN`), clean({
+      organizationId: context.organizationId,
+      transactionDate: payload.transactionDate,
+      documentId: documentRef.id,
+      documentNumber,
+      transactionType: 'Pack Disassembly',
+      status: 'Posted',
+      itemId: payload.mainItemId,
+      itemCode: mainItem.itemCode,
+      itemName: mainItem.itemName,
+      locationId: payload.locationId,
+      locationName: location.locationName,
+      sourceLocationId: payload.locationId,
+      quantityIn: 0,
+      quantityOut: payload.unbuildQuantity,
+      unit: mainItem.unit,
+      costRate: mainUnitCost,
+      totalValue: totalRecoveredValue,
+      balanceAfter: nextMainOnHand,
+      projectId: location.projectId,
+      propertyId: location.propertyId,
+      referenceDocument: payload.referenceDocument,
+      remarks: payload.remarks || 'Pack disassembly input',
+      packQuantity: payload.unbuildQuantity,
+      createdBy: context.userId,
+      postedBy: context.userId,
+      postingDate: FieldValue.serverTimestamp(),
+    }));
+
+    transaction.set(documentRef, clean({
+      organizationId: context.organizationId,
+      documentNumber,
+      documentType: 'Pack Disassembly',
+      transactionDate: payload.transactionDate,
+      status: 'Posted',
+      sourceLocationId: payload.locationId,
+      sourceLocationName: location.locationName,
+      destinationLocationId: payload.locationId,
+      destinationLocationName: location.locationName,
+      projectId: location.projectId,
+      projectName: location.projectName,
+      propertyId: location.propertyId,
+      propertyName: location.propertyName,
+      referenceDocument: payload.referenceDocument,
+      remarks: payload.remarks,
+      mainItemId: payload.mainItemId,
+      mainItemCode: mainItem.itemCode,
+      mainItemName: mainItem.itemName,
+      unbuildQuantity: payload.unbuildQuantity,
+      lines: [mainLine, ...componentLines],
+      createdBy: context.userId,
+      createdByName: context.userName,
+      postedBy: context.userId,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      postedAt: FieldValue.serverTimestamp(),
+    }));
+    transaction.set(firestore.collection(INVENTORY_COLLECTIONS.approvals).doc(), {
+      organizationId: context.organizationId,
+      documentId: documentRef.id,
+      documentNumber,
+      previousStatus: null,
+      newStatus: 'Posted',
+      action: 'Pack unbuilt and posted',
+      userId: context.userId,
+      userName: context.userName,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    const result = {
+      documentId: documentRef.id,
+      documentNumber,
+      status: 'Posted',
+      unbuildQuantity: payload.unbuildQuantity,
+      componentCount: componentLines.length,
+      unitCost: mainUnitCost,
+      totalValue: totalRecoveredValue,
+    };
+    transaction.set(requestRef, {
+      ...result,
+      organizationId: context.organizationId,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return result;
+  });
+}
+
 async function createTransfer(context: RequestContext, payload: z.infer<typeof transferCreateSchema>) {
   requirePermission(context, 'Create Transfer', { legacyTransaction: true });
   const firestore = db();
@@ -1440,6 +1741,7 @@ export async function POST(request: Request) {
       case 'saveLocation': result = await saveLocation(context, payload.location); break;
       case 'postMovement': result = await postMovement(context, payload); break;
       case 'buildPack': result = await buildPack(context, payload); break;
+      case 'unbuildPack': result = await unbuildPack(context, payload); break;
       case 'createTransfer': result = await createTransfer(context, payload); break;
       case 'transitionTransfer': result = await transitionTransfer(context, payload); break;
       case 'createStockCount': result = await createStockCount(context, payload); break;

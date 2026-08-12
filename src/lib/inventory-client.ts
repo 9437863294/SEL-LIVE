@@ -3,18 +3,24 @@
 import { auth } from '@/lib/firebase';
 
 export async function inventoryCommand<T = Record<string, unknown>>(payload: Record<string, unknown>): Promise<T> {
-  const isLocalSetupCommand = [
+  const isLocalInventoryCommand = [
     'saveItem',
     'saveLocation',
     'setInventoryScopeStatus',
     'postMovement',
     'buildPack',
+    'unbuildPack',
+    'createTransfer',
+    'transitionTransfer',
+    'createStockCount',
+    'submitStockCount',
+    'postStockCount',
   ].includes(String(payload.action || ''));
 
   // Local development intentionally has no Firebase Admin service-account key.
   // These setup writes follow the application's existing authenticated client
   // write model, avoiding a slow applicationDefault() lookup on every save.
-  if (process.env.NODE_ENV === 'development' && isLocalSetupCommand) {
+  if (process.env.NODE_ENV === 'development' && isLocalInventoryCommand) {
     const { runLocalInventorySetupCommand } = await import('@/lib/inventory-client-fallback');
     return await runLocalInventorySetupCommand(payload) as T;
   }

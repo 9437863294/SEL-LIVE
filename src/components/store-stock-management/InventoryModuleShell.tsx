@@ -66,8 +66,8 @@ const operations: NavigationItem[] = [
   },
   {
     href: '/store-stock-management/inventory/assemblies',
-    label: 'Build Packs',
-    description: 'Consume sub-items, create main',
+    label: 'Build / Unbuild',
+    description: 'Assemble or recover sub-items',
     icon: Component,
     iconClassName: 'text-fuchsia-700',
     iconBackground: 'bg-fuchsia-100',
@@ -172,6 +172,7 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
     const link = (
       <Link
         href={item.href}
+        prefetch={false}
         aria-current={active ? 'page' : undefined}
         className={cn(
           'group flex min-h-11 items-center rounded-xl transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50',
@@ -217,6 +218,7 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
       <Link
         key={item.href}
         href={item.href}
+        prefetch={false}
         onClick={() => setMobileOpen(false)}
         aria-current={active ? 'page' : undefined}
         className={cn(
@@ -268,6 +270,7 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
               <TooltipTrigger asChild>
                 <Link
                   href="/store-stock-management"
+                  prefetch={false}
                   className={cn('flex h-10 items-center rounded-lg text-sm font-medium text-muted-foreground transition-colors hover:bg-slate-100 hover:text-foreground', isExpanded ? 'gap-3 px-3' : 'justify-center px-2')}
                 >
                   <ArrowLeft className="h-4 w-4 shrink-0" />
@@ -318,7 +321,7 @@ export function InventoryModuleShell({ children }: { children: ReactNode }) {
                   <nav className="space-y-1" aria-label="Mobile inventory master data">{masters.map(mobileLink)}</nav>
                   <div className="my-4 border-t" />
                   {mobileLink(settingsItem)}
-                  <Link href="/store-stock-management" onClick={() => setMobileOpen(false)} className="mt-2 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-muted-foreground hover:bg-slate-100 hover:text-foreground">
+                  <Link href="/store-stock-management" prefetch={false} onClick={() => setMobileOpen(false)} className="mt-2 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-muted-foreground hover:bg-slate-100 hover:text-foreground">
                     <ArrowLeft className="h-4 w-4" />Back to stock management
                   </Link>
                 </div>

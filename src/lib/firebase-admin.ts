@@ -19,6 +19,21 @@ function getAdminApp() {
       && privateKey.includes('-----END PRIVATE KEY-----')
   );
 
+  const canUseLocalApplicationDefault = Boolean(
+    process.env.GOOGLE_APPLICATION_CREDENTIALS
+      || process.env.FIRESTORE_EMULATOR_HOST
+  );
+
+  if (
+    process.env.NODE_ENV === 'development'
+    && !hasCompleteServiceAccount
+    && !canUseLocalApplicationDefault
+  ) {
+    throw new Error(
+      'FIREBASE_PRIVATE_KEY is not configured. Add a Firebase service-account key or use the development inventory client fallback.',
+    );
+  }
+
   const credential = hasCompleteServiceAccount
     ? cert({ projectId: projectId!, clientEmail: clientEmail!, privateKey: privateKey! })
     : applicationDefault();

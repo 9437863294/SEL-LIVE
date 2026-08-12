@@ -123,6 +123,7 @@ function requireInventoryPermission(
   if (
     !permissions.includes(action)
     && !permissions.includes('Manage All')
+    && !(action === 'Unbuild Pack' && permissions.includes('Build Pack'))
     && !(options?.legacyTransaction && hasLegacyTransactionAccess(context))
   ) {
     throw new Error(`${action} permission is required.`);
@@ -950,6 +951,875 @@ async function buildPack(context: ClientInventoryContext, payload: Record<string
   });
 }
 
+async function unbuildPack(context: ClientInventoryContext, payload: Record<string, unknown>) {
+  const clientRequestId = String(payload.clientRequestId || '');
+  const transactionDate = String(payload.transactionDate || '');
+  const locationId = String(payload.locationId || '');
+  const mainItemId = String(payload.mainItemId || '');
+  const unbuildQuantity = Number(payload.unbuildQuantity);
+  if (clientRequestId.length < 8 || clientRequestId.length > 200) throw new Error('Pack unbuild request ID is invalid.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(transactionDate)) throw new Error('Pack unbuild date is invalid.');
+  if (!locationId || !mainItemId) throw new Error('Location and main item are required.');
+  if (!Number.isInteger(unbuildQuantity) || unbuildQuantity <= 0 || unbuildQuantity > 1000000) {
+    throw new Error('Unbuild quantity must be a positive whole number.');
+  }
+  requireInventoryPermission(context, 'Unbuild Pack');
+
+  const documentRef = doc(collection(db, INVENTORY_COLLECTIONS.documents));
+  const requestRef = doc(
+    db,
+    INVENTORY_COLLECTIONS.idempotency,
+    `${safeKey(context.organizationId)}_${safeKey(clientRequestId)}`,
+  );
+  const locationRef = doc(db, INVENTORY_COLLECTIONS.locations, locationId);
+  const mainItemRef = doc(db, INVENTORY_COLLECTIONS.items, mainItemId);
+  const mainBalanceRef = doc(
+    db,
+    INVENTORY_COLLECTIONS.balances,
+    inventoryBalanceId(context.organizationId, locationId, mainItemId),
+  );
+
+  return runTransaction(db, async (transaction) => {
+    const requestSnapshot = await transaction.get(requestRef);
+    if (requestSnapshot.exists()) return { ...requestSnapshot.data(), duplicate: true };
+    const locationSnapshot = await transaction.get(locationRef);
+    if (!locationSnapshot.exists()) throw new Error('Inventory location not found.');
+    const location = locationSnapshot.data();
+    assertLocationAccess(context, location);
+    const mainItemSnapshot = await transaction.get(mainItemRef);
+    const mainBalanceSnapshot = await transaction.get(mainBalanceRef);
+    if (!mainItemSnapshot.exists() || mainItemSnapshot.data()?.active === false) {
+      throw new Error('The selected main item is missing or inactive.');
+    }
+    const mainItem = mainItemSnapshot.data()!;
+    if (String(mainItem.organizationId || 'default') !== context.organizationId) {
+      throw new Error('The main item is outside your organization.');
+    }
+    if (mainItem.classification === 'Non-inventory') throw new Error('The main item is classified as non-inventory.');
+    if (mainItem.serialTracking || mainItem.batchTracking || mainItem.expiryTracking) {
+      throw new Error('Tracked main items require serial/batch capture and cannot currently be unbuilt.');
+    }
+    const packList = (Array.isArray(mainItem.packList) ? mainItem.packList : []) as InventoryPackComponent[];
+    if (!packList.length) throw new Error('The selected main item does not have a pack list.');
+    if (new Set(packList.map((component) => String(component.itemId || ''))).size !== packList.length) {
+      throw new Error('The main item pack list contains duplicate sub-items.');
+    }
+    if (packList.some((component) => component.itemId === mainItemId)) {
+      throw new Error('The main item cannot contain itself as a sub-item.');
+    }
+
+    const currentMainBalance = mainBalanceSnapshot.exists()
+      ? mainBalanceSnapshot.data()!
+      : emptyBalance(context.organizationId, locationId, mainItemId);
+    const currentMainOnHand = Number(currentMainBalance.onHandQuantity || 0);
+    const currentMainReserved = Number(currentMainBalance.reservedQuantity || 0);
+    if (unbuildQuantity > currentMainOnHand - currentMainReserved) {
+      throw new Error(`${mainItem.itemName}: unbuild ${unbuildQuantity}, available ${Math.max(0, currentMainOnHand - currentMainReserved)}.`);
+    }
+
+    const requirements = packBuildRequirements(packList, unbuildQuantity);
+    const componentItemSnapshots: DocumentSnapshot<DocumentData>[] = [];
+    const componentBalanceSnapshots: DocumentSnapshot<DocumentData>[] = [];
+    const componentBalanceRefs = requirements.map((component) => doc(
+      db,
+      INVENTORY_COLLECTIONS.balances,
+      inventoryBalanceId(context.organizationId, locationId, component.itemId),
+    ));
+    for (const component of requirements) {
+      componentItemSnapshots.push(await transaction.get(doc(db, INVENTORY_COLLECTIONS.items, component.itemId)));
+    }
+    for (const balanceRef of componentBalanceRefs) componentBalanceSnapshots.push(await transaction.get(balanceRef));
+    const documentNumber = await nextDocumentNumber(
+      transaction,
+      context.organizationId,
+      'Pack Disassembly',
+      transactionDate,
+    );
+    const mainUnitCost = Number(currentMainBalance.averageCost || mainItem.costRate || 0);
+    const totalRecoveredValue = mainUnitCost * unbuildQuantity;
+    const recoveryWeights = requirements.map((requirement, index) => {
+      const componentItem = componentItemSnapshots[index].data() || {};
+      const componentBalance = componentBalanceSnapshots[index].data() || {};
+      return Number(requirement.requiredQuantity || 0) * Number(componentBalance.averageCost || componentItem.costRate || 0);
+    });
+    const totalWeight = recoveryWeights.reduce((sum, value) => sum + value, 0);
+    const totalRecoveredQuantity = requirements.reduce(
+      (sum, requirement) => sum + Number(requirement.requiredQuantity || 0),
+      0,
+    );
+    const componentLines: InventoryDocumentLine[] = [];
+
+    requirements.forEach((requirement, index) => {
+      const itemSnapshot = componentItemSnapshots[index];
+      if (!itemSnapshot.exists() || itemSnapshot.data()?.active === false) {
+        throw new Error('One of the pack sub-items is missing or inactive.');
+      }
+      const item = itemSnapshot.data()!;
+      if (String(item.organizationId || 'default') !== context.organizationId) {
+        throw new Error('A pack sub-item is outside your organization.');
+      }
+      if (item.classification === 'Non-inventory') throw new Error(`${item.itemName} is classified as non-inventory.`);
+      if (item.serialTracking || item.batchTracking || item.expiryTracking) {
+        throw new Error(`${item.itemName} uses serial, batch, or expiry tracking and requires tracked disassembly input.`);
+      }
+      const recoveredQuantity = Number(requirement.requiredQuantity || 0);
+      if (recoveredQuantity <= 0) throw new Error(`${item.itemName} has an invalid pack quantity.`);
+      const balanceSnapshot = componentBalanceSnapshots[index];
+      const current = balanceSnapshot.exists()
+        ? balanceSnapshot.data()!
+        : emptyBalance(context.organizationId, locationId, requirement.itemId);
+      const currentOnHand = Number(current.onHandQuantity || 0);
+      const currentReserved = Number(current.reservedQuantity || 0);
+      const currentAverage = Number(current.averageCost || item.costRate || 0);
+      const recoveredValue = totalWeight > 0
+        ? totalRecoveredValue * (recoveryWeights[index] / totalWeight)
+        : totalRecoveredQuantity > 0
+          ? totalRecoveredValue * (recoveredQuantity / totalRecoveredQuantity)
+          : 0;
+      const recoveredRate = recoveredQuantity > 0 ? recoveredValue / recoveredQuantity : 0;
+      const nextOnHand = currentOnHand + recoveredQuantity;
+      const nextAverage = movingWeightedAverage(currentOnHand, currentAverage, recoveredQuantity, recoveredRate);
+      transaction.set(componentBalanceRefs[index], {
+        ...current,
+        organizationId: context.organizationId,
+        itemId: requirement.itemId,
+        locationId,
+        assemblyIn: Number(current.assemblyIn || 0) + recoveredQuantity,
+        onHandQuantity: nextOnHand,
+        availableQuantity: nextOnHand - currentReserved,
+        averageCost: nextAverage,
+        inventoryValue: nextOnHand * nextAverage,
+        version: Number(current.version || 0) + 1,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      const lineId = `R${index + 1}`;
+      componentLines.push({
+        id: lineId,
+        itemId: itemSnapshot.id,
+        itemCode: String(item.itemCode || ''),
+        itemName: String(item.itemName || ''),
+        description: String(item.description || ''),
+        unit: String(item.unit || ''),
+        quantity: recoveredQuantity,
+        unitCost: recoveredRate,
+        lineRole: 'Recovered Component',
+        parentPackItemId: mainItemId,
+        parentPackItemCode: String(mainItem.itemCode || ''),
+        parentPackItemName: String(mainItem.itemName || ''),
+        packQuantity: unbuildQuantity,
+        componentQuantityPerPack: Number(requirement.quantity || 0),
+      });
+      transaction.set(doc(db, INVENTORY_COLLECTIONS.ledger, `${documentRef.id}_${lineId}`), clean({
+        organizationId: context.organizationId,
+        transactionDate,
+        documentId: documentRef.id,
+        documentNumber,
+        transactionType: 'Pack Disassembly',
+        status: 'Posted',
+        itemId: itemSnapshot.id,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        locationId,
+        locationName: location.locationName,
+        destinationLocationId: locationId,
+        quantityIn: recoveredQuantity,
+        quantityOut: 0,
+        unit: item.unit,
+        costRate: recoveredRate,
+        totalValue: recoveredValue,
+        balanceAfter: nextOnHand,
+        projectId: location.projectId,
+        propertyId: location.propertyId,
+        referenceDocument: payload.referenceDocument,
+        remarks: payload.remarks || `Recovered from ${unbuildQuantity} ${mainItem.unit || ''} of ${mainItem.itemName}`,
+        parentPackItemId: mainItemId,
+        packQuantity: unbuildQuantity,
+        createdBy: context.userId,
+        postedBy: context.userId,
+        postingDate: serverTimestamp(),
+      }));
+    });
+
+    const nextMainOnHand = currentMainOnHand - unbuildQuantity;
+    transaction.set(mainBalanceRef, {
+      ...currentMainBalance,
+      organizationId: context.organizationId,
+      itemId: mainItemId,
+      locationId,
+      assemblyOut: Number(currentMainBalance.assemblyOut || 0) + unbuildQuantity,
+      onHandQuantity: nextMainOnHand,
+      availableQuantity: nextMainOnHand - currentMainReserved,
+      inventoryValue: nextMainOnHand * mainUnitCost,
+      version: Number(currentMainBalance.version || 0) + 1,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    const mainLine: InventoryDocumentLine = {
+      id: 'MAIN',
+      itemId: mainItemId,
+      itemCode: String(mainItem.itemCode || ''),
+      itemName: String(mainItem.itemName || ''),
+      description: String(mainItem.description || ''),
+      unit: String(mainItem.unit || ''),
+      quantity: unbuildQuantity,
+      unitCost: mainUnitCost,
+      lineRole: 'Disassembled',
+      packQuantity: unbuildQuantity,
+    };
+    transaction.set(doc(db, INVENTORY_COLLECTIONS.ledger, `${documentRef.id}_MAIN`), clean({
+      organizationId: context.organizationId,
+      transactionDate,
+      documentId: documentRef.id,
+      documentNumber,
+      transactionType: 'Pack Disassembly',
+      status: 'Posted',
+      itemId: mainItemId,
+      itemCode: mainItem.itemCode,
+      itemName: mainItem.itemName,
+      locationId,
+      locationName: location.locationName,
+      sourceLocationId: locationId,
+      quantityIn: 0,
+      quantityOut: unbuildQuantity,
+      unit: mainItem.unit,
+      costRate: mainUnitCost,
+      totalValue: totalRecoveredValue,
+      balanceAfter: nextMainOnHand,
+      projectId: location.projectId,
+      propertyId: location.propertyId,
+      referenceDocument: payload.referenceDocument,
+      remarks: payload.remarks || 'Pack disassembly input',
+      packQuantity: unbuildQuantity,
+      createdBy: context.userId,
+      postedBy: context.userId,
+      postingDate: serverTimestamp(),
+    }));
+    transaction.set(documentRef, clean({
+      organizationId: context.organizationId,
+      documentNumber,
+      documentType: 'Pack Disassembly',
+      transactionDate,
+      status: 'Posted',
+      sourceLocationId: locationId,
+      sourceLocationName: location.locationName,
+      destinationLocationId: locationId,
+      destinationLocationName: location.locationName,
+      projectId: location.projectId,
+      projectName: location.projectName,
+      propertyId: location.propertyId,
+      propertyName: location.propertyName,
+      referenceDocument: payload.referenceDocument,
+      remarks: payload.remarks,
+      mainItemId,
+      mainItemCode: mainItem.itemCode,
+      mainItemName: mainItem.itemName,
+      unbuildQuantity,
+      lines: [mainLine, ...componentLines],
+      createdBy: context.userId,
+      createdByName: context.userName,
+      postedBy: context.userId,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      postedAt: serverTimestamp(),
+    }));
+    transaction.set(doc(collection(db, INVENTORY_COLLECTIONS.approvals)), {
+      organizationId: context.organizationId,
+      documentId: documentRef.id,
+      documentNumber,
+      previousStatus: null,
+      newStatus: 'Posted',
+      action: 'Pack unbuilt and posted',
+      userId: context.userId,
+      userName: context.userName,
+      createdAt: serverTimestamp(),
+    });
+    const result = {
+      documentId: documentRef.id,
+      documentNumber,
+      status: 'Posted',
+      unbuildQuantity,
+      componentCount: componentLines.length,
+      unitCost: mainUnitCost,
+      totalValue: totalRecoveredValue,
+    };
+    transaction.set(requestRef, {
+      ...result,
+      organizationId: context.organizationId,
+      createdAt: serverTimestamp(),
+    });
+    return result;
+  });
+}
+
+function idempotencyDocument(context: ClientInventoryContext, clientRequestId: string) {
+  return doc(
+    db,
+    INVENTORY_COLLECTIONS.idempotency,
+    `${safeKey(context.organizationId)}_${safeKey(clientRequestId)}`,
+  );
+}
+
+function validateRequestId(payload: Record<string, unknown>, operation: string) {
+  const clientRequestId = String(payload.clientRequestId || '');
+  if (clientRequestId.length < 8 || clientRequestId.length > 200) {
+    throw new Error(`${operation} request ID is invalid.`);
+  }
+  return clientRequestId;
+}
+
+function validateDate(value: unknown, operation: string) {
+  const date = String(value || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`${operation} date is invalid.`);
+  return date;
+}
+
+async function createTransfer(context: ClientInventoryContext, payload: Record<string, unknown>) {
+  requireInventoryPermission(context, 'Create Transfer', { legacyTransaction: true });
+  const clientRequestId = validateRequestId(payload, 'Transfer');
+  const transactionDate = validateDate(payload.transactionDate, 'Transfer');
+  const sourceLocationId = String(payload.sourceLocationId || '');
+  const destinationLocationId = String(payload.destinationLocationId || '');
+  if (!sourceLocationId || !destinationLocationId) throw new Error('Source and destination locations are required.');
+  if (sourceLocationId === destinationLocationId) throw new Error('Source and destination locations must be different.');
+  const submittedLines = movementLines(payload.lines);
+
+  const documentRef = doc(collection(db, INVENTORY_COLLECTIONS.documents));
+  const requestRef = idempotencyDocument(context, clientRequestId);
+  const sourceRef = doc(db, INVENTORY_COLLECTIONS.locations, sourceLocationId);
+  const destinationRef = doc(db, INVENTORY_COLLECTIONS.locations, destinationLocationId);
+  const itemRefs = submittedLines.map((line) => doc(db, INVENTORY_COLLECTIONS.items, line.itemId));
+
+  return runTransaction(db, async (transaction) => {
+    const requestSnapshot = await transaction.get(requestRef);
+    if (requestSnapshot.exists()) return { ...requestSnapshot.data(), duplicate: true };
+    const sourceSnapshot = await transaction.get(sourceRef);
+    const destinationSnapshot = await transaction.get(destinationRef);
+    if (!sourceSnapshot.exists() || !destinationSnapshot.exists()) {
+      throw new Error('Source or destination location was not found.');
+    }
+    assertLocationAccess(context, sourceSnapshot.data());
+    assertLocationAccess(context, destinationSnapshot.data());
+
+    const itemSnapshots: DocumentSnapshot<DocumentData>[] = [];
+    for (const itemRef of itemRefs) itemSnapshots.push(await transaction.get(itemRef));
+    const documentNumber = await nextDocumentNumber(
+      transaction,
+      context.organizationId,
+      'Stock Transfer',
+      transactionDate,
+    );
+    const lines = submittedLines.map((line, index) => {
+      const itemSnapshot = itemSnapshots[index];
+      const item = itemSnapshot?.data();
+      if (!itemSnapshot?.exists() || !item || item.active === false) {
+        throw new Error('One of the selected items is missing or inactive.');
+      }
+      if (String(item.organizationId || 'default') !== context.organizationId) {
+        throw new Error('One of the selected items is outside your organization.');
+      }
+      validateTracking(item, line);
+      return clean({
+        ...line,
+        id: line.id || `L${index + 1}`,
+        itemCode: item.itemCode,
+        itemName: item.itemName,
+        description: item.description,
+        unit: item.unit,
+        requestedQuantity: line.quantity,
+        approvedQuantity: 0,
+        dispatchedQuantity: 0,
+        receivedQuantity: 0,
+        rejectedQuantity: 0,
+        damagedQuantity: 0,
+        outstandingQuantity: 0,
+      }) as unknown as InventoryDocumentLine;
+    });
+
+    transaction.set(documentRef, clean({
+      organizationId: context.organizationId,
+      documentNumber,
+      documentType: 'Stock Transfer',
+      transactionDate,
+      status: 'Draft',
+      sourceLocationId: sourceSnapshot.id,
+      sourceLocationName: sourceSnapshot.data().locationName,
+      destinationLocationId: destinationSnapshot.id,
+      destinationLocationName: destinationSnapshot.data().locationName,
+      projectId: destinationSnapshot.data().projectId || sourceSnapshot.data().projectId,
+      projectName: destinationSnapshot.data().projectName || sourceSnapshot.data().projectName,
+      propertyId: destinationSnapshot.data().propertyId || sourceSnapshot.data().propertyId,
+      propertyName: destinationSnapshot.data().propertyName || sourceSnapshot.data().propertyName,
+      requesterId: payload.requesterId || context.userId,
+      requesterName: payload.requesterName || context.userName,
+      referenceDocument: payload.referenceDocument,
+      vehicleDetails: payload.vehicleDetails,
+      remarks: payload.remarks,
+      lines,
+      createdBy: context.userId,
+      createdByName: context.userName,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+    const result = { documentId: documentRef.id, documentNumber, status: 'Draft' };
+    transaction.set(requestRef, { ...result, organizationId: context.organizationId, createdAt: serverTimestamp() });
+    return result;
+  });
+}
+
+const transferPermissions = {
+  submit: 'Create Transfer',
+  approve: 'Approve Transfer',
+  dispatch: 'Dispatch Transfer',
+  receive: 'Receive Transfer',
+  cancel: 'Create Transfer',
+} as const;
+
+async function transitionTransfer(context: ClientInventoryContext, payload: Record<string, unknown>) {
+  const transition = String(payload.transition || '') as keyof typeof transferPermissions;
+  if (!Object.hasOwn(transferPermissions, transition)) throw new Error('Transfer action is invalid.');
+  requireInventoryPermission(context, transferPermissions[transition], { legacyTransaction: true });
+  const clientRequestId = validateRequestId(payload, 'Transfer');
+  const documentId = String(payload.documentId || '');
+  if (!documentId) throw new Error('Stock transfer is required.');
+  const submittedLines = Array.isArray(payload.lines)
+    ? payload.lines.map((value, index) => {
+        const line = expectRecord(value, `Transfer line ${index + 1}`);
+        const id = String(line.id || '');
+        const quantity = Number(line.quantity);
+        const rejectedQuantity = Number(line.rejectedQuantity || 0);
+        const damagedQuantity = Number(line.damagedQuantity || 0);
+        if (!id || !Number.isFinite(quantity) || !Number.isFinite(rejectedQuantity) || !Number.isFinite(damagedQuantity)) {
+          throw new Error(`Transfer line ${index + 1} is invalid.`);
+        }
+        return { id, quantity, rejectedQuantity, damagedQuantity };
+      })
+    : [];
+
+  const documentRef = doc(db, INVENTORY_COLLECTIONS.documents, documentId);
+  const requestRef = idempotencyDocument(context, clientRequestId);
+
+  return runTransaction(db, async (transaction) => {
+    const requestSnapshot = await transaction.get(requestRef);
+    if (requestSnapshot.exists()) return { ...requestSnapshot.data(), duplicate: true };
+    const documentSnapshot = await transaction.get(documentRef);
+    if (!documentSnapshot.exists()) throw new Error('Stock transfer not found.');
+    const document = documentSnapshot.data();
+    if (document.documentType !== 'Stock Transfer' || String(document.organizationId || 'default') !== context.organizationId) {
+      throw new Error('Stock transfer not found.');
+    }
+
+    const expected: Record<keyof typeof transferPermissions, string[]> = {
+      submit: ['Draft'],
+      approve: ['Submitted'],
+      dispatch: ['Approved'],
+      receive: ['In Transit', 'Partially Received'],
+      cancel: ['Draft', 'Submitted', 'Approved'],
+    };
+    if (!expected[transition].includes(String(document.status || ''))) {
+      throw new Error(`A ${document.status} transfer cannot be ${transition}ed.`);
+    }
+
+    const sourceRef = doc(db, INVENTORY_COLLECTIONS.locations, String(document.sourceLocationId || ''));
+    const destinationRef = doc(db, INVENTORY_COLLECTIONS.locations, String(document.destinationLocationId || ''));
+    const sourceSnapshot = await transaction.get(sourceRef);
+    const destinationSnapshot = await transaction.get(destinationRef);
+    if (!sourceSnapshot.exists() || !destinationSnapshot.exists()) throw new Error('A transfer location no longer exists.');
+    assertLocationAccess(context, sourceSnapshot.data());
+    assertLocationAccess(context, destinationSnapshot.data());
+
+    let nextStatus = String(document.status || '');
+    let nextLines = (Array.isArray(document.lines) ? document.lines : []) as InventoryDocumentLine[];
+    const updates: Record<string, unknown> = { updatedAt: serverTimestamp() };
+
+    if (transition === 'submit') nextStatus = 'Submitted';
+    if (transition === 'approve') {
+      nextStatus = 'Approved';
+      nextLines = nextLines.map((line) => ({ ...line, approvedQuantity: Number(line.requestedQuantity || line.quantity) }));
+      updates.approvedBy = context.userId;
+      updates.approvedByName = context.userName;
+      updates.approvedAt = serverTimestamp();
+    }
+    if (transition === 'cancel') {
+      nextStatus = 'Cancelled';
+      updates.cancelledBy = context.userId;
+      updates.cancelledAt = serverTimestamp();
+      updates.cancellationRemarks = String(payload.remarks || '');
+    }
+
+    if (transition === 'dispatch' || transition === 'receive') {
+      const submittedById = new Map(submittedLines.map((line) => [line.id, line]));
+      const locationId = transition === 'dispatch'
+        ? String(document.sourceLocationId || '')
+        : String(document.destinationLocationId || '');
+      const balanceRefs = nextLines.map((line) => doc(
+        db,
+        INVENTORY_COLLECTIONS.balances,
+        inventoryBalanceId(context.organizationId, locationId, line.itemId),
+      ));
+      const balanceSnapshots: DocumentSnapshot<DocumentData>[] = [];
+      for (const balanceRef of balanceRefs) balanceSnapshots.push(await transaction.get(balanceRef));
+      const settingsSnapshot = transition === 'dispatch'
+        ? await transaction.get(doc(db, 'storeStockSettings', 'inventory'))
+        : null;
+      const allowNegative = settingsSnapshot?.data()?.allowNegativeInventory === true
+        && (permissionList(context, 'Inventory') || []).includes('Allow Negative Inventory');
+
+      nextLines = nextLines.map((line, index) => {
+        const submitted = submittedById.get(line.id);
+        const outstanding = Number(line.dispatchedQuantity || 0)
+          - Number(line.receivedQuantity || 0)
+          - Number(line.rejectedQuantity || 0)
+          - Number(line.damagedQuantity || 0);
+        const defaultQuantity = transition === 'dispatch'
+          ? Number(line.approvedQuantity || 0) - Number(line.dispatchedQuantity || 0)
+          : outstanding;
+        const quantity = Number(submitted?.quantity ?? defaultQuantity);
+        const rejected = transition === 'receive' ? Number(submitted?.rejectedQuantity || 0) : 0;
+        const damaged = transition === 'receive' ? Number(submitted?.damagedQuantity || 0) : 0;
+        if (quantity < 0 || rejected < 0 || damaged < 0) throw new Error('Transfer quantities cannot be negative.');
+        const maximum = transition === 'dispatch'
+          ? Number(line.approvedQuantity || 0) - Number(line.dispatchedQuantity || 0)
+          : outstanding;
+        if (quantity + rejected + damaged > maximum + 0.000001) {
+          throw new Error(`${line.itemName}: quantity exceeds the outstanding transfer quantity.`);
+        }
+
+        const balanceSnapshot = balanceSnapshots[index];
+        const current = balanceSnapshot.exists()
+          ? balanceSnapshot.data()!
+          : emptyBalance(context.organizationId, locationId, line.itemId);
+        const inbound = transition === 'receive';
+        const currentOnHand = Number(current.onHandQuantity || 0);
+        const reserved = Number(current.reservedQuantity || 0);
+        if (!inbound && !allowNegative && quantity > currentOnHand - reserved) {
+          throw new Error(`${line.itemName}: dispatch ${quantity}, available ${Math.max(0, currentOnHand - reserved)}.`);
+        }
+        const currentAverage = Number(current.averageCost || line.unitCost || 0);
+        const rate = Number(line.unitCost || currentAverage || 0);
+        const nextOnHand = currentOnHand + (inbound ? quantity : -quantity);
+        const nextAverage = inbound
+          ? movingWeightedAverage(currentOnHand, currentAverage, quantity, rate)
+          : currentAverage;
+        const counter = movementCounter('Stock Transfer', inbound);
+        transaction.set(balanceRefs[index], {
+          ...current,
+          organizationId: context.organizationId,
+          itemId: line.itemId,
+          locationId,
+          [counter]: Number(current[counter] || 0) + quantity,
+          onHandQuantity: nextOnHand,
+          availableQuantity: nextOnHand - reserved,
+          averageCost: nextAverage,
+          inventoryValue: nextOnHand * nextAverage,
+          version: Number(current.version || 0) + 1,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+
+        if (quantity > 0) {
+          const suffix = transition === 'dispatch' ? 'dispatch' : `receive_${safeKey(clientRequestId)}`;
+          transaction.set(doc(db, INVENTORY_COLLECTIONS.ledger, `${documentRef.id}_${line.id}_${suffix}`), clean({
+            organizationId: context.organizationId,
+            transactionDate: document.transactionDate,
+            documentId: documentRef.id,
+            documentNumber: document.documentNumber,
+            transactionType: 'Stock Transfer',
+            status: 'Posted',
+            itemId: line.itemId,
+            itemCode: line.itemCode,
+            itemName: line.itemName,
+            locationId,
+            locationName: inbound ? destinationSnapshot.data().locationName : sourceSnapshot.data().locationName,
+            sourceLocationId: document.sourceLocationId,
+            destinationLocationId: document.destinationLocationId,
+            quantityIn: inbound ? quantity : 0,
+            quantityOut: inbound ? 0 : quantity,
+            unit: line.unit,
+            costRate: rate,
+            totalValue: quantity * rate,
+            balanceAfter: nextOnHand,
+            projectId: document.projectId,
+            propertyId: document.propertyId,
+            requesterId: document.requesterId,
+            referenceDocument: document.referenceDocument,
+            remarks: payload.remarks || line.remarks || document.remarks,
+            batchNumber: line.batchNumber,
+            serialNumbers: line.serialNumbers,
+            createdBy: document.createdBy,
+            approvedBy: document.approvedBy,
+            postedBy: context.userId,
+            postingDate: serverTimestamp(),
+          }));
+        }
+
+        if (transition === 'dispatch') {
+          const dispatchedQuantity = Number(line.dispatchedQuantity || 0) + quantity;
+          return {
+            ...line,
+            dispatchedQuantity,
+            outstandingQuantity: dispatchedQuantity
+              - Number(line.receivedQuantity || 0)
+              - Number(line.rejectedQuantity || 0)
+              - Number(line.damagedQuantity || 0),
+            unitCost: rate,
+          };
+        }
+        const receivedQuantity = Number(line.receivedQuantity || 0) + quantity;
+        const rejectedQuantity = Number(line.rejectedQuantity || 0) + rejected;
+        const damagedQuantity = Number(line.damagedQuantity || 0) + damaged;
+        return {
+          ...line,
+          receivedQuantity,
+          rejectedQuantity,
+          damagedQuantity,
+          outstandingQuantity: Math.max(0, Number(line.dispatchedQuantity || 0) - receivedQuantity - rejectedQuantity - damagedQuantity),
+        };
+      });
+
+      if (transition === 'dispatch') {
+        nextStatus = 'In Transit';
+        updates.dispatchedBy = context.userId;
+        updates.dispatchedByName = context.userName;
+        updates.dispatchedAt = serverTimestamp();
+      } else {
+        nextStatus = nextLines.every((line) => Number(line.outstandingQuantity || 0) <= 0.000001)
+          ? 'Received'
+          : 'Partially Received';
+        updates.receivedBy = context.userId;
+        updates.receivedByName = context.userName;
+        updates.lastReceivedAt = serverTimestamp();
+        if (nextStatus === 'Received') updates.receivedAt = serverTimestamp();
+      }
+    }
+
+    transaction.update(documentRef, { ...updates, lines: nextLines, status: nextStatus });
+    transaction.set(doc(collection(db, INVENTORY_COLLECTIONS.approvals)), clean({
+      organizationId: context.organizationId,
+      documentId: documentRef.id,
+      documentNumber: document.documentNumber,
+      previousStatus: document.status,
+      newStatus: nextStatus,
+      action: transition,
+      remarks: payload.remarks,
+      userId: context.userId,
+      userName: context.userName,
+      createdAt: serverTimestamp(),
+    }));
+    const result = { documentId: documentRef.id, documentNumber: document.documentNumber, status: nextStatus };
+    transaction.set(requestRef, { ...result, organizationId: context.organizationId, createdAt: serverTimestamp() });
+    return result;
+  });
+}
+
+async function createStockCount(context: ClientInventoryContext, payload: Record<string, unknown>) {
+  requireInventoryPermission(context, 'Perform Stock Count', { legacyTransaction: true });
+  const clientRequestId = validateRequestId(payload, 'Stock count');
+  const countDate = validateDate(payload.countDate, 'Stock count');
+  const locationId = String(payload.locationId || '');
+  if (!locationId) throw new Error('Inventory location is required.');
+
+  const balanceQuery = await getDocs(query(
+    collection(db, INVENTORY_COLLECTIONS.balances),
+    where('organizationId', '==', context.organizationId),
+    where('locationId', '==', locationId),
+    limit(250),
+  ));
+  const candidateBalanceRefs = balanceQuery.docs.map((snapshot) => snapshot.ref);
+  const countRef = doc(collection(db, INVENTORY_COLLECTIONS.counts));
+  const requestRef = idempotencyDocument(context, clientRequestId);
+  const locationRef = doc(db, INVENTORY_COLLECTIONS.locations, locationId);
+
+  return runTransaction(db, async (transaction) => {
+    const requestSnapshot = await transaction.get(requestRef);
+    if (requestSnapshot.exists()) return { ...requestSnapshot.data(), duplicate: true };
+    const locationSnapshot = await transaction.get(locationRef);
+    if (!locationSnapshot.exists()) throw new Error('Inventory location not found.');
+    assertLocationAccess(context, locationSnapshot.data());
+
+    const balanceSnapshots: DocumentSnapshot<DocumentData>[] = [];
+    for (const balanceRef of candidateBalanceRefs) balanceSnapshots.push(await transaction.get(balanceRef));
+    const balances = balanceSnapshots.filter(
+      (snapshot) => snapshot.exists() && Number(snapshot.data()?.onHandQuantity || 0) !== 0,
+    );
+    const itemSnapshots: DocumentSnapshot<DocumentData>[] = [];
+    for (const balance of balances) {
+      itemSnapshots.push(await transaction.get(doc(db, INVENTORY_COLLECTIONS.items, String(balance.data()?.itemId || ''))));
+    }
+    const countNumber = await nextDocumentNumber(
+      transaction,
+      context.organizationId,
+      'Physical Count',
+      countDate,
+    );
+    const lines = balances.map((balance, index) => {
+      const item = itemSnapshots[index]?.data() || {};
+      return {
+        id: `L${index + 1}`,
+        itemId: balance.data()!.itemId,
+        itemCode: item.itemCode || '',
+        itemName: item.itemName || balance.data()!.itemId,
+        unit: item.unit || '',
+        systemQuantity: Number(balance.data()!.onHandQuantity || 0),
+      };
+    });
+    transaction.set(countRef, {
+      organizationId: context.organizationId,
+      countNumber,
+      locationId,
+      locationName: locationSnapshot.data().locationName,
+      countDate,
+      status: 'Draft',
+      lines,
+      createdBy: context.userId,
+      createdByName: context.userName,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    const result = { countId: countRef.id, countNumber, status: 'Draft', lineCount: lines.length };
+    transaction.set(requestRef, { ...result, organizationId: context.organizationId, createdAt: serverTimestamp() });
+    return result;
+  });
+}
+
+async function submitStockCount(context: ClientInventoryContext, payload: Record<string, unknown>) {
+  requireInventoryPermission(context, 'Perform Stock Count', { legacyTransaction: true });
+  const clientRequestId = validateRequestId(payload, 'Stock count');
+  const countId = String(payload.countId || '');
+  if (!countId) throw new Error('Stock count is required.');
+  if (!Array.isArray(payload.lines) || payload.lines.length < 1 || payload.lines.length > 250) {
+    throw new Error('Stock count lines are invalid.');
+  }
+  const submittedLines = payload.lines.map((value, index) => {
+    const line = expectRecord(value, `Stock count line ${index + 1}`);
+    const id = String(line.id || '');
+    const physicalQuantity = Number(line.physicalQuantity);
+    if (!id || !Number.isFinite(physicalQuantity) || physicalQuantity < 0) {
+      throw new Error(`Stock count line ${index + 1} requires a non-negative physical quantity.`);
+    }
+    return { id, physicalQuantity, varianceReason: String(line.varianceReason || '') };
+  });
+  const countRef = doc(db, INVENTORY_COLLECTIONS.counts, countId);
+  const requestRef = idempotencyDocument(context, clientRequestId);
+
+  return runTransaction(db, async (transaction) => {
+    const requestSnapshot = await transaction.get(requestRef);
+    if (requestSnapshot.exists()) return { ...requestSnapshot.data(), duplicate: true };
+    const countSnapshot = await transaction.get(countRef);
+    if (!countSnapshot.exists() || String(countSnapshot.data()?.organizationId || 'default') !== context.organizationId) {
+      throw new Error('Stock count not found.');
+    }
+    const count = countSnapshot.data()!;
+    if (count.status !== 'Draft') throw new Error('Only a draft stock count can be submitted.');
+    const values = new Map(submittedLines.map((line) => [line.id, line]));
+    const lines = (Array.isArray(count.lines) ? count.lines : []).map((line: DocumentData) => {
+      const submitted = values.get(String(line.id || ''));
+      if (!submitted) throw new Error(`Physical quantity is missing for ${line.itemName}.`);
+      return {
+        ...line,
+        physicalQuantity: submitted.physicalQuantity,
+        variance: submitted.physicalQuantity - Number(line.systemQuantity || 0),
+        varianceReason: submitted.varianceReason,
+      };
+    });
+    transaction.update(countRef, {
+      lines,
+      status: 'Submitted',
+      submittedBy: context.userId,
+      submittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    const result = { countId: countRef.id, countNumber: count.countNumber, status: 'Submitted' };
+    transaction.set(requestRef, { ...result, organizationId: context.organizationId, createdAt: serverTimestamp() });
+    return result;
+  });
+}
+
+async function postStockCount(context: ClientInventoryContext, payload: Record<string, unknown>) {
+  requireInventoryPermission(context, 'Approve Stock Count');
+  const clientRequestId = validateRequestId(payload, 'Stock count');
+  const countId = String(payload.countId || '');
+  if (!countId) throw new Error('Stock count is required.');
+  const countRef = doc(db, INVENTORY_COLLECTIONS.counts, countId);
+  const requestRef = idempotencyDocument(context, clientRequestId);
+
+  return runTransaction(db, async (transaction) => {
+    const requestSnapshot = await transaction.get(requestRef);
+    if (requestSnapshot.exists()) return { ...requestSnapshot.data(), duplicate: true };
+    const countSnapshot = await transaction.get(countRef);
+    if (!countSnapshot.exists() || String(countSnapshot.data()?.organizationId || 'default') !== context.organizationId) {
+      throw new Error('Stock count not found.');
+    }
+    const count = countSnapshot.data()!;
+    if (count.status !== 'Submitted') throw new Error('Only a submitted stock count can be posted.');
+    const lines = (Array.isArray(count.lines) ? count.lines : []) as DocumentData[];
+    const changed = lines.filter((line) => Math.abs(Number(line.variance || 0)) > 0.000001);
+    const balanceRefs = changed.map((line) => doc(
+      db,
+      INVENTORY_COLLECTIONS.balances,
+      inventoryBalanceId(context.organizationId, String(count.locationId || ''), String(line.itemId || '')),
+    ));
+    const balanceSnapshots: DocumentSnapshot<DocumentData>[] = [];
+    for (const balanceRef of balanceRefs) balanceSnapshots.push(await transaction.get(balanceRef));
+
+    changed.forEach((line, index) => {
+      const balanceSnapshot = balanceSnapshots[index];
+      const current = balanceSnapshot.exists()
+        ? balanceSnapshot.data()!
+        : emptyBalance(context.organizationId, String(count.locationId || ''), String(line.itemId || ''));
+      const variance = Number(line.variance || 0);
+      const nextOnHand = Number(line.physicalQuantity || 0);
+      const reserved = Number(current.reservedQuantity || 0);
+      const average = Number(current.averageCost || 0);
+      const counter = movementCounter('Physical Count', variance > 0);
+      transaction.set(balanceRefs[index], {
+        ...current,
+        organizationId: context.organizationId,
+        locationId: count.locationId,
+        itemId: line.itemId,
+        [counter]: Number(current[counter] || 0) + Math.abs(variance),
+        onHandQuantity: nextOnHand,
+        availableQuantity: nextOnHand - reserved,
+        inventoryValue: nextOnHand * average,
+        version: Number(current.version || 0) + 1,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      transaction.set(doc(db, INVENTORY_COLLECTIONS.ledger, `${countRef.id}_${line.id}`), {
+        organizationId: context.organizationId,
+        transactionDate: count.countDate,
+        documentId: countRef.id,
+        documentNumber: count.countNumber,
+        transactionType: 'Physical Count',
+        status: 'Posted',
+        itemId: line.itemId,
+        itemCode: line.itemCode,
+        itemName: line.itemName,
+        locationId: count.locationId,
+        locationName: count.locationName,
+        quantityIn: variance > 0 ? variance : 0,
+        quantityOut: variance < 0 ? Math.abs(variance) : 0,
+        unit: line.unit,
+        costRate: average,
+        totalValue: Math.abs(variance) * average,
+        balanceAfter: nextOnHand,
+        remarks: line.varianceReason || 'Physical count variance',
+        createdBy: count.createdBy,
+        approvedBy: context.userId,
+        postedBy: context.userId,
+        postingDate: serverTimestamp(),
+      });
+    });
+    transaction.update(countRef, {
+      status: 'Posted',
+      approvedBy: context.userId,
+      approvedByName: context.userName,
+      postedBy: context.userId,
+      postedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    const result = { countId: countRef.id, countNumber: count.countNumber, status: 'Posted', adjustments: changed.length };
+    transaction.set(requestRef, { ...result, organizationId: context.organizationId, createdAt: serverTimestamp() });
+    return result;
+  });
+}
+
 export async function runLocalInventorySetupCommand(payload: Record<string, unknown>) {
   const context = await loadContext();
   switch (payload.action) {
@@ -963,6 +1833,18 @@ export async function runLocalInventorySetupCommand(payload: Record<string, unkn
       return postMovement(context, payload);
     case 'buildPack':
       return buildPack(context, payload);
+    case 'unbuildPack':
+      return unbuildPack(context, payload);
+    case 'createTransfer':
+      return createTransfer(context, payload);
+    case 'transitionTransfer':
+      return transitionTransfer(context, payload);
+    case 'createStockCount':
+      return createStockCount(context, payload);
+    case 'submitStockCount':
+      return submitStockCount(context, payload);
+    case 'postStockCount':
+      return postStockCount(context, payload);
     default:
       throw new Error('Firebase Admin credentials are required to post inventory transactions locally.');
   }

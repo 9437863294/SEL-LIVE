@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { AlertTriangle, Boxes, Calculator, CheckCircle2, Component, PackageCheck } from 'lucide-react';
+import {
+  AlertTriangle,
+  Boxes,
+  Calculator,
+  CheckCircle2,
+  Component,
+  PackageCheck,
+  PackageMinus,
+} from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -29,11 +37,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 
 type PackAssemblyDocument = InventoryDocument & {
-  mainItemId?: string;
-  mainItemCode?: string;
-  mainItemName?: string;
-  buildQuantity?: number;
+  unbuildQuantity?: number;
 };
+
+type AssemblyMode = 'build' | 'unbuild';
 
 export default function PackAssemblyPage() {
   const { user } = useAuth();
@@ -44,6 +51,8 @@ export default function PackAssemblyPage() {
     || can('View Inventory', 'Store & Stock Management.Projects');
   const canBuild = can('Build Pack', 'Store & Stock Management.Inventory')
     || can('Manage All', 'Store & Stock Management.Inventory');
+  // Existing Build Pack roles keep reverse access; new roles can separate it with Unbuild Pack.
+  const canUnbuild = can('Unbuild Pack', 'Store & Stock Management.Inventory') || canBuild;
   const canViewCost = can('View Cost', 'Store & Stock Management.Inventory')
     || can('View Inventory', 'Store & Stock Management.Projects');
 
@@ -53,9 +62,10 @@ export default function PackAssemblyPage() {
   const [documents, setDocuments] = useState<PackAssemblyDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<AssemblyMode>('build');
   const [mainItemId, setMainItemId] = useState('');
   const [locationId, setLocationId] = useState('');
-  const [buildQuantity, setBuildQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(1);
   const [transactionDate, setTransactionDate] = useState(asDateInput());
   const [referenceDocument, setReferenceDocument] = useState('');
   const [remarks, setRemarks] = useState('');
@@ -76,7 +86,7 @@ export default function PackAssemblyPage() {
       const accessibleLocations = locationSnapshot.docs
         .map((document) => ({ id: document.id, ...document.data() }) as InventoryLocation)
         .filter((location) => location.active && (!location.allowedUserIds?.length || location.allowedUserIds.includes(user.id)))
-        .sort((a, b) => a.locationName.localeCompare(b.locationName));
+        .sort((left, right) => left.locationName.localeCompare(right.locationName));
       const accessibleLocationIds = new Set(accessibleLocations.map((location) => location.id));
       setItems(itemSnapshot.docs
         .map((document) => ({ id: document.id, ...document.data() }) as InventoryItem)
@@ -87,21 +97,28 @@ export default function PackAssemblyPage() {
         .filter((balance) => accessibleLocationIds.has(balance.locationId)));
       setDocuments(documentSnapshot.docs
         .map((document) => ({ id: document.id, ...document.data() }) as PackAssemblyDocument)
-        .filter((document) => document.documentType === 'Pack Assembly' && Boolean(document.sourceLocationId && accessibleLocationIds.has(document.sourceLocationId)))
-        .sort((a, b) => b.transactionDate.localeCompare(a.transactionDate) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+        .filter((document) => (
+          ['Pack Assembly', 'Pack Disassembly'].includes(document.documentType)
+          && Boolean(document.sourceLocationId && accessibleLocationIds.has(document.sourceLocationId))
+        ))
+        .sort((left, right) => right.transactionDate.localeCompare(left.transactionDate))
         .slice(0, 20));
     } catch (error) {
       console.error('Unable to load pack assemblies', error);
-      toast({ title: 'Unable to load pack assembly', description: 'Items, locations, or balances could not be loaded.', variant: 'destructive' });
+      toast({
+        title: 'Unable to load pack assembly',
+        description: 'Items, locations, or balances could not be loaded.',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
   }, [authorizationLoading, canView, organizationId, toast, user]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const packItems = useMemo(
-    () => items.filter((item) => Boolean(item.packList?.length)).sort((a, b) => a.itemName.localeCompare(b.itemName)),
+    () => items.filter((item) => Boolean(item.packList?.length)).sort((left, right) => left.itemName.localeCompare(right.itemName)),
     [items],
   );
   const selectedItem = items.find((item) => item.id === mainItemId);
@@ -111,58 +128,90 @@ export default function PackAssemblyPage() {
     return [item.id, Number(balance?.availableQuantity || 0)];
   })), [balances, items, locationId]);
   const requirements = useMemo(
-    () => packBuildRequirements(selectedItem?.packList || [], buildQuantity),
-    [buildQuantity, selectedItem],
+    () => packBuildRequirements(selectedItem?.packList || [], quantity),
+    [quantity, selectedItem],
   );
   const maxBuildable = useMemo(
     () => maxBuildablePacks(selectedItem?.packList || [], availableByItem),
     [availableByItem, selectedItem],
   );
+  const mainBalance = balances.find((entry) => entry.itemId === mainItemId && entry.locationId === locationId);
+  const availableMainQuantity = Number(mainBalance?.availableQuantity || 0);
   const estimatedUnitCost = requirements.reduce((sum, requirement) => {
     const component = itemMap.get(requirement.itemId);
     const balance = balances.find((entry) => entry.itemId === requirement.itemId && entry.locationId === locationId);
-    const rate = Number(balance?.averageCost || component?.costRate || 0);
-    return sum + Number(requirement.quantity || 0) * rate;
+    return sum + Number(requirement.quantity || 0) * Number(balance?.averageCost || component?.costRate || 0);
   }, 0);
-  const hasShortage = requirements.some((requirement) => (
+  const componentShortage = requirements.some((requirement) => (
     Number(requirement.requiredQuantity || 0) > Number(availableByItem.get(requirement.itemId) || 0)
   ));
+  const mainItemShortage = quantity > availableMainQuantity;
+  const isUnbuild = mode === 'unbuild';
+  const hasPermission = isUnbuild ? canUnbuild : canBuild;
+  const isBlocked = isUnbuild ? mainItemShortage : componentShortage;
 
   const submit = async () => {
-    if (!canBuild) {
-      toast({ title: 'Permission required', description: 'Build Pack permission is required.', variant: 'destructive' });
+    if (!hasPermission) {
+      toast({
+        title: 'Permission required',
+        description: `${isUnbuild ? 'Unbuild' : 'Build'} Pack permission is required.`,
+        variant: 'destructive',
+      });
       return;
     }
-    if (!mainItemId || !locationId || !Number.isInteger(buildQuantity) || buildQuantity <= 0) {
-      toast({ title: 'Complete the build', description: 'Select a main item, location, and positive whole build quantity.', variant: 'destructive' });
+    if (!mainItemId || !locationId || !Number.isInteger(quantity) || quantity <= 0) {
+      toast({
+        title: `Complete the ${mode}`,
+        description: `Select a main item, location, and positive whole ${mode} quantity.`,
+        variant: 'destructive',
+      });
       return;
     }
-    if (hasShortage) {
-      toast({ title: 'Insufficient component stock', description: 'Reduce the build quantity or receive the missing sub-items first.', variant: 'destructive' });
+    if (!isUnbuild && componentShortage) {
+      toast({
+        title: 'Insufficient component stock',
+        description: 'Reduce the build quantity or receive the missing sub-items first.',
+        variant: 'destructive',
+      });
       return;
     }
+    if (isUnbuild && mainItemShortage) {
+      toast({
+        title: 'Insufficient main-item stock',
+        description: `Only ${formatQuantity(availableMainQuantity)} ${selectedItem?.unit || ''} is available to unbuild.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       const result = await inventoryCommand<{ documentNumber: string; unitCost: number }>({
-        action: 'buildPack',
+        action: isUnbuild ? 'unbuildPack' : 'buildPack',
         clientRequestId: inventoryRequestId(),
         transactionDate,
         locationId,
         mainItemId,
-        buildQuantity,
+        ...(isUnbuild ? { unbuildQuantity: quantity } : { buildQuantity: quantity }),
         referenceDocument,
         remarks,
       });
       toast({
         title: `${result.documentNumber} posted`,
-        description: `${buildQuantity} ${selectedItem?.unit || ''} of ${selectedItem?.itemName || 'the main item'} added to stock.`,
+        description: isUnbuild
+          ? `${quantity} ${selectedItem?.unit || ''} of ${selectedItem?.itemName || 'the main item'} unbuilt and its components returned to stock.`
+          : `${quantity} ${selectedItem?.unit || ''} of ${selectedItem?.itemName || 'the main item'} added to stock.`,
       });
       setReferenceDocument('');
       setRemarks('');
-      setBuildQuantity(1);
+      setQuantity(1);
       await load();
     } catch (error) {
-      toast({ title: 'Pack build failed', description: error instanceof Error ? error.message : 'Unknown error', variant: 'destructive' });
+      toast({
+        title: `Pack ${mode} failed`,
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      });
     } finally {
       setSaving(false);
     }
@@ -173,54 +222,231 @@ export default function PackAssemblyPage() {
     return <Card><CardHeader><CardTitle>Access denied</CardTitle><CardDescription>You do not have permission to view inventory assemblies.</CardDescription></CardHeader></Card>;
   }
 
-  return <div className="space-y-6">
-    <div><div className="mb-2 flex items-center gap-2 text-sm font-medium text-fuchsia-700"><Component className="h-4 w-4" />Inventory assembly</div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Build item packs</h1><p className="text-muted-foreground">Consume the configured sub-items and create completed main-item stock in one atomic posting.</p></div>
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="mb-2 flex items-center gap-2 text-sm font-medium text-fuchsia-700">
+          <Component className="h-4 w-4" />Inventory assembly
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Build &amp; unbuild item packs</h1>
+        <p className="text-muted-foreground">
+          Create a main item from configured components or break finished stock back into those components.
+        </p>
+      </div>
 
-    {!canBuild && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Build permission required</AlertTitle><AlertDescription>Your role can view pack assemblies but cannot post them. Grant Store &amp; Stock Management → Inventory → Build Pack.</AlertDescription></Alert>}
-    <Alert><CheckCircle2 className="h-4 w-4" /><AlertTitle>Controlled stock calculation</AlertTitle><AlertDescription>Posting reduces every component at the selected location and increases the main item there. The completed item can then be issued or transferred normally.</AlertDescription></Alert>
+      {!canBuild && !canUnbuild && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Assembly permission required</AlertTitle>
+          <AlertDescription>Grant Build Pack or Unbuild Pack permission to post assembly transactions.</AlertDescription>
+        </Alert>
+      )}
 
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+      <div className="grid w-full max-w-xl grid-cols-2 rounded-xl border bg-muted p-1">
+        <Button
+          type="button"
+          variant={isUnbuild ? 'ghost' : 'default'}
+          className={!isUnbuild ? 'bg-fuchsia-700 hover:bg-fuchsia-800' : ''}
+          onClick={() => setMode('build')}
+        >
+          <PackageCheck className="mr-2 h-4 w-4" />Build item
+        </Button>
+        <Button
+          type="button"
+          variant={isUnbuild ? 'default' : 'ghost'}
+          className={isUnbuild ? 'bg-amber-600 hover:bg-amber-700' : ''}
+          onClick={() => setMode('unbuild')}
+        >
+          <PackageMinus className="mr-2 h-4 w-4" />Unbuild item
+        </Button>
+      </div>
+
+      <Alert>
+        <CheckCircle2 className="h-4 w-4" />
+        <AlertTitle>Controlled stock calculation</AlertTitle>
+        <AlertDescription>
+          {isUnbuild
+            ? 'Unbuilding decreases available main-item stock and restores every configured component at the same location in one atomic posting.'
+            : 'Building decreases every component and increases the main item at the same location in one atomic posting.'}
+        </AlertDescription>
+      </Alert>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle>{isUnbuild ? 'Unbuild' : 'Build'} header</CardTitle>
+            <CardDescription>Select a configured pack and the store where {isUnbuild ? 'disassembly' : 'assembly'} takes place.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Field label="Main item / pack">
+              <Select value={mainItemId} onValueChange={setMainItemId}>
+                <SelectTrigger><SelectValue placeholder="Select pack item" /></SelectTrigger>
+                <SelectContent>{packItems.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>{item.itemCode} · {item.itemName} ({item.unit})</SelectItem>
+                ))}</SelectContent>
+              </Select>
+            </Field>
+            <Field label="Assembly location">
+              <Select value={locationId} onValueChange={setLocationId}>
+                <SelectTrigger><SelectValue placeholder="Select store or warehouse" /></SelectTrigger>
+                <SelectContent>{locations.map((location) => (
+                  <SelectItem key={location.id} value={location.id}>{location.locationCode} · {location.locationName}</SelectItem>
+                ))}</SelectContent>
+              </Select>
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={`${isUnbuild ? 'Unbuild' : 'Build'} date`}>
+                <Input type="date" value={transactionDate} onChange={(event) => setTransactionDate(event.target.value)} />
+              </Field>
+              <Field label={`${isUnbuild ? 'Unbuild' : 'Build'} quantity${selectedItem ? ` (${selectedItem.unit})` : ''}`}>
+                <Input type="number" min="1" step="1" value={quantity} onChange={(event) => setQuantity(Number(event.target.value))} />
+              </Field>
+            </div>
+            <Field label="Reference">
+              <Input value={referenceDocument} onChange={(event) => setReferenceDocument(event.target.value)} placeholder="Work order / request / note" />
+            </Field>
+            <Field label="Remarks">
+              <Textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} placeholder={`${isUnbuild ? 'Disassembly' : 'Assembly'} details or special instructions`} />
+            </Field>
+            <Button
+              className={isUnbuild ? 'w-full bg-amber-600 hover:bg-amber-700' : 'w-full'}
+              size="lg"
+              disabled={saving || !hasPermission || !selectedItem || !locationId || isBlocked}
+              onClick={submit}
+            >
+              {saving
+                ? `${isUnbuild ? 'Unbuilding' : 'Building'} and posting…`
+                : `${isUnbuild ? 'Unbuild' : 'Build'} ${quantity || 0} ${selectedItem?.unit || 'pack(s)'}`}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{isUnbuild ? 'Component recovery' : 'Component calculation'}</CardTitle>
+            <CardDescription>
+              {selectedItem
+                ? `${selectedItem.packList?.length || 0} sub-items ${isUnbuild ? 'recovered from' : 'required for'} ${quantity || 0} ${selectedItem.unit}`
+                : 'Select a main item to calculate its sub-items.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {selectedItem && locationId && (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <MiniMetric
+                  icon={Boxes}
+                  label={isUnbuild ? 'Available to unbuild' : 'Maximum buildable'}
+                  value={`${formatQuantity(isUnbuild ? availableMainQuantity : maxBuildable)} ${selectedItem.unit}`}
+                />
+                <MiniMetric icon={Calculator} label={`${isUnbuild ? 'Unbuild' : 'Build'} quantity`} value={`${quantity || 0} ${selectedItem.unit}`} />
+                <MiniMetric
+                  icon={isUnbuild ? PackageMinus : PackageCheck}
+                  label={isUnbuild ? 'Main item unit cost' : 'Estimated unit cost'}
+                  value={canViewCost
+                    ? formatCurrency(isUnbuild ? Number(mainBalance?.averageCost || selectedItem.costRate || 0) : estimatedUnitCost)
+                    : 'Restricted'}
+                />
+              </div>
+            )}
+
+            <div className="overflow-x-auto rounded-xl border">
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>Sub-item</TableHead>
+                  <TableHead className="text-right">Per main item</TableHead>
+                  <TableHead className="text-right">{isUnbuild ? 'Recovered' : 'Required'}</TableHead>
+                  <TableHead className="text-right">Current stock</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {requirements.map((requirement) => {
+                    const component = itemMap.get(requirement.itemId);
+                    const available = Number(availableByItem.get(requirement.itemId) || 0);
+                    const short = !isUnbuild && Number(requirement.requiredQuantity || 0) > available;
+                    return (
+                      <TableRow key={requirement.itemId}>
+                        <TableCell>
+                          <div className="font-medium">{component?.itemName || requirement.itemName}</div>
+                          <div className="text-xs text-muted-foreground">{component?.itemCode || requirement.itemCode} · {component?.unit || requirement.unit}</div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{formatQuantity(requirement.quantity)}</TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">{formatQuantity(requirement.requiredQuantity)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{locationId ? formatQuantity(available) : '—'}</TableCell>
+                        <TableCell>
+                          {!locationId
+                            ? <Badge variant="secondary">Select location</Badge>
+                            : isUnbuild
+                              ? <Badge className="bg-amber-600 hover:bg-amber-600">Will recover</Badge>
+                              : short
+                                ? <Badge variant="destructive">Short</Badge>
+                                : <Badge className="bg-emerald-600 hover:bg-emerald-600">Ready</Badge>}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {!requirements.length && (
+                    <TableRow><TableCell colSpan={5} className="h-36 text-center text-muted-foreground">
+                      {packItems.length ? 'Select a pack item to see its component calculation.' : 'No items have a pack list yet. Add one from Item Master.'}
+                    </TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {!isUnbuild && componentShortage && (
+              <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Not enough component stock</AlertTitle><AlertDescription>At least one sub-item is below the requirement. Posting is blocked to prevent negative inventory.</AlertDescription></Alert>
+            )}
+            {isUnbuild && mainItemShortage && (
+              <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Not enough finished-item stock</AlertTitle><AlertDescription>Reduce the unbuild quantity to {formatQuantity(availableMainQuantity)} {selectedItem?.unit || ''} or less.</AlertDescription></Alert>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
-        <CardHeader><CardTitle>Build header</CardTitle><CardDescription>Select a configured pack and the store where assembly takes place.</CardDescription></CardHeader>
-        <CardContent className="space-y-4">
-          <Field label="Main item / pack"><Select value={mainItemId} onValueChange={setMainItemId}><SelectTrigger><SelectValue placeholder="Select pack item" /></SelectTrigger><SelectContent>{packItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.itemCode} · {item.itemName} ({item.unit})</SelectItem>)}</SelectContent></Select></Field>
-          <Field label="Assembly location"><Select value={locationId} onValueChange={setLocationId}><SelectTrigger><SelectValue placeholder="Select store or warehouse" /></SelectTrigger><SelectContent>{locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.locationCode} · {location.locationName}</SelectItem>)}</SelectContent></Select></Field>
-          <div className="grid gap-4 sm:grid-cols-2"><Field label="Build date"><Input type="date" value={transactionDate} onChange={(event) => setTransactionDate(event.target.value)} /></Field><Field label={`Build quantity${selectedItem ? ` (${selectedItem.unit})` : ''}`}><Input type="number" min="1" step="1" value={buildQuantity} onChange={(event) => setBuildQuantity(Number(event.target.value))} /></Field></div>
-          <Field label="Reference"><Input value={referenceDocument} onChange={(event) => setReferenceDocument(event.target.value)} placeholder="Work order / request / note" /></Field>
-          <Field label="Remarks"><Textarea value={remarks} onChange={(event) => setRemarks(event.target.value)} placeholder="Assembly details or special instructions" /></Field>
-          <Button className="w-full" size="lg" disabled={saving || !canBuild || !selectedItem || !locationId || hasShortage} onClick={submit}>{saving ? 'Building and posting…' : `Build ${buildQuantity || 0} ${selectedItem?.unit || 'pack(s)'}`}</Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Component calculation</CardTitle><CardDescription>{selectedItem ? `${selectedItem.packList?.length || 0} sub-items required for ${buildQuantity || 0} ${selectedItem.unit}` : 'Select a main item to calculate its required sub-items.'}</CardDescription></CardHeader>
-        <CardContent className="space-y-4">
-          {selectedItem && locationId && <div className="grid gap-3 sm:grid-cols-3"><MiniMetric icon={Boxes} label="Maximum buildable" value={`${maxBuildable} ${selectedItem.unit}`} /><MiniMetric icon={Calculator} label="Build quantity" value={`${buildQuantity || 0} ${selectedItem.unit}`} /><MiniMetric icon={PackageCheck} label="Estimated unit cost" value={canViewCost ? formatCurrency(estimatedUnitCost) : 'Restricted'} /></div>}
-          <div className="overflow-x-auto rounded-xl border">
-            <Table><TableHeader><TableRow><TableHead>Sub-item</TableHead><TableHead className="text-right">Per main item</TableHead><TableHead className="text-right">Required</TableHead><TableHead className="text-right">Available</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-              <TableBody>{requirements.map((requirement) => {
-                const component = itemMap.get(requirement.itemId);
-                const available = Number(availableByItem.get(requirement.itemId) || 0);
-                const short = Number(requirement.requiredQuantity || 0) > available;
-                return <TableRow key={requirement.itemId}><TableCell><div className="font-medium">{component?.itemName || requirement.itemName}</div><div className="text-xs text-muted-foreground">{component?.itemCode || requirement.itemCode} · {component?.unit || requirement.unit}</div></TableCell><TableCell className="text-right tabular-nums">{formatQuantity(requirement.quantity)}</TableCell><TableCell className="text-right font-semibold tabular-nums">{formatQuantity(requirement.requiredQuantity)}</TableCell><TableCell className="text-right tabular-nums">{locationId ? formatQuantity(available) : '—'}</TableCell><TableCell>{!locationId ? <Badge variant="secondary">Select location</Badge> : short ? <Badge variant="destructive">Short</Badge> : <Badge className="bg-emerald-600 hover:bg-emerald-600">Ready</Badge>}</TableCell></TableRow>;
-              })}{!requirements.length && <TableRow><TableCell colSpan={5} className="h-36 text-center text-muted-foreground">{packItems.length ? 'Select a pack item to see its component calculation.' : 'No items have a pack list yet. Add one from Item Master.'}</TableCell></TableRow>}</TableBody>
-            </Table>
-          </div>
-          {hasShortage && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Not enough component stock</AlertTitle><AlertDescription>At least one sub-item is below the calculated requirement. The posting is blocked to prevent negative inventory.</AlertDescription></Alert>}
+        <CardHeader>
+          <CardTitle>Recent build and unbuild activity</CardTitle>
+          <CardDescription>The latest posted assembly transactions at your authorized locations.</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead>Date / document</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>Main item</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead className="text-right">Quantity</TableHead>
+              <TableHead className="text-right">Unit cost</TableHead>
+              <TableHead className="text-right">Total value</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {documents.map((document) => {
+                const unbuilt = document.documentType === 'Pack Disassembly';
+                const mainLine = document.lines?.find((line) => (
+                  unbuilt ? line.lineRole === 'Disassembled' : line.lineRole === 'Output'
+                )) || document.lines?.[0];
+                const documentQuantity = document.unbuildQuantity || document.buildQuantity || mainLine?.quantity || 0;
+                return (
+                  <TableRow key={document.id}>
+                    <TableCell><div>{document.transactionDate}</div><div className="font-mono text-xs text-muted-foreground">{document.documentNumber}</div></TableCell>
+                    <TableCell><Badge className={unbuilt ? 'bg-amber-600 hover:bg-amber-600' : 'bg-fuchsia-700 hover:bg-fuchsia-700'}>{unbuilt ? 'Unbuilt' : 'Built'}</Badge></TableCell>
+                    <TableCell><div className="font-medium">{document.mainItemName || mainLine?.itemName}</div><div className="text-xs text-muted-foreground">{document.mainItemCode || mainLine?.itemCode}</div></TableCell>
+                    <TableCell>{document.sourceLocationName || '—'}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatQuantity(documentQuantity)} {mainLine?.unit}</TableCell>
+                    <TableCell className="text-right">{canViewCost ? formatCurrency(mainLine?.unitCost || 0) : 'Restricted'}</TableCell>
+                    <TableCell className="text-right">{canViewCost ? formatCurrency(Number(mainLine?.unitCost || 0) * Number(documentQuantity)) : 'Restricted'}</TableCell>
+                    <TableCell><Badge className="bg-emerald-600 hover:bg-emerald-600">{document.status}</Badge></TableCell>
+                  </TableRow>
+                );
+              })}
+              {!documents.length && <TableRow><TableCell colSpan={8} className="h-28 text-center text-muted-foreground">No pack assembly transactions have been posted yet.</TableCell></TableRow>}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>
-
-    <Card>
-      <CardHeader><CardTitle>Recent pack builds</CardTitle><CardDescription>The latest posted assemblies available to your authorized locations.</CardDescription></CardHeader>
-      <CardContent className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Date / document</TableHead><TableHead>Main item</TableHead><TableHead>Location</TableHead><TableHead className="text-right">Built</TableHead><TableHead className="text-right">Unit cost</TableHead><TableHead className="text-right">Total value</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-        <TableBody>{documents.map((document) => {
-          const output = document.lines?.find((line) => line.lineRole === 'Output') || document.lines?.[0];
-          return <TableRow key={document.id}><TableCell><div>{document.transactionDate}</div><div className="font-mono text-xs text-muted-foreground">{document.documentNumber}</div></TableCell><TableCell><div className="font-medium">{document.mainItemName || output?.itemName}</div><div className="text-xs text-muted-foreground">{document.mainItemCode || output?.itemCode}</div></TableCell><TableCell>{document.sourceLocationName || '—'}</TableCell><TableCell className="text-right tabular-nums">{formatQuantity(document.buildQuantity || output?.quantity || 0)} {output?.unit}</TableCell><TableCell className="text-right">{canViewCost ? formatCurrency(output?.unitCost || 0) : 'Restricted'}</TableCell><TableCell className="text-right">{canViewCost ? formatCurrency(Number(output?.unitCost || 0) * Number(document.buildQuantity || output?.quantity || 0)) : 'Restricted'}</TableCell><TableCell><Badge className="bg-emerald-600 hover:bg-emerald-600">{document.status}</Badge></TableCell></TableRow>;
-        })}{!documents.length && <TableRow><TableCell colSpan={7} className="h-28 text-center text-muted-foreground">No pack assemblies have been posted yet.</TableCell></TableRow>}</TableBody>
-      </Table></CardContent>
-    </Card>
-  </div>;
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

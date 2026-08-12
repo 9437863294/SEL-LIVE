@@ -51,6 +51,7 @@ export type InventoryDocumentType =
   | 'Lost Stock'
   | 'Write-Off'
   | 'Pack Assembly'
+  | 'Pack Disassembly'
   | 'Stock Transfer'
   | 'Physical Count';
 
@@ -161,7 +162,7 @@ export interface InventoryDocumentLine {
   condition?: 'Good' | 'Used but Reusable' | 'Damaged' | 'Scrap';
   remarks?: string;
   boqItemId?: string;
-  lineRole?: 'Output' | 'Component';
+  lineRole?: 'Output' | 'Component' | 'Disassembled' | 'Recovered Component';
   parentPackItemId?: string;
   parentPackItemCode?: string;
   parentPackItemName?: string;
@@ -199,6 +200,7 @@ export interface InventoryDocument {
   mainItemCode?: string;
   mainItemName?: string;
   buildQuantity?: number;
+  unbuildQuantity?: number;
   lines: InventoryDocumentLine[];
   createdBy: string;
   createdByName?: string;
@@ -286,6 +288,7 @@ export const DOCUMENT_PREFIX: Record<InventoryDocumentType, string> = {
   'Lost Stock': 'LST',
   'Write-Off': 'WOF',
   'Pack Assembly': 'ASM',
+  'Pack Disassembly': 'DSA',
   'Stock Transfer': 'STR',
   'Physical Count': 'STK',
 };

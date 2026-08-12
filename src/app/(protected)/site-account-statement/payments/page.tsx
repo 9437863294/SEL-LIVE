@@ -628,39 +628,44 @@ export default function PaymentsPage() {
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
       </div>
 
-      {/* Opening / Closing balance strip */}
+      {/* Opening / Closing balance strip — scoped to the selected period only */}
       {openingBalance !== null && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <div className="flex items-center gap-2.5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
-            <Wallet className="h-4 w-4 shrink-0 text-emerald-600" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wide">Opening Balance</p>
-              <p className={`text-sm font-bold leading-tight ${openingBalance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
-                {formatINR(openingBalance)}
-              </p>
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Cash Flow — {monthLabel} (this period only)
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="flex items-center gap-2.5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5">
+              <Wallet className="h-4 w-4 shrink-0 text-emerald-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wide">Opening Balance <span className="font-normal opacity-70">(Period)</span></p>
+                <p className={`text-sm font-bold leading-tight ${openingBalance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                  {formatINR(openingBalance)}
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5">
-            <TrendingUp className="h-4 w-4 shrink-0 text-blue-600" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-blue-600 uppercase tracking-wide">Receipts ({filtered.length})</p>
-              <p className="text-sm font-bold text-blue-700 leading-tight">{formatINR(totalFiltered)}</p>
+            <div className="flex items-center gap-2.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5">
+              <TrendingUp className="h-4 w-4 shrink-0 text-blue-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-blue-600 uppercase tracking-wide">Receipts <span className="font-normal opacity-70">(Period)</span> · {filtered.length}</p>
+                <p className="text-sm font-bold text-blue-700 leading-tight">{formatINR(totalFiltered)}</p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
-            <TrendingDown className="h-4 w-4 shrink-0 text-rose-600" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-rose-600 uppercase tracking-wide">Expenses</p>
-              <p className="text-sm font-bold text-rose-700 leading-tight">{formatINR(periodExpenses)}</p>
+            <div className="flex items-center gap-2.5 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
+              <TrendingDown className="h-4 w-4 shrink-0 text-rose-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-rose-600 uppercase tracking-wide">Expenses <span className="font-normal opacity-70">(Period)</span></p>
+                <p className="text-sm font-bold text-rose-700 leading-tight">{formatINR(periodExpenses)}</p>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5">
-            <Receipt className="h-4 w-4 shrink-0 text-indigo-600" />
-            <div className="min-w-0">
-              <p className="text-[10px] font-medium text-indigo-600 uppercase tracking-wide">Closing Balance</p>
-              <p className={`text-sm font-bold leading-tight ${(closingBalance ?? 0) >= 0 ? 'text-indigo-700' : 'text-destructive'}`}>
-                {closingBalance !== null ? formatINR(closingBalance) : '—'}
-              </p>
+            <div className="flex items-center gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5">
+              <Receipt className="h-4 w-4 shrink-0 text-indigo-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium text-indigo-600 uppercase tracking-wide">Closing Balance <span className="font-normal opacity-70">(Period)</span></p>
+                <p className={`text-sm font-bold leading-tight ${(closingBalance ?? 0) >= 0 ? 'text-indigo-700' : 'text-destructive'}`}>
+                  {closingBalance !== null ? formatINR(closingBalance) : '—'}
+                </p>
+              </div>
             </div>
           </div>
         </div>

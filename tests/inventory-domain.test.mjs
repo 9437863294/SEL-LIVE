@@ -36,6 +36,7 @@ test('required inventory document prefixes are stable', () => {
   assert.equal(DOCUMENT_PREFIX['Stock Transfer'], 'STR');
   assert.equal(DOCUMENT_PREFIX['Physical Count'], 'STK');
   assert.equal(DOCUMENT_PREFIX['Pack Assembly'], 'ASM');
+  assert.equal(DOCUMENT_PREFIX['Pack Disassembly'], 'DSA');
 });
 
 test('pack requirements scale every component for the requested build quantity', () => {

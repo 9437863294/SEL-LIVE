@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Calendar, ChevronDown, ChevronLeft, ChevronRight, Download, FileText, Filter, Layers, Loader2,
-  Pencil, Plus, Search, ShieldAlert, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
+  Lock, Pencil, Plus, Search, ShieldAlert, Target, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { cn } from '@/lib/utils';
@@ -111,6 +111,16 @@ function CatStatusBadge({ budget, spent }: { budget: SASCategoryBudget | undefin
   if (spent > budget.budgetAmount) return <Badge variant="destructive" className="text-[10px] px-1.5">Over</Badge>;
   if (pct >= 80) return <Badge className="text-[10px] px-1.5 bg-amber-500 hover:bg-amber-500">Near</Badge>;
   return <Badge className="text-[10px] px-1.5 bg-emerald-600 hover:bg-emerald-600">OK</Badge>;
+}
+
+// ── Restricted-by-role placeholder (shown instead of budget figures the current
+// role isn't permitted to view for a given budget level) ─────────────────────
+function RestrictedCell() {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/70" title="You don't have permission to view this budget level">
+      <Lock className="h-3 w-3" /> Restricted
+    </span>
+  );
 }
 
 // ── Delete confirm dialog ─────────────────────────────────────────────────────
@@ -247,6 +257,32 @@ export default function SiteFundBudgetPage() {
   const effectiveCanAdd  = canAdd  || isAltUser;
   const effectiveCanEdit = canEdit || isAltUser;
 
+  // ── Per-budget-type permissions ───────────────────────────────────────────────
+  // Role management is granular per budget level (Total / FY / Monthly / Category).
+  // Any role that still has the coarse "Budget" permission keeps seeing everything
+  // (backward compatible); admins who want to restrict a role to e.g. only Category
+  // Budget uncheck "Budget" and tick just the sub-resources that role should see.
+  function typePerm(resource: string) {
+    return {
+      view: canView   || can('View',   `${MODULE}.${resource}`),
+      add:  canAdd    || can('Add',    `${MODULE}.${resource}`) || isAltUser,
+      edit: canEdit   || can('Edit',   `${MODULE}.${resource}`) || isAltUser,
+      del:  canDelete || can('Delete', `${MODULE}.${resource}`),
+    };
+  }
+  const totalPerm    = typePerm('Total Budget');
+  const fyPerm       = typePerm('FY Budget');
+  const monthlyPerm  = typePerm('Monthly Budget');
+  const categoryPerm = typePerm('Category Budget');
+  const anyRowActionPerm = [totalPerm, fyPerm, monthlyPerm, categoryPerm].some(p => p.add || p.edit || p.del);
+
+  // Budget-type tabs the current role is allowed to create in the Set Budget dialog.
+  const addableBudgetTabs = useMemo(() => [
+    ...(totalPerm.add   ? [{ value: 'total'   as BudgetTab, label: 'Total' }]          : []),
+    ...(fyPerm.add      ? [{ value: 'fy'      as BudgetTab, label: 'Financial Year' }] : []),
+    ...(monthlyPerm.add ? [{ value: 'monthly' as BudgetTab, label: 'Monthly' }]        : []),
+  ], [totalPerm.add, fyPerm.add, monthlyPerm.add]);
+
   // Auto-expand all projects + current FY on first load; months stay collapsed until clicked
   useEffect(() => {
     if (!loading && !initialized && visibleProjects.length > 0) {
@@ -372,6 +408,12 @@ export default function SiteFundBudgetPage() {
     const amount = Number(form.budgetAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid budget amount.', variant: 'destructive' }); return; }
 
+    // Defense in depth — the dialog only ever offers tabs/actions the role can use,
+    // but re-check here in case dialogTab was left over from a different context.
+    const typePermForTab = dialogTab === 'total' ? totalPerm : dialogTab === 'fy' ? fyPerm : monthlyPerm;
+    const allowed = editingBudget ? typePermForTab.edit : typePermForTab.add;
+    if (!allowed) { toast({ title: 'Not allowed', description: 'You do not have permission to set this budget type.', variant: 'destructive' }); return; }
+
     const period = dialogTab === 'monthly' ? dialogMonth : dialogTab === 'fy' ? fyLabel(dialogFYStart) : undefined;
 
     if (!editingBudget) {
@@ -407,6 +449,11 @@ export default function SiteFundBudgetPage() {
   }
 
   async function handleDelete(budget: SASBudget) {
+    const typePerm = budget.budgetType === 'total' ? totalPerm : budget.budgetType === 'fy' ? fyPerm : monthlyPerm;
+    if (!typePerm.del) {
+      toast({ title: 'Not allowed', description: 'You do not have permission to delete this budget type.', variant: 'destructive' });
+      return;
+    }
     try {
       await deleteDoc(doc(db, SAS_COLLECTIONS.budgets, budget.id));
       void log('Delete SAS Budget', { project: budget.projectName, type: budget.budgetType, period: budget.period });
@@ -432,6 +479,10 @@ export default function SiteFundBudgetPage() {
 
   async function handleBulkCatSave() {
     if (!bulkProject) return;
+    if (!categoryPerm.add && !categoryPerm.edit) {
+      toast({ title: 'Not allowed', description: 'You do not have permission to set category budgets.', variant: 'destructive' });
+      return;
+    }
     const toSave = categories.filter(cat => {
       const v = bulkAmounts[cat.name];
       return v && Number(v) > 0;
@@ -503,6 +554,10 @@ export default function SiteFundBudgetPage() {
       return;
     }
     if (!catDialogProject) return;
+    if (!(catEditingBudget ? categoryPerm.edit : categoryPerm.add)) {
+      toast({ title: 'Not allowed', description: 'You do not have permission to set category budgets.', variant: 'destructive' });
+      return;
+    }
 
     if (!catEditingBudget) {
       const dup = allCatBudgets.find(b =>
@@ -550,6 +605,10 @@ export default function SiteFundBudgetPage() {
   }
 
   async function handleCatDelete(budget: SASCategoryBudget) {
+    if (!categoryPerm.del) {
+      toast({ title: 'Not allowed', description: 'You do not have permission to delete category budgets.', variant: 'destructive' });
+      return;
+    }
     try {
       await deleteDoc(doc(db, SAS_COLLECTIONS.categoryBudgets, budget.id));
       toast({ title: 'Removed', description: 'Category budget removed.' });
@@ -561,6 +620,10 @@ export default function SiteFundBudgetPage() {
 
   // ── PDF Approval upload helpers ───────────────────────────────────────────────
   async function handlePdfUpload(projectId: string, projectName: string, period: string, file: File) {
+    if (!monthlyPerm.add) {
+      toast({ title: 'Not allowed', description: 'You do not have permission to upload monthly budget approvals.', variant: 'destructive' });
+      return;
+    }
     setPdfUploadingKey(`${projectId}:${period}`);
     try {
       const existing = allApprovals.find(a => a.projectId === projectId && a.period === period);
@@ -595,6 +658,10 @@ export default function SiteFundBudgetPage() {
   }
 
   async function handleDeleteApproval(approval: SASBudgetApproval) {
+    if (!monthlyPerm.del) {
+      toast({ title: 'Not allowed', description: 'You do not have permission to remove monthly budget approvals.', variant: 'destructive' });
+      return;
+    }
     try {
       if (approval.storagePath) {
         try { await deleteObject(storageRef(storage, approval.storagePath)); } catch { /* ok */ }
@@ -676,6 +743,10 @@ export default function SiteFundBudgetPage() {
   }
 
   async function handleUploadSave() {
+    if (!monthlyPerm.add) {
+      toast({ title: 'Not allowed', description: 'You do not have permission to import monthly budgets.', variant: 'destructive' });
+      return;
+    }
     const valid = uploadRows.filter(r => r.valid);
     if (!valid.length) return;
     setUploadSaving(true);
@@ -760,15 +831,17 @@ export default function SiteFundBudgetPage() {
         const exportFySumAll = allBudgets.filter(b => b.projectId === project.id && b.budgetType === 'fy').reduce((s, b) => s + b.budgetAmount, 0);
         const exportMonthSumAll = allBudgets.filter(b => b.projectId === project.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0);
         const tAmt   = tb ? tb.budgetAmount : exportFySumAll > 0 ? exportFySumAll : exportMonthSumAll;
-        const tRow = ws.addRow({
-          level: 'Total', name: project.projectName,
-          budget: tAmt || '—', received: tRcvd, spent: tSpent,
-          remaining: tAmt > 0 ? tAmt - tSpent : '—',
-          pctUsed: tAmt > 0 ? formatPct((tSpent / tAmt) * 100) : '—',
-          status: tAmt === 0 ? 'No Budget' : tSpent > tAmt ? 'Over Budget' : (tSpent / tAmt) * 100 >= 80 ? 'Warning' : 'On Track',
-          notes: tb?.notes || '',
-        });
-        tRow.font = { bold: true };
+        if (totalPerm.view) {
+          const tRow = ws.addRow({
+            level: 'Total', name: project.projectName,
+            budget: tAmt || '—', received: tRcvd, spent: tSpent,
+            remaining: tAmt > 0 ? tAmt - tSpent : '—',
+            pctUsed: tAmt > 0 ? formatPct((tSpent / tAmt) * 100) : '—',
+            status: tAmt === 0 ? 'No Budget' : tSpent > tAmt ? 'Over Budget' : (tSpent / tAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+            notes: tb?.notes || '',
+          });
+          tRow.font = { bold: true };
+        }
 
         for (const fyS of getRelevantFYs(project.id)) {
           const r   = fyRange(fyS);
@@ -781,14 +854,16 @@ export default function SiteFundBudgetPage() {
           }, 0);
           if (!fyB && fySpent === 0 && exportFyMonthSum === 0) continue;
           const fAmt = fyB ? fyB.budgetAmount : exportFyMonthSum;
-          ws.addRow({
-            level: `FY ${fyLabel(fyS)}`, name: `  FY ${fyLabel(fyS)}`,
-            budget: fAmt || '—', received: fyRcvd, spent: fySpent,
-            remaining: fAmt > 0 ? fAmt - fySpent : '—',
-            pctUsed: fAmt > 0 ? formatPct((fySpent / fAmt) * 100) : '—',
-            status: fAmt === 0 ? 'No Budget' : fySpent > fAmt ? 'Over Budget' : (fySpent / fAmt) * 100 >= 80 ? 'Warning' : 'On Track',
-            notes: fyB?.notes || '',
-          });
+          if (fyPerm.view) {
+            ws.addRow({
+              level: `FY ${fyLabel(fyS)}`, name: `  FY ${fyLabel(fyS)}`,
+              budget: fAmt || '—', received: fyRcvd, spent: fySpent,
+              remaining: fAmt > 0 ? fAmt - fySpent : '—',
+              pctUsed: fAmt > 0 ? formatPct((fySpent / fAmt) * 100) : '—',
+              status: fAmt === 0 ? 'No Budget' : fySpent > fAmt ? 'Over Budget' : (fySpent / fAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+              notes: fyB?.notes || '',
+            });
+          }
 
           for (const m of getRelevantMonths(project.id, fyS)) {
             const mB = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m);
@@ -796,29 +871,33 @@ export default function SiteFundBudgetPage() {
             const mRcvd  = pPay.filter(p => p.receiptDate.startsWith(m)).reduce((s, p) => s + (p.receivedAmount || 0), 0);
             if (!mB && mSpent === 0 && !allCatBudgets.some(b => b.projectId === project.id && b.period === m)) continue;
             const mAmt = mB?.budgetAmount ?? 0;
-            ws.addRow({
-              level: monthLabel(m), name: `    ${monthLabel(m)}`,
-              budget: mAmt || '—', received: mRcvd, spent: mSpent,
-              remaining: mAmt > 0 ? mAmt - mSpent : '—',
-              pctUsed: mAmt > 0 ? formatPct((mSpent / mAmt) * 100) : '—',
-              status: !mB ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
-              notes: mB?.notes || '',
-            });
+            if (monthlyPerm.view) {
+              ws.addRow({
+                level: monthLabel(m), name: `    ${monthLabel(m)}`,
+                budget: mAmt || '—', received: mRcvd, spent: mSpent,
+                remaining: mAmt > 0 ? mAmt - mSpent : '—',
+                pctUsed: mAmt > 0 ? formatPct((mSpent / mAmt) * 100) : '—',
+                status: !mB ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+                notes: mB?.notes || '',
+              });
+            }
 
             // Category rows
-            for (const cat of getMonthCategories(project.id, m)) {
-              const cb = allCatBudgets.find(b => b.projectId === project.id && b.period === m && b.categoryName === cat);
-              const cSpent = pExp.filter(e => e.expenseDate.startsWith(m) && e.expenseCategory === cat).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-              if (!cb && cSpent === 0) continue;
-              const cAmt = cb?.budgetAmount ?? 0;
-              ws.addRow({
-                level: 'Category', name: `      ${cat}`,
-                budget: cAmt || '—', received: '—', spent: cSpent,
-                remaining: cAmt > 0 ? cAmt - cSpent : '—',
-                pctUsed: cAmt > 0 ? formatPct((cSpent / cAmt) * 100) : '—',
-                status: !cb ? 'No Budget' : cSpent > cAmt ? 'Over' : (cSpent / cAmt) * 100 >= 80 ? 'Near Limit' : 'OK',
-                notes: cb?.notes || '',
-              });
+            if (categoryPerm.view) {
+              for (const cat of getMonthCategories(project.id, m)) {
+                const cb = allCatBudgets.find(b => b.projectId === project.id && b.period === m && b.categoryName === cat);
+                const cSpent = pExp.filter(e => e.expenseDate.startsWith(m) && e.expenseCategory === cat).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+                if (!cb && cSpent === 0) continue;
+                const cAmt = cb?.budgetAmount ?? 0;
+                ws.addRow({
+                  level: 'Category', name: `      ${cat}`,
+                  budget: cAmt || '—', received: '—', spent: cSpent,
+                  remaining: cAmt > 0 ? cAmt - cSpent : '—',
+                  pctUsed: cAmt > 0 ? formatPct((cSpent / cAmt) * 100) : '—',
+                  status: !cb ? 'No Budget' : cSpent > cAmt ? 'Over' : (cSpent / cAmt) * 100 >= 80 ? 'Near Limit' : 'OK',
+                  notes: cb?.notes || '',
+                });
+              }
             }
           }
         }
@@ -896,13 +975,13 @@ export default function SiteFundBudgetPage() {
               e.target.value = '';
             }}
           />
-          {effectiveCanAdd && (
+          {monthlyPerm.add && (
             <Button variant="outline" size="sm" className="gap-2" onClick={() => document.getElementById('budget-upload-input')?.click()}>
               <Upload className="h-4 w-4" /> Upload Approval Sheet
             </Button>
           )}
-          {effectiveCanAdd && (
-            <Button size="sm" onClick={() => openAdd()} className="gap-2 bg-emerald-700 hover:bg-emerald-800">
+          {(totalPerm.add || fyPerm.add || monthlyPerm.add) && (
+            <Button size="sm" onClick={() => openAdd(undefined, totalPerm.add ? 'total' : fyPerm.add ? 'fy' : 'monthly')} className="gap-2 bg-emerald-700 hover:bg-emerald-800">
               <Plus className="h-4 w-4" /> Set Budget
             </Button>
           )}
@@ -1022,7 +1101,7 @@ export default function SiteFundBudgetPage() {
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Remaining (₹)</th>
                     <th className="px-4 py-2.5 text-left font-medium min-w-[130px]">Usage</th>
                     <th className="px-4 py-2.5 text-left font-medium">Status</th>
-                    {(effectiveCanEdit || canDelete || effectiveCanAdd) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
+                    {anyRowActionPerm && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1069,7 +1148,7 @@ export default function SiteFundBudgetPage() {
                             </button>
                           </td>
                           <td className="px-4 py-3 text-right font-semibold text-emerald-700">
-                            {tAmt > 0
+                            {!totalPerm.view ? <RestrictedCell /> : tAmt > 0
                               ? <div>
                                   {formatINR(tAmt)}
                                   {tBudgetSource === 'fy-sum' && <p className="text-[10px] font-normal text-muted-foreground">∑ FY budgets</p>}
@@ -1077,12 +1156,14 @@ export default function SiteFundBudgetPage() {
                                 </div>
                               : <span className="text-muted-foreground text-xs">—</span>}
                           </td>
-                          <td className="px-4 py-3 text-right text-rose-700 font-medium">{formatINR(tSpent)}</td>
+                          <td className="px-4 py-3 text-right text-rose-700 font-medium">
+                            {totalPerm.view ? formatINR(tSpent) : <RestrictedCell />}
+                          </td>
                           <td className={cn('px-4 py-3 text-right font-semibold', tAmt === 0 ? 'text-muted-foreground' : tAmt - tSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
-                            {tAmt > 0 ? formatINR(tAmt - tSpent) : '—'}
+                            {!totalPerm.view ? <RestrictedCell /> : tAmt > 0 ? formatINR(tAmt - tSpent) : '—'}
                           </td>
                           <td className="px-4 py-3">
-                            {tAmt > 0 ? (
+                            {!totalPerm.view ? <RestrictedCell /> : tAmt > 0 ? (
                               <div className="space-y-1 min-w-[110px]">
                                 <Progress value={tPct} className="h-2" />
                                 <p className="text-xs text-muted-foreground">{formatPct(tPct)}</p>
@@ -1090,17 +1171,19 @@ export default function SiteFundBudgetPage() {
                             ) : <span className="text-xs text-muted-foreground">—</span>}
                           </td>
                           <td className="px-4 py-3">
-                            <StatusBadge budget={tAmt > 0 ? { budgetAmount: tAmt } as SASBudget : null} spent={tSpent} />
+                            {totalPerm.view
+                              ? <StatusBadge budget={tAmt > 0 ? { budgetAmount: tAmt } as SASBudget : null} spent={tSpent} />
+                              : <RestrictedCell />}
                           </td>
-                          {(effectiveCanEdit || canDelete) && (
+                          {anyRowActionPerm && (
                             <td className="px-4 py-3 text-right">
                               <div className="flex justify-end items-center gap-1">
-                                {effectiveCanEdit && (
+                                {totalPerm.edit && (
                                   totalBudget
                                     ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(totalBudget)}><Pencil className="h-3 w-3" /></Button>
                                     : <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'total')}><Plus className="h-2.5 w-2.5" />Set Total</Button>
                                 )}
-                                {canDelete && totalBudget && (
+                                {totalPerm.del && totalBudget && (
                                   <DeleteConfirm label={`Remove total budget for ${project.projectName}?`} onConfirm={() => handleDelete(totalBudget)} />
                                 )}
                               </div>
@@ -1145,19 +1228,21 @@ export default function SiteFundBudgetPage() {
                                   </button>
                                 </td>
                                 <td className="px-4 py-2.5 text-right font-medium text-emerald-700">
-                                  {fAmt > 0
+                                  {!fyPerm.view ? <RestrictedCell /> : fAmt > 0
                                     ? <div>
                                         {formatINR(fAmt)}
                                         {fBudgetSource === 'month-sum' && <p className="text-[10px] font-normal text-muted-foreground">∑ monthly budgets</p>}
                                       </div>
                                     : <span className="text-muted-foreground text-xs">—</span>}
                                 </td>
-                                <td className="px-4 py-2.5 text-right text-rose-700">{fySpent > 0 ? formatINR(fySpent) : <span className="text-muted-foreground text-xs">—</span>}</td>
+                                <td className="px-4 py-2.5 text-right text-rose-700">
+                                  {!fyPerm.view ? <RestrictedCell /> : fySpent > 0 ? formatINR(fySpent) : <span className="text-muted-foreground text-xs">—</span>}
+                                </td>
                                 <td className={cn('px-4 py-2.5 text-right font-medium', fAmt === 0 ? 'text-muted-foreground' : fAmt - fySpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
-                                  {fAmt > 0 ? formatINR(fAmt - fySpent) : '—'}
+                                  {!fyPerm.view ? <RestrictedCell /> : fAmt > 0 ? formatINR(fAmt - fySpent) : '—'}
                                 </td>
                                 <td className="px-4 py-2.5">
-                                  {fAmt > 0 ? (
+                                  {!fyPerm.view ? <RestrictedCell /> : fAmt > 0 ? (
                                     <div className="space-y-1 min-w-[110px]">
                                       <Progress value={fyPct} className="h-1.5" />
                                       <p className="text-xs text-muted-foreground">{formatPct(fyPct)}</p>
@@ -1165,17 +1250,19 @@ export default function SiteFundBudgetPage() {
                                   ) : <span className="text-xs text-muted-foreground">—</span>}
                                 </td>
                                 <td className="px-4 py-2.5">
-                                  <StatusBadge budget={fAmt > 0 ? { budgetAmount: fAmt } as SASBudget : null} spent={fySpent} />
+                                  {fyPerm.view
+                                    ? <StatusBadge budget={fAmt > 0 ? { budgetAmount: fAmt } as SASBudget : null} spent={fySpent} />
+                                    : <RestrictedCell />}
                                 </td>
-                                {(effectiveCanEdit || canDelete) && (
+                                {anyRowActionPerm && (
                                   <td className="px-4 py-2.5 text-right">
                                     <div className="flex justify-end items-center gap-1">
-                                      {effectiveCanEdit && (
+                                      {fyPerm.edit && (
                                         fyB
                                           ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(fyB)}><Pencil className="h-3 w-3" /></Button>
                                           : <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'fy', fyS)}><Plus className="h-2.5 w-2.5" />Set FY</Button>
                                       )}
-                                      {canDelete && fyB && (
+                                      {fyPerm.del && fyB && (
                                         <DeleteConfirm label={`Remove FY ${fyLabel(fyS)} budget for ${project.projectName}?`} onConfirm={() => handleDelete(fyB)} size="sm" />
                                       )}
                                     </div>
@@ -1236,7 +1323,7 @@ export default function SiteFundBudgetPage() {
                                         </button>
                                       </td>
                                       <td className="px-4 py-2 text-right text-xs font-medium text-emerald-700">
-                                        {mAmt > 0
+                                        {!monthlyPerm.view ? <RestrictedCell /> : mAmt > 0
                                           ? <div>
                                               {formatINR(mAmt)}
                                               {!mB && <p className="text-[10px] font-normal text-muted-foreground">∑ categories</p>}
@@ -1249,13 +1336,13 @@ export default function SiteFundBudgetPage() {
                                           : <span className="text-muted-foreground">—</span>}
                                       </td>
                                       <td className="px-4 py-2 text-right text-xs text-rose-700">
-                                        {mSpent > 0 ? formatINR(mSpent) : <span className="text-muted-foreground">—</span>}
+                                        {!monthlyPerm.view ? <RestrictedCell /> : mSpent > 0 ? formatINR(mSpent) : <span className="text-muted-foreground">—</span>}
                                       </td>
                                       <td className={cn('px-4 py-2 text-right text-xs font-medium', mAmt === 0 ? 'text-muted-foreground' : mAmt - mSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
-                                        {mAmt > 0 ? formatINR(mAmt - mSpent) : '—'}
+                                        {!monthlyPerm.view ? <RestrictedCell /> : mAmt > 0 ? formatINR(mAmt - mSpent) : '—'}
                                       </td>
                                       <td className="px-4 py-2">
-                                        {mAmt > 0 ? (
+                                        {!monthlyPerm.view ? <RestrictedCell /> : mAmt > 0 ? (
                                           <div className="space-y-0.5 min-w-[110px]">
                                             <Progress value={mPct} className="h-1.5" />
                                             <p className="text-[11px] text-muted-foreground">{formatPct(mPct)}</p>
@@ -1263,32 +1350,33 @@ export default function SiteFundBudgetPage() {
                                         ) : <span className="text-xs text-muted-foreground">—</span>}
                                       </td>
                                       <td className="px-4 py-2">
-                                        <StatusBadge budget={mB ?? (catBudgetSum > 0 ? { budgetAmount: catBudgetSum } as SASBudget : null)} spent={mSpent} />
+                                        {monthlyPerm.view
+                                          ? <StatusBadge budget={mB ?? (catBudgetSum > 0 ? { budgetAmount: catBudgetSum } as SASBudget : null)} spent={mSpent} />
+                                          : <RestrictedCell />}
                                       </td>
-                                      {(effectiveCanEdit || canDelete) && (
+                                      {anyRowActionPerm && (
                                         <td className="px-4 py-2 text-right">
                                           <div className="flex justify-end items-center gap-1">
-                                            {effectiveCanEdit && (
-                                              <>
-                                                {mB
-                                                  ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(mB)}><Pencil className="h-3 w-3" /></Button>
-                                                  : <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'monthly', fyS, m)}><Plus className="h-2.5 w-2.5" />Set</Button>
-                                                }
-                                                <Button
-                                                  variant="outline" size="sm"
-                                                  className="h-6 text-[11px] gap-0.5 text-teal-700 border-teal-200 hover:bg-teal-50 px-2"
-                                                  title="Set category budgets for this month"
-                                                  onClick={() => openBulkCatDialog(project, m)}
-                                                >
-                                                  <Layers className="h-2.5 w-2.5" />Categories
-                                                </Button>
-                                              </>
+                                            {monthlyPerm.edit && (
+                                              mB
+                                                ? <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit(mB)}><Pencil className="h-3 w-3" /></Button>
+                                                : monthlyPerm.add && <Button variant="outline" size="sm" className="h-6 text-[11px] gap-0.5 text-emerald-700 border-emerald-200 hover:bg-emerald-50 px-2" onClick={() => openAdd(project, 'monthly', fyS, m)}><Plus className="h-2.5 w-2.5" />Set</Button>
                                             )}
-                                            {canDelete && mB && (
+                                            {(categoryPerm.add || categoryPerm.edit) && (
+                                              <Button
+                                                variant="outline" size="sm"
+                                                className="h-6 text-[11px] gap-0.5 text-teal-700 border-teal-200 hover:bg-teal-50 px-2"
+                                                title="Set category budgets for this month"
+                                                onClick={() => openBulkCatDialog(project, m)}
+                                              >
+                                                <Layers className="h-2.5 w-2.5" />Categories
+                                              </Button>
+                                            )}
+                                            {monthlyPerm.del && mB && (
                                               <DeleteConfirm label={`Remove ${monthLabel(m)} budget for ${project.projectName}?`} onConfirm={() => handleDelete(mB)} size="sm" />
                                             )}
                                             {/* PDF approval buttons */}
-                                            {effectiveCanAdd && (
+                                            {monthlyPerm.add && (
                                               <Button
                                                 variant="ghost"
                                                 size="icon"
@@ -1307,7 +1395,7 @@ export default function SiteFundBudgetPage() {
                                                   : <FileText className="h-3 w-3" />}
                                               </Button>
                                             )}
-                                            {approval && (
+                                            {approval && monthlyPerm.view && (
                                               <>
                                                 <Button
                                                   variant="ghost"
@@ -1318,7 +1406,7 @@ export default function SiteFundBudgetPage() {
                                                 >
                                                   <Download className="h-3 w-3" />
                                                 </Button>
-                                                {canDelete && (
+                                                {monthlyPerm.del && (
                                                   <DeleteConfirm
                                                     label={`Remove approval copy for ${monthLabel(m)}?`}
                                                     onConfirm={() => handleDeleteApproval(approval)}
@@ -1348,33 +1436,35 @@ export default function SiteFundBudgetPage() {
                                             </div>
                                           </td>
                                           <td className="px-4 py-1.5 text-right text-xs font-medium text-emerald-700">
-                                            {catB ? formatINR(cAmt) : <span className="text-muted-foreground text-xs">—</span>}
+                                            {!categoryPerm.view ? <RestrictedCell /> : catB ? formatINR(cAmt) : <span className="text-muted-foreground text-xs">—</span>}
                                           </td>
                                           <td className="px-4 py-1.5 text-right text-xs text-rose-700">
-                                            {cSpent > 0 ? formatINR(cSpent) : <span className="text-muted-foreground text-xs">—</span>}
+                                            {!categoryPerm.view ? <RestrictedCell /> : cSpent > 0 ? formatINR(cSpent) : <span className="text-muted-foreground text-xs">—</span>}
                                           </td>
                                           <td className={cn('px-4 py-1.5 text-right text-xs font-medium',
                                             !catB ? 'text-muted-foreground' : cAmt - cSpent < 0 ? 'text-destructive' : 'text-indigo-700')}>
-                                            {catB ? formatINR(cAmt - cSpent) : '—'}
+                                            {!categoryPerm.view ? <RestrictedCell /> : catB ? formatINR(cAmt - cSpent) : '—'}
                                           </td>
                                           <td className="px-4 py-1.5">
-                                            {catB ? (
+                                            {!categoryPerm.view ? <RestrictedCell /> : catB ? (
                                               <div className="space-y-0.5 min-w-[110px]">
                                                 <Progress value={cPct} className="h-1" />
                                                 <p className="text-[10px] text-muted-foreground">{formatPct(cPct)}</p>
                                               </div>
                                             ) : <span className="text-xs text-muted-foreground">—</span>}
                                           </td>
-                                          <td className="px-4 py-1.5"><CatStatusBadge budget={catB} spent={cSpent} /></td>
-                                          {(effectiveCanEdit || canDelete) && (
+                                          <td className="px-4 py-1.5">
+                                            {categoryPerm.view ? <CatStatusBadge budget={catB} spent={cSpent} /> : <RestrictedCell />}
+                                          </td>
+                                          {anyRowActionPerm && (
                                             <td className="px-4 py-1.5 text-right">
                                               <div className="flex justify-end gap-1">
-                                                {effectiveCanEdit && catB && (
+                                                {categoryPerm.edit && catB && (
                                                   <Button variant="ghost" size="icon" className="h-5 w-5" title="Edit budget" onClick={() => openCatEdit(catB)}>
                                                     <Pencil className="h-2.5 w-2.5" />
                                                   </Button>
                                                 )}
-                                                {canDelete && catB && (
+                                                {categoryPerm.del && catB && (
                                                   <DeleteConfirm label={`Remove ${cat} budget for ${monthLabel(m)}?`} onConfirm={() => handleCatDelete(catB)} size="sm" />
                                                 )}
                                               </div>
@@ -1427,13 +1517,13 @@ export default function SiteFundBudgetPage() {
             {!editingBudget && (
               <div className="space-y-2">
                 <Label>Budget Type</Label>
-                <Tabs value={dialogTab} onValueChange={v => setDialogTab(v as BudgetTab)}>
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="total">Total</TabsTrigger>
-                    <TabsTrigger value="fy">Financial Year</TabsTrigger>
-                    <TabsTrigger value="monthly">Monthly</TabsTrigger>
-                  </TabsList>
-                </Tabs>
+                {addableBudgetTabs.length > 1 && (
+                  <Tabs value={dialogTab} onValueChange={v => setDialogTab(v as BudgetTab)}>
+                    <TabsList className={cn('grid w-full', addableBudgetTabs.length === 2 ? 'grid-cols-2' : 'grid-cols-3')}>
+                      {addableBudgetTabs.map(t => <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>)}
+                    </TabsList>
+                  </Tabs>
+                )}
 
                 {dialogTab === 'fy' && (
                   <div className="flex items-center gap-2 pt-0.5">
