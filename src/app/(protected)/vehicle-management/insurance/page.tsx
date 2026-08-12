@@ -219,7 +219,9 @@ export default function InsuranceManagementPage() {
     setEditingRow(null);
     setForm(next);
     setFile(null);
-    setIsRenewalMode(true);
+    // Only badge/label this as a "renewal" when there's an actual prior record being
+    // replaced — the Vehicle Health "Add Now" flow (no renewingFromId) is a plain Add.
+    setIsRenewalMode(Boolean(renewingFromId));
     setDialogOpen(true);
   }, [canAdd, isLoading, prefill, renewingFromId, rows, toast]);
 

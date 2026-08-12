@@ -167,7 +167,7 @@ export default function PucManagementPage() {
     setEditingRow(null);
     setForm(next);
     setFile(null);
-    setIsRenewalMode(true);
+    setIsRenewalMode(Boolean(renewingFromId));
     setDialogOpen(true);
   }, [canAdd, isLoading, prefill, renewingFromId, rows, toast]);
 

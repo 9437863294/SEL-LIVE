@@ -404,7 +404,9 @@ export default function GenericCrudPage({
     setEditingRow(null);
     setFormState(merged);
     setFileState({});
-    setIsRenewalMode(true);
+    // Only badge/label this as a "renewal" when there's an actual prior record being
+    // replaced — the Vehicle Health "Add Now" flow (no renewingFromId) is a plain Add.
+    setIsRenewalMode(Boolean(renewingFromId));
     setDialogOpen(true);
   }, [canAdd, fields, initialPrefill, isLoading, renewingFromId, rows, toast]);
 

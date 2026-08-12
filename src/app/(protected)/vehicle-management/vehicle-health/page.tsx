@@ -43,6 +43,8 @@ type DocCategory = {
   expiryFields: string[];
   vehicleIdField: string;
   mandatoryField?: string;
+  /** Module page to jump to for adding a first-time record (used by the "Missing" Add Now link). */
+  addHref: string;
 };
 
 type VehicleHealth = {
@@ -66,11 +68,11 @@ type VehicleHealth = {
 // ─── Config ────────────────────────────────────────────────────────────────
 
 const DOC_CATEGORIES: DocCategory[] = [
-  { label: 'Insurance', icon: Shield, color: 'blue', collectionName: VEHICLE_COLLECTIONS.insurance, expiryFields: ['expiryDate', 'validTill'], vehicleIdField: 'vehicleId' },
-  { label: 'PUC', icon: Leaf, color: 'green', collectionName: VEHICLE_COLLECTIONS.puc, expiryFields: ['expiryDate', 'validTill'], vehicleIdField: 'vehicleId' },
-  { label: 'Fitness', icon: BadgeCheck, color: 'purple', collectionName: VEHICLE_COLLECTIONS.fitness, expiryFields: ['expiryDate', 'validTill'], vehicleIdField: 'vehicleId', mandatoryField: 'isMandatory' },
-  { label: 'Road Tax', icon: Landmark, color: 'yellow', collectionName: VEHICLE_COLLECTIONS.roadTax, expiryFields: ['validTill', 'expiryDate'], vehicleIdField: 'vehicleId' },
-  { label: 'Permit', icon: ScrollText, color: 'orange', collectionName: VEHICLE_COLLECTIONS.permit, expiryFields: ['validTill', 'expiryDate'], vehicleIdField: 'vehicleId', mandatoryField: 'isMandatory' },
+  { label: 'Insurance', icon: Shield, color: 'blue', collectionName: VEHICLE_COLLECTIONS.insurance, expiryFields: ['expiryDate', 'validTill'], vehicleIdField: 'vehicleId', addHref: '/vehicle-management/insurance' },
+  { label: 'PUC', icon: Leaf, color: 'green', collectionName: VEHICLE_COLLECTIONS.puc, expiryFields: ['expiryDate', 'validTill'], vehicleIdField: 'vehicleId', addHref: '/vehicle-management/puc' },
+  { label: 'Fitness', icon: BadgeCheck, color: 'purple', collectionName: VEHICLE_COLLECTIONS.fitness, expiryFields: ['expiryDate', 'validTill'], vehicleIdField: 'vehicleId', mandatoryField: 'isMandatory', addHref: '/vehicle-management/fitness' },
+  { label: 'Road Tax', icon: Landmark, color: 'yellow', collectionName: VEHICLE_COLLECTIONS.roadTax, expiryFields: ['validTill', 'expiryDate'], vehicleIdField: 'vehicleId', addHref: '/vehicle-management/road-tax' },
+  { label: 'Permit', icon: ScrollText, color: 'orange', collectionName: VEHICLE_COLLECTIONS.permit, expiryFields: ['validTill', 'expiryDate'], vehicleIdField: 'vehicleId', mandatoryField: 'isMandatory', addHref: '/vehicle-management/permit' },
 ];
 
 // ─── Score Helpers ─────────────────────────────────────────────────────────
@@ -595,6 +597,14 @@ export default function VehicleHealthPage() {
                               <p className="mt-1.5 text-[11px] text-muted-foreground">
                                 Exp: {alert.expiryDate}
                               </p>
+                            )}
+                            {alert.status === 'Missing' && cat && (
+                              <Link
+                                href={`${cat.addHref}?add=1&vid=${encodeURIComponent(v.id)}&vnum=${encodeURIComponent(v.vehicleNumber)}`}
+                                className="mt-1.5 inline-flex items-center text-[11px] font-semibold text-cyan-700 hover:underline"
+                              >
+                                Add {alert.category} →
+                              </Link>
                             )}
                           </div>
                         );
