@@ -59,8 +59,10 @@ export default function CategoryBudgetPage() {
   const { toast } = useToast();
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
-  const canView    = can('View', `${MODULE}.Budget`);
-  const canEdit    = can('Edit', `${MODULE}.Budget`);
+  // Category Budget is its own permission resource — "Budget" is kept as a
+  // backward-compatible fallback for roles that haven't been re-scoped yet.
+  const canView    = can('View', `${MODULE}.Category Budget`) || can('View', `${MODULE}.Budget`);
+  const canEdit    = can('Edit', `${MODULE}.Category Budget`) || can('Edit', `${MODULE}.Budget`);
 
   const [projects,     setProjects]     = useState<SASProject[]>([]);
   const [categories,   setCategories]   = useState<SASCategory[]>([]);
