@@ -16,7 +16,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
-import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -171,8 +171,21 @@ export default function PucManagementPage() {
     setDialogOpen(true);
   }, [canAdd, isLoading, prefill, renewingFromId, rows, toast]);
 
+  // Vehicles marked Sold/Scrapped (or manually flagged "PUC not required", e.g. electric
+  // vehicles) don't need a live certificate — override the record's own expiry-based alert
+  // so it stops counting as Expired/Due Soon everywhere.
+  const applicableRows = useMemo(() => {
+    return rows.map((row) => {
+      const vehicle = vehicleMap[String(row.vehicleId || '')];
+      if (!vehicle) return row;
+      const required = getVehicleComplianceRequirements(vehicle);
+      if (required.puc) return row;
+      return { ...row, alertStage: 'Not Applicable', complianceStatus: 'Not Applicable', pucStatus: 'Not Applicable' };
+    });
+  }, [rows, vehicleMap]);
+
   const filteredRows = useMemo(() => {
-    const base = rows.filter((row) => activeTab === 'history' ? row.isArchived === true : row.isArchived !== true);
+    const base = applicableRows.filter((row) => activeTab === 'history' ? row.isArchived === true : row.isArchived !== true);
     const term = query.trim().toLowerCase();
     if (!term) return base;
     return base.filter((row) =>
@@ -188,10 +201,10 @@ export default function PucManagementPage() {
         .map((value) => String(value || '').toLowerCase())
         .some((value) => value.includes(term))
     );
-  }, [activeTab, query, rows]);
+  }, [activeTab, applicableRows, query]);
   const pucPagination = useVehicleTablePagination(filteredRows);
 
-  const currentCount = useMemo(() => rows.filter((row) => row.isArchived !== true).length, [rows]);
+  const currentCount = useMemo(() => applicableRows.filter((row) => row.isArchived !== true).length, [applicableRows]);
   const historyCount = rows.length - currentCount;
 
   const getRenewalHref = (row: PucRow) => {
@@ -534,6 +547,8 @@ export default function PucManagementPage() {
                             ? 'border-orange-300 bg-orange-50 text-orange-700'
                             : ['7d', '15d', '30d'].includes(String(row.alertStage))
                             ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
+                            : row.alertStage === 'Not Applicable'
+                            ? 'border-slate-200 bg-slate-100 text-slate-500'
                             : 'border-emerald-300 bg-emerald-50 text-emerald-700'
                         )}
                       >

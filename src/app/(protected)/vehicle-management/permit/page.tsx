@@ -6,7 +6,7 @@ import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { computeRenewalMeta, getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, getVehicleComplianceRequirements, getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
@@ -86,7 +86,11 @@ export default function PermitManagementPage() {
       exportFileName="permit-management"
       defaultSort={{ key: 'validTill', direction: 'asc' }}
       onAfterFetch={(rows) => rows.map((row) => {
-        const mandatory = String(row.isMandatory || 'Yes') === 'Yes';
+        const vehicle = vehicleMap[String(row.vehicleId || '')];
+        // Sold/scrapped vehicles (or those with permit manually turned off, e.g. two-wheelers)
+        // never need a live permit, regardless of the per-record "Mandatory" flag.
+        const vehicleRequires = vehicle ? getVehicleComplianceRequirements(vehicle).permit : true;
+        const mandatory = vehicleRequires && String(row.isMandatory || 'Yes') === 'Yes';
         const meta = mandatory ? computeRenewalMeta(String(row.validTill || '')) : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' };
         return { ...row, alertStage: meta.alertStage, complianceStatus: meta.complianceStatus, permitStatus: mandatory ? (meta.complianceStatus === 'Expired' ? 'Expired' : 'Valid') : 'Not Applicable' };
       })}
@@ -96,7 +100,8 @@ export default function PermitManagementPage() {
         const dateError = getVehicleDateRangeError(payload.validFrom, payload.validTill, 'Valid-from date', 'Valid-till date');
         if (dateError) throw new Error(dateError);
         const vehicle = vehicleMap[String(payload.vehicleId)];
-        const mandatory = String(payload.isMandatory || 'Yes') === 'Yes';
+        const vehicleRequires = vehicle ? getVehicleComplianceRequirements(vehicle).permit : true;
+        const mandatory = vehicleRequires && String(payload.isMandatory || 'Yes') === 'Yes';
         const meta = mandatory ? computeRenewalMeta(String(payload.validTill || '')) : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' };
         return {
           ...payload,

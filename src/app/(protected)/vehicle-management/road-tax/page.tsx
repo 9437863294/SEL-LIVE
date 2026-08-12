@@ -6,7 +6,7 @@ import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { computeRenewalMeta, getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { computeRenewalMeta, getVehicleComplianceRequirements, getVehicleDateRangeError, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 
 const columns: CrudColumnConfig[] = [
   { key: 'vehicleNumber', label: 'Vehicle Number' },
@@ -101,6 +101,13 @@ export default function RoadTaxManagementPage() {
       exportFileName="road-tax-management"
       defaultSort={{ key: 'validTill', direction: 'asc' }}
       onAfterFetch={(rows) => rows.map((row) => {
+        const vehicle = vehicleMap[String(row.vehicleId || '')];
+        // Sold/scrapped vehicles don't need current road tax — stop flagging their old
+        // receipts as overdue.
+        const vehicleRequires = vehicle ? getVehicleComplianceRequirements(vehicle).roadTax : true;
+        if (!vehicleRequires) {
+          return { ...row, alertStage: 'Not Applicable', complianceStatus: 'Not Applicable', roadTaxStatus: 'Not Applicable' };
+        }
         const meta = computeRenewalMeta(String(row.validTill || ''));
         return { ...row, alertStage: meta.alertStage, complianceStatus: meta.complianceStatus === 'Expired' ? 'Overdue' : meta.complianceStatus, roadTaxStatus: meta.complianceStatus === 'Expired' ? 'Overdue' : 'Paid' };
       })}
@@ -110,14 +117,17 @@ export default function RoadTaxManagementPage() {
         const dateError = getVehicleDateRangeError(payload.paymentDate, payload.validTill, 'Payment date', 'Valid-till date');
         if (dateError) throw new Error(dateError);
         const vehicle = vehicleMap[String(payload.vehicleId)];
-        const meta = computeRenewalMeta(String(payload.validTill || ''));
+        const vehicleRequires = vehicle ? getVehicleComplianceRequirements(vehicle).roadTax : true;
+        const meta = vehicleRequires
+          ? computeRenewalMeta(String(payload.validTill || ''))
+          : { alertStage: 'Not Applicable', complianceStatus: 'Not Applicable' };
         const amountPaid = Number(payload.amountPaid || 0);
         const penaltyAmount = Number(payload.penaltyAmount || 0);
         return {
           ...payload,
           vehicleNumber: vehicle?.vehicleNumber || vehicle?.registrationNo || '',
           totalAmountPaid: amountPaid + penaltyAmount,
-          roadTaxStatus: meta.complianceStatus === 'Expired' ? 'Overdue' : 'Paid',
+          roadTaxStatus: !vehicleRequires ? 'Not Applicable' : meta.complianceStatus === 'Expired' ? 'Overdue' : 'Paid',
           alertStage: meta.alertStage,
           complianceStatus: meta.complianceStatus === 'Expired' ? 'Overdue' : meta.complianceStatus,
         };

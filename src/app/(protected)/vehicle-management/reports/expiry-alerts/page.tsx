@@ -9,7 +9,9 @@ import { db } from '@/lib/firebase';
 import {
   ALERT_STAGE_LABELS,
   computeRenewalMeta,
+  getVehicleComplianceRequirements,
   VEHICLE_COLLECTIONS,
+  type VehicleComplianceRequirements,
 } from '@/lib/vehicle-management';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Button } from '@/components/ui/button';
@@ -58,12 +60,13 @@ export default function ExpiryAlertsReportPage() {
   const [permitRows, setPermitRows] = useState<Record<string, any>[]>([]);
   const [documentRows, setDocumentRows] = useState<Record<string, any>[]>([]);
   const [driverRows, setDriverRows] = useState<Record<string, any>[]>([]);
+  const [vehicleMap, setVehicleMap] = useState<Record<string, Record<string, any>>>({});
 
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
       try {
-        const [insSnap, pucSnap, fitSnap, rtSnap, permSnap, docSnap, drvSnap] = await Promise.all([
+        const [insSnap, pucSnap, fitSnap, rtSnap, permSnap, docSnap, drvSnap, vehSnap] = await Promise.all([
           getDocs(collection(db, VEHICLE_COLLECTIONS.insurance)),
           getDocs(collection(db, VEHICLE_COLLECTIONS.puc)),
           getDocs(collection(db, VEHICLE_COLLECTIONS.fitness)),
@@ -71,6 +74,7 @@ export default function ExpiryAlertsReportPage() {
           getDocs(collection(db, VEHICLE_COLLECTIONS.permit)),
           getDocs(collection(db, VEHICLE_COLLECTIONS.documents)),
           getDocs(collection(db, VEHICLE_COLLECTIONS.driver)),
+          getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster)),
         ]);
         setInsuranceRows(insSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setPucRows(pucSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -79,6 +83,7 @@ export default function ExpiryAlertsReportPage() {
         setPermitRows(permSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setDocumentRows(docSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setDriverRows(drvSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setVehicleMap(Object.fromEntries(vehSnap.docs.map((d) => [d.id, d.data()])));
       } catch (err) {
         console.error('Failed to load expiry alerts report', err);
       } finally {
@@ -95,10 +100,17 @@ export default function ExpiryAlertsReportPage() {
       module: string,
       collection: Record<string, any>[],
       expiryKey: string,
-      refGetter: (r: Record<string, any>) => string
+      refGetter: (r: Record<string, any>) => string,
+      requirementKey?: keyof VehicleComplianceRequirements
     ) => {
       collection.forEach((r) => {
         if (r.isArchived === true || r.renewalStatus === 'Renewed') return;
+        // Skip categories that don't even apply to this vehicle (e.g. insurance/PUC/etc.
+        // for a Sold/Scrapped vehicle) so they don't inflate the expired/due-soon counts.
+        if (requirementKey) {
+          const vehicle = vehicleMap[String(r.vehicleId || '')];
+          if (vehicle && !getVehicleComplianceRequirements(vehicle)[requirementKey]) return;
+        }
         const expiryDate = String(r[expiryKey] || '');
         const meta = computeRenewalMeta(expiryDate);
         const parsedDate = expiryDate ? new Date(`${expiryDate}T00:00:00`) : null;
@@ -122,11 +134,13 @@ export default function ExpiryAlertsReportPage() {
       });
     };
 
-    push('Insurance', insuranceRows, 'expiryDate', (r) => String(r.policyNumber || '-'));
-    push('PUC', pucRows, 'expiryDate', (r) => String(r.pucCertificateNumber || '-'));
-    push('Fitness', fitnessRows, 'expiryDate', (r) => String(r.fitnessCertificateNumber || '-'));
-    push('Road Tax', roadTaxRows, 'validTill', (r) => String(r.receiptNumber || '-'));
-    push('Permit', permitRows, 'validTill', (r) => String(r.permitNumber || '-'));
+    push('Insurance', insuranceRows, 'expiryDate', (r) => String(r.policyNumber || '-'), 'insurance');
+    push('PUC', pucRows, 'expiryDate', (r) => String(r.pucCertificateNumber || '-'), 'puc');
+    push('Fitness', fitnessRows, 'expiryDate', (r) => String(r.fitnessCertificateNumber || '-'), 'fitness');
+    push('Road Tax', roadTaxRows, 'validTill', (r) => String(r.receiptNumber || '-'), 'roadTax');
+    push('Permit', permitRows, 'validTill', (r) => String(r.permitNumber || '-'), 'permit');
+    // Documents and driver licenses aren't covered by getVehicleComplianceRequirements, so
+    // they're always evaluated as-is (no requirementKey passed).
     push('Documents', documentRows, 'expiryDate', (r) => String(r.documentType || '-'));
     push('Driver License', driverRows, 'licenseExpiryDate', (r) => String(r.licenseNumber || '-'));
 
@@ -135,7 +149,7 @@ export default function ExpiryAlertsReportPage() {
       if (!b.expiryDate) return -1;
       return a.expiryDate.localeCompare(b.expiryDate);
     });
-  }, [insuranceRows, pucRows, fitnessRows, roadTaxRows, permitRows, documentRows, driverRows]);
+  }, [insuranceRows, pucRows, fitnessRows, roadTaxRows, permitRows, documentRows, driverRows, vehicleMap]);
 
   const availableYears = useMemo(() => {
     const currentYear = new Date().getFullYear();

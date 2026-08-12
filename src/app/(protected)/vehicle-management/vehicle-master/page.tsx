@@ -11,6 +11,7 @@ import {
   useVehicleTypeOptions,
 } from '@/components/vehicle-management/hooks';
 import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, toVehicleCode, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -605,6 +606,15 @@ export default function VehicleMasterPage() {
           updatedAt: serverTimestamp(),
         });
         savedId = created.id;
+      }
+
+      // Recompute the vehicle's cached compliance-health fields (documentHealthStatus,
+      // hasExpiredDocuments, documentAlertCount) now that vehicleStatus/requireX flags may
+      // have changed (e.g. marking a vehicle Sold should clear its stale "Expired" flags).
+      try {
+        await syncVehicleComplianceStatus(savedId);
+      } catch (syncError) {
+        console.error('Failed to sync vehicle compliance status', syncError);
       }
 
       const previousDriverId = String(editingRow?.assignedDriverId || '');

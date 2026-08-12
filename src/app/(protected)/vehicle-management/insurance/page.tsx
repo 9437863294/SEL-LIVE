@@ -21,7 +21,7 @@ import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { createUserNotification } from '@/lib/notifications';
-import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -120,7 +120,8 @@ const insuranceAlertClass = (stage: string) =>
     stage === 'Expired' && 'border-rose-200 bg-rose-50 text-rose-700',
     ['Due Today', '7d', '15d', '30d'].includes(stage) && 'border-amber-200 bg-amber-50 text-amber-700',
     stage === 'Not Due' && 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    stage === 'Missing' && 'border-slate-200 bg-slate-100 text-slate-600'
+    stage === 'Missing' && 'border-slate-200 bg-slate-100 text-slate-600',
+    stage === 'Not Applicable' && 'border-slate-200 bg-slate-100 text-slate-500'
   );
 
 export default function InsuranceManagementPage() {
@@ -222,9 +223,27 @@ export default function InsuranceManagementPage() {
     setDialogOpen(true);
   }, [canAdd, isLoading, prefill, renewingFromId, rows, toast]);
 
+  // Vehicles marked Sold/Scrapped (or manually flagged "Insurance not required") don't need a
+  // live policy — override the record's own expiry-based alert so it stops counting as
+  // Expired/Due Soon everywhere (badges, filters, "Needs Attention" tile, export).
+  const applicableRows = useMemo(() => {
+    return rows.map((row) => {
+      const vehicle = vehicleMap[String(row.vehicleId || '')];
+      if (!vehicle) return row;
+      const required = getVehicleComplianceRequirements(vehicle);
+      if (required.insurance) return row;
+      return {
+        ...row,
+        alertStage: 'Not Applicable',
+        complianceStatus: 'Not Applicable',
+        renewalStatus: row.isArchived === true || row.renewalStatus === 'Renewed' ? 'Renewed' : 'Not Applicable',
+      };
+    });
+  }, [rows, vehicleMap]);
+
   const filteredRows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    const base = rows.filter((row) => activeTab === 'history' ? row.isArchived === true : row.isArchived !== true);
+    const base = applicableRows.filter((row) => activeTab === 'history' ? row.isArchived === true : row.isArchived !== true);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return base.filter((row) => {
@@ -258,12 +277,12 @@ export default function InsuranceManagementPage() {
         .map((value) => String(value || '').toLowerCase())
         .some((value) => value.includes(term));
     });
-  }, [activeTab, expiryFilter, policyTypeFilter, query, rows, statusFilter]);
+  }, [activeTab, applicableRows, expiryFilter, policyTypeFilter, query, statusFilter]);
   const insurancePagination = useVehicleTablePagination(filteredRows);
 
-  const currentCount = useMemo(() => rows.filter((row) => row.isArchived !== true).length, [rows]);
-  const historyCount = useMemo(() => rows.filter((row) => row.isArchived === true).length, [rows]);
-  const attentionCount = useMemo(() => rows.filter((row) => row.isArchived !== true && ['Expired', 'Due Today', '7d', '15d', '30d'].includes(String(row.alertStage || ''))).length, [rows]);
+  const currentCount = useMemo(() => applicableRows.filter((row) => row.isArchived !== true).length, [applicableRows]);
+  const historyCount = useMemo(() => applicableRows.filter((row) => row.isArchived === true).length, [applicableRows]);
+  const attentionCount = useMemo(() => applicableRows.filter((row) => row.isArchived !== true && ['Expired', 'Due Today', '7d', '15d', '30d'].includes(String(row.alertStage || ''))).length, [applicableRows]);
 
   const resetFilters = () => {
     setQuery('');

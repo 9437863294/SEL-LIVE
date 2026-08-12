@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, getCountFromServer, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { getVehicleComplianceRequirements, VEHICLE_COLLECTIONS, type VehicleComplianceRequirements } from '@/lib/vehicle-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -153,13 +153,15 @@ const cards: CountCard[] = [
 ];
 
 const expirySources = [
-  { collection: VEHICLE_COLLECTIONS.insurance, key: 'expiryDate', permission: 'Insurance Management' },
-  { collection: VEHICLE_COLLECTIONS.puc, key: 'expiryDate', permission: 'PUC Management' },
-  { collection: VEHICLE_COLLECTIONS.fitness, key: 'expiryDate', permission: 'Fitness Certificate Management' },
-  { collection: VEHICLE_COLLECTIONS.roadTax, key: 'validTill', permission: 'Road Tax Management' },
-  { collection: VEHICLE_COLLECTIONS.permit, key: 'validTill', permission: 'Permit Management' },
-  { collection: VEHICLE_COLLECTIONS.documents, key: 'expiryDate', permission: 'Document Management' },
-  { collection: VEHICLE_COLLECTIONS.driver, key: 'licenseExpiryDate', permission: 'Driver Management' },
+  { collection: VEHICLE_COLLECTIONS.insurance, key: 'expiryDate', permission: 'Insurance Management', requirementKey: 'insurance' as const },
+  { collection: VEHICLE_COLLECTIONS.puc, key: 'expiryDate', permission: 'PUC Management', requirementKey: 'puc' as const },
+  { collection: VEHICLE_COLLECTIONS.fitness, key: 'expiryDate', permission: 'Fitness Certificate Management', requirementKey: 'fitness' as const },
+  { collection: VEHICLE_COLLECTIONS.roadTax, key: 'validTill', permission: 'Road Tax Management', requirementKey: 'roadTax' as const },
+  { collection: VEHICLE_COLLECTIONS.permit, key: 'validTill', permission: 'Permit Management', requirementKey: 'permit' as const },
+  // Documents and driver licenses aren't covered by getVehicleComplianceRequirements (they
+  // aren't tied to a vehicle-status rule the same way), so they're always evaluated as-is.
+  { collection: VEHICLE_COLLECTIONS.documents, key: 'expiryDate', permission: 'Document Management', requirementKey: null },
+  { collection: VEHICLE_COLLECTIONS.driver, key: 'licenseExpiryDate', permission: 'Driver Management', requirementKey: null },
 ] as const;
 
 const classifyExpiry = (value: unknown) => {
@@ -203,6 +205,15 @@ export default function VehicleManagementOverviewPage() {
       const nextCounts: Record<string, number> = {};
       const nextAlerts = { expired: 0, dueSoon: 0, valid: 0 };
       let failureCount = 0;
+      // Needed to know whether a compliance category even applies to a given vehicle
+      // (e.g. Sold/Scrapped vehicles need no insurance/PUC/fitness/road tax/permit at all).
+      let vehicleMap: Record<string, Record<string, any>> = {};
+      try {
+        const vehicleSnap = await getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster));
+        vehicleMap = Object.fromEntries(vehicleSnap.docs.map((entry) => [entry.id, entry.data()]));
+      } catch (error) {
+        console.error('Failed to load vehicles for expiry alert filtering', error);
+      }
       await Promise.all(
         cards.map(async (item) => {
           if (!canViewSection(item.permission)) return;
@@ -224,6 +235,13 @@ export default function VehicleManagementOverviewPage() {
             snapshot.docs.forEach((entry) => {
               const data = entry.data();
               if (data.isArchived === true || data.renewalStatus === 'Renewed') return;
+              if (source.requirementKey) {
+                const vehicle = vehicleMap[String(data.vehicleId || '')];
+                if (vehicle) {
+                  const required: VehicleComplianceRequirements = getVehicleComplianceRequirements(vehicle);
+                  if (!required[source.requirementKey]) return;
+                }
+              }
               const kind = classifyExpiry(data?.[source.key]);
               if (kind === 'expired') nextAlerts.expired += 1;
               if (kind === 'dueSoon') nextAlerts.dueSoon += 1;
