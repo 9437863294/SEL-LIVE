@@ -34,25 +34,28 @@ import { cn } from '@/lib/utils';
 
 // ─── Per-section color config ────────────────────────────────────────────────
 
+// Icon chip backgrounds use the *-100 tier (not *-50) so they stay visible against the
+// sidebar/sheet's own near-white backdrop — a *-50 chip (esp. slate) was blending into the
+// panel and made several rows look like their icon had gone missing.
 const sections = [
-  { href: '/vehicle-management',                label: 'Overview',        resource: '',                          icon: Gauge,       color: 'text-cyan-600',    bg: 'bg-cyan-50',    group: 'core' },
-  { href: '/vehicle-management/renewals',       label: 'Renewals Hub',    resource: '',                          icon: RefreshCw,   color: 'text-rose-600',    bg: 'bg-rose-50',    group: 'core' },
-  { href: '/vehicle-management/renewals/history', label: 'Renewal History', resource: '',                        icon: History,     color: 'text-slate-600',   bg: 'bg-slate-50',   group: 'core' },
-  { href: '/vehicle-management/vehicle-health', label: 'Vehicle Health',  resource: 'Vehicle Master',            icon: Activity,    color: 'text-emerald-600', bg: 'bg-emerald-50', group: 'core' },
-  { href: '/vehicle-management/vehicle-master', label: 'Vehicle Master',  resource: 'Vehicle Master',            icon: CarFront,    color: 'text-blue-600',    bg: 'bg-blue-50',    group: 'fleet' },
-  { href: '/vehicle-management/insurance/workflow', label: 'Insurance Workflow', resource: 'Insurance Management', icon: GitBranch, color: 'text-violet-700', bg: 'bg-violet-50', group: 'compliance' },
-  { href: '/vehicle-management/insurance',      label: 'Insurance',       resource: 'Insurance Management',     icon: Shield,      color: 'text-violet-600',  bg: 'bg-violet-50',  group: 'compliance' },
-  { href: '/vehicle-management/puc',            label: 'PUC',             resource: 'PUC Management',            icon: Leaf,        color: 'text-green-600',   bg: 'bg-green-50',   group: 'compliance' },
-  { href: '/vehicle-management/fitness',        label: 'Fitness',         resource: 'Fitness Certificate Management', icon: BadgeCheck, color: 'text-indigo-600', bg: 'bg-indigo-50', group: 'compliance' },
-  { href: '/vehicle-management/road-tax',       label: 'Road Tax',        resource: 'Road Tax Management',       icon: Landmark,    color: 'text-amber-600',   bg: 'bg-amber-50',   group: 'compliance' },
-  { href: '/vehicle-management/permit',         label: 'Permit',          resource: 'Permit Management',         icon: ScrollText,  color: 'text-orange-600',  bg: 'bg-orange-50',  group: 'compliance' },
-  { href: '/vehicle-management/maintenance',    label: 'Maintenance',     resource: 'Maintenance Management',    icon: Wrench,      color: 'text-red-600',     bg: 'bg-red-50',     group: 'ops' },
-  { href: '/vehicle-management/fuel',           label: 'Fuel',            resource: 'Fuel Management',           icon: Fuel,        color: 'text-sky-600',     bg: 'bg-sky-50',     group: 'ops' },
-  { href: '/vehicle-management/driver',         label: 'Driver Master',   resource: 'Driver Management',         icon: User,        color: 'text-teal-600',    bg: 'bg-teal-50',    group: 'ops' },
-  { href: '/vehicle-management/trips',          label: 'Trip Management', resource: 'Trip Management',           icon: LocateFixed, color: 'text-blue-600',    bg: 'bg-blue-50',    group: 'ops' },
-  { href: '/vehicle-management/documents',      label: 'Documents',       resource: 'Document Management',       icon: FileArchive, color: 'text-slate-600',   bg: 'bg-slate-50',   group: 'ops' },
-  { href: '/vehicle-management/reports',        label: 'Reports',         resource: 'Reports',                   icon: BarChart3,   color: 'text-indigo-600',  bg: 'bg-indigo-50',  group: 'ops' },
-  { href: '/vehicle-management/settings',       label: 'Settings',        resource: 'Settings',                  icon: Settings,    color: 'text-slate-600',   bg: 'bg-slate-50',   group: 'ops' },
+  { href: '/vehicle-management',                label: 'Overview',        resource: '',                          icon: Gauge,       color: 'text-cyan-600',    bg: 'bg-cyan-100',    group: 'core' },
+  { href: '/vehicle-management/renewals',       label: 'Renewals Hub',    resource: '',                          icon: RefreshCw,   color: 'text-rose-600',    bg: 'bg-rose-100',    group: 'core' },
+  { href: '/vehicle-management/renewals/history', label: 'Renewal History', resource: '',                        icon: History,     color: 'text-slate-600',   bg: 'bg-slate-200',   group: 'core' },
+  { href: '/vehicle-management/vehicle-health', label: 'Vehicle Health',  resource: 'Vehicle Master',            icon: Activity,    color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'core' },
+  { href: '/vehicle-management/vehicle-master', label: 'Vehicle Master',  resource: 'Vehicle Master',            icon: CarFront,    color: 'text-blue-600',    bg: 'bg-blue-100',    group: 'fleet' },
+  { href: '/vehicle-management/insurance/workflow', label: 'Insurance Workflow', resource: 'Insurance Management', icon: GitBranch, color: 'text-violet-700', bg: 'bg-violet-100', group: 'compliance' },
+  { href: '/vehicle-management/insurance',      label: 'Insurance',       resource: 'Insurance Management',     icon: Shield,      color: 'text-violet-600',  bg: 'bg-violet-100',  group: 'compliance' },
+  { href: '/vehicle-management/puc',            label: 'PUC',             resource: 'PUC Management',            icon: Leaf,        color: 'text-green-600',   bg: 'bg-green-100',   group: 'compliance' },
+  { href: '/vehicle-management/fitness',        label: 'Fitness',         resource: 'Fitness Certificate Management', icon: BadgeCheck, color: 'text-indigo-600', bg: 'bg-indigo-100', group: 'compliance' },
+  { href: '/vehicle-management/road-tax',       label: 'Road Tax',        resource: 'Road Tax Management',       icon: Landmark,    color: 'text-amber-600',   bg: 'bg-amber-100',   group: 'compliance' },
+  { href: '/vehicle-management/permit',         label: 'Permit',          resource: 'Permit Management',         icon: ScrollText,  color: 'text-orange-600',  bg: 'bg-orange-100',  group: 'compliance' },
+  { href: '/vehicle-management/maintenance',    label: 'Maintenance',     resource: 'Maintenance Management',    icon: Wrench,      color: 'text-red-600',     bg: 'bg-red-100',     group: 'ops' },
+  { href: '/vehicle-management/fuel',           label: 'Fuel',            resource: 'Fuel Management',           icon: Fuel,        color: 'text-sky-600',     bg: 'bg-sky-100',     group: 'ops' },
+  { href: '/vehicle-management/driver',         label: 'Driver Master',   resource: 'Driver Management',         icon: User,        color: 'text-teal-600',    bg: 'bg-teal-100',    group: 'ops' },
+  { href: '/vehicle-management/trips',          label: 'Trip Management', resource: 'Trip Management',           icon: LocateFixed, color: 'text-blue-600',    bg: 'bg-blue-100',    group: 'ops' },
+  { href: '/vehicle-management/documents',      label: 'Documents',       resource: 'Document Management',       icon: FileArchive, color: 'text-slate-600',   bg: 'bg-slate-200',   group: 'ops' },
+  { href: '/vehicle-management/reports',        label: 'Reports',         resource: 'Reports',                   icon: BarChart3,   color: 'text-indigo-600',  bg: 'bg-indigo-100',  group: 'ops' },
+  { href: '/vehicle-management/settings',       label: 'Settings',        resource: 'Settings',                  icon: Settings,    color: 'text-slate-600',   bg: 'bg-slate-200',   group: 'ops' },
 ];
 
 const groupLabels: Record<string, string> = {
@@ -119,13 +122,13 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
             {/* Icon container — colored bg when inactive, white when active */}
             <span
               className={cn(
-                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
+                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 transition-all duration-200',
                 active
-                  ? 'bg-white/20'
-                  : cn('group-hover:scale-105', item.bg)
+                  ? 'bg-white/20 ring-white/30'
+                  : cn('ring-black/[0.03] group-hover:scale-105', item.bg)
               )}
             >
-              <Icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'text-white scale-110' : item.color)} />
+              <Icon className={cn('h-4 w-4 transition-transform', active ? 'text-white scale-110' : item.color)} />
             </span>
             <span className="truncate">{item.label}</span>
           </Link>

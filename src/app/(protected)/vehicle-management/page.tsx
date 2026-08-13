@@ -374,13 +374,13 @@ export default function VehicleManagementOverviewPage() {
                 style={{ animationDelay: `${Math.min(idx * 45, 240)}ms` }}
               >
                 <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-br opacity-80', item.gradient)} />
-                <CardHeader className="relative flex h-full min-w-0 flex-row items-start gap-2 p-2.5 lg:block lg:p-3">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100 lg:mb-2 lg:h-8 lg:w-8">
-                    <Icon className="h-3.5 w-3.5 text-cyan-700 transition-transform duration-300 group-hover:scale-110 lg:h-4 lg:w-4" />
+                <CardHeader className="relative flex h-full min-w-0 flex-row items-center gap-2.5 p-3 lg:block lg:items-start lg:p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100 lg:mb-2">
+                    <Icon className="h-4 w-4 text-cyan-700 transition-transform duration-300 group-hover:scale-110" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <CardTitle className="line-clamp-2 break-words pr-0.5 text-[13px] leading-[1.15] sm:text-sm">{item.label}</CardTitle>
-                    <span className="mt-1 block text-[11px] leading-none text-muted-foreground lg:hidden">
+                    <CardTitle className="truncate pr-0.5 text-[13px] leading-tight sm:text-sm" title={item.label}>{item.label}</CardTitle>
+                    <span className="mt-1 block truncate text-[11px] leading-none text-muted-foreground lg:hidden">
                       {isLoading ? '…' : `${counts[item.collection] ?? 0} records`}
                     </span>
                   </div>
