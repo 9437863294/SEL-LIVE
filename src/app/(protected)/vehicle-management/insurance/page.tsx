@@ -21,7 +21,7 @@ import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { createUserNotification } from '@/lib/notifications';
-import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleDateRangeError, getVehicleTimestampMillis, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -225,27 +225,70 @@ export default function InsuranceManagementPage() {
     setDialogOpen(true);
   }, [canAdd, isLoading, prefill, renewingFromId, rows, toast]);
 
-  // Vehicles marked Sold/Scrapped (or manually flagged "Insurance not required") don't need a
-  // live policy — override the record's own expiry-based alert so it stops counting as
-  // Expired/Due Soon everywhere (badges, filters, "Needs Attention" tile, export).
-  const applicableRows = useMemo(() => {
-    return rows.map((row) => {
-      const vehicle = vehicleMap[String(row.vehicleId || '')];
-      if (!vehicle) return row;
-      const required = getVehicleComplianceRequirements(vehicle);
-      if (required.insurance) return row;
-      return {
-        ...row,
-        alertStage: 'Not Applicable',
-        complianceStatus: 'Not Applicable',
-        renewalStatus: row.isArchived === true || row.renewalStatus === 'Renewed' ? 'Renewed' : 'Not Applicable',
+  // "Current" tab is vehicle-driven, not record-driven: every vehicle that requires
+  // insurance gets exactly one row — its current (non-archived) policy if it has one, or a
+  // synthetic "Missing" row if it doesn't, so a vehicle with zero insurance records is no
+  // longer invisible. Sold/Scrapped (or manually "not required") vehicles are excluded
+  // entirely rather than shown with a Not Applicable badge.
+  const mergedCurrentRows = useMemo(() => {
+    const latestByVehicle = new Map<string, InsuranceRow>();
+    rows.forEach((row) => {
+      if (row.isArchived === true) return;
+      const vid = String(row.vehicleId || '');
+      if (!vid) return;
+      const existing = latestByVehicle.get(vid);
+      if (!existing) { latestByVehicle.set(vid, row); return; }
+      const stampOf = (r: InsuranceRow) => {
+        const expiryStamp = r.expiryDate ? new Date(String(r.expiryDate)).getTime() : NaN;
+        return Number.isNaN(expiryStamp) ? getVehicleTimestampMillis(r.createdAt) : expiryStamp;
       };
+      if (stampOf(row) >= stampOf(existing)) latestByVehicle.set(vid, row);
     });
-  }, [rows, vehicleMap]);
+
+    const merged: InsuranceRow[] = [];
+    // All known vehicle IDs (regardless of requirement) — used below to tell "vehicle exists
+    // but doesn't require insurance" (exclude) apart from "vehicle record can't be found at
+    // all, e.g. deleted" (still show, don't silently lose the data).
+    const knownVehicleIds = new Set(vehicleRows.map((vehicle) => String(vehicle.id)));
+
+    vehicleRows.forEach((vehicle) => {
+      const vid = String(vehicle.id);
+      if (!getVehicleComplianceRequirements(vehicle).insurance) return;
+      const existingRow = latestByVehicle.get(vid);
+      if (existingRow) {
+        merged.push(existingRow);
+      } else {
+        merged.push({
+          id: `missing::${vid}`,
+          isMissingRecord: true,
+          vehicleId: vid,
+          vehicleNumber: String(vehicle.vehicleNumber || vehicle.registrationNo || ''),
+          insuranceCompany: '',
+          policyNumber: '',
+          policyType: '',
+          expiryDate: '',
+          isArchived: false,
+          alertStage: 'Missing',
+          complianceStatus: 'Missing',
+          renewalStatus: 'Missing',
+        });
+      }
+    });
+
+    // Don't silently drop a current record whose vehicle can't be resolved at all (e.g. the
+    // vehicle was deleted from Vehicle Master) — still surface it rather than lose visibility
+    // of real data. A vehicle that exists but doesn't require insurance (Sold/Scrapped, etc.)
+    // is intentionally NOT re-added here.
+    latestByVehicle.forEach((row, vid) => {
+      if (!knownVehicleIds.has(vid)) merged.push(row);
+    });
+
+    return merged;
+  }, [rows, vehicleRows]);
 
   const filteredRows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    const base = applicableRows.filter((row) => activeTab === 'history' ? row.isArchived === true : row.isArchived !== true);
+    const base = activeTab === 'history' ? rows.filter((row) => row.isArchived === true) : mergedCurrentRows;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return base.filter((row) => {
@@ -279,12 +322,12 @@ export default function InsuranceManagementPage() {
         .map((value) => String(value || '').toLowerCase())
         .some((value) => value.includes(term));
     });
-  }, [activeTab, applicableRows, expiryFilter, policyTypeFilter, query, statusFilter]);
+  }, [activeTab, mergedCurrentRows, expiryFilter, policyTypeFilter, query, rows, statusFilter]);
   const insurancePagination = useVehicleTablePagination(filteredRows);
 
-  const currentCount = useMemo(() => applicableRows.filter((row) => row.isArchived !== true).length, [applicableRows]);
-  const historyCount = useMemo(() => applicableRows.filter((row) => row.isArchived === true).length, [applicableRows]);
-  const attentionCount = useMemo(() => applicableRows.filter((row) => row.isArchived !== true && ['Expired', 'Due Today', '7d', '15d', '30d'].includes(String(row.alertStage || ''))).length, [applicableRows]);
+  const currentCount = mergedCurrentRows.length;
+  const historyCount = useMemo(() => rows.filter((row) => row.isArchived === true).length, [rows]);
+  const attentionCount = useMemo(() => mergedCurrentRows.filter((row) => ['Expired', 'Due Today', '7d', '15d', '30d', 'Missing'].includes(String(row.alertStage || ''))).length, [mergedCurrentRows]);
 
   const resetFilters = () => {
     setQuery('');
@@ -406,6 +449,17 @@ export default function InsuranceManagementPage() {
     if (!canEdit) return;
     setEditingRow(row);
     setForm(mapRowToState(row));
+    setFile(null);
+    setIsRenewalMode(false);
+    setDialogOpen(true);
+  };
+
+  // Used by the synthetic "Missing" rows — opens a blank Add form with the vehicle
+  // already pre-selected, since there's no existing record to edit/renew.
+  const openAddForVehicle = (row: InsuranceRow) => {
+    if (!canAdd) return;
+    setEditingRow(null);
+    setForm({ ...buildInitialState(), vehicleId: String(row.vehicleId || '') });
     setFile(null);
     setIsRenewalMode(false);
     setDialogOpen(true);
@@ -750,10 +804,16 @@ export default function InsuranceManagementPage() {
                   </div>
                   {/* Action buttons */}
                   <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-slate-100 pt-3">
-                    {row.policyDocumentUrl && <Button type="button" size="icon" variant="outline" className="h-9 w-9 border-emerald-200 bg-emerald-50 text-emerald-700" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button>}
-                    {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}><Button type="button" size="icon" className="h-9 w-9 bg-amber-500 text-white hover:bg-amber-600" title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-4 w-4" /></Button></Link>}
-                    <Button type="button" size="icon" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-9 w-9 bg-white text-slate-700" title="Edit insurance" aria-label="Edit insurance"><Pencil className="h-4 w-4" /></Button>
-                    <Button type="button" size="icon" variant="outline" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="h-9 w-9 border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700" title="Delete insurance" aria-label="Delete insurance"><Trash2 className="h-4 w-4" /></Button>
+                    {row.isMissingRecord ? (
+                      <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className="h-9 flex-1 bg-cyan-600 text-white hover:bg-cyan-700"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
+                    ) : (
+                      <>
+                        {row.policyDocumentUrl && <Button type="button" size="icon" variant="outline" className="h-9 w-9 border-emerald-200 bg-emerald-50 text-emerald-700" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button>}
+                        {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}><Button type="button" size="icon" className="h-9 w-9 bg-amber-500 text-white hover:bg-amber-600" title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-4 w-4" /></Button></Link>}
+                        <Button type="button" size="icon" variant="outline" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-9 w-9 bg-white text-slate-700" title="Edit insurance" aria-label="Edit insurance"><Pencil className="h-4 w-4" /></Button>
+                        <Button type="button" size="icon" variant="outline" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="h-9 w-9 border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700" title="Delete insurance" aria-label="Delete insurance"><Trash2 className="h-4 w-4" /></Button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))
@@ -806,17 +866,25 @@ export default function InsuranceManagementPage() {
                       <TableCell className="text-center">{row.policyDocumentUrl ? <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button> : <span className="text-xs text-muted-foreground">-</span>}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && (
-                            <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}>
-                              <Button type="button" size="icon" className="h-8 w-8 bg-amber-500 text-white hover:bg-amber-600" title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-3.5 w-3.5" /></Button>
-                            </Link>
+                          {row.isMissingRecord ? (
+                            <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className="h-8 bg-cyan-600 px-3 text-white hover:bg-cyan-700">
+                              <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy
+                            </Button>
+                          ) : (
+                            <>
+                              {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && (
+                                <Link href={getRenewalHref(row)} onClick={(event) => event.stopPropagation()}>
+                                  <Button type="button" size="icon" className="h-8 w-8 bg-amber-500 text-white hover:bg-amber-600" title="Renew policy" aria-label="Renew policy"><RefreshCw className="h-3.5 w-3.5" /></Button>
+                                </Link>
+                              )}
+                              <Button type="button" size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-8 w-8 text-slate-700 hover:bg-slate-100" title="Edit insurance" aria-label="Edit insurance">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button type="button" size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="h-8 w-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700" title="Delete insurance" aria-label="Delete insurance">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
                           )}
-                          <Button type="button" size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); openEdit(row); }} disabled={!canEdit} className="h-8 w-8 text-slate-700 hover:bg-slate-100" title="Edit insurance" aria-label="Edit insurance">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button type="button" size="icon" variant="ghost" onClick={(event) => { event.stopPropagation(); setDeleteRow(row); }} disabled={!canDelete} className="h-8 w-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700" title="Delete insurance" aria-label="Delete insurance">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -844,6 +912,15 @@ export default function InsuranceManagementPage() {
               <DialogTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4 text-emerald-600" />{viewRow.vehicleNumber || 'Insurance Policy'}</DialogTitle>
               <DialogDescription className="truncate text-xs">{viewRow.policyNumber || '-'} · {viewRow.insuranceCompany || '-'}</DialogDescription>
             </DialogHeader>
+            {viewRow.isMissingRecord ? (
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-3">
+                <div className="flex flex-wrap gap-1.5"><Badge variant="outline" className={insuranceAlertClass('Missing')}>Missing</Badge></div>
+                <section className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center shadow-sm">
+                  <p className="text-sm font-medium text-slate-700">No insurance record found for this vehicle.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">This vehicle requires insurance but has no policy on file yet.</p>
+                </section>
+              </div>
+            ) : (
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/70 p-3">
               <div className="flex flex-wrap gap-1.5"><Badge variant="outline" className={insuranceAlertClass(String(viewRow.alertStage || ''))}>{viewRow.alertStage || '-'}</Badge><Badge variant="outline" className="bg-white">{viewRow.renewalStatus || '-'}</Badge><Badge variant="outline" className="bg-white">{viewRow.complianceStatus || '-'}</Badge></div>
               <section className="rounded-xl border bg-white p-3 shadow-sm">
@@ -867,10 +944,17 @@ export default function InsuranceManagementPage() {
               </section>
               {viewRow.remarks && <section className="rounded-xl border bg-white p-3 shadow-sm"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Remarks</p><p className="mt-1 whitespace-pre-wrap text-xs text-slate-700">{viewRow.remarks}</p></section>}
             </div>
+            )}
             <DialogFooter className="shrink-0 border-t bg-white px-3 py-2">
               <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => setViewRow(null)}>Close</Button>
-              {activeTab === 'current' && canAdd && viewRow.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(viewRow)}><Button type="button" size="sm" className="h-8 bg-amber-500 text-white hover:bg-amber-600"><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Renew</Button></Link>}
-              {canEdit && <Button type="button" size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700" onClick={() => { const row = viewRow; setViewRow(null); openEdit(row); }}><Pencil className="mr-1.5 h-3.5 w-3.5" />Edit</Button>}
+              {viewRow.isMissingRecord ? (
+                canAdd && <Button type="button" size="sm" className="h-8 bg-cyan-600 text-white hover:bg-cyan-700" onClick={() => { const row = viewRow; setViewRow(null); openAddForVehicle(row); }}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
+              ) : (
+                <>
+                  {activeTab === 'current' && canAdd && viewRow.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(viewRow)}><Button type="button" size="sm" className="h-8 bg-amber-500 text-white hover:bg-amber-600"><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Renew</Button></Link>}
+                  {canEdit && <Button type="button" size="sm" className="h-8 bg-emerald-600 hover:bg-emerald-700" onClick={() => { const row = viewRow; setViewRow(null); openEdit(row); }}><Pencil className="mr-1.5 h-3.5 w-3.5" />Edit</Button>}
+                </>
+              )}
             </DialogFooter>
           </>}
         </DialogContent>
