@@ -426,7 +426,23 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       setSelected(null);
       setAction(null);
     } catch (error) {
-      toast({ title: 'Workflow action failed', description: error instanceof Error ? error.message : 'Could not update the payment.', variant: 'destructive' });
+      const message = error instanceof Error ? error.message : 'Could not update the payment.';
+      toast({ title: 'Workflow action failed', description: message, variant: 'destructive' });
+      // The transaction above aborted on this error, so nothing was written — including the audit
+      // log entry it would otherwise have created. Without this, a blocked "no assignee
+      // configured" action leaves zero trace anywhere once the toast disappears, making it look
+      // like the payment silently vanished instead of simply never having left its current step.
+      if (selected && user && /No assignee is configured for/.test(message)) {
+        await setDoc(doc(collection(db, RP_COLLECTIONS.payments, selected.id, RP_COLLECTIONS.auditLogs)), {
+          organizationId: selected.organizationId,
+          paymentId: selected.id,
+          action: 'Workflow action blocked',
+          summary: `${action} could not proceed — ${message} Configure an assignee for that step, or set a fallback owner on the master.`,
+          userId: user.id,
+          userName: user.name,
+          createdAt: Timestamp.now(),
+        }).catch(() => undefined);
+      }
     } finally {
       setWorking(false);
     }
