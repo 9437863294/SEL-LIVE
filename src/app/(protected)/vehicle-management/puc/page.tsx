@@ -16,7 +16,7 @@ import { db, storage } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
-import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleDateRangeError, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleDateRangeError, getVehicleTimestampMillis, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -171,21 +171,64 @@ export default function PucManagementPage() {
     setDialogOpen(true);
   }, [canAdd, isLoading, prefill, renewingFromId, rows, toast]);
 
-  // Vehicles marked Sold/Scrapped (or manually flagged "PUC not required", e.g. electric
-  // vehicles) don't need a live certificate — override the record's own expiry-based alert
-  // so it stops counting as Expired/Due Soon everywhere.
-  const applicableRows = useMemo(() => {
-    return rows.map((row) => {
-      const vehicle = vehicleMap[String(row.vehicleId || '')];
-      if (!vehicle) return row;
-      const required = getVehicleComplianceRequirements(vehicle);
-      if (required.puc) return row;
-      return { ...row, alertStage: 'Not Applicable', complianceStatus: 'Not Applicable', pucStatus: 'Not Applicable' };
+  // "Current" tab is vehicle-driven, not record-driven: every vehicle that requires PUC
+  // gets exactly one row — its current (non-archived) certificate if it has one, or a
+  // synthetic "Missing" row if it doesn't, so a vehicle with zero PUC records is no longer
+  // invisible. Sold/Scrapped (or manually "not required", e.g. electric vehicles) are
+  // excluded entirely rather than shown with a Not Applicable badge.
+  const mergedCurrentRows = useMemo(() => {
+    const latestByVehicle = new Map<string, PucRow>();
+    rows.forEach((row) => {
+      if (row.isArchived === true) return;
+      const vid = String(row.vehicleId || '');
+      if (!vid) return;
+      const existing = latestByVehicle.get(vid);
+      if (!existing) { latestByVehicle.set(vid, row); return; }
+      const stampOf = (r: PucRow) => {
+        const expiryStamp = r.expiryDate ? new Date(String(r.expiryDate)).getTime() : NaN;
+        return Number.isNaN(expiryStamp) ? getVehicleTimestampMillis(r.createdAt) : expiryStamp;
+      };
+      if (stampOf(row) >= stampOf(existing)) latestByVehicle.set(vid, row);
     });
-  }, [rows, vehicleMap]);
+
+    const merged: PucRow[] = [];
+    const knownVehicleIds = new Set(vehicleRows.map((vehicle) => String(vehicle.id)));
+
+    vehicleRows.forEach((vehicle) => {
+      const vid = String(vehicle.id);
+      if (!getVehicleComplianceRequirements(vehicle).puc) return;
+      const existingRow = latestByVehicle.get(vid);
+      if (existingRow) {
+        merged.push(existingRow);
+      } else {
+        merged.push({
+          id: `missing::${vid}`,
+          isMissingRecord: true,
+          vehicleId: vid,
+          vehicleNumber: String(vehicle.vehicleNumber || vehicle.registrationNo || ''),
+          pucCertificateNumber: '',
+          testingCenterName: '',
+          expiryDate: '',
+          isArchived: false,
+          alertStage: 'Missing',
+          complianceStatus: 'Missing',
+          pucStatus: 'Missing',
+        });
+      }
+    });
+
+    // Don't silently drop a current record whose vehicle can't be resolved at all (e.g. the
+    // vehicle was deleted from Vehicle Master) — still surface it. A vehicle that exists but
+    // doesn't require PUC (Sold/Scrapped, etc.) is intentionally NOT re-added here.
+    latestByVehicle.forEach((row, vid) => {
+      if (!knownVehicleIds.has(vid)) merged.push(row);
+    });
+
+    return merged;
+  }, [rows, vehicleRows]);
 
   const filteredRows = useMemo(() => {
-    const base = applicableRows.filter((row) => activeTab === 'history' ? row.isArchived === true : row.isArchived !== true);
+    const base = activeTab === 'history' ? rows.filter((row) => row.isArchived === true) : mergedCurrentRows;
     const term = query.trim().toLowerCase();
     if (!term) return base;
     return base.filter((row) =>
@@ -201,11 +244,11 @@ export default function PucManagementPage() {
         .map((value) => String(value || '').toLowerCase())
         .some((value) => value.includes(term))
     );
-  }, [activeTab, applicableRows, query]);
+  }, [activeTab, mergedCurrentRows, query, rows]);
   const pucPagination = useVehicleTablePagination(filteredRows);
 
-  const currentCount = useMemo(() => applicableRows.filter((row) => row.isArchived !== true).length, [applicableRows]);
-  const historyCount = rows.length - currentCount;
+  const currentCount = mergedCurrentRows.length;
+  const historyCount = useMemo(() => rows.filter((row) => row.isArchived === true).length, [rows]);
 
   const getRenewalHref = (row: PucRow) => {
     const params = new URLSearchParams({
@@ -309,6 +352,17 @@ export default function PucManagementPage() {
     if (!canEdit) return;
     setEditingRow(row);
     setForm(mapRowToState(row));
+    setFile(null);
+    setIsRenewalMode(false);
+    setDialogOpen(true);
+  };
+
+  // Used by the synthetic "Missing" rows — opens a blank Add form with the vehicle
+  // already pre-selected, since there's no existing record to edit/renew.
+  const openAddForVehicle = (row: PucRow) => {
+    if (!canAdd) return;
+    setEditingRow(null);
+    setForm({ ...buildInitialState(), vehicleId: String(row.vehicleId || '') });
     setFile(null);
     setIsRenewalMode(false);
     setDialogOpen(true);
@@ -547,7 +601,7 @@ export default function PucManagementPage() {
                             ? 'border-orange-300 bg-orange-50 text-orange-700'
                             : ['7d', '15d', '30d'].includes(String(row.alertStage))
                             ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
-                            : row.alertStage === 'Not Applicable'
+                            : row.alertStage === 'Not Applicable' || row.alertStage === 'Missing'
                             ? 'border-slate-200 bg-slate-100 text-slate-500'
                             : 'border-emerald-300 bg-emerald-50 text-emerald-700'
                         )}
@@ -575,9 +629,15 @@ export default function PucManagementPage() {
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-                    {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
-                    {canEdit && <button onClick={() => openEdit(row)} className="h-10 flex-1 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700">Edit</button>}
-                    {canDelete && <button onClick={() => setDeleteRow(row)} className="h-10 flex-1 rounded-md bg-rose-500 text-sm font-medium text-white">Delete</button>}
+                    {row.isMissingRecord ? (
+                      <button onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-10 flex-1 rounded-md bg-cyan-600 text-sm font-medium text-white disabled:opacity-50">Add Certificate</button>
+                    ) : (
+                      <>
+                        {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
+                        {canEdit && <button onClick={() => openEdit(row)} className="h-10 flex-1 rounded-md border border-slate-200 bg-white/80 text-sm font-medium text-slate-700">Edit</button>}
+                        {canDelete && <button onClick={() => setDeleteRow(row)} className="h-10 flex-1 rounded-md bg-rose-500 text-sm font-medium text-white">Delete</button>}
+                      </>
+                    )}
                   </div>
                 </div>
               ))
@@ -628,13 +688,21 @@ export default function PucManagementPage() {
                       <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
                       <TableCell className="w-[160px] text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)}><Button size="sm" className="h-8 bg-amber-500 px-3 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
-                          {canEdit && <Button size="sm" variant="outline" onClick={() => openEdit(row)} className="h-8 px-3">
-                            Edit
-                          </Button>}
-                          {canDelete && <Button size="sm" variant="destructive" onClick={() => setDeleteRow(row)} className="h-8 px-3">
-                            Delete
-                          </Button>}
+                          {row.isMissingRecord ? (
+                            <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-8 bg-cyan-600 px-3 text-white hover:bg-cyan-700">
+                              Add Certificate
+                            </Button>
+                          ) : (
+                            <>
+                              {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)}><Button size="sm" className="h-8 bg-amber-500 px-3 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
+                              {canEdit && <Button size="sm" variant="outline" onClick={() => openEdit(row)} className="h-8 px-3">
+                                Edit
+                              </Button>}
+                              {canDelete && <Button size="sm" variant="destructive" onClick={() => setDeleteRow(row)} className="h-8 px-3">
+                                Delete
+                              </Button>}
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

@@ -374,17 +374,29 @@ export default function VehicleManagementOverviewPage() {
                 style={{ animationDelay: `${Math.min(idx * 45, 240)}ms` }}
               >
                 <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-br opacity-80', item.gradient)} />
-                <CardHeader className="relative flex h-full min-w-0 flex-row items-center gap-2.5 p-3 lg:block lg:items-start lg:p-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100 lg:mb-2">
+
+                {/* Mobile layout — its own isolated row, never shares flex sizing with the
+                    desktop block below (that cross-contamination was the actual cause of the
+                    title/count getting squeezed to nothing while the description overflowed). */}
+                <div className="relative flex items-center gap-2.5 p-3 lg:hidden">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100">
                     <Icon className="h-4 w-4 text-cyan-700 transition-transform duration-300 group-hover:scale-110" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <CardTitle className="truncate pr-0.5 text-[13px] leading-tight sm:text-sm" title={item.label}>{item.label}</CardTitle>
-                    <span className="mt-1 block truncate text-[11px] leading-none text-muted-foreground lg:hidden">
+                    <p className="truncate pr-0.5 text-[13px] font-semibold leading-tight text-card-foreground" title={item.label}>{item.label}</p>
+                    <p className="mt-1 truncate text-[11px] leading-none text-muted-foreground">
                       {isLoading ? '…' : `${counts[item.collection] ?? 0} records`}
-                    </span>
+                    </p>
                   </div>
-                  <CardDescription className="mt-1 hidden line-clamp-1 text-[11px] lg:block">{item.description}</CardDescription>
+                </div>
+
+                {/* Desktop layout — icon, label, description, and record count. */}
+                <CardHeader className="relative hidden p-3 lg:block">
+                  <div className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100">
+                    <Icon className="h-4 w-4 text-cyan-700 transition-transform duration-300 group-hover:scale-110" />
+                  </div>
+                  <CardTitle className="truncate pr-0.5 text-sm" title={item.label}>{item.label}</CardTitle>
+                  <CardDescription className="mt-1 line-clamp-1 text-[11px]">{item.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="relative hidden px-3 pb-3 lg:block">
                   {isLoading ? (

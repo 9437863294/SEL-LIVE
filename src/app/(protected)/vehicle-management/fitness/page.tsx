@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import GenericCrudPage, { CrudColumnConfig, CrudFieldConfig } from '@/components/vehicle-management/generic-crud-page';
 import { useVehicleOptions } from '@/components/vehicle-management/hooks';
@@ -53,6 +53,22 @@ export default function FitnessManagementPage() {
     [vehicleOptions]
   );
 
+  // Every vehicle that requires fitness certification gets a row, even if it has no
+  // certificate on file yet — mirrors the Insurance/PUC "Missing" redesign.
+  const buildMissingRow = useCallback((vehicle: Record<string, any>) => ({
+    id: `missing::${vehicle.id}`,
+    isMissingRecord: true,
+    vehicleId: String(vehicle.id),
+    vehicleNumber: String(vehicle.vehicleNumber || vehicle.registrationNo || ''),
+    fitnessCertificateNumber: '',
+    rtoName: '',
+    expiryDate: '',
+    isArchived: false,
+    alertStage: 'Missing',
+    fitnessStatus: 'Missing',
+    complianceStatus: 'Missing',
+  }), []);
+
   return (
     <GenericCrudPage
       title="Fitness Certificate Management"
@@ -69,6 +85,8 @@ export default function FitnessManagementPage() {
       canExport={canExport}
       exportFileName="fitness-management"
       defaultSort={{ key: 'expiryDate', direction: 'asc' }}
+      vehicleRequirementKey="fitness"
+      buildMissingRow={buildMissingRow}
       onAfterFetch={(rows) => rows.map((row) => {
         const vehicle = vehicleMap[String(row.vehicleId || '')];
         // Sold/scrapped vehicles (or those with fitness manually turned off) never need a

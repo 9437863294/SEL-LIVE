@@ -6,11 +6,13 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import {
   Archive,
@@ -24,6 +26,7 @@ import {
   Pencil,
   Plus,
   Power,
+  RefreshCw,
   Search,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
@@ -31,9 +34,12 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
+  buildPaymentObligationFields,
   buildRecurringCycle,
   currency,
   maskAccount,
+  matchApprovalRule,
+  type ApprovalRule,
   type RecurringPaymentMaster,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
@@ -89,6 +95,7 @@ export default function RecurringMasterRegister() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<RecurringPaymentMaster[]>([]);
   const [loading, setLoading] = useState(true);
+  const [generatingAll, setGeneratingAll] = useState(false);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(DEFAULT_MASTER_FILTERS);
   const activeFilterCount = (search.trim() ? 1 : 0)
@@ -148,6 +155,7 @@ export default function RecurringMasterRegister() {
   const canExport =
     can("Export", "Recurring Payments.Recurring Masters") ||
     can("View", "Recurring Payments.Recurring Masters");
+  const canGenerate = can("Add", "Recurring Payments.Payments");
 
   async function changeStatus(master: RecurringPaymentMaster) {
     const next = master.status === "Active" ? "Paused" : "Active";
@@ -192,6 +200,157 @@ export default function RecurringMasterRegister() {
       title: "Draft copy created",
       description: `Master ${created.id} is ready for review.`,
     });
+  }
+
+  async function generateAll() {
+    if (!user) return;
+    setGeneratingAll(true);
+    try {
+      const eligible = rows.filter(
+        (master) =>
+          master.status === "Active" && master.autoGenerationEnabled !== false,
+      );
+      if (!eligible.length) {
+        toast({ title: "No active masters are eligible for generation" });
+        return;
+      }
+      // Fetch existing approval rules and every payment obligation id already generated for the
+      // org once, up front, instead of a getDoc per master — a single read pass, then every
+      // master is checked against it in memory so the exact same cycle is never generated twice.
+      const [ruleSnapshot, existingSnapshot] = await Promise.all([
+        getDocs(
+          query(
+            collection(db, RP_COLLECTIONS.approvalRules),
+            where("organizationId", "==", organizationId),
+          ),
+        ),
+        getDocs(
+          query(
+            collection(db, RP_COLLECTIONS.payments),
+            where("organizationId", "==", organizationId),
+          ),
+        ),
+      ]);
+      const rules = ruleSnapshot.docs.map(
+        (item) => ({ id: item.id, ...item.data() }) as ApprovalRule,
+      );
+      const existingIds = new Set(existingSnapshot.docs.map((item) => item.id));
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      let generated = 0;
+      let duplicateCount = 0;
+      let notYetDueCount = 0;
+      let outsideDatesCount = 0;
+      let batch = writeBatch(db);
+      let batchWrites = 0;
+      const commits: Promise<void>[] = [];
+
+      for (const master of eligible) {
+        const cycle = buildRecurringCycle(master, now);
+        if (!cycle) {
+          outsideDatesCount++;
+          continue;
+        }
+        // Same lead-time rule as the daily automation route: generate once the cycle's due date
+        // is within the master's own "generate before due" window, catching up immediately for
+        // any master whose window has already passed rather than skipping it.
+        const generateBeforeDueDays = Math.min(
+          90,
+          Math.max(0, Number(master.generateBeforeDueDays ?? 7)),
+        );
+        const dueDate = new Date(`${cycle.dueDate}T00:00:00`);
+        const daysUntilDue = Math.round(
+          (dueDate.getTime() - today.getTime()) / 86_400_000,
+        );
+        if (daysUntilDue > generateBeforeDueDays) {
+          notYetDueCount++;
+          continue;
+        }
+        const cycleKey = `${organizationId}_${master.id}_${cycle.key}`;
+        const docId = cycleKey.replace(/[^a-zA-Z0-9_-]/g, "_");
+        if (existingIds.has(docId)) {
+          duplicateCount++;
+          continue;
+        }
+        const amount = Number(master.amount || 0);
+        const approvalRule = matchApprovalRule(rules, {
+          amount,
+          category: master.category,
+          projectId: master.projectId,
+          projectName: master.projectName,
+        });
+        batch.set(doc(db, RP_COLLECTIONS.payments, docId), {
+          ...buildPaymentObligationFields({
+            organizationId,
+            masterId: master.id,
+            cycle,
+            generatedAutomatically: false,
+            title: master.title,
+            category: master.category,
+            vendorName: master.vendorName,
+            branchId: master.branchId,
+            branchName: master.branchName,
+            projectId: master.projectId,
+            projectName: master.projectName,
+            departmentId: master.departmentId,
+            department: master.department,
+            costCentre: master.costCentre,
+            ledger: master.ledger,
+            amountType: master.amountType,
+            description: master.description,
+            accountNumber: master.accountNumber,
+            amount,
+            maximumAmount: master.maximumAmount,
+            assignedTo: master.assignedTo,
+            backupAssignedTo: master.backupAssignedTo,
+            verifierId: master.verifierId,
+            approverId: master.approverId,
+            accountsProcessorId: master.accountsProcessorId,
+            approvalRule,
+          }),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        // Guard against this same run ever writing the same docId twice (masterId is already
+        // part of the key, so two different masters can't collide — this only protects against
+        // a master somehow appearing in `rows` more than once).
+        existingIds.add(docId);
+        generated++;
+        batchWrites++;
+        // Stay comfortably under Firestore's 500-write-per-batch limit.
+        if (batchWrites === 400) {
+          commits.push(batch.commit());
+          batch = writeBatch(db);
+          batchWrites = 0;
+        }
+      }
+      if (batchWrites > 0) commits.push(batch.commit());
+      await Promise.all(commits);
+
+      const skippedParts = [
+        duplicateCount && `${duplicateCount} already generated`,
+        notYetDueCount && `${notYetDueCount} not yet due`,
+        outsideDatesCount && `${outsideDatesCount} outside active dates`,
+      ].filter(Boolean);
+      toast({
+        title: generated
+          ? `${generated} payment(s) generated`
+          : "No new payments were due for generation",
+        description: skippedParts.length
+          ? `Skipped: ${skippedParts.join(", ")}.`
+          : undefined,
+      });
+    } catch (error) {
+      toast({
+        title: "Bulk generation failed",
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setGeneratingAll(false);
+    }
   }
 
   function exportCsv() {
@@ -373,6 +532,20 @@ export default function RecurringMasterRegister() {
                   Import masters
                 </Button>
               </>
+            )}
+            {canGenerate && (
+              <Button
+                variant="secondary"
+                onClick={generateAll}
+                disabled={generatingAll}
+              >
+                {generatingAll ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                Generate all
+              </Button>
             )}
             {canAdd && (
               <Link href="/recurring-payments/masters/new">

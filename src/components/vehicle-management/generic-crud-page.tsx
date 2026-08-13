@@ -37,7 +37,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { compareCreatedAtDesc, formatVehicleTimestamp } from '@/lib/vehicle-management';
+import {
+  compareCreatedAtDesc,
+  formatVehicleTimestamp,
+  getVehicleComplianceRequirements,
+  getVehicleTimestampMillis,
+  VEHICLE_COLLECTIONS,
+  type VehicleComplianceRequirements,
+} from '@/lib/vehicle-management';
 import {
   Dialog,
   DialogContent,
@@ -122,6 +129,19 @@ interface GenericCrudPageProps {
   initialPrefill?: Record<string, string>;
   /** Firestore doc ID of the expired record being renewed — will be marked Archived after save */
   renewingFromId?: string;
+  /**
+   * Opt-in: when set, the "Active" tab becomes vehicle-driven instead of record-driven —
+   * every vehicle that requires this compliance category (per getVehicleComplianceRequirements)
+   * gets exactly one row: its current record if it has one, or a synthetic "Missing" row
+   * (built via `buildMissingRow`) if it doesn't. Vehicles that don't require this category
+   * (Sold/Scrapped, or manually turned off) are excluded entirely. Requires `buildMissingRow`.
+   */
+  vehicleRequirementKey?: keyof VehicleComplianceRequirements;
+  /** Builds the synthetic row shown for a vehicle with no current record. Must return an
+   * object with a unique `id`, `isMissingRecord: true`, and blank/"Missing" values for
+   * whatever `columns`/`fields` keys this module uses. Required when `vehicleRequirementKey`
+   * is set. */
+  buildMissingRow?: (vehicle: Record<string, any>) => Record<string, any>;
   onBeforeSave?: (
     payload: Record<string, any>,
     currentRow: Record<string, any> | null
@@ -293,6 +313,8 @@ export default function GenericCrudPage({
   emptyMessage = 'No records found.',
   initialPrefill,
   renewingFromId,
+  vehicleRequirementKey,
+  buildMissingRow,
   onBeforeSave,
   onAfterFetch,
   onAfterSave,
@@ -320,11 +342,26 @@ export default function GenericCrudPage({
   const [isRenewalMode, setIsRenewalMode] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [vehicleRows, setVehicleRows] = useState<Record<string, any>[]>([]);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const prefillApplied = useRef(false);
 
   const allowImport = canImport ?? canAdd;
   const allowExport = canExport ?? canView;
+
+  // Only fetch the vehicle list when a page opts into the vehicle-driven Missing-row view —
+  // other GenericCrudPage consumers (maintenance, fuel, documents, etc.) pay no extra cost.
+  useEffect(() => {
+    if (!vehicleRequirementKey) return;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster));
+        setVehicleRows(snap.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
+      } catch (error) {
+        console.error('Failed to load vehicles for compliance merge', error);
+      }
+    })();
+  }, [vehicleRequirementKey]);
 
   const loadRows = async () => {
     setIsLoading(true);
@@ -410,13 +447,47 @@ export default function GenericCrudPage({
     setDialogOpen(true);
   }, [canAdd, fields, initialPrefill, isLoading, renewingFromId, rows, toast]);
 
+  // Vehicle-driven Active list (opt-in via vehicleRequirementKey): every vehicle that
+  // requires this compliance category gets exactly one row — its current record if it has
+  // one, or a synthetic "Missing" row otherwise — so a vehicle with zero records is no
+  // longer invisible. Vehicles that don't require it are excluded entirely. When the prop
+  // isn't set, this is just the plain non-archived row list (unchanged behavior).
+  const mergedActiveRows = useMemo(() => {
+    const activeRows = rows.filter((row) => row.isArchived !== true);
+    if (!vehicleRequirementKey || !buildMissingRow) return activeRows;
+
+    const latestByVehicle = new Map<string, Record<string, any>>();
+    activeRows.forEach((row) => {
+      const vid = String(row.vehicleId || '');
+      if (!vid) return;
+      const existing = latestByVehicle.get(vid);
+      if (!existing || getVehicleTimestampMillis(row.createdAt) >= getVehicleTimestampMillis(existing.createdAt)) {
+        latestByVehicle.set(vid, row);
+      }
+    });
+
+    const merged: Record<string, any>[] = [];
+    const knownVehicleIds = new Set(vehicleRows.map((vehicle) => String(vehicle.id)));
+
+    vehicleRows.forEach((vehicle) => {
+      const vid = String(vehicle.id);
+      const requirements: VehicleComplianceRequirements = getVehicleComplianceRequirements(vehicle);
+      if (!requirements[vehicleRequirementKey]) return;
+      merged.push(latestByVehicle.get(vid) || buildMissingRow(vehicle));
+    });
+
+    // Don't silently drop a current record whose vehicle can't be resolved at all (e.g. the
+    // vehicle was deleted from Vehicle Master) — still surface it. A vehicle that exists but
+    // doesn't require this category (Sold/Scrapped, etc.) is intentionally NOT re-added here.
+    latestByVehicle.forEach((row, vid) => {
+      if (!knownVehicleIds.has(vid)) merged.push(row);
+    });
+
+    return merged;
+  }, [rows, vehicleRows, vehicleRequirementKey, buildMissingRow]);
+
   const filteredRows = useMemo(() => {
-    let base = rows;
-    if (activeTab === 'history') {
-      base = base.filter((r) => r.isArchived === true);
-    } else {
-      base = base.filter((r) => r.isArchived !== true);
-    }
+    const base = activeTab === 'history' ? rows.filter((r) => r.isArchived === true) : mergedActiveRows;
 
     const term = query.trim().toLowerCase();
     if (!term) return base;
@@ -426,10 +497,14 @@ export default function GenericCrudPage({
     return base.filter((row) =>
       searchableKeys.some((key) => toDisplay(row[key]).toLowerCase().includes(term))
     );
-  }, [rows, columns, fields, query, activeTab]);
+  }, [rows, mergedActiveRows, columns, fields, query, activeTab]);
 
-  const activeCount = useMemo(() => rows.filter((row) => row.isArchived !== true).length, [rows]);
-  const historyCount = rows.length - activeCount;
+  const activeCount = mergedActiveRows.length;
+  const historyCount = useMemo(() => rows.filter((row) => row.isArchived === true).length, [rows]);
+  // Missing rows only ever show an "Add" action (gated on canAdd), so the Actions column
+  // must stay visible for vehicleRequirementKey pages even if canEdit/canDelete are both
+  // false — this doesn't change behavior for other GenericCrudPage consumers.
+  const showActionsColumn = canEdit || canDelete || Boolean(vehicleRequirementKey && canAdd);
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / DEFAULT_PAGE_SIZE));
   const paginatedRows = useMemo(
     () => filteredRows.slice((currentPage - 1) * DEFAULT_PAGE_SIZE, currentPage * DEFAULT_PAGE_SIZE),
@@ -700,6 +775,20 @@ export default function GenericCrudPage({
     setEditingRow(row);
     setFormState(buildInitialForm(fields, row));
     setFileState({});
+    setDialogOpen(true);
+  };
+
+  // Used by the synthetic "Missing" rows — opens a blank Add form with the vehicle already
+  // pre-selected (relies on the module's vehicle-select field being keyed 'vehicleId', the
+  // convention every vehicleRequirementKey consumer uses).
+  const openAddForVehicle = (row: Record<string, any>) => {
+    if (!canAdd) return;
+    setEditingRow(null);
+    const next = buildInitialForm(fields, null);
+    if (row.vehicleId) next.vehicleId = String(row.vehicleId);
+    setFormState(next);
+    setFileState({});
+    setIsRenewalMode(false);
     setDialogOpen(true);
   };
 
@@ -1065,10 +1154,16 @@ export default function GenericCrudPage({
                       </button>
                     )}
                   </div>
-                  {(canEdit || canDelete) && (
+                  {showActionsColumn && (
                     <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
-                      {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-10 flex-1 bg-white/80">Edit</Button>}
-                      {canDelete && <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} className="h-10 flex-1">Delete</Button>}
+                      {row.isMissingRecord ? (
+                        <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-10 flex-1 bg-cyan-600 text-white hover:bg-cyan-700">Add {itemName}</Button>
+                      ) : (
+                        <>
+                          {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-10 flex-1 bg-white/80">Edit</Button>}
+                          {canDelete && <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} className="h-10 flex-1">Delete</Button>}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1089,14 +1184,14 @@ export default function GenericCrudPage({
                         <TableHead key={column.key}>{column.label}</TableHead>
                       ))}
                       <TableHead>Created Time</TableHead>
-                      {(canEdit || canDelete) && <TableHead className="text-right">Actions</TableHead>}
+                      {showActionsColumn && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {isLoading ? (
                       Array.from({ length: 4 }).map((_, idx) => (
                         <TableRow key={idx}>
-                          <TableCell colSpan={columns.length + 1 + (canEdit || canDelete ? 1 : 0)}>
+                          <TableCell colSpan={columns.length + 1 + (showActionsColumn ? 1 : 0)}>
                             <Skeleton className="h-8 w-full" />
                           </TableCell>
                         </TableRow>
@@ -1112,14 +1207,22 @@ export default function GenericCrudPage({
                             </TableCell>
                           ))}
                           <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(row.createdAt)}</TableCell>
-                          {(canEdit || canDelete) && <TableCell className="w-[160px] text-right">
+                          {showActionsColumn && <TableCell className="w-[160px] text-right">
                             <div className="flex items-center justify-end gap-2">
-                              {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-8 bg-white/80 px-3">
-                                Edit
-                              </Button>}
-                              {canDelete && <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} className="h-8 px-3">
-                                Delete
-                              </Button>}
+                              {row.isMissingRecord ? (
+                                <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-8 bg-cyan-600 px-3 text-white hover:bg-cyan-700">
+                                  Add {itemName}
+                                </Button>
+                              ) : (
+                                <>
+                                  {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-8 bg-white/80 px-3">
+                                    Edit
+                                  </Button>}
+                                  {canDelete && <Button variant="destructive" size="sm" onClick={() => setDeleteRow(row)} className="h-8 px-3">
+                                    Delete
+                                  </Button>}
+                                </>
+                              )}
                             </div>
                           </TableCell>}
                         </TableRow>

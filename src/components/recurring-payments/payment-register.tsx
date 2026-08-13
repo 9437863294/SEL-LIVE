@@ -448,13 +448,16 @@ export default function RecurringPaymentRegister() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Payment</TableHead>
-                  <TableHead>Vendor / Owner</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Vendor</TableHead>
+                  <TableHead>Owner</TableHead>
                   <TableHead>Due date</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead className="text-right">Bill amount</TableHead>
-                  <TableHead className="text-right">
-                    Paid / outstanding
-                  </TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Outstanding</TableHead>
                   <TableHead>Workflow</TableHead>
+                  <TableHead>Stage</TableHead>
                   <TableHead>Controls</TableHead>
                 </TableRow>
               </TableHeader>
@@ -475,62 +478,55 @@ export default function RecurringPaymentRegister() {
                         )
                       }
                     >
-                      <TableCell>
-                        <div className="flex items-start gap-2">
+                      <TableCell className="whitespace-nowrap">
+                        <div className="flex items-center gap-2">
                           {payment.varianceWarning && (
-                            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
                           )}
-                          <div>
-                            <p className="font-medium">{payment.title}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {payment.category} · {payment.cycleKey}
-                            </p>
-                          </div>
+                          <span className="font-medium">{payment.title}</span>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <p>{payment.vendorName}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {users.find((x) => x.id === payment.assignedTo)
-                            ?.name || "Unassigned"}
-                        </p>
+                      <TableCell className="whitespace-nowrap">
+                        {payment.category}
                       </TableCell>
-                      <TableCell>
-                        <p>
-                          {new Date(
-                            `${payment.dueDate}T00:00:00`,
-                          ).toLocaleDateString("en-IN")}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {daysLabel(payment.dueDate)}
-                        </p>
+                      <TableCell className="whitespace-nowrap">
+                        {payment.vendorName}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <p className="font-semibold">
-                          {currency(
-                            payment.billAmount || payment.expectedAmount,
-                          )}
-                        </p>
-                        {payment.varianceWarning && (
-                          <p className="text-xs text-amber-600">
-                            {Number(payment.variancePercent).toFixed(1)}%
-                            variance
-                          </p>
-                        )}
+                      <TableCell className="whitespace-nowrap">
+                        {users.find((x) => x.id === payment.assignedTo)
+                          ?.name || "Unassigned"}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <p>{currency(payment.paidAmount || 0)}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {currency(outstanding)} outstanding
-                        </p>
+                      <TableCell className="whitespace-nowrap">
+                        {new Date(
+                          `${payment.dueDate}T00:00:00`,
+                        ).toLocaleDateString("en-IN")}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {daysLabel(payment.dueDate)}
+                      </TableCell>
+                      <TableCell
+                        className={`whitespace-nowrap text-right font-semibold ${payment.varianceWarning ? "text-amber-600" : ""}`}
+                        title={
+                          payment.varianceWarning
+                            ? `${Number(payment.variancePercent).toFixed(1)}% variance`
+                            : undefined
+                        }
+                      >
+                        {currency(payment.billAmount || payment.expectedAmount)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right">
+                        {currency(payment.paidAmount || 0)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right">
+                        {currency(outstanding)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <Badge variant="outline">{payment.status}</Badge>
-                        <p className="mt-1 max-w-40 truncate text-xs text-muted-foreground">
-                          {payment.stage || "—"}
-                        </p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-40 truncate whitespace-nowrap">
+                        {payment.stage || "—"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <div className="flex gap-1">
                           {canRecord &&
                             !payment.currentStepId &&
@@ -566,7 +562,7 @@ export default function RecurringPaymentRegister() {
                 {!rows.length && (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={12}
                       className="h-36 text-center text-muted-foreground"
                     >
                       <CheckCircle2 className="mx-auto mb-2 h-9 w-9 text-emerald-400" />
