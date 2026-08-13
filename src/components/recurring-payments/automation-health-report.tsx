@@ -292,6 +292,7 @@ export default function AutomationHealthReport() {
                 <TableRow>
                   <TableHead>Due date</TableHead>
                   <TableHead>Payment</TableHead>
+                  <TableHead>Vendor</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Diagnosis</TableHead>
@@ -300,20 +301,18 @@ export default function AutomationHealthReport() {
               <TableBody>
                 {stuck.map(({ item, diagnosis }) => (
                   <TableRow key={item.id}>
-                    <TableCell>{item.dueDate || "—"}</TableCell>
-                    <TableCell>
-                      <p className="font-medium">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.vendorName}</p>
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">{item.dueDate || "—"}</TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">{item.title}</TableCell>
+                    <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {users.find((entry) => entry.id === item.assignedTo)?.name || (
                         <span className="text-amber-600">Unassigned</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="whitespace-nowrap text-right">
                       {currency(item.billAmount || item.expectedAmount || 0)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Badge variant={diagnosis.actionable ? "destructive" : "outline"}>
                         {diagnosis.label}
                       </Badge>
@@ -322,7 +321,7 @@ export default function AutomationHealthReport() {
                 ))}
                 {!stuck.length && (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="h-20 text-center text-muted-foreground">
                       Nothing is stuck — every generated obligation has entered its workflow.
                     </TableCell>
                   </TableRow>
@@ -343,7 +342,8 @@ export default function AutomationHealthReport() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Master</TableHead>
-                  <TableHead>Category / vendor</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Vendor</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Auto-generation</TableHead>
                 </TableRow>
@@ -351,15 +351,13 @@ export default function AutomationHealthReport() {
               <TableBody>
                 {inactiveMasters.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell>{item.title}</TableCell>
-                    <TableCell>
-                      {item.category}
-                      <p className="text-xs text-muted-foreground">{item.vendorName}</p>
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">{item.title}</TableCell>
+                    <TableCell className="whitespace-nowrap">{item.category}</TableCell>
+                    <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Badge variant="outline">{item.status}</Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {item.autoGenerationEnabled === false ? (
                         <Badge variant="destructive">Disabled</Badge>
                       ) : (
@@ -370,7 +368,7 @@ export default function AutomationHealthReport() {
                 ))}
                 {!inactiveMasters.length && (
                   <TableRow>
-                    <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="h-20 text-center text-muted-foreground">
                       Every master is active and auto-generating.
                     </TableCell>
                   </TableRow>

@@ -648,10 +648,15 @@ export default function RecurringMasterRegister() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Master</TableHead>
+                  <TableHead>Category</TableHead>
                   <TableHead>Scope</TableHead>
-                  <TableHead>Vendor / account</TableHead>
-                  <TableHead>Frequency / next due</TableHead>
+                  <TableHead>Department / cost centre</TableHead>
+                  <TableHead>Vendor</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead>Frequency</TableHead>
+                  <TableHead>Next due</TableHead>
                   <TableHead className="text-right">Expected amount</TableHead>
+                  <TableHead>Amount type</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead />
@@ -662,54 +667,50 @@ export default function RecurringMasterRegister() {
                   const cycle = buildRecurringCycle(master, new Date());
                   return (
                     <TableRow key={master.id}>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <Link
                           className="font-medium text-indigo-700 hover:underline"
                           href={`/recurring-payments/masters/${master.id}`}
                         >
                           {master.title}
                         </Link>
-                        <p className="text-xs text-muted-foreground">
-                          {master.category}
-                        </p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {master.category}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {master.projectName ||
                           master.branchName ||
                           "Organization-wide"}
-                        <p className="text-xs text-muted-foreground">
-                          {master.department || master.costCentre || "General"}
-                        </p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {master.department || master.costCentre || "General"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {master.vendorName}
-                        <p className="text-xs text-muted-foreground">
-                          {maskAccount(master.accountNumber) || "No account"}
-                        </p>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {maskAccount(master.accountNumber) || "No account"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {master.frequency}
-                        <p className="text-xs text-muted-foreground">
-                          {cycle
-                            ? `Due ${cycle.dueDate}`
-                            : "Outside active dates"}
-                        </p>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <p className="font-semibold">
-                          {currency(master.amount)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {master.amountType}
-                        </p>
+                      <TableCell className="whitespace-nowrap">
+                        {cycle ? `Due ${cycle.dueDate}` : "Outside active dates"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-semibold">
+                        {currency(master.amount)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {master.amountType}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {master.assignedToName ||
                           users.find((item) => item.id === master.assignedTo)
                             ?.name ||
                           "Unassigned"}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <Badge
                           variant={
                             master.status === "Active" ? "default" : "secondary"
@@ -781,7 +782,7 @@ export default function RecurringMasterRegister() {
                 {!visible.length && (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={13}
                       className="h-36 text-center text-muted-foreground"
                     >
                       No recurring masters match these filters.

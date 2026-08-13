@@ -632,11 +632,14 @@ export default function ProfessionalRecurringDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Payment</TableHead>
-                  <TableHead>Vendor / scope</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Vendor</TableHead>
+                  <TableHead>Scope</TableHead>
                   <TableHead>Due date</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
@@ -646,28 +649,28 @@ export default function ProfessionalRecurringDashboard() {
               <TableBody>
                 {upcoming.map((payment) => (
                   <TableRow key={payment.id}>
-                    <TableCell>
-                      <p className="font-medium">{payment.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {payment.category}
-                      </p>
+                    <TableCell className="whitespace-nowrap font-medium">
+                      {payment.title}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {payment.category}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {payment.vendorName}
-                      <p className="text-xs text-muted-foreground">
-                        {payment.projectName ||
-                          payment.branchName ||
-                          "Organization-wide"}
-                      </p>
                     </TableCell>
-                    <TableCell>{payment.dueDate}</TableCell>
-                    <TableCell className="text-right font-semibold">
+                    <TableCell className="whitespace-nowrap">
+                      {payment.projectName ||
+                        payment.branchName ||
+                        "Organization-wide"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{payment.dueDate}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right font-semibold">
                       {currency(payment.billAmount || payment.expectedAmount)}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Badge variant="outline">{payment.status}</Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Link href={`/recurring-payments/payments/${payment.id}`}>
                         <Button size="sm" variant="ghost">
                           View
@@ -679,7 +682,7 @@ export default function ProfessionalRecurringDashboard() {
                 {!upcoming.length && (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={8}
                       className="h-24 text-center text-muted-foreground"
                     >
                       No upcoming payments for the selected filters.
@@ -688,6 +691,7 @@ export default function ProfessionalRecurringDashboard() {
                 )}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
         <Card className={GLASS_CARD}>

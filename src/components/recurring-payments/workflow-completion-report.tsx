@@ -404,6 +404,7 @@ export default function WorkflowCompletionReport() {
                 <TableRow>
                   <TableHead>Completed at</TableHead>
                   <TableHead>Payment</TableHead>
+                  <TableHead>Vendor</TableHead>
                   <TableHead>Step</TableHead>
                   <TableHead>Action</TableHead>
                   <TableHead>By</TableHead>
@@ -414,21 +415,19 @@ export default function WorkflowCompletionReport() {
                 {completions.map((item, index) => (
                   <TableRow key={`${item.paymentId}-${index}`}>
                     <TableCell className="whitespace-nowrap">{formatTimestamp(item.timestamp)}</TableCell>
-                    <TableCell>
-                      <p className="font-medium">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.vendorName}</p>
-                    </TableCell>
-                    <TableCell>{item.stepName}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">{item.title}</TableCell>
+                    <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
+                    <TableCell className="whitespace-nowrap">{item.stepName}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Badge variant={REJECTION_ACTIONS.includes(item.action) ? "destructive" : "outline"}>{item.action}</Badge>
                     </TableCell>
-                    <TableCell>{item.userName}</TableCell>
-                    <TableCell>{item.onTime === null ? "—" : item.onTime ? "Yes" : "No"}</TableCell>
+                    <TableCell className="whitespace-nowrap">{item.userName}</TableCell>
+                    <TableCell className="whitespace-nowrap">{item.onTime === null ? "—" : item.onTime ? "Yes" : "No"}</TableCell>
                   </TableRow>
                 ))}
                 {!completions.length && (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-28 text-center text-muted-foreground">No completed steps match the selected filters.</TableCell>
+                    <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">No completed steps match the selected filters.</TableCell>
                   </TableRow>
                 )}
               </TableBody>

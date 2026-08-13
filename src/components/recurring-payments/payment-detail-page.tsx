@@ -224,11 +224,13 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
         <Card>
           {transactionsLocked && <CardDescription className="px-5 pt-4 text-amber-600">This payment is closed — transactions are locked from editing.</CardDescription>}
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Mode / bank</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead>Bank account</TableHead>
                   <TableHead>Reference</TableHead>
                   <TableHead>Paid by</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
@@ -239,18 +241,19 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
               <TableBody>
                 {transactions.map(transaction => (
                   <TableRow key={transaction.id}>
-                    <TableCell>{transaction.paymentDate}</TableCell>
-                    <TableCell>{transaction.mode}<p className="text-xs text-muted-foreground">{maskAccount(transaction.bankAccount)}</p></TableCell>
-                    <TableCell className="font-mono text-xs">{transaction.transactionReference}</TableCell>
-                    <TableCell>{transaction.paidByName}</TableCell>
-                    <TableCell className="text-right font-semibold">{currency(transaction.amount)}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">{transaction.paymentDate}</TableCell>
+                    <TableCell className="whitespace-nowrap">{transaction.mode}</TableCell>
+                    <TableCell className="whitespace-nowrap">{maskAccount(transaction.bankAccount)}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-xs">{transaction.transactionReference}</TableCell>
+                    <TableCell className="whitespace-nowrap">{transaction.paidByName}</TableCell>
+                    <TableCell className="whitespace-nowrap text-right font-semibold">{currency(transaction.amount)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {transaction.receiptUrl
                         ? <a href={transaction.receiptUrl} target="_blank" rel="noreferrer"><Button variant="outline" size="sm"><ReceiptText className="mr-1 h-3 w-3" />View</Button></a>
                         : <Badge variant="outline">No receipt uploaded</Badge>}
                     </TableCell>
                     {(canEditTransaction || canUploadReceipt) && (
-                      <TableCell className="text-right space-x-1">
+                      <TableCell className="whitespace-nowrap text-right space-x-1">
                         {canEditTransaction && (
                           <Button variant="ghost" size="sm" disabled={transactionsLocked} onClick={() => setEditingTransaction(transaction)}>
                             <Edit3 className="mr-1 h-3 w-3" />Edit
@@ -267,11 +270,12 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
                 ))}
                 {!transactions.length && (
                   <TableRow>
-                    <TableCell colSpan={canEditTransaction || canUploadReceipt ? 7 : 6} className="h-28 text-center text-muted-foreground">No transactions recorded.</TableCell>
+                    <TableCell colSpan={canEditTransaction || canUploadReceipt ? 8 : 7} className="h-28 text-center text-muted-foreground">No transactions recorded.</TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       </TabsContent>

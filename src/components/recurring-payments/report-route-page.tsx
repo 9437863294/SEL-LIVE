@@ -573,42 +573,39 @@ export default function RecurringReportRoutePage({
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Payment</TableHead>
-                  <TableHead>Category / vendor</TableHead>
+                  <TableHead>Scope</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Vendor</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead className="text-right">Expected</TableHead>
                   <TableHead className="text-right">Actual</TableHead>
                   <TableHead className="text-right">Outstanding</TableHead>
-                  <TableHead>Confidence / status</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Confidence</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell>{item.dueDate}</TableCell>
-                    <TableCell>
-                      <p className="font-medium">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.projectName ||
-                          item.branchName ||
-                          "Organization-wide"}
-                      </p>
+                    <TableCell className="whitespace-nowrap">{item.dueDate}</TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">
+                      {item.title}
                     </TableCell>
-                    <TableCell>
-                      {item.category}
-                      <p className="text-xs text-muted-foreground">
-                        {item.vendorName}
-                      </p>
+                    <TableCell className="whitespace-nowrap">
+                      {item.projectName || item.branchName || "Organization-wide"}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">{item.category}</TableCell>
+                    <TableCell className="whitespace-nowrap">{item.vendorName}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {users.find((entry) => entry.id === item.assignedTo)?.name || "—"}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="whitespace-nowrap text-right">
                       {currency(item.expectedAmount)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="whitespace-nowrap text-right">
                       {currency(item.billAmount || 0)}
                     </TableCell>
-                    <TableCell className="text-right font-semibold">
+                    <TableCell className="whitespace-nowrap text-right font-semibold">
                       {currency(
                         Math.max(
                           0,
@@ -617,22 +614,22 @@ export default function RecurringReportRoutePage({
                         ),
                       )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <Badge variant="outline">{item.status}</Badge>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {item.billAmount
-                          ? "Confirmed bill"
-                          : item.amountType === "Fixed"
-                            ? "Fixed"
-                            : "Estimated"}
-                      </p>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {item.billAmount
+                        ? "Confirmed bill"
+                        : item.amountType === "Fixed"
+                          ? "Fixed"
+                          : "Estimated"}
                     </TableCell>
                   </TableRow>
                 ))}
                 {!rows.length && (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={11}
                       className="h-28 text-center text-muted-foreground"
                     >
                       No records match the report filters.

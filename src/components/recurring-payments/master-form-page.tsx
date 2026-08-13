@@ -19,9 +19,12 @@ import {
   uploadBytes,
 } from "firebase/storage";
 import {
+  AlertCircle,
   ArrowLeft,
   BellRing,
   Building2,
+  CalendarClock,
+  CheckCircle2,
   FileText,
   Loader2,
   Save,
@@ -36,6 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   buildPaymentObligationFields,
   buildRecurringCycle,
+  currency,
   DEFAULT_PAYMENT_CATEGORIES,
   DEFAULT_RECURRING_WORKFLOW,
   matchApprovalRule,
@@ -45,6 +49,7 @@ import {
   type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -157,6 +162,58 @@ export default function RecurringMasterFormPage({
       .catch(() => setLoading(false));
   }, [masterId, organizationId]);
   const netAmount = Number(draft.amount || 0) + Number(draft.taxAmount || 0);
+  // Mirrors the exact checks `save()` runs before writing — surfaced here so the sidebar can show
+  // what's blocking submission live, instead of the user only finding out from a toast after
+  // clicking a save button.
+  const missingRequired = useMemo(() => {
+    const missing: string[] = [];
+    if (!draft.title?.trim()) missing.push("Payment title");
+    if (!draft.category) missing.push("Category");
+    if (!draft.vendorName?.trim()) missing.push("Vendor");
+    if (!draft.startDate) missing.push("Start date");
+    if (!draft.assignedTo) missing.push("Payment owner");
+    if (draft.endDate && draft.startDate && draft.endDate < draft.startDate)
+      missing.push("End date (cannot be before start date)");
+    if (draft.amountType === "Fixed" && !Number(draft.amount))
+      missing.push("Fixed amount");
+    if (draft.frequency === "Custom" && !Number(draft.customIntervalDays))
+      missing.push("Custom interval days");
+    return missing;
+  }, [
+    draft.title,
+    draft.category,
+    draft.vendorName,
+    draft.startDate,
+    draft.endDate,
+    draft.assignedTo,
+    draft.amountType,
+    draft.amount,
+    draft.frequency,
+    draft.customIntervalDays,
+  ]);
+  const previewCycle = useMemo(() => {
+    if (!draft.frequency || !draft.startDate) return null;
+    return buildRecurringCycle(
+      {
+        frequency: draft.frequency,
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+        dueDay: Number(draft.dueDay || 1),
+        customIntervalDays:
+          draft.frequency === "Custom"
+            ? Number(draft.customIntervalDays || 30)
+            : undefined,
+      },
+      new Date(),
+    );
+  }, [
+    draft.frequency,
+    draft.startDate,
+    draft.endDate,
+    draft.dueDay,
+    draft.customIntervalDays,
+  ]);
+  const ownerPreview = users.find((item) => item.id === draft.assignedTo);
   async function uploadDocuments(form: FormData, id: string) {
     const files = form
       .getAll("masterDocuments")
@@ -413,11 +470,18 @@ export default function RecurringMasterFormPage({
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">
-            {masterId
-              ? "Edit Recurring Master"
-              : "Create Recurring Payment Master"}
-          </h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold">
+              {masterId
+                ? "Edit Recurring Master"
+                : "Create Recurring Payment Master"}
+            </h1>
+            {masterId && draft.status && (
+              <Badge variant={draft.status === "Active" ? "default" : "secondary"}>
+                {draft.status}
+              </Badge>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground">
             Configuration, generation, approval, notification and ownership
             controls
@@ -425,7 +489,13 @@ export default function RecurringMasterFormPage({
         </div>
       </div>
       <form onSubmit={save} className="space-y-5">
-        <Section icon={Building2} title="Basic details">
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px] lg:items-start">
+        <div className="space-y-5">
+        <Section
+          icon={Building2}
+          title="Basic details"
+          description="Where this obligation belongs and who it's billed to."
+        >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Organization *">
               <Input
@@ -566,7 +636,11 @@ export default function RecurringMasterFormPage({
             </div>
           </div>
         </Section>
-        <Section icon={Settings2} title="Recurrence settings">
+        <Section
+          icon={Settings2}
+          title="Recurrence settings"
+          description="How often this generates, and when the next cycle falls due."
+        >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Frequency">
               <Select
@@ -701,7 +775,11 @@ export default function RecurringMasterFormPage({
             />
           </div>
         </Section>
-        <Section icon={FileText} title="Amount and accounting">
+        <Section
+          icon={FileText}
+          title="Amount and accounting"
+          description="Expected amount, tax treatment and ledger coding."
+        >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Amount type">
               <Select
@@ -799,7 +877,11 @@ export default function RecurringMasterFormPage({
             />
           </div>
         </Section>
-        <Section icon={Users} title="Assignment">
+        <Section
+          icon={Users}
+          title="Assignment"
+          description="Who owns, verifies, approves and processes this payment."
+        >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <UserField
               label="Payment owner *"
@@ -812,34 +894,43 @@ export default function RecurringMasterFormPage({
               value={draft.backupAssignedTo}
               onChange={(value) => set("backupAssignedTo", value)}
               users={users}
+              allowNone
             />
             <UserField
               label="Verifier"
               value={draft.verifierId}
               onChange={(value) => set("verifierId", value)}
               users={users}
+              allowNone
             />
             <UserField
               label="Approver"
               value={draft.approverId}
               onChange={(value) => set("approverId", value)}
               users={users}
+              allowNone
             />
             <UserField
               label="Accounts processor"
               value={draft.accountsProcessorId}
               onChange={(value) => set("accountsProcessorId", value)}
               users={users}
+              allowNone
             />
             <UserField
               label="Escalation authority"
               value={draft.escalationAuthorityId}
               onChange={(value) => set("escalationAuthorityId", value)}
               users={users}
+              allowNone
             />
           </div>
         </Section>
-        <Section icon={ShieldCheck} title="Approval configuration">
+        <Section
+          icon={ShieldCheck}
+          title="Approval configuration"
+          description="Which approval rule applies once a bill is submitted."
+        >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Approval option">
               <Select
@@ -896,7 +987,11 @@ export default function RecurringMasterFormPage({
             />
           </div>
         </Section>
-        <Section icon={BellRing} title="Notification and documents">
+        <Section
+          icon={BellRing}
+          title="Notification and documents"
+          description="Who gets reminders, and any standing reference documents."
+        >
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Reminder recipients">
               <Input
@@ -936,7 +1031,15 @@ export default function RecurringMasterFormPage({
             </Field>
           </div>
         </Section>
-        <div className="flex flex-wrap justify-end gap-2">
+        </div>
+        <SummarySidebar
+          draft={draft}
+          owner={ownerPreview}
+          missingRequired={missingRequired}
+          previewCycle={previewCycle}
+        />
+        </div>
+        <div className="sticky bottom-0 z-10 -mx-3 flex flex-wrap justify-end gap-2 border-t bg-background/95 px-3 py-3 backdrop-blur sm:-mx-4 sm:px-4">
           <Button type="button" variant="outline" onClick={() => router.back()}>
             Cancel
           </Button>
@@ -971,10 +1074,12 @@ export default function RecurringMasterFormPage({
 function Section({
   icon: Icon,
   title,
+  description,
   children,
 }: {
   icon: React.ElementType;
   title: string;
+  description: string;
   children: React.ReactNode;
 }) {
   return (
@@ -984,12 +1089,96 @@ function Section({
           <Icon className="h-5 w-5 text-indigo-600" />
           {title}
         </CardTitle>
-        <CardDescription>
-          Configure this section according to organization policy.
-        </CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
+  );
+}
+function SummarySidebar({
+  draft,
+  owner,
+  missingRequired,
+  previewCycle,
+}: {
+  draft: Partial<RecurringPaymentMaster>;
+  owner?: { name: string };
+  missingRequired: string[];
+  previewCycle: { label: string; dueDate: string } | null;
+}) {
+  return (
+    <Card className="lg:sticky lg:top-4">
+      <CardHeader>
+        <CardTitle className="text-base">Preview</CardTitle>
+        <CardDescription>
+          Live snapshot of this master as configured so far.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <p className="font-semibold">{draft.title || "Untitled master"}</p>
+          <p className="text-xs text-muted-foreground">
+            {draft.category || "No category"} ·{" "}
+            {draft.vendorName || "No vendor"}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <SummaryStat label="Frequency" value={draft.frequency || "—"} />
+          <SummaryStat
+            label="Amount"
+            value={draft.amount ? currency(Number(draft.amount)) : "—"}
+          />
+          <SummaryStat label="Owner" value={owner?.name || "Unassigned"} />
+          <SummaryStat label="Status" value={draft.status || "Draft"} />
+        </div>
+        <div className="rounded-lg border bg-muted/30 p-3">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <CalendarClock className="h-3.5 w-3.5" />
+            Next cycle
+          </p>
+          {previewCycle ? (
+            <>
+              <p className="mt-1 text-sm font-semibold">
+                {previewCycle.label}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Due {previewCycle.dueDate}
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add a start date to preview the first cycle.
+            </p>
+          )}
+        </div>
+        {missingRequired.length ? (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">Before you can save</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {missingRequired.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-xs text-emerald-900">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            All required fields are complete.
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="font-medium">{value}</p>
+    </div>
   );
 }
 function Field({
@@ -1030,19 +1219,25 @@ function UserField({
   value,
   onChange,
   users,
+  allowNone = false,
 }: {
   label: string;
   value?: string;
   onChange: (value: string) => void;
   users: Array<{ id: string; name: string; status: string }>;
+  allowNone?: boolean;
 }) {
   return (
     <Field label={label}>
-      <Select value={value} onValueChange={onChange}>
+      <Select
+        value={value || (allowNone ? "none" : undefined)}
+        onValueChange={(next) => onChange(next === "none" ? "" : next)}
+      >
         <SelectTrigger>
           <SelectValue placeholder="Select user" />
         </SelectTrigger>
         <SelectContent>
+          {allowNone && <SelectItem value="none">Unassigned</SelectItem>}
           {users
             .filter((item) => item.status === "Active")
             .map((item) => (
