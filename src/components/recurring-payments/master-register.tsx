@@ -6,10 +6,12 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   query,
   serverTimestamp,
+  Timestamp,
   updateDoc,
   where,
   writeBatch,
@@ -37,10 +39,13 @@ import {
   buildPaymentObligationFields,
   buildRecurringCycle,
   currency,
+  DEFAULT_RECURRING_WORKFLOW,
   maskAccount,
   matchApprovalRule,
+  resolveWorkflowActivation,
   type ApprovalRule,
   type RecurringPaymentMaster,
+  type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
 import { Badge } from "@/components/ui/badge";
@@ -217,28 +222,51 @@ export default function RecurringMasterRegister() {
       // Fetch existing approval rules and every payment obligation id already generated for the
       // org once, up front, instead of a getDoc per master — a single read pass, then every
       // master is checked against it in memory so the exact same cycle is never generated twice.
-      const [ruleSnapshot, existingSnapshot] = await Promise.all([
-        getDocs(
-          query(
-            collection(db, RP_COLLECTIONS.approvalRules),
-            where("organizationId", "==", organizationId),
+      // Also fetch the org's automation settings and the configured workflow once, so each newly
+      // generated obligation can be entered into its first workflow step immediately (same as the
+      // per-master "Generate now" button and the daily automation route) instead of sitting at
+      // "Scheduled" until the next cron run picks it up.
+      const [ruleSnapshot, existingSnapshot, settingsSnap, workflowSnap] =
+        await Promise.all([
+          getDocs(
+            query(
+              collection(db, RP_COLLECTIONS.approvalRules),
+              where("organizationId", "==", organizationId),
+            ),
           ),
-        ),
-        getDocs(
-          query(
-            collection(db, RP_COLLECTIONS.payments),
-            where("organizationId", "==", organizationId),
+          getDocs(
+            query(
+              collection(db, RP_COLLECTIONS.payments),
+              where("organizationId", "==", organizationId),
+            ),
           ),
-        ),
-      ]);
+          getDoc(
+            doc(
+              db,
+              RP_COLLECTIONS.settings,
+              organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"),
+            ),
+          ),
+          getDoc(doc(db, "workflows", "recurring-payments-workflow")),
+        ]);
       const rules = ruleSnapshot.docs.map(
         (item) => ({ id: item.id, ...item.data() }) as ApprovalRule,
       );
       const existingIds = new Set(existingSnapshot.docs.map((item) => item.id));
+      const activationDays = Math.min(
+        90,
+        Math.max(
+          0,
+          Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7),
+        ),
+      );
+      const workflow = (workflowSnap.data()?.steps ||
+        DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
       let generated = 0;
+      let workflowTriggered = 0;
       let duplicateCount = 0;
       let notYetDueCount = 0;
       let outsideDatesCount = 0;
@@ -280,35 +308,56 @@ export default function RecurringMasterRegister() {
           projectId: master.projectId,
           projectName: master.projectName,
         });
+        const obligationFields = buildPaymentObligationFields({
+          organizationId,
+          masterId: master.id,
+          cycle,
+          generatedAutomatically: false,
+          title: master.title,
+          category: master.category,
+          vendorName: master.vendorName,
+          branchId: master.branchId,
+          branchName: master.branchName,
+          projectId: master.projectId,
+          projectName: master.projectName,
+          departmentId: master.departmentId,
+          department: master.department,
+          costCentre: master.costCentre,
+          ledger: master.ledger,
+          amountType: master.amountType,
+          description: master.description,
+          accountNumber: master.accountNumber,
+          amount,
+          maximumAmount: master.maximumAmount,
+          assignedTo: master.assignedTo,
+          backupAssignedTo: master.backupAssignedTo,
+          verifierId: master.verifierId,
+          approverId: master.approverId,
+          accountsProcessorId: master.accountsProcessorId,
+          approvalRule,
+        });
+        const activation = resolveWorkflowActivation(
+          workflow[0],
+          obligationFields,
+          { activationDays, today },
+        );
+        if (activation) workflowTriggered++;
         batch.set(doc(db, RP_COLLECTIONS.payments, docId), {
-          ...buildPaymentObligationFields({
-            organizationId,
-            masterId: master.id,
-            cycle,
-            generatedAutomatically: false,
-            title: master.title,
-            category: master.category,
-            vendorName: master.vendorName,
-            branchId: master.branchId,
-            branchName: master.branchName,
-            projectId: master.projectId,
-            projectName: master.projectName,
-            departmentId: master.departmentId,
-            department: master.department,
-            costCentre: master.costCentre,
-            ledger: master.ledger,
-            amountType: master.amountType,
-            description: master.description,
-            accountNumber: master.accountNumber,
-            amount,
-            maximumAmount: master.maximumAmount,
-            assignedTo: master.assignedTo,
-            backupAssignedTo: master.backupAssignedTo,
-            verifierId: master.verifierId,
-            approverId: master.approverId,
-            accountsProcessorId: master.accountsProcessorId,
-            approvalRule,
-          }),
+          ...obligationFields,
+          ...(activation
+            ? {
+                status: activation.status,
+                workflowStatus: activation.workflowStatus,
+                stage: activation.stage,
+                currentStepId: activation.currentStepId,
+                assignees: activation.assignees,
+                workflowStartedAt: serverTimestamp(),
+                stepEnteredAt: serverTimestamp(),
+                workflowDeadline: Timestamp.fromMillis(
+                  activation.workflowDeadlineMs,
+                ),
+              }
+            : {}),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -333,12 +382,20 @@ export default function RecurringMasterRegister() {
         notYetDueCount && `${notYetDueCount} not yet due`,
         outsideDatesCount && `${outsideDatesCount} outside active dates`,
       ].filter(Boolean);
+      const notYetActiveCount = generated - workflowTriggered;
+      const detailParts = [
+        workflowTriggered &&
+          `${workflowTriggered} entered their workflow`,
+        notYetActiveCount &&
+          `${notYetActiveCount} still at "Scheduled" (not yet due for the workflow, or no assignee is configured for the first step)`,
+        skippedParts.length && `skipped: ${skippedParts.join(", ")}`,
+      ].filter(Boolean);
       toast({
         title: generated
           ? `${generated} payment(s) generated`
           : "No new payments were due for generation",
-        description: skippedParts.length
-          ? `Skipped: ${skippedParts.join(", ")}.`
+        description: detailParts.length
+          ? `${detailParts.join(". ")}.`
           : undefined,
       });
     } catch (error) {
