@@ -54,7 +54,7 @@ export default function ProjectManagementSettingsPage() {
     return (
       <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-24 w-full rounded-xl" />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-16 rounded-xl" />
           ))}
@@ -108,7 +108,7 @@ export default function ProjectManagementSettingsPage() {
       </Card>
 
       {/* ── Sections ─────────────────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
         {settingsSections.map((section) => {
           const Icon = section.icon;
 
@@ -116,10 +116,10 @@ export default function ProjectManagementSettingsPage() {
             <Link key={section.href} href={section.href} className="group no-underline">
               <Card className="h-full overflow-hidden border-border/60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
                 <div className={cn("h-1 w-full bg-gradient-to-r", section.gradient)} />
-                <CardContent className="flex items-center gap-3 p-3.5">
+                <CardContent className="flex items-center gap-2.5 p-3">
                   <div
                     className={cn(
-                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm",
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm",
                       section.gradient,
                     )}
                   >

@@ -124,6 +124,17 @@ export function normalizeBoqColumnDataType(
 
 export const YES_NO_OPTIONS = ["Yes", "No"] as const;
 
+// A BOQ "section header" row (e.g. "14  BUS BAR & CIRCUIT MATERIALS") groups the items below it
+// but isn't itself an orderable line — it carries no Unit and no Qty. Inferred rather than a
+// stored flag, so existing data and every BOQ-consuming view automatically recognise it.
+export function isBoqSectionHeader(item: { Unit?: unknown; QTY?: unknown } | null | undefined): boolean {
+  if (!item) return false;
+  const hasUnit = String(item.Unit ?? "").trim().length > 0;
+  if (hasUnit) return false;
+  const qty = Number(String(item.QTY ?? "").replace(/,/g, "").trim());
+  return !Number.isFinite(qty) || qty === 0;
+}
+
 export const DEFAULT_BOQ_COLUMNS: BoqColumnConfig[] = standardColumnKeys.map(
   (key, order) => ({
     key,

@@ -54,6 +54,7 @@ import type { FabricationBomItem, JmcEntry, Bill, Project, MvacEntry } from '@/l
 import {
   BOQ_COLUMN_SETTINGS_COLLECTION,
   BOQ_COLUMN_SETTINGS_DOC,
+  isBoqSectionHeader,
   mergeBoqColumns,
   YES_NO_OPTIONS,
 } from '@/lib/project-management-boq-columns';
@@ -135,6 +136,23 @@ const baseTableHeaders = [
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
+// Section header rows (e.g. "14  BUS BAR & CIRCUIT MATERIALS") carry no Qty/Rate of their own —
+// blank these computed/numeric columns out for them instead of showing a misleading "0".
+const HEADER_ROW_BLANK_COLUMNS = new Set([
+  'QTY',
+  'Unit Rate',
+  'Total Amount',
+  'Budget Price',
+  'F&I Price',
+  'Total Budget Price',
+  'JMC/MVAC Executed Qty',
+  'JMC/MVAC Certified Qty',
+  'JMC/MVAC Amount',
+  'Indent Qty',
+  'PO Qty',
+  'MDL Status',
+]);
+
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
 
@@ -200,7 +218,7 @@ export default function ViewBoqPage() {
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-  const [sortKey, setSortKey] = useState<string>('ERP SL NO');
+  const [sortKey, setSortKey] = useState<string>('BOQ SL No');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Column editor state
@@ -596,6 +614,30 @@ export default function ViewBoqPage() {
   };
 
   /** SORT **/
+  // Hierarchical BOQ/ERP SL Nos (e.g. "14.5.2" vs "14.5.10") aren't valid single JS numbers once
+  // they have more than one dot, and plain string comparison gets "14.5.10" wrong relative to
+  // "14.5.2" — so these two columns compare each dot-separated segment numerically instead.
+  const compareSlNoSegments = (a: string, b: string): number => {
+    const partsA = a.split('.');
+    const partsB = b.split('.');
+    const len = Math.max(partsA.length, partsB.length);
+    for (let i = 0; i < len; i += 1) {
+      const pa = partsA[i];
+      const pb = partsB[i];
+      if (pa === undefined) return -1;
+      if (pb === undefined) return 1;
+      const na = Number(pa);
+      const nb = Number(pb);
+      if (Number.isFinite(na) && Number.isFinite(nb)) {
+        if (na !== nb) return na - nb;
+      } else if (pa !== pb) {
+        return pa < pb ? -1 : 1;
+      }
+    }
+    return 0;
+  };
+  const SL_NO_SORT_KEYS = new Set(['BOQ SL No', 'ERP SL NO']);
+
   const sortedBoqItems = useMemo(() => {
     const sorted = [...filteredBoqItems];
 
@@ -632,6 +674,11 @@ export default function ViewBoqPage() {
       sorted.sort((a, b) => {
         const aVal = getComparableValue(a, sortKey);
         const bVal = getComparableValue(b, sortKey);
+
+        if (SL_NO_SORT_KEYS.has(sortKey)) {
+          const cmp = compareSlNoSegments(String(aVal ?? ''), String(bVal ?? ''));
+          return sortDirection === 'asc' ? cmp : -cmp;
+        }
 
         const aNum = parsedNumber(aVal);
         const bNum = parsedNumber(bVal);
@@ -1031,6 +1078,7 @@ export default function ViewBoqPage() {
                         const scope2 = getScope2(item);
                         const boqSlNo = getBoqSlNo(item);
                         const budgetValues = getBudgetValues(item);
+                        const isHeaderRow = isBoqSectionHeader(item);
 
                         return (
                           <Fragment key={item.id}>
@@ -1072,7 +1120,9 @@ export default function ViewBoqPage() {
                               {visibleHeaders.map((header) => {
                                 let display: React.ReactNode;
 
-                                if (
+                                if (isHeaderRow && HEADER_ROW_BLANK_COLUMNS.has(header)) {
+                                  display = '';
+                                } else if (
                                   header === 'JMC/MVAC Executed Qty' ||
                                   header === 'JMC/MVAC Certified Qty' ||
                                   header === 'JMC/MVAC Amount'
@@ -1147,7 +1197,12 @@ export default function ViewBoqPage() {
 
                                 return (
                                   <TableCell key={`${item.id}-${header}`} className={cn(shouldTruncate && 'max-w-xs')}>
-                                    <p className="truncate" title={titleText}>{display}</p>
+                                    <p
+                                      className={cn('truncate', isHeaderRow && header === 'Description' && 'font-semibold')}
+                                      title={titleText}
+                                    >
+                                      {display}
+                                    </p>
                                   </TableCell>
                                 );
                               })}

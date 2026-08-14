@@ -747,7 +747,12 @@ export default function ImportBoqPage() {
         if (field.type === 'number' || field.type === 'percentage') {
           const parsed = parseNumber(rawValue);
           data[field.key] = parsed.value;
-          if (field.required && parsed.empty) errors.push(`${field.label} is required.`);
+          // A row with no Unit and no QTY is a BOQ section header (e.g. "14  BUS BAR & CIRCUIT
+          // MATERIALS") grouping the rows below it, not an incomplete line item — let it through.
+          const isSectionHeaderRow = field.key === 'QTY' && !String(data['Unit'] ?? '').trim();
+          if (field.required && parsed.empty && !isSectionHeaderRow) {
+            errors.push(`${field.label} is required.`);
+          }
           if (!parsed.valid && field.key !== 'Budget Price') {
             errors.push(`${field.label} must be a valid number.`);
           }

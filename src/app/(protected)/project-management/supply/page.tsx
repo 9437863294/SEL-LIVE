@@ -6,10 +6,16 @@ import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
+  BadgeCheck,
+  ClipboardCheck,
   ClipboardList,
+  Compass,
+  Factory,
   FileSearch,
+  Gauge,
   ListChecks,
   Package,
+  PenTool,
   ShieldAlert,
   ShoppingCart,
 } from "lucide-react";
@@ -45,6 +51,12 @@ export default function SupplyPage() {
   const canViewIndent = can("View", `${MODULE_NAME}.Indent`) || canViewBoq;
   const canViewRfq = can("View", `${MODULE_NAME}.RFQ`) || canViewBoq;
   const canViewPurchaseOrders = can("View", `${MODULE_NAME}.Purchase Orders`) || canViewRfq;
+  const canViewSurvey = can("View", `${MODULE_NAME}.Survey`) || canViewBoq;
+  const canViewDrawing = can("View", `${MODULE_NAME}.Drawing`) || canViewBoq;
+  const canViewManufacturingClearance = can("View", `${MODULE_NAME}.Manufacturing Clearance`) || canViewBoq;
+  const canViewInspections = can("View", `${MODULE_NAME}.Inspections`) || canViewBoq;
+  const canViewMdcc = can("View", `${MODULE_NAME}.MDCC`) || canViewBoq;
+  const canViewMvac = can("View", `${MODULE_NAME}.MVAC`) || canViewBoq;
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -85,6 +97,16 @@ export default function SupplyPage() {
       gradient: "from-cyan-500 to-blue-600",
     },
     {
+      show: canViewSurvey,
+      href: `/project-management/survey?project=${encodeURIComponent(mappingId)}`,
+      title: "Survey",
+      description: mapping
+        ? `Track survey activities for ${mapping.projectName}.`
+        : "Track survey activities for this project.",
+      icon: Compass,
+      gradient: "from-rose-500 to-pink-600",
+    },
+    {
       show: canViewIndent,
       href: `/project-management/indent?project=${encodeURIComponent(mappingId)}`,
       title: "Indent",
@@ -114,13 +136,63 @@ export default function SupplyPage() {
       icon: ShoppingCart,
       gradient: "from-emerald-500 to-teal-600",
     },
+    {
+      show: canViewDrawing,
+      href: `/project-management/drawing?project=${encodeURIComponent(mappingId)}`,
+      title: "Drawing",
+      description: mapping
+        ? `Track drawings for ${mapping.projectName}.`
+        : "Track drawings for this project.",
+      icon: PenTool,
+      gradient: "from-slate-500 to-slate-700",
+    },
+    {
+      show: canViewManufacturingClearance,
+      href: `/project-management/manufacturing-clearance?project=${encodeURIComponent(mappingId)}`,
+      title: "Manufacturing Clearance",
+      description: mapping
+        ? `Track manufacturing clearance for ${mapping.projectName}.`
+        : "Track manufacturing clearance for this project.",
+      icon: Factory,
+      gradient: "from-lime-500 to-green-600",
+    },
+    {
+      show: canViewInspections,
+      href: `/project-management/inspections?project=${encodeURIComponent(mappingId)}`,
+      title: "Inspections",
+      description: mapping
+        ? `Track inspections for ${mapping.projectName}.`
+        : "Track inspections for this project.",
+      icon: ClipboardCheck,
+      gradient: "from-blue-500 to-indigo-600",
+    },
+    {
+      show: canViewMdcc,
+      href: `/project-management/mdcc?project=${encodeURIComponent(mappingId)}`,
+      title: "MDCC",
+      description: mapping
+        ? `Track MDCC for ${mapping.projectName}.`
+        : "Track MDCC for this project.",
+      icon: BadgeCheck,
+      gradient: "from-fuchsia-500 to-purple-600",
+    },
+    {
+      show: canViewMvac,
+      href: `/project-management/mvac?project=${encodeURIComponent(mappingId)}`,
+      title: "MVAC",
+      description: mapping
+        ? `Track MVAC for ${mapping.projectName}.`
+        : "Track MVAC for this project.",
+      icon: Gauge,
+      gradient: "from-teal-500 to-cyan-600",
+    },
   ].filter((link) => link.show);
 
   if (isAuthLoading || isLoading) {
     return (
       <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-24 rounded-xl" />
           ))}
@@ -179,15 +251,15 @@ export default function SupplyPage() {
       </div>
 
       {quickLinks.length ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {quickLinks.map((link) => (
             <Link key={link.title} href={link.href} className="group no-underline">
               <Card className="h-full overflow-hidden border-border/60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
                 <div className={cn("h-1 w-full bg-gradient-to-r", link.gradient)} />
-                <CardContent className="flex items-center gap-3 p-3.5">
+                <CardContent className="flex items-center gap-2.5 p-3">
                   <div
                     className={cn(
-                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm",
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm",
                       link.gradient,
                     )}
                   >

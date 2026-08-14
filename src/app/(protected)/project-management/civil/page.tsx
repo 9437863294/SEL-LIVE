@@ -120,15 +120,15 @@ export default function CivilPage() {
       </div>
 
       {canViewBoq && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           <Link
             href={`/project-management/boq/costing?project=${encodeURIComponent(mappingId)}&scope2=Civil`}
             className="group no-underline"
           >
             <Card className="h-full overflow-hidden border-border/60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
               <div className={cn("h-1 w-full bg-gradient-to-r", "from-stone-500 to-stone-700")} />
-              <CardContent className="flex items-center gap-3 p-3.5">
-                <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm", "from-stone-500 to-stone-700")}>
+              <CardContent className="flex items-center gap-2.5 p-3">
+                <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm", "from-stone-500 to-stone-700")}>
                   <ClipboardList className="h-4 w-4 text-white" />
                 </div>
                 <div className="min-w-0 flex-1">
