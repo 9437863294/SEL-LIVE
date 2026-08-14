@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo, Fragment, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Fragment, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -172,6 +172,13 @@ export default function ViewBoqPage() {
   const canAddManual = can('Add Manual', 'Project Management.BOQ');
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get('project') ?? '';
+  // Arriving with ?scope2=Supply/Civil/Erection means we came from that module's own page —
+  // send Back there instead of the generic BOQ hub.
+  const scope2Param = (searchParams?.get('scope2') ?? '').trim().toLowerCase();
+  const scopeBackPaths: Record<string, string> = { supply: 'supply', civil: 'civil', erection: 'erection' };
+  const backHref = scopeBackPaths[scope2Param]
+    ? `/project-management/${scopeBackPaths[scope2Param]}?project=${encodeURIComponent(mappingId)}`
+    : `/project-management/boq?project=${encodeURIComponent(mappingId)}`;
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -233,12 +240,29 @@ export default function ViewBoqPage() {
 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState(() => ({
     search: '',
     'Scope 1': 'all',
-    'Scope 2': 'all',
+    'Scope 2': searchParams?.get('scope2') ?? 'all',
     'Category 1': 'all',
-  });
+  }));
+
+  // If the page was opened with a ?scope2= param (e.g. from the Supply/Civil module cards),
+  // snap it to the exact casing found in the data once loaded — matching is already
+  // case-insensitive below, this just keeps the dropdown's displayed value looking right.
+  const appliedUrlScope2Ref = useRef(false);
+  useEffect(() => {
+    if (appliedUrlScope2Ref.current) return;
+    const urlScope2 = searchParams?.get('scope2');
+    if (!urlScope2 || !boqItems.length) return;
+    appliedUrlScope2Ref.current = true;
+    const match = boqItems.find(
+      (item) => String(item['Scope 2'] ?? '').trim().toLowerCase() === urlScope2.trim().toLowerCase(),
+    );
+    if (match) {
+      setFilters((prev) => ({ ...prev, 'Scope 2': String(match['Scope 2']) }));
+    }
+  }, [boqItems, searchParams]);
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<BoqItem | null>(null);
@@ -484,7 +508,8 @@ export default function ViewBoqPage() {
         String(item['Category 3'] ?? '').toLowerCase().includes(search);
 
       const scope1Match = s1 === 'all' || item['Scope 1'] === s1;
-      const scope2Match = s2 === 'all' || item['Scope 2'] === s2;
+      const scope2Match =
+        s2 === 'all' || String(item['Scope 2'] ?? '').trim().toLowerCase() === s2.trim().toLowerCase();
       const category1Match = c1 === 'all' || item['Category 1'] === c1;
 
       return searchMatch && scope1Match && scope2Match && category1Match;
@@ -500,10 +525,19 @@ export default function ViewBoqPage() {
       base = base.filter((i) => i['Scope 1'] === filters['Scope 1']);
     }
 
-    const s2Options = [...new Set(base.map((i) => i['Scope 2']).filter(Boolean))] as string[];
+    // Dedupe case-insensitively — the same scope often appears with inconsistent casing in imports.
+    const s2Options = Array.from(
+      new Map(
+        base
+          .map((i) => i['Scope 2'])
+          .filter(Boolean)
+          .map((v) => [String(v).trim().toLowerCase(), v]),
+      ).values(),
+    ) as string[];
 
     if (filters['Scope 2'] !== 'all') {
-      base = base.filter((i) => i['Scope 2'] === filters['Scope 2']);
+      const s2Filter = filters['Scope 2'].trim().toLowerCase();
+      base = base.filter((i) => String(i['Scope 2'] ?? '').trim().toLowerCase() === s2Filter);
     }
 
     const c1Options = [...new Set(base.map((i) => i['Category 1']).filter(Boolean))] as string[];
@@ -796,7 +830,7 @@ export default function ViewBoqPage() {
       {/* Header */}
       <div className="py-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Link href={`/project-management/boq?project=${encodeURIComponent(mappingId)}`}>
+          <Link href={backHref}>
             <Button variant="ghost" size="icon" aria-label="Back">
               <ArrowLeft className="h-6 w-6" />
             </Button>

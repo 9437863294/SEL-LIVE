@@ -7,13 +7,12 @@ import {
   ArrowRight,
   Building2,
   ClipboardList,
-  FileSearch,
   FileStack,
   FolderKanban,
-  ListChecks,
+  HardHat,
+  Package,
   Settings,
   ShieldAlert,
-  ShoppingCart,
 } from "lucide-react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -59,12 +58,10 @@ export default function ProjectManagementPage() {
 
   const canViewModule = can("View Module", MODULE_NAME);
   const canViewBoq = can("View", `${MODULE_NAME}.BOQ`);
-  const canViewIndent =
-    can("View", `${MODULE_NAME}.Indent`) || canViewBoq;
-  const canViewRfq = can("View", `${MODULE_NAME}.RFQ`) || canViewBoq;
-  const canViewPurchaseOrders =
-    can("View", `${MODULE_NAME}.Purchase Orders`) || canViewRfq;
   const canViewMdl = can("View", `${MODULE_NAME}.MDL`) || canViewBoq;
+  const canViewSupply = can("View", `${MODULE_NAME}.Supply`) || canViewBoq;
+  const canViewCivil = can("View", `${MODULE_NAME}.Civil`) || canViewBoq;
+  const canViewErection = can("View", `${MODULE_NAME}.Erection`) || canViewBoq;
   const canViewSettings = can("View", `${MODULE_NAME}.Settings`);
   const selectedProjectId = searchParams?.get("project") ?? "";
 
@@ -119,36 +116,6 @@ export default function ProjectManagementPage() {
       gradient: "from-emerald-500 to-teal-600",
     },
     {
-      show: Boolean(selectedProject && canViewIndent),
-      href: `/project-management/indent?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "Indent",
-      description: selectedProject
-        ? `Create BOQ item indents for ${selectedProject.projectName}.`
-        : "Create project indents against BOQ items.",
-      icon: ListChecks,
-      gradient: "from-amber-500 to-orange-600",
-    },
-    {
-      show: Boolean(selectedProject && canViewRfq),
-      href: `/project-management/rfq?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "RFQ",
-      description: selectedProject
-        ? `Request vendor quotations for ${selectedProject.projectName}.`
-        : "Request and compare vendor quotations for indents.",
-      icon: FileSearch,
-      gradient: "from-violet-500 to-purple-600",
-    },
-    {
-      show: Boolean(selectedProject && canViewPurchaseOrders),
-      href: `/project-management/purchase-orders?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "Purchase Orders",
-      description: selectedProject
-        ? `Create and track purchase orders for ${selectedProject.projectName}.`
-        : "Create and track purchase orders against vendors.",
-      icon: ShoppingCart,
-      gradient: "from-emerald-500 to-teal-600",
-    },
-    {
       show: Boolean(selectedProject && canViewMdl),
       href: `/project-management/mdl?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
       title: "MDL",
@@ -157,6 +124,36 @@ export default function ProjectManagementPage() {
         : "Master Drawing List — track drawing submission and approval.",
       icon: FileStack,
       gradient: "from-sky-500 to-blue-600",
+    },
+    {
+      show: Boolean(selectedProject && canViewSupply),
+      href: `/project-management/supply?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+      title: "Supply",
+      description: selectedProject
+        ? `Track supply scope items for ${selectedProject.projectName}.`
+        : "Track supply scope BOQ items.",
+      icon: Package,
+      gradient: "from-cyan-500 to-blue-600",
+    },
+    {
+      show: Boolean(selectedProject && canViewCivil),
+      href: `/project-management/civil?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+      title: "Civil",
+      description: selectedProject
+        ? `Track civil scope items for ${selectedProject.projectName}.`
+        : "Track civil scope BOQ items.",
+      icon: Building2,
+      gradient: "from-stone-500 to-stone-700",
+    },
+    {
+      show: Boolean(selectedProject && canViewErection),
+      href: `/project-management/erection?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+      title: "Erection",
+      description: selectedProject
+        ? `Track erection scope items for ${selectedProject.projectName}.`
+        : "Track erection scope BOQ items.",
+      icon: HardHat,
+      gradient: "from-orange-500 to-red-600",
     },
     {
       show: canViewSettings,
