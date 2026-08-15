@@ -49,6 +49,12 @@ import {
   type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
+import { ControlledField, ControlledToggleLabel } from "./controlled-field";
+import {
+  useFieldControl,
+  validateFieldControlRequirements,
+  type RPFieldSetting,
+} from "./use-field-control";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,6 +102,7 @@ export default function RecurringMasterFormPage({
   const { user, users } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
+  const { field } = useFieldControl("master");
   const organizationId = user?.organizationId || "default";
   const { projects, departments, activeProjects, activeDepartments } =
     useGlobalScopes();
@@ -280,6 +287,12 @@ export default function RecurringMasterFormPage({
     if (draft.frequency === "Custom" && !Number(draft.customIntervalDays))
       return toast({
         title: "Custom interval is required",
+        variant: "destructive",
+      });
+    const missingLabel = validateFieldControlRequirements("master", draft, field);
+    if (missingLabel)
+      return toast({
+        title: `${missingLabel} is required`,
         variant: "destructive",
       });
     setSaving(true);
@@ -503,13 +516,13 @@ export default function RecurringMasterFormPage({
                 disabled
               />
             </Field>
-            <Field label="Branch">
+            <ControlledField setting={field("branchName")}>
               <Input
                 value={draft.branchName || ""}
                 onChange={(event) => set("branchName", event.target.value)}
               />
-            </Field>
-            <Field label="Project">
+            </ControlledField>
+            <ControlledField setting={field("projectId")}>
               <Select
                 value={
                   draft.projectId ||
@@ -539,8 +552,8 @@ export default function RecurringMasterFormPage({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Department">
+            </ControlledField>
+            <ControlledField setting={field("departmentId")}>
               <Select
                 value={
                   draft.departmentId ||
@@ -571,14 +584,14 @@ export default function RecurringMasterFormPage({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Payment title *">
+            </ControlledField>
+            <ControlledField setting={field("title")}>
               <Input
                 value={draft.title || ""}
                 onChange={(event) => set("title", event.target.value)}
               />
-            </Field>
-            <Field label="Category *">
+            </ControlledField>
+            <ControlledField setting={field("category")}>
               <Select
                 value={draft.category}
                 onValueChange={(value) => set("category", value)}
@@ -599,8 +612,8 @@ export default function RecurringMasterFormPage({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Vendor *">
+            </ControlledField>
+            <ControlledField setting={field("vendorName")}>
               <Input
                 list="master-form-vendors"
                 value={draft.vendorName || ""}
@@ -611,28 +624,28 @@ export default function RecurringMasterFormPage({
                   <option key={item.id}>{item.name}</option>
                 ))}
               </datalist>
-            </Field>
-            <Field label="Account / consumer number">
+            </ControlledField>
+            <ControlledField setting={field("accountNumber")}>
               <Input
                 value={draft.accountNumber || ""}
                 onChange={(event) => set("accountNumber", event.target.value)}
               />
-            </Field>
-            <Field label="Internal reference">
+            </ControlledField>
+            <ControlledField setting={field("internalReference")}>
               <Input
                 value={draft.internalReference || ""}
                 onChange={(event) =>
                   set("internalReference", event.target.value)
                 }
               />
-            </Field>
+            </ControlledField>
             <div className="sm:col-span-2 lg:col-span-3">
-              <Field label="Description">
+              <ControlledField setting={field("description")}>
                 <Textarea
                   value={draft.description || ""}
                   onChange={(event) => set("description", event.target.value)}
                 />
-              </Field>
+              </ControlledField>
             </div>
           </div>
         </Section>
@@ -642,7 +655,7 @@ export default function RecurringMasterFormPage({
           description="How often this generates, and when the next cycle falls due."
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Frequency">
+            <ControlledField setting={field("frequency")}>
               <Select
                 value={draft.frequency}
                 onValueChange={(value) =>
@@ -669,9 +682,9 @@ export default function RecurringMasterFormPage({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
+            </ControlledField>
             {draft.frequency === "Custom" && (
-              <Field label="Custom interval days">
+              <ControlledField setting={field("customIntervalDays")}>
                 <Input
                   type="number"
                   min="1"
@@ -680,37 +693,37 @@ export default function RecurringMasterFormPage({
                     set("customIntervalDays", Number(event.target.value))
                   }
                 />
-              </Field>
+              </ControlledField>
             )}
-            <Field label="Start date *">
+            <ControlledField setting={field("startDate")}>
               <Input
                 type="date"
                 value={draft.startDate || ""}
                 onChange={(event) => set("startDate", event.target.value)}
               />
-            </Field>
-            <Field label="End date">
+            </ControlledField>
+            <ControlledField setting={field("endDate")}>
               <Input
                 type="date"
                 value={draft.endDate || ""}
                 onChange={(event) => set("endDate", event.target.value)}
               />
-            </Field>
-            <Field label="Billing cycle">
+            </ControlledField>
+            <ControlledField setting={field("billingCycle")}>
               <Input
                 value={draft.billingCycle || ""}
                 onChange={(event) => set("billingCycle", event.target.value)}
               />
-            </Field>
-            <Field label="Generation rule">
+            </ControlledField>
+            <ControlledField setting={field("generationDateRule")}>
               <Input
                 value={draft.generationDateRule || ""}
                 onChange={(event) =>
                   set("generationDateRule", event.target.value)
                 }
               />
-            </Field>
-            <Field label="Due-date rule">
+            </ControlledField>
+            <ControlledField setting={field("dueDateRule")}>
               <Select
                 value={draft.dueDateRule}
                 onValueChange={(value) =>
@@ -737,8 +750,8 @@ export default function RecurringMasterFormPage({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Due day / offset">
+            </ControlledField>
+            <ControlledField setting={field("dueDay")}>
               <Input
                 type="number"
                 min="1"
@@ -746,8 +759,8 @@ export default function RecurringMasterFormPage({
                 value={draft.dueDay || 1}
                 onChange={(event) => set("dueDay", Number(event.target.value))}
               />
-            </Field>
-            <Field label="Grace period days">
+            </ControlledField>
+            <ControlledField setting={field("gracePeriodDays")}>
               <Input
                 type="number"
                 min="0"
@@ -756,8 +769,8 @@ export default function RecurringMasterFormPage({
                   set("gracePeriodDays", Number(event.target.value))
                 }
               />
-            </Field>
-            <Field label="Generate before due (days)">
+            </ControlledField>
+            <ControlledField setting={field("generateBeforeDueDays")}>
               <Input
                 type="number"
                 min="0"
@@ -767,12 +780,14 @@ export default function RecurringMasterFormPage({
                   set("generateBeforeDueDays", Number(event.target.value))
                 }
               />
-            </Field>
-            <Toggle
-              label="Enable auto-generation"
-              checked={draft.autoGenerationEnabled !== false}
-              onChange={(value) => set("autoGenerationEnabled", value)}
-            />
+            </ControlledField>
+            {field("autoGenerationEnabled").visible && (
+              <Toggle
+                label={<ControlledToggleLabel setting={field("autoGenerationEnabled")} />}
+                checked={draft.autoGenerationEnabled !== false}
+                onChange={(value) => set("autoGenerationEnabled", value)}
+              />
+            )}
           </div>
         </Section>
         <Section
@@ -781,7 +796,7 @@ export default function RecurringMasterFormPage({
           description="Expected amount, tax treatment and ledger coding."
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Amount type">
+            <ControlledField setting={field("amountType")}>
               <Select
                 value={draft.amountType}
                 onValueChange={(value) =>
@@ -802,13 +817,19 @@ export default function RecurringMasterFormPage({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field
-              label={
-                draft.amountType === "Fixed"
-                  ? "Fixed amount *"
-                  : "Estimated amount *"
-              }
+            </ControlledField>
+            <ControlledField
+              setting={{
+                ...field("amount"),
+                // Only substitute the Fixed/Estimated wording while the label is still the
+                // registry default — once an admin customizes it, respect their wording as-is.
+                label:
+                  field("amount").label === "Amount"
+                    ? draft.amountType === "Fixed"
+                      ? "Fixed amount"
+                      : "Estimated amount"
+                    : field("amount").label,
+              }}
             >
               <Input
                 type="number"
@@ -816,8 +837,8 @@ export default function RecurringMasterFormPage({
                 value={draft.amount || ""}
                 onChange={(event) => set("amount", Number(event.target.value))}
               />
-            </Field>
-            <Field label="Maximum permitted amount">
+            </ControlledField>
+            <ControlledField setting={field("maximumAmount")}>
               <Input
                 type="number"
                 min="0"
@@ -826,8 +847,8 @@ export default function RecurringMasterFormPage({
                   set("maximumAmount", Number(event.target.value))
                 }
               />
-            </Field>
-            <Field label="Tax amount">
+            </ControlledField>
+            <ControlledField setting={field("taxAmount")}>
               <Input
                 type="number"
                 min="0"
@@ -836,26 +857,26 @@ export default function RecurringMasterFormPage({
                   set("taxAmount", Number(event.target.value))
                 }
               />
-            </Field>
-            <Field label="Cost centre">
+            </ControlledField>
+            <ControlledField setting={field("costCentre")}>
               <Input
                 value={draft.costCentre || ""}
                 onChange={(event) => set("costCentre", event.target.value)}
               />
-            </Field>
-            <Field label="General ledger code">
+            </ControlledField>
+            <ControlledField setting={field("ledger")}>
               <Input
                 value={draft.ledger || ""}
                 onChange={(event) => set("ledger", event.target.value)}
               />
-            </Field>
-            <Field label="Budget head">
+            </ControlledField>
+            <ControlledField setting={field("budgetHead")}>
               <Input
                 value={draft.budgetHead || ""}
                 onChange={(event) => set("budgetHead", event.target.value)}
               />
-            </Field>
-            <Field label="Variance tolerance %">
+            </ControlledField>
+            <ControlledField setting={field("varianceTolerancePercent")}>
               <Input
                 type="number"
                 min="0"
@@ -864,17 +885,21 @@ export default function RecurringMasterFormPage({
                   set("varianceTolerancePercent", Number(event.target.value))
                 }
               />
-            </Field>
-            <Toggle
-              label="TDS applicable"
-              checked={!!draft.tdsApplicable}
-              onChange={(value) => set("tdsApplicable", value)}
-            />
-            <Toggle
-              label="GST applicable"
-              checked={!!draft.gstApplicable}
-              onChange={(value) => set("gstApplicable", value)}
-            />
+            </ControlledField>
+            {field("tdsApplicable").visible && (
+              <Toggle
+                label={<ControlledToggleLabel setting={field("tdsApplicable")} />}
+                checked={!!draft.tdsApplicable}
+                onChange={(value) => set("tdsApplicable", value)}
+              />
+            )}
+            {field("gstApplicable").visible && (
+              <Toggle
+                label={<ControlledToggleLabel setting={field("gstApplicable")} />}
+                checked={!!draft.gstApplicable}
+                onChange={(value) => set("gstApplicable", value)}
+              />
+            )}
           </div>
         </Section>
         <Section
@@ -884,41 +909,41 @@ export default function RecurringMasterFormPage({
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <UserField
-              label="Payment owner *"
+              setting={field("assignedTo")}
               value={draft.assignedTo}
               onChange={(value) => set("assignedTo", value)}
               users={users}
             />
             <UserField
-              label="Backup owner"
+              setting={field("backupAssignedTo")}
               value={draft.backupAssignedTo}
               onChange={(value) => set("backupAssignedTo", value)}
               users={users}
               allowNone
             />
             <UserField
-              label="Verifier"
+              setting={field("verifierId")}
               value={draft.verifierId}
               onChange={(value) => set("verifierId", value)}
               users={users}
               allowNone
             />
             <UserField
-              label="Approver"
+              setting={field("approverId")}
               value={draft.approverId}
               onChange={(value) => set("approverId", value)}
               users={users}
               allowNone
             />
             <UserField
-              label="Accounts processor"
+              setting={field("accountsProcessorId")}
               value={draft.accountsProcessorId}
               onChange={(value) => set("accountsProcessorId", value)}
               users={users}
               allowNone
             />
             <UserField
-              label="Escalation authority"
+              setting={field("escalationAuthorityId")}
               value={draft.escalationAuthorityId}
               onChange={(value) => set("escalationAuthorityId", value)}
               users={users}
@@ -932,7 +957,7 @@ export default function RecurringMasterFormPage({
           description="Which approval rule applies once a bill is submitted."
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Approval option">
+            <ControlledField setting={field("approvalConfiguration")}>
               <Select
                 value={draft.approvalConfiguration}
                 onValueChange={(value) =>
@@ -958,33 +983,36 @@ export default function RecurringMasterFormPage({
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            {draft.approvalConfiguration === "Custom rule" && (
-              <Field label="Custom approval rule">
-                <Select
-                  value={draft.customApprovalRuleId}
-                  onValueChange={(value) => set("customApprovalRuleId", value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select rule" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {rules
-                      .filter((item) => item.active)
-                      .map((item) => (
-                        <SelectItem value={item.id} key={item.id}>
-                          {item.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+            </ControlledField>
+            {draft.approvalConfiguration === "Custom rule" &&
+              field("customApprovalRuleId").visible && (
+                <ControlledField setting={field("customApprovalRuleId")}>
+                  <Select
+                    value={draft.customApprovalRuleId}
+                    onValueChange={(value) => set("customApprovalRuleId", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select rule" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {rules
+                        .filter((item) => item.active)
+                        .map((item) => (
+                          <SelectItem value={item.id} key={item.id}>
+                            {item.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </ControlledField>
+              )}
+            {field("highVarianceAdditionalApproval").visible && (
+              <Toggle
+                label={<ControlledToggleLabel setting={field("highVarianceAdditionalApproval")} />}
+                checked={!!draft.highVarianceAdditionalApproval}
+                onChange={(value) => set("highVarianceAdditionalApproval", value)}
+              />
             )}
-            <Toggle
-              label="Additional approval on high variance"
-              checked={!!draft.highVarianceAdditionalApproval}
-              onChange={(value) => set("highVarianceAdditionalApproval", value)}
-            />
           </div>
         </Section>
         <Section
@@ -993,7 +1021,7 @@ export default function RecurringMasterFormPage({
           description="Who gets reminders, and any standing reference documents."
         >
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Reminder recipients">
+            <ControlledField setting={field("reminderRecipients")}>
               <Input
                 value={(draft.reminderRecipients || []).join(", ")}
                 onChange={(event) =>
@@ -1006,8 +1034,8 @@ export default function RecurringMasterFormPage({
                   )
                 }
               />
-            </Field>
-            <Field label="Escalation recipients">
+            </ControlledField>
+            <ControlledField setting={field("escalationRecipients")}>
               <Input
                 value={(draft.escalationRecipients || []).join(", ")}
                 onChange={(event) =>
@@ -1020,15 +1048,15 @@ export default function RecurringMasterFormPage({
                   )
                 }
               />
-            </Field>
-            <Field label="Master documents">
+            </ControlledField>
+            <ControlledField setting={field("masterDocuments")}>
               <Input
                 name="masterDocuments"
                 type="file"
                 multiple
                 accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx"
               />
-            </Field>
+            </ControlledField>
           </div>
         </Section>
         </div>
@@ -1200,7 +1228,7 @@ function Toggle({
   checked,
   onChange,
 }: {
-  label: string;
+  label: React.ReactNode;
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
@@ -1215,20 +1243,20 @@ function Toggle({
   );
 }
 function UserField({
-  label,
+  setting,
   value,
   onChange,
   users,
   allowNone = false,
 }: {
-  label: string;
+  setting: RPFieldSetting;
   value?: string;
   onChange: (value: string) => void;
   users: Array<{ id: string; name: string; status: string }>;
   allowNone?: boolean;
 }) {
   return (
-    <Field label={label}>
+    <ControlledField setting={setting}>
       <Select
         value={value || (allowNone ? "none" : undefined)}
         onValueChange={(next) => onChange(next === "none" ? "" : next)}
@@ -1247,6 +1275,6 @@ function UserField({
             ))}
         </SelectContent>
       </Select>
-    </Field>
+    </ControlledField>
   );
 }

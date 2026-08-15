@@ -17,6 +17,8 @@ import {
   type PaymentObligation,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
+import { ControlledField } from "./controlled-field";
+import { useFieldControl, validateFieldControlRequirements } from "./use-field-control";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,7 +28,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -42,6 +43,7 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
   const { user, users } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
+  const { field } = useFieldControl("paymentEdit");
   const { projects, departments, activeProjects, activeDepartments } =
     useGlobalScopes();
   const [payment, setPayment] = useState<PaymentObligation | null>(null);
@@ -69,6 +71,13 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
     const projectId = selectedProjectId === "none" ? "" : selectedProjectId;
     const departmentId =
       selectedDepartmentId === "none" ? "" : selectedDepartmentId;
+    const missingLabel = validateFieldControlRequirements(
+      "paymentEdit",
+      { ...Object.fromEntries(form.entries()), projectId, departmentId },
+      field,
+    );
+    if (missingLabel)
+      return toast({ title: `${missingLabel} is required`, variant: "destructive" });
     const next = {
       title: String(form.get("title") || ""),
       vendorName: String(form.get("vendorName") || ""),
@@ -170,47 +179,47 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
         </CardHeader>
         <CardContent>
           <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
-            <Field label="Payment title">
+            <ControlledField setting={field("title")}>
               <Input
                 disabled={locked}
                 name="title"
                 defaultValue={payment.title}
-                required
+                required={field("title").required}
               />
-            </Field>
-            <Field label="Vendor">
+            </ControlledField>
+            <ControlledField setting={field("vendorName")}>
               <Input
                 disabled={locked}
                 name="vendorName"
                 defaultValue={payment.vendorName}
-                required
+                required={field("vendorName").required}
               />
-            </Field>
-            <Field label="Category">
+            </ControlledField>
+            <ControlledField setting={field("category")}>
               <Input
                 disabled={locked}
                 name="category"
                 defaultValue={payment.category}
-                required
+                required={field("category").required}
               />
-            </Field>
-            <Field label="Due date">
+            </ControlledField>
+            <ControlledField setting={field("dueDate")}>
               <Input
                 disabled={locked}
                 name="dueDate"
                 type="date"
                 defaultValue={payment.dueDate}
-                required
+                required={field("dueDate").required}
               />
-            </Field>
-            <Field label="Branch">
+            </ControlledField>
+            <ControlledField setting={field("branchName")}>
               <Input
                 disabled={locked}
                 name="branchName"
                 defaultValue={payment.branchName}
               />
-            </Field>
-            <Field label="Project">
+            </ControlledField>
+            <ControlledField setting={field("projectId")}>
               <Select
                 disabled={locked}
                 name="projectId"
@@ -234,8 +243,8 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Department">
+            </ControlledField>
+            <ControlledField setting={field("departmentId")}>
               <Select
                 disabled={locked}
                 name="departmentId"
@@ -258,8 +267,8 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Bill amount">
+            </ControlledField>
+            <ControlledField setting={field("billAmount")}>
               <Input
                 disabled={locked}
                 name="billAmount"
@@ -267,8 +276,8 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
                 min="0"
                 defaultValue={payment.billAmount || payment.expectedAmount}
               />
-            </Field>
-            <Field label="Priority">
+            </ControlledField>
+            <ControlledField setting={field("priority")}>
               <Select
                 disabled={locked}
                 name="priority"
@@ -285,8 +294,8 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Payment owner">
+            </ControlledField>
+            <ControlledField setting={field("assignedTo")}>
               <Select
                 disabled={locked}
                 name="assignedTo"
@@ -305,15 +314,15 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
                     ))}
                 </SelectContent>
               </Select>
-            </Field>
+            </ControlledField>
             <div className="sm:col-span-2">
-              <Field label="Description">
+              <ControlledField setting={field("description")}>
                 <Textarea
                   disabled={locked}
                   name="description"
                   defaultValue={payment.description}
                 />
-              </Field>
+              </ControlledField>
             </div>
             <div className="sm:col-span-2 flex justify-end gap-2">
               <Button
@@ -337,20 +346,6 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
           </form>
         </CardContent>
       </Card>
-    </div>
-  );
-}
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      {children}
     </div>
   );
 }

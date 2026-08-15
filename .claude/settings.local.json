@@ -49,7 +49,10 @@
       "PowerShell(winget install --id EclipseAdoptium.Temurin.21.JDK --silent --accept-source-agreements --accept-package-agreements 2>&1)",
       "Bash(xargs grep -l \"provider is not enabled\")",
       "Read(//d/Application Dev/SEL Live/node_modules/@capacitor-firebase/authentication/dist/**)",
-      "PowerShell(Select-String -Path \"d:\\\\Application Dev\\\\SEL Live\\\\node_modules\\\\@capacitor-firebase\\\\authentication\\\\dist\\\\plugin.js\" -Pattern \"provider|providers|enabled\" -CaseSensitive:$false)"
+      "PowerShell(Select-String -Path \"d:\\\\Application Dev\\\\SEL Live\\\\node_modules\\\\@capacitor-firebase\\\\authentication\\\\dist\\\\plugin.js\" -Pattern \"provider|providers|enabled\" -CaseSensitive:$false)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/recurring-payments/handbook)",
+      "Bash(npx tsc *)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

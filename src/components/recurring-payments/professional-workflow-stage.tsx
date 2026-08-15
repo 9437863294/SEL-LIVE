@@ -49,6 +49,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { ControlledField } from './controlled-field';
+import { useFieldControl, validateFieldControlRequirements, type RPFieldSetting } from './use-field-control';
 
 const FORWARD_ACTIONS = ['Submit Bill', 'Verify', 'Approve', 'Record Payment', 'Close', 'Create Expense Request'];
 const COMMENT_REQUIRED = ['Return for Correction', 'Reject', 'Dispute', 'On Hold', 'Payment Failed'];
@@ -67,6 +69,12 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   const { user } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
+  const { field: submitBillField } = useFieldControl('submitBill');
+  const { field: verifyField } = useFieldControl('verifyBill');
+  const { field: recordPaymentField } = useFieldControl('recordPayment');
+  const { field: expenseField } = useFieldControl('expenseRequest');
+  const { field: commonField } = useFieldControl('workflowCommon');
+  const activeChecklist = VERIFICATION_CHECKLIST.map((label, index) => ({ key: `check${index + 1}`, ...verifyField(`check${index + 1}`) })).filter(item => item.visible);
   const organizationId = user?.organizationId || 'default';
   const [workflow, setWorkflow] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
   const [settings, setSettings] = useState<RecurringPaymentSettings>({ ...DEFAULT_RECURRING_PAYMENT_SETTINGS, organizationId });
@@ -168,8 +176,9 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     const chequeNumber = String(form.get('chequeNumber') || '').trim();
     const appliedAmount = paymentAmount + tdsAmount + deductionAmount + adjustmentAmount;
     const currentOutstanding = Math.max(0, (selected.billAmount || selected.expectedAmount) - (selected.settledAmount || selected.paidAmount || 0));
-    const checklistCount = form.getAll('verificationChecklist').length;
-    if (action === 'Verify' && checklistCount !== VERIFICATION_CHECKLIST.length) return toast({ title: 'Complete the bill verification checklist', description: 'Every verification control must be confirmed before the bill can proceed.', variant: 'destructive' });
+    const checkedChecklist = form.getAll('verificationChecklist').map(String);
+    const missingChecklist = activeChecklist.some(item => item.required && !checkedChecklist.includes(item.label));
+    if (action === 'Verify' && missingChecklist) return toast({ title: 'Complete the bill verification checklist', description: 'Every required verification control must be confirmed before the bill can proceed.', variant: 'destructive' });
     if (action === 'Record Payment' && paymentAmount <= 0) return toast({ title: 'Paid amount is required', variant: 'destructive' });
     // A transaction reference is only meaningful for non-cash modes — a cash payment has no UTR
     // or transaction number to record, so it's exempt from this setting regardless.
@@ -193,6 +202,15 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     if (action === 'Create Expense Request' && !expenseDepartmentId) return toast({ title: 'Select a department for the expense request', variant: 'destructive' });
     if (action === 'Create Expense Request' && expenseAmount <= 0) return toast({ title: 'Expense amount is required', variant: 'destructive' });
     if (action === 'Create Expense Request' && (!expenseHeadOfAccount || !expenseSubHeadOfAccount)) return toast({ title: 'Select a head and sub-head of account', variant: 'destructive' });
+
+    if (action === 'Record Payment') {
+      const missingLabel = validateFieldControlRequirements('recordPayment', { ...Object.fromEntries(form.entries()), paymentAmount, tdsAmount, gstAmount, deductionAmount, adjustmentAmount }, recordPaymentField);
+      if (missingLabel) return toast({ title: `${missingLabel} is required`, variant: 'destructive' });
+    }
+    if (action === 'Create Expense Request') {
+      const missingLabel = validateFieldControlRequirements('expenseRequest', { ...Object.fromEntries(form.entries()), expenseDepartmentId, expenseAmount, expensePartyName, expenseHeadOfAccount, expenseSubHeadOfAccount, expenseDescription }, expenseField);
+      if (missingLabel) return toast({ title: `${missingLabel} is required`, variant: 'destructive' });
+    }
 
     setWorking(true);
     try {
@@ -456,7 +474,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   return <div className="space-y-5">
     <Card className="border-0 bg-gradient-to-r from-indigo-700 via-violet-700 to-purple-700 text-white"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs uppercase tracking-wider text-indigo-200">Recurring payment workflow · Step {stage.id}</p><h1 className="text-2xl font-bold">{stage.name}</h1><p className="mt-1 text-sm text-indigo-100">{stage.description}</p></div><div className="grid grid-cols-3 gap-2 text-center"><StageMetric label="My queue" value={pending.length} /><StageMetric label="Due ≤ 3 days" value={dueSoon} /><StageMetric label="Overdue" value={overdue} /></div></CardContent></Card>
     <Tabs defaultValue="pending"><TabsList><TabsTrigger value="pending">My pending tasks ({pending.length})</TabsTrigger><TabsTrigger value="completed">My completed tasks ({completed.length})</TabsTrigger></TabsList><TabsContent value="pending"><TaskTable rows={pending} stage={stage} onView={setSelected} onAction={(payment, nextAction) => { setSelected(payment); setAction(nextAction); }} /></TabsContent><TabsContent value="completed"><TaskTable rows={completed} stage={stage} onView={setSelected} /></TabsContent></Tabs>
-    <ActionDialog payment={selected} stage={stage} action={action} canAct={!!selected && pending.some(item => item.id === selected.id)} onAction={setAction} onClose={() => { setSelected(null); setAction(null); }} onSubmit={perform} working={working} departments={departments} accountHeads={accountHeads} subAccountHeads={subAccountHeads} />
+    <ActionDialog payment={selected} stage={stage} action={action} canAct={!!selected && pending.some(item => item.id === selected.id)} onAction={setAction} onClose={() => { setSelected(null); setAction(null); }} onSubmit={perform} working={working} departments={departments} accountHeads={accountHeads} subAccountHeads={subAccountHeads} submitBillField={submitBillField} activeChecklist={activeChecklist} recordPaymentField={recordPaymentField} expenseField={expenseField} commonField={commonField} />
   </div>;
 }
 
@@ -464,7 +482,7 @@ function TaskTable({ rows, stage, onView, onAction }: { rows: PaymentObligation[
   return <Card><CardContent className="p-0"><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Category</TableHead><TableHead>Vendor</TableHead><TableHead>Due date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Variance</TableHead><TableHead>SLA deadline</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.length ? rows.map(payment => <TableRow key={payment.id} className="cursor-pointer" onClick={() => onView(payment)}><TableCell className="whitespace-nowrap"><div className="flex items-center gap-2">{payment.varianceWarning && <AlertTriangle className="h-4 w-4 text-amber-500" />}<span className="font-medium">{payment.title}</span></div></TableCell><TableCell className="whitespace-nowrap">{payment.category}</TableCell><TableCell className="whitespace-nowrap">{payment.vendorName}</TableCell><TableCell className="whitespace-nowrap">{payment.dueDate}</TableCell><TableCell className={`whitespace-nowrap ${daysUntil(payment.dueDate) < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{dueLabel(payment.dueDate)}</TableCell><TableCell className="whitespace-nowrap text-right font-semibold">{currency(payment.billAmount || payment.expectedAmount)}</TableCell><TableCell className="whitespace-nowrap"><Badge variant={payment.varianceWarning ? 'destructive' : 'outline'}>{payment.varianceWarning ? `${Number(payment.variancePercent || 0).toFixed(1)}% variance` : 'Normal'}</Badge></TableCell><TableCell className="whitespace-nowrap text-muted-foreground">{formatTimestamp(payment.workflowDeadline)}</TableCell><TableCell className="whitespace-nowrap text-right">{onAction ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" onClick={event => event.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{stage.actions.map(item => <DropdownMenuItem key={item} onSelect={() => onAction(payment, item)}>{item}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu> : <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={9} className="h-36 text-center text-muted-foreground"><CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-400" />No tasks in this queue.</TableCell></TableRow>}</TableBody></Table></div></CardContent></Card>;
 }
 
-function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSubmit, working, departments, accountHeads, subAccountHeads }: { payment: PaymentObligation | null; stage: RecurringWorkflowStep; action: string | null; canAct: boolean; onAction: (action: string | null) => void; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; working: boolean; departments: Department[]; accountHeads: AccountHead[]; subAccountHeads: SubAccountHead[] }) {
+function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSubmit, working, departments, accountHeads, subAccountHeads, submitBillField, activeChecklist, recordPaymentField, expenseField, commonField }: { payment: PaymentObligation | null; stage: RecurringWorkflowStep; action: string | null; canAct: boolean; onAction: (action: string | null) => void; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; working: boolean; departments: Department[]; accountHeads: AccountHead[]; subAccountHeads: SubAccountHead[]; submitBillField: (key: string) => RPFieldSetting; activeChecklist: { key: string; label: string; required: boolean; visible: boolean }[]; recordPaymentField: (key: string) => RPFieldSetting; expenseField: (key: string) => RPFieldSetting; commonField: (key: string) => RPFieldSetting }) {
   // Drives which of the mode-specific fields below (bank account / UTR / cheque number) are
   // shown for "Record Payment" — a cash payment has none of these, so showing them unconditionally
   // just confused whoever was recording the payment into thinking they were required.
@@ -477,36 +495,37 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
     {payment.varianceWarning && <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-5 w-5 shrink-0" /><div><p className="font-semibold">Amount variance requires review</p><p>{Number(payment.variancePercent || 0).toFixed(1)}% against baseline {currency(payment.varianceBaseline || payment.expectedAmount)}{payment.amountLimitExceeded&&payment.maximumAmount?` and above the ${currency(payment.maximumAmount)} master limit`:''}. Verification and approval comments are mandatory.</p></div></div>}
     <div><Label>Workflow history</Label><div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{(payment.workflowHistory || []).map((item, index) => <div key={index} className="flex gap-3 rounded-lg border p-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 text-indigo-500" /><div><p className="font-medium">{item.action} · {item.stepName}</p><p className="text-xs text-muted-foreground">{item.userName}{item.comment ? ` — ${item.comment}` : ''} · {formatTimestamp(item.timestamp)}</p></div></div>)}{!(payment.workflowHistory || []).length && <p className="text-sm text-muted-foreground">Workflow has just started.</p>}</div></div>
     {canAct && (!action ? <div className="flex flex-wrap gap-2 border-t pt-4">{stage.actions.map(item => <Button key={item} variant={['Reject', 'Payment Failed'].includes(item) ? 'destructive' : 'default'} onClick={() => onAction(item)}>{item}</Button>)}</div> : <form onSubmit={onSubmit} className="space-y-4 border-t pt-4"><p className="font-semibold">Action: {action}</p>
-      {action === 'Submit Bill' && <div className="grid gap-3 sm:grid-cols-3"><Field label="Bill number"><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></Field><Field label="Bill received date"><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || new Date().toISOString().slice(0, 10)} required /></Field><Field label="Final bill amount"><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></Field></div>}
-      {action === 'Verify' && <div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><p className="font-semibold">Bill verification checklist</p><p className="text-xs text-muted-foreground">Confirm every control. The completed checklist is captured in the audit record.</p></div><div className="grid gap-3 sm:grid-cols-2">{VERIFICATION_CHECKLIST.map(item => <label key={item} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-sm"><Checkbox name="verificationChecklist" value={item} required className="mt-0.5" /><span>{item}</span></label>)}</div></div>}
+      {action === 'Submit Bill' && <div className="grid gap-3 sm:grid-cols-3"><ControlledField setting={submitBillField('billNumber')}><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></ControlledField><ControlledField setting={submitBillField('billReceivedDate')}><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || new Date().toISOString().slice(0, 10)} required /></ControlledField><ControlledField setting={submitBillField('billAmount')}><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField></div>}
+      {action === 'Verify' && <div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><p className="font-semibold">Bill verification checklist</p><p className="text-xs text-muted-foreground">Confirm every required control. The completed checklist is captured in the audit record.</p></div><div className="grid gap-3 sm:grid-cols-2">{activeChecklist.map(item => <label key={item.key} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-sm"><Checkbox name="verificationChecklist" value={item.label} required={item.required} className="mt-0.5" /><span>{item.label}{item.required && <span className="text-destructive"> *</span>}</span></label>)}</div></div>}
       {action === 'Record Payment' && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Payment date"><Input name="paymentDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></Field>
-        <Field label="Paid amount"><Input name="paymentAmount" type="number" min="0.01" step="0.01" max={outstanding || undefined} required /></Field>
-        <Field label="Payment mode"><Select name="mode" value={paymentMode} onValueChange={value => setPaymentMode(value as PaymentMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_MODES.map(mode => <SelectItem value={mode} key={mode}>{mode}</SelectItem>)}</SelectContent></Select></Field>
+        <ControlledField setting={recordPaymentField('paymentDate')}><Input name="paymentDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></ControlledField>
+        <ControlledField setting={recordPaymentField('paymentAmount')}><Input name="paymentAmount" type="number" min="0.01" step="0.01" max={outstanding || undefined} required /></ControlledField>
+        {recordPaymentField('mode').visible && <ControlledField setting={recordPaymentField('mode')}><Select name="mode" value={paymentMode} onValueChange={value => setPaymentMode(value as PaymentMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_MODES.map(mode => <SelectItem value={mode} key={mode}>{mode}</SelectItem>)}</SelectContent></Select></ControlledField>}
         {/* Bank account and UTR/transaction reference only apply once money actually moves
             through a bank — a cash payment has neither, so they're hidden rather than shown
-            as fields nobody knows how to fill in. */}
-        {paymentMode !== 'Cash' && <Field label="Bank account"><Input name="bankAccount" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></Field>}
-        {paymentMode === 'Cheque' && <Field label="Cheque number"><Input name="chequeNumber" required /></Field>}
+            as fields nobody knows how to fill in. These three are locked in Field Control because
+            the step's own logic already hard-requires them for the applicable payment modes. */}
+        {paymentMode !== 'Cash' && <ControlledField setting={recordPaymentField('bankAccount')}><Input name="bankAccount" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></ControlledField>}
+        {paymentMode === 'Cheque' && <ControlledField setting={recordPaymentField('chequeNumber')}><Input name="chequeNumber" required /></ControlledField>}
         {paymentMode === 'Cash'
-          ? <Field label="Cash voucher / receipt no."><Input name="transactionReference" /></Field>
-          : <Field label="Transaction / UTR"><Input name="transactionReference" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></Field>}
-        <Field label="TDS amount"><Input name="tdsAmount" type="number" min="0" defaultValue="0" /></Field>
-        <Field label="GST amount"><Input name="gstAmount" type="number" min="0" defaultValue="0" /></Field>
-        <Field label="Other deduction"><Input name="deductionAmount" type="number" min="0" defaultValue="0" /></Field>
-        <Field label="Adjustment"><Input name="adjustmentAmount" type="number" defaultValue="0" /></Field>
-        <Field label="Payment receipt"><Input name="receiptFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" /></Field>
+          ? <ControlledField setting={{ ...recordPaymentField('transactionReference'), required: false, label: 'Cash voucher / receipt no.' }}><Input name="transactionReference" /></ControlledField>
+          : <ControlledField setting={recordPaymentField('transactionReference')}><Input name="transactionReference" required={BANK_ACCOUNT_REQUIRED_MODES.includes(paymentMode)} /></ControlledField>}
+        <ControlledField setting={recordPaymentField('tdsAmount')}><Input name="tdsAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('tdsAmount').required} /></ControlledField>
+        <ControlledField setting={recordPaymentField('gstAmount')}><Input name="gstAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('gstAmount').required} /></ControlledField>
+        <ControlledField setting={recordPaymentField('deductionAmount')}><Input name="deductionAmount" type="number" min="0" defaultValue="0" required={recordPaymentField('deductionAmount').required} /></ControlledField>
+        <ControlledField setting={recordPaymentField('adjustmentAmount')}><Input name="adjustmentAmount" type="number" defaultValue="0" required={recordPaymentField('adjustmentAmount').required} /></ControlledField>
+        <ControlledField setting={recordPaymentField('receiptFile')}><Input name="receiptFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" required={recordPaymentField('receiptFile').required} /></ControlledField>
       </div>}
       {action === 'Create Expense Request' && <div className="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2">
-        <Field label="Department *"><Select name="expenseDepartmentId" defaultValue={payment.departmentId || undefined}><SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger><SelectContent>{departments.map(item => <SelectItem value={item.id} key={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Party name"><Input name="expensePartyName" defaultValue={payment.vendorName} required /></Field>
-        <Field label="Amount"><Input name="expenseAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></Field>
-        <Field label="Head of account"><Select name="expenseHeadOfAccount" defaultValue={accountHeads[0]?.name}><SelectTrigger><SelectValue placeholder="Select head" /></SelectTrigger><SelectContent>{accountHeads.map(item => <SelectItem value={item.name} key={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
-        <Field label="Sub-head of account"><Select name="expenseSubHeadOfAccount"><SelectTrigger><SelectValue placeholder="Select sub-head" /></SelectTrigger><SelectContent>{subAccountHeads.map(item => <SelectItem value={item.name} key={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
-        <div className="sm:col-span-2"><Field label="Expense description"><Textarea name="expenseDescription" defaultValue={payment.description || payment.title} /></Field></div>
+        <ControlledField setting={expenseField('expenseDepartmentId')}><Select name="expenseDepartmentId" defaultValue={payment.departmentId || undefined}><SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger><SelectContent>{departments.map(item => <SelectItem value={item.id} key={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></ControlledField>
+        <ControlledField setting={expenseField('expensePartyName')}><Input name="expensePartyName" defaultValue={payment.vendorName} required={expenseField('expensePartyName').required} /></ControlledField>
+        <ControlledField setting={expenseField('expenseAmount')}><Input name="expenseAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField>
+        <ControlledField setting={expenseField('expenseHeadOfAccount')}><Select name="expenseHeadOfAccount" defaultValue={accountHeads[0]?.name}><SelectTrigger><SelectValue placeholder="Select head" /></SelectTrigger><SelectContent>{accountHeads.map(item => <SelectItem value={item.name} key={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></ControlledField>
+        <ControlledField setting={expenseField('expenseSubHeadOfAccount')}><Select name="expenseSubHeadOfAccount"><SelectTrigger><SelectValue placeholder="Select sub-head" /></SelectTrigger><SelectContent>{subAccountHeads.map(item => <SelectItem value={item.name} key={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></ControlledField>
+        <div className="sm:col-span-2"><ControlledField setting={expenseField('expenseDescription')}><Textarea name="expenseDescription" defaultValue={payment.description || payment.title} required={expenseField('expenseDescription').required} /></ControlledField></div>
       </div>}
-      {stage.uploadRequired && !['Reject', 'On Hold', 'Dispute', 'Payment Failed', 'Return for Correction'].includes(action) && <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2"><Field label="Supporting document"><Input name="documentFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" /></Field><Field label="Or document reference"><Input name="documentReference" placeholder="URL or document number" /></Field></div>}
-      <Field label={COMMENT_REQUIRED.includes(action) || (payment.varianceWarning && ['Verify', 'Approve'].includes(action)) ? 'Comment / justification *' : 'Comment'}><Textarea name="comment" placeholder="Add clear remarks for the audit trail" /></Field>
+      {stage.uploadRequired && !['Reject', 'On Hold', 'Dispute', 'Payment Failed', 'Return for Correction'].includes(action) && <div className="grid gap-3 rounded-lg border p-3 sm:grid-cols-2"><ControlledField setting={commonField('documentFile')}><Input name="documentFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx" /></ControlledField><ControlledField setting={commonField('documentReference')}><Input name="documentReference" placeholder="URL or document number" /></ControlledField></div>}
+      <ControlledField setting={{ ...commonField('comment'), required: COMMENT_REQUIRED.includes(action) || !!(payment.varianceWarning && ['Verify', 'Approve'].includes(action)) }}><Textarea name="comment" placeholder="Add clear remarks for the audit trail" /></ControlledField>
       <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => onAction(null)}>Back</Button><Button disabled={working}>{working && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirm {action}</Button></div>
     </form>)}
     <DialogFooter><Button variant="outline" onClick={onClose}>Close</Button></DialogFooter>
@@ -515,7 +534,6 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
 
 function StageMetric({ label, value }: { label: string; value: number }) { return <div className="min-w-20 rounded-xl bg-white/15 px-3 py-2"><p className="text-lg font-bold">{value}</p><p className="text-[10px] text-indigo-100">{label}</p></div>; }
 function Summary({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="font-semibold">{value}</p></div>; }
-function Field({ label, children }: { label: string; children: React.ReactNode }) { return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>; }
 function timestampDateOnly(value: unknown) { const data = value as { toDate?: () => Date; seconds?: number } | null | undefined; const date = data?.toDate ? data.toDate() : data?.seconds ? new Date(data.seconds * 1000) : null; return date ? date.toISOString().slice(0, 10) : ''; }
 function daysUntil(value: string) { const due = new Date(`${value}T00:00:00`); const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); return Math.round((due.getTime() - today.getTime()) / 86_400_000); }
 function dueLabel(value: string) { const days = daysUntil(value); return days < 0 ? `${Math.abs(days)} day(s) overdue` : days === 0 ? 'Due today' : `Due in ${days} day(s)`; }

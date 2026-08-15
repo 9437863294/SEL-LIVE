@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   addDoc,
   collection,
@@ -17,7 +16,6 @@ import {
   BellRing,
   Bot,
   Building2,
-  GitBranch,
   Loader2,
   Pencil,
   Plus,
@@ -63,9 +61,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { useGlobalScopes } from "./use-global-scopes";
+import { useFieldControl, validateFieldControlRequirements } from "./use-field-control";
 
 const settingDocId = (organizationId: string) =>
   organizationId.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -81,10 +78,10 @@ const parseNumbers = (value: string) =>
 
 export default function RecurringPaymentSettingsPanel({
   organizationId,
-  initialTab = "approvals",
+  section,
 }: {
   organizationId: string;
-  initialTab?: "approvals" | "notifications" | "automation" | "organization";
+  section: "approvals" | "notifications" | "automation" | "organization";
 }) {
   const { users } = useAuth();
   const { can } = useAuthorization();
@@ -104,7 +101,6 @@ export default function RecurringPaymentSettingsPanel({
     "Assigned Employee, Accounts Team",
   );
   const canEdit = can("Edit", "Recurring Payments.Settings");
-  const canViewWorkflow = can("View Workflow", "Recurring Payments.Settings");
 
   useEffect(() => {
     const settingsRef = doc(
@@ -208,37 +204,7 @@ export default function RecurringPaymentSettingsPanel({
   );
   return (
     <>
-      {canViewWorkflow && (
-        <Card className="mb-4 border-indigo-200 bg-indigo-50/40">
-          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="font-semibold">Payment Workflow</p>
-              <p className="text-sm text-muted-foreground">
-                Configure workflow steps, assigned users, TAT, required
-                documents and actions.
-              </p>
-            </div>
-            <Link href="/recurring-payments/settings/workflow">
-              <Button>
-                <GitBranch className="mr-2 h-4 w-4" />
-                {can("Edit Workflow", "Recurring Payments.Settings")
-                  ? "Configure"
-                  : "View"}{" "}
-                workflow
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      )}
-      <Tabs defaultValue={initialTab} className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 lg:grid-cols-4">
-          <TabsTrigger value="approvals">Approval Rules</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="automation">Automation</TabsTrigger>
-          <TabsTrigger value="organization">Organization</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="approvals">
+      {section === "approvals" && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
@@ -333,9 +299,9 @@ export default function RecurringPaymentSettingsPanel({
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+      )}
 
-        <TabsContent value="notifications">
+      {section === "notifications" && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -419,9 +385,9 @@ export default function RecurringPaymentSettingsPanel({
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+      )}
 
-        <TabsContent value="automation">
+      {section === "automation" && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -525,9 +491,9 @@ export default function RecurringPaymentSettingsPanel({
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+      )}
 
-        <TabsContent value="organization">
+      {section === "organization" && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -637,8 +603,7 @@ export default function RecurringPaymentSettingsPanel({
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+      )}
       <ApprovalRuleDialog
         open={ruleOpen}
         rule={editingRule}
@@ -666,6 +631,7 @@ function ApprovalRuleDialog({
   const { users } = useAuth();
   const { projects, activeProjects } = useGlobalScopes();
   const { toast } = useToast();
+  const { field } = useFieldControl("approvalRule");
   const [saving, setSaving] = useState(false);
   const [approvers, setApprovers] = useState<string[]>([]);
   const [selectedProject, setSelectedProject] = useState("*");
@@ -696,8 +662,15 @@ function ApprovalRuleDialog({
         title: "Select at least one approver",
         variant: "destructive",
       });
-    setSaving(true);
     const f = new FormData(e.currentTarget);
+    const missingLabel = validateFieldControlRequirements(
+      "approvalRule",
+      { ...Object.fromEntries(f.entries()), approvers },
+      field,
+    );
+    if (missingLabel)
+      return toast({ title: `${missingLabel} is required`, variant: "destructive" });
+    setSaving(true);
     try {
       const max = String(f.get("maxAmount") || "");
       const payload = {
@@ -750,77 +723,96 @@ function ApprovalRuleDialog({
           onSubmit={submit}
           className="grid gap-4 sm:grid-cols-2"
         >
-          <SettingField label="Rule name">
-            <Input name="name" defaultValue={rule?.name || ""} required />
-          </SettingField>
-          <SettingField label="Approval mode">
-            <Select name="mode" defaultValue={rule?.mode || "Sequential"}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Sequential">Sequential</SelectItem>
-                <SelectItem value="Parallel">Parallel</SelectItem>
-              </SelectContent>
-            </Select>
-          </SettingField>
-          <SettingField label="Minimum amount">
-            <Input
-              name="minAmount"
-              type="number"
-              min="0"
-              defaultValue={rule?.minAmount || 0}
-              required
-            />
-          </SettingField>
-          <SettingField label="Maximum amount" help="Leave blank for no limit">
-            <Input
-              name="maxAmount"
-              type="number"
-              min="0"
-              defaultValue={rule?.maxAmount ?? ""}
-            />
-          </SettingField>
-          <SettingField label="Category">
-            <Select name="category" defaultValue={rule?.category || "*"}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="*">All categories</SelectItem>
-                {DEFAULT_PAYMENT_CATEGORIES.map((x) => (
-                  <SelectItem value={x} key={x}>
-                    {x}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </SettingField>
-          <SettingField label="Project" help="Uses Settings > Manage Project">
-            <Select
-              name="project"
-              value={selectedProject}
-              onValueChange={setSelectedProject}
+          {field("name").visible && (
+            <SettingField label={`${field("name").label}${field("name").required ? " *" : ""}`}>
+              <Input name="name" defaultValue={rule?.name || ""} required={field("name").required} />
+            </SettingField>
+          )}
+          {field("mode").visible && (
+            <SettingField label={`${field("mode").label}${field("mode").required ? " *" : ""}`}>
+              <Select name="mode" defaultValue={rule?.mode || "Sequential"}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Sequential">Sequential</SelectItem>
+                  <SelectItem value="Parallel">Parallel</SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingField>
+          )}
+          {field("minAmount").visible && (
+            <SettingField label={`${field("minAmount").label}${field("minAmount").required ? " *" : ""}`}>
+              <Input
+                name="minAmount"
+                type="number"
+                min="0"
+                defaultValue={rule?.minAmount || 0}
+                required={field("minAmount").required}
+              />
+            </SettingField>
+          )}
+          {field("maxAmount").visible && (
+            <SettingField
+              label={`${field("maxAmount").label}${field("maxAmount").required ? " *" : ""}`}
+              help="Leave blank for no limit"
             >
-              <SelectTrigger>
-                <SelectValue placeholder="All global projects" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="*">All projects</SelectItem>
-                {activeProjects.map((project) => (
-                  <SelectItem value={project.id} key={project.id}>
-                    {project.projectName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </SettingField>
+              <Input
+                name="maxAmount"
+                type="number"
+                min="0"
+                defaultValue={rule?.maxAmount ?? ""}
+                required={field("maxAmount").required}
+              />
+            </SettingField>
+          )}
+          {field("category").visible && (
+            <SettingField label={`${field("category").label}${field("category").required ? " *" : ""}`}>
+              <Select name="category" defaultValue={rule?.category || "*"}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="*">All categories</SelectItem>
+                  {DEFAULT_PAYMENT_CATEGORIES.map((x) => (
+                    <SelectItem value={x} key={x}>
+                      {x}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingField>
+          )}
+          {field("project").visible && (
+            <SettingField
+              label={`${field("project").label}${field("project").required ? " *" : ""}`}
+              help="Uses Settings > Manage Project"
+            >
+              <Select
+                name="project"
+                value={selectedProject}
+                onValueChange={setSelectedProject}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All global projects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="*">All projects</SelectItem>
+                  {activeProjects.map((project) => (
+                    <SelectItem value={project.id} key={project.id}>
+                      {project.projectName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </SettingField>
+          )}
           <div className="sm:col-span-2">
             <SettingField
               label={
                 rule?.mode === "Parallel"
-                  ? "Approvers"
-                  : "Approvers in sequence"
+                  ? field("approvers").label
+                  : `${field("approvers").label} in sequence`
               }
               help="For sequential rules, selection order is the approval order."
             >
@@ -854,22 +846,24 @@ function ApprovalRuleDialog({
               </div>
             </SettingField>
           </div>
-          <SettingField label="Final accounts verification">
-            <Select
-              name="accounts"
-              defaultValue={
-                rule?.finalAccountsVerification === false ? "no" : "yes"
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="yes">Required</SelectItem>
-                <SelectItem value="no">Not required</SelectItem>
-              </SelectContent>
-            </Select>
-          </SettingField>
+          {field("accounts").visible && (
+            <SettingField label={field("accounts").label}>
+              <Select
+                name="accounts"
+                defaultValue={
+                  rule?.finalAccountsVerification === false ? "no" : "yes"
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="yes">Required</SelectItem>
+                  <SelectItem value="no">Not required</SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingField>
+          )}
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel

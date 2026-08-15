@@ -10,10 +10,11 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { RP_COLLECTIONS } from '@/lib/recurring-payments';
 import type { RecurringVendor } from './vendor-management';
+import { ControlledField } from './controlled-field';
+import { useFieldControl, validateFieldControlRequirements } from './use-field-control';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -32,6 +33,7 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
   const { user, users } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
+  const { field } = useFieldControl('vendor');
   const organizationId = user?.organizationId || 'default';
   const [vendor, setVendor] = useState<Partial<RecurringVendor>>({ status: 'Active' });
   const [originalVendor, setOriginalVendor] = useState<Partial<RecurringVendor>>({});
@@ -58,6 +60,8 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
     event.preventDefault();
     const authorized = vendorId ? can('Edit', 'Recurring Payments.Vendors') : can('Add', 'Recurring Payments.Vendors');
     if (!user || !authorized) return;
+    const missingLabel = validateFieldControlRequirements('vendor', vendor, field);
+    if (missingLabel) return toast({ title: `${missingLabel} is required`, variant: 'destructive' });
     setSaving(true);
     try {
       const reference = vendorId ? doc(db, RP_COLLECTIONS.vendors, vendorId) : doc(collection(db, RP_COLLECTIONS.vendors));
@@ -126,26 +130,22 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
     <div className="flex items-center gap-3"><Button size="icon" variant="outline" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><h1 className="text-2xl font-bold">{vendorId ? 'Edit Vendor' : 'Add Vendor'}</h1><p className="text-sm text-muted-foreground">Tax, contact, terms and masked banking details</p></div></div>
     <Card><CardHeader><CardTitle>Vendor information</CardTitle><CardDescription>Full bank account numbers should not be stored here. Banking changes are separately audited and notified.</CardDescription></CardHeader><CardContent>
       <form onSubmit={save} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Vendor name *"><Input value={vendor.name || ''} onChange={event => set('name', event.target.value)} required /></Field>
-        <Field label="Vendor code"><Input value={vendor.code || ''} onChange={event => set('code', event.target.value)} /></Field>
-        <Field label="Vendor category"><Input value={vendor.category || ''} onChange={event => set('category', event.target.value)} /></Field>
-        <Field label="GSTIN"><Input value={vendor.gstin || ''} onChange={event => set('gstin', event.target.value)} /></Field>
-        <Field label="PAN"><Input value={vendor.pan || ''} onChange={event => set('pan', event.target.value)} /></Field>
-        <Field label="Contact person"><Input value={vendor.contactPerson || ''} onChange={event => set('contactPerson', event.target.value)} /></Field>
-        <Field label="Mobile"><Input value={vendor.mobile || ''} onChange={event => set('mobile', event.target.value)} /></Field>
-        <Field label="Email"><Input type="email" value={vendor.email || ''} onChange={event => set('email', event.target.value)} /></Field>
-        <Field label="Payment terms"><Input value={vendor.paymentTerms || ''} onChange={event => set('paymentTerms', event.target.value)} /></Field>
-        <Field label="Bank name"><Input value={vendor.bankName || ''} onChange={event => set('bankName', event.target.value)} /></Field>
-        <Field label="Masked account number"><Input placeholder="••••1234" value={vendor.maskedAccountNumber || ''} onChange={event => set('maskedAccountNumber', event.target.value)} /></Field>
-        <Field label="IFSC"><Input value={vendor.ifsc || ''} onChange={event => set('ifsc', event.target.value)} /></Field>
-        <Field label="Status"><Select value={vendor.status || 'Active'} onValueChange={value => set('status', value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent></Select></Field>
-        <div className="sm:col-span-2 lg:col-span-3"><Field label="Address"><Textarea value={vendor.address || ''} onChange={event => set('address', event.target.value)} /></Field></div>
+        <ControlledField setting={field('name')}><Input value={vendor.name || ''} onChange={event => set('name', event.target.value)} required={field('name').required} /></ControlledField>
+        <ControlledField setting={field('code')}><Input value={vendor.code || ''} onChange={event => set('code', event.target.value)} required={field('code').required} /></ControlledField>
+        <ControlledField setting={field('category')}><Input value={vendor.category || ''} onChange={event => set('category', event.target.value)} required={field('category').required} /></ControlledField>
+        <ControlledField setting={field('gstin')}><Input value={vendor.gstin || ''} onChange={event => set('gstin', event.target.value)} required={field('gstin').required} /></ControlledField>
+        <ControlledField setting={field('pan')}><Input value={vendor.pan || ''} onChange={event => set('pan', event.target.value)} required={field('pan').required} /></ControlledField>
+        <ControlledField setting={field('contactPerson')}><Input value={vendor.contactPerson || ''} onChange={event => set('contactPerson', event.target.value)} required={field('contactPerson').required} /></ControlledField>
+        <ControlledField setting={field('mobile')}><Input value={vendor.mobile || ''} onChange={event => set('mobile', event.target.value)} required={field('mobile').required} /></ControlledField>
+        <ControlledField setting={field('email')}><Input type="email" value={vendor.email || ''} onChange={event => set('email', event.target.value)} required={field('email').required} /></ControlledField>
+        <ControlledField setting={field('paymentTerms')}><Input value={vendor.paymentTerms || ''} onChange={event => set('paymentTerms', event.target.value)} required={field('paymentTerms').required} /></ControlledField>
+        <ControlledField setting={field('bankName')}><Input value={vendor.bankName || ''} onChange={event => set('bankName', event.target.value)} required={field('bankName').required} /></ControlledField>
+        <ControlledField setting={field('maskedAccountNumber')}><Input placeholder="••••1234" value={vendor.maskedAccountNumber || ''} onChange={event => set('maskedAccountNumber', event.target.value)} required={field('maskedAccountNumber').required} /></ControlledField>
+        <ControlledField setting={field('ifsc')}><Input value={vendor.ifsc || ''} onChange={event => set('ifsc', event.target.value)} required={field('ifsc').required} /></ControlledField>
+        <ControlledField setting={field('status')}><Select value={vendor.status || 'Active'} onValueChange={value => set('status', value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Active">Active</SelectItem><SelectItem value="Inactive">Inactive</SelectItem></SelectContent></Select></ControlledField>
+        <div className="sm:col-span-2 lg:col-span-3"><ControlledField setting={field('address')}><Textarea value={vendor.address || ''} onChange={event => set('address', event.target.value)} /></ControlledField></div>
         <div className="flex justify-end gap-2 sm:col-span-2 lg:col-span-3"><Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button><Button disabled={saving}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Save vendor</Button></div>
       </form>
     </CardContent></Card>
   </div>;
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="space-y-1.5"><Label>{label}</Label>{children}</div>;
 }

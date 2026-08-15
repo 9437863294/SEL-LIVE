@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { doc, onSnapshot } from 'firebase/firestore';
 import {
   BarChart3,
+  BookOpen,
   CalendarClock,
   CalendarDays,
   CircleDollarSign,
@@ -63,6 +64,7 @@ const managementItems: NavItem[] = [
   { href: '/recurring-payments/categories', label: 'Categories', resource: 'Categories', icon: Tags, color: 'text-orange-600', bg: 'bg-orange-50', group: 'masters' },
   { href: '/recurring-payments/reports', label: 'Reports', resource: 'Reports', icon: BarChart3, color: 'text-fuchsia-600', bg: 'bg-fuchsia-50', group: 'insights' },
   { href: '/recurring-payments/settings', label: 'Settings', resource: 'Settings', icon: Settings, color: 'text-slate-600', bg: 'bg-slate-50', group: 'settings' },
+  { href: '/recurring-payments/handbook', label: 'Handbook', resource: 'Dashboard', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50', group: 'help' },
 ];
 
 const workflowPalette = [

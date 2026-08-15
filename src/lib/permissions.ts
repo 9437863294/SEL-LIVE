@@ -263,6 +263,7 @@ export const permissionModules = {
       "Manage Permissions",
       "View Workflow",
       "Edit Workflow",
+      "Manage Field Control",
     ],
   },
   "Letter of Credit Management": {

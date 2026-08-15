@@ -33,6 +33,12 @@ import {
   RP_COLLECTIONS,
   currency,
 } from "@/lib/recurring-payments";
+import { ControlledField } from "./controlled-field";
+import {
+  useFieldControl,
+  validateFieldControlRequirements,
+  type RPFieldSetting,
+} from "./use-field-control";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -60,6 +66,7 @@ export default function ManualPaymentForm() {
   const { user, users } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
+  const { field } = useFieldControl("manualPayment");
   const organizationId = user?.organizationId || "default";
   const { projects, departments, activeProjects, activeDepartments } =
     useGlobalScopes();
@@ -168,6 +175,19 @@ export default function ManualPaymentForm() {
           "Enter an exception reason when the due date is before the bill date",
         variant: "destructive",
       });
+    const fieldValues = {
+      ...Object.fromEntries(form.entries()),
+      projectId: String(form.get("projectId") || "") === "none" ? "" : form.get("projectId"),
+      departmentId: String(form.get("departmentId") || "") === "none" ? "" : form.get("departmentId"),
+      billAmount: amounts.bill,
+      taxAmount: amounts.tax,
+      tdsAmount: amounts.tds,
+      deductionAmount: amounts.deduction,
+      adjustmentAmount: amounts.adjustment,
+    };
+    const missingLabel = validateFieldControlRequirements("manualPayment", fieldValues, field);
+    if (missingLabel)
+      return toast({ title: `${missingLabel} is required`, variant: "destructive" });
 
     setSaving(true);
     try {
@@ -420,10 +440,10 @@ export default function ManualPaymentForm() {
                 disabled
               />
             </Field>
-            <Field label="Branch">
+            <ControlledField setting={field("branchName")}>
               <Input name="branchName" />
-            </Field>
-            <Field label="Project">
+            </ControlledField>
+            <ControlledField setting={field("projectId")}>
               <Select name="projectId" defaultValue="none">
                 <SelectTrigger>
                   <SelectValue placeholder="Select global project" />
@@ -437,8 +457,8 @@ export default function ManualPaymentForm() {
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Department">
+            </ControlledField>
+            <ControlledField setting={field("departmentId")}>
               <Select name="departmentId" defaultValue="none">
                 <SelectTrigger>
                   <SelectValue placeholder="Select global department" />
@@ -452,12 +472,12 @@ export default function ManualPaymentForm() {
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Payment title *">
-              <Input name="title" required />
-            </Field>
-            <Field label="Category *">
-              <Select name="category" required>
+            </ControlledField>
+            <ControlledField setting={field("title")}>
+              <Input name="title" required={field("title").required} />
+            </ControlledField>
+            <ControlledField setting={field("category")}>
+              <Select name="category" required={field("category").required}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
@@ -474,16 +494,16 @@ export default function ManualPaymentForm() {
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
-            <Field label="Vendor *">
-              <Input name="vendorName" required list="manual-payment-vendors" />
+            </ControlledField>
+            <ControlledField setting={field("vendorName")}>
+              <Input name="vendorName" required={field("vendorName").required} list="manual-payment-vendors" />
               <datalist id="manual-payment-vendors">
                 {vendors.map((item) => (
                   <option key={item.id}>{item.name}</option>
                 ))}
               </datalist>
-            </Field>
-            <Field label="Priority">
+            </ControlledField>
+            <ControlledField setting={field("priority")}>
               <Select name="priority" defaultValue="Normal">
                 <SelectTrigger>
                   <SelectValue />
@@ -496,11 +516,11 @@ export default function ManualPaymentForm() {
                   ))}
                 </SelectContent>
               </Select>
-            </Field>
+            </ControlledField>
             <div className="sm:col-span-2 lg:col-span-4">
-              <Field label="Description">
+              <ControlledField setting={field("description")}>
                 <Textarea name="description" />
-              </Field>
+              </ControlledField>
             </div>
           </div>
         </Section>
@@ -509,47 +529,52 @@ export default function ManualPaymentForm() {
           description="Bill, period, due date and payable calculation"
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Bill number *">
-              <Input name="billNumber" required />
-            </Field>
-            <Field label="Bill date">
+            <ControlledField setting={field("billNumber")}>
+              <Input name="billNumber" required={field("billNumber").required} />
+            </ControlledField>
+            <ControlledField setting={field("billDate")}>
               <Input name="billDate" type="date" />
-            </Field>
-            <Field label="Billing period start">
+            </ControlledField>
+            <ControlledField setting={field("billingPeriodStart")}>
               <Input name="billingPeriodStart" type="date" />
-            </Field>
-            <Field label="Billing period end">
+            </ControlledField>
+            <ControlledField setting={field("billingPeriodEnd")}>
               <Input name="billingPeriodEnd" type="date" />
-            </Field>
-            <Field label="Due date *">
-              <Input name="dueDate" type="date" required />
-            </Field>
+            </ControlledField>
+            <ControlledField setting={field("dueDate")}>
+              <Input name="dueDate" type="date" required={field("dueDate").required} />
+            </ControlledField>
             <AmountField
-              label="Bill amount *"
+              setting={field("billAmount")}
+              allowNegative={false}
               value={amounts.bill}
               onChange={(bill) =>
                 setAmounts((current) => ({ ...current, bill }))
               }
             />
             <AmountField
-              label="Tax amount"
+              setting={field("taxAmount")}
+              allowNegative={false}
               value={amounts.tax}
               onChange={(tax) => setAmounts((current) => ({ ...current, tax }))}
             />
             <AmountField
-              label="TDS amount"
+              setting={field("tdsAmount")}
+              allowNegative={false}
               value={amounts.tds}
               onChange={(tds) => setAmounts((current) => ({ ...current, tds }))}
             />
             <AmountField
-              label="Other deductions"
+              setting={field("deductionAmount")}
+              allowNegative={false}
               value={amounts.deduction}
               onChange={(deduction) =>
                 setAmounts((current) => ({ ...current, deduction }))
               }
             />
             <AmountField
-              label="Adjustment"
+              setting={field("adjustmentAmount")}
+              allowNegative
               value={amounts.adjustment}
               onChange={(adjustment) =>
                 setAmounts((current) => ({ ...current, adjustment }))
@@ -562,12 +587,12 @@ export default function ManualPaymentForm() {
                 className="font-bold"
               />
             </Field>
-            <Field label="Exception reason">
+            <ControlledField setting={field("exceptionReason")}>
               <Input
                 name="exceptionReason"
                 placeholder="Required for unusual due date"
               />
-            </Field>
+            </ControlledField>
           </div>
         </Section>
         <Section
@@ -577,15 +602,14 @@ export default function ManualPaymentForm() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <UserSelect
               name="ownerId"
-              label="Payment owner *"
+              setting={field("ownerId")}
               users={users}
-              required
             />
-            <UserSelect name="verifierId" label="Verifier" users={users} />
-            <UserSelect name="approverId" label="Approver" users={users} />
+            <UserSelect name="verifierId" setting={field("verifierId")} users={users} />
+            <UserSelect name="approverId" setting={field("approverId")} users={users} />
             <UserSelect
               name="accountsProcessorId"
-              label="Accounts person"
+              setting={field("accountsProcessorId")}
               users={users}
             />
           </div>
@@ -595,24 +619,24 @@ export default function ManualPaymentForm() {
           description="Bill and supporting evidence"
         >
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Bill document">
+            <ControlledField setting={field("billFile")}>
               <Input
                 name="billFile"
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx"
               />
-            </Field>
-            <Field label="Supporting document">
+            </ControlledField>
+            <ControlledField setting={field("supportingFile")}>
               <Input
                 name="supportingFile"
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx"
               />
-            </Field>
+            </ControlledField>
             <div className="sm:col-span-2">
-              <Field label="Notes">
+              <ControlledField setting={field("notes")}>
                 <Textarea name="notes" />
-              </Field>
+              </ControlledField>
             </div>
           </div>
         </Section>
@@ -681,41 +705,41 @@ function Field({
   );
 }
 function AmountField({
-  label,
+  setting,
+  allowNegative = false,
   value,
   onChange,
 }: {
-  label: string;
+  setting: RPFieldSetting;
+  allowNegative?: boolean;
   value: number;
   onChange: (value: number) => void;
 }) {
   return (
-    <Field label={label}>
+    <ControlledField setting={setting}>
       <Input
         type="number"
-        min={label === "Adjustment" ? undefined : 0}
+        min={allowNegative ? undefined : 0}
         step="0.01"
         value={value || ""}
         onChange={(event) => onChange(Number(event.target.value || 0))}
-        required={label.includes("*")}
+        required={setting.required}
       />
-    </Field>
+    </ControlledField>
   );
 }
 function UserSelect({
   name,
-  label,
+  setting,
   users,
-  required = false,
 }: {
   name: string;
-  label: string;
+  setting: RPFieldSetting;
   users: Array<{ id: string; name: string; status: string }>;
-  required?: boolean;
 }) {
   return (
-    <Field label={label}>
-      <Select name={name} required={required}>
+    <ControlledField setting={setting}>
+      <Select name={name} required={setting.required}>
         <SelectTrigger>
           <SelectValue placeholder="Select user" />
         </SelectTrigger>
@@ -729,7 +753,7 @@ function UserSelect({
             ))}
         </SelectContent>
       </Select>
-    </Field>
+    </ControlledField>
   );
 }
 function dateOnly(date: Date) {
