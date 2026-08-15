@@ -2,19 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDoc, collection, deleteDoc, doc, getDoc, getDocs, getAggregateFromServer,
+  addDoc, collection, deleteDoc, doc, getDocs, getAggregateFromServer,
   orderBy, query, serverTimestamp, sum, updateDoc, where,
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase';
 import {
-  DEFAULT_EXPENSE_FIELD_CONTROL, EXPENSE_FIELD_CONTROL_LABELS, formatINR, PAYMENT_MODES,
-  SAS_COLLECTIONS, SAS_FIELD_CONTROL_DOC_ID,
-  type SASAttachment, type SASCategory, type SASExpense, type SASExpenseFieldControl,
-  type SASFieldControlSettings, type SASPayment, type SASProject,
+  formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
+  type SASAttachment, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { checkAndFireBudgetAlerts, checkCategoryBudgetAlerts, checkFyBudgetAlerts, checkTotalBudgetAlerts } from '@/lib/sas-budget-alerts';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -114,18 +114,12 @@ function AttachmentIcon({ type }: { type: string }) {
   return <File className="h-4 w-4 text-slate-400 shrink-0" />;
 }
 
-// Marks a field label as required/optional per the Field Control settings.
-function fieldMark(mandatory: boolean) {
-  return mandatory
-    ? <span className="text-destructive">*</span>
-    : <span className="text-muted-foreground text-xs font-normal">(optional)</span>;
-}
-
 export default function SiteExpensesPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
   const { user } = useAuth();
+  const { field } = useFieldControl('expense');
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -140,7 +134,6 @@ export default function SiteExpensesPage() {
   const [categories,    setCategories]    = useState<SASCategory[]>([]);
   const [expenses,      setExpenses]      = useState<SASExpense[]>([]);
   const [payments,      setPayments]      = useState<SASPayment[]>([]);
-  const [fieldControl,  setFieldControl]  = useState<SASExpenseFieldControl>(DEFAULT_EXPENSE_FIELD_CONTROL);
   const [loading,              setLoading]              = useState(true);
   const [staticLoaded,         setStaticLoaded]         = useState(false);
   const [prePeriodExpenseSum,  setPrePeriodExpenseSum]  = useState<number | null>(null);
@@ -182,17 +175,14 @@ export default function SiteExpensesPage() {
   async function loadStatic() {
     setLoading(true);
     try {
-      const [pSnap, catSnap, paySnap, fieldControlSnap] = await Promise.all([
+      const [pSnap, catSnap, paySnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.payments))),   // small — load all for opening balance
-        getDoc(doc(db, SAS_COLLECTIONS.settings, SAS_FIELD_CONTROL_DOC_ID)),
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
       setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
-      const settingsData = fieldControlSnap.exists() ? (fieldControlSnap.data() as Partial<SASFieldControlSettings>) : null;
-      setFieldControl({ ...DEFAULT_EXPENSE_FIELD_CONTROL, ...(settingsData?.expense || {}) });
       setStaticLoaded(true);
     } catch {
       setLoading(false);
@@ -590,17 +580,18 @@ export default function SiteExpensesPage() {
     const amount = Number(form.expenseAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.',     variant: 'destructive' }); return; }
 
-    if (fieldControl.expenseCategory    && !form.expenseCategory)          { toast({ title: 'Validation', description: `${EXPENSE_FIELD_CONTROL_LABELS.expenseCategory} is required.`,    variant: 'destructive' }); return; }
-    if (fieldControl.expenseSubCategory && !form.expenseSubCategory.trim()){ toast({ title: 'Validation', description: `${EXPENSE_FIELD_CONTROL_LABELS.expenseSubCategory} is required.`, variant: 'destructive' }); return; }
-    if (fieldControl.expensedBy         && !form.expensedBy.trim())        { toast({ title: 'Validation', description: `${EXPENSE_FIELD_CONTROL_LABELS.expensedBy} is required.`,         variant: 'destructive' }); return; }
-    if (fieldControl.paymentMode        && !form.paymentMode)              { toast({ title: 'Validation', description: `${EXPENSE_FIELD_CONTROL_LABELS.paymentMode} is required.`,        variant: 'destructive' }); return; }
-    if (fieldControl.vendorPartyName    && !form.vendorPartyName.trim())   { toast({ title: 'Validation', description: `${EXPENSE_FIELD_CONTROL_LABELS.vendorPartyName} is required.`,    variant: 'destructive' }); return; }
-    if (fieldControl.billNo             && !form.billNo.trim())            { toast({ title: 'Validation', description: `${EXPENSE_FIELD_CONTROL_LABELS.billNo} is required.`,             variant: 'destructive' }); return; }
-    if (fieldControl.narration          && !form.narration.trim())         { toast({ title: 'Validation', description: `${EXPENSE_FIELD_CONTROL_LABELS.narration} is required.`,          variant: 'destructive' }); return; }
-    if (fieldControl.remarks            && !form.remarks.trim())           { toast({ title: 'Validation', description: `${EXPENSE_FIELD_CONTROL_LABELS.remarks} is required.`,            variant: 'destructive' }); return; }
-    if (fieldControl.attachment && pendingFiles.length + existingAttachments.length === 0) {
-      toast({ title: 'Validation', description: 'At least one document upload is required.', variant: 'destructive' }); return;
-    }
+    const missingLabel = validateFieldControlRequirements('expense', {
+      expenseCategory: form.expenseCategory,
+      expenseSubCategory: form.expenseSubCategory,
+      expensedBy: form.expensedBy,
+      paymentMode: form.paymentMode,
+      vendorPartyName: form.vendorPartyName,
+      billNo: form.billNo,
+      narration: form.narration,
+      remarks: form.remarks,
+      attachment: pendingFiles.length + existingAttachments.length > 0 ? 'attached' : '',
+    }, field);
+    if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
 
     setSaving(true);
     if (pendingFiles.length > 0) setUploading(true);
@@ -1260,8 +1251,9 @@ export default function SiteExpensesPage() {
             )}
 
             {/* Main Category */}
+            {field('expenseCategory').visible && (
             <div className="space-y-1.5">
-              <Label>Main Category {fieldMark(fieldControl.expenseCategory)}</Label>
+              <Label>{field('expenseCategory').label} {fieldMark(field('expenseCategory'))}</Label>
               <Select value={form.expenseCategoryId} onValueChange={selectMainCategory}>
                 <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
                 <SelectContent>
@@ -1269,10 +1261,12 @@ export default function SiteExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
 
             {/* Sub-Category */}
+            {field('expenseSubCategory').visible && (
             <div className="space-y-1.5">
-              <Label>Sub-Category {fieldMark(fieldControl.expenseSubCategory)}</Label>
+              <Label>{field('expenseSubCategory').label} {fieldMark(field('expenseSubCategory'))}</Label>
               <Select
                 value={form.expenseSubCategory || '_none_'}
                 onValueChange={v => setField('expenseSubCategory', v === '_none_' ? '' : v)}
@@ -1291,28 +1285,32 @@ export default function SiteExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
 
             {/* Expensed By */}
+            {field('expensedBy').visible && (
             <div className="space-y-1.5">
-              <Label>Expensed By {fieldMark(fieldControl.expensedBy)}</Label>
+              <Label>{field('expensedBy').label} {fieldMark(field('expensedBy'))}</Label>
               <Input value={form.expensedBy} onChange={e => setField('expensedBy', e.target.value)} placeholder="Person who spent" />
             </div>
+            )}
 
             {/* Date */}
             <div className="space-y-1.5">
-              <Label>Expense Date <span className="text-destructive">*</span></Label>
+              <Label>{field('expenseDate').label} <span className="text-destructive">*</span></Label>
               <Input type="date" value={form.expenseDate} onChange={e => setField('expenseDate', e.target.value)} />
             </div>
 
             {/* Amount */}
             <div className="space-y-1.5">
-              <Label>Amount (₹) <span className="text-destructive">*</span></Label>
+              <Label>{field('expenseAmount').label} (₹) <span className="text-destructive">*</span></Label>
               <Input type="number" min="0" value={form.expenseAmount} onChange={e => setField('expenseAmount', e.target.value)} placeholder="0" />
             </div>
 
             {/* Payment Mode */}
+            {field('paymentMode').visible && (
             <div className="space-y-1.5">
-              <Label>Payment Mode {fieldMark(fieldControl.paymentMode)}</Label>
+              <Label>{field('paymentMode').label} {fieldMark(field('paymentMode'))}</Label>
               <Select value={form.paymentMode} onValueChange={v => setField('paymentMode', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -1320,36 +1318,46 @@ export default function SiteExpensesPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
 
             {/* Vendor */}
+            {field('vendorPartyName').visible && (
             <div className="space-y-1.5">
-              <Label>Vendor / Party Name {fieldMark(fieldControl.vendorPartyName)}</Label>
+              <Label>{field('vendorPartyName').label} {fieldMark(field('vendorPartyName'))}</Label>
               <Input value={form.vendorPartyName} onChange={e => setField('vendorPartyName', e.target.value)} placeholder="Vendor or party name" />
             </div>
+            )}
 
             {/* Bill No */}
+            {field('billNo').visible && (
             <div className="space-y-1.5">
-              <Label>Bill No. {fieldMark(fieldControl.billNo)}</Label>
+              <Label>{field('billNo').label} {fieldMark(field('billNo'))}</Label>
               <Input value={form.billNo} onChange={e => setField('billNo', e.target.value)} placeholder="Bill / voucher number" />
             </div>
+            )}
 
             {/* Narration */}
+            {field('narration').visible && (
             <div className="col-span-2 space-y-1.5">
-              <Label>Narration {fieldMark(fieldControl.narration)}</Label>
+              <Label>{field('narration').label} {fieldMark(field('narration'))}</Label>
               <Input value={form.narration} onChange={e => setField('narration', e.target.value)} placeholder="Brief description of payment purpose" />
             </div>
+            )}
 
             {/* Remarks */}
+            {field('remarks').visible && (
             <div className="col-span-2 space-y-1.5">
-              <Label>Remarks {fieldMark(fieldControl.remarks)}</Label>
+              <Label>{field('remarks').label} {fieldMark(field('remarks'))}</Label>
               <Textarea rows={2} value={form.remarks} onChange={e => setField('remarks', e.target.value)} placeholder="Additional notes" />
             </div>
+            )}
 
             {/* ── Attachments ─────────────────────────────────────────────────── */}
+            {field('attachment').visible && (
             <div className="col-span-2 space-y-2">
               <Label className="flex items-center gap-1.5">
                 <Paperclip className="h-3.5 w-3.5" />
-                Upload Document {fieldMark(fieldControl.attachment)}
+                {field('attachment').label} {fieldMark(field('attachment'))}
                 <span className="text-muted-foreground text-xs font-normal">— PDF, images, Word, Excel</span>
               </Label>
 
@@ -1431,6 +1439,7 @@ export default function SiteExpensesPage() {
                 </p>
               )}
             </div>
+            )}
           </div>
 
           <DialogFooter>

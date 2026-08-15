@@ -12,6 +12,8 @@ import {
   type SASAttachment, type SASBudget, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
 import { checkAndFireBudgetAlerts } from '@/lib/sas-budget-alerts';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -105,6 +107,7 @@ function QuickExpenseDialog({
 }: QuickExpenseDialogProps) {
   const { toast } = useToast();
   const { log } = useActivityLogger(MODULE);
+  const { field } = useFieldControl('expense');
   const [saving, setSaving] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -165,11 +168,21 @@ function QuickExpenseDialog({
   }
 
   async function submit() {
-    if (!form.expenseCategory) { toast({ title: 'Validation', description: 'Select a main category.', variant: 'destructive' }); return; }
-    if (!form.expensedBy.trim()) { toast({ title: 'Validation', description: 'Expensed By is required.', variant: 'destructive' }); return; }
     if (!form.expenseDate) { toast({ title: 'Validation', description: 'Date is required.', variant: 'destructive' }); return; }
     const amount = Number(form.expenseAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.', variant: 'destructive' }); return; }
+    const missingLabel = validateFieldControlRequirements('expense', {
+      expenseCategory: form.expenseCategory,
+      expenseSubCategory: form.expenseSubCategory,
+      expensedBy: form.expensedBy,
+      paymentMode: form.paymentMode,
+      vendorPartyName: form.vendorPartyName,
+      billNo: form.billNo,
+      narration: form.narration,
+      remarks: form.remarks,
+      attachment: pendingFiles.length > 0 ? 'attached' : '',
+    }, field);
+    if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
 
     setSaving(true);
     try {
@@ -245,8 +258,9 @@ function QuickExpenseDialog({
         <div className="grid grid-cols-2 gap-3 py-1">
 
           {/* Main Category */}
+          {field('expenseCategory').visible && (
           <div className="col-span-2 space-y-1.5">
-            <Label>Main Category <span className="text-destructive">*</span></Label>
+            <Label>{field('expenseCategory').label} {fieldMark(field('expenseCategory'))}</Label>
             <Select value={form.expenseCategoryId || '_none_'} onValueChange={handleMainCategoryChange}>
               <SelectTrigger><SelectValue placeholder="Select main category" /></SelectTrigger>
               <SelectContent>
@@ -255,12 +269,13 @@ function QuickExpenseDialog({
               </SelectContent>
             </Select>
           </div>
+          )}
 
           {/* Sub-Category */}
+          {field('expenseSubCategory').visible && (
           <div className="col-span-2 space-y-1.5">
             <Label className="flex items-center gap-1.5">
-              Sub-Category
-              <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+              {field('expenseSubCategory').label} {fieldMark(field('expenseSubCategory'))}
             </Label>
             <Select
               value={form.expenseSubCategory || '_none_'}
@@ -276,60 +291,72 @@ function QuickExpenseDialog({
               </SelectContent>
             </Select>
           </div>
+          )}
 
           {/* Narration */}
+          {field('narration').visible && (
           <div className="col-span-2 space-y-1.5">
             <Label className="flex items-center gap-1.5">
-              Narration
-              <span className="text-xs text-muted-foreground font-normal">(payment details)</span>
+              {field('narration').label} {fieldMark(field('narration'))}
             </Label>
             <Input value={form.narration} onChange={e => setF('narration', e.target.value)} placeholder="e.g. Labour wages for week ending…" />
           </div>
+          )}
 
           {/* Expensed By + Date */}
+          {field('expensedBy').visible && (
           <div className="space-y-1.5">
-            <Label>Expensed By <span className="text-destructive">*</span></Label>
+            <Label>{field('expensedBy').label} {fieldMark(field('expensedBy'))}</Label>
             <Input value={form.expensedBy} onChange={e => setF('expensedBy', e.target.value)} />
           </div>
+          )}
           <div className="space-y-1.5">
-            <Label>Date <span className="text-destructive">*</span></Label>
+            <Label>{field('expenseDate').label} <span className="text-destructive">*</span></Label>
             <Input type="date" value={form.expenseDate} onChange={e => setF('expenseDate', e.target.value)} />
           </div>
 
           {/* Amount + Mode */}
           <div className="space-y-1.5">
-            <Label>Amount (₹) <span className="text-destructive">*</span></Label>
+            <Label>{field('expenseAmount').label} (₹) <span className="text-destructive">*</span></Label>
             <Input type="number" min="0" value={form.expenseAmount} onChange={e => setF('expenseAmount', e.target.value)} placeholder="0" />
           </div>
+          {field('paymentMode').visible && (
           <div className="space-y-1.5">
-            <Label>Payment Mode</Label>
+            <Label>{field('paymentMode').label} {fieldMark(field('paymentMode'))}</Label>
             <Select value={form.paymentMode} onValueChange={v => setF('paymentMode', v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>{PAYMENT_MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
             </Select>
           </div>
+          )}
 
           {/* Vendor + Bill */}
+          {field('vendorPartyName').visible && (
           <div className="space-y-1.5">
-            <Label>Vendor / Party</Label>
+            <Label>{field('vendorPartyName').label} {fieldMark(field('vendorPartyName'))}</Label>
             <Input value={form.vendorPartyName} onChange={e => setF('vendorPartyName', e.target.value)} placeholder="Optional" />
           </div>
+          )}
+          {field('billNo').visible && (
           <div className="space-y-1.5">
-            <Label>Bill No.</Label>
+            <Label>{field('billNo').label} {fieldMark(field('billNo'))}</Label>
             <Input value={form.billNo} onChange={e => setF('billNo', e.target.value)} placeholder="Optional" />
           </div>
+          )}
 
           {/* Remarks */}
+          {field('remarks').visible && (
           <div className="col-span-2 space-y-1.5">
-            <Label>Remarks</Label>
+            <Label>{field('remarks').label} {fieldMark(field('remarks'))}</Label>
             <Textarea rows={2} value={form.remarks} onChange={e => setF('remarks', e.target.value)} placeholder="Additional notes" />
           </div>
+          )}
 
           {/* Documents */}
+          {field('attachment').visible && (
           <div className="col-span-2 space-y-2">
             <Label className="flex items-center gap-1.5">
-              <Paperclip className="h-3.5 w-3.5" /> Documents
-              <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+              <Paperclip className="h-3.5 w-3.5" /> {field('attachment').label} {fieldMark(field('attachment'))}
             </Label>
 
             {/* Pending files list */}
@@ -366,6 +393,7 @@ function QuickExpenseDialog({
               />
             </label>
           </div>
+          )}
 
         </div>
         <DialogFooter>

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { DEFAULT_EXPENSE_CATEGORIES, SAS_COLLECTIONS, type SASCategory } from '@/lib/site-account-statement';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { ControlledField } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -41,6 +43,7 @@ export default function ExpenseCategoriesPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
+  const { field } = useFieldControl('expenseCategory');
 
   const canView   = can('View',   `${MODULE}.${RESOURCE}`) || can('View Module', MODULE);
   const canAdd    = can('Add',    `${MODULE}.${RESOURCE}`);
@@ -121,6 +124,8 @@ export default function ExpenseCategoriesPage() {
       toast({ title: 'Validation', description: 'Category name is required.', variant: 'destructive' });
       return;
     }
+    const missingLabel = validateFieldControlRequirements('expenseCategory', { ...form }, field);
+    if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
     const parentCat = form.parentId ? mainCategories.find(c => c.id === form.parentId) : null;
     setSaving(true);
     try {
@@ -346,8 +351,9 @@ export default function ExpenseCategoriesPage() {
             <DialogTitle>{editingRow ? 'Edit Category' : 'Add Expense Category'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {field('parentId').visible && (
             <div className="space-y-1.5">
-              <Label>Parent Category <span className="text-muted-foreground text-xs">(optional — leave blank for main category)</span></Label>
+              <Label>{field('parentId').label} <span className="text-muted-foreground text-xs">(optional — leave blank for main category)</span></Label>
               <Select
                 value={form.parentId || '_none_'}
                 onValueChange={v => setForm(f => ({ ...f, parentId: v === '_none_' ? '' : v }))}
@@ -364,9 +370,10 @@ export default function ExpenseCategoriesPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
             <div className="space-y-1.5">
               <Label>
-                {form.parentId ? 'Sub-Category Name' : 'Category Name'} <span className="text-destructive">*</span>
+                {form.parentId ? 'Sub-Category Name' : field('name').label} <span className="text-destructive">*</span>
               </Label>
               <Input
                 value={form.name}
@@ -374,22 +381,23 @@ export default function ExpenseCategoriesPage() {
                 placeholder={form.parentId ? 'e.g. Cement, Steel Rods' : 'e.g. Material Purchase'}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Description</Label>
+            <ControlledField setting={field('description')}>
               <Input
                 value={form.description}
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 placeholder="Optional description"
               />
-            </div>
+            </ControlledField>
+            {field('isActive').visible && (
             <div className="flex items-center gap-3">
               <Switch
                 checked={form.isActive}
                 onCheckedChange={v => setForm(f => ({ ...f, isActive: v }))}
                 id="cat-active"
               />
-              <Label htmlFor="cat-active">Active</Label>
+              <Label htmlFor="cat-active">{field('isActive').label}</Label>
             </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>

@@ -12,6 +12,8 @@ import {
   type SASBudget, type SASBudgetApproval, type SASCategory, type SASCategoryBudget,
   type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { ControlledField } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -152,6 +154,8 @@ export default function SiteFundBudgetPage() {
   const { log } = useActivityLogger(MODULE);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { field } = useFieldControl('siteFundBudget');
+  const { field: categoryBudgetField } = useFieldControl('categoryBudget');
 
   const canViewAll = can('View',   `${MODULE}.All Projects`);
   const canView    = can('View', `${MODULE}.${RESOURCE}`);
@@ -405,6 +409,8 @@ export default function SiteFundBudgetPage() {
     if (!form.projectId) { toast({ title: 'Validation', description: 'Select a project.', variant: 'destructive' }); return; }
     const amount = Number(form.budgetAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid budget amount.', variant: 'destructive' }); return; }
+    const missingLabel = validateFieldControlRequirements('siteFundBudget', { notes: form.notes }, field);
+    if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
 
     // Defense in depth — the dialog only ever offers tabs/actions the role can use,
     // but re-check here in case dialogTab was left over from a different context.
@@ -551,6 +557,8 @@ export default function SiteFundBudgetPage() {
       toast({ title: 'Validation', description: 'Enter a valid budget amount.', variant: 'destructive' });
       return;
     }
+    const missingLabel = validateFieldControlRequirements('categoryBudget', { notes: catDialogNotes }, categoryBudgetField);
+    if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
     if (!catDialogProject) return;
     if (!(catEditingBudget ? categoryPerm.edit : categoryPerm.add)) {
       toast({ title: 'Not allowed', description: 'You do not have permission to set category budgets.', variant: 'destructive' });
@@ -1561,7 +1569,7 @@ export default function SiteFundBudgetPage() {
             )}
 
             <div className="space-y-1.5">
-              <Label>Project <span className="text-destructive">*</span></Label>
+              <Label>{field('projectId').label} <span className="text-destructive">*</span></Label>
               <Select
                 value={form.projectId}
                 onValueChange={id => {
@@ -1578,7 +1586,7 @@ export default function SiteFundBudgetPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Budget Amount (₹) <span className="text-destructive">*</span></Label>
+              <Label>{field('budgetAmount').label} <span className="text-destructive">*</span></Label>
               <Input
                 type="number" min="0"
                 value={form.budgetAmount}
@@ -1587,10 +1595,9 @@ export default function SiteFundBudgetPage() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label>Notes</Label>
+            <ControlledField setting={field('notes')}>
               <Textarea rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
-            </div>
+            </ControlledField>
 
             {editingBudget && (() => {
               const newAmt = Number(form.budgetAmount) || 0;
@@ -1741,7 +1748,7 @@ export default function SiteFundBudgetPage() {
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label>Budget Amount (₹) <span className="text-destructive">*</span></Label>
+              <Label>{categoryBudgetField('amount').label} <span className="text-destructive">*</span></Label>
               <Input
                 type="number"
                 value={catDialogAmount}
@@ -1752,15 +1759,14 @@ export default function SiteFundBudgetPage() {
                 autoFocus
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Notes (optional)</Label>
+            <ControlledField setting={categoryBudgetField('notes')}>
               <Input
                 value={catDialogNotes}
                 onChange={e => setCatDialogNotes(e.target.value)}
                 placeholder="Optional notes..."
                 className="h-9"
               />
-            </div>
+            </ControlledField>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCatDialogOpen(false)} disabled={catSaving}>Cancel</Button>

@@ -2,16 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDoc, collection, deleteDoc, doc, getDoc, getDocs, orderBy, query, serverTimestamp, updateDoc,
+  addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db, storage } from '@/lib/firebase';
 import {
-  DEFAULT_PAYMENT_FIELD_CONTROL, formatINR, PAYMENT_FIELD_CONTROL_LABELS, PAYMENT_MODES,
-  SAS_COLLECTIONS, SAS_FIELD_CONTROL_DOC_ID,
-  type SASAttachment, type SASExpense, type SASFieldControlSettings, type SASPayment,
-  type SASPaymentFieldControl, type SASProject,
+  formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
+  type SASAttachment, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -94,13 +94,6 @@ function AttachmentIcon({ type }: { type: string }) {
   return <File className="h-4 w-4 text-slate-400 shrink-0" />;
 }
 
-// Marks a field label as required/optional per the Field Control settings.
-function fieldMark(mandatory: boolean) {
-  return mandatory
-    ? <span className="text-destructive">*</span>
-    : <span className="text-muted-foreground text-xs font-normal">(optional)</span>;
-}
-
 function formatTimestamp(ts: any): string {
   if (!ts) return '—';
   const d: Date | null = ts?.toDate?.() ?? (ts?.seconds ? new Date(ts.seconds * 1000) : null);
@@ -116,6 +109,7 @@ export default function PaymentsPage() {
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
   const { user } = useAuth();
+  const { field } = useFieldControl('payment');
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -129,7 +123,6 @@ export default function PaymentsPage() {
   const [projects,  setProjects]  = useState<SASProject[]>([]);
   const [payments,  setPayments]  = useState<SASPayment[]>([]);
   const [expenses,  setExpenses]  = useState<SASExpense[]>([]);
-  const [fieldControl, setFieldControl] = useState<SASPaymentFieldControl>(DEFAULT_PAYMENT_FIELD_CONTROL);
   const [loading,   setLoading]   = useState(true);
   const [saving,           setSaving]           = useState(false);
   const [uploading,        setUploading]        = useState(false);
@@ -159,17 +152,14 @@ export default function PaymentsPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, paySnap, expSnap, fieldControlSnap] = await Promise.all([
+      const [pSnap, paySnap, expSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.payments), orderBy('receiptDate', 'desc'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
-        getDoc(doc(db, SAS_COLLECTIONS.settings, SAS_FIELD_CONTROL_DOC_ID)),
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
       setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
-      const settingsData = fieldControlSnap.exists() ? (fieldControlSnap.data() as Partial<SASFieldControlSettings>) : null;
-      setFieldControl({ ...DEFAULT_PAYMENT_FIELD_CONTROL, ...(settingsData?.payment || {}) });
     } finally {
       setLoading(false);
     }
@@ -401,24 +391,15 @@ export default function PaymentsPage() {
       toast({ title: 'Validation', description: 'Enter a valid amount.', variant: 'destructive' });
       return;
     }
-    if (fieldControl.paymentMode && !form.paymentMode) {
-      toast({ title: 'Validation', description: `${PAYMENT_FIELD_CONTROL_LABELS.paymentMode} is required.`, variant: 'destructive' });
-      return;
-    }
-    if (fieldControl.referenceNo && !form.referenceNo.trim()) {
-      toast({ title: 'Validation', description: `${PAYMENT_FIELD_CONTROL_LABELS.referenceNo} is required.`, variant: 'destructive' });
-      return;
-    }
-    if (fieldControl.receivedBy && !form.receivedBy.trim()) {
-      toast({ title: 'Validation', description: `${PAYMENT_FIELD_CONTROL_LABELS.receivedBy} is required.`, variant: 'destructive' });
-      return;
-    }
-    if (fieldControl.remarks && !form.remarks.trim()) {
-      toast({ title: 'Validation', description: `${PAYMENT_FIELD_CONTROL_LABELS.remarks} is required.`, variant: 'destructive' });
-      return;
-    }
-    if (fieldControl.attachment && pendingFiles.length + existingAttachments.length === 0) {
-      toast({ title: 'Validation', description: 'At least one document upload is required.', variant: 'destructive' });
+    const missingLabel = validateFieldControlRequirements('payment', {
+      paymentMode: form.paymentMode,
+      referenceNo: form.referenceNo,
+      receivedBy: form.receivedBy,
+      remarks: form.remarks,
+      attachment: pendingFiles.length + existingAttachments.length > 0 ? 'attached' : '',
+    }, field);
+    if (missingLabel) {
+      toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' });
       return;
     }
 
@@ -891,15 +872,16 @@ export default function PaymentsPage() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Receipt Date <span className="text-destructive">*</span></Label>
+              <Label>{field('receiptDate').label} <span className="text-destructive">*</span></Label>
               <Input type="date" value={form.receiptDate} onChange={e => setField('receiptDate', e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Amount (₹) <span className="text-destructive">*</span></Label>
+              <Label>{field('receivedAmount').label} (₹) <span className="text-destructive">*</span></Label>
               <Input type="number" min="0" value={form.receivedAmount} onChange={e => setField('receivedAmount', e.target.value)} placeholder="0" />
             </div>
+            {field('paymentMode').visible && (
             <div className="space-y-1.5">
-              <Label>Payment Mode {fieldMark(fieldControl.paymentMode)}</Label>
+              <Label>{field('paymentMode').label} {fieldMark(field('paymentMode'))}</Label>
               <Select value={form.paymentMode} onValueChange={v => setField('paymentMode', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -907,24 +889,32 @@ export default function PaymentsPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
+            {field('referenceNo').visible && (
             <div className="space-y-1.5">
-              <Label>Reference No. {fieldMark(fieldControl.referenceNo)}</Label>
+              <Label>{field('referenceNo').label} {fieldMark(field('referenceNo'))}</Label>
               <Input value={form.referenceNo} onChange={e => setField('referenceNo', e.target.value)} placeholder="Txn / UTR / Cheque No." />
             </div>
+            )}
+            {field('receivedBy').visible && (
             <div className="col-span-2 space-y-1.5">
-              <Label>Received By {fieldMark(fieldControl.receivedBy)}</Label>
+              <Label>{field('receivedBy').label} {fieldMark(field('receivedBy'))}</Label>
               <Input value={form.receivedBy} onChange={e => setField('receivedBy', e.target.value)} placeholder="Person who received the amount" />
             </div>
+            )}
+            {field('remarks').visible && (
             <div className="col-span-2 space-y-1.5">
-              <Label>Remarks {fieldMark(fieldControl.remarks)}</Label>
+              <Label>{field('remarks').label} {fieldMark(field('remarks'))}</Label>
               <Textarea rows={2} value={form.remarks} onChange={e => setField('remarks', e.target.value)} placeholder="Additional notes" />
             </div>
+            )}
 
             {/* ── Attachments ─────────────────────────────────────────────────── */}
+            {field('attachment').visible && (
             <div className="col-span-2 space-y-2">
               <Label className="flex items-center gap-1.5">
                 <Paperclip className="h-3.5 w-3.5" />
-                Upload Document {fieldMark(fieldControl.attachment)}
+                {field('attachment').label} {fieldMark(field('attachment'))}
                 <span className="text-muted-foreground text-xs font-normal">— PDF, images, Word, Excel</span>
               </Label>
 
@@ -1006,6 +996,7 @@ export default function PaymentsPage() {
                 </p>
               )}
             </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>

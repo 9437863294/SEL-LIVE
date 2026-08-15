@@ -52,7 +52,9 @@
       "PowerShell(Select-String -Path \"d:\\\\Application Dev\\\\SEL Live\\\\node_modules\\\\@capacitor-firebase\\\\authentication\\\\dist\\\\plugin.js\" -Pattern \"provider|providers|enabled\" -CaseSensitive:$false)",
       "Bash(npm run *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/recurring-payments/handbook)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(taskkill //F //IM node.exe //FI \"WINDOWTITLE eq none\")",
+      "Bash(grep -i \"budget.category\\\\|budget\\\\\\\\\\\\\\\\category\")"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

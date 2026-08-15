@@ -122,7 +122,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
   function canAccessSection(item: typeof sections[0]): boolean {
     // Settings: requires explicit Settings-family RBAC
     if (item.href === '/site-account-statement/settings') {
-      return ['Project Settings', 'Expense Categories', 'Budget Alerts', 'Tender Budget'].some(r =>
+      return ['Project Settings', 'Expense Categories', 'Budget Alerts', 'Tender Budget', 'Field Control'].some(r =>
         can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
       );
     }
@@ -168,7 +168,8 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
         (s.href !== '/site-account-statement' && path.startsWith(s.href + '/')) ||
         (isSettings && (
           path.startsWith('/site-account-statement/expense-categories') ||
-          path.startsWith('/site-account-statement/budget-alerts')
+          path.startsWith('/site-account-statement/budget-alerts') ||
+          path.startsWith('/site-account-statement/tender-budget')
         ))
       );
     });
@@ -185,7 +186,8 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
         (item.href !== '/site-account-statement' && safePathname.startsWith(item.href + '/')) ||
         (isSettingsEntry && (
           safePathname.startsWith('/site-account-statement/expense-categories') ||
-          safePathname.startsWith('/site-account-statement/budget-alerts')
+          safePathname.startsWith('/site-account-statement/budget-alerts') ||
+          safePathname.startsWith('/site-account-statement/tender-budget')
         ));
       const Icon = item.icon;
       const showDivider = item.group !== lastGroup && lastGroup !== '';

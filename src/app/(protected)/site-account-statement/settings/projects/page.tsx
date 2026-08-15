@@ -7,6 +7,8 @@ import {
 import { db } from '@/lib/firebase';
 import { SAS_COLLECTIONS, type SASProject } from '@/lib/site-account-statement';
 import type { Project, User } from '@/lib/types';
+import { useFieldControl } from '@/components/site-account-statement/use-field-control';
+import { ControlledToggleLabel } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
@@ -68,6 +70,7 @@ export default function ProjectSettingsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { log } = useActivityLogger('Site Account Statement');
   const { toast } = useToast();
+  const { field } = useFieldControl('project');
 
   const canView   = can('View',   `${MODULE}.${RESOURCE}`) || can('View Module', MODULE);
   const canAdd    = can('Add',    `${MODULE}.${RESOURCE}`);
@@ -404,7 +407,7 @@ export default function ProjectSettingsPage() {
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="col-span-2 space-y-1.5">
               <Label>
-                Project <span className="text-destructive">*</span>
+                {field('centralProjectId').label} <span className="text-destructive">*</span>
                 <span className="ml-2 text-xs font-normal text-muted-foreground">(from central project hub)</span>
               </Label>
               <Select
@@ -445,8 +448,9 @@ export default function ProjectSettingsPage() {
               </>
             )}
 
+            {field('assignedPersonId').visible && (
             <div className="col-span-2 space-y-1.5">
-              <Label>Assigned Person</Label>
+              <Label>{field('assignedPersonId').label} {field('assignedPersonId').required && <span className="text-destructive">*</span>}</Label>
               <Select
                 value={form.assignedPersonId || '_none_'}
                 onValueChange={v => v === '_none_' ? setForm(f => ({ ...f, assignedPersonId: '', assignedPersonName: '', assignedPersonEmail: '' })) : selectUser(v)}
@@ -464,10 +468,12 @@ export default function ProjectSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
 
+            {field('altUserId').visible && (
             <div className="col-span-2 space-y-1.5">
               <Label className="flex items-center gap-1.5">
-                Alternative User
+                {field('altUserId').label}
                 <span className="text-xs font-normal text-muted-foreground">(same access as assigned person)</span>
               </Label>
               <Select value={form.altUserId || '_none_'} onValueChange={selectAltUser}>
@@ -484,10 +490,12 @@ export default function ProjectSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
 
+            {field('viewerId').visible && (
             <div className="col-span-2 space-y-1.5">
               <Label className="flex items-center gap-1.5">
-                Viewer
+                {field('viewerId').label}
                 <span className="text-xs font-normal text-muted-foreground">(read-only, can view reports & statement)</span>
               </Label>
               <Select value={form.viewerId || '_none_'} onValueChange={selectViewer}>
@@ -504,9 +512,11 @@ export default function ProjectSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
 
+            {field('status').visible && (
             <div className="space-y-1.5">
-              <Label>Status</Label>
+              <Label>{field('status').label}</Label>
               <Select value={form.status} onValueChange={v => setField('status', v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -515,15 +525,18 @@ export default function ProjectSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+            )}
 
+            {field('enabledForSiteAccount').visible && (
             <div className="flex items-center gap-3 pt-5">
               <Switch
                 checked={form.enabledForSiteAccount}
                 onCheckedChange={v => setField('enabledForSiteAccount', v)}
                 id="proj-enabled"
               />
-              <Label htmlFor="proj-enabled">Enable for Site Account Statement</Label>
+              <Label htmlFor="proj-enabled"><ControlledToggleLabel setting={field('enabledForSiteAccount')} /></Label>
             </div>
+            )}
           </div>
 
           <DialogFooter>

@@ -11,6 +11,7 @@ import {
   type SASBudgetAlertRecipient,
   type SASProject,
 } from '@/lib/site-account-statement';
+import { useFieldControl } from '@/components/site-account-statement/use-field-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
@@ -88,6 +89,7 @@ export default function BudgetAlertsPage() {
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
+  const { field } = useFieldControl('budgetAlerts');
 
   const canEdit    = can('Edit',   'Site Account Statement.Budget Alerts')
                   || can('Edit',   'Site Account Statement.Project Settings');
@@ -597,7 +599,7 @@ export default function BudgetAlertsPage() {
             <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="space-y-0.5">
                 <Label htmlFor="alert-enabled" className="text-sm font-medium">
-                  Enable Alerts
+                  {field('enabled').label}
                 </Label>
                 <p className="text-xs text-muted-foreground">
                   Send email notifications when budget thresholds are reached
@@ -613,7 +615,7 @@ export default function BudgetAlertsPage() {
             {/* Thresholds */}
             <div className="space-y-2.5">
               <Label className="text-sm font-medium">
-                Alert Thresholds
+                {field('thresholds').label}
                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">
                   (select one or more)
                 </span>
@@ -659,7 +661,7 @@ export default function BudgetAlertsPage() {
             <div className="space-y-3">
               <Label className="text-sm font-medium flex items-center gap-1.5">
                 <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                Recipients
+                {field('recipients').label}
               </Label>
 
               {/* Existing recipients table */}
@@ -711,7 +713,7 @@ export default function BudgetAlertsPage() {
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <Label htmlFor="rec-name" className="text-xs text-muted-foreground">Name</Label>
+                    <Label htmlFor="rec-name" className="text-xs text-muted-foreground">{field('newName').label}</Label>
                     <Input
                       id="rec-name"
                       value={dialog.newName}
@@ -722,7 +724,7 @@ export default function BudgetAlertsPage() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="rec-email" className="text-xs text-muted-foreground">Email</Label>
+                    <Label htmlFor="rec-email" className="text-xs text-muted-foreground">{field('newEmail').label}</Label>
                     <Input
                       id="rec-email"
                       type="email"

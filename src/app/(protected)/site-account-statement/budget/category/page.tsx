@@ -13,6 +13,8 @@ import {
   type SASExpense,
   type SASProject,
 } from '@/lib/site-account-statement';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { ControlledField } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useToast } from '@/hooks/use-toast';
@@ -57,6 +59,7 @@ export default function CategoryBudgetPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { field } = useFieldControl('categoryBudget');
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
   // Category Budget is its own permission resource — "Budget" is kept as a
@@ -183,6 +186,8 @@ export default function CategoryBudgetPage() {
       toast({ title: 'Validation', description: 'Enter a valid budget amount.', variant: 'destructive' });
       return;
     }
+    const missingLabel = validateFieldControlRequirements('categoryBudget', { notes: dlgNotes }, field);
+    if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
     const project = projects.find(p => p.id === selectedProjectId);
     const catDoc  = categories.find(c => c.name === dlgCategory);
 
@@ -510,7 +515,7 @@ export default function CategoryBudgetPage() {
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label>Budget Amount (₹) *</Label>
+              <Label>{field('amount').label} *</Label>
               <Input
                 type="number"
                 value={dlgAmount}
@@ -521,15 +526,14 @@ export default function CategoryBudgetPage() {
                 autoFocus
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Notes (optional)</Label>
+            <ControlledField setting={field('notes')}>
               <Input
                 value={dlgNotes}
                 onChange={e => setDlgNotes(e.target.value)}
                 placeholder="Optional notes..."
                 className="h-9"
               />
-            </div>
+            </ControlledField>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>

@@ -9,6 +9,8 @@ import {
   formatINR, SAS_COLLECTIONS,
   type SASProject, type SASTenderBudget,
 } from '@/lib/site-account-statement';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { ControlledField } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -57,6 +59,7 @@ export default function TenderBudgetSetupPage() {
   const { log } = useActivityLogger(MODULE);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { field } = useFieldControl('tenderBudget');
 
   const canViewAll = can('View',   `${MODULE}.All Projects`);
   const canView    = can('View', `${MODULE}.${RESOURCE}`);
@@ -132,6 +135,8 @@ export default function TenderBudgetSetupPage() {
     if (!dialogProjectId) { toast({ title: 'Select a project', variant: 'destructive' }); return; }
     if (!amount || amount <= 0) { toast({ title: 'Enter a valid tender amount', variant: 'destructive' }); return; }
     if (dialogStart > dialogEnd) { toast({ title: 'Start month must be before end month', variant: 'destructive' }); return; }
+    const missingLabel = validateFieldControlRequirements('tenderBudget', { dialogNotes }, field);
+    if (missingLabel) { toast({ title: `${missingLabel} is required`, variant: 'destructive' }); return; }
     const project = projects.find(p => p.id === dialogProjectId);
     if (!project) return;
 
@@ -353,7 +358,7 @@ export default function TenderBudgetSetupPage() {
           <div className="space-y-4 py-2">
 
             <div className="space-y-1.5">
-              <Label>Project <span className="text-destructive">*</span></Label>
+              <Label>{field('dialogProjectId').label} <span className="text-destructive">*</span></Label>
               {editingBudget ? (
                 <Input value={visibleProjects.find(p => p.id === dialogProjectId)?.projectName ?? dialogProjectId} disabled />
               ) : (
@@ -367,14 +372,14 @@ export default function TenderBudgetSetupPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Tender Amount (₹) <span className="text-destructive">*</span></Label>
+              <Label>{field('dialogAmount').label} <span className="text-destructive">*</span></Label>
               <Input type="number" min={0} step={1000} placeholder="e.g. 5000000"
                 value={dialogAmount} onChange={e => setDialogAmount(e.target.value)} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start Month</Label>
+                <Label>{field('dialogStart').label}</Label>
                 <div className="flex items-center gap-1.5">
                   <Button size="icon" variant="outline" className="h-8 w-8 shrink-0" onClick={() => setDialogStart(s => shiftMonth(s, -1))}><ChevronLeft className="h-4 w-4" /></Button>
                   <span className="flex-1 text-center text-sm font-medium">{monthLabel(dialogStart)}</span>
@@ -382,7 +387,7 @@ export default function TenderBudgetSetupPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label>End Month</Label>
+                <Label>{field('dialogEnd').label}</Label>
                 <div className="flex items-center gap-1.5">
                   <Button size="icon" variant="outline" className="h-8 w-8 shrink-0" onClick={() => setDialogEnd(e => shiftMonth(e, -1))}><ChevronLeft className="h-4 w-4" /></Button>
                   <span className="flex-1 text-center text-sm font-medium">{monthLabel(dialogEnd)}</span>
@@ -404,11 +409,10 @@ export default function TenderBudgetSetupPage() {
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label>Notes (optional)</Label>
+            <ControlledField setting={field('dialogNotes')}>
               <Textarea rows={2} placeholder="Any notes about this tender…"
                 value={dialogNotes} onChange={e => setDialogNotes(e.target.value)} />
-            </div>
+            </ControlledField>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
