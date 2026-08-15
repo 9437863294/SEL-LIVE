@@ -372,7 +372,7 @@ export default function RenewalsHubPage() {
             <div className="grid w-full grid-cols-2 items-center gap-2 sm:flex sm:w-auto">
               <Link
                 href="/vehicle-management/vehicle-health"
-                className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-center text-xs font-semibold text-cyan-700 transition-colors hover:bg-cyan-100 sm:min-h-0"
+                className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-center text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 sm:min-h-0"
               >
                 <Activity className="h-3.5 w-3.5" />
                 Health Dashboard
@@ -426,7 +426,7 @@ export default function RenewalsHubPage() {
                       ? 'bg-rose-500 text-white shadow-sm'
                       : tab === 'dueSoon'
                       ? 'bg-amber-500 text-white shadow-sm'
-                      : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-sm'
+                      : 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm'
                     : 'bg-white/80 text-muted-foreground hover:bg-white border border-white/70'
                 )}
               >

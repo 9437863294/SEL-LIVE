@@ -38,7 +38,7 @@ import { cn } from '@/lib/utils';
 // sidebar/sheet's own near-white backdrop — a *-50 chip (esp. slate) was blending into the
 // panel and made several rows look like their icon had gone missing.
 const sections = [
-  { href: '/vehicle-management',                label: 'Overview',        resource: '',                          icon: Gauge,       color: 'text-cyan-600',    bg: 'bg-cyan-100',    group: 'core' },
+  { href: '/vehicle-management',                label: 'Overview',        resource: '',                          icon: Gauge,       color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'core' },
   { href: '/vehicle-management/renewals',       label: 'Renewals Hub',    resource: '',                          icon: RefreshCw,   color: 'text-rose-600',    bg: 'bg-rose-100',    group: 'core' },
   { href: '/vehicle-management/renewals/history', label: 'Renewal History', resource: '',                        icon: History,     color: 'text-slate-600',   bg: 'bg-slate-200',   group: 'core' },
   { href: '/vehicle-management/vehicle-health', label: 'Vehicle Health',  resource: 'Vehicle Master',            icon: Activity,    color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'core' },
@@ -115,7 +115,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
             className={cn(
               'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 lg:py-2 text-sm font-medium transition-all duration-200',
               active
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-[0_8px_24px_-8px_rgba(14,116,205,0.6)]'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_8px_24px_-8px_rgba(16,185,129,0.5)]'
                 : 'text-slate-600 hover:bg-white/70 hover:text-slate-900'
             )}
           >
@@ -156,8 +156,8 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
   return (
     <div className="vm-module-root relative w-full px-2 py-2 sm:px-6 sm:py-4 lg:px-8 [&_table]:min-w-max [&_table_th]:whitespace-nowrap [&_table_td]:whitespace-nowrap">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl vm-gradient-atmosphere" />
-      <div className="pointer-events-none absolute -z-10 left-[8%] top-[8%] h-56 w-56 rounded-full bg-cyan-300/20 blur-3xl vm-orb-a" />
-      <div className="pointer-events-none absolute -z-10 right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-blue-300/20 blur-3xl vm-orb-b" />
+      <div className="pointer-events-none absolute -z-10 left-[8%] top-[8%] h-56 w-56 rounded-full bg-emerald-300/20 blur-3xl vm-orb-a" />
+      <div className="pointer-events-none absolute -z-10 right-[10%] bottom-[6%] h-64 w-64 rounded-full bg-teal-300/20 blur-3xl vm-orb-b" />
 
       {/* Mobile header */}
       <div className="mb-2 sm:mb-3 lg:hidden">
@@ -170,10 +170,10 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
                   <Menu className="h-4 w-4" /> Menu
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[88vw] max-w-[300px] border-r border-white/70 bg-slate-50/98 p-0 backdrop-blur-xl flex flex-col">
+              <SheetContent side="left" className="w-[88vw] max-w-[300px] border-r border-white/70 bg-slate-50 p-0 flex flex-col">
                 <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
                   <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow">
                       <Truck className="h-4 w-4 text-white" />
                     </div>
                     <div>
@@ -191,7 +191,7 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
 
             {/* Logo + title — right of Menu button */}
             <div className="flex items-center gap-2 min-w-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
                 <Truck className="h-4 w-4 text-white" />
               </div>
               <div className="min-w-0">
@@ -208,9 +208,9 @@ export default function VehicleManagementLayoutShell({ children }: { children: R
         <aside className="hidden lg:sticky lg:top-20 lg:block">
           <Card className="overflow-hidden vm-panel-strong vm-reveal">
             {/* Sidebar header */}
-            <div className="border-b border-white/50 bg-gradient-to-r from-cyan-500/10 to-blue-500/5 px-4 py-3">
+            <div className="border-b border-white/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 px-4 py-3">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 shadow-sm">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
                   <Truck className="h-4 w-4 text-white" />
                 </div>
                 <div>

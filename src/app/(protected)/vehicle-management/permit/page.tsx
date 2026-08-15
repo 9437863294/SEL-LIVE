@@ -90,6 +90,7 @@ export default function PermitManagementPage() {
       title="Permit Management"
       description="Permit validity and renewal for commercial/transport vehicles."
       itemName="Permit Record"
+      formKey="permit"
       collectionName={VEHICLE_COLLECTIONS.permit}
       fields={fields}
       columns={columns}

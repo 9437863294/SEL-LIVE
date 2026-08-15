@@ -357,7 +357,7 @@ export function VehicleImportDialog({
   /* ================================================================== */
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
+      <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 vm-panel-strong">
         {/* ── Header ── */}
         <div className="vm-dialog-header shrink-0 border-b border-slate-100 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 px-6 pb-4 pt-5 pr-12">
           <DialogTitle className="text-base font-semibold text-slate-900">{title}</DialogTitle>

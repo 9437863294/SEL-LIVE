@@ -106,6 +106,7 @@ export default function RoadTaxManagementPage() {
       title="Road Tax Management"
       description="Tax dues, validity, and receipt records."
       itemName="Road Tax Record"
+      formKey="roadTax"
       collectionName={VEHICLE_COLLECTIONS.roadTax}
       fields={fields}
       columns={columns}

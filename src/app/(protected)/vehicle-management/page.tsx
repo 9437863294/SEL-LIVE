@@ -310,7 +310,7 @@ export default function VehicleManagementOverviewPage() {
   return (
     <div className="min-w-0 space-y-3 overflow-x-hidden sm:space-y-4">
       <Card className="relative overflow-hidden vm-panel-strong vm-reveal">
-        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-sky-500/5 to-blue-500/10 animate-bb-gradient" />
+        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 via-white/5 to-teal-500/10 animate-bb-gradient" />
         <div className="electric-scan-line top-8" />
         <CardHeader className="relative flex flex-row items-start justify-between gap-3 px-3 pb-1.5 pt-2.5 sm:p-3">
           <div className="min-w-0">
@@ -325,15 +325,15 @@ export default function VehicleManagementOverviewPage() {
           </Button>
         </CardHeader>
         <CardContent className="relative grid grid-cols-3 gap-1.5 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
-          <div className="rounded-lg border border-cyan-100/70 bg-white/80 p-2 shadow-sm">
+          <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
             <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Modules</p>
             <p className="mt-0.5 text-base font-semibold sm:text-xl">{visibleCards.length}</p>
           </div>
-          <div className="rounded-lg border border-cyan-100/70 bg-white/80 p-2 shadow-sm">
+          <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
             <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Records</p>
             <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalVisibleRecords}</p>
           </div>
-          <div className="rounded-lg border border-cyan-100/70 bg-white/80 p-2 shadow-sm">
+          <div className="rounded-lg border border-emerald-100/70 bg-white/80 p-2 shadow-sm">
             <p className="text-[10px] leading-tight text-muted-foreground sm:text-xs">Alerts</p>
             <p className="mt-0.5 text-base font-semibold sm:text-xl">{isLoading ? '...' : totalAlerts}</p>
             {syncFailures > 0 && <p className="mt-0.5 text-[9px] font-medium text-amber-700 sm:text-[10px]">Partial data · retry refresh</p>}
@@ -368,7 +368,7 @@ export default function VehicleManagementOverviewPage() {
             <Link key={item.href} href={item.href} className="block h-full min-w-0" aria-label={`Open ${item.label}`}>
               <Card
                 className={cn(
-                  'group relative h-full min-h-[4.75rem] min-w-0 overflow-hidden vm-panel transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_24px_50px_-32px_rgba(14,116,205,0.55)]',
+                  'group relative h-full min-h-[4.75rem] min-w-0 overflow-hidden vm-panel transition-all duration-300 hover:-translate-y-1.5 hover:shadow-[0_24px_50px_-32px_rgba(16,185,129,0.55)]',
                   'vm-reveal cursor-pointer active:scale-[0.98]'
                 )}
                 style={{ animationDelay: `${Math.min(idx * 45, 240)}ms` }}
@@ -379,8 +379,8 @@ export default function VehicleManagementOverviewPage() {
                     desktop block below (that cross-contamination was the actual cause of the
                     title/count getting squeezed to nothing while the description overflowed). */}
                 <div className="relative flex items-center gap-2.5 p-3 lg:hidden">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100">
-                    <Icon className="h-4 w-4 text-cyan-700 transition-transform duration-300 group-hover:scale-110" />
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-emerald-100">
+                    <Icon className="h-4 w-4 text-emerald-700 transition-transform duration-300 group-hover:scale-110" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate pr-0.5 text-[13px] font-semibold leading-tight text-card-foreground" title={item.label}>{item.label}</p>
@@ -392,8 +392,8 @@ export default function VehicleManagementOverviewPage() {
 
                 {/* Desktop layout — icon, label, description, and record count. */}
                 <CardHeader className="relative hidden p-3 lg:block">
-                  <div className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-cyan-100">
-                    <Icon className="h-4 w-4 text-cyan-700 transition-transform duration-300 group-hover:scale-110" />
+                  <div className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white/80 shadow-sm ring-1 ring-emerald-100">
+                    <Icon className="h-4 w-4 text-emerald-700 transition-transform duration-300 group-hover:scale-110" />
                   </div>
                   <CardTitle className="truncate pr-0.5 text-sm" title={item.label}>{item.label}</CardTitle>
                   <CardDescription className="mt-1 line-clamp-1 text-[11px]">{item.description}</CardDescription>
@@ -425,7 +425,7 @@ export default function VehicleManagementOverviewPage() {
       {canViewReports && (
         <Link href="/vehicle-management/reports" className="block" aria-label="Open reports">
           <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(14,116,205,0.55)]">
-            <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
+            <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
             <CardHeader className="p-2.5 sm:p-3">
               <CardTitle className="text-sm">Reports</CardTitle>
               <CardDescription className="hidden sm:block">Fuel cost, mileage, monthly trends, and project-wise cost analysis.</CardDescription>
@@ -466,11 +466,11 @@ export default function VehicleManagementOverviewPage() {
         </Link>
         {canViewHealth && (
           <Link href="/vehicle-management/vehicle-health" className="block" aria-label="Open Vehicle Health Dashboard">
-            <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(6,182,212,0.45)] active:scale-[0.98]">
-              <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-cyan-500 to-blue-600" />
+            <Card className="vm-panel-strong overflow-hidden vm-reveal cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_-32px_rgba(16,185,129,0.45)] active:scale-[0.98]">
+              <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-600" />
               <CardHeader className="flex flex-row items-center gap-2 p-2 sm:p-3">
-                <div className="flex h-7 w-7 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-50 shadow-sm ring-1 ring-cyan-100">
-                  <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-cyan-600" />
+                <div className="flex h-7 w-7 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 shadow-sm ring-1 ring-emerald-100">
+                  <Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-600" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">

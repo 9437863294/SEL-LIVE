@@ -4,30 +4,8 @@ import { useModules } from "@/context/ModuleContext";
 import type { Module } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Banknote,
-  BookOpenCheck,
-  Coins,
-  CreditCard,
-  Edit,
-  FileText,
-  FolderKanban,
-  GitMerge,
-  GripVertical,
-  Landmark,
-  MessageSquare,
-  Package,
-  Receipt,
-  Settings,
-  Shield,
-  ShieldCheck,
-  ShoppingCart,
-  Trash2,
-  Truck,
-  User,
-  Users,
-  type LucideIcon as LucideIconType,
-} from "lucide-react";
+import { Edit, GripVertical, Trash2 } from "lucide-react";
+import { getModuleIconEntry } from "./module-icon-registry";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,35 +27,6 @@ interface ModuleCardProps extends React.HTMLAttributes<HTMLDivElement> {
   module: Module;
   isDragging?: boolean;
 }
-
-const moduleIconComponents: Record<string, LucideIconType> = {
-  Banknote,
-  BookOpenCheck,
-  Coins,
-  CreditCard,
-  FileText,
-  FolderKanban,
-  GitMerge,
-  Landmark,
-  MessageSquare,
-  Package,
-  Receipt,
-  Settings,
-  Shield,
-  ShieldCheck,
-  ShoppingCart,
-  Truck,
-  User,
-  Users,
-};
-
-const ModuleIcon = ({
-  name,
-  ...props
-}: { name: string } & React.ComponentProps<LucideIconType>) => {
-  const Icon = moduleIconComponents[name] || FileText;
-  return <Icon {...props} />;
-};
 
 export default function ModuleCard({
   module,
@@ -192,15 +141,19 @@ export default function ModuleCard({
     </Card>
   );
 
+  const { Icon: ModuleGlyph, gradient } = getModuleIconEntry(module.icon);
+
   const cardInnerContent = (
     <>
       <CardHeader className="flex-col items-start gap-2 space-y-0 p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-4">
         <div className="flex w-full items-center gap-2 sm:contents">
-          <div className="bg-primary/10 p-1.5 sm:p-2 rounded-lg shrink-0">
-            <ModuleIcon
-              name={module.icon}
-              className="w-4 h-4 sm:w-5 sm:h-5 text-primary"
-            />
+          <div
+            className={cn(
+              "bg-gradient-to-br p-1.5 sm:p-2 rounded-lg shrink-0 shadow-sm",
+              gradient,
+            )}
+          >
+            <ModuleGlyph className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
           <div className="flex-1 min-w-0 sm:hidden">
             <CardTitle className="text-xs font-bold leading-tight truncate">

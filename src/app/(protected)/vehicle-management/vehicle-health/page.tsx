@@ -354,11 +354,11 @@ export default function VehicleHealthPage() {
     <div className="space-y-3 vm-reveal sm:space-y-5">
       {/* Header */}
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-cyan-500 to-blue-600 animate-bb-gradient" />
+        <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-600 animate-bb-gradient" />
         <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <CardTitle className="flex items-center gap-2 tracking-tight">
-              <Activity className="h-5 w-5 text-cyan-500" />
+              <Activity className="h-5 w-5 text-emerald-500" />
               Vehicle Health Dashboard
             </CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
@@ -416,7 +416,7 @@ export default function VehicleHealthPage() {
           {(['All', 'A', 'B', 'C', 'D', 'F'] as const).map((g) => {
             const active = gradeFilter === g;
             const colorMap: Record<string, string> = {
-              All: 'border-cyan-400 bg-cyan-50 text-cyan-700',
+              All: 'border-emerald-400 bg-emerald-50 text-emerald-700',
               A: 'border-emerald-400 bg-emerald-50 text-emerald-700',
               B: 'border-cyan-400 bg-cyan-50 text-cyan-700',
               C: 'border-yellow-400 bg-yellow-50 text-yellow-700',
@@ -448,7 +448,7 @@ export default function VehicleHealthPage() {
               onClick={() => setSortKey(key)}
               className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                 sortKey === key
-                  ? 'border-cyan-400 bg-cyan-50 text-cyan-700'
+                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
                   : 'border-white/20 bg-white/10 text-muted-foreground hover:bg-white/20'
               }`}
             >
@@ -601,7 +601,7 @@ export default function VehicleHealthPage() {
                             {alert.status === 'Missing' && cat && (
                               <Link
                                 href={`${cat.addHref}?add=1&vid=${encodeURIComponent(v.id)}&vnum=${encodeURIComponent(v.vehicleNumber)}`}
-                                className="mt-1.5 inline-flex items-center text-[11px] font-semibold text-cyan-700 hover:underline"
+                                className="mt-1.5 inline-flex items-center text-[11px] font-semibold text-emerald-700 hover:underline"
                               >
                                 Add {alert.category} →
                               </Link>
@@ -618,7 +618,7 @@ export default function VehicleHealthPage() {
                       <span>⛽ Mileage: <strong>{v.fuelHealthLabel}</strong></span>
                       <Link
                         href={`/vehicle-management/renewals`}
-                        className="ml-auto text-cyan-600 hover:underline font-medium"
+                        className="ml-auto text-emerald-600 hover:underline font-medium"
                       >
                         View Renewals →
                       </Link>

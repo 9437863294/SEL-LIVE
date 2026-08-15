@@ -90,7 +90,7 @@ export function EditModuleDialog({ isOpen, onOpenChange, module }: EditModuleDia
                 <FormField control={form.control} name="icon" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Icon</FormLabel>
-                      <FormControl><Input {...field} placeholder="e.g., Landmark" /></FormControl>
+                      <FormControl><Input {...field} placeholder="e.g., Vault, ShieldCheck, Package" /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -23,6 +23,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { createUserNotification } from '@/lib/notifications';
 import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleDateRangeError, getVehicleTimestampMillis, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/vehicle-management/use-field-control';
+import { labelWithMark } from '@/components/vehicle-management/controlled-field';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -129,6 +131,7 @@ export default function InsuranceManagementPage() {
   const { user } = useAuth();
   const { log } = useActivityLogger('Vehicle Management');
   const { can } = useAuthorization();
+  const { field } = useFieldControl('insurance');
   const { rows: vehicleRows, options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
   const { prefill, renewingFromId, workflowCaseId } = useRenewalPrefill();
 
@@ -470,25 +473,21 @@ export default function InsuranceManagementPage() {
 
   const submit = async () => {
     if (isSaving) return;
-    const required = [
-      ['vehicleId', 'Vehicle Number'],
-      ['insuranceCompany', 'Insurance Company'],
-      ['policyNumber', 'Policy Number'],
-      ['policyType', 'Policy Type'],
-      ['startDate', 'Start Date'],
-      ['expiryDate', 'Expiry Date'],
-      ['premiumAmount', 'Premium Amount'],
-    ] as const;
-
-    for (const [key, label] of required) {
-      if (!String(form[key] || '').trim()) {
-        toast({ title: 'Validation Error', description: `${label} is required.`, variant: 'destructive' });
-        return;
-      }
+    if (!String(form.vehicleId || '').trim()) {
+      toast({ title: 'Validation Error', description: `${field('vehicleId').label} is required.`, variant: 'destructive' });
+      return;
+    }
+    // certificateDocumentUrl is validated separately below (required only when adding, and
+    // against the pending `file` selection rather than the form's own url field), so it's
+    // excluded here to avoid double-checking it against the wrong value.
+    const missingLabel = validateFieldControlRequirements('insurance', { ...form, certificateDocumentUrl: 'skip' }, field);
+    if (missingLabel) {
+      toast({ title: 'Validation Error', description: `${missingLabel} is required.`, variant: 'destructive' });
+      return;
     }
 
-    if (!editingRow && !file) {
-      toast({ title: 'Validation Error', description: 'Document Upload is required.', variant: 'destructive' });
+    if (!editingRow && field('certificateDocumentUrl').required && !file) {
+      toast({ title: 'Validation Error', description: `${field('certificateDocumentUrl').label} is required.`, variant: 'destructive' });
       return;
     }
 
@@ -805,7 +804,7 @@ export default function InsuranceManagementPage() {
                   {/* Action buttons */}
                   <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-slate-100 pt-3">
                     {row.isMissingRecord ? (
-                      <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className="h-9 flex-1 bg-cyan-600 text-white hover:bg-cyan-700"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
+                      <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className="h-9 flex-1 bg-emerald-600 text-white hover:bg-emerald-700"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
                     ) : (
                       <>
                         {row.policyDocumentUrl && <Button type="button" size="icon" variant="outline" className="h-9 w-9 border-emerald-200 bg-emerald-50 text-emerald-700" title="View uploaded policy document" aria-label="View uploaded policy document" asChild><a href={String(row.policyDocumentUrl)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}><Eye className="h-4 w-4" /></a></Button>}
@@ -867,7 +866,7 @@ export default function InsuranceManagementPage() {
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           {row.isMissingRecord ? (
-                            <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className="h-8 bg-cyan-600 px-3 text-white hover:bg-cyan-700">
+                            <Button type="button" size="sm" onClick={(event) => { event.stopPropagation(); openAddForVehicle(row); }} disabled={!canAdd} className="h-8 bg-emerald-600 px-3 text-white hover:bg-emerald-700">
                               <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy
                             </Button>
                           ) : (
@@ -906,9 +905,9 @@ export default function InsuranceManagementPage() {
       </Card>
 
       <Dialog open={!!viewRow} onOpenChange={(open) => { if (!open) setViewRow(null); }}>
-        <DialogContent size="default" className="vm-mobile-dialog flex max-h-[88vh] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent size="default" className="vm-mobile-dialog flex max-h-[88dvh] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           {viewRow && <>
-            <DialogHeader className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 py-3 pr-12">
+            <DialogHeader className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 py-3 pr-12">
               <DialogTitle className="flex items-center gap-2 text-base"><ShieldCheck className="h-4 w-4 text-emerald-600" />{viewRow.vehicleNumber || 'Insurance Policy'}</DialogTitle>
               <DialogDescription className="truncate text-xs">{viewRow.policyNumber || '-'} · {viewRow.insuranceCompany || '-'}</DialogDescription>
             </DialogHeader>
@@ -948,7 +947,7 @@ export default function InsuranceManagementPage() {
             <DialogFooter className="shrink-0 border-t bg-white px-3 py-2">
               <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => setViewRow(null)}>Close</Button>
               {viewRow.isMissingRecord ? (
-                canAdd && <Button type="button" size="sm" className="h-8 bg-cyan-600 text-white hover:bg-cyan-700" onClick={() => { const row = viewRow; setViewRow(null); openAddForVehicle(row); }}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
+                canAdd && <Button type="button" size="sm" className="h-8 bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => { const row = viewRow; setViewRow(null); openAddForVehicle(row); }}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />Add Policy</Button>
               ) : (
                 <>
                   {activeTab === 'current' && canAdd && viewRow.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(viewRow)}><Button type="button" size="sm" className="h-8 bg-amber-500 text-white hover:bg-amber-600"><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Renew</Button></Link>}
@@ -961,8 +960,8 @@ export default function InsuranceManagementPage() {
       </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
-        <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
+        <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
+          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><ShieldCheck className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1">
@@ -981,38 +980,55 @@ export default function InsuranceManagementPage() {
               </div>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 <SearchableSelectField
-                  label="Vehicle Number *"
+                  label={labelWithMark(field('vehicleId'))}
                   value={form.vehicleId}
                   onValueChange={(v) => setField('vehicleId', v)}
                   options={vehicleOptions}
                   searchPlaceholder="Type to search vehicle number..."
                 />
-                <Field label="Insurance Company *">
+                {field('insuranceCompany').visible && (
+                <Field label={labelWithMark(field('insuranceCompany'))}>
                   <Input value={form.insuranceCompany} onChange={(e) => setField('insuranceCompany', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Policy Number *">
+                )}
+                {field('policyNumber').visible && (
+                <Field label={labelWithMark(field('policyNumber'))}>
                   <Input value={form.policyNumber} onChange={(e) => setField('policyNumber', e.target.value)} className="h-9" />
                 </Field>
-                <SelectField label="Policy Type *" value={form.policyType} onValueChange={(v) => setField('policyType', v)} options={policyTypeOptions} />
-                <Field label="Start Date *">
+                )}
+                {field('policyType').visible && <SelectField label={labelWithMark(field('policyType'))} value={form.policyType} onValueChange={(v) => setField('policyType', v)} options={policyTypeOptions} />}
+                {field('startDate').visible && (
+                <Field label={labelWithMark(field('startDate'))}>
                   <Input type="date" value={form.startDate} onChange={(e) => setField('startDate', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Expiry Date *">
+                )}
+                {field('expiryDate').visible && (
+                <Field label={labelWithMark(field('expiryDate'))}>
                   <Input type="date" value={form.expiryDate} onChange={(e) => setField('expiryDate', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Premium Amount *">
+                )}
+                {field('premiumAmount').visible && (
+                <Field label={labelWithMark(field('premiumAmount'))}>
                   <Input type="number" value={form.premiumAmount} onChange={(e) => setField('premiumAmount', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="IDV Value">
+                )}
+                {field('idvValue').visible && (
+                <Field label={labelWithMark(field('idvValue'))}>
                   <Input type="number" value={form.idvValue} onChange={(e) => setField('idvValue', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Agent Name">
+                )}
+                {field('agentName').visible && (
+                <Field label={labelWithMark(field('agentName'))}>
                   <Input value={form.agentName} onChange={(e) => setField('agentName', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Agent Contact">
+                )}
+                {field('agentContact').visible && (
+                <Field label={labelWithMark(field('agentContact'))}>
                   <Input value={form.agentContact} onChange={(e) => setField('agentContact', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Document Upload *" className="md:col-span-2 xl:col-span-3">
+                )}
+                {field('certificateDocumentUrl').visible && (
+                <Field label={labelWithMark(field('certificateDocumentUrl'))} className="md:col-span-2 xl:col-span-3">
                   <div className="space-y-1.5">
                     <label
                       htmlFor="insurance-policy-file"
@@ -1046,9 +1062,12 @@ export default function InsuranceManagementPage() {
                     )}
                   </div>
                 </Field>
-                <Field label="Remarks" className="md:col-span-2 xl:col-span-3">
+                )}
+                {field('remarks').visible && (
+                <Field label={field('remarks').label} className="md:col-span-2 xl:col-span-3">
                   <Textarea value={form.remarks} onChange={(e) => setField('remarks', e.target.value)} className="min-h-[84px]" />
                 </Field>
+                )}
               </div>
             </div>
           </div>
@@ -1125,7 +1144,7 @@ function Field({
   return (
     <div
       className={cn(
-        'space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 transition-all hover:border-emerald-200 hover:bg-white focus-within:border-emerald-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-emerald-100',
+        'space-y-1.5',
         className
       )}
     >
@@ -1151,7 +1170,7 @@ function SelectField({
   return (
     <Field label={label} className={className}>
       <Select value={value || undefined} onValueChange={onValueChange}>
-        <SelectTrigger className="h-9 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400">
+        <SelectTrigger className="h-9 border-slate-200 bg-white text-[13px]">
           <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
         </SelectTrigger>
         <SelectContent>

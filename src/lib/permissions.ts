@@ -483,7 +483,7 @@ export const permissionModules = {
     "Driver Mobile Trip": ["View", "Add", "Edit"],
     "Driver Mobile Fuel": ["View", "Add", "Edit", "Delete"],
     "Driver Daily Status": ["View", "Add", "Edit", "Delete"],
-    Settings: ["View", "Edit"],
+    Settings: ["View", "Edit", "Manage Field Control"],
     Reports: ["View", "Export"],
   },
   "Driver Management": {

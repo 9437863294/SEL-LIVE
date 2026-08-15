@@ -18,6 +18,8 @@ import { useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useRenewalPrefill } from '@/components/vehicle-management/use-renewal-prefill';
 import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, getVehicleDateRangeError, getVehicleTimestampMillis, normalizeVehicleRegistration, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/vehicle-management/use-field-control';
+import { labelWithMark } from '@/components/vehicle-management/controlled-field';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -87,6 +89,7 @@ const mapRowToState = (row: PucRow): PucForm => ({
 export default function PucManagementPage() {
   const { toast } = useToast();
   const { can } = useAuthorization();
+  const { field } = useFieldControl('puc');
   const { rows: vehicleRows, options: vehicleOptions, map: vehicleMap } = useVehicleOptions();
   const { prefill, renewingFromId } = useRenewalPrefill();
 
@@ -373,24 +376,20 @@ export default function PucManagementPage() {
 
   const submit = async () => {
     if (isSaving) return;
-    const required = [
-      ['vehicleId', 'Vehicle Number'],
-      ['pucCertificateNumber', 'PUC Certificate Number'],
-      ['issueDate', 'Issue Date'],
-      ['expiryDate', 'Expiry Date'],
-      ['testingCenterName', 'Testing Center Name'],
-      ['amountPaid', 'Amount Paid'],
-    ] as const;
-
-    for (const [key, label] of required) {
-      if (!String(form[key] || '').trim()) {
-        toast({ title: 'Validation Error', description: `${label} is required.`, variant: 'destructive' });
-        return;
-      }
+    if (!String(form.vehicleId || '').trim()) {
+      toast({ title: 'Validation Error', description: `${field('vehicleId').label} is required.`, variant: 'destructive' });
+      return;
+    }
+    // certificateDocumentUrl is validated separately below (required only when adding, and
+    // against the pending `file` selection rather than the form's own url field).
+    const missingLabel = validateFieldControlRequirements('puc', { ...form, certificateDocumentUrl: 'skip' }, field);
+    if (missingLabel) {
+      toast({ title: 'Validation Error', description: `${missingLabel} is required.`, variant: 'destructive' });
+      return;
     }
 
-    if (!editingRow && !file) {
-      toast({ title: 'Validation Error', description: 'Certificate Upload is required.', variant: 'destructive' });
+    if (!editingRow && field('certificateDocumentUrl').required && !file) {
+      toast({ title: 'Validation Error', description: `${field('certificateDocumentUrl').label} is required.`, variant: 'destructive' });
       return;
     }
 
@@ -630,7 +629,7 @@ export default function PucManagementPage() {
                   </div>
                   <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                     {row.isMissingRecord ? (
-                      <button onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-10 flex-1 rounded-md bg-cyan-600 text-sm font-medium text-white disabled:opacity-50">Add Certificate</button>
+                      <button onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-10 flex-1 rounded-md bg-emerald-600 text-sm font-medium text-white disabled:opacity-50">Add Certificate</button>
                     ) : (
                       <>
                         {activeTab === 'current' && canAdd && row.alertStage !== 'Not Applicable' && <Link href={getRenewalHref(row)} className="flex-1"><Button size="sm" className="h-10 w-full bg-amber-500 hover:bg-amber-600"><RefreshCw className="mr-1 h-3.5 w-3.5" />Renew</Button></Link>}
@@ -689,7 +688,7 @@ export default function PucManagementPage() {
                       <TableCell className="w-[160px] text-right">
                         <div className="flex items-center justify-end gap-2">
                           {row.isMissingRecord ? (
-                            <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-8 bg-cyan-600 px-3 text-white hover:bg-cyan-700">
+                            <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-8 bg-emerald-600 px-3 text-white hover:bg-emerald-700">
                               Add Certificate
                             </Button>
                           ) : (
@@ -724,8 +723,8 @@ export default function PucManagementPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setIsRenewalMode(false); }}>
-        <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
+        <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
+          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20"><FileCheck2 className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1">
@@ -743,23 +742,34 @@ export default function PucManagementPage() {
                 <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-600">* Required</span>
               </div>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                <SelectField label="Vehicle Number *" value={form.vehicleId} onValueChange={(v) => setField('vehicleId', v)} options={vehicleOptions} />
-                <Field label="PUC Certificate Number *">
+                <SelectField label={labelWithMark(field('vehicleId'))} value={form.vehicleId} onValueChange={(v) => setField('vehicleId', v)} options={vehicleOptions} />
+                {field('pucCertificateNumber').visible && (
+                <Field label={labelWithMark(field('pucCertificateNumber'))}>
                   <Input value={form.pucCertificateNumber} onChange={(e) => setField('pucCertificateNumber', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Issue Date *">
+                )}
+                {field('issueDate').visible && (
+                <Field label={labelWithMark(field('issueDate'))}>
                   <Input type="date" value={form.issueDate} onChange={(e) => setField('issueDate', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Expiry Date *">
+                )}
+                {field('expiryDate').visible && (
+                <Field label={labelWithMark(field('expiryDate'))}>
                   <Input type="date" value={form.expiryDate} onChange={(e) => setField('expiryDate', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Testing Center Name *">
+                )}
+                {field('testingCenterName').visible && (
+                <Field label={labelWithMark(field('testingCenterName'))}>
                   <Input value={form.testingCenterName} onChange={(e) => setField('testingCenterName', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Amount Paid *">
+                )}
+                {field('amountPaid').visible && (
+                <Field label={labelWithMark(field('amountPaid'))}>
                   <Input type="number" value={form.amountPaid} onChange={(e) => setField('amountPaid', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Certificate Upload *" className="md:col-span-2 xl:col-span-3">
+                )}
+                {field('certificateDocumentUrl').visible && (
+                <Field label={labelWithMark(field('certificateDocumentUrl'))} className="md:col-span-2 xl:col-span-3">
                   <div className="space-y-1.5">
                     <label
                       htmlFor="puc-file"
@@ -793,9 +803,12 @@ export default function PucManagementPage() {
                     )}
                   </div>
                 </Field>
-                <Field label="Remarks" className="md:col-span-2 xl:col-span-3">
+                )}
+                {field('remarks').visible && (
+                <Field label={field('remarks').label} className="md:col-span-2 xl:col-span-3">
                   <Textarea value={form.remarks} onChange={(e) => setField('remarks', e.target.value)} className="min-h-[84px]" />
                 </Field>
+                )}
               </div>
             </div>
           </div>
@@ -860,7 +873,7 @@ function Field({
   return (
     <div
       className={cn(
-        'space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 transition-all hover:border-emerald-200 hover:bg-white focus-within:border-emerald-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-emerald-100',
+        'space-y-1.5',
         className
       )}
     >

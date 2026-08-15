@@ -226,8 +226,8 @@ export function VehicleDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:left-1/2 sm:top-1/2 sm:h-[92vh] sm:w-[calc(100vw-3rem)] sm:max-w-7xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl">
-        <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-emerald-50 to-cyan-50 px-5 py-4 pr-12">
+      <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:left-1/2 sm:top-1/2 sm:h-[92dvh] sm:w-[calc(100vw-3rem)] sm:max-w-7xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl">
+        <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-emerald-50 to-teal-50 px-5 py-4 pr-12">
           <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-emerald-600" />{vehicle.vehicleNumber || 'Vehicle Profile'}</DialogTitle>
           <DialogDescription>Complete vehicle profile, compliance status, and old renewal history.</DialogDescription>
         </DialogHeader>

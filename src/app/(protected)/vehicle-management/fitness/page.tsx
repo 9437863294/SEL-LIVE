@@ -74,6 +74,7 @@ export default function FitnessManagementPage() {
       title="Fitness Certificate Management"
       description="Fitness validity tracking for commercial/transport vehicles."
       itemName="Fitness Record"
+      formKey="fitness"
       collectionName={VEHICLE_COLLECTIONS.fitness}
       fields={fields}
       columns={columns}

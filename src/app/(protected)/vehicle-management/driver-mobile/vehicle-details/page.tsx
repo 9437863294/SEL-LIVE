@@ -269,7 +269,7 @@ export default function DriverVehicleDetailsPage() {
   return (
     <div className="space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
+        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
         <CardHeader>
           <CardTitle className="tracking-tight">Assigned Vehicle Details</CardTitle>
           <CardDescription>All key details for your assigned vehicle.</CardDescription>

@@ -12,30 +12,34 @@ import { useCurrentDriverProfile } from "@/components/vehicle-management/hooks";
 
 const moduleIcons: Record<string, string> = {
   "Site Fund Requisition": "Landmark",
+  "Site Fund Requisition 2": "Workflow",
   "Site Fund Request": "GitMerge",
-  "Daily Requisition": "FileText",
+  "Daily Requisition": "ClipboardCheck",
   "Billing Recon": "CreditCard",
   "Bank Balance": "Banknote",
   Expenses: "Receipt",
   Settings: "Settings",
   "Chat System": "MessageSquare",
   Loan: "Coins",
-  "Recurring Payments": "Receipt",
+  "Recurring Payments": "RefreshCard",
   "Letter of Credit Management": "BookOpenCheck",
   "Bank Guarantee Management": "ShieldCheck",
-  "Fixed Deposit Management": "Landmark",
+  "Fixed Deposit Management": "Vault",
   Insurance: "Shield",
   "Store & Stock Management": "Package",
-  "Subcontractors Management": "Users",
+  "Subcontractors Management": "HardHat",
   "Project Management": "FolderKanban",
   "Vendor Management": "ShoppingCart",
-  Employee: "User",
+  Employee: "IdBadge",
   "Vehicle Management": "Truck",
-  "Driver Management": "User",
+  "Driver Management": "SteeringWheel",
+  "Site Account Statement": "LedgerChart",
 };
 
 const moduleDescriptions: Record<string, string> = {
   "Site Fund Requisition": "Handle site fund requests and approvals.",
+  "Site Fund Requisition 2":
+    "Raise, approve, and track site fund requests with configurable workflow and reporting.",
   "Site Fund Request": "Submit and approve site fund requests with workflow.",
   "Daily Requisition": "Handle daily material and service requests.",
   "Billing Recon": "Reconcile billing statements and payments.",
@@ -62,6 +66,8 @@ const moduleDescriptions: Record<string, string> = {
   "Vehicle Management": "Manage fleet, trips, fuel usage, and maintenance.",
   "Driver Management":
     "Driver mobile workflows, trip actions, and assignment execution.",
+  "Site Account Statement":
+    "Track project-wise payments, expenses, and budgets with forecasts and reports.",
 };
 
 export default function ModuleDashboard() {

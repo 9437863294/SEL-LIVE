@@ -172,6 +172,7 @@ export default function DriverManagementPage() {
       title="Driver Management"
       description="Driver records, license tracking, emergency contacts, and vehicle assignment."
       itemName="Driver"
+      formKey="driver"
       collectionName={VEHICLE_COLLECTIONS.driver}
       fields={fields}
       columns={columns}

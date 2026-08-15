@@ -257,7 +257,7 @@ export default function TripManagementPage() {
   return (
     <div className="space-y-3 sm:space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500 animate-bb-gradient" />
+        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
         <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
           <div>
             <CardTitle className="tracking-tight">Trip Management</CardTitle>
@@ -384,7 +384,7 @@ export default function TripManagementPage() {
                   key={String(trip.id)}
                   onClick={() => setSelectedTripId((current) => current === String(trip.id) ? '' : String(trip.id))}
                   className={`rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform cursor-pointer ${
-                    selectedTripId === String(trip.id) ? 'ring-2 ring-cyan-400/60' : ''
+                    selectedTripId === String(trip.id) ? 'ring-2 ring-emerald-400/60' : ''
                   }`}
                 >
                   <div className="mb-3 flex items-start justify-between gap-2">
@@ -472,7 +472,7 @@ export default function TripManagementPage() {
                             )
                           }
                           className={`cursor-pointer transition-colors ${
-                            isSelected ? 'bg-cyan-50/80 hover:bg-cyan-100/70' : 'hover:bg-cyan-50/70'
+                            isSelected ? 'bg-emerald-50/80 hover:bg-emerald-100/70' : 'hover:bg-emerald-50/70'
                           }`}
                         >
                           <TableCell className="font-medium">{String(trip.id || '-')}</TableCell>
@@ -495,7 +495,7 @@ export default function TripManagementPage() {
                           <TableCell className="whitespace-nowrap">{formatVehicleTimestamp(trip.createdAt)}</TableCell>
                         </TableRow>,
                         isSelected ? (
-                          <TableRow key={`${String(trip.id)}-details`} className="bg-cyan-50/50 hover:bg-cyan-50/50">
+                          <TableRow key={`${String(trip.id)}-details`} className="bg-emerald-50/50 hover:bg-emerald-50/50">
                             <TableCell colSpan={11} className="space-y-3">
                               <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                                 <div className="rounded-lg border border-white/70 bg-white/85 px-3 py-2">

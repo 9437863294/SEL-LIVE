@@ -8,6 +8,8 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile, useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/vehicle-management/use-field-control';
+import { ControlledField } from '@/components/vehicle-management/controlled-field';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,6 +51,7 @@ export default function DriverMobileFuelPage() {
   const { can } = useAuthorization();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { field } = useFieldControl('driverMobileFuel');
   const { driver, isLoading: isDriverLoading } = useCurrentDriverProfile();
   const { options: allVehicleOptions, map: vehicleMap } = useVehicleOptions();
   const [form, setForm] = useState<FuelFormState>(initialForm);
@@ -158,10 +161,11 @@ export default function DriverMobileFuelPage() {
       });
       return;
     }
-    if (!form.vehicleId || !form.fuelDate || !form.fuelStationName) {
+    const missingLabel = validateFieldControlRequirements('driverMobileFuel', { ...form, billFile }, field);
+    if (missingLabel) {
       toast({
         title: 'Validation Error',
-        description: 'Vehicle, date, and fuel station are required.',
+        description: `${missingLabel} is required.`,
         variant: 'destructive',
       });
       return;
@@ -296,14 +300,13 @@ export default function DriverMobileFuelPage() {
   return (
     <div className="space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
+        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
         <CardHeader>
           <CardTitle className="tracking-tight">Driver Fuel Entry</CardTitle>
           <CardDescription>Submit fuel from phone in a few taps.</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Vehicle</Label>
+          <ControlledField setting={field('vehicleId')}>
             <Select value={form.vehicleId || undefined} onValueChange={(value) => setForm((prev) => ({ ...prev, vehicleId: value }))}>
               <SelectTrigger className="bg-white/85">
                 <SelectValue placeholder="Select vehicle" />
@@ -316,12 +319,11 @@ export default function DriverMobileFuelPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </ControlledField>
 
-          <div className="space-y-2">
-            <Label>Date</Label>
+          <ControlledField setting={field('fuelDate')}>
             <Input type="date" value={form.fuelDate} onChange={(e) => setForm((prev) => ({ ...prev, fuelDate: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
 
           <div className="space-y-2">
             <Label>Fuel Type (from Vehicle Master)</Label>
@@ -332,56 +334,48 @@ export default function DriverMobileFuelPage() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Fuel Station</Label>
+          <ControlledField setting={field('fuelStationName')}>
             <Input value={form.fuelStationName} onChange={(e) => setForm((prev) => ({ ...prev, fuelStationName: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
 
-          <div className="space-y-2">
-            <Label>Quantity (L)</Label>
+          <ControlledField setting={field('quantityLiters')}>
             <Input type="number" value={form.quantityLiters} onChange={(e) => setForm((prev) => ({ ...prev, quantityLiters: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
 
-          <div className="space-y-2">
-            <Label>Rate Per Unit</Label>
+          <ControlledField setting={field('ratePerUnit')}>
             <Input type="number" value={form.ratePerUnit} onChange={(e) => setForm((prev) => ({ ...prev, ratePerUnit: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
 
-          <div className="space-y-2">
-            <Label>Current Odometer</Label>
+          <ControlledField setting={field('odometerReadingKm')}>
             <Input type="number" value={form.odometerReadingKm} onChange={(e) => setForm((prev) => ({ ...prev, odometerReadingKm: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
 
-          <div className="space-y-2">
-            <Label>Previous Odometer</Label>
+          <ControlledField setting={field('previousOdometerReadingKm')}>
             <Input type="number" value={form.previousOdometerReadingKm} onChange={(e) => setForm((prev) => ({ ...prev, previousOdometerReadingKm: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
 
-          <div className="space-y-2">
-            <Label>Bill Number</Label>
+          <ControlledField setting={field('billNumber')}>
             <Input value={form.billNumber} onChange={(e) => setForm((prev) => ({ ...prev, billNumber: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
 
-          <div className="space-y-2">
-            <Label>Bill Upload</Label>
+          <ControlledField setting={field('billFile')}>
             <Input
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,.webp"
               onChange={(e) => setBillFile(e.target.files?.[0] || null)}
-              className="bg-white/85 file:mr-3 file:rounded-md file:border-0 file:bg-cyan-600 file:px-3 file:py-1 file:text-white"
+              className="bg-white/85 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1 file:text-white"
             />
-          </div>
+          </ControlledField>
 
-          <div className="space-y-2 md:col-span-2">
-            <Label>Remarks</Label>
+          <ControlledField setting={field('remarks')} className="space-y-2 md:col-span-2">
             <Textarea value={form.remarks} onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
 
           <div className="md:col-span-2">
             <Button
               onClick={onSubmit}
               disabled={!canAdd || isSubmitting}
-              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white"
+              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 text-white"
             >
               {isSubmitting ? 'Submitting...' : 'Submit Fuel Entry'}
             </Button>

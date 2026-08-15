@@ -696,7 +696,7 @@ export default function DriverMobileTripsPage() {
   return (
     <div className="space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500 animate-bb-gradient" />
+        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
         <CardHeader>
           <CardTitle className="tracking-tight">Driver Trip Tracking</CardTitle>
           <CardDescription>
@@ -705,7 +705,7 @@ export default function DriverMobileTripsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge className="bg-cyan-600 text-white">{String(driver.driverName || 'Driver')}</Badge>
+            <Badge className="bg-emerald-600 text-white">{String(driver.driverName || 'Driver')}</Badge>
             <Badge variant="outline">Vehicle: {assignedVehicleNumber || 'Not assigned'}</Badge>
             <Badge variant="outline">Tracking: {settingsIntervalSec}s</Badge>
             <Badge variant="outline">

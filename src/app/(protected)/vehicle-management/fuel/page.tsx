@@ -94,6 +94,7 @@ export default function FuelManagementPage() {
       title="Fuel Management"
       description="Fuel expenses, fill type, mileage efficiency, and bill tracking."
       itemName="Fuel Record"
+      formKey="fuel"
       collectionName={VEHICLE_COLLECTIONS.fuel}
       fields={fields}
       columns={columns}

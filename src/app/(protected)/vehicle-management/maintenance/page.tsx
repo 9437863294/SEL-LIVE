@@ -105,6 +105,7 @@ export default function MaintenanceManagementPage() {
       title="Maintenance Management"
       description="Vehicle repair, service history, cost tracking, and approval workflows."
       itemName="Maintenance Record"
+      formKey="maintenance"
       collectionName={VEHICLE_COLLECTIONS.maintenance}
       fields={fields}
       columns={columns}

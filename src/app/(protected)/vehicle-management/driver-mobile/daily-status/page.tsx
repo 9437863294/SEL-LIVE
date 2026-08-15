@@ -6,6 +6,8 @@ import { db } from '@/lib/firebase';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile, useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/vehicle-management/use-field-control';
+import { ControlledField } from '@/components/vehicle-management/controlled-field';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,6 +56,7 @@ const OWN_VEHICLE_OPTION = '__OWN_VEHICLE__';
 export default function DriverDailyStatusPage() {
   const { can } = useAuthorization();
   const { toast } = useToast();
+  const { field } = useFieldControl('driverMobileDailyStatus');
   const { driver, isLoading: isDriverLoading } = useCurrentDriverProfile();
   const { options: allVehicleOptions, map: vehicleMap } = useVehicleOptions();
   const [form, setForm] = useState<DailyStatusForm>(initialForm);
@@ -159,10 +162,11 @@ export default function DriverDailyStatusPage() {
       });
       return;
     }
-    if (!form.vehicleId || !form.statusDate || !form.runningStatus) {
+    const missingLabel = validateFieldControlRequirements('driverMobileDailyStatus', { ...form }, field);
+    if (missingLabel) {
       toast({
         title: 'Validation Error',
-        description: 'Date, vehicle, and running status are required.',
+        description: `${missingLabel} is required.`,
         variant: 'destructive',
       });
       return;
@@ -290,12 +294,10 @@ export default function DriverDailyStatusPage() {
           <CardDescription>Submit your daily movement, odometer, and status report.</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Date</Label>
+          <ControlledField setting={field('statusDate')}>
             <Input type="date" value={form.statusDate} onChange={(e) => setForm((prev) => ({ ...prev, statusDate: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Vehicle</Label>
+          </ControlledField>
+          <ControlledField setting={field('vehicleId')}>
             <Select value={form.vehicleId || undefined} onValueChange={(value) => setForm((prev) => ({ ...prev, vehicleId: value }))}>
               <SelectTrigger className="bg-white/85">
                 <SelectValue placeholder="Select vehicle" />
@@ -308,37 +310,29 @@ export default function DriverDailyStatusPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Shift Start</Label>
+          </ControlledField>
+          <ControlledField setting={field('shiftStartTime')}>
             <Input type="time" value={form.shiftStartTime} onChange={(e) => setForm((prev) => ({ ...prev, shiftStartTime: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Shift End</Label>
+          </ControlledField>
+          <ControlledField setting={field('shiftEndTime')}>
             <Input type="time" value={form.shiftEndTime} onChange={(e) => setForm((prev) => ({ ...prev, shiftEndTime: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Opening Odometer (KM)</Label>
+          </ControlledField>
+          <ControlledField setting={field('openingOdometerKm')}>
             <Input type="number" value={form.openingOdometerKm} onChange={(e) => setForm((prev) => ({ ...prev, openingOdometerKm: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Closing Odometer (KM)</Label>
+          </ControlledField>
+          <ControlledField setting={field('closingOdometerKm')}>
             <Input type="number" value={form.closingOdometerKm} onChange={(e) => setForm((prev) => ({ ...prev, closingOdometerKm: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Opening Fuel (L)</Label>
+          </ControlledField>
+          <ControlledField setting={field('openingFuelLiters')}>
             <Input type="number" value={form.openingFuelLiters} onChange={(e) => setForm((prev) => ({ ...prev, openingFuelLiters: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Closing Fuel (L)</Label>
+          </ControlledField>
+          <ControlledField setting={field('closingFuelLiters')}>
             <Input type="number" value={form.closingFuelLiters} onChange={(e) => setForm((prev) => ({ ...prev, closingFuelLiters: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Total Trips</Label>
+          </ControlledField>
+          <ControlledField setting={field('totalTrips')}>
             <Input type="number" value={form.totalTrips} onChange={(e) => setForm((prev) => ({ ...prev, totalTrips: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2">
-            <Label>Running Status</Label>
+          </ControlledField>
+          <ControlledField setting={field('runningStatus')}>
             <Select value={form.runningStatus} onValueChange={(value) => setForm((prev) => ({ ...prev, runningStatus: value }))}>
               <SelectTrigger className="bg-white/85">
                 <SelectValue placeholder="Select status" />
@@ -351,19 +345,16 @@ export default function DriverDailyStatusPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label>Route Summary</Label>
+          </ControlledField>
+          <ControlledField setting={field('routeSummary')} className="space-y-2 md:col-span-2">
             <Textarea value={form.routeSummary} onChange={(e) => setForm((prev) => ({ ...prev, routeSummary: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label>Issues Reported</Label>
+          </ControlledField>
+          <ControlledField setting={field('issuesReported')} className="space-y-2 md:col-span-2">
             <Textarea value={form.issuesReported} onChange={(e) => setForm((prev) => ({ ...prev, issuesReported: e.target.value }))} className="bg-white/85" />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label>Remarks</Label>
+          </ControlledField>
+          <ControlledField setting={field('remarks')} className="space-y-2 md:col-span-2">
             <Textarea value={form.remarks} onChange={(e) => setForm((prev) => ({ ...prev, remarks: e.target.value }))} className="bg-white/85" />
-          </div>
+          </ControlledField>
           <div className="md:col-span-2">
             <Button
               onClick={onSubmit}

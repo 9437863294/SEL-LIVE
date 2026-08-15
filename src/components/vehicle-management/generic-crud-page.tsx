@@ -77,6 +77,8 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { useFieldControl } from './use-field-control';
+import type { VMFormKey } from '@/lib/vehicle-management-field-registry';
 
 export type CrudFieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'file';
 
@@ -113,6 +115,13 @@ interface GenericCrudPageProps {
   itemName: string;
   collectionName: string;
   fields: CrudFieldConfig[];
+  /**
+   * Field Control registry key — lets an admin show/hide, require, or relabel these fields from
+   * Settings > Field Control. Omit this for callers outside the Vehicle Management module (this
+   * component is also reused by Letter of Credit and Employee Trip Reimbursement, which don't
+   * have a Field Control registry) — the field list is then used exactly as passed in.
+   */
+  formKey?: VMFormKey;
   columns: CrudColumnConfig[];
   canView: boolean;
   canAdd: boolean;
@@ -299,7 +308,8 @@ export default function GenericCrudPage({
   description,
   itemName,
   collectionName,
-  fields,
+  fields: fieldsProp,
+  formKey,
   columns,
   canView,
   canAdd,
@@ -326,6 +336,20 @@ export default function GenericCrudPage({
 
   const { toast } = useToast();
   const { log } = useActivityLogger('Vehicle Management');
+  const { field: fieldControl } = useFieldControl(formKey);
+  // Field Control overrides (visible/required/label) applied on top of the page's own field
+  // config — hidden fields are dropped entirely so every downstream consumer (rendering, submit
+  // validation, import) sees the same, already-filtered list. `vehicleId` is locked in the
+  // registry for every one of these forms, so it can never disappear from this list. Callers
+  // outside Vehicle Management don't pass `formKey` at all, so the field list is used verbatim.
+  const fields: CrudFieldConfig[] = !formKey
+    ? fieldsProp
+    : fieldsProp
+        .filter((item) => fieldControl(item.key).visible)
+        .map((item) => {
+          const setting = fieldControl(item.key);
+          return { ...item, required: setting.required, label: setting.label };
+        });
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState<'active' | 'history'>(initialTab);
@@ -1157,7 +1181,7 @@ export default function GenericCrudPage({
                   {showActionsColumn && (
                     <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
                       {row.isMissingRecord ? (
-                        <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-10 flex-1 bg-cyan-600 text-white hover:bg-cyan-700">Add {itemName}</Button>
+                        <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-10 flex-1 bg-emerald-600 text-white hover:bg-emerald-700">Add {itemName}</Button>
                       ) : (
                         <>
                           {canEdit && <Button variant="outline" size="sm" onClick={() => openEditDialog(row)} className="h-10 flex-1 bg-white/80">Edit</Button>}
@@ -1210,7 +1234,7 @@ export default function GenericCrudPage({
                           {showActionsColumn && <TableCell className="w-[160px] text-right">
                             <div className="flex items-center justify-end gap-2">
                               {row.isMissingRecord ? (
-                                <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-8 bg-cyan-600 px-3 text-white hover:bg-cyan-700">
+                                <Button size="sm" onClick={() => openAddForVehicle(row)} disabled={!canAdd} className="h-8 bg-emerald-600 px-3 text-white hover:bg-emerald-700">
                                   Add {itemName}
                                 </Button>
                               ) : (
@@ -1266,10 +1290,10 @@ export default function GenericCrudPage({
           setDialogOpen(true);
         }}
       >
-        <DialogContent className="vm-mobile-dialog flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
+        <DialogContent className="vm-mobile-dialog flex max-h-[92dvh] w-[calc(100vw-2rem)] max-w-5xl flex-col gap-0 overflow-hidden rounded-2xl border-slate-200 bg-slate-50 p-0 shadow-2xl">
 
           {/* ── Sticky header ─────────────────────────────────── */}
-          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
+          <div className="vm-dialog-header shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 py-4 pr-12 sm:px-6 sm:py-5">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20">
                 <FilePlus2 className="h-5 w-5" />
@@ -1314,7 +1338,7 @@ export default function GenericCrudPage({
                   <div
                     key={field.key}
                     className={cn(
-                      'space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 transition-all hover:border-emerald-200 hover:bg-white focus-within:border-emerald-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-emerald-100',
+                      'space-y-1.5',
                       isWideField && 'md:col-span-2 xl:col-span-3'
                     )}
                   >

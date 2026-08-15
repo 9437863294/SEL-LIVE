@@ -212,13 +212,13 @@ export default function DriverMobileHubPage() {
   return (
     <div className="space-y-4">
       <Card className="vm-panel-strong overflow-hidden">
-        <div className="h-1 w-full bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600 animate-bb-gradient" />
+        <div className="h-1 w-full bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 animate-bb-gradient" />
         <CardHeader>
           <CardTitle className="tracking-tight">Driver Mobile</CardTitle>
           <CardDescription>Quick mobile workflow for fuel updates and daily running status.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-2">
-          <Badge className="bg-cyan-600 text-white">{driverName}</Badge>
+          <Badge className="bg-emerald-600 text-white">{driverName}</Badge>
           <Badge variant="outline">Mobile: {driver.mobileNumber || '-'}</Badge>
           <Badge variant="outline">Assigned Vehicle: {driver.assignedVehicleNumber || 'Not assigned'}</Badge>
         </CardContent>

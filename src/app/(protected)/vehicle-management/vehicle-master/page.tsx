@@ -53,6 +53,8 @@ import { CarFront, Download, FileUp, Gauge, Loader2, MapPin, ShieldCheck } from 
 import { VehicleImportDialog, type ImportField } from '@/components/vehicle-management/import-dialog';
 import { VehicleTablePagination, useVehicleTablePagination } from '@/components/vehicle-management/table-pagination';
 import { VehicleDetailsDialog } from '@/components/vehicle-management/vehicle-details-dialog';
+import { useFieldControl, validateFieldControlRequirements } from '@/components/vehicle-management/use-field-control';
+import { labelWithMark } from '@/components/vehicle-management/controlled-field';
 
 const DRIVER_UNASSIGNED = '__unassigned__';
 
@@ -201,6 +203,7 @@ export default function VehicleMasterPage() {
   const { toast } = useToast();
   const { log } = useActivityLogger('Vehicle Management');
   const { can } = useAuthorization();
+  const { field } = useFieldControl('vehicleMaster');
   const { options: departmentOptions, map: departmentMap } = useDepartmentOptions();
   const { options: projectOptions, map: projectMap } = useProjectOptions();
   const { options: rawDriverOptions, map: driverMap } = useDriverOptions();
@@ -487,26 +490,14 @@ export default function VehicleMasterPage() {
 
   const submit = async () => {
     if (isSaving) return;
-    const requiredFields: Array<[keyof VehicleFormState, string]> = [
-      ['vehicleNumber', 'Vehicle Number'],
-      ['vehicleType', 'Vehicle Type'],
-      ['vehicleCategory', 'Vehicle Category'],
-      ['brand', 'Brand'],
-      ['model', 'Model'],
-      ['yearOfManufacture', 'Year of Manufacture'],
-      ['fuelType', 'Fuel Type'],
-      ['chassisNumber', 'Chassis Number'],
-      ['engineNumber', 'Engine Number'],
-      ['ownershipType', 'Ownership Type'],
-      ['currentOdometerKm', 'Current Odometer (KM)'],
-      ['vehicleStatus', 'Vehicle Status'],
-    ];
-
-    for (const [key, label] of requiredFields) {
-      if (!toText(form[key]).trim()) {
-        toast({ title: 'Validation Error', description: `${label} is required.`, variant: 'destructive' });
-        return;
-      }
+    if (!toText(form.vehicleNumber).trim()) {
+      toast({ title: 'Validation Error', description: `${field('vehicleNumber').label} is required.`, variant: 'destructive' });
+      return;
+    }
+    const missingLabel = validateFieldControlRequirements('vehicleMaster', { ...form }, field);
+    if (missingLabel) {
+      toast({ title: 'Validation Error', description: `${missingLabel} is required.`, variant: 'destructive' });
+      return;
     }
 
     const year = Number(form.yearOfManufacture || 0);
@@ -894,8 +885,8 @@ export default function VehicleMasterPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-slate-50 p-0 shadow-2xl sm:left-1/2 sm:top-1/2 sm:h-[90vh] sm:max-h-[900px] sm:w-[calc(100vw-3rem)] sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border">
-          <div className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 px-4 pb-3 pt-4 pr-12 sm:px-7 sm:py-5">
+        <DialogContent className="inset-0 left-0 top-0 flex h-[100dvh] max-h-none w-screen max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-slate-50 p-0 shadow-2xl sm:left-1/2 sm:top-1/2 sm:h-[90dvh] sm:max-h-[900px] sm:w-[calc(100vw-3rem)] sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border">
+          <div className="shrink-0 border-b border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-teal-50 px-4 pb-3 pt-4 pr-12 sm:px-7 sm:py-5">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/20 sm:h-11 sm:w-11">
                 <CarFront className="h-5 w-5 text-white" />
@@ -915,59 +906,76 @@ export default function VehicleMasterPage() {
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start lg:gap-4">
               <FormSection className="lg:col-span-2" icon={<CarFront className="h-4 w-4" />} title="Vehicle identity" description="Registration and manufacturing details" tone="emerald">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                <Field label="Vehicle Number *">
+                <Field label={`${field('vehicleNumber').label} *`}>
                   <Input value={form.vehicleNumber} onChange={(e) => setField('vehicleNumber', normalizeVehicleNumber(e.target.value))} autoCapitalize="characters" placeholder="e.g. MH12AB1234" className="h-11 uppercase tracking-wide sm:h-9" />
                 </Field>
-                <SelectField label="Vehicle Type *" value={form.vehicleType} onValueChange={(v) => setField('vehicleType', v)} options={vehicleTypeOptions} />
-                <SelectField label="Vehicle Category *" value={form.vehicleCategory} onValueChange={(v) => setField('vehicleCategory', v)} options={vehicleCategoryOptions} />
-                <Field label="Brand *">
+                {field('vehicleType').visible && <SelectField label={labelWithMark(field('vehicleType'))} value={form.vehicleType} onValueChange={(v) => setField('vehicleType', v)} options={vehicleTypeOptions} />}
+                {field('vehicleCategory').visible && <SelectField label={labelWithMark(field('vehicleCategory'))} value={form.vehicleCategory} onValueChange={(v) => setField('vehicleCategory', v)} options={vehicleCategoryOptions} />}
+                {field('brand').visible && (
+                <Field label={labelWithMark(field('brand'))}>
                   <Input value={form.brand} onChange={(e) => setField('brand', e.target.value)} placeholder="Manufacturer" className="h-9" />
                 </Field>
-                <Field label="Model *">
+                )}
+                {field('model').visible && (
+                <Field label={labelWithMark(field('model'))}>
                   <Input value={form.model} onChange={(e) => setField('model', e.target.value)} placeholder="Model name" className="h-9" />
                 </Field>
-                <Field label="Year Of Manufacture *">
+                )}
+                {field('yearOfManufacture').visible && (
+                <Field label={labelWithMark(field('yearOfManufacture'))}>
                   <Input value={form.yearOfManufacture} onChange={(e) => setField('yearOfManufacture', e.target.value)} type="number" className="h-9" />
                 </Field>
-                <SelectField label="Fuel Type *" value={form.fuelType} onValueChange={(v) => setField('fuelType', v)} options={fuelTypeOptions} />
-                <Field label="Chassis Number *">
+                )}
+                {field('fuelType').visible && <SelectField label={labelWithMark(field('fuelType'))} value={form.fuelType} onValueChange={(v) => setField('fuelType', v)} options={fuelTypeOptions} />}
+                {field('chassisNumber').visible && (
+                <Field label={labelWithMark(field('chassisNumber'))}>
                   <Input value={form.chassisNumber} onChange={(e) => setField('chassisNumber', e.target.value)} className="h-9" />
                 </Field>
-                <Field label="Engine Number *">
+                )}
+                {field('engineNumber').visible && (
+                <Field label={labelWithMark(field('engineNumber'))}>
                   <Input value={form.engineNumber} onChange={(e) => setField('engineNumber', e.target.value)} className="h-9" />
                 </Field>
+                )}
               </div>
               </FormSection>
 
               <FormSection icon={<Gauge className="h-4 w-4" />} title="Ownership & usage" description="Purchase, odometer and operating state" tone="blue">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                <SelectField label="Ownership Type *" value={form.ownershipType} onValueChange={(v) => setField('ownershipType', v)} options={ownershipTypeOptions} />
-                <Field label="Purchase Date">
+                {field('ownershipType').visible && <SelectField label={labelWithMark(field('ownershipType'))} value={form.ownershipType} onValueChange={(v) => setField('ownershipType', v)} options={ownershipTypeOptions} />}
+                {field('purchaseDate').visible && (
+                <Field label={labelWithMark(field('purchaseDate'))}>
                   <Input value={form.purchaseDate} onChange={(e) => setField('purchaseDate', e.target.value)} type="date" className="h-9" />
                 </Field>
-                <Field label="Purchase Value">
+                )}
+                {field('purchaseValue').visible && (
+                <Field label={labelWithMark(field('purchaseValue'))}>
                   <Input value={form.purchaseValue} onChange={(e) => setField('purchaseValue', e.target.value)} type="number" className="h-9" />
                 </Field>
-                <SelectField label="Current Status" value={form.currentStatus} onValueChange={(v) => setField('currentStatus', v)} options={currentStatusOptions} />
-                <Field label="Current Odometer (KM) *">
+                )}
+                {field('currentStatus').visible && <SelectField label={labelWithMark(field('currentStatus'))} value={form.currentStatus} onValueChange={(v) => setField('currentStatus', v)} options={currentStatusOptions} />}
+                {field('currentOdometerKm').visible && (
+                <Field label={labelWithMark(field('currentOdometerKm'))}>
                   <Input value={form.currentOdometerKm} onChange={(e) => setField('currentOdometerKm', e.target.value)} type="number" min="0" className="h-9" />
                 </Field>
-                <SelectField label="Vehicle Status *" value={form.vehicleStatus} onValueChange={(v) => setField('vehicleStatus', v)} options={vehicleStatusOptions} />
+                )}
+                {field('vehicleStatus').visible && <SelectField label={labelWithMark(field('vehicleStatus'))} value={form.vehicleStatus} onValueChange={(v) => setField('vehicleStatus', v)} options={vehicleStatusOptions} />}
               </div>
               </FormSection>
 
               <FormSection icon={<MapPin className="h-4 w-4" />} title="Assignment" description="Connect this vehicle to its working team" tone="violet">
               <div className="grid grid-cols-1 gap-2">
-                <SelectField label="Assigned Department" value={form.assignedDepartmentId} onValueChange={(v) => setField('assignedDepartmentId', v)} options={departmentOptions} />
-                <SelectField label="Assigned Project" value={form.assignedProjectId} onValueChange={(v) => setField('assignedProjectId', v)} options={projectOptions} />
-                <SelectField label="Assigned Driver" value={form.assignedDriverId} onValueChange={(v) => setField('assignedDriverId', v)} options={driverOptions} />
+                {field('assignedDepartmentId').visible && <SelectField label={labelWithMark(field('assignedDepartmentId'))} value={form.assignedDepartmentId} onValueChange={(v) => setField('assignedDepartmentId', v)} options={departmentOptions} />}
+                {field('assignedProjectId').visible && <SelectField label={labelWithMark(field('assignedProjectId'))} value={form.assignedProjectId} onValueChange={(v) => setField('assignedProjectId', v)} options={projectOptions} />}
+                {field('assignedDriverId').visible && <SelectField label={labelWithMark(field('assignedDriverId'))} value={form.assignedDriverId} onValueChange={(v) => setField('assignedDriverId', v)} options={driverOptions} />}
               </div>
               </FormSection>
 
               <FormSection className="lg:col-span-2" icon={<ShieldCheck className="h-4 w-4" />} title="Compliance & notes" description="Control documents and add useful notes" tone="amber">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {field('complianceRuleMode').visible && (
                 <SelectField
-                  label="Compliance Rule Mode *"
+                  label={labelWithMark(field('complianceRuleMode'))}
                   value={form.complianceRuleMode}
                   onValueChange={(v) => setField('complianceRuleMode', v)}
                   options={[
@@ -975,18 +983,21 @@ export default function VehicleMasterPage() {
                     { value: 'Manual', label: 'Manual (Set Required Docs)' },
                   ]}
                 />
+                )}
                 {requiresManualRules(form) && (
                   <>
-                    <SelectField label="Insurance Required" value={form.requireInsurance} onValueChange={(v) => setField('requireInsurance', v)} options={yesNoOptions} />
-                    <SelectField label="PUC Required" value={form.requirePuc} onValueChange={(v) => setField('requirePuc', v)} options={yesNoOptions} />
-                    <SelectField label="Fitness Required" value={form.requireFitness} onValueChange={(v) => setField('requireFitness', v)} options={yesNoOptions} />
-                    <SelectField label="Road Tax Required" value={form.requireRoadTax} onValueChange={(v) => setField('requireRoadTax', v)} options={yesNoOptions} />
-                    <SelectField label="Permit Required" value={form.requirePermit} onValueChange={(v) => setField('requirePermit', v)} options={yesNoOptions} />
+                    {field('requireInsurance').visible && <SelectField label={labelWithMark(field('requireInsurance'))} value={form.requireInsurance} onValueChange={(v) => setField('requireInsurance', v)} options={yesNoOptions} />}
+                    {field('requirePuc').visible && <SelectField label={labelWithMark(field('requirePuc'))} value={form.requirePuc} onValueChange={(v) => setField('requirePuc', v)} options={yesNoOptions} />}
+                    {field('requireFitness').visible && <SelectField label={labelWithMark(field('requireFitness'))} value={form.requireFitness} onValueChange={(v) => setField('requireFitness', v)} options={yesNoOptions} />}
+                    {field('requireRoadTax').visible && <SelectField label={labelWithMark(field('requireRoadTax'))} value={form.requireRoadTax} onValueChange={(v) => setField('requireRoadTax', v)} options={yesNoOptions} />}
+                    {field('requirePermit').visible && <SelectField label={labelWithMark(field('requirePermit'))} value={form.requirePermit} onValueChange={(v) => setField('requirePermit', v)} options={yesNoOptions} />}
                   </>
                 )}
-                <Field label="Remarks" className="md:col-span-2 xl:col-span-3">
+                {field('remarks').visible && (
+                <Field label={field('remarks').label} className="md:col-span-2 xl:col-span-3">
                   <Textarea value={form.remarks} onChange={(e) => setField('remarks', e.target.value)} placeholder="Add any useful vehicle notes…" className="min-h-[84px] resize-none" />
                 </Field>
+                )}
               </div>
               </FormSection>
             </div>
@@ -1089,7 +1100,7 @@ function Field({
   return (
     <div
       className={cn(
-        'space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/40 px-3 py-2.5 transition-all hover:border-emerald-200 hover:bg-white focus-within:border-emerald-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-emerald-100 [&_input]:h-11 sm:[&_input]:h-9',
+        'space-y-1.5 [&_input]:h-11 sm:[&_input]:h-9',
         className
       )}
     >
@@ -1115,7 +1126,7 @@ function SelectField({
   return (
     <Field label={label} className={className}>
       <Select value={value || undefined} onValueChange={onValueChange}>
-        <SelectTrigger className="h-11 border-slate-200 bg-white text-[13px] transition-colors focus:ring-1 focus:ring-emerald-400/50 data-[state=open]:border-emerald-400 sm:h-9">
+        <SelectTrigger className="h-11 border-slate-200 bg-white text-[13px] sm:h-9">
           <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
         </SelectTrigger>
         <SelectContent>

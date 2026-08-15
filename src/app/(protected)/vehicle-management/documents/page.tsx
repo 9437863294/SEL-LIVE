@@ -68,6 +68,7 @@ export default function DocumentManagementPage() {
       title="Document Management"
       description="Vehicle-wise document folder, validity tracking, and compliance status."
       itemName="Document"
+      formKey="documents"
       collectionName={VEHICLE_COLLECTIONS.documents}
       fields={fields}
       columns={columns}

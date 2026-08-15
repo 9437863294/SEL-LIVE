@@ -410,35 +410,40 @@ main {
 }
 
 @keyframes vm-reveal-up {
-  from { opacity: 0; transform: translateY(14px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  /* No scale() here on purpose — animating a sub-1 scale forces the browser to rasterize text
+     and nearby backdrop-blur panels at a fractional pixel ratio, which is what read as a
+     "blurry" flash on mobile. Fade + a small rise gives the same reveal feel without it. */
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @layer utilities {
   .vm-gradient-atmosphere {
+    /* Static on purpose (matches Recurring Payments / Site Account Statement, which never
+       animate their ambient background) — panning this gradient behind the blurred panels
+       below was the main contributor to the module's mobile chrome looking blurry. */
     background-image:
-      radial-gradient(circle at 10% 12%, rgba(34, 211, 238, 0.22) 0, transparent 36%),
-      radial-gradient(circle at 88% 14%, rgba(59, 130, 246, 0.2) 0, transparent 38%),
+      radial-gradient(circle at 10% 12%, rgba(52, 211, 153, 0.22) 0, transparent 36%),
+      radial-gradient(circle at 88% 14%, rgba(20, 184, 166, 0.2) 0, transparent 38%),
       radial-gradient(circle at 52% 92%, rgba(251, 191, 36, 0.13) 0, transparent 44%),
-      linear-gradient(140deg, rgba(239, 246, 255, 0.86), rgba(240, 249, 255, 0.78), rgba(245, 250, 255, 0.9));
-    background-size: 140% 140%;
-    animation: vm-gradient-pan 16s ease infinite;
+      linear-gradient(140deg, rgba(236, 253, 245, 0.86), rgba(240, 253, 250, 0.78), rgba(245, 253, 250, 0.9));
   }
 
   .vm-panel {
-    @apply border border-white/70 bg-white/70 backdrop-blur-xl shadow-[0_20px_65px_-40px_rgba(2,6,23,0.5)];
+    /* backdrop-blur-sm (not -xl) to match the blur intensity used elsewhere in the app. */
+    @apply border border-white/70 bg-white/70 backdrop-blur-sm shadow-[0_20px_65px_-40px_rgba(2,6,23,0.5)];
   }
 
   .vm-panel-strong {
-    @apply border border-white/70 bg-white/80 backdrop-blur-xl shadow-[0_24px_80px_-45px_rgba(2,6,23,0.55)];
+    @apply border border-white/70 bg-white/80 backdrop-blur-sm shadow-[0_24px_80px_-45px_rgba(2,6,23,0.55)];
   }
 
   .vm-orb-a {
-    animation: vm-float-a 18s ease-in-out infinite;
+    /* Static — see .vm-gradient-atmosphere above. */
   }
 
   .vm-orb-b {
-    animation: vm-float-b 22s ease-in-out infinite;
+    /* Static — see .vm-gradient-atmosphere above. */
   }
 
   .vm-nav-active {
@@ -446,7 +451,7 @@ main {
   }
 
   .vm-reveal {
-    animation: vm-reveal-up 0.4s ease-out both;
+    animation: vm-reveal-up 0.3s ease-out both;
   }
 }
 
