@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/project-management/**/*.ts",
+    "src/app/(protected)/project-management/**/*.tsx",
+    "src/app/(public)/project-management/**/*.ts",
+    "src/app/(public)/project-management/**/*.tsx",
+    "src/components/project-management/**/*.ts",
+    "src/components/project-management/**/*.tsx",
+    "src/lib/project-management-*.ts",
+    "src/lib/mdl.ts",
+    "src/lib/purchase-orders.ts",
+    "src/lib/rfq.ts",
+    "src/lib/supply-gates.ts"
+  ],
+  "exclude": ["node_modules"]
+}

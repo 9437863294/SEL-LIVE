@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  CalendarClock,
   CalendarDays,
   ChevronDown,
   ChevronRight,
@@ -414,6 +415,11 @@ export default function ProjectIndentPage() {
 
         <div className="flex flex-col items-end gap-1">
           <div className="flex items-center gap-2">
+            <Button variant="outline" asChild>
+              <Link href={`/project-management/requirement-planner?project=${encodeURIComponent(mappingId)}`}>
+                <CalendarClock className="mr-2 h-4 w-4" /> Requirement Planner
+              </Link>
+            </Button>
             {indents.length > 0 && (
               <Button variant="outline" onClick={exportIndents}>
                 <Download className="mr-2 h-4 w-4" /> Export

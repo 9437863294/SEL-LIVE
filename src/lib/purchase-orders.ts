@@ -48,6 +48,18 @@ export interface PurchaseOrder {
   createdByName?: string;
   updatedAt?: unknown;
   cancelledReason?: string;
+  // This PO's own flow-down terms, checked at issue against the project's client (see
+  // computeFlowDownCheck below).
+  warrantyMonths?: number;
+  ldRatePct?: number;
+  ldCapPct?: number;
+  performanceSecurityPct?: number;
+  // Recorded acceptance of a gap found at issue time — commitment-over-BOQ and/or flow-down —
+  // rather than the gap being silently absorbed.
+  commitmentOverrideReason?: string;
+  flowDownOverrideReason?: string;
+  issueOverrideBy?: string;
+  issueOverrideByName?: string;
 }
 
 export const toNumber = (value: unknown): number => {
@@ -88,4 +100,84 @@ export function isPoOverdue(po?: Pick<PurchaseOrder, "endDate" | "status">, toda
   if (Number.isNaN(end.getTime())) return false;
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   return end.getTime() < startOfToday.getTime();
+}
+
+/**
+ * The back-to-back flow-down check (blueprint §2): every obligation the client imposes on SEL
+ * for supplied material must be mirrored in the PO to the vendor, or SEL carries the gap
+ * uncovered. For each numeric term, the PO's own commitment to the vendor must be at least as
+ * strong as what the client requires of SEL — a lower number (shorter warranty, smaller LD cap,
+ * no security) is a real, costed exposure, not a rounding difference.
+ */
+export interface FlowDownObligation {
+  key: string;
+  label: string;
+  clientValue: string;
+  poValue: string;
+  status: "ok" | "gap" | "informational";
+}
+
+type FlowDownClientTerms = {
+  warrantyMonths?: number;
+  ldRatePct?: number;
+  ldCapPct?: number;
+  performanceSecurityPct?: number;
+  inspectionRegime?: string;
+};
+
+type FlowDownPoTerms = {
+  warrantyMonths?: number;
+  ldRatePct?: number;
+  ldCapPct?: number;
+  performanceSecurityPct?: number;
+};
+
+export function computeFlowDownCheck(
+  client: FlowDownClientTerms | null | undefined,
+  po: FlowDownPoTerms,
+): FlowDownObligation[] {
+  if (!client) return [];
+  const obligations: FlowDownObligation[] = [];
+
+  const compareAtLeast = (key: string, label: string, clientValue: number | undefined, poValue: number | undefined, unit: string) => {
+    if (clientValue == null) return; // client hasn't configured this term — nothing to check
+    obligations.push({
+      key,
+      label,
+      clientValue: `${clientValue}${unit}`,
+      poValue: poValue != null ? `${poValue}${unit}` : "Not set",
+      status: poValue != null && poValue >= clientValue ? "ok" : "gap",
+    });
+  };
+
+  compareAtLeast("warrantyMonths", "Warranty", client.warrantyMonths, po.warrantyMonths, " months");
+  compareAtLeast("ldRatePct", "LD Rate", client.ldRatePct, po.ldRatePct, "%/week");
+  compareAtLeast("ldCapPct", "LD Cap", client.ldCapPct, po.ldCapPct, "%");
+  compareAtLeast("performanceSecurityPct", "Performance Security", client.performanceSecurityPct, po.performanceSecurityPct, "%");
+
+  if (client.inspectionRegime) {
+    obligations.push({
+      key: "inspectionRegime",
+      label: "Inspection Regime",
+      clientValue: client.inspectionRegime,
+      poValue: "Confirm PO terms include this",
+      status: "informational",
+    });
+  }
+
+  return obligations;
+}
+
+/** Whether committing `additionalValue` more against a BOQ line (on top of what's already
+ * committed via other live POs) would push total commitment above the BOQ value beyond the
+ * configured tolerance — the same guard as the indent/survey tolerance checks, applied at the
+ * point money actually becomes binding. */
+export function isCommitmentOverBoq(
+  boqValue: number,
+  alreadyCommittedValue: number,
+  additionalValue: number,
+  tolerancePct: number,
+): boolean {
+  const allowance = boqValue * (1 + tolerancePct / 100);
+  return alreadyCommittedValue + additionalValue > allowance;
 }

@@ -60,13 +60,23 @@ export interface MdlDrawing {
   approveDate: string;
   status: MdlOverallStatus;
   remark: string;
+  // Set once, from the earliest revision submission date ever recorded, and never reset by a
+  // later revision — cycle age is measured from here, not from the current round, so a drawing
+  // stuck across three revisions reads as 140 days pending, not "12 days since last resubmission."
+  firstSubmittedOn?: string;
   createdAt?: unknown;
   createdBy?: string;
   createdByName?: string;
   updatedAt?: unknown;
 }
 
-const MDL_CLOSED_STATUSES: MdlOverallStatus[] = ["Approved", "Approved with Comments"];
+export const MDL_CLOSED_STATUSES: MdlOverallStatus[] = ["Approved", "Approved with Comments"];
+
+// Whether a drawing has reached a state that can release downstream work (Manufacturing
+// Clearance, construction) — Approved or Approved with Comments. Anything else — including no
+// MdlDrawing record at all yet — is not approved.
+export const isMdlApproved = (status?: MdlOverallStatus): boolean =>
+  status != null && MDL_CLOSED_STATUSES.includes(status);
 
 // A drawing is overdue once its planned end date has passed without reaching an approved state.
 export function isMdlOverdue(drawing?: Pick<MdlDrawing, "plannedEndDate" | "status">, today: Date = new Date()): boolean {
@@ -76,6 +86,27 @@ export function isMdlOverdue(drawing?: Pick<MdlDrawing, "plannedEndDate" | "stat
   if (Number.isNaN(end.getTime())) return false;
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   return end.getTime() < startOfToday.getTime();
+}
+
+// Days elapsed since the drawing's first-ever submission — never resets on a later revision.
+// Returns null when there's nothing to measure from yet (no submission recorded).
+export function computeMdlCycleAgeDays(
+  drawing?: Pick<MdlDrawing, "firstSubmittedOn">,
+  today: Date = new Date(),
+): number | null {
+  if (!drawing?.firstSubmittedOn) return null;
+  const start = new Date(`${drawing.firstSubmittedOn}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.max(0, Math.round((startOfToday.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+// The earliest submission date across all revisions — used to seed/backfill firstSubmittedOn
+// without ever moving it later once set.
+export function earliestSubmissionDate(revisions: MdlRevision[]): string | undefined {
+  const dates = revisions.map((r) => r.submissionDate).filter((d): d is string => Boolean(d));
+  if (!dates.length) return undefined;
+  return dates.reduce((earliest, current) => (current < earliest ? current : earliest));
 }
 
 export const emptyRevisions = (): MdlRevision[] =>

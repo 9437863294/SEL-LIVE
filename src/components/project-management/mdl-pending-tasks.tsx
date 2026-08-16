@@ -7,10 +7,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  MDL_CLOSED_STATUSES,
+  computeMdlCycleAgeDays,
   formatMdlDate,
   isMdlOverdue,
   mdlOverallStatusStyles,
-  type MdlOverallStatus,
   type MdlRow,
 } from "@/lib/mdl";
 
@@ -20,7 +21,9 @@ export type PoPlacement = {
   latestPoDate: string;
 };
 
-export const MDL_APPROVED_STATUSES: MdlOverallStatus[] = ["Approved", "Approved with Comments"];
+// Alias kept for callers already importing this name — same array as mdl.ts's own
+// MDL_CLOSED_STATUSES, so the two never drift apart.
+export const MDL_APPROVED_STATUSES = MDL_CLOSED_STATUSES;
 
 // A drawing becomes a "pending task" once a purchase order has actually been placed for its
 // BOQ item — that's the point procurement is committed and the drawing needs to be ready —
@@ -69,6 +72,7 @@ export default function MdlPendingTasks({
                   <TableHead>Vendor</TableHead>
                   <TableHead>PO Date</TableHead>
                   <TableHead>Planned End</TableHead>
+                  <TableHead>Cycle Age</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-20" />
                 </TableRow>
@@ -76,6 +80,7 @@ export default function MdlPendingTasks({
               <TableBody>
                 {pendingRows.map(({ item, drawing, po }, index) => {
                   const overdue = isMdlOverdue(drawing);
+                  const cycleAgeDays = computeMdlCycleAgeDays(drawing);
                   return (
                     <TableRow key={item.id} className="cursor-pointer" onClick={() => onSelectItem(item.id)}>
                       <TableCell>{index + 1}</TableCell>
@@ -93,6 +98,11 @@ export default function MdlPendingTasks({
                             Overdue
                           </span>
                         )}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {cycleAgeDays != null ? (
+                          <span className={cycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>{cycleAgeDays}d</span>
+                        ) : "—"}
                       </TableCell>
                       <TableCell>
                         <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[drawing?.status ?? "Pending"])}>

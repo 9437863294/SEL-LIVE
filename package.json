@@ -25,7 +25,9 @@
     "chat:migrate-to-rtdb": "node scripts/migrate-chat-to-realtime.js",
     "inventory:migrate": "node scripts/migrate-inventory-v2.mjs",
     "test:inventory": "node --experimental-strip-types --test tests/inventory-domain.test.mjs",
-    "typecheck:inventory": "tsc -p tsconfig.inventory.json"
+    "test:project-management": "node --experimental-strip-types --test tests/project-management-domain.test.mjs",
+    "typecheck:inventory": "tsc -p tsconfig.inventory.json",
+    "typecheck:project-management": "tsc -p tsconfig.project-management.json"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

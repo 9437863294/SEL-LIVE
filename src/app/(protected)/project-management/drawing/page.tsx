@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, PenTool, ShieldAlert } from "lucide-react";
+import { ArrowLeft, FolderOpen, PenTool, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -85,6 +85,12 @@ export default function DrawingPage() {
             <p className="font-medium">Coming soon</p>
             <p className="text-sm text-muted-foreground">This section is being built out.</p>
           </div>
+          <Button variant="outline" asChild>
+            <Link href={`/project-management/documents?project=${encodeURIComponent(mappingId)}&category=Drawing`}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              View Drawings
+            </Link>
+          </Button>
         </CardContent>
       </Card>
     </main>

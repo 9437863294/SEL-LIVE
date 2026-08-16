@@ -84,6 +84,39 @@ export interface Project {
   woNo?: string;
   signatures?: Signature[];
   projectDescription?: string;
+  // Client/contract linkage — optional so every existing project (created before this existed)
+  // keeps working unchanged; only Project Management's client-facing features read these.
+  clientId?: string;
+  clientName?: string;
+  contractValue?: number;
+  loaRef?: string;
+  loaDate?: string;
+  retentionPct?: number;
+}
+
+/** A client (the paying customer) a project is executed for. Independent of `Project` — one
+ * client can have many projects, referenced by `Project.clientId`. */
+export interface Client {
+  id: string;
+  name: string;
+  gstin?: string;
+  pan?: string;
+  addresses?: string[];
+  contacts?: ContactPerson[];
+  paymentTermsDays?: number;
+  retentionPct?: number;
+  defaultTdsPct?: number;
+  // Flow-down terms — what this client's contract obligates SEL to, so every PO to a vendor can
+  // be checked against them (see computeFlowDownCheck in purchase-orders.ts). Defaults here save
+  // re-entering the same contractual terms on every PO; a PO can still legitimately differ.
+  warrantyMonths?: number;
+  ldRatePct?: number;
+  ldCapPct?: number;
+  performanceSecurityPct?: number;
+  inspectionRegime?: string;
+  status: "Active" | "Inactive";
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 export interface Site {
@@ -566,16 +599,27 @@ export const permissionModules = {
   },
   "Project Management": {
     "View Module": [],
-    BOQ: ["View", "Import", "Add Manual"],
+    BOQ: ["View", "Import", "Add Manual", "Delete", "Export"],
     Indent: ["View", "Add", "Delete"],
-    RFQ: ["View", "Add", "Send", "Enter Quote", "Award"],
-    "Purchase Orders": ["View", "Add", "Delete", "Issue", "Receive", "Cancel"],
+    RFQ: ["View", "Add", "Delete", "Send", "Enter Quote", "Award"],
+    "Purchase Orders": ["View", "Add", "Edit", "Delete", "Issue", "Receive", "Cancel"],
     MDL: ["View", "Edit"],
     Supply: ["View"],
-    Civil: ["View"],
-    Erection: ["View"],
+    Survey: ["View", "Record"],
+    "Requirement Planner": ["View", "Edit Schedule"],
+    "Manufacturing Clearance": ["View", "Clear", "Reject"],
+    Inspections: ["View", "Request", "Record Result"],
+    MDCC: ["View", "Request", "Issue"],
+    GRN: ["View", "Record"],
+    MVAC: ["View", "Request", "Verify", "Sign", "Release Billing"],
+    Documents: ["View", "Add", "Delete"],
+    Drawing: ["View"],
+    Civil: ["View", "Add", "Edit", "Delete", "Export"],
+    Erection: ["View", "Add", "Edit", "Delete", "Export"],
+    Clients: ["View", "Add", "Edit", "Delete"],
+    "Variation Orders": ["View", "Add", "Approve", "Reject"],
     "Project Mappings": ["View", "Add", "Edit", "Delete"],
-    Settings: ["View", "Edit"],
+    Settings: ["View", "Edit", "Manage Field Control"],
   },
   "Vendor Management": {
     "View Module": [],

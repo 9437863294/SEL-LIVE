@@ -65,12 +65,16 @@ import {
   RFQ_COLLECTION,
   RFQ_PERMISSION_RESOURCE,
   RFQ_QUOTES_SUBCOLLECTION,
+  computeCashOutflow,
+  computeLandedCost,
   formatCurrency,
   formatDate,
   formatQuantity,
+  markRfqItemsAwarded,
   rfqStatusStyles,
   toNumber,
   type Rfq,
+  type RfqAwardEntry,
   type RfqItem,
   type RfqQuote,
   type RfqStatus,
@@ -92,6 +96,11 @@ type QuoteForm = {
   validityDate: string;
   remarks: string;
   rates: Record<string, string>;
+  discountAmount: string;
+  packingForwardingAmount: string;
+  freightAmount: string;
+  insuranceAmount: string;
+  gstPct: string;
 };
 
 const emptyQuoteForm = (rfqItems: RfqItem[]): QuoteForm => ({
@@ -101,6 +110,11 @@ const emptyQuoteForm = (rfqItems: RfqItem[]): QuoteForm => ({
   validityDate: "",
   remarks: "",
   rates: Object.fromEntries(rfqItems.map((item) => [item.rfqItemId, ""])),
+  discountAmount: "",
+  packingForwardingAmount: "",
+  freightAmount: "",
+  insuranceAmount: "",
+  gstPct: "",
 });
 
 const today = () => {
@@ -123,6 +137,7 @@ export default function RfqDetailPage() {
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [rfq, setRfq] = useState<Rfq | null>(null);
   const [quotes, setQuotes] = useState<RfqQuote[]>([]);
+  const [budgetPriceByBoqItemId, setBudgetPriceByBoqItemId] = useState<Map<string, number>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isSavingQuote, setIsSavingQuote] = useState(false);
@@ -153,10 +168,14 @@ export default function RfqDetailPage() {
       const rfqData = { id: rfqSnapshot.id, ...rfqSnapshot.data() } as Rfq;
       setRfq(rfqData);
 
-      const quotesSnapshot = await getDocs(
-        collection(db, "projects", mappingData.globalProjectId, RFQ_COLLECTION, rfqId, RFQ_QUOTES_SUBCOLLECTION),
-      );
+      const [quotesSnapshot, boqSnapshot] = await Promise.all([
+        getDocs(collection(db, "projects", mappingData.globalProjectId, RFQ_COLLECTION, rfqId, RFQ_QUOTES_SUBCOLLECTION)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
+      ]);
       setQuotes(quotesSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as RfqQuote));
+      setBudgetPriceByBoqItemId(
+        new Map(boqSnapshot.docs.map((d) => [d.id, toNumber((d.data() as Record<string, unknown>)["Budget Price"])])),
+      );
 
       setAwardSelections(
         Object.fromEntries(rfqData.items.map((item) => [item.rfqItemId, item.awardedVendorId ?? ""])),
@@ -190,6 +209,24 @@ export default function RfqDetailPage() {
     });
     return map;
   }, [rfq, receivedQuotes]);
+
+  // What this package would cost at BOQ rates — the benchmark a normalised quote is judged
+  // against, shown alongside every vendor so a rate escalation is visible before award.
+  const boqBenchmarkValue = useMemo(() => {
+    if (!rfq) return 0;
+    return rfq.items.reduce((sum, item) => sum + item.qty * (budgetPriceByBoqItemId.get(item.boqItemId) ?? 0), 0);
+  }, [rfq, budgetPriceByBoqItemId]);
+
+  const landedCostByVendor = useMemo(() => {
+    const map = new Map<string, number>();
+    receivedQuotes.forEach((quote) => map.set(quote.vendorId, quote.landedCost ?? computeLandedCost(quote)));
+    return map;
+  }, [receivedQuotes]);
+
+  const bestLandedCost = useMemo(() => {
+    const values = Array.from(landedCostByVendor.values());
+    return values.length ? Math.min(...values) : undefined;
+  }, [landedCostByVendor]);
 
   const handleSendToVendors = async () => {
     if (!mapping || !rfq) return;
@@ -253,12 +290,32 @@ export default function RfqDetailPage() {
             String(existing.items.find((qi) => qi.rfqItemId === item.rfqItemId)?.rate ?? ""),
           ]),
         ),
+        discountAmount: existing.discountAmount != null ? String(existing.discountAmount) : "",
+        packingForwardingAmount: existing.packingForwardingAmount != null ? String(existing.packingForwardingAmount) : "",
+        freightAmount: existing.freightAmount != null ? String(existing.freightAmount) : "",
+        insuranceAmount: existing.insuranceAmount != null ? String(existing.insuranceAmount) : "",
+        gstPct: existing.gstPct != null ? String(existing.gstPct) : "",
       });
     } else {
       setQuoteForm({ ...emptyQuoteForm(rfq.items), submittedDate: today() });
     }
     setQuoteDialogVendorId(vendorId);
   };
+
+  const quoteFormPreview = useMemo(() => {
+    const basicTotal = rfq
+      ? rfq.items.reduce((sum, item) => sum + toNumber(quoteForm.rates[item.rfqItemId]) * item.qty, 0)
+      : 0;
+    const landedCost = computeLandedCost({
+      totalAmount: basicTotal,
+      discountAmount: toNumber(quoteForm.discountAmount),
+      packingForwardingAmount: toNumber(quoteForm.packingForwardingAmount),
+      freightAmount: toNumber(quoteForm.freightAmount),
+      insuranceAmount: toNumber(quoteForm.insuranceAmount),
+    });
+    const cashOutflowInclGst = computeCashOutflow(landedCost, toNumber(quoteForm.gstPct));
+    return { basicTotal, landedCost, cashOutflowInclGst };
+  }, [rfq, quoteForm]);
 
   const handleSaveQuote = async () => {
     if (!mapping || !rfq || !quoteDialogVendorId) return;
@@ -277,6 +334,14 @@ export default function RfqDetailPage() {
       return;
     }
 
+    const discountAmount = toNumber(quoteForm.discountAmount);
+    const packingForwardingAmount = toNumber(quoteForm.packingForwardingAmount);
+    const freightAmount = toNumber(quoteForm.freightAmount);
+    const insuranceAmount = toNumber(quoteForm.insuranceAmount);
+    const gstPct = toNumber(quoteForm.gstPct);
+    const landedCost = computeLandedCost({ totalAmount, discountAmount, packingForwardingAmount, freightAmount, insuranceAmount });
+    const cashOutflowInclGst = computeCashOutflow(landedCost, gstPct);
+
     setIsSavingQuote(true);
     try {
       await setDoc(
@@ -292,6 +357,13 @@ export default function RfqDetailPage() {
           remarks: quoteForm.remarks.trim(),
           items,
           totalAmount,
+          discountAmount,
+          packingForwardingAmount,
+          freightAmount,
+          insuranceAmount,
+          gstPct,
+          landedCost,
+          cashOutflowInclGst,
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -327,9 +399,12 @@ export default function RfqDetailPage() {
         byVendor.set(vendorId, [...(byVendor.get(vendorId) ?? []), item]);
       });
 
-      const updatedItems = [...rfq.items];
       let poCount = 0;
 
+      // One vendor group at a time — each award is verified and written transactionally (see
+      // markRfqItemsAwarded), so if this RFQ was also being awarded concurrently from the PO
+      // builder's "From RFQ Quotes" tab, the second attempt on any shared item fails loudly
+      // instead of silently double-awarding it into two purchase orders.
       for (const [vendorId, items] of byVendor.entries()) {
         const quote = quotes.find((q) => q.vendorId === vendorId);
         if (!quote) continue;
@@ -372,38 +447,30 @@ export default function RfqDetailPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        poCount += 1;
 
-        items.forEach((item) => {
-          const index = updatedItems.findIndex((i) => i.rfqItemId === item.rfqItemId);
-          if (index === -1) return;
+        const awards: RfqAwardEntry[] = items.map((item) => {
           const quoteItem = quote.items.find((qi) => qi.rfqItemId === item.rfqItemId);
-          updatedItems[index] = {
-            ...updatedItems[index],
+          return {
+            rfqItemId: item.rfqItemId,
             awardedVendorId: vendorId,
             awardedVendorName: quote.vendorName,
             awardedRate: quoteItem?.rate ?? 0,
             awardedAmount: quoteItem?.amount ?? 0,
-            poId: poRef.id,
           };
         });
+        await markRfqItemsAwarded(db, mapping.globalProjectId, rfq.id, poRef.id, awards);
+        poCount += 1;
       }
-
-      const allAwarded = updatedItems.every((item) => item.awardedVendorId);
-      const someAwarded = updatedItems.some((item) => item.awardedVendorId);
-      const nextStatus: RfqStatus = allAwarded ? "Awarded" : someAwarded ? "Partially Awarded" : rfq.status;
-
-      await setDoc(
-        doc(db, "projects", mapping.globalProjectId, RFQ_COLLECTION, rfq.id),
-        { items: updatedItems, status: nextStatus, updatedAt: serverTimestamp() },
-        { merge: true },
-      );
 
       toast({ title: `Awarded ${itemsToProcess.length} item(s) across ${poCount} purchase order(s)` });
       await loadRfq();
     } catch (error) {
       console.error("Failed to confirm awards:", error);
-      toast({ title: "Unable to confirm awards", variant: "destructive" });
+      toast({
+        title: "Unable to confirm awards",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     } finally {
       setIsAwarding(false);
     }
@@ -538,7 +605,8 @@ export default function RfqDetailPage() {
                 <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                   <p>Payment Terms: <span className="text-foreground">{quote.paymentTerms || "—"}</span></p>
                   <p>Delivery Time: <span className="text-foreground">{quote.deliveryTime || "—"}</span></p>
-                  <p>Total: <span className="font-semibold text-foreground">{formatCurrency(quote.totalAmount)}</span></p>
+                  <p>Basic Total: <span className="text-foreground">{formatCurrency(quote.totalAmount)}</span></p>
+                  <p>Landed Cost: <span className="font-semibold text-foreground">{formatCurrency(quote.landedCost ?? computeLandedCost(quote))}</span></p>
                 </div>
               ) : (
                 <p className="mt-2 text-xs text-muted-foreground">Awaiting quote submission.</p>
@@ -557,7 +625,11 @@ export default function RfqDetailPage() {
         <Card>
           <CardHeader>
             <CardTitle>Compare Quotes</CardTitle>
-            <CardDescription>Lowest rate per item is highlighted. Choose an award for each item, then confirm.</CardDescription>
+            <CardDescription>
+              Lowest rate per item, and lowest overall landed cost, are highlighted. BOQ benchmark for this package:{" "}
+              <span className="font-semibold text-foreground">{formatCurrency(boqBenchmarkValue)}</span>. Choose an
+              award for each item, then confirm.
+            </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -623,10 +695,41 @@ export default function RfqDetailPage() {
                     <TableCell />
                   </TableRow>
                   <TableRow className="bg-muted/30">
-                    <TableCell className="font-medium">Total Quoted</TableCell>
+                    <TableCell className="font-medium">Basic Total</TableCell>
                     {receivedQuotes.map((quote) => (
-                      <TableCell key={quote.vendorId} className="text-right text-xs font-semibold">{formatCurrency(quote.totalAmount)}</TableCell>
+                      <TableCell key={quote.vendorId} className="text-right text-xs">{formatCurrency(quote.totalAmount)}</TableCell>
                     ))}
+                    <TableCell />
+                  </TableRow>
+                  <TableRow className="bg-muted/30">
+                    <TableCell className="font-medium">Landed Cost (excl. GST)</TableCell>
+                    {receivedQuotes.map((quote) => {
+                      const landedCost = landedCostByVendor.get(quote.vendorId) ?? quote.totalAmount;
+                      const isBest = typeof bestLandedCost === "number" && landedCost === bestLandedCost;
+                      const overBenchmark = boqBenchmarkValue > 0 && landedCost > boqBenchmarkValue;
+                      return (
+                        <TableCell
+                          key={quote.vendorId}
+                          className={`text-right text-xs font-semibold ${isBest ? "bg-emerald-50 text-emerald-700" : overBenchmark ? "text-amber-600" : ""}`}
+                        >
+                          {formatCurrency(landedCost)}
+                          {overBenchmark && <div className="text-[10px] font-normal text-amber-600">above BOQ rate</div>}
+                        </TableCell>
+                      );
+                    })}
+                    <TableCell />
+                  </TableRow>
+                  <TableRow className="bg-muted/30">
+                    <TableCell className="font-medium">Cash Outflow (incl. GST)</TableCell>
+                    {receivedQuotes.map((quote) => {
+                      const landedCost = landedCostByVendor.get(quote.vendorId) ?? quote.totalAmount;
+                      const cashOutflow = quote.cashOutflowInclGst ?? computeCashOutflow(landedCost, quote.gstPct ?? 0);
+                      return (
+                        <TableCell key={quote.vendorId} className="text-right text-xs text-muted-foreground">
+                          {formatCurrency(cashOutflow)}
+                        </TableCell>
+                      );
+                    })}
                     <TableCell />
                   </TableRow>
                 </TableBody>
@@ -720,6 +823,41 @@ export default function RfqDetailPage() {
                   })}
                 </TableBody>
               </Table>
+            </div>
+
+            <div className="space-y-2 rounded-lg border p-3">
+              <p className="text-sm font-medium">Landed Cost Adjustments</p>
+              <p className="text-xs text-muted-foreground">
+                Quoted as one lump sum for this RFQ, not per line. GST is excluded from the comparable landed cost
+                (input credit is available) but shown separately as actual cash outflow.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="space-y-1">
+                  <Label htmlFor="discount-amount">Discount (₹)</Label>
+                  <Input id="discount-amount" type="number" min="0" step="1" value={quoteForm.discountAmount} onChange={(e) => setQuoteForm((c) => ({ ...c, discountAmount: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="pf-amount">Packing & Forwarding (₹)</Label>
+                  <Input id="pf-amount" type="number" min="0" step="1" value={quoteForm.packingForwardingAmount} onChange={(e) => setQuoteForm((c) => ({ ...c, packingForwardingAmount: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="freight-amount">Freight (₹)</Label>
+                  <Input id="freight-amount" type="number" min="0" step="1" value={quoteForm.freightAmount} onChange={(e) => setQuoteForm((c) => ({ ...c, freightAmount: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="insurance-amount">Insurance (₹)</Label>
+                  <Input id="insurance-amount" type="number" min="0" step="1" value={quoteForm.insuranceAmount} onChange={(e) => setQuoteForm((c) => ({ ...c, insuranceAmount: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="gst-pct">GST (%)</Label>
+                  <Input id="gst-pct" type="number" min="0" step="0.5" value={quoteForm.gstPct} onChange={(e) => setQuoteForm((c) => ({ ...c, gstPct: e.target.value }))} />
+                </div>
+              </div>
+              <div className="mt-2 space-y-1 rounded-md bg-muted/40 p-2 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">Basic Total</span><span>{formatCurrency(quoteFormPreview.basicTotal)}</span></div>
+                <div className="flex justify-between font-semibold"><span>Landed Cost (excl. GST)</span><span>{formatCurrency(quoteFormPreview.landedCost)}</span></div>
+                <div className="flex justify-between text-xs text-muted-foreground"><span>Cash Outflow (incl. GST)</span><span>{formatCurrency(quoteFormPreview.cashOutflowInclGst)}</span></div>
+              </div>
             </div>
 
             <div className="space-y-2">

@@ -81,7 +81,9 @@ import {
   MDL_PERMISSION_RESOURCE,
   MDL_REVISION_ROUNDS,
   MDL_REVISION_STATUSES,
+  computeMdlCycleAgeDays,
   countVisibleRevisions,
+  earliestSubmissionDate,
   emptyRevisions,
   formatMdlDate,
   getLatestRevision,
@@ -470,6 +472,11 @@ export default function MdlPage() {
         }),
       );
 
+      // Set once, from the earliest submission across all revisions, and never moved afterward —
+      // see computeMdlCycleAgeDays in mdl.ts for why this must never reset on a later revision.
+      const existingFirstSubmittedOn = drawings[editingBoqItem.id]?.firstSubmittedOn;
+      const firstSubmittedOn = existingFirstSubmittedOn ?? earliestSubmissionDate(revisions);
+
       await setDoc(doc(db, "projects", mapping.globalProjectId, MDL_COLLECTION, editingBoqItem.id), {
         boqItemId: editingBoqItem.id,
         boqSlNo: String(editingBoqItem["BOQ SL No"] ?? ""),
@@ -481,6 +488,7 @@ export default function MdlPage() {
         approveDate: form.approveDate,
         status: form.status,
         remark: form.remark.trim(),
+        ...(firstSubmittedOn ? { firstSubmittedOn } : {}),
         createdAt: drawings[editingBoqItem.id]?.createdAt ?? serverTimestamp(),
         createdBy: drawings[editingBoqItem.id]?.createdBy ?? user.id,
         createdByName: drawings[editingBoqItem.id]?.createdByName ?? user.name ?? "",
@@ -611,6 +619,7 @@ export default function MdlPage() {
                           <TableHead>Planned Start</TableHead>
                           <TableHead>Planned End</TableHead>
                           <TableHead>Current Stage</TableHead>
+                          <TableHead>Cycle Age</TableHead>
                           <TableHead>Approve Date</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Remark</TableHead>
@@ -622,6 +631,7 @@ export default function MdlPage() {
                           const drawing = drawings[item.id];
                           const latest = drawing ? getLatestRevision(drawing.revisions ?? []) : null;
                           const overdue = isMdlOverdue(drawing);
+                          const cycleAgeDays = computeMdlCycleAgeDays(drawing);
                           return (
                             <TableRow key={item.id}>
                               <TableCell>{index + 1}</TableCell>
@@ -646,6 +656,13 @@ export default function MdlPage() {
                                 {latest ? (
                                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${latest.status ? mdlRevisionStatusStyles[latest.status] : "bg-muted text-muted-foreground"}`}>
                                     {latest.round}{latest.status ? ` · ${latest.status}` : ""}
+                                  </span>
+                                ) : "—"}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {cycleAgeDays != null ? (
+                                  <span className={cycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>
+                                    {cycleAgeDays}d
                                   </span>
                                 ) : "—"}
                               </TableCell>

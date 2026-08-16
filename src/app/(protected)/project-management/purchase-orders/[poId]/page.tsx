@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowLeft,
   Ban,
   CheckCircle2,
   FileUp,
+  GitPullRequestArrow,
   Loader2,
   Paperclip,
   PackageCheck,
@@ -23,10 +25,37 @@ import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage
 import { db, storage } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing, type MdlOverallStatus } from "@/lib/mdl";
+import {
+  DI_COLLECTION,
+  GRN_COLLECTION,
+  INSPECTION_COLLECTION,
+  MC_COLLECTION,
+  MDCC_COLLECTION,
+  MVAC_COLLECTION,
+  diStatusStyles,
+  grnStatusStyles,
+  inspectionStatusStyles,
+  mcStatusStyles,
+  mdccStatusStyles,
+  mvacStatusStyles,
+  type DiRecord,
+  type DiStatus,
+  type GrnRecord,
+  type GrnStatus,
+  type InspectionRecord,
+  type InspectionStatus,
+  type ManufacturingClearance,
+  type McStatus,
+  type MdccRecord,
+  type MdccStatus,
+  type MvacRecord,
+  type MvacStatus,
+} from "@/lib/supply-gates";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
 import { useToast } from "@/hooks/use-toast";
+import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -68,13 +97,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
+  computeFlowDownCheck,
   formatCurrency,
   formatQuantity,
+  isCommitmentOverBoq,
   isPoOverdue,
   poStatusStyles,
   toNumber,
+  type FlowDownObligation,
   type PurchaseOrder,
 } from "@/lib/purchase-orders";
+import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
+import type { Client } from "@/lib/types";
+import { Textarea } from "@/components/ui/textarea";
 
 type ProjectMapping = {
   id: string;
@@ -105,18 +140,30 @@ export default function ProjectPurchaseOrderDetailPage() {
   const canReceive = can("Receive", PO_PERMISSION_RESOURCE);
   const canCancel = can("Cancel", PO_PERMISSION_RESOURCE);
   const canDelete = can("Delete", PO_PERMISSION_RESOURCE);
-  const canEditDates = can("Add", PO_PERMISSION_RESOURCE);
+  const canEditDates = can("Edit", PO_PERMISSION_RESOURCE);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [budgetPriceByBoqItemId, setBudgetPriceByBoqItemId] = useState<Map<string, number>>(new Map());
+  const [boqQtyByBoqItemId, setBoqQtyByBoqItemId] = useState<Map<string, number>>(new Map());
   const [boqSlNoByBoqItemId, setBoqSlNoByBoqItemId] = useState<Map<string, string>>(new Map());
   const [mdlStatusByBoqItemId, setMdlStatusByBoqItemId] = useState<Map<string, MdlOverallStatus>>(new Map());
+  const [mcStatusByBoqItemId, setMcStatusByBoqItemId] = useState<Map<string, McStatus>>(new Map());
+  const [inspectionStatusByBoqItemId, setInspectionStatusByBoqItemId] = useState<Map<string, InspectionStatus>>(new Map());
+  const [mdccStatusByBoqItemId, setMdccStatusByBoqItemId] = useState<Map<string, MdccStatus>>(new Map());
+  const [diStatusByBoqItemId, setDiStatusByBoqItemId] = useState<Map<string, DiStatus>>(new Map());
+  const [grnStatusByBoqItemId, setGrnStatusByBoqItemId] = useState<Map<string, GrnStatus>>(new Map());
+  const [mvacStatusByBoqItemId, setMvacStatusByBoqItemId] = useState<Map<string, MvacStatus>>(new Map());
+  const [committedValueByBoqItemId, setCommittedValueByBoqItemId] = useState<Map<string, number>>(new Map());
+  const [client, setClient] = useState<Client | null>(null);
+  const [tolerancePct, setTolerancePct] = useState(DEFAULT_VARIATION_TOLERANCE_PCT);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDatesDialogOpen, setIsDatesDialogOpen] = useState(false);
   const [datesForm, setDatesForm] = useState({ startDate: "", endDate: "" });
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [isIssueReviewOpen, setIsIssueReviewOpen] = useState(false);
+  const [issueOverrideReason, setIssueOverrideReason] = useState("");
 
   const loadPo = useCallback(async () => {
     if (!mappingId || !poId) {
@@ -131,21 +178,59 @@ export default function ProjectPurchaseOrderDetailPage() {
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
       setMapping(mappingData);
 
-      const [snapshot, boqSnapshot, mdlSnapshot] = await Promise.all([
-        getDoc(doc(db, "projects", mappingData.globalProjectId, PO_COLLECTION, poId)),
-        getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
-        getDocs(collection(db, "projects", mappingData.globalProjectId, MDL_COLLECTION)),
-      ]);
+      const [snapshot, boqSnapshot, mdlSnapshot, mcSnapshot, inspectionSnapshot, mdccSnapshot, diSnapshot, grnSnapshot, mvacSnapshot, projectSnapshot, allPoSnapshot, settingsSnapshot] =
+        await Promise.all([
+          getDoc(doc(db, "projects", mappingData.globalProjectId, PO_COLLECTION, poId)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, MDL_COLLECTION)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, MC_COLLECTION)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, INSPECTION_COLLECTION)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, MDCC_COLLECTION)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, DI_COLLECTION)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, GRN_COLLECTION)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, MVAC_COLLECTION)),
+          getDoc(doc(db, "projects", mappingData.globalProjectId)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
+          getDoc(doc(db, "projectManagementSettings", "general")),
+        ]);
       setBudgetPriceByBoqItemId(
         new Map(
           boqSnapshot.docs.map((d) => [d.id, toNumber((d.data() as Record<string, unknown>)["Budget Price"])]),
         ),
+      );
+      setBoqQtyByBoqItemId(
+        new Map(boqSnapshot.docs.map((d) => [d.id, toNumber((d.data() as Record<string, unknown>)["QTY"])])),
       );
       setBoqSlNoByBoqItemId(
         new Map(
           boqSnapshot.docs.map((d) => [d.id, String((d.data() as Record<string, unknown>)["BOQ SL No"] ?? "")]),
         ),
       );
+
+      // Commitment accounting (§3) — total value committed across every live PO for this project,
+      // per BOQ line, so a single PO can be judged against what's already been committed elsewhere.
+      const committed = new Map<string, number>();
+      allPoSnapshot.docs.forEach((poDoc) => {
+        const data = poDoc.data() as PurchaseOrder;
+        if (data.status === "Cancelled") return;
+        (data.items ?? []).forEach((item) => {
+          if (!item.boqItemId) return;
+          committed.set(item.boqItemId, (committed.get(item.boqItemId) ?? 0) + toNumber(item.amount));
+        });
+      });
+      setCommittedValueByBoqItemId(committed);
+
+      const storedTolerance = settingsSnapshot.data()?.variationTolerancePct;
+      setTolerancePct(typeof storedTolerance === "number" ? storedTolerance : DEFAULT_VARIATION_TOLERANCE_PCT);
+
+      // Flow-down check (§2) — the client's contract terms this project's POs must at least match.
+      const clientId = projectSnapshot.data()?.clientId as string | undefined;
+      if (clientId) {
+        const clientSnapshot = await getDoc(doc(db, "clients", clientId));
+        setClient(clientSnapshot.exists() ? ({ id: clientSnapshot.id, ...clientSnapshot.data() } as Client) : null);
+      } else {
+        setClient(null);
+      }
       const mdlRequiredBoqItemIds = new Set(
         boqSnapshot.docs
           .filter((d) => String((d.data() as Record<string, unknown>).MDL ?? "").trim().toLowerCase() === "yes")
@@ -161,6 +246,30 @@ export default function ProjectPurchaseOrderDetailPage() {
             drawingsByBoqItemId.get(boqItemId)?.status ?? "Pending",
           ]),
         ),
+      );
+      // Downstream supply gates — Manufacturing Clearance -> Inspection -> MDCC -> DI -> GRN -> MVAC
+      // — each keyed by boqItemId, same as MDL, so this line-item table can show the whole chain.
+      setMcStatusByBoqItemId(
+        new Map(
+          mcSnapshot.docs.map((d) => [d.id, (d.data() as ManufacturingClearance).status ?? "Pending"]),
+        ),
+      );
+      setInspectionStatusByBoqItemId(
+        new Map(
+          inspectionSnapshot.docs.map((d) => [d.id, (d.data() as InspectionRecord).status ?? "Not Requested"]),
+        ),
+      );
+      setMdccStatusByBoqItemId(
+        new Map(mdccSnapshot.docs.map((d) => [d.id, (d.data() as MdccRecord).status ?? "Pending"])),
+      );
+      setDiStatusByBoqItemId(
+        new Map(diSnapshot.docs.map((d) => [d.id, (d.data() as DiRecord).status ?? "Pending"])),
+      );
+      setGrnStatusByBoqItemId(
+        new Map(grnSnapshot.docs.map((d) => [d.id, (d.data() as GrnRecord).status ?? "Not Received"])),
+      );
+      setMvacStatusByBoqItemId(
+        new Map(mvacSnapshot.docs.map((d) => [d.id, (d.data() as MvacRecord).status ?? "Pending"])),
       );
       if (!snapshot.exists()) {
         setPo(null);
@@ -182,6 +291,83 @@ export default function ProjectPurchaseOrderDetailPage() {
     }
     void loadPo();
   }, [canView, isAuthLoading, loadPo]);
+
+  const flowDownObligations: FlowDownObligation[] = po ? computeFlowDownCheck(client, po) : [];
+  const flowDownGaps = flowDownObligations.filter((item) => item.status === "gap");
+
+  // BOQ lines where total committed value (this PO plus every other live PO) exceeds the BOQ
+  // value beyond tolerance — the exception list called out in §4.9, computed on the fly rather
+  // than as its own screen.
+  const commitmentExceptions = (po?.items ?? []).reduce((rows, item) => {
+    const boqItemId = item.boqItemId;
+    if (!boqItemId || rows.some((row) => row.boqItemId === boqItemId)) return rows;
+    const boqQty = boqQtyByBoqItemId.get(boqItemId) ?? 0;
+    const budgetPrice = budgetPriceByBoqItemId.get(boqItemId) ?? 0;
+    const boqValue = boqQty * budgetPrice;
+    const committedValue = committedValueByBoqItemId.get(boqItemId) ?? 0;
+    if (!boqValue || !isCommitmentOverBoq(boqValue, 0, committedValue, tolerancePct)) return rows;
+    rows.push({
+      boqItemId,
+      boqSlNo: boqSlNoByBoqItemId.get(boqItemId) || "—",
+      description: item.description,
+      boqValue,
+      committedValue,
+    });
+    return rows;
+  }, [] as Array<{ boqItemId: string; boqSlNo: string; description: string; boqValue: number; committedValue: number }>);
+
+  const hasUnresolvedGaps = flowDownGaps.length > 0 || commitmentExceptions.length > 0;
+  const needsIssueOverrideReason = hasUnresolvedGaps && !po?.commitmentOverrideReason && !po?.flowDownOverrideReason;
+
+  const handleRequestIssue = () => {
+    setIssueOverrideReason("");
+    if (hasUnresolvedGaps) {
+      setIsIssueReviewOpen(true);
+    } else {
+      void updateStatus("Issued");
+    }
+  };
+
+  const handleConfirmIssue = async () => {
+    if (!mapping || !po) return;
+    if (needsIssueOverrideReason && !issueOverrideReason.trim()) {
+      toast({ title: "A reason is required to issue with unresolved gaps", variant: "destructive" });
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      await updateDoc(doc(db, "projects", mapping.globalProjectId, PO_COLLECTION, po.id), {
+        status: "Issued",
+        ...(flowDownGaps.length ? { flowDownOverrideReason: issueOverrideReason.trim() } : {}),
+        ...(commitmentExceptions.length ? { commitmentOverrideReason: issueOverrideReason.trim() } : {}),
+        ...(hasUnresolvedGaps && user ? { issueOverrideBy: user.id, issueOverrideByName: user.name } : {}),
+        updatedAt: serverTimestamp(),
+      });
+      if (user) {
+        void logUserActivity({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: "Project Management",
+          action: "Mark PO as Issued",
+          details: {
+            poNumber: po.poNumber,
+            project: mapping.projectName,
+            flowDownGaps: flowDownGaps.map((g) => g.label),
+            commitmentExceptions: commitmentExceptions.map((c) => c.boqSlNo),
+          },
+        });
+      }
+      toast({ title: "Purchase order issued" });
+      setIsIssueReviewOpen(false);
+      await loadPo();
+    } catch (error) {
+      console.error("Failed to issue purchase order:", error);
+      toast({ title: "Unable to issue purchase order", variant: "destructive" });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   const openDatesDialog = () => {
     if (!po) return;
@@ -368,7 +554,7 @@ export default function ProjectPurchaseOrderDetailPage() {
             <Printer className="mr-2 h-4 w-4" /> Print for Approval
           </Button>
           {po.status === "Draft" && canIssue && (
-            <Button onClick={() => void updateStatus("Issued")} disabled={isUpdating}>
+            <Button onClick={handleRequestIssue} disabled={isUpdating}>
               <Truck className="mr-2 h-4 w-4" /> Mark as Issued
             </Button>
           )}
@@ -417,6 +603,8 @@ export default function ProjectPurchaseOrderDetailPage() {
           )}
         </div>
       </div>
+
+      <SupplyGateNav mappingId={mappingId} active="purchase-orders" />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">PO Date</p><p className="font-semibold">{formatDate(po.poDate)}</p></CardContent></Card>
@@ -470,6 +658,12 @@ export default function ProjectPurchaseOrderDetailPage() {
                   <TableHead>Amount</TableHead>
                   <TableHead>Source RFQ</TableHead>
                   <TableHead>MDL Status</TableHead>
+                  <TableHead>MC Status</TableHead>
+                  <TableHead>Inspection</TableHead>
+                  <TableHead>MDCC</TableHead>
+                  <TableHead>DI</TableHead>
+                  <TableHead>GRN</TableHead>
+                  <TableHead>MVAC</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -477,6 +671,12 @@ export default function ProjectPurchaseOrderDetailPage() {
                   const budgetPrice = item.boqItemId ? budgetPriceByBoqItemId.get(item.boqItemId) ?? 0 : 0;
                   const boqSlNo = item.boqItemId ? boqSlNoByBoqItemId.get(item.boqItemId) : "";
                   const mdlStatus = item.boqItemId ? mdlStatusByBoqItemId.get(item.boqItemId) : undefined;
+                  const mcStatus = item.boqItemId ? mcStatusByBoqItemId.get(item.boqItemId) : undefined;
+                  const inspectionStatus = item.boqItemId ? inspectionStatusByBoqItemId.get(item.boqItemId) : undefined;
+                  const mdccStatus = item.boqItemId ? mdccStatusByBoqItemId.get(item.boqItemId) : undefined;
+                  const diStatus = item.boqItemId ? diStatusByBoqItemId.get(item.boqItemId) : undefined;
+                  const grnStatus = item.boqItemId ? grnStatusByBoqItemId.get(item.boqItemId) : undefined;
+                  const mvacStatus = item.boqItemId ? mvacStatusByBoqItemId.get(item.boqItemId) : undefined;
                   return (
                     <TableRow key={index}>
                       <TableCell className="whitespace-nowrap text-muted-foreground">{boqSlNo || "—"}</TableCell>
@@ -499,6 +699,36 @@ export default function ProjectPurchaseOrderDetailPage() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
+                      <TableCell>
+                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mcStatusStyles[mcStatus ?? "Pending"])}>
+                          {mcStatus ?? "Pending"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", inspectionStatusStyles[inspectionStatus ?? "Not Requested"])}>
+                          {inspectionStatus ?? "Not Requested"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdccStatusStyles[mdccStatus ?? "Pending"])}>
+                          {mdccStatus ?? "Pending"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", diStatusStyles[diStatus ?? "Pending"])}>
+                          {diStatus ?? "Pending"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", grnStatusStyles[grnStatus ?? "Not Received"])}>
+                          {grnStatus ?? "Not Received"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mvacStatusStyles[mvacStatus ?? "Pending"])}>
+                          {mvacStatus ?? "Pending"}
+                        </span>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -507,6 +737,84 @@ export default function ProjectPurchaseOrderDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {(flowDownObligations.length > 0 || commitmentExceptions.length > 0) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Commitment & Flow-Down Check</CardTitle>
+            <CardDescription>
+              Whether this project&apos;s POs impose on the vendor what the client&apos;s contract imposes on SEL,
+              and whether committed value has run ahead of BOQ value.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-0">
+            {flowDownObligations.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Obligation</TableHead>
+                      <TableHead>Client Requires</TableHead>
+                      <TableHead>This PO</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {flowDownObligations.map((item) => (
+                      <TableRow key={item.key}>
+                        <TableCell className="font-medium">{item.label}</TableCell>
+                        <TableCell>{item.clientValue}</TableCell>
+                        <TableCell>{item.poValue}</TableCell>
+                        <TableCell>
+                          {item.status === "gap" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                              <AlertTriangle className="h-3 w-3" /> Gap
+                            </span>
+                          ) : item.status === "ok" ? (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Covered</span>
+                          ) : (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">Confirm manually</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {commitmentExceptions.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>BOQ SL No</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-right">BOQ Value</TableHead>
+                      <TableHead className="text-right">Committed (all POs)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {commitmentExceptions.map((row) => (
+                      <TableRow key={row.boqItemId}>
+                        <TableCell className="whitespace-nowrap">{row.boqSlNo}</TableCell>
+                        <TableCell className="max-w-sm truncate" title={row.description}>{row.description}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(row.boqValue)}</TableCell>
+                        <TableCell className="text-right font-semibold text-red-600">{formatCurrency(row.committedValue)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {po.commitmentOverrideReason || po.flowDownOverrideReason ? (
+              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <GitPullRequestArrow className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Accepted by {po.issueOverrideByName || "—"}: {po.flowDownOverrideReason || po.commitmentOverrideReason}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
 
       {po.status === "Received" && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
@@ -577,6 +885,58 @@ export default function ProjectPurchaseOrderDetailPage() {
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleSaveDates()} disabled={isUpdating}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isIssueReviewOpen} onOpenChange={setIsIssueReviewOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Review Before Issue</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2 text-sm">
+            {flowDownGaps.length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                <p className="font-medium text-red-800">Flow-down gaps</p>
+                <ul className="mt-1 list-disc pl-4 text-red-700">
+                  {flowDownGaps.map((gap) => (
+                    <li key={gap.key}>
+                      {gap.label}: client requires {gap.clientValue}, this PO offers {gap.poValue}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {commitmentExceptions.length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                <p className="font-medium text-red-800">Committed above BOQ value</p>
+                <ul className="mt-1 list-disc pl-4 text-red-700">
+                  {commitmentExceptions.map((row) => (
+                    <li key={row.boqItemId}>
+                      {row.boqSlNo}: committed {formatCurrency(row.committedValue)} vs BOQ value {formatCurrency(row.boqValue)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="issue-override-reason">
+                {needsIssueOverrideReason ? "Reason for accepting this exposure (required)" : "Notes (optional)"}
+              </Label>
+              <Textarea
+                id="issue-override-reason"
+                placeholder="Why is it acceptable to issue with this gap?"
+                value={issueOverrideReason}
+                onChange={(e) => setIssueOverrideReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild><Button variant="outline">Back</Button></DialogClose>
+            <Button onClick={() => void handleConfirmIssue()} disabled={isUpdating}>
+              {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
+              Confirm & Issue
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

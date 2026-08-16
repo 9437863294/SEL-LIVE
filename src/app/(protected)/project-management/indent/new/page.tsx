@@ -18,6 +18,7 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { ControlledField } from "@/components/project-management/controlled-field";
 import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
+import { DEFAULT_VARIATION_TOLERANCE_PCT, computeAvailableQty } from "@/lib/project-management-variations";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -96,6 +97,10 @@ export default function NewIndentPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
+  const deepLinkBoqItemIds = useMemo(
+    () => (searchParams?.get("boqItemIds") ?? "").split(",").map((id) => id.trim()).filter(Boolean),
+    [searchParams],
+  );
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -106,6 +111,7 @@ export default function NewIndentPage() {
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [usedQtyByBoqItem, setUsedQtyByBoqItem] = useState<Map<string, number>>(new Map());
+  const [variationTolerancePct, setVariationTolerancePct] = useState(DEFAULT_VARIATION_TOLERANCE_PCT);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isMultiSelectOpen, setIsMultiSelectOpen] = useState(false);
@@ -129,17 +135,41 @@ export default function NewIndentPage() {
         const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
         if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
 
-        const [projectSnapshot, boqSnapshot, indentSnapshot] = await Promise.all([
+        const [projectSnapshot, boqSnapshot, indentSnapshot, settingsSnapshot] = await Promise.all([
           getDoc(doc(db, "projects", mappingData.globalProjectId)),
           getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
           getDocs(collection(db, "projects", mappingData.globalProjectId, "indents")),
+          getDoc(doc(db, "projectManagementSettings", "general")),
         ]);
         if (!projectSnapshot.exists()) throw new Error("Mapped global project not found");
         const globalProjectName =
           (projectSnapshot.data()?.projectName as string | undefined) ?? mappingData.globalProjectName;
 
         setMapping({ ...mappingData, globalProjectName });
-        setBoqItems(boqSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as BoqItem));
+        const loadedBoqItems = boqSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as BoqItem);
+        setBoqItems(loadedBoqItems);
+        const storedTolerance = settingsSnapshot.data()?.variationTolerancePct;
+        setVariationTolerancePct(typeof storedTolerance === "number" ? storedTolerance : DEFAULT_VARIATION_TOLERANCE_PCT);
+
+        // Arriving from the Requirement Planner with ?boqItemIds= — pre-populate rows instead of
+        // making the user re-pick what they just selected there.
+        if (deepLinkBoqItemIds.length) {
+          const matches = loadedBoqItems.filter((item) => deepLinkBoqItemIds.includes(item.id));
+          if (matches.length) {
+            setRows(
+              matches.map((item) => ({
+                rowId: Math.random().toString(36).slice(2),
+                boqItemId: item.id,
+                boqSlNo: String(item["BOQ SL No"] ?? item["SL. No."] ?? ""),
+                description: String(item["Description"] ?? ""),
+                unit: String(item["Unit"] ?? ""),
+                boqQty: toNumber(item["QTY"]),
+                budgetPrice: toNumber(item["Budget Price"]),
+                requestedQty: "",
+              })),
+            );
+          }
+        }
 
         const used = new Map<string, number>();
         indentSnapshot.docs.forEach((indentDoc) => {
@@ -165,15 +195,38 @@ export default function NewIndentPage() {
     };
 
     void load();
-  }, [canAdd, isAuthLoading, mappingId, toast]);
+  }, [canAdd, isAuthLoading, mappingId, toast, deepLinkBoqItemIds]);
 
   const usedBoqItemIds = useMemo(
     () => new Set(rows.map((row) => row.boqItemId).filter(Boolean)),
     [rows],
   );
 
+  // Approved variation orders raise a BOQ item's effective allowance above its stated quantity —
+  // see project-management-variations.ts. Read directly off the already-loaded BOQ item docs.
+  const variationApprovedQtyByBoqItem = useMemo(() => {
+    const map = new Map<string, number>();
+    boqItems.forEach((item) => map.set(item.id, toNumber(item.variationApprovedQty)));
+    return map;
+  }, [boqItems]);
+
+  // A recorded survey (see project-management-survey.ts) reflects actual site reality and
+  // supersedes the raw BOQ tender quantity as the base for availability, once one exists.
+  const surveyedQtyByBoqItem = useMemo(() => {
+    const map = new Map<string, number>();
+    boqItems.forEach((item) => {
+      if (typeof item.surveyedQty === "number") map.set(item.id, item.surveyedQty);
+    });
+    return map;
+  }, [boqItems]);
+
   const availableFor = (boqItemId: string, boqQty: number) =>
-    Math.max(0, boqQty - (usedQtyByBoqItem.get(boqItemId) ?? 0));
+    computeAvailableQty(
+      surveyedQtyByBoqItem.get(boqItemId) ?? boqQty,
+      variationTolerancePct,
+      variationApprovedQtyByBoqItem.get(boqItemId) ?? 0,
+      usedQtyByBoqItem.get(boqItemId) ?? 0,
+    );
 
   const handleBoqSelect = (rowId: string, boqItem: BoqItem | null) => {
     setRows((current) =>
@@ -276,7 +329,7 @@ export default function NewIndentPage() {
       if (toNumber(row.requestedQty) > available) {
         toast({
           title: "Quantity exceeds BOQ availability",
-          description: `${row.description || row.boqSlNo}: only ${formatQuantity(available)} ${row.unit} remain available.`,
+          description: `${row.description || row.boqSlNo}: only ${formatQuantity(available)} ${row.unit} remain available. If the site actually needs more, request a Variation Order from Project Management → Settings first.`,
           variant: "destructive",
         });
         return;
@@ -458,7 +511,21 @@ export default function NewIndentPage() {
                       </TableCell>
                       <TableCell className="max-w-xs truncate" title={row.description}>{row.description || "—"}</TableCell>
                       <TableCell>{row.unit || "—"}</TableCell>
-                      <TableCell>{row.boqItemId ? formatQuantity(row.boqQty) : "—"}</TableCell>
+                      <TableCell>
+                        {row.boqItemId ? (
+                          <>
+                            {formatQuantity(row.boqQty)}
+                            {(() => {
+                              const surveyed = surveyedQtyByBoqItem.get(row.boqItemId);
+                              return surveyed != null && surveyed !== row.boqQty ? (
+                                <div className="text-xs text-muted-foreground">Surveyed: {formatQuantity(surveyed)}</div>
+                              ) : null;
+                            })()}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
                       <TableCell>{row.boqItemId ? formatCurrency(row.budgetPrice) : "—"}</TableCell>
                       <TableCell className={available <= 0 && row.boqItemId ? "text-destructive" : "text-emerald-700"}>
                         {row.boqItemId ? formatQuantity(available) : "—"}

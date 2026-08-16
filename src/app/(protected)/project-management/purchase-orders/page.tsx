@@ -59,6 +59,7 @@ import PoReports, { type PoBoqItemLite } from "@/components/project-management/p
 import PoGanttChart from "@/components/project-management/po-gantt";
 import PoBoqItemsTable from "@/components/project-management/po-boq-items";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
+import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 
 type ProjectMapping = {
   id: string;
@@ -286,6 +287,10 @@ export default function ProjectPurchaseOrdersPage() {
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="mb-4">
+        <SupplyGateNav mappingId={mappingId} active="purchase-orders" />
       </div>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">

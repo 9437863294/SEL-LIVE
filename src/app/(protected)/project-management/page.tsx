@@ -9,6 +9,7 @@ import {
   ClipboardList,
   FileStack,
   FolderKanban,
+  FolderOpen,
   HardHat,
   Package,
   Settings,
@@ -33,6 +34,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
+import ProjectControlTower from "@/components/project-management/project-control-tower";
 
 const MODULE_NAME = "Project Management";
 const PROJECTS_COLLECTION = "projectManagementProjects";
@@ -62,6 +64,7 @@ export default function ProjectManagementPage() {
   const canViewSupply = can("View", `${MODULE_NAME}.Supply`) || canViewBoq;
   const canViewCivil = can("View", `${MODULE_NAME}.Civil`) || canViewBoq;
   const canViewErection = can("View", `${MODULE_NAME}.Erection`) || canViewBoq;
+  const canViewDocuments = can("View", `${MODULE_NAME}.Documents`) || canViewBoq;
   const canViewSettings = can("View", `${MODULE_NAME}.Settings`);
   const selectedProjectId = searchParams?.get("project") ?? "";
 
@@ -154,6 +157,16 @@ export default function ProjectManagementPage() {
         : "Track erection scope BOQ items.",
       icon: HardHat,
       gradient: "from-orange-500 to-red-600",
+    },
+    {
+      show: Boolean(selectedProject && canViewDocuments),
+      href: `/project-management/documents?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+      title: "Documents",
+      description: selectedProject
+        ? `Drawings, QC certificates, and other files for ${selectedProject.projectName}.`
+        : "Drawings, QC certificates, and other project files.",
+      icon: FolderOpen,
+      gradient: "from-purple-500 to-fuchsia-600",
     },
     {
       show: canViewSettings,
@@ -280,6 +293,10 @@ export default function ProjectManagementPage() {
           </Link>
         ))}
       </div>
+
+      {selectedProject && canViewBoq && (
+        <ProjectControlTower mapping={selectedProject} />
+      )}
     </main>
   );
 }

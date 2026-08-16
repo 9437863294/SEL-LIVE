@@ -1,7 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Settings2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Loader2, Save, Settings2, ShieldAlert } from "lucide-react";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
+import { DEFAULT_PLAUSIBILITY_LIMIT_PCT } from "@/lib/project-management-survey";
+import { DEFAULT_LEAD_TIME_DAYS } from "@/lib/project-management-requirement-planner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -10,15 +16,89 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthorization } from "@/hooks/useAuthorization";
+import { useToast } from "@/hooks/use-toast";
 
 const SETTINGS_PERMISSION = "Project Management.Settings";
+const SETTINGS_COLLECTION = "projectManagementSettings";
+const GENERAL_SETTINGS_DOC = "general";
 
 export default function ProjectManagementGeneralSettingsPage() {
-  const { can, isLoading } = useAuthorization();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { toast } = useToast();
+  const canView = can("View", SETTINGS_PERMISSION);
+  const canEdit = can("Edit", SETTINGS_PERMISSION);
 
-  if (isLoading) {
+  const [variationTolerancePct, setVariationTolerancePct] = useState(String(DEFAULT_VARIATION_TOLERANCE_PCT));
+  const [plausibilityLimitPct, setPlausibilityLimitPct] = useState(String(DEFAULT_PLAUSIBILITY_LIMIT_PCT));
+  const [leadTimeDays, setLeadTimeDays] = useState(String(DEFAULT_LEAD_TIME_DAYS));
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isAuthLoading || !canView) {
+      setIsLoading(false);
+      return;
+    }
+    const load = async () => {
+      try {
+        const snapshot = await getDoc(doc(db, SETTINGS_COLLECTION, GENERAL_SETTINGS_DOC));
+        const stored = snapshot.data()?.variationTolerancePct;
+        if (typeof stored === "number") setVariationTolerancePct(String(stored));
+        const storedPlausibility = snapshot.data()?.plausibilityLimitPct;
+        if (typeof storedPlausibility === "number") setPlausibilityLimitPct(String(storedPlausibility));
+        const storedLeadTime = snapshot.data()?.leadTimeDays;
+        if (typeof storedLeadTime === "number") setLeadTimeDays(String(storedLeadTime));
+      } catch (error) {
+        console.error("Failed to load Project Management general settings:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    void load();
+  }, [canView, isAuthLoading]);
+
+  const handleSave = async () => {
+    const pct = Number(variationTolerancePct);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      toast({ title: "Enter a tolerance between 0 and 100", variant: "destructive" });
+      return;
+    }
+    const plausibility = Number(plausibilityLimitPct);
+    if (!Number.isFinite(plausibility) || plausibility <= 0) {
+      toast({ title: "Enter a valid plausibility limit", variant: "destructive" });
+      return;
+    }
+    const leadTime = Number(leadTimeDays);
+    if (!Number.isFinite(leadTime) || leadTime < 0) {
+      toast({ title: "Enter a valid lead time", variant: "destructive" });
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await setDoc(
+        doc(db, SETTINGS_COLLECTION, GENERAL_SETTINGS_DOC),
+        {
+          variationTolerancePct: pct,
+          plausibilityLimitPct: plausibility,
+          leadTimeDays: leadTime,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      toast({ title: "Settings saved" });
+    } catch (error) {
+      console.error("Failed to save Project Management general settings:", error);
+      toast({ title: "Unable to save settings", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isAuthLoading || isLoading) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
@@ -26,7 +106,7 @@ export default function ProjectManagementGeneralSettingsPage() {
     );
   }
 
-  if (!can("View", SETTINGS_PERMISSION)) {
+  if (!canView) {
     return (
       <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">General Settings</h1>
@@ -58,23 +138,98 @@ export default function ProjectManagementGeneralSettingsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold sm:text-3xl">General Settings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            General configuration fields can be added here as requirements are defined.
-          </p>
+          <p className="mt-1 text-sm text-muted-foreground">Module-wide defaults for Project Management.</p>
         </div>
       </div>
 
-      <Card className="border-dashed">
-        <CardContent className="flex min-h-48 flex-col items-center justify-center gap-3 text-center">
-          <Settings2 className="h-10 w-10 text-muted-foreground" />
-          <div>
-            <p className="font-medium">Ready for configuration</p>
-            <p className="text-sm text-muted-foreground">
-              Define the general project settings you need and they can be added here.
-            </p>
+      <Card className="max-w-xl">
+        <CardHeader>
+          <CardTitle className="text-lg">Variation Order Tolerance</CardTitle>
+          <CardDescription>
+            When a surveyed or required quantity exceeds a BOQ item&apos;s stated quantity by more than this
+            percentage, it can&apos;t be indented, ordered, or billed until an approved{" "}
+            <Link href="/project-management/settings/variation-orders" className="underline underline-offset-2">
+              variation order
+            </Link>{" "}
+            covers the excess.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-xs space-y-2">
+            <Label htmlFor="variation-tolerance">Tolerance (%)</Label>
+            <Input
+              id="variation-tolerance"
+              type="number"
+              min="0"
+              max="100"
+              step="0.5"
+              value={variationTolerancePct}
+              disabled={!canEdit}
+              onChange={(event) => setVariationTolerancePct(event.target.value)}
+            />
           </div>
         </CardContent>
       </Card>
+
+      <Card className="mt-4 max-w-xl">
+        <CardHeader>
+          <CardTitle className="text-lg">Survey Plausibility Limit</CardTitle>
+          <CardDescription>
+            A surveyed quantity deviating from the BOQ by more than this percentage is treated as a likely
+            measurement error rather than a real variation — it&apos;s blocked pending re-survey instead of being
+            approved.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-xs space-y-2">
+            <Label htmlFor="plausibility-limit">Plausibility Limit (%)</Label>
+            <Input
+              id="plausibility-limit"
+              type="number"
+              min="1"
+              step="10"
+              value={plausibilityLimitPct}
+              disabled={!canEdit}
+              onChange={(event) => setPlausibilityLimitPct(event.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4 max-w-xl">
+        <CardHeader>
+          <CardTitle className="text-lg">Procurement Lead Time</CardTitle>
+          <CardDescription>
+            Default total lead time (RFQ → quotes → PO → manufacturing → inspection → dispatch → transit) used
+            by the{" "}
+            <Link href="/project-management/requirement-planner" className="underline underline-offset-2">
+              Requirement Planner
+            </Link>{" "}
+            to back-calculate each BOQ line&apos;s indent-by date from its required-at-site date.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-xs space-y-2">
+            <Label htmlFor="lead-time-days">Lead Time (days)</Label>
+            <Input
+              id="lead-time-days"
+              type="number"
+              min="0"
+              step="1"
+              value={leadTimeDays}
+              disabled={!canEdit}
+              onChange={(event) => setLeadTimeDays(event.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {canEdit && (
+        <Button className="mt-4" onClick={handleSave} disabled={isSaving}>
+          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Save
+        </Button>
+      )}
     </main>
   );
 }

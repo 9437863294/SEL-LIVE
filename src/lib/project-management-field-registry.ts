@@ -20,7 +20,7 @@
  * — those are specialized multi-select mechanisms, not simple entity fields.
  */
 
-export type PMFormKey = "boqAdd" | "indentNew" | "rfqNew" | "poNew" | "projectMapping";
+export type PMFormKey = "boqAdd" | "indentNew" | "rfqNew" | "poNew" | "projectMapping" | "clientMaster";
 
 export interface PMFieldDef {
   key: string;
@@ -88,6 +88,10 @@ export const PM_FORM_REGISTRY: Record<PMFormKey, PMFormDef> = {
       { key: "startDate", defaultLabel: "Start Date", defaultRequired: true, locked: true },
       { key: "endDate", defaultLabel: "End Date", defaultRequired: true, locked: true },
       { key: "terms", defaultLabel: "Terms", defaultRequired: false },
+      { key: "warrantyMonths", defaultLabel: "Warranty (Months)", defaultRequired: false },
+      { key: "ldRatePct", defaultLabel: "LD Rate (%/week)", defaultRequired: false },
+      { key: "ldCapPct", defaultLabel: "LD Cap (%)", defaultRequired: false },
+      { key: "performanceSecurityPct", defaultLabel: "Performance Security (%)", defaultRequired: false },
     ],
   },
   projectMapping: {
@@ -99,6 +103,24 @@ export const PM_FORM_REGISTRY: Record<PMFormKey, PMFormDef> = {
       { key: "description", defaultLabel: "Description", defaultRequired: false },
       { key: "startDate", defaultLabel: "Start Date", defaultRequired: false },
       { key: "endDate", defaultLabel: "End Date", defaultRequired: false },
+    ],
+  },
+  clientMaster: {
+    title: "Client Master",
+    description: "The Add/Edit dialog under Settings → Clients.",
+    fields: [
+      { key: "name", defaultLabel: "Client Name", defaultRequired: true, locked: true },
+      { key: "gstin", defaultLabel: "GSTIN", defaultRequired: false },
+      { key: "pan", defaultLabel: "PAN", defaultRequired: false },
+      { key: "address", defaultLabel: "Address", defaultRequired: false },
+      { key: "paymentTermsDays", defaultLabel: "Payment Terms (Days)", defaultRequired: false },
+      { key: "retentionPct", defaultLabel: "Retention %", defaultRequired: false },
+      { key: "defaultTdsPct", defaultLabel: "Default TDS %", defaultRequired: false },
+      { key: "warrantyMonths", defaultLabel: "Warranty (Months)", defaultRequired: false },
+      { key: "ldRatePct", defaultLabel: "LD Rate (%/week)", defaultRequired: false },
+      { key: "ldCapPct", defaultLabel: "LD Cap (%)", defaultRequired: false },
+      { key: "performanceSecurityPct", defaultLabel: "Performance Security (%)", defaultRequired: false },
+      { key: "inspectionRegime", defaultLabel: "Inspection Regime", defaultRequired: false },
     ],
   },
 };

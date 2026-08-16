@@ -71,8 +71,17 @@ import {
   type PurchaseOrder,
   type PurchaseOrderItem,
 } from "@/lib/purchase-orders";
-import { RFQ_COLLECTION, RFQ_QUOTES_SUBCOLLECTION, type RfqItem, type RfqQuote, type RfqStatus } from "@/lib/rfq";
+import {
+  RFQ_COLLECTION,
+  RFQ_QUOTES_SUBCOLLECTION,
+  markRfqItemsAwarded,
+  type RfqAwardEntry,
+  type RfqItem,
+  type RfqQuote,
+  type RfqStatus,
+} from "@/lib/rfq";
 import { VENDOR_COLLECTIONS, type Vendor } from "@/lib/vendor-management";
+import type { Client } from "@/lib/types";
 
 type ProjectMapping = {
   id: string;
@@ -175,6 +184,11 @@ export default function NewProjectPurchaseOrderPage() {
   const [startDate, setStartDate] = useState(today());
   const [endDate, setEndDate] = useState("");
   const [terms, setTerms] = useState("");
+  const [client, setClient] = useState<Client | null>(null);
+  const [warrantyMonths, setWarrantyMonths] = useState("");
+  const [ldRatePct, setLdRatePct] = useState("");
+  const [ldCapPct, setLdCapPct] = useState("");
+  const [performanceSecurityPct, setPerformanceSecurityPct] = useState("");
   const [selectedRfqItems, setSelectedRfqItems] = useState<Record<string, Selection>>({});
   const [selectedIndentItems, setSelectedIndentItems] = useState<Record<string, Selection>>({});
   const [selectedBoqItems, setSelectedBoqItems] = useState<Record<string, Selection>>({});
@@ -233,6 +247,20 @@ export default function NewProjectPurchaseOrderPage() {
         ]);
         const globalProjectName =
           (projectSnapshot.data()?.projectName as string | undefined) ?? mappingData.globalProjectName;
+        const clientId = projectSnapshot.data()?.clientId as string | undefined;
+        if (clientId) {
+          const clientSnapshot = await getDoc(doc(db, "clients", clientId));
+          if (clientSnapshot.exists()) {
+            const clientData = { id: clientSnapshot.id, ...clientSnapshot.data() } as Client;
+            setClient(clientData);
+            // Default the PO's own terms to what the client requires — the buyer should have to
+            // consciously weaken a term, not forget to set it in the first place.
+            setWarrantyMonths(clientData.warrantyMonths != null ? String(clientData.warrantyMonths) : "");
+            setLdRatePct(clientData.ldRatePct != null ? String(clientData.ldRatePct) : "");
+            setLdCapPct(clientData.ldCapPct != null ? String(clientData.ldCapPct) : "");
+            setPerformanceSecurityPct(clientData.performanceSecurityPct != null ? String(clientData.performanceSecurityPct) : "");
+          }
+        }
 
         const rfqRows = rfqSnapshot.docs
           .map((d) => ({ id: d.id, ...d.data() }) as RfqWithItems)
@@ -595,6 +623,10 @@ export default function NewProjectPurchaseOrderPage() {
         startDate,
         endDate,
         terms: terms.trim(),
+        warrantyMonths: warrantyMonths ? toNumber(warrantyMonths) : null,
+        ldRatePct: ldRatePct ? toNumber(ldRatePct) : null,
+        ldCapPct: ldCapPct ? toNumber(ldCapPct) : null,
+        performanceSecurityPct: performanceSecurityPct ? toNumber(performanceSecurityPct) : null,
         items,
         totalAmount: computedTotal,
         status: "Draft",
@@ -606,30 +638,26 @@ export default function NewProjectPurchaseOrderPage() {
         updatedAt: serverTimestamp(),
       });
 
-      // Mark the selected items as awarded on each contributing RFQ.
+      // Mark the selected items as awarded on each contributing RFQ. This goes through the same
+      // transactional helper the RFQ detail page's own "Confirm Awards" uses (markRfqItemsAwarded)
+      // — it re-verifies none of these items were awarded by someone else a moment ago (e.g. via
+      // that other flow) before writing, instead of blindly overwriting whatever state it finds.
       await Promise.all(
         involvedRfqIds.map(async (rfqId) => {
           const rfq = rfqs.find((r) => r.id === rfqId)!;
-          const updatedItems = rfq.items.map((item) => {
-            const key = rfqItemKey(rfqId, item.rfqItemId);
-            const sel = selectedRfqItems[key];
-            if (!sel) return item;
-            return {
-              ...item,
-              awardedVendorId: selectedVendor.id,
-              awardedVendorName: selectedVendor.vendorName,
-              awardedRate: toNumber(sel.rate),
-              awardedAmount: lineAmount(sel),
-              poId: poRef.id,
-            };
-          });
-          const allAwarded = updatedItems.every((item) => item.awardedVendorId);
-          const nextStatus: RfqStatus = allAwarded ? "Awarded" : "Partially Awarded";
-          await setDoc(
-            doc(db, "projects", mapping.globalProjectId, RFQ_COLLECTION, rfqId),
-            { items: updatedItems, status: nextStatus, updatedAt: serverTimestamp() },
-            { merge: true },
-          );
+          const awards: RfqAwardEntry[] = rfq.items
+            .filter((item) => selectedRfqItems[rfqItemKey(rfqId, item.rfqItemId)])
+            .map((item) => {
+              const sel = selectedRfqItems[rfqItemKey(rfqId, item.rfqItemId)];
+              return {
+                rfqItemId: item.rfqItemId,
+                awardedVendorId: selectedVendor.id,
+                awardedVendorName: selectedVendor.vendorName,
+                awardedRate: toNumber(sel.rate),
+                awardedAmount: lineAmount(sel),
+              };
+            });
+          await markRfqItemsAwarded(db, mapping.globalProjectId, rfqId, poRef.id, awards);
         }),
       );
 
@@ -659,7 +687,11 @@ export default function NewProjectPurchaseOrderPage() {
       router.push(`/project-management/purchase-orders/${poRef.id}?project=${encodeURIComponent(mappingId)}`);
     } catch (error) {
       console.error("Failed to create purchase order:", error);
-      toast({ title: "Unable to create purchase order", variant: "destructive" });
+      toast({
+        title: "Unable to create purchase order",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -763,6 +795,29 @@ export default function NewProjectPurchaseOrderPage() {
           <ControlledField setting={fieldControl("terms")} className="mt-4 space-y-2">
             <Textarea id="terms" placeholder="Optional delivery terms, payment terms, or notes" value={terms} onChange={(e) => setTerms(e.target.value)} />
           </ControlledField>
+
+          <div className="mt-4 space-y-1">
+            <p className="text-sm font-medium">Flow-Down Terms</p>
+            <p className="text-xs text-muted-foreground">
+              {client
+                ? `Defaulted from ${client.name}'s contract terms — checked against these again before this PO can be issued.`
+                : "Map this project to a client under Settings → Clients to auto-default these from the client's contract terms."}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+            <ControlledField setting={fieldControl("warrantyMonths")} className="space-y-2">
+              <Input id="warranty-months" type="number" min="0" value={warrantyMonths} onChange={(e) => setWarrantyMonths(e.target.value)} />
+            </ControlledField>
+            <ControlledField setting={fieldControl("ldRatePct")} className="space-y-2">
+              <Input id="ld-rate-pct" type="number" min="0" step="0.1" value={ldRatePct} onChange={(e) => setLdRatePct(e.target.value)} />
+            </ControlledField>
+            <ControlledField setting={fieldControl("ldCapPct")} className="space-y-2">
+              <Input id="ld-cap-pct" type="number" min="0" max="100" value={ldCapPct} onChange={(e) => setLdCapPct(e.target.value)} />
+            </ControlledField>
+            <ControlledField setting={fieldControl("performanceSecurityPct")} className="space-y-2">
+              <Input id="performance-security-pct" type="number" min="0" max="100" value={performanceSecurityPct} onChange={(e) => setPerformanceSecurityPct(e.target.value)} />
+            </ControlledField>
+          </div>
         </CardContent>
       </Card>
 

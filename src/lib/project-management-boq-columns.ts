@@ -33,6 +33,7 @@ const costingDefaults = new Set([
   "End Date",
   "MDL",
   "MDL Status",
+  "Inspection Required",
 ]);
 
 const operationalDefaults = new Set([
@@ -48,6 +49,7 @@ const operationalDefaults = new Set([
   "End Date",
   "MDL",
   "MDL Status",
+  "Inspection Required",
 ]);
 
 const standardColumnKeys = [
@@ -79,6 +81,7 @@ const standardColumnKeys = [
   "End Date",
   "MDL",
   "MDL Status",
+  "Inspection Required",
 ];
 
 const numberColumnKeys = new Set([
@@ -97,7 +100,7 @@ const numberColumnKeys = new Set([
 
 const dateColumnKeys = new Set(["Start Date", "End Date"]);
 
-const yesNoColumnKeys = new Set(["MDL"]);
+const yesNoColumnKeys = new Set(["MDL", "Inspection Required"]);
 
 export function getDefaultBoqColumnDataType(key: string): BoqColumnDataType {
   if (yesNoColumnKeys.has(key)) return "yesno";

@@ -4,8 +4,10 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
+  Building2,
   ClipboardList,
   FolderCog,
+  GitPullRequestArrow,
   Settings2,
   ShieldAlert,
   SlidersHorizontal,
@@ -31,6 +33,20 @@ const settingsSections = [
     href: "/project-management/settings/projects",
     icon: FolderCog,
     gradient: "from-indigo-500 to-blue-600",
+  },
+  {
+    title: "Clients",
+    description: "Manage the paying customers projects are executed for.",
+    href: "/project-management/settings/clients",
+    icon: Building2,
+    gradient: "from-indigo-500 to-blue-600",
+  },
+  {
+    title: "Variation Orders",
+    description: "Review and approve BOQ quantities that exceed the surveyed tolerance.",
+    href: "/project-management/settings/variation-orders",
+    icon: GitPullRequestArrow,
+    gradient: "from-amber-500 to-orange-600",
   },
   {
     title: "General Settings",

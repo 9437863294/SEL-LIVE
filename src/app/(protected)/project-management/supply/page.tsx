@@ -7,17 +7,20 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  CalendarClock,
   ClipboardCheck,
   ClipboardList,
   Compass,
   Factory,
+  FileCheck2,
   FileSearch,
-  Gauge,
   ListChecks,
   Package,
+  PackageCheck,
   PenTool,
   ShieldAlert,
   ShoppingCart,
+  Truck,
 } from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -52,10 +55,13 @@ export default function SupplyPage() {
   const canViewRfq = can("View", `${MODULE_NAME}.RFQ`) || canViewBoq;
   const canViewPurchaseOrders = can("View", `${MODULE_NAME}.Purchase Orders`) || canViewRfq;
   const canViewSurvey = can("View", `${MODULE_NAME}.Survey`) || canViewBoq;
+  const canViewRequirementPlanner = can("View", `${MODULE_NAME}.Requirement Planner`) || canViewIndent;
   const canViewDrawing = can("View", `${MODULE_NAME}.Drawing`) || canViewBoq;
   const canViewManufacturingClearance = can("View", `${MODULE_NAME}.Manufacturing Clearance`) || canViewBoq;
   const canViewInspections = can("View", `${MODULE_NAME}.Inspections`) || canViewBoq;
   const canViewMdcc = can("View", `${MODULE_NAME}.MDCC`) || canViewBoq;
+  const canViewDi = can("View", `${MODULE_NAME}.Dispatch Instructions`) || canViewBoq;
+  const canViewGrn = can("View", `${MODULE_NAME}.GRN`) || canViewBoq;
   const canViewMvac = can("View", `${MODULE_NAME}.MVAC`) || canViewBoq;
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
@@ -105,6 +111,16 @@ export default function SupplyPage() {
         : "Track survey activities for this project.",
       icon: Compass,
       gradient: "from-rose-500 to-pink-600",
+    },
+    {
+      show: canViewRequirementPlanner,
+      href: `/project-management/requirement-planner?project=${encodeURIComponent(mappingId)}`,
+      title: "Requirement Planner",
+      description: mapping
+        ? `What must be indented today, and what is already late, for ${mapping.projectName}.`
+        : "Net requirement and indent-by dates, computed backward from site requirement dates.",
+      icon: CalendarClock,
+      gradient: "from-amber-600 to-yellow-600",
     },
     {
       show: canViewIndent,
@@ -177,13 +193,33 @@ export default function SupplyPage() {
       gradient: "from-fuchsia-500 to-purple-600",
     },
     {
+      show: canViewDi,
+      href: `/project-management/dispatch-instructions?project=${encodeURIComponent(mappingId)}`,
+      title: "Dispatch Instructions",
+      description: mapping
+        ? `SEL's numbered instruction authorising vendor dispatch for ${mapping.projectName}.`
+        : "SEL's own numbered instruction authorising a vendor to move material.",
+      icon: Truck,
+      gradient: "from-sky-500 to-blue-600",
+    },
+    {
+      show: canViewGrn,
+      href: `/project-management/grn?project=${encodeURIComponent(mappingId)}`,
+      title: "GRN",
+      description: mapping
+        ? `Record material receipt at site for ${mapping.projectName}.`
+        : "Record material receipt at site against dispatched POs.",
+      icon: PackageCheck,
+      gradient: "from-orange-500 to-amber-600",
+    },
+    {
       show: canViewMvac,
       href: `/project-management/mvac?project=${encodeURIComponent(mappingId)}`,
       title: "MVAC",
       description: mapping
-        ? `Track MVAC for ${mapping.projectName}.`
-        : "Track MVAC for this project.",
-      icon: Gauge,
+        ? `Joint verification & acceptance with the client for ${mapping.projectName}.`
+        : "Joint verification & acceptance with the client — the trigger for supply billing.",
+      icon: FileCheck2,
       gradient: "from-teal-500 to-cyan-600",
     },
   ].filter((link) => link.show);
