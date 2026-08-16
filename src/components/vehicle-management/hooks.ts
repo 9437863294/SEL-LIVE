@@ -18,6 +18,20 @@ const normalizeMobile = (value?: string) => {
   return digits;
 };
 
+/**
+ * The formats a 10-digit Indian mobile is realistically stored in, so a lookup
+ * can match on an index instead of scanning and normalizing every document.
+ * Capped well under Firestore's 30-value limit for `in`.
+ */
+const mobileNumberCandidates = (value?: string) => {
+  const local = normalizeMobile(value);
+  if (!local) return [];
+  const raw = String(value || '').trim();
+  return Array.from(
+    new Set([raw, local, `0${local}`, `91${local}`, `+91${local}`, `+91 ${local}`].filter(Boolean))
+  );
+};
+
 const toSortedOptions = (rows: Record<string, any>[], labelGetter: (row: Record<string, any>) => string) =>
   rows
     .map((row) => ({
@@ -195,15 +209,28 @@ export const useCurrentDriverProfile = (enabled = true) => {
             return;
           }
 
-          const allDriversSnap = await getDocs(collection(db, VEHICLE_COLLECTIONS.driver));
-          const me = normalizeMobile(user.mobile);
-          const matched = allDriversSnap.docs.find((entry) => {
-            const data = entry.data() as Record<string, any>;
-            return normalizeMobile(String(data.mobileNumber || '')) === me;
-          });
-          if (matched) {
-            setDriver({ id: matched.id, ...matched.data() });
-            return;
+          // The stored format varies (+91, leading 0, spaces), which is why an
+          // exact match can miss. This used to fall back to reading the entire
+          // drivers collection and normalizing client-side — on every dashboard
+          // load, for every user who isn't a driver. Query the plausible formats
+          // instead so the miss path stays a single indexed lookup.
+          const candidates = mobileNumberCandidates(user.mobile);
+          if (candidates.length) {
+            const byCandidate = await getDocs(
+              query(
+                collection(db, VEHICLE_COLLECTIONS.driver),
+                where('mobileNumber', 'in', candidates)
+              )
+            );
+            const me = normalizeMobile(user.mobile);
+            const matched = byCandidate.docs.find((entry) => {
+              const data = entry.data() as Record<string, any>;
+              return normalizeMobile(String(data.mobileNumber || '')) === me;
+            });
+            if (matched) {
+              setDriver({ id: matched.id, ...matched.data() });
+              return;
+            }
           }
         }
 

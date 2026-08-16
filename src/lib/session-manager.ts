@@ -89,13 +89,23 @@ export function getOrCreateSessionId(): string {
   return newId;
 }
 
+const GEO_TIMEOUT_MS = 4000;
+
 async function fetchGeo(): Promise<SessionGeo> {
   const empty: SessionGeo = {
     ipAddress: null, city: null, region: null, country: null,
     countryCode: null, isp: null, lat: null, lon: null, timezone: null,
   };
   try {
-    const res = await fetch('/api/session/geo', { cache: 'no-store' });
+    // Never let a slow/rate-limited geo provider hold the session write open.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GEO_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch('/api/session/geo', { cache: 'no-store', signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) return empty;
     const data = await res.json();
     return {
@@ -124,15 +134,12 @@ export async function createOrResumeSession(
     const snap = await getDoc(sessionRef);
     const ua = navigator.userAgent;
     const { browser, os, deviceType, deviceLabel } = parseUserAgent(ua);
-    const geo = await fetchGeo();
 
     if (snap.exists() && snap.data()?.isActive === true) {
       await updateDoc(sessionRef, {
         lastActiveAt: serverTimestamp(),
         userName: user.name || '',
         userRole: user.role || '',
-        // Refresh geo in case IP changed (e.g. roaming)
-        ...geo,
       });
     } else {
       await setDoc(sessionRef, {
@@ -152,9 +159,14 @@ export async function createOrResumeSession(
         terminatedBy: null,
         terminatedByUserId: null,
         terminatedByUserName: null,
-        ...geo,
       });
     }
+
+    // Geo is telemetry, not a precondition for having a session. Resolve it after
+    // the session row exists so sign-in never waits on a third-party IP lookup.
+    void fetchGeo()
+      .then((geo) => updateDoc(sessionRef, { ...geo }))
+      .catch(() => {});
   } catch (err) {
     console.error('Failed to create/resume session', err);
   }

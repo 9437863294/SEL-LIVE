@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import {
   Check,
   CheckCheck,
@@ -50,7 +51,7 @@ interface ChatMessageItemProps {
   onJumpToMessage: (messageId: string) => void;
 }
 
-export function ChatMessageItem({
+function ChatMessageItemComponent({
   message,
   previousMessage,
   currentUserId,
@@ -355,6 +356,14 @@ function DateDivider({ message }: { message: ChatMessage }) {
     </div>
   );
 }
+
+/**
+ * A conversation renders every message in the window on each update. Memoized so
+ * an incoming message only re-renders rows whose own props actually changed —
+ * `listenToMessages` preserves object identity for untouched messages, and the
+ * handlers below are passed as stable callbacks.
+ */
+export const ChatMessageItem = memo(ChatMessageItemComponent);
 
 function getMessageDayKey(message?: ChatMessage) {
   if (!message) return '';

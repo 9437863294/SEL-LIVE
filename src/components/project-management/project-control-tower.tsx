@@ -5,12 +5,16 @@ import Link from "next/link";
 import {
   AlertCircle,
   ArrowRight,
+  CalendarClock,
   ClipboardCheck,
   FileStack,
+  HardHat,
+  Hourglass,
   IndianRupee,
   PackageCheck,
   RefreshCw,
   Route,
+  Scale,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -19,6 +23,12 @@ import {
   type ProjectAttentionTarget,
   type ProjectControlTowerSummary,
 } from "@/lib/project-management-dashboard";
+import {
+  JMC_ENTRY_COLLECTION,
+  MVAC_ENTRY_COLLECTION,
+  SUBCONTRACTOR_BILL_COLLECTION,
+  WORK_ORDER_COLLECTION,
+} from "@/lib/civil-execution";
 import { MDL_COLLECTION } from "@/lib/mdl";
 import { PO_COLLECTION } from "@/lib/purchase-orders";
 import { RFQ_COLLECTION } from "@/lib/rfq";
@@ -43,6 +53,7 @@ type ProjectControlTowerProps = {
     id: string;
     projectName: string;
     globalProjectId: string;
+    endDate?: string;
   };
 };
 
@@ -64,6 +75,9 @@ const targetPath: Record<ProjectAttentionTarget, string> = {
   "dispatch-instructions": "dispatch-instructions",
   grn: "grn",
   mvac: "mvac",
+  projects: "projects",
+  civil: "civil",
+  jmc: "jmc/log",
 };
 
 const attentionStyles = {
@@ -85,6 +99,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
     setError("");
     try {
       const projectPath = ["projects", mapping.globalProjectId] as const;
+      const mappingEndDate = mapping.endDate;
       const [
         boqSnapshot,
         indentSnapshot,
@@ -97,6 +112,10 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         diSnapshot,
         grnSnapshot,
         mvacSnapshot,
+        workOrderSnapshot,
+        jmcEntrySnapshot,
+        mvacEntrySnapshot,
+        subBillSnapshot,
         settingsSnapshot,
       ] = await Promise.all([
         getDocs(collection(db, ...projectPath, "boqItems")),
@@ -110,6 +129,11 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
         getDocs(collection(db, ...projectPath, DI_COLLECTION)),
         getDocs(collection(db, ...projectPath, GRN_COLLECTION)),
         getDocs(collection(db, ...projectPath, MVAC_COLLECTION)),
+        // Civil registers owned by Billing Recon / Subcontractors Management — read-only join.
+        getDocs(collection(db, ...projectPath, WORK_ORDER_COLLECTION)),
+        getDocs(collection(db, ...projectPath, JMC_ENTRY_COLLECTION)),
+        getDocs(collection(db, ...projectPath, MVAC_ENTRY_COLLECTION)),
+        getDocs(collection(db, ...projectPath, SUBCONTRACTOR_BILL_COLLECTION)),
         getDoc(doc(db, "projectManagementSettings", "general")),
       ]);
 
@@ -129,10 +153,23 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
           dispatchInstructions: records(diSnapshot),
           grns: records(grnSnapshot),
           mvacRecords: records(mvacSnapshot),
+          workOrders: records(workOrderSnapshot),
+          jmcEntries: records(jmcEntrySnapshot),
+          mvacEntries: records(mvacEntrySnapshot),
+          subcontractorBills: records(subBillSnapshot),
           leadTimeDays:
             typeof settingsSnapshot.data()?.leadTimeDays === "number"
               ? settingsSnapshot.data()?.leadTimeDays
               : undefined,
+          tolerancePct:
+            typeof settingsSnapshot.data()?.variationTolerancePct === "number"
+              ? settingsSnapshot.data()?.variationTolerancePct
+              : undefined,
+          stallDays:
+            typeof settingsSnapshot.data()?.stallDays === "number"
+              ? settingsSnapshot.data()?.stallDays
+              : undefined,
+          projectEndDate: mappingEndDate,
         }),
       );
     } catch (loadError) {
@@ -142,7 +179,7 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
     } finally {
       setIsLoading(false);
     }
-  }, [mapping.globalProjectId]);
+  }, [mapping.globalProjectId, mapping.endDate]);
 
   useEffect(() => {
     void loadSummary();
@@ -191,10 +228,27 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
             Live commercial, engineering, procurement, and site-control indicators for {mapping.projectName}.
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => void loadSummary()}>
-          <RefreshCw className="mr-2 h-4 w-4" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {summary.schedule.daysRemaining != null && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
+                summary.schedule.daysRemaining < 0
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-border bg-muted/40 text-muted-foreground",
+              )}
+            >
+              <CalendarClock className="h-3.5 w-3.5" />
+              {summary.schedule.daysRemaining < 0
+                ? `${-summary.schedule.daysRemaining} day${summary.schedule.daysRemaining === -1 ? "" : "s"} past planned completion`
+                : `${summary.schedule.daysRemaining} day${summary.schedule.daysRemaining === 1 ? "" : "s"} to planned completion`}
+            </span>
+          )}
+          <Button size="sm" variant="outline" onClick={() => void loadSummary()}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -211,15 +265,34 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
           </CardContent>
         </Card>
 
-        <Card className={metricCard}>
+        <Card className={cn(metricCard, summary.cost.overBudget && "border-red-300")}>
           <CardContent className="p-4">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">Committed value</span>
-              <IndianRupee className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium text-muted-foreground">Committed vs budget</span>
+              <IndianRupee className={cn("h-4 w-4", summary.cost.overBudget ? "text-red-600" : "text-blue-600")} />
             </div>
-            <p className="text-2xl font-bold">{formatCurrency(summary.procurement.committedValue)}</p>
+            <div className="flex items-end justify-between gap-3">
+              <p className={cn("text-2xl font-bold", summary.cost.overBudget && "text-red-600")}>
+                {formatCurrency(summary.cost.committedValue)}
+              </p>
+              {summary.cost.budgetValue > 0 && (
+                <span className={cn("text-xs font-medium", summary.cost.overBudget ? "text-red-600" : "text-muted-foreground")}>
+                  {summary.cost.committedPct}%
+                </span>
+              )}
+            </div>
+            {summary.cost.budgetValue > 0 && (
+              <Progress
+                value={Math.min(summary.cost.committedPct, 100)}
+                className={cn("mt-2 h-2", summary.cost.overBudget && "[&>*]:bg-red-500")}
+              />
+            )}
             <p className="mt-1 text-xs text-muted-foreground">
-              {summary.procurement.livePoCount} live PO{summary.procurement.livePoCount === 1 ? "" : "s"} · {summary.procurement.overduePoCount} overdue
+              {summary.cost.overBudget
+                ? `${formatCurrency(summary.cost.varianceValue)} over the BOQ baseline`
+                : summary.cost.workOrderCommittedValue > 0
+                  ? `POs ${formatCurrency(summary.cost.poCommittedValue)} · WOs ${formatCurrency(summary.cost.workOrderCommittedValue)}`
+                  : `${summary.procurement.livePoCount} live PO${summary.procurement.livePoCount === 1 ? "" : "s"} · ${summary.procurement.overduePoCount} overdue`}
             </p>
           </CardContent>
         </Card>
@@ -278,6 +351,167 @@ export default function ProjectControlTower({ mapping }: ProjectControlTowerProp
           </div>
         </CardContent>
       </Card>
+
+      {(summary.civil.workOrderCount > 0 ||
+        summary.civil.measurementEntryCount > 0 ||
+        summary.civil.subcontractorBilledValue > 0) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <HardHat className="h-4 w-4" />
+              Civil execution
+            </CardTitle>
+            <CardDescription>
+              Subcontract commitment, joint measurement, and subcontractor billing — joined from the
+              Billing Recon and Subcontractors registers.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                <p className="text-xl font-bold">{summary.civil.workOrderCount}</p>
+                <p className="text-xs text-muted-foreground">
+                  Work order{summary.civil.workOrderCount === 1 ? "" : "s"} ·{" "}
+                  {formatCurrency(summary.civil.workOrderValue)}
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                <p className="text-xl font-bold">{formatCurrency(summary.civil.executedValue)}</p>
+                <p className="text-xs text-muted-foreground">Executed (JMC/MVAC)</p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                <p className="text-xl font-bold">{formatCurrency(summary.civil.certifiedValue)}</p>
+                <p className="text-xs text-muted-foreground">Certified</p>
+              </div>
+              <div
+                className={cn(
+                  "rounded-lg border px-3 py-3",
+                  summary.civil.openMeasurementCount ? "border-amber-200 bg-amber-50" : "bg-muted/20",
+                )}
+              >
+                <p
+                  className={cn(
+                    "text-xl font-bold",
+                    summary.civil.openMeasurementCount && "text-amber-700",
+                  )}
+                >
+                  {summary.civil.openMeasurementCount}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Of {summary.civil.measurementEntryCount} measurement
+                  {summary.civil.measurementEntryCount === 1 ? "" : "s"} in workflow
+                </p>
+              </div>
+              <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                <p className="text-xl font-bold">
+                  {formatCurrency(summary.civil.subcontractorBilledValue)}
+                </p>
+                <p className="text-xs text-muted-foreground">Subcontractor billed</p>
+              </div>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <Button size="sm" variant="outline" asChild>
+                <Link href={`/project-management/civil?project=${encodeURIComponent(mapping.id)}`}>
+                  Civil workspace
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <Link href={`/project-management/erection?project=${encodeURIComponent(mapping.id)}`}>
+                  Erection workspace
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Hourglass className="h-4 w-4" />
+              Stalled gates
+            </CardTitle>
+            <CardDescription>
+              Waiting-state records older than the stall threshold, and who they are sitting with.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {summary.stalledGates.length ? (
+              <div className="space-y-2">
+                {summary.stalledGates.map((gate) => (
+                  <Link
+                    key={gate.key}
+                    href={`/project-management/${targetPath[gate.target]}?project=${encodeURIComponent(mapping.id)}`}
+                    className="group flex items-center gap-3 rounded-lg border p-3 no-underline transition-shadow hover:shadow-sm"
+                  >
+                    <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-amber-100 text-sm font-bold text-amber-700">
+                      {gate.count}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold">{gate.label}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Waiting on {gate.waitingOn} · oldest {gate.oldestDays} days
+                      </span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                Nothing has been waiting past the stall threshold.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Scale className="h-4 w-4" />
+              Quantity integrity
+            </CardTitle>
+            <CardDescription>
+              Every BOQ line&apos;s stage quantities reconciled against each other and against approved scope.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-lg border bg-muted/20 px-3 py-3">
+                <p className="text-xl font-bold">{summary.quantityIntegrity.checkedCount}</p>
+                <p className="text-xs text-muted-foreground">Lines checked</p>
+              </div>
+              <div className={cn("rounded-lg border px-3 py-3", summary.quantityIntegrity.criticalCount ? "border-red-200 bg-red-50" : "bg-muted/20")}>
+                <p className={cn("text-xl font-bold", summary.quantityIntegrity.criticalCount && "text-red-700")}>
+                  {summary.quantityIntegrity.criticalCount}
+                </p>
+                <p className="text-xs text-muted-foreground">Registers disagree</p>
+              </div>
+              <div className={cn("rounded-lg border px-3 py-3", summary.quantityIntegrity.warningCount ? "border-amber-200 bg-amber-50" : "bg-muted/20")}>
+                <p className={cn("text-xl font-bold", summary.quantityIntegrity.warningCount && "text-amber-700")}>
+                  {summary.quantityIntegrity.warningCount}
+                </p>
+                <p className="text-xs text-muted-foreground">Over scope</p>
+              </div>
+            </div>
+            {summary.quantityIntegrity.criticalCount + summary.quantityIntegrity.warningCount > 0 ? (
+              <Button size="sm" variant="outline" asChild>
+                <Link href={`/project-management/boq/costing?project=${encodeURIComponent(mapping.id)}`}>
+                  Review in BOQ costing
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                All recorded quantities reconcile cleanly.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader className="pb-3">

@@ -1,0 +1,838 @@
+'use client';
+
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  Save,
+  Trash2,
+  Plus,
+  GripVertical,
+  GitMerge,
+  Loader2,
+  ArrowUp,
+  ArrowDown,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { useToast } from '@/hooks/use-toast';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import type {
+  WorkflowStep,
+  WorkflowStepUser,
+  WorkflowStepMapped,
+  Role,
+  User,
+  Project,
+  Department,
+  AssignedTo,
+  UploadRequirement,
+  ActionConfig,
+} from '@/lib/types';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { logUserActivity } from '@/lib/activity-logger';
+import { useSearchParams } from 'next/navigation';
+import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-context';
+import {
+  JMC_SETTINGS_GRADIENT,
+  JmcAccessDenied,
+  JmcLoadingState,
+  JmcPageHeader,
+  JmcPageShell,
+  JmcProjectNotFound,
+} from '@/components/jmc/jmc-page-shell';
+import { JmcNav } from '@/components/jmc/jmc-nav';
+import { Badge } from '@/components/ui/badge';
+
+/* ---------------- type guards ---------------- */
+function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
+  return step.assignmentType === 'User-based';
+}
+function isMapped(step: WorkflowStep): step is WorkflowStepMapped {
+  return step.assignmentType === 'Project-based' || step.assignmentType === 'Department-based';
+}
+
+/* ---------------- initial data ---------------- */
+const initialSteps: WorkflowStep[] = [
+  {
+    id: '1',
+    name: 'Verification',
+    tat: 24,
+    assignmentType: 'User-based',
+    assignedTo: [],
+    actions: ['Approve', 'Reject', 'Needs Correction', 'Update Certified Qty'],
+    upload: 'Required',
+  },
+  {
+    id: '2',
+    name: 'Certification',
+    tat: 16,
+    assignmentType: 'User-based',
+    assignedTo: [],
+    actions: ['Verified', 'Reject'],
+    upload: 'Optional',
+  },
+];
+
+const allActions: (string | ActionConfig)[] = [
+  'Approve',
+  'Reject',
+  'Needs Correction',
+  'Complete',
+  'Verified',
+  'Update Certified Qty',
+];
+
+/* ---------------- page ---------------- */
+export default function JmcWorkflowConfigurationPage() {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const searchParams = useSearchParams();
+  const mappingId = searchParams?.get('project') ?? '';
+  const { context, isResolving, notFound, projectName } = useProjectManagementJmcContext(mappingId);
+
+  const [steps, setSteps] = useState<WorkflowStep[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  /* -------- permissions via safe 2-arg dotted can() wrapper -------- */
+  const canViewPage = useMemo(
+    () => !isAuthLoading && safeCan(can, 'View Settings', context.permissionResource),
+    [isAuthLoading, can, context.permissionResource],
+  );
+  const canEditPage = useMemo(
+    () => !isAuthLoading && safeCan(can, 'Edit Settings', context.permissionResource),
+    [isAuthLoading, can, context.permissionResource],
+  );
+
+  useEffect(() => {
+    if (isAuthLoading) return;
+    if (canViewPage) void fetchData();
+    else setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthLoading, canViewPage]);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [usersSnap, projectsSnap, deptsSnap, rolesSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'projects')),
+        getDocs(collection(db, 'departments')),
+        getDocs(collection(db, 'roles')),
+      ]);
+
+      setUsers(usersSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as User)));
+      setProjects(projectsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Project)));
+      setDepartments(deptsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Department)));
+      setRoles(rolesSnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Role)));
+
+      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+      const workflowSnap = await getDoc(workflowRef);
+
+      if (workflowSnap.exists()) {
+        const s = (workflowSnap.data().steps || []) as WorkflowStep[];
+        setSteps(Array.isArray(s) && s.length > 0 ? normalizeIds(s) : initialSteps);
+      } else {
+        setSteps(initialSteps);
+      }
+    } catch (error) {
+      console.error('Error fetching data: ', error);
+      toast({ title: 'Error', description: 'Failed to fetch configuration data.', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  /* ---------------- actions: add / delete / move ---------------- */
+  function handleAddStep() {
+    const newIndex = steps.length + 1;
+    const newStep: WorkflowStep = {
+      id: String(newIndex),
+      name: `New Step ${newIndex}`,
+      tat: 8,
+      assignmentType: 'User-based',
+      assignedTo: [],
+      actions: [],
+      upload: 'Optional',
+    };
+    setSteps((prev) => [...prev, newStep]);
+  }
+
+  function handleDeleteStep(id: string) {
+    setSteps((prev) => {
+      if (prev.length <= 1) return prev; // keep at least one step
+      const next = prev.filter((s) => s.id !== id);
+      return normalizeIds(next);
+    });
+  }
+
+  function moveStep(id: string, dir: 'up' | 'down') {
+    setSteps((prev) => {
+      const idx = prev.findIndex((s) => s.id === id);
+      if (idx < 0) return prev;
+      const target = dir === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= prev.length) return prev;
+      const copy = [...prev];
+      [copy[idx], copy[target]] = [copy[target], copy[idx]];
+      return normalizeIds(copy);
+    });
+  }
+
+  /* ---------------- step edits ---------------- */
+  function handleStepChange<T extends keyof WorkflowStep>(id: string, field: T, value: WorkflowStep[T]) {
+    setSteps((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+
+        // changing assignment type re-shapes assignedTo with correct structure
+        if (field === 'assignmentType') {
+          const at = value as WorkflowStep['assignmentType'];
+          if (at === 'User-based') {
+            const next: WorkflowStepUser = {
+              ...s,
+              assignmentType: 'User-based',
+              assignedTo: [],
+            } as WorkflowStepUser;
+            (next as any).name = s.name;
+            (next as any).tat = s.tat;
+            (next as any).actions = s.actions;
+            (next as any).upload = s.upload as UploadRequirement;
+            return next;
+          }
+          const next: WorkflowStepMapped = {
+            ...s,
+            assignmentType: at as 'Project-based' | 'Department-based',
+            assignedTo: {} as Record<string, AssignedTo>,
+          } as WorkflowStepMapped;
+          (next as any).name = s.name;
+          (next as any).tat = s.tat;
+          (next as any).actions = s.actions;
+          (next as any).upload = s.upload as UploadRequirement;
+          return next;
+        }
+
+        // actions kept unique by name
+        if (field === 'actions') {
+          const list = (value as (string | ActionConfig)[]) ?? [];
+          const dedupByName = dedupeActionsByName(list);
+          return { ...s, actions: dedupByName };
+        }
+
+        // TAT normalized to positive int
+        if (field === 'tat') {
+          const tatNum = Number(value);
+          return { ...s, tat: Number.isFinite(tatNum) && tatNum > 0 ? Math.floor(tatNum) : 1 };
+        }
+
+        return { ...s, [field]: value } as WorkflowStep;
+      }),
+    );
+  }
+
+  // For mapped steps: set per-project/department primary/alternative
+  const handleAssignmentDetailChange = (
+    stepId: string,
+    detailKey: string,
+    userType: 'primary' | 'alternative',
+    userId: string,
+  ) => {
+    setSteps((prev) =>
+      prev.map((s) => {
+        if (s.id !== stepId || !isMapped(s)) return s;
+
+        const currentMap: Record<string, AssignedTo> = (s.assignedTo as Record<string, AssignedTo>) || {};
+        const current = currentMap[detailKey] ?? { primary: '', alternative: '' };
+        const next: AssignedTo = { ...current, [userType]: userId === 'none' ? '' : userId };
+
+        return {
+          ...s,
+          assignedTo: { ...currentMap, [detailKey]: next },
+        };
+      }),
+    );
+  };
+
+  function handleActionToggle(stepId: string, action: string | ActionConfig, checked: boolean) {
+    const actionName = typeof action === 'string' ? action : action.name;
+    setSteps((prev) =>
+      prev.map((s) => {
+        if (s.id !== stepId) return s;
+        let newActions = [...s.actions];
+
+        const hasAction = newActions.some((a) => (typeof a === 'string' ? a : a.name) === actionName);
+        if (checked && !hasAction) newActions.push(action);
+        if (!checked && hasAction) {
+          newActions = newActions.filter((a) => (typeof a === 'string' ? a : a.name) !== actionName);
+        }
+        return { ...s, actions: dedupeActionsByName(newActions) };
+      }),
+    );
+  }
+
+  /* ---------------- validation & save ---------------- */
+  function normalizeAndValidateSteps():
+    | { ok: true; steps: WorkflowStep[] }
+    | { ok: false; msg: string } {
+    const normalized = normalizeIds(steps);
+
+    for (const s of normalized) {
+      if (!s.name || !s.name.trim()) {
+        return { ok: false, msg: `Step ${s.id}: name is required.` };
+      }
+      const tatNum = Number(s.tat);
+      if (!Number.isFinite(tatNum) || tatNum <= 0) {
+        return { ok: false, msg: `Step ${s.id} (“${s.name}”): TAT must be a positive number.` };
+      }
+      if (isUserBased(s)) {
+        const primary = s.assignedTo?.[0];
+        if (!primary) {
+          return { ok: false, msg: `Step ${s.id} (“${s.name}”): select a primary user.` };
+        }
+      }
+      if (isMapped(s)) {
+        const map = (s.assignedTo ?? {}) as Record<string, AssignedTo>;
+        const hasAnyMapping = Object.values(map).some(
+          (m) => !!m && (!!m.primary || !!m.alternative),
+        );
+        if (!hasAnyMapping) {
+          return {
+            ok: false,
+            msg: `Step ${s.id} (“${s.name}”): add at least one ${
+              s.assignmentType === 'Project-based' ? 'project' : 'department'
+            } mapping.`,
+          };
+        }
+      }
+    }
+
+    return { ok: true, steps: normalized };
+  }
+
+  async function handleSave() {
+    if (!user) {
+      toast({ title: 'Not signed in', description: 'Please sign in to save changes.', variant: 'destructive' });
+      return;
+    }
+    if (!canEditPage) {
+      toast({ title: 'No permission', description: 'You are not allowed to edit this workflow.', variant: 'destructive' });
+      return;
+    }
+
+    const validation = normalizeAndValidateSteps();
+    if (!validation.ok) {
+      toast({ title: 'Fix required', description: validation.msg, variant: 'destructive' });
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const payload = { steps: validation.steps };
+      const workflowRef = doc(db, 'workflows', 'jmc-workflow');
+      await setDoc(workflowRef, payload, { merge: true });
+
+      await logUserActivity({
+        userId: (user as any).id ?? (user as any).uid ?? 'unknown',
+        userName: (user as any).name ?? (user as any).displayName,
+        userEmail: (user as any).email,
+        module: context.activityModule,
+        action: 'Update JMC Workflow',
+        details: { stepCount: validation.steps.length },
+      });
+
+      toast({ title: 'Success', description: 'Workflow configuration saved.' });
+    } catch (error) {
+      console.error('Error saving workflow: ', error);
+      toast({ title: 'Error', description: 'Failed to save configuration.', variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  const pageInvalidMsg = useMemo(() => {
+    const v = normalizeAndValidateSteps();
+    return v.ok ? '' : v.msg;
+  }, [steps]);
+
+  /* ---------------- render ---------------- */
+  if (isAuthLoading || isResolving || (isLoading && canViewPage)) {
+    return <JmcLoadingState />;
+  }
+
+  if (!canViewPage) {
+    return <JmcAccessDenied description="You do not have permission to view or edit this page." />;
+  }
+
+  if (notFound) {
+    return (
+      <JmcProjectNotFound description="This project could not be resolved. Return to Civil and choose a project before opening the JMC workflow configuration." />
+    );
+  }
+
+  return (
+    <JmcPageShell>
+      <JmcPageHeader
+        title="JMC Workflow Configuration"
+        subtitle={
+          projectName
+            ? `Approval steps, assignees and turnaround times for ${projectName}.`
+            : 'Approval steps, assignees and turnaround times for the JMC workflow.'
+        }
+        icon={GitMerge}
+        backHref={context.jmcHref('settings')}
+        backLabel="Back to JMC settings"
+        gradient={JMC_SETTINGS_GRADIENT}
+        actions={
+          <>
+            {pageInvalidMsg && (
+              <Badge variant="destructive" className="whitespace-nowrap">
+                {pageInvalidMsg}
+              </Badge>
+            )}
+            <Button onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Workflow
+            </Button>
+          </>
+        }
+      />
+
+      <JmcNav context={context} active="settings" />
+
+      <Card className="border-border/60">
+        <CardHeader>
+          <CardTitle>Workflow Steps</CardTitle>
+          <CardDescription>
+            Define the approval process, assignees, and turnaround time for each step.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : (
+            <Accordion type="multiple" className="w-full" defaultValue={steps.map((s) => s.id)}>
+              {steps.map((step, index) => (
+                <AccordionItem
+                  value={step.id}
+                  key={step.id}
+                  className="mb-2 rounded-lg border border-border/60 bg-background px-4"
+                >
+                  <div className="flex items-center gap-2 py-2">
+                    <GripVertical className="h-5 w-5 text-muted-foreground" />
+                    <AccordionTrigger className="flex-1 text-base hover:no-underline">
+                      {index + 1}. {step.name}
+                    </AccordionTrigger>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => moveStep(step.id, 'up')}
+                        disabled={!canEditPage || index === 0}
+                        aria-label="Move up"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => moveStep(step.id, 'down')}
+                        disabled={!canEditPage || index === steps.length - 1}
+                        aria-label="Move down"
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteStep(step.id)}
+                        disabled={!canEditPage || steps.length <= 1}
+                        aria-label={`Delete step ${step.name}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <AccordionContent>
+                    <div className="space-y-6 p-4 border-t">
+                      {/* Step name + TAT */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label htmlFor={`step-name-${step.id}`}>Step Name</Label>
+                          <Input
+                            id={`step-name-${step.id}`}
+                            value={step.name}
+                            onChange={(e) => handleStepChange(step.id, 'name', e.target.value)}
+                            disabled={!canEditPage}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor={`tat-${step.id}`}>TAT (hours)</Label>
+                          <Input
+                            id={`tat-${step.id}`}
+                            type="number"
+                            inputMode="numeric"
+                            min={1}
+                            value={Number(step.tat) || 1}
+                            onChange={(e) =>
+                              handleStepChange(
+                                step.id,
+                                'tat',
+                                Math.max(1, parseInt(e.target.value || '1', 10)) as unknown as WorkflowStep['tat'],
+                              )
+                            }
+                            disabled={!canEditPage}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Assignment type */}
+                      <div className="space-y-4">
+                        <Label>Assignment Type</Label>
+                        <RadioGroup
+                          value={step.assignmentType}
+                          onValueChange={(v) =>
+                            handleStepChange(step.id, 'assignmentType', v as WorkflowStep['assignmentType'])
+                          }
+                          className="flex flex-wrap gap-4"
+                        >
+                          {(['User-based', 'Project-based', 'Department-based'] as const).map((type) => (
+                            <div key={type} className="flex items-center space-x-2">
+                              <RadioGroupItem value={type} id={`${step.id}-${type}`} disabled={!canEditPage} />
+                              <Label htmlFor={`${step.id}-${type}`} className="font-normal">
+                                {type}
+                              </Label>
+                            </div>
+                          ))}
+                        </RadioGroup>
+                      </div>
+
+                      {/* User-based assignment */}
+                      {isUserBased(step) && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Primary User</Label>
+                            <Select
+                              value={step.assignedTo[0] ?? ''}
+                              onValueChange={(value) => {
+                                const next: WorkflowStepUser['assignedTo'] = [value, step.assignedTo[1] ?? ''];
+                                handleStepChange(step.id, 'assignedTo', next);
+                              }}
+                              disabled={!canEditPage}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a user" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {users.map((u) => (
+                                  <SelectItem key={u.id} value={u.id}>
+                                    {u.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Alternative User</Label>
+                            <Select
+                              value={step.assignedTo[1] || 'none'}
+                              onValueChange={(value) => {
+                                const alt = value === 'none' ? '' : value;
+                                const next: WorkflowStepUser['assignedTo'] = [step.assignedTo[0] ?? '', alt];
+                                handleStepChange(step.id, 'assignedTo', next);
+                              }}
+                              disabled={!canEditPage}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a user (optional)" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                {users.map((u) => (
+                                  <SelectItem key={u.id} value={u.id}>
+                                    {u.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Project/Department-based assignment */}
+                      {isMapped(step) && (
+                        <div className="space-y-2">
+                          <Label>Assign Users</Label>
+                          <Card className="mt-2 border-border/60">
+                            <CardContent className="p-0">
+                              <div className="overflow-x-auto">
+                              <Table className="min-w-[720px]">
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="whitespace-nowrap">
+                                      {step.assignmentType === 'Project-based' ? 'Project' : 'Department'}
+                                    </TableHead>
+                                    <TableHead className="whitespace-nowrap">Primary User</TableHead>
+                                    <TableHead className="whitespace-nowrap">Alternative User</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(step.assignmentType === 'Project-based' ? projects : departments).map((item) => {
+                                    const map = (step.assignedTo ?? {}) as Record<string, AssignedTo>;
+                                    const row = map[item.id] ?? { primary: '', alternative: '' };
+                                    return (
+                                      <TableRow key={item.id}>
+                                        <TableCell className="whitespace-nowrap">
+                                          {'projectName' in item ? item.projectName : item.name}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Select
+                                            value={row.primary || ''}
+                                            onValueChange={(value) =>
+                                              handleAssignmentDetailChange(step.id, item.id, 'primary', value)
+                                            }
+                                            disabled={!canEditPage}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select primary user" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {users.map((u) => (
+                                                <SelectItem key={u.id} value={u.id}>
+                                                  {u.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                        <TableCell>
+                                          <Select
+                                            value={row.alternative || 'none'}
+                                            onValueChange={(value) =>
+                                              handleAssignmentDetailChange(step.id, item.id, 'alternative', value)
+                                            }
+                                            disabled={!canEditPage}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select alternative user" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="none">None</SelectItem>
+                                              {users.map((u) => (
+                                                <SelectItem key={u.id} value={u.id}>
+                                                  {u.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="space-y-4">
+                        <Label>Actions</Label>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {[...allActions].map((action) => {
+                            const actionName = typeof action === 'string' ? action : action.name;
+                            const isChecked = step.actions.some(
+                              (a) => (typeof a === 'string' ? a : a.name) === actionName,
+                            );
+                            const id = `${step.id}-action-${actionName}`;
+                            return (
+                              <div key={id} className="space-y-2">
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={id}
+                                    checked={isChecked}
+                                    onCheckedChange={(checked) =>
+                                      handleActionToggle(step.id, action, Boolean(checked))
+                                    }
+                                    disabled={!canEditPage}
+                                  />
+                                  <Label htmlFor={id} className="font-normal">
+                                    {actionName}
+                                  </Label>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Upload requirement */}
+                      <div className="space-y-2">
+                        <Label>Upload</Label>
+                        <RadioGroup
+                          value={step.upload}
+                          onValueChange={(v) => handleStepChange(step.id, 'upload', v as UploadRequirement)}
+                          className="flex gap-4"
+                        >
+                          {(['Required', 'Not Required', 'Optional'] as const).map((opt) => (
+                            <div key={opt} className="flex items-center space-x-2">
+                              <RadioGroupItem value={opt} id={`${step.id}-upload-${opt}`} disabled={!canEditPage} />
+                              <Label htmlFor={`${step.id}-upload-${opt}`} className="font-normal">
+                                {opt}
+                              </Label>
+                            </div>
+                          ))}
+                        </RadioGroup>
+                      </div>
+
+                      {/* Step instructions */}
+                      <div className="space-y-2">
+                        <Label htmlFor={`desc-${step.id}`}>Step Instructions</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Shown to the assignee when this step is active.
+                        </p>
+                        <Textarea
+                          id={`desc-${step.id}`}
+                          value={step.description || ''}
+                          onChange={(e) => handleStepChange(step.id, 'description', e.target.value)}
+                          placeholder="e.g. Verify quantities against drawing, sign and stamp each page..."
+                          disabled={!canEditPage}
+                          className="resize-none"
+                          rows={2}
+                        />
+                      </div>
+
+                      {/* Notifications & Escalation */}
+                      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Notify on Step Entry</Label>
+                          <p className="text-xs text-muted-foreground">Users notified when this step becomes active.</p>
+                          <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-lg border border-border p-2.5">
+                            {users.length === 0 ? (
+                              <p className="text-xs text-muted-foreground py-2 text-center">No users available</p>
+                            ) : (
+                              users.map((u) => {
+                                const notifyIds = step.notifyUserIds ?? [];
+                                const checked = notifyIds.includes(u.id);
+                                return (
+                                  <div key={u.id} className="flex items-center space-x-2">
+                                    <Checkbox
+                                      id={`notify-${step.id}-${u.id}`}
+                                      checked={checked}
+                                      onCheckedChange={(c) => {
+                                        const current = step.notifyUserIds ?? [];
+                                        const next = c ? [...current, u.id] : current.filter((id) => id !== u.id);
+                                        handleStepChange(step.id, 'notifyUserIds', next);
+                                      }}
+                                      disabled={!canEditPage}
+                                    />
+                                    <Label htmlFor={`notify-${step.id}-${u.id}`} className="cursor-pointer font-normal text-sm">
+                                      {u.name}
+                                    </Label>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>TAT Escalation</Label>
+                          <p className="text-xs text-muted-foreground">Auto-escalate when TAT is running out.</p>
+                          <Select
+                            value={step.escalationUserId || 'none'}
+                            onValueChange={(v) => handleStepChange(step.id, 'escalationUserId', v === 'none' ? '' : v)}
+                            disabled={!canEditPage}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select escalation user" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No escalation</SelectItem>
+                              {users.map((u) => (
+                                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {step.escalationUserId && (
+                            <div className="space-y-1 pt-1">
+                              <Label className="text-xs text-muted-foreground">Escalate after % of TAT elapsed</Label>
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="number" min={10} max={100} step={10}
+                                  value={step.escalationThreshold ?? 80}
+                                  onChange={(e) => handleStepChange(step.id, 'escalationThreshold', Number(e.target.value))}
+                                  disabled={!canEditPage}
+                                  className="w-20"
+                                />
+                                <span className="text-sm text-muted-foreground">%</span>
+                                <span className="text-xs text-muted-foreground">
+                                  = after {Math.round(((step.escalationThreshold ?? 80) * step.tat) / 100)}h of {step.tat}h
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          )}
+
+          <Button variant="outline" onClick={handleAddStep} disabled={!canEditPage}>
+            <Plus className="mr-2 h-4 w-4" /> Add Step
+          </Button>
+        </CardContent>
+      </Card>
+    </JmcPageShell>
+  );
+}
+
+/* ---------------- utils ---------------- */
+
+type CanFn = (action: string, resource: string) => boolean;
+function safeCan(canFn: CanFn, action: string, resource: string): boolean {
+  try {
+    return canFn(action, resource);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeIds(arr: WorkflowStep[]): WorkflowStep[] {
+  return arr.map((s, i) => ({ ...s, id: String(i + 1) }));
+}
+
+function dedupeActionsByName(list: (string | ActionConfig)[]) {
+  const seen = new Set<string>();
+  const out: (string | ActionConfig)[] = [];
+  for (const a of list) {
+    const name = typeof a === 'string' ? a : a.name;
+    if (!seen.has(name)) {
+      seen.add(name);
+      out.push(a);
+    }
+  }
+  return out;
+}

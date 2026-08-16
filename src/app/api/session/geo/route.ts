@@ -10,6 +10,8 @@ const PRIVATE_RANGES = [
   /^fe80:/,
 ];
 
+const UPSTREAM_TIMEOUT_MS = 3000;
+
 function isPrivateIp(ip: string): boolean {
   return PRIVATE_RANGES.some((re) => re.test(ip));
 }
@@ -46,10 +48,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
-      headers: { 'User-Agent': 'SEL-SessionManager/1.0' },
-      next: { revalidate: 300 },
-    });
+    // ipapi.co is a free, rate-limited third party. Cap how long we hold the
+    // request open for it — an empty geo result is far better than a hung route.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, {
+        headers: { 'User-Agent': 'SEL-SessionManager/1.0' },
+        next: { revalidate: 300 },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!res.ok) throw new Error(`ipapi.co responded ${res.status}`);
 

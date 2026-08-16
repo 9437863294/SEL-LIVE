@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import {
   collection,
-  onSnapshot,
+  getDocs,
 } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 import { useSearchParams } from 'next/navigation';
@@ -77,10 +77,12 @@ import { ForwardMessageDialog } from './ForwardMessageDialog';
 import { GroupInfoDialog } from './GroupInfoDialog';
 import { canRoleReceiveChats } from '@/lib/chat-access';
 import {
+  clearTypingOnDisconnect,
   createRealtimeConversation,
+  fetchOlderMessages,
   getRealtimeConversation,
   listenToMessages,
-  listenToUserConversations,
+  MESSAGE_PAGE_SIZE,
   newRealtimeKey,
   persistRealtimeMessage,
   realtimeServerTimestamp,
@@ -90,9 +92,11 @@ import {
   updateMessage,
   updateRealtimePaths,
 } from '@/lib/chat-realtime';
+import { subscribeToUserConversations } from '@/lib/chat-conversations-store';
 
 const MAX_MESSAGE_LENGTH = 4000;
 const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+const TYPING_HEARTBEAT_MS = 2000;
 
 export default function ChatModule() {
   const { user, users } = useAuth();
@@ -125,8 +129,13 @@ export default function ChatModule() {
   const [typingClock, setTypingClock] = useState(Date.now());
   const [chatEnabledRoles, setChatEnabledRoles] = useState<Set<string>>(new Set());
   const [isLoadingChatRoles, setIsLoadingChatRoles] = useState(true);
+  const [olderMessages, setOlderMessages] = useState<ChatMessage[]>([]);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [hasMoreHistory, setHasMoreHistory] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messageScrollRef = useRef<HTMLDivElement>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingHeartbeatRef = useRef<number>(0);
 
   const canViewChat =
     can('View Module', 'Chat System') &&
@@ -155,15 +164,54 @@ export default function ChatModule() {
     [conversations, selectedConversationId]
   );
 
+  // The live listener holds only the newest page; anything paged in via
+  // "load older" is kept separately and prepended for display.
+  const visibleMessages = useMemo(() => {
+    if (!olderMessages.length) return messages;
+    const seen = new Set(messages.map((message) => message.id));
+    return [...olderMessages.filter((message) => !seen.has(message.id)), ...messages];
+  }, [messages, olderMessages]);
+
   const searchMatches = useMemo(() => {
     const normalized = messageSearch.trim().toLowerCase();
     if (!normalized) return [] as ChatMessage[];
-    return messages.filter((message) =>
+    return visibleMessages.filter((message) =>
       `${message.senderName} ${message.text} ${(message.attachments || []).map((item) => item.name).join(' ')}`
         .toLowerCase()
         .includes(normalized)
     );
-  }, [messageSearch, messages]);
+  }, [messageSearch, visibleMessages]);
+
+  // Membership lookup per rendered row was O(matches); a set makes it O(1).
+  const searchMatchIds = useMemo(
+    () => new Set(searchMatches.map((message) => message.id)),
+    [searchMatches]
+  );
+
+  const activeSearchMatchId = searchMatches.length
+    ? searchMatches[Math.min(activeSearchIndex, searchMatches.length - 1)]?.id ?? null
+    : null;
+
+  const handleLoadOlderMessages = useCallback(async () => {
+    if (!selectedConversationId || isLoadingOlder || !hasMoreHistory) return;
+    const oldest = visibleMessages[0];
+    if (!oldest) return;
+    setIsLoadingOlder(true);
+    try {
+      const page = await fetchOlderMessages(selectedConversationId, oldest.clientCreatedAt);
+      if (page.length < MESSAGE_PAGE_SIZE) setHasMoreHistory(false);
+      if (page.length) setOlderMessages((prev) => [...page, ...prev]);
+    } catch (error) {
+      console.error('Unable to load older messages:', error);
+      toast({
+        title: 'Could not load older messages',
+        description: 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }, [hasMoreHistory, isLoadingOlder, selectedConversationId, toast, visibleMessages]);
 
   const activeTypingNames = useMemo(() => {
     if (!selectedConversation?.typing || !user?.id) return [];
@@ -172,10 +220,23 @@ export default function ChatModule() {
       .map(([userId]) => usersById.get(userId)?.name || 'Someone');
   }, [selectedConversation?.typing, typingClock, user?.id, usersById]);
 
+  // Only tick while someone is actually typing. This used to run unconditionally,
+  // re-rendering the whole module and every message row once a second forever.
+  const hasTypingActivity = useMemo(() => {
+    const typing = selectedConversation?.typing;
+    if (!typing || !user?.id) return false;
+    return Object.entries(typing).some(
+      ([userId, lastTypedAt]) => userId !== user.id && Date.now() - Number(lastTypedAt) < 5000
+    );
+    // typingClock is a dep so each tick re-evaluates and the interval can stop
+    // itself once the last entry goes stale, even if the peer's clear never lands.
+  }, [selectedConversation?.typing, typingClock, user?.id]);
+
   useEffect(() => {
+    if (!hasTypingActivity) return;
     const interval = window.setInterval(() => setTypingClock(Date.now()), 1000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [hasTypingActivity]);
 
   useEffect(() => {
     if (isLoadingPermissions || !canViewChat) {
@@ -184,10 +245,14 @@ export default function ChatModule() {
       return;
     }
 
+    // Which roles may receive chats changes about as often as the role list
+    // itself — a one-shot read on mount, not a standing listener over the whole
+    // collection for the lifetime of the page.
+    let cancelled = false;
     setIsLoadingChatRoles(true);
-    return onSnapshot(
-      collection(db, 'roles'),
-      (snapshot) => {
+    getDocs(collection(db, 'roles'))
+      .then((snapshot) => {
+        if (cancelled) return;
         setChatEnabledRoles(new Set(
           snapshot.docs
             .map((roleDocument) => roleDocument.data() as Role)
@@ -195,13 +260,14 @@ export default function ChatModule() {
             .map((role) => role.name)
         ));
         setIsLoadingChatRoles(false);
-      },
-      (error) => {
+      })
+      .catch((error) => {
+        if (cancelled) return;
         console.error('Unable to load chat-enabled roles:', error);
         setChatEnabledRoles(new Set());
         setIsLoadingChatRoles(false);
-      }
-    );
+      });
+    return () => { cancelled = true; };
   }, [canViewChat, isLoadingPermissions]);
 
   useEffect(() => {
@@ -211,14 +277,36 @@ export default function ChatModule() {
     setMessageSearch('');
     setMessageSearchOpen(false);
     setActiveSearchIndex(0);
-  }, [selectedConversationId]);
+
+    // Cancel any pending "stop typing" write and clear the flag we may have set.
+    // Without this the timer fired after navigation, writing to the conversation
+    // we just left, and the previous chat kept showing us as typing.
+    const previousConversationId = selectedConversationId;
+    const userId = user?.id;
+    return () => {
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+      if (typingHeartbeatRef.current && previousConversationId && userId) {
+        updateConversation(previousConversationId, { [`typing/${userId}`]: null }).catch(() => {});
+      }
+      typingHeartbeatRef.current = 0;
+    };
+  }, [selectedConversationId, user?.id]);
 
   useEffect(() => {
-    if (!searchMatches.length) return;
-    const safeIndex = Math.min(activeSearchIndex, searchMatches.length - 1);
-    if (safeIndex !== activeSearchIndex) setActiveSearchIndex(safeIndex);
-    document.getElementById(`message-${searchMatches[safeIndex].id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [activeSearchIndex, searchMatches]);
+    if (searchMatches.length && activeSearchIndex > searchMatches.length - 1) {
+      setActiveSearchIndex(searchMatches.length - 1);
+    }
+  }, [activeSearchIndex, searchMatches.length]);
+
+  useEffect(() => {
+    if (!activeSearchMatchId) return;
+    document.getElementById(`message-${activeSearchMatchId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Keyed on the matched id rather than the matches array: the array gets a new
+    // identity on every incoming message, which re-scrolled the viewport each time.
+  }, [activeSearchMatchId]);
 
   useEffect(() => {
     if (
@@ -232,24 +320,11 @@ export default function ChatModule() {
   useEffect(() => {
     if (!user?.id || !canViewChat) return;
     setIsLoadingConversations(true);
-    return listenToUserConversations(
-      user.id,
-      (nextValues) => {
-        const nextConversations = nextValues.sort(
-            (a, b) =>
-              timestampMillis(b.lastMessageAt || b.updatedAt || b.createdAt) -
-              timestampMillis(a.lastMessageAt || a.updatedAt || a.createdAt)
-          );
+    // Shared with the header's unread badge; the store sorts the list and owns
+    // the delivery receipts, so this callback is pure state assignment.
+    return subscribeToUserConversations(user.id, {
+      onConversations: (nextConversations) => {
         setConversations(nextConversations);
-        nextConversations.forEach((conversation) => {
-          const lastMessageAt = timestampMillis(conversation.lastMessageAt);
-          const deliveredAt = timestampMillis(conversation.deliveredAt?.[user.id]);
-          if (conversation.lastMessageSenderId !== user.id && lastMessageAt > deliveredAt) {
-            updateConversation(conversation.id, {
-              [`deliveredAt/${user.id}`]: realtimeServerTimestamp(),
-            }).catch(() => {});
-          }
-        });
         setSelectedConversationId((current) => {
           if (current && nextConversations.some((conversation) => conversation.id === current)) {
             return current;
@@ -258,7 +333,7 @@ export default function ChatModule() {
         });
         setIsLoadingConversations(false);
       },
-      (error) => {
+      onError: (error) => {
         console.error('Unable to load conversations:', error);
         setIsLoadingConversations(false);
         toast({
@@ -266,8 +341,8 @@ export default function ChatModule() {
           description: 'Please check your connection and try again.',
           variant: 'destructive',
         });
-      }
-    );
+      },
+    });
   }, [canViewChat, toast, user?.id]);
 
   useEffect(() => {
@@ -276,6 +351,8 @@ export default function ChatModule() {
       return;
     }
     setIsLoadingMessages(true);
+    setOlderMessages([]);
+    setHasMoreHistory(true);
     return listenToMessages(
       selectedConversationId,
       (nextMessages) => {
@@ -309,6 +386,14 @@ export default function ChatModule() {
   }, [selectedConversationId, selectedUnreadCount, user?.id]);
 
   useEffect(() => {
+    // Switching conversations always lands at the newest message. For an incoming
+    // message, only follow if the reader is already near the bottom — otherwise
+    // reading back through history got yanked away on every new arrival.
+    const container = messageScrollRef.current;
+    const isNearBottom =
+      !container ||
+      container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    if (!isNearBottom) return;
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length, selectedConversationId]);
 
@@ -441,11 +526,13 @@ export default function ChatModule() {
       ...(payload.forwardedFrom ? { forwardedFrom: payload.forwardedFrom } : {}),
     }, user.id, preparedMessageId, preview, incrementUnread);
     if (notifyRecipients) {
-      try {
-        await notifyChatRecipients(conversation.id, messageId);
-      } catch (notificationError) {
+      // The message is already in Realtime DB and has rendered for everyone with
+      // the app open. Push dispatch is best-effort follow-up work (the route
+      // answers 202 and finishes in the background), so don't hold the composer
+      // — or a multi-target forward — open waiting for the round trip.
+      void notifyChatRecipients(conversation.id, messageId).catch((notificationError) => {
         console.warn('Message saved, but push notification delivery failed:', notificationError);
-      }
+      });
     }
     return messageId;
   };
@@ -485,14 +572,27 @@ export default function ChatModule() {
     setDraft(value.slice(0, MAX_MESSAGE_LENGTH));
     if (!user?.id || !selectedConversationId) return;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    if (value.trim()) {
-      updateConversation(selectedConversationId, { [`typing/${user.id}`]: Date.now() }).catch(() => {});
-      typingTimerRef.current = setTimeout(() => {
-        updateConversation(selectedConversationId, { [`typing/${user.id}`]: null }).catch(() => {});
-      }, 1800);
-    } else {
+
+    if (!value.trim()) {
+      typingHeartbeatRef.current = 0;
       updateConversation(selectedConversationId, { [`typing/${user.id}`]: null }).catch(() => {});
+      return;
     }
+
+    // Peers treat a heartbeat as live for 5s, so re-announcing on every keystroke
+    // was one Realtime DB write per character. Refresh at most every 2s instead.
+    const now = Date.now();
+    if (now - typingHeartbeatRef.current > TYPING_HEARTBEAT_MS) {
+      typingHeartbeatRef.current = now;
+      updateConversation(selectedConversationId, { [`typing/${user.id}`]: now }).catch(() => {});
+      // If this tab dies mid-typing, don't strand the indicator on for everyone.
+      clearTypingOnDisconnect(selectedConversationId, user.id);
+    }
+
+    typingTimerRef.current = setTimeout(() => {
+      typingHeartbeatRef.current = 0;
+      updateConversation(selectedConversationId, { [`typing/${user.id}`]: null }).catch(() => {});
+    }, 1800);
   };
 
   const uploadAttachments = async (files: File[], voiceDurationSeconds?: number) => {
@@ -545,23 +645,47 @@ export default function ChatModule() {
     }
   };
 
-  const toggleReaction = async (message: ChatMessage, emoji: string) => {
+  // The handlers below are passed to every rendered message row; keeping their
+  // identity stable is what lets the memoized rows skip re-rendering.
+  const toggleReaction = useCallback(async (message: ChatMessage, emoji: string) => {
     if (!user?.id || !selectedConversationId) return;
+    const userId = user.id;
     await transactMessageReactions(selectedConversationId, message.id, (currentReactions) => {
       const reactions = { ...currentReactions };
       const usersForReaction = reactions[emoji] || [];
-      reactions[emoji] = usersForReaction.includes(user.id)
-        ? usersForReaction.filter((id) => id !== user.id)
-        : [...usersForReaction, user.id];
+      reactions[emoji] = usersForReaction.includes(userId)
+        ? usersForReaction.filter((id) => id !== userId)
+        : [...usersForReaction, userId];
       if (!reactions[emoji].length) delete reactions[emoji];
       return reactions;
     });
-  };
+  }, [selectedConversationId, user?.id]);
 
-  const toggleStar = async (message: ChatMessage) => {
+  const toggleStar = useCallback(async (message: ChatMessage) => {
     if (!user?.id || !selectedConversationId) return;
     await transactMessageStars(selectedConversationId, message.id, user.id);
-  };
+  }, [selectedConversationId, user?.id]);
+
+  const handleReplyToMessage = useCallback((selected: ChatMessage) => {
+    setEditingMessage(null);
+    setReplyingTo(selected);
+  }, []);
+
+  const handleEditMessage = useCallback((selected: ChatMessage) => {
+    setReplyingTo(null);
+    setEditingMessage(selected);
+    setDraft(selected.text);
+  }, []);
+
+  const handleReactToMessage = useCallback(
+    (selected: ChatMessage, emoji: string) => void toggleReaction(selected, emoji),
+    [toggleReaction]
+  );
+
+  const handleStarMessage = useCallback(
+    (selected: ChatMessage) => void toggleStar(selected),
+    [toggleStar]
+  );
 
   const deleteMessage = async () => {
     if (!messageToDelete || !selectedConversation || !user?.id) return;
@@ -627,16 +751,21 @@ export default function ChatModule() {
     if (!messageToForward) return;
     setIsForwarding(true);
     try {
-      for (const conversationId of conversationIds) {
-        const target = conversations.find((conversation) => conversation.id === conversationId);
-        if (!target) continue;
-        await persistMessage(target, {
-          text: messageToForward.text,
-          type: messageToForward.type,
-          attachments: messageToForward.attachments,
-          forwardedFrom: { messageId: messageToForward.id, senderName: messageToForward.senderName },
-        });
-      }
+      // Independent writes — dispatch together rather than one round trip per
+      // target, which made forwarding to several chats visibly slow.
+      const targets = conversationIds
+        .map((conversationId) => conversations.find((conversation) => conversation.id === conversationId))
+        .filter((target): target is ChatConversation => Boolean(target));
+      await Promise.all(
+        targets.map((target) =>
+          persistMessage(target, {
+            text: messageToForward.text,
+            type: messageToForward.type,
+            attachments: messageToForward.attachments,
+            forwardedFrom: { messageId: messageToForward.id, senderName: messageToForward.senderName },
+          })
+        )
+      );
       setMessageToForward(null);
     } catch (error) {
       console.error('Unable to forward message:', error);
@@ -719,9 +848,9 @@ export default function ChatModule() {
     return 'sent';
   };
 
-  const jumpToMessage = (messageId: string) => {
+  const jumpToMessage = useCallback((messageId: string) => {
     document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  };
+  }, []);
 
   if (!user || isLoadingPermissions || isLoadingChatRoles) {
     return <ChatLoadingScreen />;
@@ -829,31 +958,49 @@ export default function ChatModule() {
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setMessageSearchOpen(false); setMessageSearch(''); }}><X className="h-4 w-4" /></Button>
                 </div>
               )}
-              <div className="relative min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-6">
+              <div ref={messageScrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-6">
                 <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end">
                   {isLoadingMessages ? (
                     <MessageListSkeleton />
-                  ) : messages.length ? (
-                    messages.map((message, index) => (
+                  ) : visibleMessages.length ? (
+                    <>
+                    {hasMoreHistory && visibleMessages.length >= MESSAGE_PAGE_SIZE && (
+                      <div className="mb-3 flex justify-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={isLoadingOlder}
+                          onClick={() => void handleLoadOlderMessages()}
+                        >
+                          {isLoadingOlder ? (
+                            <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />Loading…</>
+                          ) : (
+                            'Load older messages'
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                    {visibleMessages.map((message, index) => (
                       <ChatMessageItem
                         key={message.id}
                         message={message}
-                        previousMessage={messages[index - 1]}
+                        previousMessage={visibleMessages[index - 1]}
                         currentUserId={user.id}
                         isGroup={selectedConversation.type === 'group'}
                         usersById={usersById}
                         deliveryStatus={getDeliveryStatus(message)}
-                        isSearchMatch={searchMatches.some((match) => match.id === message.id)}
-                        isActiveSearchMatch={searchMatches[activeSearchIndex]?.id === message.id}
-                        onReply={(selected) => { setEditingMessage(null); setReplyingTo(selected); }}
-                        onEdit={(selected) => { setReplyingTo(null); setEditingMessage(selected); setDraft(selected.text); }}
+                        isSearchMatch={searchMatchIds.has(message.id)}
+                        isActiveSearchMatch={activeSearchMatchId === message.id}
+                        onReply={handleReplyToMessage}
+                        onEdit={handleEditMessage}
                         onDelete={setMessageToDelete}
-                        onReact={(selected, emoji) => void toggleReaction(selected, emoji)}
-                        onStar={(selected) => void toggleStar(selected)}
+                        onReact={handleReactToMessage}
+                        onStar={handleStarMessage}
                         onForward={setMessageToForward}
                         onJumpToMessage={jumpToMessage}
                       />
-                    ))
+                    ))}
+                    </>
                   ) : (
                     <div className="flex flex-1 flex-col items-center justify-center py-14 text-center">
                       <div className="rounded-full bg-primary/10 p-4">

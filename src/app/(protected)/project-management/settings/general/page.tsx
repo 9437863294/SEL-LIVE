@@ -8,6 +8,7 @@ import { db } from "@/lib/firebase";
 import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
 import { DEFAULT_PLAUSIBILITY_LIMIT_PCT } from "@/lib/project-management-survey";
 import { DEFAULT_LEAD_TIME_DAYS } from "@/lib/project-management-requirement-planner";
+import { DEFAULT_STALL_DAYS } from "@/lib/project-management-dashboard";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -35,6 +36,7 @@ export default function ProjectManagementGeneralSettingsPage() {
   const [variationTolerancePct, setVariationTolerancePct] = useState(String(DEFAULT_VARIATION_TOLERANCE_PCT));
   const [plausibilityLimitPct, setPlausibilityLimitPct] = useState(String(DEFAULT_PLAUSIBILITY_LIMIT_PCT));
   const [leadTimeDays, setLeadTimeDays] = useState(String(DEFAULT_LEAD_TIME_DAYS));
+  const [stallDays, setStallDays] = useState(String(DEFAULT_STALL_DAYS));
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -52,6 +54,8 @@ export default function ProjectManagementGeneralSettingsPage() {
         if (typeof storedPlausibility === "number") setPlausibilityLimitPct(String(storedPlausibility));
         const storedLeadTime = snapshot.data()?.leadTimeDays;
         if (typeof storedLeadTime === "number") setLeadTimeDays(String(storedLeadTime));
+        const storedStallDays = snapshot.data()?.stallDays;
+        if (typeof storedStallDays === "number") setStallDays(String(storedStallDays));
       } catch (error) {
         console.error("Failed to load Project Management general settings:", error);
       } finally {
@@ -77,6 +81,11 @@ export default function ProjectManagementGeneralSettingsPage() {
       toast({ title: "Enter a valid lead time", variant: "destructive" });
       return;
     }
+    const stall = Number(stallDays);
+    if (!Number.isFinite(stall) || stall < 1) {
+      toast({ title: "Enter a stall threshold of at least 1 day", variant: "destructive" });
+      return;
+    }
     setIsSaving(true);
     try {
       await setDoc(
@@ -85,6 +94,7 @@ export default function ProjectManagementGeneralSettingsPage() {
           variationTolerancePct: pct,
           plausibilityLimitPct: plausibility,
           leadTimeDays: leadTime,
+          stallDays: stall,
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -219,6 +229,30 @@ export default function ProjectManagementGeneralSettingsPage() {
               value={leadTimeDays}
               disabled={!canEdit}
               onChange={(event) => setLeadTimeDays(event.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4 max-w-xl">
+        <CardHeader>
+          <CardTitle className="text-lg">Stall Threshold</CardTitle>
+          <CardDescription>
+            How many days a waiting record (an RFQ sent, an inspection or MDCC requested, a DI issued,
+            an MVAC with the client) may age before the project control tower reports it as stalled.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="max-w-xs space-y-2">
+            <Label htmlFor="stall-days">Stall Threshold (days)</Label>
+            <Input
+              id="stall-days"
+              type="number"
+              min="1"
+              step="1"
+              value={stallDays}
+              disabled={!canEdit}
+              onChange={(event) => setStallDays(event.target.value)}
             />
           </div>
         </CardContent>

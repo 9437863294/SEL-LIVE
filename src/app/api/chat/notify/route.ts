@@ -1,4 +1,4 @@
-import { type DocumentReference } from 'firebase-admin/firestore';
+import { type DocumentReference, type QuerySnapshot } from 'firebase-admin/firestore';
 import { after, NextResponse } from 'next/server';
 import {
   getFirebaseAdminAuth,
@@ -14,6 +14,8 @@ type PushDevice = {
   token: string;
   ref: DocumentReference;
 };
+
+const DEVICE_QUERY_BATCH = 25;
 
 const INVALID_TOKEN_CODES = new Set([
   'messaging/invalid-registration-token',
@@ -55,20 +57,35 @@ async function deliverChatNotification(
       throw new Error('Not permitted to notify this conversation.');
     }
 
-    if (message.pushNotifiedAt) return;
+    // Claim the send atomically. The previous read-then-write left a window in
+    // which a retry or a concurrent invocation for the same message both saw an
+    // unset flag and pushed the notification twice.
+    const claim = await messageRef
+      .child('pushNotifiedAt')
+      .transaction((current) => (current ? undefined : Date.now()));
+    if (!claim.committed) return;
 
     const firestore = getFirebaseAdminFirestore();
     const recipientIds: string[] = memberIds.filter((memberId: string) => memberId !== senderUserId);
-    const deviceSnapshots = await Promise.all(
-      recipientIds.map((recipientId) =>
-        firestore
-          .collection('users')
-          .doc(recipientId)
-          .collection('pushDevices')
-          .where('enabled', '==', true)
-          .get()
-      )
-    );
+
+    // One subcollection read per recipient. Batched so a large group doesn't open
+    // a hundred concurrent Firestore reads at once.
+    const deviceSnapshots: QuerySnapshot[] = [];
+    for (let index = 0; index < recipientIds.length; index += DEVICE_QUERY_BATCH) {
+      const batch = recipientIds.slice(index, index + DEVICE_QUERY_BATCH);
+      deviceSnapshots.push(
+        ...(await Promise.all(
+          batch.map((recipientId) =>
+            firestore
+              .collection('users')
+              .doc(recipientId)
+              .collection('pushDevices')
+              .where('enabled', '==', true)
+              .get()
+          )
+        ))
+      );
+    }
 
     const devicesByToken = new Map<string, PushDevice>();
     deviceSnapshots.forEach((snapshot) => {

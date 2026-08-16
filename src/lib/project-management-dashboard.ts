@@ -1,3 +1,13 @@
+import { reconcileBoqQuantities } from "./boq-quantity-control.ts";
+import {
+  aggregateMeasurementsByBoqKey,
+  aggregateSubcontractorBillsByBoqItem,
+  aggregateWorkOrdersByBoqItem,
+  civilBoqKeyOfBoqItem,
+  readLooseScope,
+} from "./civil-execution.ts";
+import { isBoqSectionHeader } from "./project-management-boq-columns.ts";
+
 type UnknownRecord = Record<string, unknown>;
 
 export type ProjectAttentionSeverity = "critical" | "warning" | "info";
@@ -11,7 +21,28 @@ export type ProjectAttentionTarget =
   | "mdcc"
   | "dispatch-instructions"
   | "grn"
-  | "mvac";
+  | "mvac"
+  | "projects"
+  | "civil"
+  | "jmc";
+
+/**
+ * How long a record may sit in a waiting state before it is reported as stalled. A gate that is
+ * merely "open" is normal; one that has been open for a fortnight is somebody forgetting about it,
+ * and until now nothing in the module measured the difference.
+ */
+export const DEFAULT_STALL_DAYS = 14;
+
+/** A gate whose waiting records have aged past the stall threshold, and who they are sitting with. */
+export interface ProjectStalledGate {
+  key: string;
+  label: string;
+  /** Who has to act: Client, Vendor, Inspector, or SEL itself. */
+  waitingOn: string;
+  count: number;
+  oldestDays: number;
+  target: ProjectAttentionTarget;
+}
 
 export interface ProjectAttentionItem {
   id: string;
@@ -34,7 +65,19 @@ export interface ProjectControlTowerInput {
   dispatchInstructions: UnknownRecord[];
   grns: UnknownRecord[];
   mvacRecords: UnknownRecord[];
+  /* --- civil registers owned by Billing Recon / Subcontractors Management (read-only join —
+   * see src/lib/civil-execution.ts). Optional so existing callers keep working unchanged. --- */
+  workOrders?: UnknownRecord[];
+  jmcEntries?: UnknownRecord[];
+  mvacEntries?: UnknownRecord[];
+  subcontractorBills?: UnknownRecord[];
   leadTimeDays?: number;
+  /** Same variation tolerance the Indent screen enforces; used by the quantity roll-up. */
+  tolerancePct?: number;
+  /** Days a waiting record may age before it is reported as stalled. */
+  stallDays?: number;
+  /** The PM project's planned completion date (yyyy-mm-dd), when one is recorded. */
+  projectEndDate?: string;
   today?: Date;
 }
 
@@ -52,6 +95,37 @@ export interface ProjectControlTowerSummary {
     committedValue: number;
     overduePoCount: number;
   };
+  /**
+   * Commitment vs budget — the cost-control view the tower previously lacked. `committedValue`
+   * is everything the project has promised to spend — supply POs plus civil subcontract work
+   * orders; `budgetValue` is what the BOQ says the work is worth. When commitment crosses budget
+   * the project is spending money the contract never priced.
+   */
+  cost: {
+    budgetValue: number;
+    committedValue: number;
+    poCommittedValue: number;
+    workOrderCommittedValue: number;
+    /** committed − budget; positive means over-committed. */
+    varianceValue: number;
+    /** Rounded percentage of budget committed (0 when there is no budget to compare against). */
+    committedPct: number;
+    overBudget: boolean;
+  };
+  /** Civil execution, joined from Billing Recon / Subcontractors Management registers. */
+  civil: {
+    workOrderCount: number;
+    workOrderValue: number;
+    /** Σ rate × executedQty across non-void JMC/MVAC measurement entries, at recorded rates. */
+    executedValue: number;
+    /** Σ rate × certifiedQty across the same entries. */
+    certifiedValue: number;
+    measurementEntryCount: number;
+    /** Measurement entries whose certification workflow has not finished. */
+    openMeasurementCount: number;
+    /** Σ totalAmount of non-rejected, non-retention subcontractor bills. */
+    subcontractorBilledValue: number;
+  };
   engineering: {
     drawingCount: number;
     approvedDrawingCount: number;
@@ -62,6 +136,24 @@ export interface ProjectControlTowerSummary {
     label: string;
     count: number;
   }>;
+  /** Planned completion vs today — null fields when the mapping has no end date recorded. */
+  schedule: {
+    endDate: string | null;
+    /** Negative once the date has passed. */
+    daysRemaining: number | null;
+    /** End date passed while procurement or the supply pipeline is still open. */
+    overdueWithOpenWork: boolean;
+  };
+  /** Waiting-state records that have aged past the stall threshold, grouped by gate. */
+  stalledGates: ProjectStalledGate[];
+  /** BOQ lines whose per-stage quantities disagree (critical) or exceed approved scope (warning),
+   * rolled up from reconcileBoqQuantities() across every line — the register-integrity check that
+   * previously only ran when someone happened to open a single item's 360° page. */
+  quantityIntegrity: {
+    checkedCount: number;
+    criticalCount: number;
+    warningCount: number;
+  };
   attention: ProjectAttentionItem[];
 }
 
@@ -136,6 +228,163 @@ const attentionOrder: Record<ProjectAttentionSeverity, number> = {
   info: 2,
 };
 
+/** Whole days between a yyyy-mm-dd string and today; null when the date is absent or unparsable. */
+const daysSince = (value: unknown, today: Date): number | null => {
+  if (typeof value !== "string" || !value) return null;
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.floor((startOfToday.getTime() - date.getTime()) / 86_400_000);
+};
+
+/**
+ * The waiting states worth ageing, and who each one waits on. A record only counts once it has
+ * genuinely left SEL's hands (or is sitting unactioned inside them) AND carries a date to age
+ * from — a Requested record with no request date cannot be aged and is skipped rather than
+ * guessed at.
+ */
+const WORKFLOW_WAITING_STATUSES = new Set(["Pending", "In Progress"]);
+
+const STALL_RULES: Array<{
+  key: string;
+  label: string;
+  waitingOn: string;
+  source: keyof Pick<
+    ProjectControlTowerInput,
+    | "indents"
+    | "rfqs"
+    | "inspections"
+    | "mdccRecords"
+    | "dispatchInstructions"
+    | "mvacRecords"
+    | "jmcEntries"
+    | "mvacEntries"
+    | "subcontractorBills"
+  >;
+  target: ProjectAttentionTarget;
+  matches: (record: UnknownRecord) => boolean;
+  ageFrom: (record: UnknownRecord) => unknown;
+}> = [
+  {
+    key: "indent-approval",
+    label: "Indents awaiting approval",
+    waitingOn: "SEL approval",
+    source: "indents",
+    target: "requirement-planner",
+    matches: (record) => record.status === "Submitted",
+    ageFrom: (record) => record.indentDate,
+  },
+  {
+    key: "rfq-quotes",
+    label: "RFQs awaiting quotes",
+    waitingOn: "Vendors",
+    source: "rfqs",
+    target: "purchase-orders",
+    matches: (record) => record.status === "Sent",
+    ageFrom: (record) => record.rfqDate,
+  },
+  {
+    key: "inspection-visit",
+    label: "Inspections awaiting visit",
+    waitingOn: "Inspector",
+    source: "inspections",
+    target: "inspections",
+    matches: (record) => record.status === "Requested",
+    ageFrom: (record) => record.requestedDate,
+  },
+  {
+    key: "mdcc-issue",
+    label: "MDCCs awaiting client issue",
+    waitingOn: "Client",
+    source: "mdccRecords",
+    target: "mdcc",
+    matches: (record) => record.status === "Requested",
+    ageFrom: (record) => record.requestedDate,
+  },
+  {
+    key: "di-dispatch",
+    label: "DIs awaiting vendor dispatch",
+    waitingOn: "Vendor",
+    source: "dispatchInstructions",
+    target: "dispatch-instructions",
+    matches: (record) => record.status === "Issued" || record.status === "Acknowledged",
+    ageFrom: (record) => record.issuedOn,
+  },
+  {
+    key: "mvac-signature",
+    label: "MVACs awaiting client signature",
+    waitingOn: "Client",
+    source: "mvacRecords",
+    target: "mvac",
+    matches: (record) => record.status === "Requested",
+    ageFrom: (record) => record.requestedDate,
+  },
+  {
+    key: "jmc-certification",
+    label: "JMC entries awaiting certification",
+    waitingOn: "Certification workflow",
+    source: "jmcEntries",
+    // Project Management hosts the JMC screens, so this one can land on the log itself. MVAC
+    // entries and subcontractor bills still live only in Billing Recon / Subcontractors, so their
+    // rules point at the Civil workspace instead.
+    target: "jmc",
+    matches: (record) => WORKFLOW_WAITING_STATUSES.has(String(record.status ?? "")),
+    ageFrom: (record) => record.jmcDate,
+  },
+  {
+    key: "mvac-entry-certification",
+    label: "MVAC entries awaiting certification",
+    waitingOn: "Certification workflow",
+    source: "mvacEntries",
+    target: "civil",
+    matches: (record) => WORKFLOW_WAITING_STATUSES.has(String(record.status ?? "")),
+    ageFrom: (record) => record.mvacDate,
+  },
+  {
+    key: "subcontractor-bill-approval",
+    label: "Subcontractor bills in approval",
+    waitingOn: "Billing workflow",
+    source: "subcontractorBills",
+    target: "civil",
+    matches: (record) => WORKFLOW_WAITING_STATUSES.has(String(record.status ?? "")),
+    ageFrom: (record) => record.billDate,
+  },
+];
+
+const sumItemQtyByBoqItem = (
+  parents: UnknownRecord[],
+  isCounted: (parent: UnknownRecord) => boolean,
+  qtyOf: (item: UnknownRecord) => number,
+): Map<string, number> => {
+  const quantities = new Map<string, number>();
+  for (const parent of parents) {
+    if (!isCounted(parent)) continue;
+    const items = Array.isArray(parent.items) ? (parent.items as UnknownRecord[]) : [];
+    for (const item of items) {
+      const boqItemId = String(item.boqItemId ?? "");
+      if (!boqItemId) continue;
+      quantities.set(boqItemId, (quantities.get(boqItemId) ?? 0) + qtyOf(item));
+    }
+  }
+  return quantities;
+};
+
+/** One-doc-per-boqItemId gate registers → boqItemId → chosen numeric field (undefined when the
+ * record hasn't stored one, which reconcileBoqQuantities treats as "not recorded", not zero). */
+const gateQtyByBoqItem = (
+  records: UnknownRecord[],
+  field: string,
+): Map<string, number> => {
+  const quantities = new Map<string, number>();
+  for (const record of records) {
+    const boqItemId = String(record.boqItemId ?? record.id ?? "");
+    if (!boqItemId) continue;
+    const value = record[field];
+    if (typeof value === "number" && Number.isFinite(value)) quantities.set(boqItemId, value);
+  }
+  return quantities;
+};
+
 /**
  * Builds the cross-register management summary used by the Project Management landing page.
  * The calculation is deliberately pure so the dashboard can be regression-tested without
@@ -190,6 +439,130 @@ export function calculateProjectControlTower(
   const signedNotReleased = input.mvacRecords.filter(
     (record) => record.status === "Signed" && !record.billingReleasedOn,
   );
+
+  /* ---- stalled gates: waiting-state records that have aged past the threshold ---- */
+  const stallDays = Math.max(1, input.stallDays ?? DEFAULT_STALL_DAYS);
+  const stalledGates: ProjectStalledGate[] = [];
+  for (const rule of STALL_RULES) {
+    const ages = (input[rule.source] ?? [])
+      .filter(rule.matches)
+      .map((record) => daysSince(rule.ageFrom(record), today))
+      .filter((age): age is number => age != null && age >= stallDays);
+    if (ages.length) {
+      stalledGates.push({
+        key: rule.key,
+        label: rule.label,
+        waitingOn: rule.waitingOn,
+        count: ages.length,
+        oldestDays: Math.max(...ages),
+        target: rule.target,
+      });
+    }
+  }
+  stalledGates.sort((a, b) => b.oldestDays - a.oldestDays);
+
+  /* ---- civil execution: the registers Billing Recon / Subcontractors Management own ---- */
+  const workOrders = input.workOrders ?? [];
+  const measurementEntries = [...(input.jmcEntries ?? []), ...(input.mvacEntries ?? [])];
+  const subcontractorBills = input.subcontractorBills ?? [];
+  const workOrderAggByBoqItem = aggregateWorkOrdersByBoqItem(workOrders);
+  const measurementAggByBoqKey = aggregateMeasurementsByBoqKey(measurementEntries);
+  const subBillAggByBoqItem = aggregateSubcontractorBillsByBoqItem(subcontractorBills);
+  const liveWorkOrders = workOrders.filter(
+    (workOrder) => !["Cancelled"].includes(String(workOrder.status ?? "")),
+  );
+  const workOrderValue = liveWorkOrders.reduce(
+    (sum, workOrder) => sum + projectManagementNumber(workOrder.totalAmount),
+    0,
+  );
+  const nonVoidMeasurements = measurementEntries.filter(
+    (entry) => !["Rejected", "Cancelled"].includes(String(entry.status ?? "")),
+  );
+  let civilExecutedValue = 0;
+  let civilCertifiedValue = 0;
+  for (const aggregate of measurementAggByBoqKey.values()) {
+    civilExecutedValue += aggregate.executedValue;
+    civilCertifiedValue += aggregate.certifiedValue;
+  }
+  const subcontractorBilledValue = subcontractorBills
+    .filter(
+      (bill) =>
+        !["Rejected", "Cancelled"].includes(String(bill.status ?? "")) &&
+        bill.isRetentionBill !== true,
+    )
+    .reduce((sum, bill) => sum + projectManagementNumber(bill.totalAmount), 0);
+
+  /* ---- quantity integrity: reconcile every BOQ line's ladder, roll up the exceptions ---- */
+  const committedPoQtyByBoqItem = sumItemQtyByBoqItem(
+    input.purchaseOrders,
+    (po) => LIVE_PO_STATUSES.has(String(po.status ?? "")),
+    (item) => projectManagementNumber(item.qty),
+  );
+  const inspectedQtyByBoqItem = gateQtyByBoqItem(input.inspections, "qtyAccepted");
+  const dispatchedQtyByBoqItem = gateQtyByBoqItem(input.dispatchInstructions, "dispatchQty");
+  const siteAcceptedQtyByBoqItem = gateQtyByBoqItem(input.grns, "acceptedQty");
+  const clientAcceptedQtyByBoqItem = gateQtyByBoqItem(input.mvacRecords, "qtyAccepted");
+  let quantityCheckedCount = 0;
+  let quantityCriticalCount = 0;
+  let quantityWarningCount = 0;
+  for (const item of input.boqItems) {
+    if (isBoqSectionHeader(item as { Unit?: unknown; QTY?: unknown })) continue;
+    const boqItemId = recordId(item);
+    if (!boqItemId) continue;
+    quantityCheckedCount += 1;
+    const scope2 = readLooseScope(item, 2).toLowerCase();
+    const isCivilLane = scope2 === "civil" || scope2 === "erection";
+    const indentedQty = indentQtyByBoqItem.get(boqItemId);
+    const orderedQty = committedPoQtyByBoqItem.get(boqItemId);
+    const workOrderAgg = isCivilLane ? workOrderAggByBoqItem.get(boqItemId) : undefined;
+    const measurementAgg = isCivilLane
+      ? measurementAggByBoqKey.get(civilBoqKeyOfBoqItem(item))
+      : undefined;
+    const subBillAgg = isCivilLane ? subBillAggByBoqItem.get(boqItemId) : undefined;
+    const ledger = reconcileBoqQuantities({
+      lane: isCivilLane ? "civil" : "supply",
+      boqQty: projectManagementNumber(item.QTY ?? item.Quantity),
+      surveyedQty: typeof item.surveyedQty === "number" ? item.surveyedQty : undefined,
+      indentedQty: indentedQty || undefined,
+      orderedQty: orderedQty || undefined,
+      inspectedAcceptedQty: inspectedQtyByBoqItem.get(boqItemId),
+      dispatchedQty: dispatchedQtyByBoqItem.get(boqItemId),
+      siteAcceptedQty: siteAcceptedQtyByBoqItem.get(boqItemId),
+      clientAcceptedQty: clientAcceptedQtyByBoqItem.get(boqItemId),
+      woOrderedQty: workOrderAgg ? workOrderAgg.orderedQty : undefined,
+      executedQty: measurementAgg ? measurementAgg.executedQty : undefined,
+      jmcQty: measurementAgg ? measurementAgg.certifiedQty : undefined,
+      subcontractorBilledQty: subBillAgg ? subBillAgg.billedQty : undefined,
+      approvedVariationQty:
+        typeof item.variationApprovedQty === "number" ? item.variationApprovedQty : 0,
+      tolerancePct: input.tolerancePct,
+    });
+    if (ledger.worstSeverity === "critical") quantityCriticalCount += 1;
+    else if (ledger.worstSeverity === "warning") quantityWarningCount += 1;
+  }
+
+  /* ---- cost: total commitment (supply POs + civil work orders) vs BOQ budget ---- */
+  const poCommittedValue = committedPurchaseOrders.reduce(
+    (sum, po) => sum + projectManagementNumber(po.totalAmount),
+    0,
+  );
+  const committedValue = poCommittedValue + workOrderValue;
+  const overBudget = budgetValue > 0 && committedValue > budgetValue;
+
+  /* ---- schedule: planned completion vs the work still open ---- */
+  const openIndentCount = input.indents.filter((indent) =>
+    OPEN_INDENT_STATUSES.has(String(indent.status ?? "")),
+  ).length;
+  const openRfqCount = input.rfqs.filter((rfq) =>
+    OPEN_RFQ_STATUSES.has(String(rfq.status ?? "")),
+  ).length;
+  const daysPastEnd = daysSince(input.projectEndDate, today);
+  const hasOpenWork =
+    openIndentCount + openRfqCount > 0 ||
+    committedPurchaseOrders.some((po) => po.status === "Issued") ||
+    signedNotReleased.length > 0 ||
+    heldMvac.length > 0;
+  const overdueWithOpenWork = daysPastEnd != null && daysPastEnd > 0 && hasOpenWork;
 
   const attention: ProjectAttentionItem[] = [];
   const addAttention = (
@@ -278,6 +651,46 @@ export function calculateProjectControlTower(
     detail: "Accepted material is ready for the billing hand-off.",
     target: "mvac",
   });
+  if (overBudget) {
+    addAttention(1, {
+      id: "over-committed",
+      severity: "critical",
+      title: "PO commitment exceeds the BOQ budget",
+      detail: "Committed purchase value has crossed the approved BOQ baseline value.",
+      target: "purchase-orders",
+    });
+  }
+  if (overdueWithOpenWork) {
+    addAttention(1, {
+      id: "schedule-overrun",
+      severity: "critical",
+      title: "Project end date has passed with open work",
+      detail: `Planned completion was ${daysPastEnd} day${daysPastEnd === 1 ? "" : "s"} ago and procurement or acceptance is still open.`,
+      target: "projects",
+    });
+  }
+  addAttention(quantityCriticalCount, {
+    id: "quantity-mismatch",
+    severity: "critical",
+    title: "Stage quantities disagree",
+    detail: "BOQ lines where a downstream register records more than its upstream stage.",
+    target: "boq",
+  });
+  addAttention(quantityWarningCount, {
+    id: "quantity-over-scope",
+    severity: "warning",
+    title: "Quantities exceed approved scope",
+    detail: "Indented or ordered quantities need a variation order to cover the excess.",
+    target: "boq",
+  });
+  const stalledRecordCount = stalledGates.reduce((sum, gate) => sum + gate.count, 0);
+  addAttention(stalledRecordCount, {
+    id: "stalled-gates",
+    severity: "warning",
+    title: `Records stalled beyond ${stallDays} days`,
+    detail: "Waiting-state records that have aged past the stall threshold need chasing.",
+    target: stalledGates[0]?.target ?? "boq",
+  });
 
   attention.sort(
     (a, b) => attentionOrder[a.severity] - attentionOrder[b.severity] || b.count - a.count,
@@ -293,16 +706,31 @@ export function calculateProjectControlTower(
         : 0,
     },
     procurement: {
-      openIndentCount: input.indents.filter((indent) =>
-        OPEN_INDENT_STATUSES.has(String(indent.status ?? "")),
-      ).length,
-      openRfqCount: input.rfqs.filter((rfq) => OPEN_RFQ_STATUSES.has(String(rfq.status ?? ""))).length,
+      openIndentCount,
+      openRfqCount,
       livePoCount: committedPurchaseOrders.length,
-      committedValue: committedPurchaseOrders.reduce(
-        (sum, po) => sum + projectManagementNumber(po.totalAmount),
-        0,
-      ),
+      committedValue: poCommittedValue,
       overduePoCount: overduePurchaseOrders.length,
+    },
+    cost: {
+      budgetValue,
+      committedValue,
+      poCommittedValue,
+      workOrderCommittedValue: workOrderValue,
+      varianceValue: Math.round((committedValue - budgetValue) * 100) / 100,
+      committedPct: budgetValue > 0 ? Math.round((committedValue / budgetValue) * 100) : 0,
+      overBudget,
+    },
+    civil: {
+      workOrderCount: liveWorkOrders.length,
+      workOrderValue,
+      executedValue: Math.round(civilExecutedValue * 100) / 100,
+      certifiedValue: Math.round(civilCertifiedValue * 100) / 100,
+      measurementEntryCount: nonVoidMeasurements.length,
+      openMeasurementCount: nonVoidMeasurements.filter((entry) =>
+        WORKFLOW_WAITING_STATUSES.has(String(entry.status ?? "")),
+      ).length,
+      subcontractorBilledValue,
     },
     engineering: {
       drawingCount: input.mdlDrawings.length,
@@ -330,6 +758,17 @@ export function calculateProjectControlTower(
       { key: "mvac", label: "Client Accepted", count: uniqueCount(input.mvacRecords, (r) => r.status === "Signed") },
       { key: "billing", label: "Billing Released", count: uniqueCount(input.mvacRecords, (r) => Boolean(r.billingReleasedOn)) },
     ],
+    schedule: {
+      endDate: input.projectEndDate ?? null,
+      daysRemaining: daysPastEnd != null ? -daysPastEnd : null,
+      overdueWithOpenWork,
+    },
+    stalledGates,
+    quantityIntegrity: {
+      checkedCount: quantityCheckedCount,
+      criticalCount: quantityCriticalCount,
+      warningCount: quantityWarningCount,
+    },
     attention,
   };
 }

@@ -557,6 +557,20 @@ export const permissionModules = {
     "Dispatch Instructions": ["View", "Issue", "Acknowledge", "Dispatch"],
     GRN: ["View", "Record"],
     MVAC: ["View", "Request", "Verify", "Sign", "Release Billing"],
+    // JMC screens are hosted here as well as in Billing Recon (same registers, same workflow —
+    // see src/lib/jmc-module.ts). Actions mirror Billing Recon.JMC so a role can be granted the
+    // same capabilities in whichever module its users actually work from.
+    JMC: [
+      "View",
+      "Create JMC Entry",
+      "View Log",
+      "Delete JMC",
+      "View Certified JMC",
+      "View Settings",
+      "Edit Settings",
+      "Edit Serial Nos",
+      "View Reports",
+    ],
     "Project Mappings": ["View", "Add", "Edit", "Delete"],
     Clients: ["View", "Add", "Edit", "Delete"],
     "Variation Orders": ["View", "Add", "Approve", "Reject"],

@@ -35,6 +35,9 @@ import {
 import { unregisterCurrentChatPushDevice } from '@/lib/chat-push-client';
 import { stopNativeAndroidUserLocation } from '@/lib/native-user-location';
 
+/** Upper bound on how long the app shell waits for the first permissions read. */
+const ROLE_SNAPSHOT_TIMEOUT_MS = 5000;
+
 /* ---------------- types ---------------- */
 
 interface AuthContextType {
@@ -217,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (firebaseUser: FirebaseUser | null): Promise<User | null> => {
       if (!firebaseUser) {
         setUser(null);
+        setUsers([]);
         setPermissions({});
         setOriginalUser(null);
         setIsImpersonating(false);
@@ -224,17 +228,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        // All users list
-        const allUsersSnap = await getDocs(collection(db, 'users'));
-        const allUsers = allUsersSnap.docs.map(
-          (d) =>
-            ({
-              id: d.id,
-              ...d.data(),
-            } as User)
-        );
-        setUsers(allUsers);
-
         // Impersonation
         const impersonationUserId = localStorage.getItem('impersonationUserId');
         const storedOriginalUser = localStorage.getItem('originalAdminUser');
@@ -292,35 +285,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(userData);
 
-        // Session tracking — skip during impersonation
-        if (!impersonating) {
-          try {
-            const sessionId = getOrCreateSessionId();
-            await createOrResumeSession(sessionId, {
-              id: userData.id,
-              name: userData.name || '',
-              email: userData.email || '',
-              role: userData.role || '',
-            });
+        // The full directory is needed by admin/chat screens, never by first paint.
+        // Load it in the background so it can't gate the app shell.
+        void getDocs(collection(db, 'users'))
+          .then((allUsersSnap) => {
+            setUsers(
+              allUsersSnap.docs.map((d) => ({ id: d.id, ...d.data() } as User))
+            );
+          })
+          .catch((err) => console.error('Failed to load users directory', err));
 
-            // Replace any existing listener
-            if (sessionUnsubscribeRef.current) sessionUnsubscribeRef.current();
-            sessionUnsubscribeRef.current = listenToSession(sessionId, async () => {
-              // Unsubscribe before acting to prevent re-entry
-              if (sessionUnsubscribeRef.current) {
-                sessionUnsubscribeRef.current();
-                sessionUnsubscribeRef.current = null;
-              }
-              toast({
-                title: 'Session Terminated',
-                description: 'An administrator has signed you out from this device.',
-                variant: 'destructive',
+        // Session tracking — skip during impersonation. Fire-and-forget: session
+        // bookkeeping must not delay rendering the app.
+        if (!impersonating) {
+          void (async () => {
+            try {
+              const sessionId = getOrCreateSessionId();
+              await createOrResumeSession(sessionId, {
+                id: userData.id,
+                name: userData.name || '',
+                email: userData.email || '',
+                role: userData.role || '',
               });
-              await handleSignOut(false);
-            });
-          } catch (err) {
-            console.error('Session setup failed', err);
-          }
+
+              // Replace any existing listener
+              if (sessionUnsubscribeRef.current) sessionUnsubscribeRef.current();
+              sessionUnsubscribeRef.current = listenToSession(sessionId, async () => {
+                // Unsubscribe before acting to prevent re-entry
+                if (sessionUnsubscribeRef.current) {
+                  sessionUnsubscribeRef.current();
+                  sessionUnsubscribeRef.current = null;
+                }
+                toast({
+                  title: 'Session Terminated',
+                  description: 'An administrator has signed you out from this device.',
+                  variant: 'destructive',
+                });
+                await handleSignOut(false);
+              });
+            } catch (err) {
+              console.error('Session setup failed', err);
+            }
+          })();
         }
 
         if (!localStorage.getItem('lastActivity')) {
@@ -356,16 +362,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             roleUnsubscribeRef.current();
             roleUnsubscribeRef.current = null;
           }
-          roleUnsubscribeRef.current = onSnapshot(rolesQuery, (snap) => {
-            if (!snap.empty) {
-              const roleData = snap.docs[0].data() as Role;
-              setPermissions(roleData.permissions || {});
-            } else {
-              console.warn(`Role '${userData.role}' not found`);
-              setPermissions({});
-            }
-          }, (err) => {
-            console.error('Role permissions listener error:', err);
+          // Permissions gate what the shell renders, so wait for the first
+          // snapshot — but only that one. Later snapshots keep flowing so role
+          // edits still apply live without a re-login.
+          await new Promise<void>((resolve) => {
+            let settled = false;
+            let timeout: ReturnType<typeof setTimeout> | null = null;
+            const settle = () => {
+              if (settled) return;
+              settled = true;
+              if (timeout) clearTimeout(timeout);
+              resolve();
+            };
+            // Don't let a cold cache with no connectivity strand the app on the
+            // loading screen — render with whatever permissions we have and let
+            // the listener fill them in when it does arrive.
+            timeout = setTimeout(settle, ROLE_SNAPSHOT_TIMEOUT_MS);
+            roleUnsubscribeRef.current = onSnapshot(rolesQuery, (snap) => {
+              if (!snap.empty) {
+                const roleData = snap.docs[0].data() as Role;
+                setPermissions(roleData.permissions || {});
+              } else {
+                console.warn(`Role '${userData.role}' not found`);
+                setPermissions({});
+              }
+              settle();
+            }, (err) => {
+              console.error('Role permissions listener error:', err);
+              settle();
+            });
           });
         } else {
           console.warn('User has no role');

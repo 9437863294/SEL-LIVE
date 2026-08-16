@@ -17,6 +17,7 @@ import {
   ChevronUp,
   Search,
   Edit,
+  Route,
   Save,
   ShieldAlert,
 } from 'lucide-react';
@@ -78,6 +79,14 @@ import {
   type GrnRecord,
   type MvacRecord,
 } from '@/lib/supply-gates';
+import { reconcileBoqQuantities, quantityExceptionStyles } from '@/lib/boq-quantity-control';
+import {
+  WORK_ORDER_COLLECTION,
+  aggregateSubcontractorBillsByBoqItem,
+  aggregateWorkOrdersByBoqItem,
+  type WorkOrderLike,
+} from '@/lib/civil-execution';
+import { DEFAULT_VARIATION_TOLERANCE_PCT } from '@/lib/project-management-variations';
 import BoqItemDetailsDialog from '@/components/billing-recon/BoqItemDetailsDialog';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -150,6 +159,7 @@ const baseTableHeaders = [
     'DI Dispatch Qty',
     'GRN Accepted Qty',
     'Material Acceptance Qty',
+    'Qty Reconciliation',
     'Budget Price',
     'F&I %',
     'F&I Price',
@@ -193,10 +203,22 @@ const HEADER_ROW_BLANK_COLUMNS = new Set([
   'DI Dispatch Qty',
   'GRN Accepted Qty',
   'Material Acceptance Qty',
+  'Qty Reconciliation',
 ]);
 
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
+
+/** NUMBERS **/
+const parsedNumber = (v: unknown) => {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const s = v.replace(/[, ]/g, '');
+    const n = Number(s);
+    return Number.isFinite(n) ? n : NaN;
+  }
+  return NaN;
+};
 
 const toDateInputValue = (value: unknown) => {
   if (typeof value === 'string') {
@@ -251,6 +273,7 @@ export default function ViewBoqPage() {
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
   const [mvacEntries, setMvacEntries] = useState<MvacEntry[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrderLike[]>([]);
   const [indents, setIndents] = useState<IndentRecord[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [mdlDrawings, setMdlDrawings] = useState<MdlDrawing[]>([]);
@@ -263,6 +286,7 @@ export default function ViewBoqPage() {
   const [diRecords, setDiRecords] = useState<DiRecord[]>([]);
   const [grnRecords, setGrnRecords] = useState<GrnRecord[]>([]);
   const [mvacGateRecords, setMvacGateRecords] = useState<MvacRecord[]>([]);
+  const [tolerancePct, setTolerancePct] = useState(DEFAULT_VARIATION_TOLERANCE_PCT);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projectSlug, setProjectSlug] = useState('');
   const [globalProjectId, setGlobalProjectId] = useState('');
@@ -299,6 +323,7 @@ export default function ViewBoqPage() {
           'DI Dispatch Qty',
           'GRN Accepted Qty',
           'Material Acceptance Qty',
+          'Qty Reconciliation',
           'Total Amount',
           'Budget Price',
           'F&I %',
@@ -433,6 +458,8 @@ export default function ViewBoqPage() {
         diSnapshot,
         grnSnapshot,
         mvacGateSnapshot,
+        workOrderSnapshot,
+        generalSettingsSnapshot,
       ] = await Promise.all([
           getDoc(doc(db, 'projects', projectId)),
           getDocs(collection(db, 'projects', projectId, 'boqItems')),
@@ -448,6 +475,10 @@ export default function ViewBoqPage() {
           getDocs(collection(db, 'projects', projectId, DI_COLLECTION)),
           getDocs(collection(db, 'projects', projectId, GRN_COLLECTION)),
           getDocs(collection(db, 'projects', projectId, MVAC_COLLECTION)),
+          // Subcontract work orders (owned by Subcontractors Management) — the civil lane's
+          // commitment register, needed for the civil quantity ladder.
+          getDocs(collection(db, 'projects', projectId, WORK_ORDER_COLLECTION)),
+          getDoc(doc(db, 'projectManagementSettings', 'general')),
         ]);
 
       if (!projectSnapshot.exists()) throw new Error('Project not found');
@@ -487,6 +518,9 @@ export default function ViewBoqPage() {
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
       setMvacEntries(mvacSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacEntry)));
       setBills(billsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Bill)));
+      setWorkOrders(
+        workOrderSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as WorkOrderLike)),
+      );
       setIndents(indentSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as IndentRecord)));
       setPurchaseOrders(poSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as PurchaseOrder)));
       setMdlDrawings(mdlSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MdlDrawing)));
@@ -496,6 +530,10 @@ export default function ViewBoqPage() {
       setDiRecords(diSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as DiRecord)));
       setGrnRecords(grnSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as GrnRecord)));
       setMvacGateRecords(mvacGateSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacRecord)));
+      const storedTolerance = generalSettingsSnapshot.data()?.variationTolerancePct;
+      setTolerancePct(
+        typeof storedTolerance === 'number' ? storedTolerance : DEFAULT_VARIATION_TOLERANCE_PCT,
+      );
     } catch (error) {
       console.error(error);
       toast({
@@ -512,11 +550,14 @@ export default function ViewBoqPage() {
     if (isClient) void fetchProjectAndBoq();
   }, [fetchProjectAndBoq, isClient]);
 
-  /** PRE-AGGREGATE EXECUTED/CERTIFIED COUNTS (fast lookups) **/
+  /** PRE-AGGREGATE EXECUTED/CERTIFIED COUNTS (fast lookups) **
+   * Rejected/Cancelled entries are excluded — a rejected measurement is not executed quantity,
+   * the same rule the indent and PO aggregations below already apply. */
   type QtyAgg = { executed: number; certified: number };
   const jmcAggBySlNo = useMemo(() => {
     const map = new Map<string, QtyAgg>();
     for (const entry of jmcEntries) {
+      if (['Rejected', 'Cancelled'].includes(String(entry.status ?? ''))) continue;
       const items = Array.isArray(entry.items) ? entry.items : [];
       for (const it of items) {
         const key = compositeKey(getScope1(it), getScope2(it), getBoqSlNo(it));
@@ -533,6 +574,7 @@ export default function ViewBoqPage() {
   const mvacAggBySlNo = useMemo(() => {
     const map = new Map<string, QtyAgg>();
     for (const entry of mvacEntries) {
+      if (['Rejected', 'Cancelled'].includes(String(entry.status ?? ''))) continue;
       const items = Array.isArray(entry.items) ? entry.items : [];
       for (const it of items) {
         const key = compositeKey(getScope1(it), getScope2(it), getBoqSlNo(it));
@@ -562,7 +604,11 @@ export default function ViewBoqPage() {
   const poQtyByBoqItemId = useMemo(() => {
     const map = new Map<string, number>();
     for (const po of purchaseOrders) {
-      if (po.status === 'Cancelled') continue;
+      // Only committed POs count. This previously excluded just "Cancelled", which meant Draft POs
+      // inflated this column relative to every downstream gate — buildPoPlacedItems() in
+      // supply-gates.ts and the Survey page both count Issued/Received only, and a Draft PO is not
+      // a commitment. Aligning here keeps PO Qty consistent with the reconciliation column below.
+      if (!['Issued', 'Received'].includes(po.status)) continue;
       for (const it of po.items ?? []) {
         if (!it.boqItemId) continue;
         map.set(it.boqItemId, (map.get(it.boqItemId) ?? 0) + Number(it.qty || 0));
@@ -635,6 +681,63 @@ export default function ViewBoqPage() {
     }
     return map;
   }, [mvacGateRecords]);
+
+  /** Cross-stage reconciliation per BOQ item, built from the per-stage Maps above so nothing is
+   * aggregated twice. Section-header rows carry no quantities and are skipped. Civil/erection
+   * items run the civil ladder, fed from the work order / JMC-MVAC / subcontractor-bill joins. */
+  const workOrderAggByBoqItemId = useMemo(() => aggregateWorkOrdersByBoqItem(workOrders), [workOrders]);
+  const subBillAggByBoqItemId = useMemo(() => aggregateSubcontractorBillsByBoqItem(bills), [bills]);
+  const reconciliationByBoqItemId = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof reconcileBoqQuantities>>();
+    for (const item of boqItems) {
+      if (isBoqSectionHeader(item)) continue;
+      const isCivil = ['civil', 'erection'].includes(getScope2(item).toLowerCase());
+      const measurementKey = compositeKey(getScope1(item), getScope2(item), getBoqSlNo(item));
+      const jmcAgg = isCivil ? jmcAggBySlNo.get(measurementKey) : undefined;
+      const mvacAgg = isCivil ? mvacAggBySlNo.get(measurementKey) : undefined;
+      const measurementExecuted =
+        jmcAgg || mvacAgg ? (jmcAgg?.executed ?? 0) + (mvacAgg?.executed ?? 0) : undefined;
+      const measurementCertified =
+        jmcAgg || mvacAgg ? (jmcAgg?.certified ?? 0) + (mvacAgg?.certified ?? 0) : undefined;
+      const workOrderAgg = isCivil ? workOrderAggByBoqItemId.get(item.id) : undefined;
+      const subBillAgg = isCivil ? subBillAggByBoqItemId.get(item.id) : undefined;
+      map.set(
+        item.id,
+        reconcileBoqQuantities({
+          lane: isCivil ? 'civil' : 'supply',
+          boqQty: parsedNumber(item.QTY) || 0,
+          surveyedQty: typeof item.surveyedQty === 'number' ? item.surveyedQty : undefined,
+          indentedQty: indentQtyByBoqItemId.get(item.id),
+          orderedQty: poQtyByBoqItemId.get(item.id),
+          inspectedAcceptedQty: inspectionQtyByBoqItemId.get(item.id),
+          dispatchedQty: diQtyByBoqItemId.get(item.id),
+          siteAcceptedQty: grnQtyByBoqItemId.get(item.id),
+          clientAcceptedQty: mvacGateQtyByBoqItemId.get(item.id),
+          woOrderedQty: workOrderAgg?.orderedQty,
+          executedQty: measurementExecuted,
+          jmcQty: measurementCertified,
+          subcontractorBilledQty: subBillAgg?.billedQty,
+          approvedVariationQty:
+            typeof item.variationApprovedQty === 'number' ? item.variationApprovedQty : 0,
+          tolerancePct,
+        }),
+      );
+    }
+    return map;
+  }, [
+    boqItems,
+    indentQtyByBoqItemId,
+    poQtyByBoqItemId,
+    inspectionQtyByBoqItemId,
+    diQtyByBoqItemId,
+    grnQtyByBoqItemId,
+    mvacGateQtyByBoqItemId,
+    jmcAggBySlNo,
+    mvacAggBySlNo,
+    workOrderAggByBoqItemId,
+    subBillAggByBoqItemId,
+    tolerancePct,
+  ]);
 
   const getQuantities = useCallback(
     (scope1: string, scope2: string, boqSlNo: string) => {
@@ -721,17 +824,6 @@ export default function ViewBoqPage() {
     setFilters({ search: '', 'Scope 1': 'all', 'Scope 2': 'all', 'Category 1': 'all' });
   };
 
-  /** NUMBERS **/
-  const parsedNumber = (v: unknown) => {
-    if (typeof v === 'number') return v;
-    if (typeof v === 'string') {
-      const s = v.replace(/[, ]/g, '');
-      const n = Number(s);
-      return Number.isFinite(n) ? n : NaN;
-    }
-    return NaN;
-  };
-
   const fmtNum = (v: unknown) => {
     const n = parsedNumber(v);
     return Number.isFinite(n)
@@ -809,6 +901,11 @@ export default function ViewBoqPage() {
       if (key === 'DI Dispatch Qty') return isOnPo ? diQtyByBoqItemId.get(item.id) ?? 0 : 0;
       if (key === 'GRN Accepted Qty') return isOnPo ? grnQtyByBoqItemId.get(item.id) ?? 0 : 0;
       if (key === 'Material Acceptance Qty') return isOnPo ? mvacGateQtyByBoqItemId.get(item.id) ?? 0 : 0;
+      if (key === 'Qty Reconciliation') {
+        // Sort worst-first so a single click surfaces every disagreement.
+        const severity = reconciliationByBoqItemId.get(item.id)?.worstSeverity;
+        return severity === 'critical' ? 2 : severity === 'warning' ? 1 : 0;
+      }
       if (key === 'Budget Price') return getBudgetValues(item).budgetPrice;
       if (key === 'F&I %') return getBudgetValues(item).fiPercentage;
       if (key === 'F&I Price') return getBudgetValues(item).fiPrice;
@@ -867,6 +964,7 @@ export default function ViewBoqPage() {
     diQtyByBoqItemId,
     grnQtyByBoqItemId,
     mvacGateQtyByBoqItemId,
+    reconciliationByBoqItemId,
   ]);
 
   /** ROW ACTIONS **/
@@ -1390,6 +1488,24 @@ export default function ViewBoqPage() {
                                       </span>
                                     );
                                   }
+                                } else if (header === 'Qty Reconciliation') {
+                                  const ledger = reconciliationByBoqItemId.get(item.id);
+                                  if (!ledger || !ledger.worstSeverity) {
+                                    display = <span className="text-muted-foreground">—</span>;
+                                  } else {
+                                    display = (
+                                      <span
+                                        className={cn(
+                                          'inline-flex rounded-full px-2 py-0.5 text-xs font-medium',
+                                          quantityExceptionStyles[ledger.worstSeverity],
+                                        )}
+                                        title={ledger.exceptions.map((e) => e.message).join('\n')}
+                                      >
+                                        {ledger.worstSeverity === 'critical' ? 'Breach' : 'Check'} (
+                                        {ledger.exceptions.length})
+                                      </span>
+                                    );
+                                  }
                                 } else if (SUPPLY_GATE_STATUS_COLUMNS.has(header) || SUPPLY_GATE_QTY_COLUMNS.has(header)) {
                                   // Supply gate chain — blank until the item is actually placed on a PO, same
                                   // "not applicable yet" treatment as MDL Status above.
@@ -1469,9 +1585,26 @@ export default function ViewBoqPage() {
                               })}
 
                               <TableCell className="text-right">
-                                <Button variant="outline" size="sm" onClick={(e) => handleOpenEditDialog(e, item)}>
-                                  <Edit className="mr-2 h-4 w-4" /> Edit
-                                </Button>
+                                <div className="flex justify-end gap-1">
+                                  {!isHeaderRow && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      asChild
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="Open the full lifecycle for this BOQ item"
+                                    >
+                                      <Link
+                                        href={`/project-management/boq/item/${encodeURIComponent(item.id)}?project=${encodeURIComponent(mappingId)}`}
+                                      >
+                                        <Route className="mr-2 h-4 w-4" /> 360°
+                                      </Link>
+                                    </Button>
+                                  )}
+                                  <Button variant="outline" size="sm" onClick={(e) => handleOpenEditDialog(e, item)}>
+                                    <Edit className="mr-2 h-4 w-4" /> Edit
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
 

@@ -11,6 +11,9 @@
         },
         "type": {
           ".validate": "newData.val() == 'direct' || newData.val() == 'group'"
+        },
+        "createdBy": {
+          ".validate": "!data.exists() || data.val() == newData.val()"
         }
       }
     },
@@ -18,10 +21,25 @@
       "$conversationId": {
         ".indexOn": ["clientCreatedAt"],
         ".read": "auth != null && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true",
-        ".write": "auth != null && data.exists() && !newData.exists() && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true",
+        ".write": "auth != null && data.exists() && !newData.exists() && root.child('chatConversations').child($conversationId).child('type').val() == 'direct' && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true",
         "$messageId": {
-          ".write": "auth != null && (root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true || (!data.exists() && newData.child('senderId').val() == auth.uid))",
-          ".validate": "!newData.exists() || (newData.hasChildren(['senderId', 'senderName', 'type', 'clientCreatedAt']) && newData.child('senderId').isString() && newData.child('clientCreatedAt').isNumber())"
+          ".write": "auth != null && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true && (!data.exists() ? newData.child('senderId').val() == auth.uid : data.child('senderId').val() == auth.uid)",
+          ".validate": "!newData.exists() || (newData.hasChildren(['senderId', 'senderName', 'type', 'clientCreatedAt']) && newData.child('senderId').isString() && newData.child('clientCreatedAt').isNumber())",
+          "senderId": {
+            ".validate": "newData.isString() && (data.exists() ? data.val() == newData.val() : newData.val() == auth.uid)"
+          },
+          "clientCreatedAt": {
+            ".validate": "newData.isNumber() && (!data.exists() || data.val() == newData.val())"
+          },
+          "text": {
+            ".validate": "newData.isString() && newData.val().length <= 4000"
+          },
+          "reactions": {
+            ".write": "auth != null && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true"
+          },
+          "starredBy": {
+            ".write": "auth != null && root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true"
+          }
         }
       }
     },
@@ -29,7 +47,7 @@
       "$userId": {
         ".read": "auth != null && auth.uid == $userId",
         "$conversationId": {
-          ".write": "auth != null && (auth.uid == $userId || (!data.exists() && newData.val() == true) || root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true)",
+          ".write": "auth != null && (auth.uid == $userId || root.child('chatConversations').child($conversationId).child('memberIds').child(auth.uid).val() == true || (!data.exists() && newData.val() == true && !root.child('chatConversations').child($conversationId).exists()))",
           ".validate": "!newData.exists() || newData.val() == true"
         }
       }

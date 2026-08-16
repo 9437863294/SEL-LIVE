@@ -2,11 +2,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Header from '@/components/app/Header';
-import { SessionExpiryDialog } from '@/components/auth/SessionExpiryDialog';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { usePathname } from 'next/navigation';
-import { startUserLocationTracking, stopUserLocationTracking } from '@/lib/user-location-service';
+
+const SessionExpiryDialog = dynamic(
+  () => import('@/components/auth/SessionExpiryDialog').then((m) => m.SessionExpiryDialog),
+  { ssr: false }
+);
 
 export default function AppShell({
     children,
@@ -27,10 +31,25 @@ export default function AppShell({
     }, [safePathname]);
 
     // Listen for this user's administrator-managed location capture setting.
+    // Imported on demand: this module statically pulls in the whole Capacitor
+    // native plugin graph (geolocation, camera, filesystem, background-geolocation,
+    // …), which has no business sitting in the web app's first paint.
     useEffect(() => {
-        if (!user?.id) return;
-        startUserLocationTracking(user.id).catch(() => {});
-        return () => { stopUserLocationTracking({ stopNative: false }); };
+        const userId = user?.id;
+        if (!userId) return;
+        let cancelled = false;
+        let stop: ((options: { stopNative?: boolean }) => void) | null = null;
+
+        void import('@/lib/user-location-service').then((locationService) => {
+            if (cancelled) return;
+            stop = locationService.stopUserLocationTracking;
+            locationService.startUserLocationTracking(userId).catch(() => {});
+        });
+
+        return () => {
+            cancelled = true;
+            stop?.({ stopNative: false });
+        };
     }, [user?.id]);
 
     const isDriverRoute = useMemo(

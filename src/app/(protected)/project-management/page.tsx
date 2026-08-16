@@ -109,6 +109,15 @@ export default function ProjectManagementPage() {
 
   const quickLinks = [
     {
+      // Project-independent: the register lists every project, so it does not need one selected.
+      show: canViewModule,
+      href: "/project-management/projects",
+      title: "Projects",
+      description: "Every project with its code, scope, manager, schedule and status.",
+      icon: FolderKanban,
+      gradient: "from-indigo-500 to-blue-600",
+    },
+    {
       show: Boolean(selectedProject && canViewBoq),
       href: `/project-management/boq?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
       title: "BOQ",

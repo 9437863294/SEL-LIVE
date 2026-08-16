@@ -21,14 +21,29 @@ import { signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ChangePasswordDialog } from '@/components/auth/ChangePasswordDialog';
+import dynamic from 'next/dynamic';
 import { cn } from '@/lib/utils';
 import { collection, query, where, onSnapshot, getDocs, collectionGroup, orderBy, limit, updateDoc, doc } from 'firebase/firestore';
 import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
-import ViewRequisitionDialog from '@/components/site-fund-requisition/ViewRequisitionDialog';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { SwitchUserDialog } from '@/components/auth/SwitchUserDialog';
-import { listenToUserConversations } from '@/lib/chat-realtime';
+import { subscribeToUserConversations } from '@/lib/chat-conversations-store';
+
+// The header renders on every authenticated page, but these dialogs are only
+// reachable behind a click. Loading them eagerly put ~60KB of dialog code (and
+// ViewRequisitionDialog's firebase/storage + date-fns dependencies) into the
+// first paint of every route.
+const ChangePasswordDialog = dynamic(
+  () => import('@/components/auth/ChangePasswordDialog').then((m) => m.ChangePasswordDialog),
+  { ssr: false }
+);
+const SwitchUserDialog = dynamic(
+  () => import('@/components/auth/SwitchUserDialog').then((m) => m.SwitchUserDialog),
+  { ssr: false }
+);
+const ViewRequisitionDialog = dynamic(
+  () => import('@/components/site-fund-requisition/ViewRequisitionDialog'),
+  { ssr: false }
+);
 
 
 function ImpersonationBanner() {
@@ -94,60 +109,63 @@ export default function Header() {
 
     const fetchSupportingDataAndTasks = async () => {
         try {
-            // Fetch supporting data first
-            const projectsSnap = await getDocs(collection(db, 'projects'));
-            const projectsData = projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-            setProjects(projectsData);
-            
-            const deptsSnap = await getDocs(collection(db, 'departments'));
+            // Independent reads — fetch concurrently rather than in series.
+            const [projectsSnap, deptsSnap] = await Promise.all([
+              getDocs(collection(db, 'projects')),
+              getDocs(collection(db, 'departments')),
+            ]);
+            setProjects(projectsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)));
             setDepartments(deptsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Department)));
-
-            // Set up listeners using the fetched projects data
-            const reqQuery = query(
-              collection(db, 'requisitions'),
-              where('assignees', 'array-contains', user.id),
-              where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
-            );
-
-            const unsubscribeReqs = onSnapshot(reqQuery, (querySnapshot) => {
-               const reqTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'requisition' } as PendingTask));
-               setPendingTasks(prev => {
-                   const otherTasks = prev.filter(t => t.taskType !== 'requisition');
-                   return [...otherTasks, ...reqTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-               });
-            }, (error) => {
-              console.error("Error fetching pending requisitions:", error);
-            });
-            unsubscribes.push(unsubscribeReqs);
-
-            // Fetch JMC entries for each project
-            projectsData.forEach(project => {
-                const jmcQuery = query(
-                    collection(db, 'projects', project.id, 'jmcEntries'),
-                    where('assignees', 'array-contains', user.id)
-                );
-                const unsubscribeJmc = onSnapshot(jmcQuery, (snapshot) => {
-                    const jmcTasks = snapshot.docs
-                        .map(doc => ({ ...doc.data(), id: doc.id, taskType: 'jmc' } as PendingTask))
-                        .filter(task => ['Pending', 'In Progress', 'Needs Review'].includes(task.status));
-                    
-                    setPendingTasks(prev => {
-                        // Remove old tasks for this project to avoid duplicates, then add new ones
-                        const otherTasks = prev.filter(t => t.taskType !== 'jmc' || (t as JmcEntry).projectId !== project.id);
-                        return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-                    });
-                }, (error) => {
-                    console.error(`Error fetching JMC tasks for project ${project.projectName}:`, error);
-                });
-                unsubscribes.push(unsubscribeJmc);
-            });
-
         } catch (error) {
             console.error("Failed to fetch initial data for Header:", error);
         }
     };
 
     fetchSupportingDataAndTasks();
+
+    const reqQuery = query(
+      collection(db, 'requisitions'),
+      where('assignees', 'array-contains', user.id),
+      where('status', 'in', ['Pending', 'In Progress', 'Needs Review'])
+    );
+
+    const unsubscribeReqs = onSnapshot(reqQuery, (querySnapshot) => {
+       const reqTasks = querySnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id, taskType: 'requisition' } as PendingTask));
+       setPendingTasks(prev => {
+           const otherTasks = prev.filter(t => t.taskType !== 'requisition');
+           return [...otherTasks, ...reqTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+       });
+    }, (error) => {
+      console.error("Error fetching pending requisitions:", error);
+    });
+    unsubscribes.push(unsubscribeReqs);
+
+    // One collection-group listener across every project's jmcEntries, instead of
+    // opening a separate listener per project (which scaled with the project count
+    // and had to wait on the projects fetch before it could start).
+    const jmcQuery = query(
+        collectionGroup(db, 'jmcEntries'),
+        where('assignees', 'array-contains', user.id)
+    );
+    const unsubscribeJmc = onSnapshot(jmcQuery, (snapshot) => {
+        const jmcTasks = snapshot.docs
+            .map(doc => ({
+                ...doc.data(),
+                id: doc.id,
+                // Derive from the ref so this holds even if the field is absent.
+                projectId: doc.ref.parent.parent?.id,
+                taskType: 'jmc',
+            } as PendingTask))
+            .filter(task => ['Pending', 'In Progress', 'Needs Review'].includes(task.status));
+
+        setPendingTasks(prev => {
+            const otherTasks = prev.filter(t => t.taskType !== 'jmc');
+            return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+        });
+    }, (error) => {
+        console.error("Error fetching JMC tasks:", error);
+    });
+    unsubscribes.push(unsubscribeJmc);
 
     // Listen for unread notifications for this user — budget alerts as well as recurring
     // payment workflow/reminder notifications (an owner's payment entering their workflow
@@ -168,7 +186,9 @@ export default function Header() {
     unsubscribes.push(unsubscribeAlerts);
 
     return () => unsubscribes.forEach(unsub => unsub());
-  }, [user, isImpersonating]);
+    // Keyed on the id, not the object: unrelated profile edits (theme, etc.)
+    // shouldn't tear down and rebuild every listener.
+  }, [user?.id, isImpersonating]);
 
   useEffect(() => {
     if (!user?.id || !canViewChat) {
@@ -176,16 +196,16 @@ export default function Header() {
       return;
     }
 
-    return listenToUserConversations(
-      user.id,
-      (conversations) => {
+    const userId = user.id;
+    return subscribeToUserConversations(userId, {
+      onConversations: (conversations) => {
         const total = conversations.reduce((sum, conversation) => {
-          return sum + (conversation.unreadCounts?.[user.id] || 0);
+          return sum + (conversation.unreadCounts?.[userId] || 0);
         }, 0);
         setChatUnreadCount(total);
       },
-      () => setChatUnreadCount(0)
-    );
+      onError: () => setChatUnreadCount(0),
+    });
   }, [canViewChat, user?.id]);
   
   const handleViewTask = (task: PendingTask) => {
@@ -385,8 +405,13 @@ export default function Header() {
             </TooltipProvider>
           </div>
         </div>
-        <ChangePasswordDialog isOpen={isChangePasswordOpen} onOpenChange={setIsChangePasswordOpen} />
-        {canSwitchUser && <SwitchUserDialog isOpen={isSwitchUserOpen} onOpenChange={setIsSwitchUserOpen} />}
+        {/* Mounted only while open so the lazy chunk is fetched on demand. */}
+        {isChangePasswordOpen && (
+          <ChangePasswordDialog isOpen onOpenChange={setIsChangePasswordOpen} />
+        )}
+        {canSwitchUser && isSwitchUserOpen && (
+          <SwitchUserDialog isOpen onOpenChange={setIsSwitchUserOpen} />
+        )}
       </header>
       
       {selectedRequisition && (

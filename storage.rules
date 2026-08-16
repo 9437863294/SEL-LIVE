@@ -31,11 +31,28 @@ service firebase.storage {
       allow read, write: if canAccessTreasuryOrganization(organizationId);
     }
 
+    // Chat attachments: chat/{conversationId}/{messageId}/{fileName}.
+    //
+    // NOTE: conversation membership lives in Realtime Database, and Storage
+    // rules can only query Firestore — so read access cannot be scoped to
+    // members here. Restricting reads properly requires mirroring conversation
+    // membership into Firestore (plus a backfill for existing conversations).
+    // Until then this at least stops a signed-in user from overwriting or
+    // deleting another conversation's attachments, and caps upload size to the
+    // client's 25 MB limit.
+    match /chat/{conversationId}/{messageId}/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.size <= 25 * 1024 * 1024;
+      allow update, delete: if false;
+    }
+
     // Allow read/write access to all authenticated users for all files
     // This is a permissive rule, you may want to restrict it further
     // for example, only allow users to read/write their own files.
     match /{allPaths=**} {
       allow read, write: if request.auth != null
+        && !allPaths.matches('chat/.*')
         && !allPaths.matches('organizations/[^/]+/fixed-deposits/.*')
         && !allPaths.matches('fixed-deposits/[^/]+/.*')
         && !allPaths.matches('organizations/[^/]+/letters-of-credit/.*')

@@ -2,7 +2,11 @@
 # https://firebase.google.com/docs/app-hosting/configure
 
 runConfig:
-  maxInstances: 1
+  # A single instance served every user, so concurrent sign-ins queued behind one
+  # another and every cold start was felt app-wide.
+  maxInstances: 5
+  minInstances: 1
+  concurrency: 80
 
 env:
   # ── Public application URL (used in authentication emails) ──────────

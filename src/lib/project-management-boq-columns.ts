@@ -24,6 +24,9 @@ const SUPPLY_GATE_COLUMN_KEYS = [
   "DI Dispatch Qty",
   "GRN Accepted Qty",
   "Material Acceptance Qty",
+  // Cross-stage control: flags where two registers disagree about the same BOQ line, or where
+  // commitment has run past approved scope. See src/lib/boq-quantity-control.ts.
+  "Qty Reconciliation",
 ];
 
 const costingDefaults = new Set([

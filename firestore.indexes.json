@@ -374,5 +374,14 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "jmcEntries",
+      "fieldPath": "assignees",
+      "indexes": [
+        { "queryScope": "COLLECTION", "arrayConfig": "CONTAINS" },
+        { "queryScope": "COLLECTION_GROUP", "arrayConfig": "CONTAINS" }
+      ]
+    }
+  ]
 }

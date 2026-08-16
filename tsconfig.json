@@ -15,6 +15,11 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // Legal because noEmit is set. Needed only by the pure, Firebase-free domain modules under
+    // src/lib that are unit-tested directly with `node --experimental-strip-types --test`: Node's
+    // ESM resolver requires an explicit extension on relative specifiers, while the rest of the
+    // codebase (bundled by Next) keeps its extensionless convention.
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [

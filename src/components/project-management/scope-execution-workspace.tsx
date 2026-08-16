@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Ruler,
   Search,
   ShieldAlert,
   Trash2,
@@ -32,6 +33,28 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
 import { projectBoqValue } from "@/lib/project-management-dashboard";
+import {
+  JMC_ENTRY_COLLECTION,
+  MVAC_ENTRY_COLLECTION,
+  SUBCONTRACTOR_BILL_COLLECTION,
+  WORK_ORDER_COLLECTION,
+  aggregateMeasurementsByBoqKey,
+  aggregateSubcontractorBillsByBoqItem,
+  aggregateWorkOrdersByBoqItem,
+  civilBoqKeyOfBoqItem,
+  readBoqSlNo,
+  type MeasurementEntryLike,
+  type SubcontractorBillLike,
+  type WorkOrderLike,
+} from "@/lib/civil-execution";
+import {
+  reconcileBoqQuantities,
+  quantityExceptionStyles,
+} from "@/lib/boq-quantity-control";
+import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
+import { isBoqSectionHeader } from "@/lib/project-management-boq-columns";
+// Single source of truth for where the JMC screens live, so this link cannot drift from the routes.
+import { PM_JMC_BASE_PATH } from "@/lib/jmc-module";
 import {
   WORK_PACKAGE_COLLECTION,
   WORK_PACKAGE_PRIORITIES,
@@ -186,10 +209,17 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
   const canEdit = can("Edit", resource);
   const canDelete = can("Delete", resource);
   const canExport = can("Export", resource) || can("Export", "Project Management.BOQ");
+  // JMC is hosted by both modules against the same registers, so either module's view right opens it.
+  const canViewJmc = can("View", "Project Management.JMC") || can("View", "Billing Recon.JMC");
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [packages, setPackages] = useState<ProjectWorkPackage[]>([]);
   const [boqStats, setBoqStats] = useState({ itemCount: 0, value: 0 });
+  const [scopeBoqItems, setScopeBoqItems] = useState<Array<Record<string, unknown> & { id: string }>>([]);
+  const [workOrders, setWorkOrders] = useState<WorkOrderLike[]>([]);
+  const [measurementEntries, setMeasurementEntries] = useState<MeasurementEntryLike[]>([]);
+  const [subcontractorBills, setSubcontractorBills] = useState<SubcontractorBillLike[]>([]);
+  const [tolerancePct, setTolerancePct] = useState(DEFAULT_VARIATION_TOLERANCE_PCT);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -217,9 +247,24 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
       }
       const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
       setMapping(mappingData);
-      const [boqSnapshot, packageSnapshot] = await Promise.all([
+      const [
+        boqSnapshot,
+        packageSnapshot,
+        workOrderSnapshot,
+        jmcEntrySnapshot,
+        mvacEntrySnapshot,
+        subBillSnapshot,
+        settingsSnapshot,
+      ] = await Promise.all([
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", mappingData.globalProjectId, WORK_PACKAGE_COLLECTION)),
+        // Civil registers owned by Billing Recon / Subcontractors Management — read-only join
+        // (see src/lib/civil-execution.ts).
+        getDocs(collection(db, "projects", mappingData.globalProjectId, WORK_ORDER_COLLECTION)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, JMC_ENTRY_COLLECTION)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, MVAC_ENTRY_COLLECTION)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, SUBCONTRACTOR_BILL_COLLECTION)),
+        getDoc(doc(db, "projectManagementSettings", "general")),
       ]);
 
       const scopeBoq = boqSnapshot.docs
@@ -234,6 +279,21 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
         itemCount: scopeBoq.length,
         value: scopeBoq.reduce((sum, item) => sum + projectBoqValue(item), 0),
       });
+      setScopeBoqItems(scopeBoq);
+      setWorkOrders(
+        workOrderSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as WorkOrderLike),
+      );
+      setMeasurementEntries([
+        ...jmcEntrySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as MeasurementEntryLike),
+        ...mvacEntrySnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as MeasurementEntryLike),
+      ]);
+      setSubcontractorBills(
+        subBillSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as SubcontractorBillLike),
+      );
+      const storedTolerance = settingsSnapshot.data()?.variationTolerancePct;
+      setTolerancePct(
+        typeof storedTolerance === "number" ? storedTolerance : DEFAULT_VARIATION_TOLERANCE_PCT,
+      );
       setPackages(
         packageSnapshot.docs
           .map((packageDoc) => ({ id: packageDoc.id, ...packageDoc.data() }) as ProjectWorkPackage)
@@ -257,6 +317,41 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
   }, [canView, isAuthLoading, loadData]);
 
   const summary = useMemo(() => calculateWorkPackageSummary(packages), [packages]);
+
+  /** Per-BOQ-line coverage: subcontract commitment, joint measurement, and subcontractor billing
+   * joined onto each line of this scope's BOQ, with its quantity ladder reconciled. */
+  const coverageRows = useMemo(() => {
+    const workOrderAgg = aggregateWorkOrdersByBoqItem(workOrders);
+    const measurementAgg = aggregateMeasurementsByBoqKey(measurementEntries);
+    const billAgg = aggregateSubcontractorBillsByBoqItem(subcontractorBills);
+    return scopeBoqItems
+      .filter((item) => !isBoqSectionHeader(item as { Unit?: unknown; QTY?: unknown }))
+      .map((item) => {
+        const workOrder = workOrderAgg.get(item.id);
+        const measurement = measurementAgg.get(civilBoqKeyOfBoqItem(item));
+        const bill = billAgg.get(item.id);
+        const boqQty = Number(String(item.QTY ?? "").replace(/,/g, "").trim()) || 0;
+        const surveyedQty = typeof item.surveyedQty === "number" ? item.surveyedQty : undefined;
+        const ledger = reconcileBoqQuantities({
+          lane: "civil",
+          boqQty,
+          surveyedQty,
+          woOrderedQty: workOrder?.orderedQty,
+          executedQty: measurement?.executedQty,
+          jmcQty: measurement?.certifiedQty,
+          subcontractorBilledQty: bill?.billedQty,
+          approvedVariationQty:
+            typeof item.variationApprovedQty === "number" ? item.variationApprovedQty : 0,
+          tolerancePct,
+        });
+        return { item, workOrder, measurement, bill, boqQty, surveyedQty, ledger };
+      });
+  }, [scopeBoqItems, workOrders, measurementEntries, subcontractorBills, tolerancePct]);
+
+  const coverageHasData = useMemo(
+    () => coverageRows.some((row) => row.workOrder || row.measurement || row.bill),
+    [coverageRows],
+  );
 
   const filteredPackages = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -565,6 +660,15 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* JMC is the civil lane's measurement register — the same screens Billing Recon hosts,
+              rendered here against this project (see src/lib/jmc-module.ts). */}
+          {canViewJmc && (
+            <Button variant="outline" asChild>
+              <Link href={`${PM_JMC_BASE_PATH}?project=${encodeURIComponent(mappingId)}`}>
+                <Ruler className="mr-2 h-4 w-4" />JMC
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" onClick={() => void loadData()}>
             <RefreshCw className="mr-2 h-4 w-4" />Refresh
           </Button>
@@ -709,6 +813,87 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
               </div>
               {canAdd && !packages.length && <Button onClick={openCreate}><Plus className="mr-2 h-4 w-4" />Add first work package</Button>}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Subcontract & measurement coverage — the civil registers Billing Recon and
+             Subcontractors Management own, joined per BOQ line ─────────────────────────── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Subcontract &amp; measurement coverage</CardTitle>
+          <CardDescription>
+            Work orders, JMC/MVAC measurement, and subcontractor billing joined onto each {scope.toLowerCase()} BOQ
+            line, with every quantity checked down the ladder.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {coverageHasData ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>SL No</TableHead>
+                    <TableHead className="min-w-64">Description</TableHead>
+                    <TableHead className="text-right">BOQ Qty</TableHead>
+                    <TableHead className="text-right">Surveyed</TableHead>
+                    <TableHead className="text-right">WO Qty</TableHead>
+                    <TableHead>Subcontractor</TableHead>
+                    <TableHead className="text-right">Executed</TableHead>
+                    <TableHead className="text-right">Certified</TableHead>
+                    <TableHead className="text-right">Sub-billed</TableHead>
+                    <TableHead>Ladder</TableHead>
+                    <TableHead className="w-20 text-right">Open</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {coverageRows.map(({ item, workOrder, measurement, bill, boqQty, surveyedQty, ledger }) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="whitespace-nowrap text-xs">{readBoqSlNo(item) || "—"}</TableCell>
+                      <TableCell className="max-w-xs">
+                        <p className="truncate text-xs" title={String(item.Description ?? "")}>
+                          {String(item.Description ?? "") || "—"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-right text-xs">{boqQty}</TableCell>
+                      <TableCell className="text-right text-xs">{surveyedQty ?? "—"}</TableCell>
+                      <TableCell className="text-right text-xs">{workOrder ? workOrder.orderedQty : "—"}</TableCell>
+                      <TableCell className="max-w-40 truncate text-xs" title={workOrder?.subcontractorNames.join(", ")}>
+                        {workOrder?.subcontractorNames.join(", ") || "—"}
+                      </TableCell>
+                      <TableCell className="text-right text-xs">{measurement ? measurement.executedQty : "—"}</TableCell>
+                      <TableCell className="text-right text-xs">{measurement ? measurement.certifiedQty : "—"}</TableCell>
+                      <TableCell className="text-right text-xs">{bill ? bill.billedQty : "—"}</TableCell>
+                      <TableCell>
+                        {ledger.worstSeverity ? (
+                          <Badge
+                            variant="outline"
+                            className={quantityExceptionStyles[ledger.worstSeverity]}
+                            title={ledger.exceptions.map((exception) => exception.message).join("\n")}
+                          >
+                            {ledger.worstSeverity}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-emerald-100 text-emerald-700">clean</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" asChild aria-label="Open BOQ item lifecycle">
+                          <Link href={`/project-management/boq/item/${encodeURIComponent(item.id)}?project=${encodeURIComponent(mappingId)}`}>
+                            360°
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <p className="p-6 text-center text-sm text-muted-foreground">
+              No work orders, measurement entries, or subcontractor bills reference this scope&apos;s BOQ lines yet.
+              They are created in Subcontractors Management and Billing Recon and appear here automatically.
+            </p>
           )}
         </CardContent>
       </Card>

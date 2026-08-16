@@ -11,10 +11,17 @@
     "src/app/(public)/project-management/**/*.tsx",
     "src/components/project-management/**/*.ts",
     "src/components/project-management/**/*.tsx",
+    "src/components/jmc/**/*.ts",
+    "src/components/jmc/**/*.tsx",
     "src/lib/project-management-*.ts",
+    "src/lib/jmc-module.ts",
+    "src/lib/civil-execution.ts",
+    "src/lib/boq-traceability.ts",
+    "src/lib/boq-quantity-control.ts",
     "src/lib/mdl.ts",
     "src/lib/purchase-orders.ts",
     "src/lib/rfq.ts",
+    "src/lib/serial-tracking.ts",
     "src/lib/supply-gates.ts"
   ],
   "exclude": ["node_modules"]

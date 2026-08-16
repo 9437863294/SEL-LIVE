@@ -1,7 +1,9 @@
 import {
+  endBefore,
   get,
   increment,
   limitToLast,
+  onDisconnect,
   onValue,
   orderByChild,
   push,
@@ -94,7 +96,14 @@ export function listenToUserConversations(
             }
             emit();
           },
-          onError
+          (error) => {
+            // A single unreadable entry (stale index row, revoked membership)
+            // should drop that conversation, not fail the whole list — this used
+            // to surface as "Could not load chat" with nothing rendered.
+            console.warn(`Skipping unreadable conversation ${conversationId}:`, error);
+            conversationValues.delete(conversationId);
+            emit();
+          }
         );
         conversationListeners.set(conversationId, unsubscribe);
       });
@@ -109,31 +118,99 @@ export function listenToUserConversations(
   };
 }
 
+export const MESSAGE_PAGE_SIZE = 50;
+
+function snapshotToMessages(conversationId: string, value: unknown): ChatMessage[] {
+  return Object.entries((value || {}) as Record<string, unknown>)
+    .map(([id, message]) => ({
+      ...(message as Omit<ChatMessage, 'id' | 'conversationId'>),
+      id,
+      conversationId,
+    }))
+    .sort((a, b) => (a.clientCreatedAt || 0) - (b.clientCreatedAt || 0));
+}
+
 export function listenToMessages(
   conversationId: string,
   onMessages: (messages: ChatMessage[]) => void,
-  onError: (error: Error) => void
+  onError: (error: Error) => void,
+  pageSize: number = MESSAGE_PAGE_SIZE
 ) {
   const messagesQuery = query(
     ref(realtimeDb, messagesPath(conversationId)),
     orderByChild('clientCreatedAt'),
-    limitToLast(200)
+    limitToLast(pageSize)
   );
+
+  // `onValue` hands back the whole window on every change. Rebuilding each object
+  // gave every row a new prop identity, so a single incoming message re-rendered
+  // the entire list. Reuse the previous object whenever its raw value is unchanged
+  // so React.memo can skip the rows that didn't actually move.
+  const cache = new Map<string, { raw: string; message: ChatMessage }>();
+
   return onValue(
     messagesQuery,
     (snapshot) => {
-      const value = snapshot.val() || {};
-      const messages = Object.entries(value)
-        .map(([id, message]) => ({
-          ...(message as Omit<ChatMessage, 'id' | 'conversationId'>),
+      const value = (snapshot.val() || {}) as Record<string, unknown>;
+      const seen = new Set<string>();
+      const messages: ChatMessage[] = [];
+
+      for (const [id, raw] of Object.entries(value)) {
+        seen.add(id);
+        const serialized = JSON.stringify(raw);
+        const cached = cache.get(id);
+        if (cached && cached.raw === serialized) {
+          messages.push(cached.message);
+          continue;
+        }
+        const message = {
+          ...(raw as Omit<ChatMessage, 'id' | 'conversationId'>),
           id,
           conversationId,
-        }))
-        .sort((a, b) => (a.clientCreatedAt || 0) - (b.clientCreatedAt || 0));
+        } as ChatMessage;
+        cache.set(id, { raw: serialized, message });
+        messages.push(message);
+      }
+
+      for (const id of cache.keys()) {
+        if (!seen.has(id)) cache.delete(id);
+      }
+
+      messages.sort((a, b) => (a.clientCreatedAt || 0) - (b.clientCreatedAt || 0));
       onMessages(messages);
     },
     onError
   );
+}
+
+/**
+ * One-shot fetch of the page immediately older than `beforeClientCreatedAt`.
+ * The live listener stays pinned to the newest page; older history is appended
+ * client-side so scrolling back doesn't widen the realtime subscription.
+ */
+export async function fetchOlderMessages(
+  conversationId: string,
+  beforeClientCreatedAt: number,
+  pageSize: number = MESSAGE_PAGE_SIZE
+): Promise<ChatMessage[]> {
+  const olderQuery = query(
+    ref(realtimeDb, messagesPath(conversationId)),
+    orderByChild('clientCreatedAt'),
+    endBefore(beforeClientCreatedAt),
+    limitToLast(pageSize)
+  );
+  const snapshot = await get(olderQuery);
+  return snapshotToMessages(conversationId, snapshot.val());
+}
+
+/**
+ * Registers a server-side cleanup so an abrupt disconnect (tab close, crash,
+ * network drop) clears this user's typing flag instead of leaving peers with a
+ * permanent "typing…" indicator.
+ */
+export function clearTypingOnDisconnect(conversationId: string, userId: string) {
+  const typingRef = ref(realtimeDb, `${conversationPath(conversationId)}/typing/${userId}`);
+  onDisconnect(typingRef).remove().catch(() => {});
 }
 
 export async function getRealtimeConversation(conversationId: string) {

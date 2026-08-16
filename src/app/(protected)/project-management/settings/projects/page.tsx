@@ -78,23 +78,33 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
 import { ControlledField } from "@/components/project-management/controlled-field";
 import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import {
+  PROJECT_SCOPES,
+  PROJECT_TYPES,
+  PM_TEAM_ROLES,
+  canActivateProject,
+  canTransitionLifecycle,
+  deriveLegacyStatus,
+  nextLifecycleStates,
+  projectLifecycleStyles,
+  resolveLifecycle,
+  validatePmProject,
+  type PmProject,
+  type PmProjectTeam,
+  type ProjectLifecycleState,
+  type ProjectScope,
+  type ProjectType,
+} from "@/lib/project-management-projects";
 
 const COLLECTION_NAME = "projectManagementProjects";
 const PERMISSION_RESOURCE = "Project Management.Project Mappings";
 
 type MappingStatus = "Active" | "Inactive";
 
-type ProjectMapping = {
-  id: string;
-  projectName: string;
-  globalProjectId: string;
-  globalProjectName: string;
-  globalProjectSite?: string;
-  description?: string;
-  startDate?: string;
-  endDate?: string;
-  status: MappingStatus;
-};
+type ProjectMapping = PmProject & { globalProjectName: string };
 
 type MappingForm = Omit<ProjectMapping, "id" | "globalProjectName" | "globalProjectSite">;
 
@@ -104,8 +114,26 @@ const emptyForm: MappingForm = {
   description: "",
   startDate: "",
   endDate: "",
-  status: "Active",
+  status: "Inactive",
+  projectCode: "",
+  scopes: [],
+  projectManagerId: "",
+  projectManagerName: "",
+  siteInChargeId: "",
+  siteInChargeName: "",
+  team: {},
+  // New projects start as drafts. A project record should be able to exist before every detail is
+  // known; going live is a deliberate act that has to clear the activation bar.
+  lifecycle: "Draft",
 };
+
+/** Three steps, because the fields genuinely group into three decisions: what and where it is,
+ * who runs it, and whether it is ready to go live. */
+const WIZARD_STEPS = [
+  { key: "details", label: "Project details" },
+  { key: "scope", label: "Scope & team" },
+  { key: "activation", label: "Review & activate" },
+] as const;
 
 const formatProjectDate = (value?: string) => {
   if (!value) return "Not set";
@@ -130,6 +158,8 @@ export default function ProjectMappingsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingMapping, setEditingMapping] = useState<ProjectMapping | null>(null);
   const [form, setForm] = useState<MappingForm>(emptyForm);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [staff, setStaff] = useState<Array<{ id: string; name: string; role?: string }>>([]);
 
   const canView = can("View", PERMISSION_RESOURCE);
   const canAdd = can("Add", PERMISSION_RESOURCE);
@@ -145,9 +175,11 @@ export default function ProjectMappingsPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [projectsSnapshot, mappingsSnapshot] = await Promise.all([
+      const [projectsSnapshot, mappingsSnapshot, usersSnapshot] = await Promise.all([
         getDocs(collection(db, "projects")),
         getDocs(collection(db, COLLECTION_NAME)),
+        // Team assignment references `users` by id — never copies staff records.
+        getDocs(collection(db, "users")),
       ]);
 
       const projects = projectsSnapshot.docs
@@ -162,6 +194,15 @@ export default function ProjectMappingsPage() {
 
       setGlobalProjects(projects);
       setMappings(projectMappings);
+      setStaff(
+        usersSnapshot.docs
+          .map((userDoc) => {
+            const data = userDoc.data() as { name?: string; role?: string; status?: string };
+            return { id: userDoc.id, name: data.name ?? "", role: data.role, status: data.status };
+          })
+          .filter((member) => member.name && member.status !== "Inactive")
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      );
     } catch (error) {
       console.error("Failed to load project mappings:", error);
       toast({
@@ -186,6 +227,7 @@ export default function ProjectMappingsPage() {
   const openCreateDialog = () => {
     setEditingMapping(null);
     setForm(emptyForm);
+    setWizardStep(0);
     setIsDialogOpen(true);
   };
 
@@ -198,9 +240,50 @@ export default function ProjectMappingsPage() {
       startDate: mapping.startDate ?? "",
       endDate: mapping.endDate ?? "",
       status: mapping.status,
+      projectCode: mapping.projectCode ?? "",
+      projectType: mapping.projectType,
+      scopes: mapping.scopes ?? [],
+      projectManagerId: mapping.projectManagerId ?? "",
+      projectManagerName: mapping.projectManagerName ?? "",
+      siteInChargeId: mapping.siteInChargeId ?? "",
+      siteInChargeName: mapping.siteInChargeName ?? "",
+      team: mapping.team ?? {},
+      // Legacy mappings predate the lifecycle field — infer it rather than showing a blank.
+      lifecycle: resolveLifecycle(mapping),
     });
+    setWizardStep(0);
     setIsDialogOpen(true);
   };
+
+  const toggleScope = (scope: ProjectScope) =>
+    setForm((current) => {
+      const scopes = current.scopes ?? [];
+      return {
+        ...current,
+        scopes: scopes.includes(scope)
+          ? scopes.filter((item) => item !== scope)
+          : [...scopes, scope],
+      };
+    });
+
+  const toggleTeamMember = (role: keyof PmProjectTeam, userId: string) =>
+    setForm((current) => {
+      const members = current.team?.[role] ?? [];
+      return {
+        ...current,
+        team: {
+          ...current.team,
+          [role]: members.includes(userId)
+            ? members.filter((item) => item !== userId)
+            : [...members, userId],
+        },
+      };
+    });
+
+  // Blocking problems for the lifecycle the user is actually trying to save.
+  const activationErrors = canActivateProject(form);
+  const draftErrors = validatePmProject(form);
+  const blockingErrors = form.lifecycle === "Active" ? activationErrors : draftErrors;
 
   const handleSave = async () => {
     const projectName = form.projectName.trim();
@@ -269,8 +352,36 @@ export default function ProjectMappingsPage() {
       return;
     }
 
+    // Domain rules — light for a Draft, strict for anything going Active.
+    if (blockingErrors.length) {
+      toast({
+        title:
+          form.lifecycle === "Active"
+            ? "This project cannot be activated yet"
+            : "Complete the project details",
+        description: blockingErrors.map((error) => error.message).join(" "),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Status changes follow the allowed graph rather than free-form dropdown editing.
+    if (editingMapping) {
+      const from = resolveLifecycle(editingMapping);
+      const to = form.lifecycle ?? "Draft";
+      if (!canTransitionLifecycle(from, to)) {
+        toast({
+          title: "Status change not allowed",
+          description: `A project cannot move directly from ${from} to ${to}.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
+      const lifecycle = form.lifecycle ?? "Draft";
       const payload = {
         projectName,
         globalProjectId: globalProject.id,
@@ -279,7 +390,19 @@ export default function ProjectMappingsPage() {
         description: form.description?.trim() ?? "",
         startDate: form.startDate ?? "",
         endDate: form.endDate ?? "",
-        status: form.status,
+        // The legacy Active/Inactive flag is derived, never edited directly, so existing screens
+        // that filter on `status` stay correct without knowing lifecycle exists.
+        status: deriveLegacyStatus(lifecycle),
+        lifecycle,
+        projectCode: form.projectCode?.trim() ?? "",
+        ...(form.projectType ? { projectType: form.projectType } : {}),
+        scopes: form.scopes ?? [],
+        projectManagerId: form.projectManagerId ?? "",
+        projectManagerName:
+          staff.find((member) => member.id === form.projectManagerId)?.name ?? "",
+        siteInChargeId: form.siteInChargeId ?? "",
+        siteInChargeName: staff.find((member) => member.id === form.siteInChargeId)?.name ?? "",
+        team: form.team ?? {},
         updatedAt: serverTimestamp(),
       };
 
@@ -432,18 +555,36 @@ export default function ProjectMappingsPage() {
               New Project Mapping
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-xl">
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>
-                {editingMapping ? "Edit Project Mapping" : "Create Project Mapping"}
+                {editingMapping ? "Edit Project" : "New Project"}
               </DialogTitle>
               <DialogDescription>
-                Give the new Project Management project its own name, then map it to an
-                existing global project.
+                {WIZARD_STEPS[wizardStep].label} — step {wizardStep + 1} of {WIZARD_STEPS.length}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-4 py-4">
+            {/* Step rail */}
+            <div className="flex items-center gap-2">
+              {WIZARD_STEPS.map((step, index) => (
+                <button
+                  key={step.key}
+                  type="button"
+                  onClick={() => setWizardStep(index)}
+                  className={cn(
+                    "flex-1 rounded-md border px-2 py-1.5 text-left text-xs transition-colors",
+                    index === wizardStep
+                      ? "border-primary bg-primary/5 font-medium text-primary"
+                      : "border-border text-muted-foreground hover:bg-muted/50",
+                  )}
+                >
+                  <span className="block">{index + 1}. {step.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className={cn("grid gap-4 py-4", wizardStep !== 0 && "hidden")}>
               <ControlledField setting={field("projectName")}>
                 <Input
                   id="project-name"
@@ -524,33 +665,249 @@ export default function ProjectMappingsPage() {
                 </ControlledField>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="mapping-status">Status</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(status: MappingStatus) =>
-                    setForm((current) => ({ ...current, status }))
-                  }
-                >
-                  <SelectTrigger id="mapping-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="project-code">Project Code</Label>
+                  <Input
+                    id="project-code"
+                    placeholder="SEL/PRJ/0031"
+                    value={form.projectCode ?? ""}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, projectCode: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="project-type">Project Type</Label>
+                  <Select
+                    value={form.projectType ?? ""}
+                    onValueChange={(projectType: ProjectType) =>
+                      setForm((current) => ({ ...current, projectType }))
+                    }
+                  >
+                    <SelectTrigger id="project-type">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PROJECT_TYPES.map((type) => (
+                        <SelectItem key={type} value={type}>{type}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
 
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <Button onClick={handleSave} disabled={isSaving}>
-                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingMapping ? "Save Changes" : "Create Mapping"}
-              </Button>
+            {/* Step 2 — scope and team */}
+            <div className={cn("grid gap-5 py-4", wizardStep !== 1 && "hidden")}>
+              <div className="space-y-2">
+                <Label>Scope</Label>
+                <p className="text-xs text-muted-foreground">
+                  Which lanes this project actually runs. Determines which workflow a BOQ line
+                  follows and which sections are worth showing.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {PROJECT_SCOPES.map((scope) => (
+                    <label
+                      key={scope}
+                      className="flex items-center gap-2 rounded-md border p-2 text-sm"
+                    >
+                      <Checkbox
+                        checked={(form.scopes ?? []).includes(scope)}
+                        onCheckedChange={() => toggleScope(scope)}
+                      />
+                      {scope}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="project-manager">Project Manager</Label>
+                  <Select
+                    value={form.projectManagerId ?? ""}
+                    onValueChange={(projectManagerId) =>
+                      setForm((current) => ({ ...current, projectManagerId }))
+                    }
+                  >
+                    <SelectTrigger id="project-manager">
+                      <SelectValue placeholder="Select manager" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staff.map((member) => (
+                        <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="site-incharge">Site In-Charge</Label>
+                  <Select
+                    value={form.siteInChargeId ?? ""}
+                    onValueChange={(siteInChargeId) =>
+                      setForm((current) => ({ ...current, siteInChargeId }))
+                    }
+                  >
+                    <SelectTrigger id="site-incharge">
+                      <SelectValue placeholder="Select site in-charge" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staff.map((member) => (
+                        <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Project Team</Label>
+                <p className="text-xs text-muted-foreground">
+                  Referenced by user account, never copied — a rename or role change in User
+                  Management flows through automatically.
+                </p>
+                <div className="space-y-3">
+                  {PM_TEAM_ROLES.map((role) => (
+                    <div key={role.key} className="rounded-md border p-2">
+                      <p className="mb-1.5 text-xs font-medium">{role.label}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {staff.map((member) => {
+                          const selected = (form.team?.[role.key] ?? []).includes(member.id);
+                          return (
+                            <button
+                              key={member.id}
+                              type="button"
+                              onClick={() => toggleTeamMember(role.key, member.id)}
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-xs transition-colors",
+                                selected
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border text-muted-foreground hover:bg-muted",
+                              )}
+                            >
+                              {member.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3 — review and activate */}
+            <div className={cn("space-y-4 py-4", wizardStep !== 2 && "hidden")}>
+              <div className="space-y-2">
+                <Label htmlFor="project-lifecycle">Status</Label>
+                <Select
+                  value={form.lifecycle ?? "Draft"}
+                  onValueChange={(lifecycle: ProjectLifecycleState) =>
+                    setForm((current) => ({ ...current, lifecycle }))
+                  }
+                >
+                  <SelectTrigger id="project-lifecycle">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(editingMapping
+                      ? Array.from(
+                          new Set([
+                            resolveLifecycle(editingMapping),
+                            ...nextLifecycleStates(resolveLifecycle(editingMapping)),
+                          ]),
+                        )
+                      : (["Draft", "Review"] as ProjectLifecycleState[])
+                    ).map((state) => (
+                      <SelectItem key={state} value={state}>{state}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Only transitions valid from the current status are offered. A new project starts
+                  as a Draft and is activated once it clears the checks below.
+                </p>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <p className="mb-2 text-sm font-medium">Activation checklist</p>
+                {activationErrors.length ? (
+                  <ul className="space-y-1">
+                    {activationErrors.map((error) => (
+                      <li key={`${error.field}-${error.message}`} className="text-xs text-red-600">
+                        • {error.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-emerald-700">
+                    Everything required to activate this project is in place.
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-lg border p-3 text-xs">
+                <p className="mb-2 text-sm font-medium">Summary</p>
+                <div className="grid gap-1.5 sm:grid-cols-2">
+                  <span className="text-muted-foreground">Name</span>
+                  <span>{form.projectName || "—"}</span>
+                  <span className="text-muted-foreground">Code</span>
+                  <span>{form.projectCode || "—"}</span>
+                  <span className="text-muted-foreground">Type</span>
+                  <span>{form.projectType || "—"}</span>
+                  <span className="text-muted-foreground">Scope</span>
+                  <span>
+                    {(form.scopes ?? []).length ? (
+                      <span className="flex flex-wrap gap-1">
+                        {(form.scopes ?? []).map((scope) => (
+                          <Badge key={scope} variant="outline">{scope}</Badge>
+                        ))}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </span>
+                  <span className="text-muted-foreground">Project Manager</span>
+                  <span>
+                    {staff.find((member) => member.id === form.projectManagerId)?.name || "—"}
+                  </span>
+                  <span className="text-muted-foreground">Schedule</span>
+                  <span>
+                    {form.startDate || "—"} → {form.endDate || "—"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:justify-between">
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setWizardStep((step) => Math.max(0, step - 1))}
+                  disabled={wizardStep === 0}
+                >
+                  Back
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    setWizardStep((step) => Math.min(WIZARD_STEPS.length - 1, step + 1))
+                  }
+                  disabled={wizardStep === WIZARD_STEPS.length - 1}
+                >
+                  Next
+                </Button>
+              </div>
+              <div className="flex gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={handleSave} disabled={isSaving || blockingErrors.length > 0}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {editingMapping ? "Save Changes" : "Create Project"}
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -619,14 +976,18 @@ export default function ProjectMappingsPage() {
                         </TableCell>
                         <TableCell>
                           <span
-                            className={
-                              mapping.status === "Active"
-                                ? "rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700"
-                                : "rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
-                            }
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-xs font-medium",
+                              projectLifecycleStyles[resolveLifecycle(mapping)],
+                            )}
                           >
-                            {mapping.status}
+                            {resolveLifecycle(mapping)}
                           </span>
+                          {mapping.projectCode ? (
+                            <div className="mt-1 text-[10px] text-muted-foreground">
+                              {mapping.projectCode}
+                            </div>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
