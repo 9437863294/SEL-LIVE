@@ -25,6 +25,8 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
+import { ControlledField } from "@/components/project-management/controlled-field";
+import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -87,6 +89,7 @@ export default function NewRfqPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canAdd = can("Add", RFQ_PERMISSION_RESOURCE);
+  const { field: fieldControl } = useFieldControl("rfqNew");
   const canSend = can("Send", RFQ_PERMISSION_RESOURCE);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
@@ -228,6 +231,15 @@ export default function NewRfqPage() {
       toast({ title: "Select the RFQ date", variant: "destructive" });
       return;
     }
+    const missingLabel = validateFieldControlRequirements(
+      "rfqNew",
+      { rfqDate, dueDate, remarks },
+      fieldControl,
+    );
+    if (missingLabel) {
+      toast({ title: `${missingLabel} is required`, variant: "destructive" });
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -310,7 +322,7 @@ export default function NewRfqPage() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-64 w-full" />
       </main>
@@ -319,7 +331,7 @@ export default function NewRfqPage() {
 
   if (!canAdd) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Create RFQ</h1>
         <Card>
           <CardHeader>
@@ -336,7 +348,7 @@ export default function NewRfqPage() {
 
   if (!mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Select a project first</CardTitle>
@@ -371,19 +383,16 @@ export default function NewRfqPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="rfq-date">RFQ Date</Label>
+            <ControlledField setting={fieldControl("rfqDate")} className="space-y-2">
               <Input id="rfq-date" type="date" value={rfqDate} max={dueDate || undefined} onChange={(e) => setRfqDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="due-date">Quote Due Date</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("dueDate")} className="space-y-2">
               <Input id="due-date" type="date" value={dueDate} min={rfqDate || undefined} onChange={(e) => setDueDate(e.target.value)} />
-            </div>
+            </ControlledField>
           </div>
-          <div className="mt-4 space-y-2">
-            <Label htmlFor="remarks">Remarks / Instructions to vendors</Label>
+          <ControlledField setting={fieldControl("remarks")} className="mt-4 space-y-2">
             <Textarea id="remarks" placeholder="Optional" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-          </div>
+          </ControlledField>
         </CardContent>
       </Card>
 

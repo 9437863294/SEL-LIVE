@@ -190,7 +190,7 @@ export default function SupplyPage() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {[1, 2, 3].map((i) => (
@@ -203,7 +203,7 @@ export default function SupplyPage() {
 
   if (!canView) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -219,7 +219,7 @@ export default function SupplyPage() {
 
   if (!mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Select a project first</CardTitle>
@@ -234,7 +234,7 @@ export default function SupplyPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">

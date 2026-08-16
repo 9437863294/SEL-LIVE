@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  Download,
   FilePlus2,
   IndianRupee,
   ListChecks,
@@ -19,6 +20,9 @@ import {
 } from "lucide-react";
 import { collection, deleteDoc, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { logUserActivity } from "@/lib/activity-logger";
+import { exportWorkbook } from "@/lib/report-excel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -194,6 +198,7 @@ export default function ProjectIndentPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
+  const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canView =
@@ -286,11 +291,47 @@ export default function ProjectIndentPage() {
     [indents],
   );
 
+  const exportIndents = async () => {
+    await exportWorkbook(`indents-${mapping?.projectName || "project"}.xlsx`, [
+      {
+        name: "Indents",
+        columns: [
+          { header: "Indent No.", key: "indentNumber", width: 20 },
+          { header: "Indent Date", key: "indentDate", width: 14 },
+          { header: "Required Date", key: "requiredDate", width: 14 },
+          { header: "Status", key: "status", width: 14 },
+          { header: "Items", key: "itemCount", width: 10 },
+          { header: "Total Amount", key: "totalAmount", width: 16 },
+          { header: "Remarks", key: "remarks", width: 30 },
+        ],
+        rows: indents.map((indent) => ({
+          indentNumber: indent.indentNumber,
+          indentDate: formatDate(indent.indentDate),
+          requiredDate: formatDate(indent.requiredDate),
+          status: indent.status,
+          itemCount: indent.items?.length ?? 0,
+          totalAmount: toNumber(indent.totalAmount),
+          remarks: indent.remarks || "",
+        })),
+      },
+    ]);
+  };
+
   const handleDelete = async (indent: IndentRecord) => {
     if (!mapping || indent.status !== "Draft") return;
     setDeletingId(indent.id);
     try {
       await deleteDoc(doc(db, "projects", mapping.globalProjectId, "indents", indent.id));
+      if (user) {
+        void logUserActivity({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: "Project Management",
+          action: "Delete Draft Indent",
+          details: { indentNumber: indent.indentNumber, project: mapping.projectName },
+        });
+      }
       toast({ title: "Draft indent deleted" });
       await loadData();
     } catch (error) {
@@ -311,7 +352,7 @@ export default function ProjectIndentPage() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-24 w-full" />
         <div className="grid gap-3 sm:grid-cols-4">
           {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-24" />)}
@@ -323,7 +364,7 @@ export default function ProjectIndentPage() {
 
   if (!canView) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -339,7 +380,7 @@ export default function ProjectIndentPage() {
 
   if (!mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Select a project first</CardTitle>
@@ -354,7 +395,7 @@ export default function ProjectIndentPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
@@ -372,17 +413,24 @@ export default function ProjectIndentPage() {
         </div>
 
         <div className="flex flex-col items-end gap-1">
-          {canAdd && boqItems.length ? (
-            <Button asChild>
-              <Link href={`/project-management/indent/new?project=${encodeURIComponent(mappingId)}`}>
+          <div className="flex items-center gap-2">
+            {indents.length > 0 && (
+              <Button variant="outline" onClick={exportIndents}>
+                <Download className="mr-2 h-4 w-4" /> Export
+              </Button>
+            )}
+            {canAdd && boqItems.length ? (
+              <Button asChild>
+                <Link href={`/project-management/indent/new?project=${encodeURIComponent(mappingId)}`}>
+                  <Plus className="mr-2 h-4 w-4" /> New Indent
+                </Link>
+              </Button>
+            ) : (
+              <Button disabled>
                 <Plus className="mr-2 h-4 w-4" /> New Indent
-              </Link>
-            </Button>
-          ) : (
-            <Button disabled>
-              <Plus className="mr-2 h-4 w-4" /> New Indent
-            </Button>
-          )}
+              </Button>
+            )}
+          </div>
           {!canAdd && (
             <p className="max-w-xs text-right text-xs text-destructive">
               You don&apos;t have permission to add indents. Ask an admin to grant &quot;Add&quot; under Project Management &rsaquo; Indent in Role Management.

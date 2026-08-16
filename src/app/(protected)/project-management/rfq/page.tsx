@@ -8,19 +8,26 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  Download,
   FileSearch,
+  Loader2,
   Plus,
   ShieldAlert,
+  Trash2,
   Users,
 } from "lucide-react";
 import { Fragment } from "react";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { logUserActivity } from "@/lib/activity-logger";
+import { exportWorkbook } from "@/lib/report-excel";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,6 +36,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -59,15 +77,18 @@ export default function RfqListPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
+  const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canView = can("View", RFQ_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
   const canAdd = can("Add", RFQ_PERMISSION_RESOURCE);
+  const canDelete = can("Delete", RFQ_PERMISSION_RESOURCE);
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [rfqs, setRfqs] = useState<Rfq[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState("");
 
   const loadData = useCallback(async () => {
     if (!mappingId) {
@@ -122,9 +143,62 @@ export default function RfqListPage() {
     [rfqs],
   );
 
+  // Draft-only, matching Indent/PO's own delete lifecycle — a Draft RFQ has never been sent, so
+  // none of its items can have been quoted or awarded yet, and nothing else references it back.
+  const exportRfqs = async () => {
+    await exportWorkbook(`rfqs-${mapping?.projectName || "project"}.xlsx`, [
+      {
+        name: "RFQs",
+        columns: [
+          { header: "RFQ No.", key: "rfqNumber", width: 20 },
+          { header: "RFQ Date", key: "rfqDate", width: 14 },
+          { header: "Due Date", key: "dueDate", width: 14 },
+          { header: "Status", key: "status", width: 16 },
+          { header: "Items", key: "itemCount", width: 10 },
+          { header: "Vendors Invited", key: "vendorCount", width: 16 },
+          { header: "Remarks", key: "remarks", width: 30 },
+        ],
+        rows: rfqs.map((rfq) => ({
+          rfqNumber: rfq.rfqNumber,
+          rfqDate: formatDate(rfq.rfqDate),
+          dueDate: formatDate(rfq.dueDate),
+          status: rfq.status,
+          itemCount: rfq.items?.length ?? 0,
+          vendorCount: rfq.vendorIds?.length ?? 0,
+          remarks: rfq.remarks || "",
+        })),
+      },
+    ]);
+  };
+
+  const handleDelete = async (rfq: Rfq) => {
+    if (!mapping || rfq.status !== "Draft") return;
+    setDeletingId(rfq.id);
+    try {
+      await deleteDoc(doc(db, "projects", mapping.globalProjectId, RFQ_COLLECTION, rfq.id));
+      if (user) {
+        void logUserActivity({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: "Project Management",
+          action: "Delete Draft RFQ",
+          details: { rfqNumber: rfq.rfqNumber, project: mapping.projectName },
+        });
+      }
+      toast({ title: "Draft RFQ deleted" });
+      await loadData();
+    } catch (error) {
+      console.error("Failed to delete RFQ:", error);
+      toast({ title: "Unable to delete RFQ", variant: "destructive" });
+    } finally {
+      setDeletingId("");
+    }
+  };
+
   if (isAuthLoading || isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-80 w-full" />
       </main>
@@ -133,7 +207,7 @@ export default function RfqListPage() {
 
   if (!canView) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -149,7 +223,7 @@ export default function RfqListPage() {
 
   if (!mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Select a project first</CardTitle>
@@ -164,7 +238,7 @@ export default function RfqListPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
@@ -180,13 +254,20 @@ export default function RfqListPage() {
             <p className="text-sm text-muted-foreground">Request quotations from vendors for {mapping.projectName}.</p>
           </div>
         </div>
-        {canAdd && (
-          <Button asChild>
-            <Link href={`/project-management/rfq/new?project=${encodeURIComponent(mappingId)}`}>
-              <Plus className="mr-2 h-4 w-4" /> New RFQ
-            </Link>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {rfqs.length > 0 && (
+            <Button variant="outline" onClick={exportRfqs}>
+              <Download className="mr-2 h-4 w-4" /> Export
+            </Button>
+          )}
+          {canAdd && (
+            <Button asChild>
+              <Link href={`/project-management/rfq/new?project=${encodeURIComponent(mappingId)}`}>
+                <Plus className="mr-2 h-4 w-4" /> New RFQ
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -235,9 +316,32 @@ export default function RfqListPage() {
                           <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${rfqStatusStyles[rfq.status]}`}>{rfq.status}</span>
                         </TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                          <Link href={`/project-management/rfq/${rfq.id}?project=${encodeURIComponent(mappingId)}`} className="text-sm font-medium text-primary hover:underline">
-                            Open
-                          </Link>
+                          <div className="flex items-center justify-end gap-1">
+                            <Link href={`/project-management/rfq/${rfq.id}?project=${encodeURIComponent(mappingId)}`} className="text-sm font-medium text-primary hover:underline">
+                              Open
+                            </Link>
+                            {canDelete && rfq.status === "Draft" && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="icon" disabled={deletingId === rfq.id} aria-label={`Delete ${rfq.rfqNumber}`}>
+                                    {deletingId === rfq.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 text-destructive" />}
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete draft RFQ?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This permanently deletes {rfq.rfqNumber} and its vendor quotes. This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => void handleDelete(rfq)}>Delete Draft</AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                       {isExpanded && (

@@ -74,7 +74,7 @@ export default function OperationalBoqProjectPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
       </main>
     );
@@ -82,7 +82,7 @@ export default function OperationalBoqProjectPage() {
 
   if (!canView) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Operational BOQ</h1>
         <Card>
           <CardHeader>
@@ -100,7 +100,7 @@ export default function OperationalBoqProjectPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link

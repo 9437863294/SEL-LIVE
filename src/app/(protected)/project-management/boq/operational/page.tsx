@@ -23,9 +23,17 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthorization } from "@/hooks/useAuthorization";
-import type { Project } from "@/lib/types";
 
 const BOQ_PERMISSION = "Project Management.BOQ";
+// Matches the module home page's own project picker — the PM "project" is a mapping onto a
+// global project, not the global project itself.
+const PROJECTS_COLLECTION = "projectManagementProjects";
+
+type ProjectMapping = {
+  id: string;
+  projectName: string;
+  status: "Active" | "Inactive";
+};
 
 const slugify = (text: string) =>
   text
@@ -42,7 +50,7 @@ export default function OperationalBoqPage() {
   const { can, isLoading } = useAuthorization();
   const canView = can("View", BOQ_PERMISSION);
 
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [mappings, setMappings] = useState<ProjectMapping[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
 
   useEffect(() => {
@@ -51,10 +59,15 @@ export default function OperationalBoqPage() {
     const fetchProjects = async () => {
       setIsLoadingProjects(true);
       try {
-        const snapshot = await getDocs(collection(db, "projects"));
-        setProjects(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Project)));
+        const snapshot = await getDocs(collection(db, PROJECTS_COLLECTION));
+        setMappings(
+          snapshot.docs
+            .map((d) => ({ id: d.id, ...d.data() }) as ProjectMapping)
+            .filter((mapping) => mapping.status === "Active")
+            .sort((a, b) => a.projectName.localeCompare(b.projectName)),
+        );
       } catch (error) {
-        console.error("Error fetching projects:", error);
+        console.error("Error fetching project mappings:", error);
       } finally {
         setIsLoadingProjects(false);
       }
@@ -63,14 +76,17 @@ export default function OperationalBoqPage() {
     fetchProjects();
   }, [isLoading, canView]);
 
-  const handleProjectChange = (slug: string) => {
-    if (!slug) return;
-    router.push(`/project-management/boq/operational/${slug}`);
+  const handleProjectChange = (mappingId: string) => {
+    const mapping = mappings.find((item) => item.id === mappingId);
+    if (!mapping) return;
+    router.push(
+      `/project-management/boq/operational/${slugify(mapping.projectName)}?project=${encodeURIComponent(mapping.id)}`,
+    );
   };
 
   if (isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
       </main>
     );
@@ -78,7 +94,7 @@ export default function OperationalBoqPage() {
 
   if (!canView) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Operational BOQ</h1>
         <Card>
           <CardHeader>
@@ -96,7 +112,7 @@ export default function OperationalBoqPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/project-management/boq" aria-label="Back to BOQ">
@@ -131,14 +147,14 @@ export default function OperationalBoqPage() {
                   <SelectValue placeholder="Choose a project..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {projects.length === 0 ? (
+                  {mappings.length === 0 ? (
                     <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                      No projects found.
+                      No mapped projects found. Add one from Settings → Manage Projects first.
                     </div>
                   ) : (
-                    projects.map((p) => (
-                      <SelectItem key={p.id} value={slugify(p.projectName)}>
-                        {p.projectName}
+                    mappings.map((mapping) => (
+                      <SelectItem key={mapping.id} value={mapping.id}>
+                        {mapping.projectName}
                       </SelectItem>
                     ))
                   )}

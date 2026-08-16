@@ -8,6 +8,7 @@ import {
   FolderCog,
   Settings2,
   ShieldAlert,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +46,13 @@ const settingsSections = [
     icon: ClipboardList,
     gradient: "from-violet-500 to-purple-600",
   },
+  {
+    title: "Field Control",
+    description: "Show, hide, rename, or require fields across BOQ, Indent, RFQ, PO, and project mapping forms.",
+    href: "/project-management/settings/field-control",
+    icon: SlidersHorizontal,
+    gradient: "from-indigo-500 to-blue-600",
+  },
 ];
 
 export default function ProjectManagementSettingsPage() {
@@ -52,7 +60,7 @@ export default function ProjectManagementSettingsPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-24 w-full rounded-xl" />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {[1, 2, 3].map((i) => (
@@ -65,7 +73,7 @@ export default function ProjectManagementSettingsPage() {
 
   if (!can("View", SETTINGS_PERMISSION)) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">
           Project Management Settings
         </h1>
@@ -85,7 +93,7 @@ export default function ProjectManagementSettingsPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-slate-700 via-slate-600 to-slate-500 text-white shadow-lg">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />

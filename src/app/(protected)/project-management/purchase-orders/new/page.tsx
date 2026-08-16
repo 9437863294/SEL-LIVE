@@ -30,6 +30,8 @@ import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing } from "@/lib/m
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
+import { ControlledField } from "@/components/project-management/controlled-field";
+import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -150,6 +152,7 @@ export default function NewProjectPurchaseOrderPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canAdd = can("Add", PO_PERMISSION_RESOURCE);
+  const { field: fieldControl } = useFieldControl("poNew");
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -470,6 +473,15 @@ export default function NewProjectPurchaseOrderPage() {
       toast({ title: "Start and end dates are required", variant: "destructive" });
       return;
     }
+    const missingLabel = validateFieldControlRequirements(
+      "poNew",
+      { vendorId, poDate, startDate, endDate, terms },
+      fieldControl,
+    );
+    if (missingLabel) {
+      toast({ title: `${missingLabel} is required`, variant: "destructive" });
+      return;
+    }
     if (endDate < startDate) {
       toast({ title: "End date cannot be before the start date", variant: "destructive" });
       return;
@@ -655,7 +667,7 @@ export default function NewProjectPurchaseOrderPage() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-40 w-full" />
         <Skeleton className="h-64 w-full" />
@@ -665,7 +677,7 @@ export default function NewProjectPurchaseOrderPage() {
 
   if (!canAdd) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Create Purchase Order</h1>
         <Card>
           <CardHeader>
@@ -682,7 +694,7 @@ export default function NewProjectPurchaseOrderPage() {
 
   if (!mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Select a project first</CardTitle>
@@ -723,8 +735,7 @@ export default function NewProjectPurchaseOrderPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <div className="space-y-2">
-              <Label htmlFor="vendor">Vendor *</Label>
+            <ControlledField setting={fieldControl("vendorId")} className="space-y-2">
               <Select value={vendorId} onValueChange={setVendorId}>
                 <SelectTrigger id="vendor"><SelectValue placeholder="Select a vendor" /></SelectTrigger>
                 <SelectContent>
@@ -738,24 +749,20 @@ export default function NewProjectPurchaseOrderPage() {
                   No active vendors. <Link href="/vendor-management/vendors" className="text-primary underline-offset-4 hover:underline">Add one first</Link>.
                 </p>
               )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="po-date">PO Date</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("poDate")} className="space-y-2">
               <Input id="po-date" type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="start-date">Start Date *</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("startDate")} className="space-y-2">
               <Input id="start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="end-date">End Date *</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("endDate")} className="space-y-2">
               <Input id="end-date" type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} />
-            </div>
+            </ControlledField>
           </div>
-          <div className="mt-4 space-y-2">
-            <Label htmlFor="terms">Terms / Remarks</Label>
+          <ControlledField setting={fieldControl("terms")} className="mt-4 space-y-2">
             <Textarea id="terms" placeholder="Optional delivery terms, payment terms, or notes" value={terms} onChange={(e) => setTerms(e.target.value)} />
-          </div>
+          </ControlledField>
         </CardContent>
       </Card>
 

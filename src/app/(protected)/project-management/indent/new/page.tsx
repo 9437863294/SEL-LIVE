@@ -16,6 +16,8 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
+import { ControlledField } from "@/components/project-management/controlled-field";
+import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -99,6 +101,7 @@ export default function NewIndentPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canAdd = can("Add", PERMISSION_RESOURCE) || can("Import", "Project Management.BOQ");
+  const { field: fieldControl } = useFieldControl("indentNew");
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
@@ -250,6 +253,15 @@ export default function NewIndentPage() {
       toast({ title: "Select the indent date", variant: "destructive" });
       return;
     }
+    const missingLabel = validateFieldControlRequirements(
+      "indentNew",
+      { indentDate, requiredDate, remarks },
+      fieldControl,
+    );
+    if (missingLabel) {
+      toast({ title: `${missingLabel} is required`, variant: "destructive" });
+      return;
+    }
     if (requiredDate && requiredDate < indentDate) {
       toast({
         title: "Invalid required date",
@@ -318,7 +330,7 @@ export default function NewIndentPage() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-40 w-full" />
         <Skeleton className="h-64 w-full" />
@@ -328,7 +340,7 @@ export default function NewIndentPage() {
 
   if (!canAdd) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Create Indent</h1>
         <Card>
           <CardHeader>
@@ -345,7 +357,7 @@ export default function NewIndentPage() {
 
   if (!mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Select a project first</CardTitle>
@@ -390,18 +402,15 @@ export default function NewIndentPage() {
               <Label htmlFor="project">Project</Label>
               <Input id="project" value={mapping.projectName} readOnly className="bg-muted/50" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="indent-date">Indent Date</Label>
+            <ControlledField setting={fieldControl("indentDate")} className="space-y-2">
               <Input id="indent-date" type="date" value={indentDate} max={requiredDate || undefined} onChange={(e) => setIndentDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="required-date">Required Date</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("requiredDate")} className="space-y-2">
               <Input id="required-date" type="date" value={requiredDate} min={indentDate || undefined} onChange={(e) => setRequiredDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="remarks">Remarks</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("remarks")} className="space-y-2">
               <Input id="remarks" placeholder="Optional" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-            </div>
+            </ControlledField>
           </div>
         </CardContent>
       </Card>

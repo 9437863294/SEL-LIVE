@@ -18,8 +18,10 @@ import {
   Search,
   Edit,
   Save,
+  ShieldAlert,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, writeBatch, doc, updateDoc, getDoc } from 'firebase/firestore';
@@ -186,8 +188,10 @@ const formatBoqDate = (value: unknown) => {
 
 export default function ViewBoqPage() {
   const { toast } = useToast();
-  const { can } = useAuthorization();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
+  const canView = can('View', 'Project Management.BOQ');
   const canAddManual = can('Add Manual', 'Project Management.BOQ');
+  const canDelete = can('Delete', 'Project Management.BOQ');
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get('project') ?? '';
   // Arriving with ?scope2=Supply/Civil/Erection means we came from that module's own page —
@@ -824,17 +828,43 @@ export default function ViewBoqPage() {
     });
   };
 
-  /** DELETE **/
+  /** DELETE — a BOQ item referenced by an Indent line, a PO line, or an MDL drawing (its doc id
+   * *is* the boqItemId, see mdl.ts) is skipped rather than deleted, since removing it would leave
+   * those downstream records pointing at a BOQ item that no longer exists. **/
+  const referencedBoqItemIds = useMemo(() => {
+    const ids = new Set<string>();
+    indents.forEach((indent) => (indent.items || []).forEach((item) => {
+      if (item.boqItemId) ids.add(item.boqItemId);
+    }));
+    purchaseOrders.forEach((po) => (po.items || []).forEach((item) => {
+      if (item.boqItemId) ids.add(item.boqItemId);
+    }));
+    mdlDrawings.forEach((drawing) => ids.add(drawing.id));
+    return ids;
+  }, [indents, purchaseOrders, mdlDrawings]);
+
+  const { deletableIds, blockedIds } = useMemo(() => {
+    const deletable: string[] = [];
+    const blocked: string[] = [];
+    selectedItemIds.forEach((id) => (referencedBoqItemIds.has(id) ? blocked : deletable).push(id));
+    return { deletableIds: deletable, blockedIds: blocked };
+  }, [selectedItemIds, referencedBoqItemIds]);
+
   const handleDelete = async () => {
-    if (!currentProject || selectedItemIds.length === 0) return;
+    if (!currentProject || deletableIds.length === 0) return;
     setIsDeleting(true);
     try {
       const batch = writeBatch(db);
-      selectedItemIds.forEach((id) => {
+      deletableIds.forEach((id) => {
         batch.delete(doc(db, 'projects', (currentProject as any).id, 'boqItems', id));
       });
       await batch.commit();
-      toast({ title: 'Deleted', description: `${selectedItemIds.length} item(s) removed.` });
+      toast({
+        title: 'Deleted',
+        description: blockedIds.length
+          ? `${deletableIds.length} item(s) removed. ${blockedIds.length} skipped — still referenced by an indent, PO, or MDL drawing.`
+          : `${deletableIds.length} item(s) removed.`,
+      });
       setSelectedItemIds([]);
       fetchProjectAndBoq();
     } catch (e) {
@@ -872,8 +902,41 @@ export default function ViewBoqPage() {
 
   const selectAllState: CheckedState = allSelected ? true : someSelected ? 'indeterminate' : false;
 
+  if (isAuthLoading) {
+    return (
+      <div className="w-full space-y-4 px-4 py-6 sm:px-6 lg:px-8">
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-6 flex items-center gap-3">
+          <Link href={backHref}>
+            <Button variant="ghost" size="icon" aria-label="Back">
+              <ArrowLeft className="h-6 w-6" />
+            </Button>
+          </Link>
+          <h1 className="text-xl font-bold">View BOQ</h1>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>You do not have permission to view BOQ costing.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center p-8">
+            <ShieldAlert className="h-16 w-16 text-destructive" />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] w-full px-4 sm:px-6 lg:px-8">
+    <div className="flex flex-col h-[calc(100dvh-8rem)] w-full px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="py-6 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -935,7 +998,7 @@ export default function ViewBoqPage() {
             Clear Filters
           </Button>
 
-          {selectedItemIds.length > 0 && (
+          {canDelete && selectedItemIds.length > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" disabled={isDeleting}>
@@ -951,12 +1014,22 @@ export default function ViewBoqPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will permanently delete {selectedItemIds.length} item(s).
+                    {blockedIds.length > 0 ? (
+                      <>
+                        This will permanently delete {deletableIds.length} item(s). {blockedIds.length} of the
+                        selected item(s) are referenced by an indent, purchase order, or MDL drawing and will be
+                        skipped — reassign or remove those references first if they also need to be deleted.
+                      </>
+                    ) : (
+                      <>This will permanently delete {deletableIds.length} item(s).</>
+                    )}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete}>Continue</AlertDialogAction>
+                  <AlertDialogAction onClick={handleDelete} disabled={deletableIds.length === 0}>
+                    Continue
+                  </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>

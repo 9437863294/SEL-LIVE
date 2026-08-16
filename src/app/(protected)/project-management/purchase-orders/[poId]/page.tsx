@@ -24,6 +24,8 @@ import { db, storage } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing, type MdlOverallStatus } from "@/lib/mdl";
 import { useAuthorization } from "@/hooks/useAuthorization";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { logUserActivity } from "@/lib/activity-logger";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,6 +98,7 @@ export default function ProjectPurchaseOrderDetailPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { user } = useAuth();
 
   const canView = can("View", PO_PERMISSION_RESOURCE) || can("View", "Project Management.RFQ");
   const canIssue = can("Issue", PO_PERMISSION_RESOURCE);
@@ -252,6 +255,16 @@ export default function ProjectPurchaseOrderDetailPage() {
         status,
         updatedAt: serverTimestamp(),
       });
+      if (user) {
+        void logUserActivity({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: "Project Management",
+          action: `Mark PO as ${status}`,
+          details: { poNumber: po.poNumber, project: mapping.projectName },
+        });
+      }
       toast({ title: `Purchase order marked as ${status}` });
       await loadPo();
     } catch (error) {
@@ -267,6 +280,16 @@ export default function ProjectPurchaseOrderDetailPage() {
     setIsUpdating(true);
     try {
       await deleteDoc(doc(db, "projects", mapping.globalProjectId, PO_COLLECTION, po.id));
+      if (user) {
+        void logUserActivity({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: "Project Management",
+          action: "Delete Draft PO",
+          details: { poNumber: po.poNumber, project: mapping.projectName },
+        });
+      }
       toast({ title: "Draft purchase order deleted" });
       router.push(`/project-management/purchase-orders?project=${encodeURIComponent(mappingId)}`);
     } catch (error) {
@@ -278,7 +301,7 @@ export default function ProjectPurchaseOrderDetailPage() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-64 w-full" />
       </main>
@@ -287,7 +310,7 @@ export default function ProjectPurchaseOrderDetailPage() {
 
   if (!canView) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
@@ -303,7 +326,7 @@ export default function ProjectPurchaseOrderDetailPage() {
 
   if (!po || !mapping) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Purchase order not found</CardTitle>
@@ -318,7 +341,7 @@ export default function ProjectPurchaseOrderDetailPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>

@@ -238,7 +238,7 @@ export default function ProjectManagementBoqSettingsPage() {
 
   if (isAuthLoading || (isLoading && canView)) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Skeleton className="mb-6 h-9 w-56" />
         <Skeleton className="h-96 w-full" />
       </main>
@@ -247,7 +247,7 @@ export default function ProjectManagementBoqSettingsPage() {
 
   if (!canView) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">BOQ Settings</h1>
         <Card>
           <CardHeader>
@@ -265,7 +265,7 @@ export default function ProjectManagementBoqSettingsPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>

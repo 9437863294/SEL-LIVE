@@ -20,7 +20,7 @@ export default function ProjectManagementGeneralSettingsPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
       </main>
     );
@@ -28,7 +28,7 @@ export default function ProjectManagementGeneralSettingsPage() {
 
   if (!can("View", SETTINGS_PERMISSION)) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">General Settings</h1>
         <Card>
           <CardHeader>
@@ -46,7 +46,7 @@ export default function ProjectManagementGeneralSettingsPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
       <div className="mb-6 flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link href="/project-management/settings" aria-label="Back to Settings">

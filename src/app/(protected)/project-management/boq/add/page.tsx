@@ -24,6 +24,8 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
+import { ControlledField } from "@/components/project-management/controlled-field";
+import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -152,6 +154,7 @@ export default function AddBoqItemsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canAdd = can("Add Manual", BOQ_PERMISSION);
+  const { field: fieldControl } = useFieldControl("boqAdd");
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
@@ -254,6 +257,15 @@ export default function AddBoqItemsPage() {
       toast({ title: "Enter a valid quantity", variant: "destructive" });
       return;
     }
+    const missingLabel = validateFieldControlRequirements(
+      "boqAdd",
+      { ...sticky, ...line },
+      fieldControl,
+    );
+    if (missingLabel) {
+      toast({ title: `${missingLabel} is required`, variant: "destructive" });
+      return;
+    }
     if (line.startDate && line.endDate && line.endDate < line.startDate) {
       toast({
         title: "Invalid item timeline",
@@ -349,7 +361,7 @@ export default function AddBoqItemsPage() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-64 w-full" />
       </main>
@@ -358,7 +370,7 @@ export default function AddBoqItemsPage() {
 
   if (!canAdd) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Add BOQ Items</h1>
         <Card>
           <CardHeader>
@@ -375,7 +387,7 @@ export default function AddBoqItemsPage() {
 
   if (!mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Select a project first</CardTitle>
@@ -392,7 +404,7 @@ export default function AddBoqItemsPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link href={`/project-management/boq?project=${encodeURIComponent(mappingId)}`} aria-label="Back to BOQ">
@@ -421,85 +433,67 @@ export default function AddBoqItemsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="sub-division">Sub-Division</Label>
+            <ControlledField setting={fieldControl("subDivision")}>
               <Input id="sub-division" value={sticky.subDivision} onChange={(e) => setSticky((c) => ({ ...c, subDivision: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="site">Site</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("site")}>
               <Input id="site" value={sticky.site} onChange={(e) => setSticky((c) => ({ ...c, site: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="scope-1">Scope 1</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("scope1")}>
               <Input id="scope-1" value={sticky.scope1} onChange={(e) => setSticky((c) => ({ ...c, scope1: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="scope-2">Scope 2</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("scope2")}>
               <Input id="scope-2" value={sticky.scope2} onChange={(e) => setSticky((c) => ({ ...c, scope2: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="category-1">Category 1</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("category1")}>
               <Input id="category-1" value={sticky.category1} onChange={(e) => setSticky((c) => ({ ...c, category1: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="category-2">Category 2</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("category2")}>
               <Input id="category-2" value={sticky.category2} onChange={(e) => setSticky((c) => ({ ...c, category2: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="category-3">Category 3</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("category3")}>
               <Input id="category-3" value={sticky.category3} onChange={(e) => setSticky((c) => ({ ...c, category3: e.target.value }))} />
-            </div>
+            </ControlledField>
           </div>
 
           <div className="h-px bg-border" />
 
           <div className="grid gap-3 sm:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="erp-sl-no">ERP SL NO</Label>
+            <ControlledField setting={fieldControl("erpSlNo")}>
               <Input id="erp-sl-no" value={line.erpSlNo} onChange={(e) => setLine((c) => ({ ...c, erpSlNo: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="boq-sl-no">BOQ SL No <span className="text-destructive">*</span></Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("boqSlNo")}>
               <Input id="boq-sl-no" value={line.boqSlNo} onChange={(e) => setLine((c) => ({ ...c, boqSlNo: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="description">Description <span className="text-destructive">*</span></Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("description")} className="space-y-1.5 sm:col-span-2">
               <Input id="description" value={line.description} onChange={(e) => setLine((c) => ({ ...c, description: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="unit">Unit <span className="text-destructive">*</span></Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("unit")}>
               <Input id="unit" value={line.unit} onChange={(e) => setLine((c) => ({ ...c, unit: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="qty">QTY <span className="text-destructive">*</span></Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("qty")}>
               <Input id="qty" type="number" step="0.001" min="0" value={line.qty} onChange={(e) => setLine((c) => ({ ...c, qty: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="unit-rate">Unit Rate</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("unitRate")}>
               <Input id="unit-rate" type="number" step="0.01" min="0" value={line.unitRate} onChange={(e) => setLine((c) => ({ ...c, unitRate: e.target.value }))} />
-            </div>
+            </ControlledField>
             <div className="space-y-1.5">
               <Label htmlFor="total-amount">Total Amount</Label>
               <Input id="total-amount" type="number" step="0.01" min="0" placeholder="Auto: QTY × Rate" value={line.totalAmount} onChange={(e) => setLine((c) => ({ ...c, totalAmount: e.target.value }))} />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="budget-price">Budget Price</Label>
+            <ControlledField setting={fieldControl("budgetPrice")}>
               <Input id="budget-price" type="number" step="0.01" min="0" value={line.budgetPrice} onChange={(e) => setLine((c) => ({ ...c, budgetPrice: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="fi-percentage">F&amp;I %</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("fiPercentage")}>
               <Input id="fi-percentage" type="number" step="0.01" min="0" max="100" value={line.fiPercentage} onChange={(e) => setLine((c) => ({ ...c, fiPercentage: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="start-date">Start Date</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("startDate")}>
               <Input id="start-date" type="date" value={line.startDate} max={line.endDate || undefined} onChange={(e) => setLine((c) => ({ ...c, startDate: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="end-date">End Date</Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("endDate")}>
               <Input id="end-date" type="date" value={line.endDate} min={line.startDate || undefined} onChange={(e) => setLine((c) => ({ ...c, endDate: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="mdl">MDL <span className="font-normal text-muted-foreground">(Master Drawing List)</span></Label>
+            </ControlledField>
+            <ControlledField setting={fieldControl("mdl")}>
               <Select value={line.mdl} onValueChange={(mdl) => setLine((c) => ({ ...c, mdl }))}>
                 <SelectTrigger id="mdl"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -508,7 +502,7 @@ export default function AddBoqItemsPage() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </ControlledField>
           </div>
 
           <Button onClick={handleAddRow}>

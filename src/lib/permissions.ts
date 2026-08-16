@@ -540,9 +540,9 @@ export const permissionModules = {
   },
   "Project Management": {
     "View Module": [],
-    BOQ: ["View", "Import", "Add Manual"],
+    BOQ: ["View", "Import", "Add Manual", "Delete"],
     Indent: ["View", "Add", "Delete"],
-    RFQ: ["View", "Add", "Send", "Enter Quote", "Award"],
+    RFQ: ["View", "Add", "Send", "Enter Quote", "Award", "Delete"],
     "Purchase Orders": ["View", "Add", "Delete", "Issue", "Receive", "Cancel"],
     MDL: ["View", "Edit"],
     Supply: ["View"],
@@ -555,7 +555,7 @@ export const permissionModules = {
     MDCC: ["View"],
     MVAC: ["View"],
     "Project Mappings": ["View", "Add", "Edit", "Delete"],
-    Settings: ["View", "Edit"],
+    Settings: ["View", "Edit", "Manage Field Control"],
   },
   "Vendor Management": {
     "View Module": [],

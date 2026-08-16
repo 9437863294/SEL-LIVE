@@ -18,6 +18,8 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  limit,
+  query,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
@@ -72,6 +74,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { logUserActivity } from "@/lib/activity-logger";
+import { ControlledField } from "@/components/project-management/controlled-field";
+import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
 
 const COLLECTION_NAME = "projectManagementProjects";
 const PERMISSION_RESOURCE = "Project Management.Project Mappings";
@@ -116,6 +122,7 @@ const formatProjectDate = (value?: string) => {
 export default function ProjectMappingsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [globalProjects, setGlobalProjects] = useState<Project[]>([]);
   const [mappings, setMappings] = useState<ProjectMapping[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -128,6 +135,7 @@ export default function ProjectMappingsPage() {
   const canAdd = can("Add", PERMISSION_RESOURCE);
   const canEdit = can("Edit", PERMISSION_RESOURCE);
   const canDelete = can("Delete", PERMISSION_RESOURCE);
+  const { field } = useFieldControl("projectMapping");
 
   const globalProjectsById = useMemo(
     () => new Map(globalProjects.map((project) => [project.id, project])),
@@ -207,6 +215,16 @@ export default function ProjectMappingsPage() {
       return;
     }
 
+    const missingLabel = validateFieldControlRequirements(
+      "projectMapping",
+      { ...form },
+      field,
+    );
+    if (missingLabel) {
+      toast({ title: `${missingLabel} is required`, variant: "destructive" });
+      return;
+    }
+
     if (Boolean(form.startDate) !== Boolean(form.endDate)) {
       toast({
         title: "Complete the project timeline",
@@ -220,6 +238,32 @@ export default function ProjectMappingsPage() {
       toast({
         title: "Invalid project timeline",
         description: "The end date cannot be before the start date.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const duplicateName = mappings.some(
+      (mapping) =>
+        mapping.id !== editingMapping?.id &&
+        mapping.projectName.trim().toLowerCase() === projectName.toLowerCase(),
+    );
+    if (duplicateName) {
+      toast({
+        title: "Name already in use",
+        description: `A Project Management project named "${projectName}" already exists.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const duplicateGlobalProject = mappings.find(
+      (mapping) => mapping.id !== editingMapping?.id && mapping.globalProjectId === globalProject.id,
+    );
+    if (duplicateGlobalProject) {
+      toast({
+        title: "Project already mapped",
+        description: `"${globalProject.projectName}" is already mapped as "${duplicateGlobalProject.projectName}". Each global project can only be mapped once.`,
         variant: "destructive",
       });
       return;
@@ -241,12 +285,32 @@ export default function ProjectMappingsPage() {
 
       if (editingMapping) {
         await updateDoc(doc(db, COLLECTION_NAME, editingMapping.id), payload);
+        if (user) {
+          void logUserActivity({
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+            module: "Project Management",
+            action: "Update Project Mapping",
+            details: { projectName },
+          });
+        }
         toast({ title: "Project mapping updated" });
       } else {
         await addDoc(collection(db, COLLECTION_NAME), {
           ...payload,
           createdAt: serverTimestamp(),
         });
+        if (user) {
+          void logUserActivity({
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+            module: "Project Management",
+            action: "Create Project Mapping",
+            details: { projectName, globalProjectName: globalProject.projectName },
+          });
+        }
         toast({ title: "Project mapping created" });
       }
 
@@ -268,7 +332,40 @@ export default function ProjectMappingsPage() {
 
   const handleDelete = async (mapping: ProjectMapping) => {
     try {
+      // Deleting the mapping doesn't touch the underlying subcollections — it just makes them
+      // unreachable from every Project Management page, which all resolve data via this mapping.
+      // Block the delete if the project actually has anything under it yet.
+      const [boqSnap, indentSnap, rfqSnap, poSnap] = await Promise.all([
+        getDocs(query(collection(db, "projects", mapping.globalProjectId, "boqItems"), limit(1))),
+        getDocs(query(collection(db, "projects", mapping.globalProjectId, "indents"), limit(1))),
+        getDocs(query(collection(db, "projects", mapping.globalProjectId, "rfqs"), limit(1))),
+        getDocs(query(collection(db, "projects", mapping.globalProjectId, "purchaseOrders"), limit(1))),
+      ]);
+      const inUse = [
+        boqSnap.empty ? null : "BOQ items",
+        indentSnap.empty ? null : "indents",
+        rfqSnap.empty ? null : "RFQs",
+        poSnap.empty ? null : "purchase orders",
+      ].filter((label): label is string => Boolean(label));
+      if (inUse.length > 0) {
+        toast({
+          title: "Can't delete this project",
+          description: `"${mapping.projectName}" still has ${inUse.join(", ")}. Remove those first, or leave the mapping and just set its status to Inactive.`,
+          variant: "destructive",
+        });
+        return;
+      }
       await deleteDoc(doc(db, COLLECTION_NAME, mapping.id));
+      if (user) {
+        void logUserActivity({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: "Project Management",
+          action: "Delete Project Mapping",
+          details: { projectName: mapping.projectName },
+        });
+      }
       toast({ title: "Project mapping deleted" });
       await loadData();
     } catch (error) {
@@ -282,7 +379,7 @@ export default function ProjectMappingsPage() {
 
   if (isAuthLoading || (isLoading && canView)) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <Skeleton className="mb-6 h-9 w-72" />
         <Skeleton className="h-80 w-full" />
       </main>
@@ -291,7 +388,7 @@ export default function ProjectMappingsPage() {
 
   if (!canView) {
     return (
-      <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
         <h1 className="mb-6 text-2xl font-bold sm:text-3xl">Manage Projects</h1>
         <Card>
           <CardHeader>
@@ -309,7 +406,7 @@ export default function ProjectMappingsPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
@@ -347,8 +444,7 @@ export default function ProjectMappingsPage() {
             </DialogHeader>
 
             <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="project-name">New project name</Label>
+              <ControlledField setting={field("projectName")}>
                 <Input
                   id="project-name"
                   placeholder="For example: Project Y"
@@ -360,10 +456,9 @@ export default function ProjectMappingsPage() {
                     }))
                   }
                 />
-              </div>
+              </ControlledField>
 
-              <div className="space-y-2">
-                <Label htmlFor="global-project">Map to global project</Label>
+              <ControlledField setting={field("globalProjectId")}>
                 <Select
                   value={form.globalProjectId}
                   onValueChange={(globalProjectId) =>
@@ -382,10 +477,9 @@ export default function ProjectMappingsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
+              </ControlledField>
 
-              <div className="space-y-2">
-                <Label htmlFor="mapping-description">Description</Label>
+              <ControlledField setting={field("description")}>
                 <Input
                   id="mapping-description"
                   placeholder="Optional description"
@@ -397,11 +491,10 @@ export default function ProjectMappingsPage() {
                     }))
                   }
                 />
-              </div>
+              </ControlledField>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="project-start-date">Start date</Label>
+                <ControlledField setting={field("startDate")}>
                   <Input
                     id="project-start-date"
                     type="date"
@@ -414,9 +507,8 @@ export default function ProjectMappingsPage() {
                       }))
                     }
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="project-end-date">End date</Label>
+                </ControlledField>
+                <ControlledField setting={field("endDate")}>
                   <Input
                     id="project-end-date"
                     type="date"
@@ -429,7 +521,7 @@ export default function ProjectMappingsPage() {
                       }))
                     }
                   />
-                </div>
+                </ControlledField>
               </div>
 
               <div className="space-y-2">

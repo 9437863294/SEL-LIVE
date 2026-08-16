@@ -23,6 +23,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
   writeBatch,
 } from 'firebase/firestore';
@@ -218,6 +219,11 @@ function isEmptyRow(row: BoqItem) {
   return Object.values(row).every(isBlank);
 }
 
+// Matches boq/add/page.tsx's manual-entry dedup key exactly, so the same Scope1+Scope2+BOQ SL No
+// combination is rejected whether an item is entered manually or brought in via import.
+const compositeKey = (scope1: string, scope2: string, boqSlNo: string) =>
+  `${scope1.trim().toLowerCase()}__${scope2.trim().toLowerCase()}__${boqSlNo.trim().toLowerCase()}`;
+
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
@@ -390,6 +396,7 @@ export default function ImportBoqPage() {
   const canImport = can('Import', 'Project Management.BOQ');
 
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
   const [configuredColumns, setConfiguredColumns] = useState<BoqColumnConfig[]>(() =>
     mergeBoqColumns(undefined),
   );
@@ -480,6 +487,20 @@ export default function ImportBoqPage() {
             .toLowerCase()
             .replace(/\s+/g, '-')
             .replace(/[^\w-]+/g, ''),
+        );
+
+        const itemsSnapshot = await getDocs(collection(db, 'projects', project.id, 'boqItems'));
+        setExistingKeys(
+          new Set(
+            itemsSnapshot.docs.map((itemDoc) => {
+              const data = itemDoc.data() as Record<string, unknown>;
+              return compositeKey(
+                String(data['Scope 1'] ?? ''),
+                String(data['Scope 2'] ?? ''),
+                String(data['BOQ SL No'] ?? data['SL. No.'] ?? ''),
+              );
+            }),
+          ),
         );
       } catch (error) {
         console.error('Failed to load mapped project:', error);
@@ -725,6 +746,12 @@ export default function ImportBoqPage() {
       return;
     }
 
+    // Tracks Scope1+Scope2+BOQ SL No combinations already seen — either previously imported/added
+    // for this project, or earlier in this same file — so re-importing an overlapping sheet (or a
+    // sheet with its own repeated rows) is flagged instead of silently creating duplicate items,
+    // matching the same check the manual Add page already enforces.
+    const seenKeys = new Set<string>();
+
     const nextRows: ValidatedRow[] = rawRows.map((rawRow, rowIndex) => {
       const data: BoqItem = {};
       const errors: string[] = [];
@@ -817,6 +844,17 @@ export default function ImportBoqPage() {
         errors.push('Start Date and End Date must be supplied together.');
       } else if (startDate && endDate && endDate < startDate) {
         errors.push('End Date cannot be before Start Date.');
+      }
+
+      const boqSlNo = String(data['BOQ SL No'] ?? data['SL. No.'] ?? '').trim();
+      if (boqSlNo) {
+        const key = compositeKey(String(data['Scope 1'] ?? ''), String(data['Scope 2'] ?? ''), boqSlNo);
+        if (existingKeys.has(key)) {
+          errors.push('This Scope 1 + Scope 2 + BOQ SL No already exists in this project.');
+        } else if (seenKeys.has(key)) {
+          errors.push('Duplicate of another row in this file (same Scope 1 + Scope 2 + BOQ SL No).');
+        }
+        seenKeys.add(key);
       }
 
       return {
@@ -929,7 +967,7 @@ export default function ImportBoqPage() {
 
   if (isAuthLoading) {
     return (
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center">
+      <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -952,7 +990,7 @@ export default function ImportBoqPage() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] space-y-5 p-4 sm:p-6">
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
