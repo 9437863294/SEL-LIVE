@@ -46,7 +46,6 @@ import {
   INSURANCE_WORKFLOW_CONFIG_DOC_ID,
   INSURANCE_WORKFLOW_OPEN_STATUSES,
   insuranceDaysUntil,
-  insuranceWorkflowDeadline,
   insuranceWorkflowDeadlineMeta,
   insuranceWorkflowPriority,
   insuranceWorkflowProgress,
@@ -58,6 +57,9 @@ import {
   type InsuranceWorkflowHistoryEntry,
   type InsuranceWorkflowStep,
 } from '@/lib/vehicle-insurance-workflow';
+import { addBusinessHours } from '@/lib/working-hours';
+import { loadWorkingCalendar } from '@/lib/working-hours-client';
+import type { Holiday, WorkingHours } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
@@ -101,16 +103,19 @@ export default function InsuranceWorkflowPage() {
   const [proposedPremiumText, setProposedPremiumText] = useState('');
   const [reassignUserId, setReassignUserId] = useState('');
   const [vehicleMap, setVehicleMap] = useState<Record<string, Record<string, any>>>({});
+  const [workingHours, setWorkingHours] = useState<WorkingHours | null>(null);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const autoScanStarted = useRef(false);
 
   const activeUsers = useMemo(() => users.filter((item) => item.status !== 'Inactive'), [users]);
   const userMap = useMemo(() => Object.fromEntries(activeUsers.map((item) => [item.id, item])), [activeUsers]);
 
   const loadCases = useCallback(async () => {
-    const [caseSnapshot, configSnapshot, vehicleSnapshot] = await Promise.all([
+    const [caseSnapshot, configSnapshot, vehicleSnapshot, calendar] = await Promise.all([
       getDocs(collection(db, VEHICLE_COLLECTIONS.insuranceWorkflowCases)),
       getDoc(doc(db, VEHICLE_COLLECTIONS.settings, INSURANCE_WORKFLOW_CONFIG_DOC_ID)),
       getDocs(collection(db, VEHICLE_COLLECTIONS.vehicleMaster)),
+      loadWorkingCalendar(),
     ]);
     const nextConfig = normalizeInsuranceWorkflowConfig(configSnapshot.exists() ? configSnapshot.data() as Partial<InsuranceWorkflowConfig> : null);
     const nextCases = caseSnapshot.docs
@@ -123,13 +128,15 @@ export default function InsuranceWorkflowPage() {
     setConfig(nextConfig);
     setCases(nextCases);
     setVehicleMap(nextVehicleMap);
+    setWorkingHours(calendar.workingHours);
+    setHolidays(calendar.holidays);
     if (targetCaseId && nextCases.some((item) => item.id === targetCaseId)) {
       setSelectedCaseId(targetCaseId);
     } else if (targetInsuranceId) {
       const matching = nextCases.find((item) => item.insuranceId === targetInsuranceId && !TERMINAL_STATUSES.includes(item.status));
       if (matching) setSelectedCaseId(matching.id);
     }
-    return { nextConfig, nextCases, nextVehicleMap };
+    return { nextConfig, nextCases, nextVehicleMap, calendar };
   }, [targetCaseId, targetInsuranceId]);
 
   useEffect(() => {
@@ -172,7 +179,7 @@ export default function InsuranceWorkflowPage() {
     if (!canManage || isScanning) return '';
     setIsScanning(true);
     try {
-      const [{ nextConfig, nextCases, nextVehicleMap }, insuranceSnapshot] = await Promise.all([
+      const [{ nextConfig, nextCases, nextVehicleMap, calendar }, insuranceSnapshot] = await Promise.all([
         loadCases(),
         getDocs(collection(db, VEHICLE_COLLECTIONS.insurance)),
       ]);
@@ -225,7 +232,7 @@ export default function InsuranceWorkflowPage() {
           totalSteps: nextConfig.steps.length,
           ...assignment,
           escalationLevel: 0,
-          workflowDeadline: Timestamp.fromDate(insuranceWorkflowDeadline(firstStep.tatHours)),
+          workflowDeadline: Timestamp.fromDate(addBusinessHours(new Date(), firstStep.tatHours, calendar.workingHours, calendar.holidays)),
           stepStartedAt: now,
           acknowledgedAt: null,
           history: [historyEntry],
@@ -377,7 +384,7 @@ export default function InsuranceWorkflowPage() {
             currentStepIndex: nextIndex,
             stepStartedAt: now,
             acknowledgedAt: null,
-            workflowDeadline: Timestamp.fromDate(insuranceWorkflowDeadline(nextStep.tatHours)),
+            workflowDeadline: Timestamp.fromDate(addBusinessHours(new Date(), nextStep.tatHours, workingHours, holidays)),
           });
           notifyIds = assignment.assigneeIds;
           notifyTitle = selectedAction === 'Return' ? 'Insurance renewal returned' : 'Insurance workflow step assigned';
@@ -423,7 +430,7 @@ export default function InsuranceWorkflowPage() {
         status: 'In Progress',
         stepStartedAt: now,
         acknowledgedAt: null,
-        workflowDeadline: Timestamp.fromDate(insuranceWorkflowDeadline(currentStep.tatHours)),
+        workflowDeadline: Timestamp.fromDate(addBusinessHours(new Date(), currentStep.tatHours, workingHours, holidays)),
         history: arrayUnion(historyEntry),
         updatedAt: now,
       });
@@ -473,7 +480,7 @@ export default function InsuranceWorkflowPage() {
           assigneeIds: nextUser ? [nextUser.id] : caseRow.assigneeIds,
           assigneeNames: nextUser ? [nextUser.name || nextUser.email] : caseRow.assigneeNames,
           escalationLevel: Number(caseRow.escalationLevel || 0) + 1,
-          workflowDeadline: Timestamp.fromDate(insuranceWorkflowDeadline(workflowStep.tatHours)),
+          workflowDeadline: Timestamp.fromDate(addBusinessHours(new Date(), workflowStep.tatHours, workingHours, holidays)),
           history: arrayUnion(historyEntry),
           updatedAt: now,
         });

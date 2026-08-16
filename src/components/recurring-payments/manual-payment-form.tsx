@@ -27,12 +27,14 @@ import {
   DEFAULT_PAYMENT_CATEGORIES,
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
+  loadWorkingCalendar,
   type ApprovalRule,
   type RecurringPaymentSettings,
   type RecurringWorkflowStep,
   RP_COLLECTIONS,
   currency,
 } from "@/lib/recurring-payments";
+import { addBusinessHours } from "@/lib/working-hours";
 import { ControlledField } from "./controlled-field";
 import {
   useFieldControl,
@@ -268,12 +270,15 @@ export default function ManualPaymentForm() {
         projects.find((item) => item.id === projectId)?.projectName || "";
       const department =
         departments.find((item) => item.id === departmentId)?.name || "";
-      const ruleSnapshot = await getDocs(
-        query(
-          collection(db, RP_COLLECTIONS.approvalRules),
-          where("organizationId", "==", organizationId),
+      const [ruleSnapshot, calendar] = await Promise.all([
+        getDocs(
+          query(
+            collection(db, RP_COLLECTIONS.approvalRules),
+            where("organizationId", "==", organizationId),
+          ),
         ),
-      );
+        loadWorkingCalendar(),
+      ]);
       const approvalRule = ruleSnapshot.docs
         .map((item) => ({ id: item.id, ...item.data() }) as ApprovalRule)
         .find(
@@ -359,7 +364,7 @@ export default function ManualPaymentForm() {
         workflowDeadline:
           intent === "submit"
             ? Timestamp.fromMillis(
-                Date.now() + Math.max(1, verificationStep.tat) * 3_600_000,
+                addBusinessHours(new Date(), Math.max(1, verificationStep.tat), calendar.workingHours, calendar.holidays).getTime(),
               )
             : null,
         documentReferences: documents,

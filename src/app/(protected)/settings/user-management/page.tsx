@@ -2,10 +2,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCheck, Copy, Plus, RefreshCw, ShieldAlert, Search, Sparkles } from 'lucide-react';
+import { ArrowLeft, CheckCheck, Copy, Plus, RefreshCw, ShieldAlert, Search, Sparkles, KeyRound, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -33,6 +33,16 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -47,6 +57,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
+import { cn } from '@/lib/utils';
 
 
 const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -100,7 +111,13 @@ export default function ManageUserPage() {
   }, [isAddDialogOpen]);
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [originalUserRole, setOriginalUserRole] = useState('');
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
+
+  // Set when saving would change the signed-in admin's own role away from one that can
+  // still manage users — confirmed via dialog before saving, so nobody locks themselves out.
+  const [pendingSelfRoleChange, setPendingSelfRoleChange] = useState<{ roleName: string } | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -109,6 +126,20 @@ export default function ManageUserPage() {
   const canView = can('View', 'Settings.User Management');
   const canAdd = can('Add', 'Settings.User Management');
   const canEdit = can('Edit', 'Settings.User Management');
+
+  const knownRoleNames = useMemo(() => new Set(roles.map((r) => r.name)), [roles]);
+  const unknownRoleUsers = useMemo(
+    () => users.filter((u) => u.role && !knownRoleNames.has(u.role)),
+    [users, knownRoleNames],
+  );
+  const activeCount = useMemo(() => users.filter((u) => u.status === 'Active').length, [users]);
+  const inactiveCount = users.length - activeCount;
+
+  const roleGrantsUserManagementEdit = (roleName: string) => {
+    const role = roles.find((r) => r.name === roleName);
+    if (!role) return false;
+    return (role.permissions?.['Settings.User Management'] || []).includes('Edit');
+  };
 
   useEffect(() => {
     if (!isAuthLoading && canView) {
@@ -257,12 +288,13 @@ export default function ManageUserPage() {
   
   const openEditDialog = (user: User) => {
     setEditingUser(user);
+    setOriginalUserRole(user.role);
     setIsEditDialogOpen(true);
   };
   
-  const handleUpdateUser = async () => {
+  const performUpdateUser = async () => {
     if (!editingUser || !adminUser) return;
-  
+
     try {
       const userRef = doc(db, 'users', editingUser.id);
       const { id, ...dataToUpdate } = editingUser;
@@ -284,6 +316,7 @@ export default function ManageUserPage() {
       });
       setIsEditDialogOpen(false);
       setEditingUser(null);
+      setPendingSelfRoleChange(null);
       fetchUsersAndRoles();
     } catch (error) {
       console.error('Error updating user: ', error);
@@ -292,6 +325,59 @@ export default function ManageUserPage() {
         description: 'Failed to update user.',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleUpdateUser = async () => {
+    if (!editingUser || !adminUser) return;
+
+    const isSelf = editingUser.id === adminUser.id;
+
+    // Deactivating yourself has no legitimate use here — you'd just lock yourself out with
+    // no other way to flip it back on. Block it outright rather than warn.
+    if (isSelf && editingUser.status === 'Inactive') {
+      toast({
+        title: "Can't deactivate your own account",
+        description: 'Ask another administrator to do this if it’s really needed.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Changing your own role away from one that can still edit User Management is recoverable
+    // (another admin can fix it) but easy to do by accident — confirm before proceeding. Only
+    // relevant if the role field actually changed in this session, not on every unrelated edit.
+    const roleChanged = editingUser.role !== originalUserRole;
+    if (isSelf && roleChanged && !roleGrantsUserManagementEdit(editingUser.role)) {
+      setPendingSelfRoleChange({ roleName: editingUser.role });
+      return;
+    }
+
+    await performUpdateUser();
+  };
+
+  const handleSendPasswordReset = async () => {
+    if (!editingUser?.email) return;
+    setIsSendingReset(true);
+    try {
+      await fetch('/api/send-password-reset-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: editingUser.email }),
+      });
+      toast({
+        title: 'Reset email sent',
+        description: `If ${editingUser.email} has an account, a password reset link was sent to it.`,
+      });
+    } catch (error) {
+      console.error('Error sending password reset email: ', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to send password reset email.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSendingReset(false);
     }
   };
 
@@ -312,7 +398,7 @@ export default function ManageUserPage() {
   
   if (isAuthLoading || (isLoading && canView)) {
       return (
-        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+        <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
             <AuroraBackdrop />
             <div className="w-full">
               <div className="mb-6 flex items-center justify-between">
@@ -331,7 +417,7 @@ export default function ManageUserPage() {
   
   if (!canView) {
     return (
-        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+        <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
             <AuroraBackdrop />
             <div className="w-full">
               <div className="mb-6 flex items-center gap-4">
@@ -358,7 +444,7 @@ export default function ManageUserPage() {
 
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
       <AuroraBackdrop />
 
       <div className="w-full">
@@ -370,11 +456,19 @@ export default function ManageUserPage() {
               </Button>
             </Link>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">User Management</h1>
                 <Badge variant="outline" className="border-white/70 bg-white/70 text-slate-700 backdrop-blur">
                   {users.length} users
                 </Badge>
+                <Badge variant="outline" className="border-emerald-200/80 bg-emerald-50 text-emerald-700">
+                  {activeCount} active
+                </Badge>
+                {inactiveCount > 0 && (
+                  <Badge variant="outline" className="border-slate-200/80 bg-white/70 text-slate-500">
+                    {inactiveCount} inactive
+                  </Badge>
+                )}
               </div>
               <p className="mt-1 text-sm text-slate-600">
                 Create accounts, assign roles, and review activity logs with one click.
@@ -486,6 +580,16 @@ export default function ManageUserPage() {
         </div>
       </div>
 
+      {unknownRoleUsers.length > 0 && (
+        <div className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-200/80 bg-amber-50/80 px-4 py-3 text-sm text-amber-800 backdrop-blur">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            {unknownRoleUsers.length} user{unknownRoleUsers.length === 1 ? '' : 's'} {unknownRoleUsers.length === 1 ? 'has' : 'have'} a role that no longer
+            exists (it may have been renamed or deleted). Open Edit and reassign a current role so they don’t lose access unexpectedly.
+          </p>
+        </div>
+      )}
+
       <Card className="mb-4 overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
         <CardContent className="p-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -544,7 +648,18 @@ export default function ManageUserPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {user.role && <Badge variant="outline" className="text-xs">{user.role}</Badge>}
+                {user.id === adminUser?.id && (
+                  <Badge variant="outline" className="text-xs border-sky-200 bg-sky-50 text-sky-700">You</Badge>
+                )}
+                {user.role && (
+                  <Badge
+                    variant="outline"
+                    className={cn('text-xs', !knownRoleNames.has(user.role) && 'gap-1 border-amber-200 bg-amber-50 text-amber-700')}
+                  >
+                    {!knownRoleNames.has(user.role) && <AlertTriangle className="h-3 w-3" />}
+                    {user.role}
+                  </Badge>
+                )}
                 <Badge
                   variant={user.status === 'Active' ? 'default' : 'outline'}
                   className={user.status === 'Active' ? 'bg-emerald-500 text-white text-xs border-0' : 'text-xs'}
@@ -573,7 +688,7 @@ export default function ManageUserPage() {
 
       <Card className="hidden md:block overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-22rem)]" showHorizontalScrollbar>
+          <ScrollArea className="h-[calc(100dvh-22rem)]" showHorizontalScrollbar>
             <Table className="min-w-[980px]">
               <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
                 <TableRow>
@@ -606,10 +721,26 @@ export default function ManageUserPage() {
                       onClick={() => handleRowClick(user.id)}
                       className="cursor-pointer hover:bg-slate-50/70"
                     >
-                      <TableCell className="font-semibold text-slate-900">{user.name}</TableCell>
+                      <TableCell className="font-semibold text-slate-900">
+                        <div className="flex items-center gap-1.5">
+                          {user.name}
+                          {user.id === adminUser?.id && (
+                            <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700 text-[10px]">You</Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-slate-700">{user.email}</TableCell>
                       <TableCell className="text-slate-700">{user.mobile}</TableCell>
-                      <TableCell className="text-slate-700">{user.role}</TableCell>
+                      <TableCell className="text-slate-700">
+                        {user.role && !knownRoleNames.has(user.role) ? (
+                          <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-700">
+                            <AlertTriangle className="h-3 w-3" />
+                            {user.role}
+                          </Badge>
+                        ) : (
+                          user.role
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant="outline"
@@ -654,12 +785,18 @@ export default function ManageUserPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Edit User</DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogTitle>Edit User</DialogTitle>
+              {editingUser?.id === adminUser?.id && (
+                <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700 text-xs">This is you</Badge>
+              )}
+            </div>
             <DialogDescription>
               Update the details of the user. Note: Email and password cannot be changed from this dialog.
             </DialogDescription>
           </DialogHeader>
           {editingUser && (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                  <div className="space-y-2">
                     <Label htmlFor="editName">Name</Label>
@@ -678,23 +815,56 @@ export default function ManageUserPage() {
                     <Select value={editingUser.role} onValueChange={(value: string) => setEditingUser({...editingUser, role: value})}>
                         <SelectTrigger id="editRole"><SelectValue /></SelectTrigger>
                         <SelectContent>
+                            {editingUser.role && !knownRoleNames.has(editingUser.role) && (
+                              <SelectItem value={editingUser.role} disabled>
+                                {editingUser.role} (no longer exists)
+                              </SelectItem>
+                            )}
                             {roles.map(role => (
                               <SelectItem key={role.id} value={role.name}>{role.name}</SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="editStatus">Status</Label>
                     <Select value={editingUser.status} onValueChange={(value: 'Active' | 'Inactive') => setEditingUser({...editingUser, status: value})}>
                         <SelectTrigger id="editStatus"><SelectValue/></SelectTrigger>
                         <SelectContent>
                             <SelectItem value="Active">Active</SelectItem>
-                            <SelectItem value="Inactive">Inactive</SelectItem>
+                            <SelectItem
+                              value="Inactive"
+                              disabled={editingUser.id === adminUser?.id}
+                            >
+                              Inactive
+                            </SelectItem>
                         </SelectContent>
                     </Select>
+                    {editingUser.id === adminUser?.id && (
+                      <p className="text-xs text-slate-500">You can't deactivate your own account.</p>
+                    )}
                 </div>
             </div>
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-700">Forgot their password?</p>
+                <p className="text-xs text-slate-500 truncate">Sends a reset link to {editingUser.email}.</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 bg-white"
+                disabled={isSendingReset}
+                onClick={handleSendPasswordReset}
+              >
+                {isSendingReset
+                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  : <KeyRound className="mr-2 h-4 w-4" />}
+                Send Reset Email
+              </Button>
+            </div>
+            </>
           )}
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
@@ -702,6 +872,30 @@ export default function ManageUserPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirm before letting an admin change their own role away from one that can still
+          manage users — recoverable by another admin, but easy to do by accident. */}
+      <AlertDialog
+        open={!!pendingSelfRoleChange}
+        onOpenChange={(open) => !open && setPendingSelfRoleChange(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change your own role?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You're changing your own role to &quot;{pendingSelfRoleChange?.roleName}&quot;, which does not
+              include Edit access to User Management. If you continue, you may not be able to manage users or
+              roles yourself afterward — you'd need another administrator to fix it. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => performUpdateUser()}>
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </div>
     </div>
   );

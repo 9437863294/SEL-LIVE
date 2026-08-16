@@ -2,24 +2,42 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { AlertTriangle, BarChart3, CalendarClock, Download, FileSpreadsheet, Loader2, Printer, Store, Tags, TrendingUp } from 'lucide-react';
+import { BarChart3, CalendarClock, FileSpreadsheet, Loader2, Printer, Store, Tags, TrendingUp } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { PaymentObligation, RP_COLLECTIONS, currency, effectiveStatus } from '@/lib/recurring-payments';
+import { PaymentObligation, RP_COLLECTIONS, currency, effectiveStatus, matchesScopeFilter, recurringDateOnly } from '@/lib/recurring-payments';
+import { exportWorkbook } from '@/lib/report-excel';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import CollapsibleFilterCard from './collapsible-filter-card';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useGlobalScopes } from './use-global-scopes';
+import {
+  ReportAccessDenied,
+  ReportErrorBanner,
+  ReportHeader,
+  ReportLoading,
+  ReportMetricTile,
+  ReportSummaryTable,
+} from './report-ui';
+
+const DEFAULT_FILTERS = { project: 'all', department: 'all' };
 
 export default function RecurringPaymentReports() {
   const { user } = useAuth();
   const { can } = useAuthorization();
   const { toast } = useToast();
+  const { activeProjects, activeDepartments } = useGlobalScopes();
   const organizationId = user?.organizationId || 'default';
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   useEffect(
     () => onSnapshot(
@@ -28,23 +46,43 @@ export default function RecurringPaymentReports() {
         setPayments(snap.docs.map(d => ({ id: d.id, ...d.data(), status: effectiveStatus({ id: d.id, ...d.data() } as PaymentObligation) } as PaymentObligation)));
         setLoading(false);
       },
-      () => setLoading(false),
+      () => {
+        setLoading(false);
+        setLoadError(true);
+      },
     ),
     [organizationId],
   );
 
-  const open = useMemo(() => payments.filter(p => !['Paid', 'Closed', 'Cancelled', 'Waived'].includes(p.status)), [payments]);
+  const activeFilterCount = (Object.keys(DEFAULT_FILTERS) as Array<keyof typeof DEFAULT_FILTERS>)
+    .filter(key => filters[key] !== DEFAULT_FILTERS[key]).length;
+
+  const scopedPayments = useMemo(
+    () => payments.filter(p =>
+      matchesScopeFilter(filters.project, { id: p.projectId, name: p.projectName }, activeProjects.map(project => ({ id: project.id, name: project.projectName }))) &&
+      matchesScopeFilter(filters.department, { id: p.departmentId, name: p.department }, activeDepartments.map(department => ({ id: department.id, name: department.name })))),
+    [payments, filters, activeProjects, activeDepartments],
+  );
+
+  // "Non-void" excludes Cancelled/Waived — those never happened, so counting them into expense
+  // exposure (category/vendor totals, the monthly trend) overstated spend. Draft/Scheduled
+  // obligations are still included here (at their expected amount) since they're a real forecast,
+  // not yet-realized spend — that distinction is what "open" (below) narrows further for ageing.
+  const nonVoid = useMemo(() => scopedPayments.filter(p => !['Cancelled', 'Waived'].includes(p.status)), [scopedPayments]);
+  const open = useMemo(() => scopedPayments.filter(p => !['Paid', 'Closed', 'Cancelled', 'Waived'].includes(p.status)), [scopedPayments]);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const outflow = (days: number) => open.filter(p => {
+    if (!p.dueDate) return false;
     const due = new Date(`${p.dueDate}T00:00:00`);
     return due >= today && due <= new Date(today.getTime() + days * 86_400_000);
   }).reduce((s, p) => s + (p.billAmount || p.expectedAmount), 0);
 
-  const byCategory = group(payments, p => p.category);
-  const byVendor = group(payments, p => p.vendorName);
+  const byCategory = group(nonVoid, p => p.category);
+  const byVendor = group(nonVoid, p => p.vendorName);
   const ageing = [['1–7 days', 1, 7], ['8–15 days', 8, 15], ['16–30 days', 16, 30], ['31–60 days', 31, 60], ['Above 60 days', 61, 100_000]].map(([label, min, max]) => {
     const subset = open.filter(p => {
+      if (!p.dueDate) return false;
       const days = Math.floor((today.getTime() - new Date(`${p.dueDate}T00:00:00`).getTime()) / 86_400_000);
       return days >= Number(min) && days <= Number(max);
     });
@@ -53,7 +91,7 @@ export default function RecurringPaymentReports() {
   const monthly = Array.from({ length: 6 }, (_, index) => {
     const d = new Date(today.getFullYear(), today.getMonth() - (5 - index), 1);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const subset = payments.filter(p => p.dueDate.startsWith(key));
+    const subset = nonVoid.filter(p => p.dueDate?.startsWith(key));
     return {
       month: d.toLocaleString('en-IN', { month: 'short', year: '2-digit' }),
       expected: subset.reduce((s, p) => s + p.expectedAmount, 0),
@@ -65,29 +103,51 @@ export default function RecurringPaymentReports() {
   async function excel() {
     setExporting(true);
     try {
-      const ExcelJS = (await import('exceljs')).default;
-      const wb = new ExcelJS.Workbook();
-      wb.creator = 'SEL Live';
-      wb.created = new Date();
-      const register = wb.addWorksheet('Payment Register');
-      register.columns = [['Cycle', 'cycleKey', 22], ['Title', 'title', 32], ['Category', 'category', 24], ['Vendor', 'vendorName', 24], ['Due Date', 'dueDate', 14], ['Expected', 'expectedAmount', 14], ['Bill Amount', 'billAmount', 14], ['Paid', 'paidAmount', 14], ['Status', 'status', 18], ['Stage', 'stage', 22]].map(([header, key, width]) => ({ header: String(header), key: String(key), width: Number(width) }));
-      payments.forEach(p => register.addRow({ ...p, billAmount: p.billAmount || p.expectedAmount }));
-      styleSheet(register);
-      const categories = wb.addWorksheet('Category Summary');
-      categories.columns = [{ header: 'Category', key: 'name', width: 30 }, { header: 'Count', key: 'count', width: 12 }, { header: 'Amount', key: 'amount', width: 18 }];
-      byCategory.forEach(row => categories.addRow(row));
-      styleSheet(categories);
-      const vendors = wb.addWorksheet('Vendor Summary');
-      vendors.columns = [{ header: 'Vendor', key: 'name', width: 30 }, { header: 'Count', key: 'count', width: 12 }, { header: 'Amount', key: 'amount', width: 18 }];
-      byVendor.forEach(row => vendors.addRow(row));
-      styleSheet(vendors);
-      const age = wb.addWorksheet('Overdue Ageing');
-      age.columns = [{ header: 'Bucket', key: 'label', width: 20 }, { header: 'Count', key: 'count', width: 12 }, { header: 'Outstanding', key: 'amount', width: 18 }];
-      ageing.forEach(row => age.addRow(row));
-      styleSheet(age);
-      const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      download(blob, `recurring-payment-report-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      await exportWorkbook(`recurring-payment-report-${recurringDateOnly(new Date())}.xlsx`, [
+        {
+          name: 'Payment Register',
+          columns: [
+            { header: 'Cycle', key: 'cycleKey', width: 22 },
+            { header: 'Title', key: 'title', width: 32 },
+            { header: 'Category', key: 'category', width: 24 },
+            { header: 'Vendor', key: 'vendorName', width: 24 },
+            { header: 'Due Date', key: 'dueDate', width: 14 },
+            { header: 'Expected', key: 'expectedAmount', width: 14 },
+            { header: 'Bill Amount', key: 'billAmount', width: 14 },
+            { header: 'Paid', key: 'paidAmount', width: 14 },
+            { header: 'Status', key: 'status', width: 18 },
+            { header: 'Stage', key: 'stage', width: 22 },
+          ],
+          rows: scopedPayments.map(p => ({ ...p, billAmount: p.billAmount || p.expectedAmount })),
+        },
+        {
+          name: 'Category Summary',
+          columns: [
+            { header: 'Category', key: 'name', width: 30 },
+            { header: 'Count', key: 'count', width: 12 },
+            { header: 'Amount', key: 'amount', width: 18 },
+          ],
+          rows: byCategory,
+        },
+        {
+          name: 'Vendor Summary',
+          columns: [
+            { header: 'Vendor', key: 'name', width: 30 },
+            { header: 'Count', key: 'count', width: 12 },
+            { header: 'Amount', key: 'amount', width: 18 },
+          ],
+          rows: byVendor,
+        },
+        {
+          name: 'Overdue Ageing',
+          columns: [
+            { header: 'Bucket', key: 'label', width: 20 },
+            { header: 'Count', key: 'count', width: 12 },
+            { header: 'Outstanding', key: 'amount', width: 18 },
+          ],
+          rows: ageing,
+        },
+      ]);
       toast({ title: 'Excel report exported' });
     } catch {
       toast({ title: 'Excel export failed', variant: 'destructive' });
@@ -96,25 +156,16 @@ export default function RecurringPaymentReports() {
     }
   }
 
-  if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>;
-  if (!can('View', 'Recurring Payments.Reports')) return (
-    <Card>
-      <CardContent className="py-16 text-center">
-        <AlertTriangle className="mx-auto mb-3 h-9 w-9 text-amber-500" />
-        <p className="font-semibold text-muted-foreground">You don&apos;t have permission to view this report.</p>
-      </CardContent>
-    </Card>
-  );
+  if (loading) return <ReportLoading />;
+  if (!can('View', 'Recurring Payments.Reports')) return <ReportAccessDenied />;
 
   return (
     <div className="space-y-5 print:p-0">
-      <Card className="border-0 bg-gradient-to-r from-violet-700 to-indigo-700 text-white print:bg-white print:text-black">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Recurring Payment Analytics</h1>
-            <p className="text-sm text-violet-100 print:text-slate-600">Cash-flow, category, vendor, trend and overdue analysis</p>
-          </div>
-          <div className="flex gap-2 print:hidden">
+      <ReportHeader
+        title="Recurring Payment Analytics"
+        description="Cash-flow, category, vendor, trend and overdue analysis"
+        actions={
+          <>
             {can('Export', 'Recurring Payments.Reports') && (
               <Button variant="secondary" onClick={excel} disabled={exporting}>
                 {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
@@ -125,36 +176,52 @@ export default function RecurringPaymentReports() {
               <Printer className="mr-2 h-4 w-4" />
               Print / PDF
             </Button>
+          </>
+        }
+      />
+
+      {loadError && <ReportErrorBanner />}
+
+      <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">Project</Label>
+            <Select value={filters.project} onValueChange={project => setFilters(current => ({ ...current, project }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All global projects" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All global projects</SelectItem>
+                {activeProjects.map(project => <SelectItem value={project.id} key={project.id}>{project.projectName}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
-        </CardContent>
-      </Card>
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground">Department</Label>
+            <Select value={filters.department} onValueChange={department => setFilters(current => ({ ...current, department }))}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="All global departments" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All global departments</SelectItem>
+                {activeDepartments.map(department => <SelectItem value={department.id} key={department.id}>{department.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </CollapsibleFilterCard>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[7, 15, 30, 60, 90].map(days => (
-          <Card key={days}>
-            <CardContent className="flex items-start justify-between gap-3 p-4">
-              <div>
-                <p className="text-xs text-muted-foreground">Next {days} days</p>
-                <p className="mt-1 text-xl font-bold">{currency(outflow(days))}</p>
-                <p className="text-xs text-muted-foreground">Expected outflow</p>
-              </div>
-              <div className="rounded-lg bg-indigo-100 p-2 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400">
-                <CalendarClock className="h-4 w-4" />
-              </div>
-            </CardContent>
-          </Card>
+          <ReportMetricTile key={days} label={`Next ${days} days`} value={currency(outflow(days))} icon={CalendarClock} tone="neutral" />
         ))}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SummaryTable title="Category-wise expense" description="Total billed value across all payments, by category" icon={Tags} rows={byCategory} />
-        <SummaryTable title="Vendor-wise expense" description="Top 12 vendors by total billed value" icon={Store} rows={byVendor.slice(0, 12)} />
+        <ReportSummaryTable title="Category-wise expense" description="Total billed (or expected, where no bill exists yet) value, by category — excludes cancelled/waived" icon={Tags} rows={byCategory} />
+        <ReportSummaryTable title="Vendor-wise expense" description="Top 12 vendors by total value — excludes cancelled/waived" icon={Store} rows={byVendor.slice(0, 12)} />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-indigo-600" />Six-month comparison</CardTitle>
-          <CardDescription>Expected vs. billed vs. paid, over the trailing 6 months</CardDescription>
+          <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-emerald-600" />Six-month comparison</CardTitle>
+          <CardDescription>Expected vs. billed vs. paid, over the trailing 6 months — excludes cancelled/waived</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -224,61 +291,4 @@ function group(payments: PaymentObligation[], key: (p: PaymentObligation) => str
       return acc;
     }, {}),
   ).map(([name, value]) => ({ name, ...value })).sort((a, b) => b.amount - a.amount);
-}
-
-function SummaryTable({
-  title, description, icon: Icon, rows,
-}: {
-  title: string;
-  description: string;
-  icon: React.ElementType;
-  rows: Array<{ name: string; count: number; amount: number }>;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2"><Icon className="h-5 w-5 text-indigo-600" />{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead className="text-right">Records</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map(row => (
-              <TableRow key={row.name}>
-                <TableCell>{row.name}</TableCell>
-                <TableCell className="text-right">{row.count}</TableCell>
-                <TableCell className="text-right font-semibold">{currency(row.amount)}</TableCell>
-              </TableRow>
-            ))}
-            {!rows.length && (
-              <TableRow>
-                <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">No data yet.</TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
-
-function styleSheet(sheet: { getRow: (row: number) => { font: unknown; fill: unknown }; views: unknown[]; autoFilter?: unknown; rowCount: number; columnCount: number }) {
-  sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
-  sheet.views = [{ state: 'frozen', ySplit: 1 }];
-  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: sheet.rowCount, column: sheet.columnCount } };
-}
-function download(blob: Blob, name: string) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(a.href);
 }

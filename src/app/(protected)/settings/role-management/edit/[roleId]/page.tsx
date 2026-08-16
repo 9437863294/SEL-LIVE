@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
-import { ArrowLeft, Save, Loader2, Search, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Search, ShieldAlert, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +15,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import {
@@ -25,6 +35,7 @@ import {
   getDocs,
   query,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import type { Role, Department, Project } from "@/lib/types";
 import { permissionModules } from "@/lib/permissions";
@@ -141,13 +152,22 @@ export default function EditRolePage() {
   const canEdit = can("Edit", "Settings.Role Management");
 
   const [editingRole, setEditingRole] = useState<Role | null>(null);
+  const [originalName, setOriginalName] = useState("");
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [otherRoles, setOtherRoles] = useState<Role[]>([]);
+  const [assignedUserCount, setAssignedUserCount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const [permissionQuery, setPermissionQuery] = useState("");
   const [openModules, setOpenModules] = useState<string[]>([]);
+
+  // Set once we know a rename would need to cascade to real users; confirmed via dialog before saving.
+  const [pendingRenameSave, setPendingRenameSave] = useState<{
+    newName: string;
+    userCount: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!roleId) return;
@@ -177,6 +197,13 @@ export default function EditRolePage() {
         const roleDocRef = doc(db, "roles", roleId);
         const roleDocSnap = await getDoc(roleDocRef);
 
+        const rolesSnap = await getDocs(collection(db, "roles"));
+        setOtherRoles(
+          rolesSnap.docs
+            .filter((d) => d.id !== roleId)
+            .map((d) => ({ id: d.id, ...d.data() }) as Role),
+        );
+
         if (roleDocSnap.exists()) {
           const roleData = {
             id: roleDocSnap.id,
@@ -195,6 +222,17 @@ export default function EditRolePage() {
           }
 
           setEditingRole({ ...roleData, permissions: completePermissions });
+          setOriginalName(roleData.name);
+
+          if (roleData.name?.trim()) {
+            const usersSnap = await getDocs(
+              query(
+                collection(db, "users"),
+                where("role", "==", roleData.name),
+              ),
+            );
+            setAssignedUserCount(usersSnap.size);
+          }
         } else {
           toast({
             title: "Error",
@@ -250,22 +288,26 @@ export default function EditRolePage() {
     });
   };
 
-  const handleUpdateRole = async () => {
-    if (!editingRole || !editingRole.name.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Role Name cannot be empty.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!user) return;
-
+  const performSave = async (finalName: string, cascadeToUsers: boolean) => {
+    if (!editingRole || !user) return;
     setIsSaving(true);
     try {
       const roleRef = doc(db, "roles", editingRole.id);
       const { id, ...dataToUpdate } = editingRole;
-      await updateDoc(roleRef, dataToUpdate);
+      await updateDoc(roleRef, { ...dataToUpdate, name: finalName });
+
+      if (cascadeToUsers && originalName.trim() && finalName !== originalName) {
+        const usersSnap = await getDocs(
+          query(collection(db, "users"), where("role", "==", originalName)),
+        );
+        if (!usersSnap.empty) {
+          const batch = writeBatch(db);
+          usersSnap.docs.forEach((userDoc) => {
+            batch.update(userDoc.ref, { role: finalName });
+          });
+          await batch.commit();
+        }
+      }
 
       await logUserActivity({
         userId: user.id,
@@ -273,7 +315,7 @@ export default function EditRolePage() {
         userEmail: user.email,
         module: "Settings",
         action: "Update Role",
-        details: { roleId: editingRole.id, roleName: editingRole.name },
+        details: { roleId: editingRole.id, roleName: finalName },
       });
       toast({ title: "Success", description: "Role updated successfully." });
       router.push("/settings/role-management");
@@ -286,7 +328,41 @@ export default function EditRolePage() {
       });
     } finally {
       setIsSaving(false);
+      setPendingRenameSave(null);
     }
+  };
+
+  const handleUpdateRole = async () => {
+    if (!editingRole) return;
+    const trimmedName = editingRole.name.trim();
+    if (!trimmedName) {
+      toast({
+        title: "Validation Error",
+        description: "Role Name cannot be empty.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const nameTaken = otherRoles.some(
+      (role) => role.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+    );
+    if (nameTaken) {
+      toast({
+        title: "Validation Error",
+        description: `A role named "${trimmedName}" already exists.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!user) return;
+
+    const isRename =
+      !!originalName.trim() && trimmedName !== originalName.trim();
+    if (isRename && assignedUserCount > 0) {
+      setPendingRenameSave({ newName: trimmedName, userCount: assignedUserCount });
+      return;
+    }
+    await performSave(trimmedName, false);
   };
 
   const filteredModules = useMemo(() => {
@@ -418,6 +494,19 @@ export default function EditRolePage() {
                 >
                   {editingRole.name || "Role"}
                 </Badge>
+                <Badge
+                  variant="outline"
+                  className={
+                    assignedUserCount > 0
+                      ? "gap-1 border-sky-200 bg-sky-50 text-sky-700 text-xs"
+                      : "gap-1 border-slate-200 bg-white/80 text-slate-500 text-xs"
+                  }
+                >
+                  <Users className="h-3 w-3" />
+                  {assignedUserCount > 0
+                    ? `Assigned to ${assignedUserCount} user${assignedUserCount === 1 ? "" : "s"}`
+                    : "No users assigned"}
+                </Badge>
               </div>
               <p className="text-sm text-slate-500 mt-0.5">
                 Update the role name and fine-tune module permissions.
@@ -519,7 +608,7 @@ export default function EditRolePage() {
             </CardDescriptionShad>
           </CardHeader>
           <CardContent className="p-0">
-            <ScrollArea className="h-[calc(100vh-20rem)]">
+            <ScrollArea className="h-[calc(100dvh-20rem)]">
               <div className="p-5">
                 <Accordion
                   type="multiple"
@@ -1083,6 +1172,41 @@ export default function EditRolePage() {
           </Button>
         </div>
       </div>
+
+      {/* Renaming a role that's still assigned to users requires an explicit, informed confirmation
+          before we cascade-update those users' `role` field — otherwise the rename would silently
+          orphan them (AuthProvider resolves permissions by role NAME, not id). */}
+      <AlertDialog
+        open={!!pendingRenameSave}
+        onOpenChange={(open) => !open && setPendingRenameSave(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rename role and update assigned users?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingRenameSave?.userCount} user
+              {pendingRenameSave?.userCount === 1 ? "" : "s"} currently{" "}
+              {pendingRenameSave?.userCount === 1 ? "has" : "have"} the role &quot;
+              {originalName}&quot;. Renaming it to &quot;{pendingRenameSave?.newName}&quot; will
+              also update {pendingRenameSave?.userCount === 1 ? "that user" : "those users"} to the
+              new name, so nobody loses access. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving}
+              onClick={() =>
+                pendingRenameSave &&
+                performSave(pendingRenameSave.newName, true)
+              }
+            >
+              {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Rename &amp; Update Users
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

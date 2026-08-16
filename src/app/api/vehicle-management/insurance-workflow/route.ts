@@ -6,13 +6,13 @@ import {
   INSURANCE_WORKFLOW_CONFIG_DOC_ID,
   INSURANCE_WORKFLOW_OPEN_STATUSES,
   insuranceDaysUntil,
-  insuranceWorkflowDeadline,
   insuranceWorkflowPriority,
   normalizeInsuranceWorkflowConfig,
   resolveInsuranceWorkflowAssignment,
 } from '@/lib/vehicle-insurance-workflow';
 import { getVehicleComplianceRequirements, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
-import type { User } from '@/lib/types';
+import { addBusinessHours, normalizeWorkingHoursDoc } from '@/lib/working-hours';
+import type { Holiday, User } from '@/lib/types';
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -23,14 +23,20 @@ export async function GET(request: Request) {
   const db = getFirebaseAdminFirestore();
   const now = new Date();
   const nowTimestamp = Timestamp.fromDate(now);
-  const [configSnapshot, userSnapshot, insuranceSnapshot, caseSnapshot, vehicleSnapshot] = await Promise.all([
+  const [configSnapshot, userSnapshot, insuranceSnapshot, caseSnapshot, vehicleSnapshot, workingHoursSnap, holidaysSnap] = await Promise.all([
     db.collection(VEHICLE_COLLECTIONS.settings).doc(INSURANCE_WORKFLOW_CONFIG_DOC_ID).get(),
     db.collection('users').get(),
     db.collection(VEHICLE_COLLECTIONS.insurance).get(),
     db.collection(VEHICLE_COLLECTIONS.insuranceWorkflowCases).get(),
     db.collection(VEHICLE_COLLECTIONS.vehicleMaster).get(),
+    db.collection('settings').doc('workingHours').get(),
+    db.collection('holidays').get(),
   ]);
   const config = normalizeInsuranceWorkflowConfig(configSnapshot.exists ? configSnapshot.data() : DEFAULT_INSURANCE_WORKFLOW_CONFIG);
+  // Fetched once for the whole run — accounts for the org's configured working hours/holidays
+  // instead of raw calendar time when computing each case's TAT deadline.
+  const workingHours = normalizeWorkingHoursDoc(workingHoursSnap.data());
+  const holidays = holidaysSnap.docs.map((item) => item.data() as Holiday);
   const users = userSnapshot.docs.map((item) => ({ id: item.id, ...item.data() } as User));
   // Needed so Sold/Scrapped vehicles (or ones with insurance manually turned off) never get a
   // renewal case created/escalated just because their old policy has a past expiry date.
@@ -81,7 +87,7 @@ export async function GET(request: Request) {
         totalSteps: config.steps.length,
         ...assignment,
         escalationLevel: 0,
-        workflowDeadline: Timestamp.fromDate(insuranceWorkflowDeadline(firstStep.tatHours, now)),
+        workflowDeadline: Timestamp.fromDate(addBusinessHours(now, firstStep.tatHours, workingHours, holidays)),
         stepStartedAt: nowTimestamp,
         acknowledgedAt: null,
         history: [{ ...history, timestamp: nowTimestamp }],
@@ -188,7 +194,7 @@ export async function GET(request: Request) {
       assigneeIds: nextUser ? [nextUser.id] : caseRow.assigneeIds || [],
       assigneeNames: nextUser ? [nextUser.name || nextUser.email] : caseRow.assigneeNames || [],
       escalationLevel: Number(caseRow.escalationLevel || 0) + 1,
-      workflowDeadline: Timestamp.fromDate(insuranceWorkflowDeadline(workflowStep.tatHours, now)),
+      workflowDeadline: Timestamp.fromDate(addBusinessHours(now, workflowStep.tatHours, workingHours, holidays)),
       history: FieldValue.arrayUnion(history),
       updatedAt: nowTimestamp,
     });

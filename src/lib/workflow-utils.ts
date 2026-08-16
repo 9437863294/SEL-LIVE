@@ -3,15 +3,15 @@
 
 import { db } from './firebase';
 import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
-import type { 
-    WorkflowStep, 
-    Requisition, 
-    AmountBasedCondition, 
-    WorkingHours, 
+import type {
+    WorkflowStep,
+    Requisition,
+    AmountBasedCondition,
+    WorkingHours,
     Holiday,
     AssignedTo
 } from '@/lib/types';
-import { add, setHours, setMinutes, setSeconds, isSameDay, parse, formatISO } from 'date-fns';
+import { addBusinessHours } from './working-hours';
 
 // Caching for settings to avoid repeated Firestore reads within a single operation
 let workingHoursCache: WorkingHours | null = null;
@@ -44,53 +44,7 @@ async function getHolidays(): Promise<Holiday[]> {
 export async function calculateDeadline(startDate: Date, tatHours: number): Promise<Date> {
     const workingHours = await getWorkingHours();
     const holidays = await getHolidays();
-    const holidayDates = holidays.map(h => parse(h.date, 'yyyy-MM-dd', new Date()));
-
-    let remainingHours = tatHours;
-    let currentDate = new Date(startDate);
-
-    while (remainingHours > 0) {
-        const dayOfWeek = currentDate.toLocaleDateString('en-US', { weekday: 'long' });
-        const dayConfig = workingHours[dayOfWeek];
-
-        const isHoliday = holidayDates.some(holidayDate => isSameDay(currentDate, holidayDate));
-
-        if (dayConfig && dayConfig.isWorkDay && !isHoliday) {
-            const [startHour, startMinute] = dayConfig.startTime.split(':').map(Number);
-            const [endHour, endMinute] = dayConfig.endTime.split(':').map(Number);
-
-            let dayStartTime = setSeconds(setMinutes(setHours(currentDate, startHour), startMinute), 0);
-            let dayEndTime = setSeconds(setMinutes(setHours(currentDate, endHour), endMinute), 0);
-            
-            // If the start date is before working hours, advance it to the start of the working day
-            if(currentDate < dayStartTime) {
-                currentDate = dayStartTime;
-            }
-
-            // If the start date is after working hours, move to the next day and continue
-            if (currentDate >= dayEndTime) {
-                currentDate = add(currentDate, { days: 1 });
-                currentDate = setSeconds(setMinutes(setHours(currentDate, 0), 0), 0);
-                continue;
-            }
-
-            const remainingWorkHoursToday = (dayEndTime.getTime() - currentDate.getTime()) / (1000 * 60 * 60);
-
-            if (remainingHours <= remainingWorkHoursToday) {
-                currentDate = add(currentDate, { hours: remainingHours });
-                remainingHours = 0;
-            } else {
-                remainingHours -= remainingWorkHoursToday;
-                currentDate = add(currentDate, { days: 1 });
-                currentDate = setSeconds(setMinutes(setHours(currentDate, 0), 0), 0);
-            }
-        } else {
-            // It's a weekend or holiday, move to the next day
-            currentDate = add(currentDate, { days: 1 });
-            currentDate = setSeconds(setMinutes(setHours(currentDate, 0), 0), 0);
-        }
-    }
-    return currentDate;
+    return addBusinessHours(startDate, tatHours, workingHours, holidays);
 }
 
 

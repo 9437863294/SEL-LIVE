@@ -40,6 +40,7 @@ import {
   buildRecurringCycle,
   currency,
   DEFAULT_RECURRING_WORKFLOW,
+  loadWorkingCalendar,
   maskAccount,
   matchApprovalRule,
   resolveWorkflowActivation,
@@ -48,6 +49,7 @@ import {
   type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
+import { addBusinessHours } from "@/lib/working-hours";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -226,7 +228,7 @@ export default function RecurringMasterRegister() {
       // generated obligation can be entered into its first workflow step immediately (same as the
       // per-master "Generate now" button and the daily automation route) instead of sitting at
       // "Scheduled" until the next cron run picks it up.
-      const [ruleSnapshot, existingSnapshot, settingsSnap, workflowSnap] =
+      const [ruleSnapshot, existingSnapshot, settingsSnap, workflowSnap, calendar] =
         await Promise.all([
           getDocs(
             query(
@@ -248,6 +250,9 @@ export default function RecurringMasterRegister() {
             ),
           ),
           getDoc(doc(db, "workflows", "recurring-payments-workflow")),
+          // Fetched once for the whole batch — every master in the loop reuses the same schedule,
+          // rather than a Firestore round-trip per master.
+          loadWorkingCalendar(),
         ]);
       const rules = ruleSnapshot.docs.map(
         (item) => ({ id: item.id, ...item.data() }) as ApprovalRule,
@@ -353,8 +358,10 @@ export default function RecurringMasterRegister() {
                 assignees: activation.assignees,
                 workflowStartedAt: serverTimestamp(),
                 stepEnteredAt: serverTimestamp(),
+                // Real deadline, not resolveWorkflowActivation's naive approximation — accounts
+                // for the org's configured working hours and holidays.
                 workflowDeadline: Timestamp.fromMillis(
-                  activation.workflowDeadlineMs,
+                  addBusinessHours(new Date(), Math.max(1, workflow[0].tat), calendar.workingHours, calendar.holidays).getTime(),
                 ),
               }
             : {}),

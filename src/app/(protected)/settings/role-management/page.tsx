@@ -2,9 +2,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, ShieldAlert, Edit, Trash2, Sparkles } from 'lucide-react';
+import { ArrowLeft, Plus, ShieldAlert, Edit, Trash2, Copy, Sparkles, Search, Users, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -21,27 +21,86 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, addDoc } from 'firebase/firestore';
 import { type Role } from '@/lib/types';
 import { permissionModules } from '@/lib/permissions';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getTotalPermissionsForModule, getGrantedPermissionsForModule } from '@/lib/permission-utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
+import { cn } from '@/lib/utils';
 
+const MAX_VISIBLE_MODULE_BADGES = 4;
+
+function getModuleSummaries(role: Role) {
+  const summaries: { moduleName: string; percentage: number }[] = [];
+  Object.keys(permissionModules).forEach((moduleName) => {
+    const totalPerms = getTotalPermissionsForModule(moduleName);
+    if (totalPerms === 0) return;
+    const grantedPerms = getGrantedPermissionsForModule(role.permissions, moduleName);
+    if (grantedPerms === 0) return;
+    summaries.push({ moduleName, percentage: Math.round((grantedPerms / totalPerms) * 100) });
+  });
+  return summaries;
+}
+
+function ModuleSummaryBadges({ role, size = 'default' }: { role: Role; size?: 'default' | 'sm' }) {
+  const summaries = getModuleSummaries(role);
+  if (summaries.length === 0) {
+    return <span className="text-xs italic text-slate-400">No permissions granted</span>;
+  }
+  const visible = summaries.slice(0, MAX_VISIBLE_MODULE_BADGES);
+  const hiddenCount = summaries.length - visible.length;
+  const textSize = size === 'sm' ? 'text-[10px]' : 'text-xs';
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {visible.map(({ moduleName, percentage }) => (
+        <Badge
+          key={moduleName}
+          variant="outline"
+          className={cn(
+            textSize,
+            percentage === 100
+              ? 'border-emerald-200/80 bg-emerald-50 text-emerald-700'
+              : 'border-slate-200/80 bg-white/70 text-slate-700',
+          )}
+        >
+          {moduleName}: {percentage}%
+        </Badge>
+      ))}
+      {hiddenCount > 0 && (
+        <Badge variant="outline" className={cn(textSize, 'border-slate-200/80 bg-slate-100 text-slate-500')}>
+          +{hiddenCount} more
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 export default function ManageRolePage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
-  
+
   const [roles, setRoles] = useState<Role[]>([]);
+  const [roleUsage, setRoleUsage] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
-  
+  const [search, setSearch] = useState('');
+
+  const [deleteTarget, setDeleteTarget] = useState<Role | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const [duplicateSource, setDuplicateSource] = useState<Role | null>(null);
+  const [duplicateName, setDuplicateName] = useState('');
+  const [isDuplicating, setIsDuplicating] = useState(false);
+
   const canView = can('View', 'Settings.Role Management');
   const canAdd = can('Add', 'Settings.Role Management');
   const canEdit = can('Edit', 'Settings.Role Management');
@@ -50,9 +109,19 @@ export default function ManageRolePage() {
   const fetchRoles = async () => {
     setIsLoading(true);
     try {
-      const rolesSnap = await getDocs(collection(db, 'roles'));
+      const [rolesSnap, usersSnap] = await Promise.all([
+        getDocs(collection(db, 'roles')),
+        getDocs(collection(db, 'users')),
+      ]);
       const rolesData: Role[] = rolesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Role));
+      const usage: Record<string, number> = {};
+      usersSnap.docs.forEach((docSnap) => {
+        const roleName = String((docSnap.data() as any)?.role || '').trim();
+        if (!roleName) return;
+        usage[roleName] = (usage[roleName] || 0) + 1;
+      });
       setRoles(rolesData);
+      setRoleUsage(usage);
     } catch (error) {
       console.error("Error fetching roles: ", error);
       toast({
@@ -63,23 +132,30 @@ export default function ManageRolePage() {
     }
     setIsLoading(false);
   };
-  
+
   useEffect(() => {
     if (!isAuthLoading && canView) {
       fetchRoles();
     } else if (!isAuthLoading && !canView) {
         setIsLoading(false);
     }
-  }, [isAuthLoading, canView, toast]);
+  }, [isAuthLoading, canView]);
 
+  const filteredRoles = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return roles;
+    return roles.filter((role) => role.name.toLowerCase().includes(q));
+  }, [roles, search]);
 
-  const handleDeleteRole = async (id: string) => {
+  const handleDeleteRole = async (role: Role) => {
+    setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "roles", id));
+      await deleteDoc(doc(db, "roles", role.id));
       toast({
         title: "Success",
-        description: "Role deleted successfully.",
+        description: `Role "${role.name}" deleted successfully.`,
       });
+      setDeleteTarget(null);
       fetchRoles();
     } catch (error) {
       console.error("Error deleting role: ", error);
@@ -88,12 +164,54 @@ export default function ManageRolePage() {
         description: "Failed to delete role.",
         variant: "destructive",
       });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
+  const openDuplicateDialog = (role: Role) => {
+    setDuplicateSource(role);
+    setDuplicateName(`Copy of ${role.name}`);
+  };
+
+  const handleDuplicateRole = async () => {
+    if (!duplicateSource) return;
+    const trimmed = duplicateName.trim();
+    if (!trimmed) {
+      toast({ title: 'Validation Error', description: 'Role name cannot be empty.', variant: 'destructive' });
+      return;
+    }
+    const nameTaken = roles.some((role) => role.name.trim().toLowerCase() === trimmed.toLowerCase());
+    if (nameTaken) {
+      toast({ title: 'Validation Error', description: `A role named "${trimmed}" already exists.`, variant: 'destructive' });
+      return;
+    }
+    setIsDuplicating(true);
+    try {
+      await addDoc(collection(db, 'roles'), {
+        name: trimmed,
+        permissions: duplicateSource.permissions || {},
+      });
+      toast({
+        title: 'Success',
+        description: `Role "${trimmed}" created from "${duplicateSource.name}".`,
+      });
+      setDuplicateSource(null);
+      setDuplicateName('');
+      fetchRoles();
+    } catch (error) {
+      console.error('Error duplicating role: ', error);
+      toast({ title: 'Error', description: 'Failed to duplicate role.', variant: 'destructive' });
+    } finally {
+      setIsDuplicating(false);
+    }
+  };
+
+  const deleteUsageCount = deleteTarget ? (roleUsage[deleteTarget.name.trim()] || 0) : 0;
+
   if (isAuthLoading || (isLoading && canView)) {
     return (
-        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+        <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
             <AuroraBackdrop />
             <div className="w-full">
               <div className="mb-6 flex items-center justify-between">
@@ -109,10 +227,10 @@ export default function ManageRolePage() {
         </div>
     );
   }
-  
+
   if (!canView) {
     return (
-        <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+        <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
             <AuroraBackdrop />
             <div className="w-full">
               <div className="mb-6 flex items-center gap-4">
@@ -138,7 +256,7 @@ export default function ManageRolePage() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
       <AuroraBackdrop />
 
       <div className="w-full">
@@ -179,75 +297,86 @@ export default function ManageRolePage() {
           </div>
         </div>
 
+        {/* Search */}
+        <div className="relative mb-4 max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search roles by name..."
+            className="border-white/70 bg-white/70 pl-9 backdrop-blur"
+          />
+        </div>
+
         {/* Mobile card view — hidden on md+ */}
         <div className="space-y-3 md:hidden">
           {isLoading ? (
             Array.from({length: 3}).map((_, i) => <Skeleton key={i} className="h-36 w-full rounded-2xl" />)
-          ) : roles.length === 0 ? (
+          ) : filteredRoles.length === 0 ? (
             <div className="rounded-2xl border border-white/70 bg-white/70 px-4 py-10 text-center text-sm text-muted-foreground backdrop-blur">
-              No roles found.
+              {roles.length === 0 ? 'No roles found.' : 'No roles match your search.'}
             </div>
           ) : (
-            roles.map(role => (
+            filteredRoles.map(role => {
+              const usageCount = roleUsage[role.name.trim()] || 0;
+              return (
               <div key={role.id} className="rounded-2xl border border-white/70 bg-white/70 p-4 shadow-sm backdrop-blur space-y-3 active:scale-[0.99] transition-transform">
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-semibold text-slate-900">{role.name}</h3>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'shrink-0 gap-1 text-[10px]',
+                      usageCount > 0 ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white/70 text-slate-500',
+                    )}
+                  >
+                    <Users className="h-3 w-3" /> {usageCount}
+                  </Badge>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.keys(permissionModules).map(moduleName => {
-                    const totalPerms = getTotalPermissionsForModule(moduleName);
-                    if (totalPerms === 0) return null;
-                    const grantedPerms = getGrantedPermissionsForModule(role.permissions, moduleName);
-                    if (grantedPerms === 0) return null;
-                    const percentage = Math.round((grantedPerms / totalPerms) * 100);
-                    return (
-                      <Badge key={moduleName} variant="outline"
-                        className={percentage === 100
-                          ? 'border-emerald-200/80 bg-emerald-50 text-emerald-700 text-[10px]'
-                          : 'border-slate-200/80 bg-white/70 text-slate-700 text-[10px]'}>
-                        {moduleName}: {percentage}%
-                      </Badge>
-                    );
-                  })}
-                </div>
+                <ModuleSummaryBadges role={role} size="sm" />
                 <div className="flex gap-2 border-t border-slate-100 pt-3">
                   <Link href={`/settings/role-management/edit/${role.id}`} className="flex-1">
                     <Button variant="outline" size="sm" disabled={!canEdit} className="w-full bg-white/70 border-white/70 h-10">
                       <Edit className="mr-2 h-4 w-4" /> Edit
                     </Button>
                   </Link>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="destructive" size="sm" disabled={!canDelete} className="flex-1 h-10">
-                        <Trash2 className="mr-2 h-4 w-4" /> Delete
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete &quot;{role.name}&quot;?</AlertDialogTitle>
-                        <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => handleDeleteRole(role.id)}>Delete</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={!canAdd}
+                    className="h-10 w-10 shrink-0 bg-white/70 border-white/70"
+                    title="Duplicate role"
+                    onClick={() => openDuplicateDialog(role)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    disabled={!canDelete}
+                    className="h-10 w-10 shrink-0"
+                    title="Delete role"
+                    onClick={() => setDeleteTarget(role)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
 
         <Card className="hidden md:block overflow-hidden rounded-2xl border border-white/70 bg-white/70 shadow-[0_20px_70px_-55px_rgba(2,6,23,0.55)] backdrop-blur">
           <CardContent className="p-0">
-            <ScrollArea className="h-[calc(100vh-18.5rem)]" showHorizontalScrollbar>
-              <Table className="min-w-[980px]">
+            <ScrollArea className="h-[calc(100dvh-18.5rem)]" showHorizontalScrollbar>
+              <Table className="min-w-[1080px]">
               <TableHeader className="sticky top-0 z-10 bg-gradient-to-r from-white/90 via-white/80 to-white/90 backdrop-blur border-b border-white/70">
                 <TableRow>
-                  <TableHead className="w-[220px] text-slate-700">Role Name</TableHead>
+                  <TableHead className="w-[200px] text-slate-700">Role Name</TableHead>
                   <TableHead className="text-slate-700">Permissions Summary</TableHead>
-                  <TableHead className="text-right w-[200px] text-slate-700">Actions</TableHead>
+                  <TableHead className="w-[110px] text-slate-700">Users</TableHead>
+                  <TableHead className="text-right w-[240px] text-slate-700">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -256,39 +385,32 @@ export default function ManageRolePage() {
                     <TableRow key={i}>
                       <TableCell><Skeleton className="h-5 w-3/4" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-10" /></TableCell>
                       <TableCell className="text-right space-x-2">
                         <Skeleton className="h-8 w-16 inline-block" />
                         <Skeleton className="h-8 w-16 inline-block" />
                       </TableCell>
                     </TableRow>
                   ))
-                ) : roles.length > 0 ? (
-                  roles.map((role) => (
+                ) : filteredRoles.length > 0 ? (
+                  filteredRoles.map((role) => {
+                    const usageCount = roleUsage[role.name.trim()] || 0;
+                    return (
                     <TableRow key={role.id} className="hover:bg-slate-50/70">
                       <TableCell className="font-semibold text-slate-900">{role.name}</TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
-                          {getTotalPermissionsForModule && getGrantedPermissionsForModule && Object.keys(permissionModules).map(moduleName => {
-                            const totalPerms = getTotalPermissionsForModule(moduleName);
-                            if (totalPerms === 0) return null;
-                            const grantedPerms = getGrantedPermissionsForModule(role.permissions, moduleName);
-                            if (grantedPerms === 0) return null;
-                            const percentage = totalPerms > 0 ? Math.round((grantedPerms / totalPerms) * 100) : 0;
-                            return (
-                              <Badge
-                                key={moduleName}
-                                variant="outline"
-                                className={
-                                  percentage === 100
-                                    ? 'border-emerald-200/80 bg-emerald-50 text-emerald-700'
-                                    : 'border-slate-200/80 bg-white/70 text-slate-700'
-                                }
-                              >
-                                {moduleName}: {percentage}%
-                              </Badge>
-                            );
-                          })}
-                        </div>
+                        <ModuleSummaryBadges role={role} />
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'gap-1',
+                            usageCount > 0 ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white/70 text-slate-500',
+                          )}
+                        >
+                          <Users className="h-3 w-3" /> {usageCount}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-right space-x-2">
                         <Link href={`/settings/role-management/edit/${role.id}`}>
@@ -296,34 +418,33 @@ export default function ManageRolePage() {
                             <Edit className="mr-2 h-4 w-4" /> Edit
                           </Button>
                         </Link>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="destructive" size="sm" disabled={!canDelete}>
-                              <Trash2 className="mr-2 h-4 w-4" /> Delete
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will permanently delete the "{role.name}" role.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeleteRole(role.id)}>
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          disabled={!canAdd}
+                          className="bg-white/70 border-white/70"
+                          title="Duplicate role"
+                          onClick={() => openDuplicateDialog(role)}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="icon"
+                          disabled={!canDelete}
+                          title="Delete role"
+                          onClick={() => setDeleteTarget(role)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center h-24 text-slate-600">
-                      No roles found.
+                    <TableCell colSpan={4} className="text-center h-24 text-slate-600">
+                      {roles.length === 0 ? 'No roles found.' : 'No roles match your search.'}
                     </TableCell>
                   </TableRow>
                 )}
@@ -333,6 +454,78 @@ export default function ManageRolePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Delete confirmation — blocks the action outright if users are still assigned to this role */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          {deleteTarget && deleteUsageCount > 0 ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Can&apos;t delete &quot;{deleteTarget.name}&quot;</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {deleteUsageCount} user{deleteUsageCount === 1 ? ' is' : 's are'} currently assigned this role.
+                  Reassign {deleteUsageCount === 1 ? 'that user' : 'those users'} to a different role in User Management
+                  first, then come back to delete this one.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogAction onClick={() => setDeleteTarget(null)}>Got it</AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete &quot;{deleteTarget?.name}&quot;?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete the role and cannot be undone. No users are currently assigned to it.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={isDeleting}
+                  onClick={() => deleteTarget && handleDeleteRole(deleteTarget)}
+                >
+                  {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Duplicate role */}
+      <Dialog open={!!duplicateSource} onOpenChange={(open) => !open && setDuplicateSource(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Duplicate role</DialogTitle>
+            <DialogDescription>
+              Creates a new role with the same permissions as &quot;{duplicateSource?.name}&quot;. You can rename it and
+              adjust permissions afterwards from Edit.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="duplicateRoleName">New role name</Label>
+            <Input
+              id="duplicateRoleName"
+              value={duplicateName}
+              onChange={(e) => setDuplicateName(e.target.value)}
+              placeholder="e.g. Finance Approver (Copy)"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDuplicateSource(null)} disabled={isDuplicating}>
+              Cancel
+            </Button>
+            <Button onClick={handleDuplicateRole} disabled={isDuplicating}>
+              {isDuplicating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Copy className="mr-2 h-4 w-4" />}
+              Create Role
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

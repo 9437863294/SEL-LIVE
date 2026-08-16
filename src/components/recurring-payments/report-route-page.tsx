@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import {
   AlertTriangle,
+  CalendarClock,
   CalendarRange,
   CheckCircle2,
   Download,
@@ -15,13 +16,14 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
-  downloadCsv,
   matchesScopeFilter,
   type PaymentObligation,
   RP_COLLECTIONS,
   currency,
   effectiveStatus,
+  recurringDateOnly,
 } from "@/lib/recurring-payments";
+import { exportWorkbook } from "@/lib/report-excel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,6 +52,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useGlobalScopes } from "./use-global-scopes";
+import {
+  ReportAccessDenied,
+  ReportErrorBanner,
+  ReportHeader,
+  ReportLoading,
+  ReportMetricTile,
+} from "./report-ui";
 
 export type ReportKind = "upcoming" | "overdue" | "expenses" | "cash-flow";
 
@@ -72,6 +81,8 @@ const titles = {
   ],
 } as const;
 
+const FORECAST_HORIZONS = [7, 15, 30, 60, 90];
+
 const DEFAULT_FILTERS = {
   from: "",
   to: "",
@@ -88,10 +99,13 @@ const DEFAULT_FILTERS = {
   max: "",
 };
 
+// Uses recurringDateOnly (local calendar components) rather than toISOString — a UTC round-trip
+// here silently returned the wrong day for any timezone ahead of UTC (including IST), corrupting
+// the "Last 7/30 days" presets and the "today" cutoff every time they were used.
 function addDays(dateOnly: string, delta: number) {
   const date = new Date(`${dateOnly}T00:00:00`);
   date.setDate(date.getDate() + delta);
-  return date.toISOString().slice(0, 10);
+  return recurringDateOnly(date);
 }
 
 const COMPACT_CONTROL = "h-8 text-sm";
@@ -116,6 +130,8 @@ export default function RecurringReportRoutePage({
   const { activeProjects, activeDepartments } = useGlobalScopes();
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   useEffect(
     () =>
@@ -139,12 +155,20 @@ export default function RecurringReportRoutePage({
             ),
           );
           setLoading(false);
+          setLoadError(false);
         },
-        () => setLoading(false),
+        () => {
+          setLoading(false);
+          setLoadError(true);
+        },
       ),
     [organizationId],
   );
-  const today = new Date().toISOString().slice(0, 10);
+  const todayDate = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }, []);
+  const today = recurringDateOnly(todayDate);
   const rows = useMemo(
     () =>
       payments
@@ -162,8 +186,9 @@ export default function RecurringReportRoutePage({
           )
             return false;
           // Expense Summary is about what's actually been billed, not what's merely scheduled —
-          // unlike Cash-Flow Forecast, exclude obligations that haven't received a bill yet.
-          if (kind === "expenses" && !item.billAmount) return false;
+          // unlike Cash-Flow Forecast, exclude obligations that haven't received a bill yet. Uses
+          // `== null` rather than falsy so a legitimate ₹0 bill still counts as "received."
+          if (kind === "expenses" && item.billAmount == null) return false;
           const dateValue = item[filters.dateField] as string | undefined;
           if ((filters.from || filters.to) && !dateValue) return false;
           if (filters.from && dateValue! < filters.from) return false;
@@ -229,6 +254,27 @@ export default function RecurringReportRoutePage({
       ),
     0,
   );
+  // Cash-Flow Forecast additionally shows a forward-looking horizon view (independent of the date
+  // filter below) — otherwise this page was just the same flat table as Upcoming/Overdue with a
+  // different status filter, despite being named "Forecast."
+  const openForForecast = useMemo(
+    () => payments.filter((item) => !["Paid", "Closed", "Cancelled", "Waived"].includes(item.status)),
+    [payments],
+  );
+  const outflowBuckets = useMemo(
+    () =>
+      FORECAST_HORIZONS.map((days) => {
+        const amount = openForForecast
+          .filter((item) => {
+            if (!item.dueDate) return false;
+            const due = new Date(`${item.dueDate}T00:00:00`);
+            return due >= todayDate && due <= new Date(todayDate.getTime() + days * 86_400_000);
+          })
+          .reduce((sum, item) => sum + Number(item.billAmount || item.expectedAmount || 0), 0);
+        return { days, amount };
+      }),
+    [openForForecast, todayDate],
+  );
   const values = (key: keyof PaymentObligation) =>
     [
       ...new Set(
@@ -237,100 +283,121 @@ export default function RecurringReportRoutePage({
     ].sort();
   const activeFilterCount = (Object.keys(DEFAULT_FILTERS) as Array<keyof typeof DEFAULT_FILTERS>)
     .filter((key) => filters[key] !== DEFAULT_FILTERS[key]).length;
-  function exportCsv() {
-    downloadCsv(
-      `recurring-${kind}-${today}.csv`,
-      [
-        "Payment ID",
-        "Title",
-        "Category",
-        "Vendor",
-        "Owner",
-        "Source",
-        "Branch",
-        "Project",
-        "Department",
-        "Bill No.",
-        "Due Date",
-        "Bill Date",
-        "Payment Date",
-        "Expected",
-        "Bill",
-        "Paid",
-        "Outstanding",
-        "Status",
-        "Confidence",
-      ],
-      rows.map((item) => [
-        item.id,
-        item.title,
-        item.category,
-        item.vendorName,
-        users.find((entry) => entry.id === item.assignedTo)?.name || "",
-        item.sourceType || "Recurring",
-        item.branchName || "",
-        item.projectName || "",
-        item.department || "",
-        item.billNumber || "",
-        item.dueDate,
-        item.billDate || "",
-        item.paymentDate || "",
-        item.expectedAmount,
-        item.billAmount || "",
-        item.paidAmount,
-        Math.max(
-          0,
-          (item.billAmount || item.expectedAmount) -
-            (item.settledAmount || item.paidAmount),
-        ),
-        item.status,
-        item.billAmount
-          ? "Confirmed bill"
-          : item.amountType === "Fixed"
-            ? "Fixed recurring"
-            : "Estimated",
-      ]),
-    );
+  async function exportReport() {
+    setIsExporting(true);
+    try {
+      await exportWorkbook(`recurring-${kind}-${today}.xlsx`, [
+        {
+          name: titles[kind][0].slice(0, 31),
+          columns: [
+            { header: "Payment ID", key: "id", width: 20 },
+            { header: "Title", key: "title", width: 30 },
+            { header: "Category", key: "category", width: 20 },
+            { header: "Vendor", key: "vendorName", width: 24 },
+            { header: "Owner", key: "owner", width: 20 },
+            { header: "Source", key: "source", width: 12 },
+            { header: "Branch", key: "branch", width: 16 },
+            { header: "Project", key: "project", width: 20 },
+            { header: "Department", key: "department", width: 18 },
+            { header: "Bill No.", key: "billNumber", width: 16 },
+            { header: "Due Date", key: "dueDate", width: 14 },
+            { header: "Bill Date", key: "billDate", width: 14 },
+            { header: "Payment Date", key: "paymentDate", width: 14 },
+            { header: "Expected", key: "expectedAmount", width: 14 },
+            { header: "Bill", key: "billAmount", width: 14 },
+            { header: "Paid", key: "paidAmount", width: 14 },
+            { header: "Outstanding", key: "outstanding", width: 14 },
+            { header: "Status", key: "status", width: 18 },
+            { header: "Confidence", key: "confidence", width: 18 },
+          ],
+          rows: rows.map((item) => ({
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            vendorName: item.vendorName,
+            owner: users.find((entry) => entry.id === item.assignedTo)?.name || "",
+            source: item.sourceType || "Recurring",
+            branch: item.branchName || "",
+            project: item.projectName || "",
+            department: item.department || "",
+            billNumber: item.billNumber || "",
+            dueDate: item.dueDate,
+            billDate: item.billDate || "",
+            paymentDate: item.paymentDate || "",
+            expectedAmount: item.expectedAmount,
+            billAmount: item.billAmount || "",
+            paidAmount: item.paidAmount,
+            outstanding: Math.max(
+              0,
+              (item.billAmount || item.expectedAmount) -
+                (item.settledAmount || item.paidAmount),
+            ),
+            status: item.status,
+            confidence: item.billAmount
+              ? "Confirmed bill"
+              : item.amountType === "Fixed"
+                ? "Fixed recurring"
+                : "Estimated",
+          })),
+        },
+      ]);
+    } finally {
+      setIsExporting(false);
+    }
   }
-  if (loading)
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin" />
-      </div>
-    );
+  if (loading) return <ReportLoading />;
+  if (!can("View", "Recurring Payments.Reports")) return <ReportAccessDenied />;
   return (
     <div className="space-y-5">
-      <Card className="border-0 bg-gradient-to-r from-slate-900 to-indigo-900 text-white">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">{titles[kind][0]}</h1>
-            <p className="text-sm text-indigo-100">{titles[kind][1]}</p>
-          </div>
-          <div className="flex gap-2 print:hidden">
+      <ReportHeader
+        title={titles[kind][0]}
+        description={titles[kind][1]}
+        actions={
+          <>
             {can("Export", "Recurring Payments.Reports") && (
-              <Button variant="secondary" onClick={exportCsv}>
-                <Download className="mr-2 h-4 w-4" />
-                Export Excel/CSV
+              <Button variant="secondary" onClick={exportReport} disabled={isExporting}>
+                {isExporting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Export Excel
               </Button>
             )}
             <Button variant="secondary" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
               Print / PDF
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
+      {loadError && <ReportErrorBanner />}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric label="Expected total" value={currency(expected)} icon={Target} tone="neutral" />
-        <Metric label="Confirmed bill total" value={currency(confirmed)} icon={FileCheck2} tone="neutral" />
-        <Metric label="Paid total" value={currency(paid)} icon={CheckCircle2} tone="good" />
-        <Metric
+        <ReportMetricTile label="Expected total" value={currency(expected)} icon={Target} tone="neutral" />
+        <ReportMetricTile label="Confirmed bill total" value={currency(confirmed)} icon={FileCheck2} tone="neutral" />
+        <ReportMetricTile label="Paid total" value={currency(paid)} icon={CheckCircle2} tone="good" />
+        <ReportMetricTile
           label="Outstanding total"
           value={currency(outstanding)}
           icon={AlertTriangle}
           tone={outstanding > 0 ? (kind === "overdue" ? "critical" : "warning") : "good"}
         />
       </div>
+      {kind === "cash-flow" && (
+        <div>
+          <div className="mb-2">
+            <h2 className="text-lg font-semibold">Outflow horizon</h2>
+            <p className="text-sm text-muted-foreground">
+              Total open exposure (confirmed bills, or expected amount where no bill exists yet) due within each window, regardless of the filters below.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            {outflowBuckets.map(({ days, amount }) => (
+              <ReportMetricTile key={days} label={`Next ${days} days`} value={currency(amount)} icon={CalendarClock} tone="neutral" />
+            ))}
+          </div>
+        </div>
+      )}
       <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
           <div className="space-y-1.5 border-b pb-3">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -645,39 +712,6 @@ export default function RecurringReportRoutePage({
   );
 }
 
-const METRIC_TONES = {
-  neutral: { chip: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300", value: "" },
-  good: { chip: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400", value: "" },
-  warning: { chip: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400", value: "text-amber-600 dark:text-amber-400" },
-  critical: { chip: "bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400", value: "text-rose-600 dark:text-rose-400" },
-} as const;
-
-function Metric({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string;
-  value: string;
-  icon: React.ElementType;
-  tone: keyof typeof METRIC_TONES;
-}) {
-  const palette = METRIC_TONES[tone];
-  return (
-    <Card>
-      <CardContent className="flex items-start justify-between gap-3 p-4">
-        <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className={`mt-1 text-xl font-bold ${palette.value}`}>{value}</p>
-        </div>
-        <div className={`rounded-lg p-2 ${palette.chip}`}>
-          <Icon className="h-4 w-4" />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">

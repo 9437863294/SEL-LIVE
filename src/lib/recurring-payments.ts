@@ -1,4 +1,5 @@
 import type { Timestamp } from 'firebase/firestore';
+export { loadWorkingCalendar } from './working-hours-client';
 
 export const RP_COLLECTIONS = {
   masters: 'recurringPaymentMasters',
@@ -628,6 +629,13 @@ export type WorkflowActivation = {
  * could see it. Returns null when the obligation isn't due soon enough yet, or when no assignee
  * can be resolved for the first step — callers should leave the obligation "Scheduled" in either
  * case (the daily automation run will retry it, and will log an audit entry if it's the latter).
+ *
+ * This function is pure and has no Firestore access, so `workflowDeadlineMs` here is only a naive
+ * calendar-hour approximation (used as-is by the Automation Health report's preview, which only
+ * checks whether activation is possible at all, not the exact deadline). Callers that actually
+ * *write* the obligation should instead recompute the real deadline with `addBusinessHours`
+ * (from `./working-hours`) against the org's configured working hours/holidays — loaded via this
+ * module's re-exported `loadWorkingCalendar` — and use that value instead of `workflowDeadlineMs`.
  */
 export function resolveWorkflowActivation(
   step: RecurringWorkflowStep | undefined,

@@ -15,10 +15,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, query, where } from "firebase/firestore";
-import type { Department, Project } from "@/lib/types";
+import type { Department, Project, Role } from "@/lib/types";
 import { permissionModules } from "@/lib/permissions";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
@@ -137,6 +144,8 @@ export default function AddRolePage() {
   }>({ name: "", permissions: {} });
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [existingRoles, setExistingRoles] = useState<Role[]>([]);
+  const [cloneFromId, setCloneFromId] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -166,6 +175,11 @@ export default function AddRolePage() {
         );
         setProjects(projectsData);
 
+        const rolesSnap = await getDocs(collection(db, "roles"));
+        setExistingRoles(
+          rolesSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Role),
+        );
+
         setNewRole({
           name: "",
           permissions: initializePermissions(deptsData, projectsData),
@@ -181,6 +195,26 @@ export default function AddRolePage() {
     };
     fetchDeptsAndProjects();
   }, [toast]);
+
+  const handleCloneFrom = (roleId: string) => {
+    setCloneFromId(roleId);
+    if (!roleId) return;
+    const source = existingRoles.find((role) => role.id === roleId);
+    if (!source) return;
+    setNewRole((prev) => {
+      const merged = initializePermissions(departments, projects);
+      for (const key in source.permissions || {}) {
+        if (merged.hasOwnProperty(key)) {
+          merged[key] = source.permissions[key];
+        }
+      }
+      return { ...prev, permissions: merged };
+    });
+    toast({
+      title: "Permissions cloned",
+      description: `Copied permissions from "${source.name}". Adjust as needed before saving.`,
+    });
+  };
 
   const handlePermissionChange = (
     moduleKey: string,
@@ -216,10 +250,22 @@ export default function AddRolePage() {
   };
 
   const handleAddRole = async () => {
-    if (!newRole.name.trim()) {
+    const trimmedName = newRole.name.trim();
+    if (!trimmedName) {
       toast({
         title: "Validation Error",
         description: "Role Name cannot be empty.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const nameTaken = existingRoles.some(
+      (role) => role.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+    );
+    if (nameTaken) {
+      toast({
+        title: "Validation Error",
+        description: `A role named "${trimmedName}" already exists.`,
         variant: "destructive",
       });
       return;
@@ -228,18 +274,21 @@ export default function AddRolePage() {
 
     setIsSaving(true);
     try {
-      await addDoc(collection(db, "roles"), newRole);
+      await addDoc(collection(db, "roles"), {
+        ...newRole,
+        name: trimmedName,
+      });
       await logUserActivity({
         userId: user.id,
         userName: user.name,
         userEmail: user.email,
         module: "Settings",
         action: "Create Role",
-        details: { roleName: newRole.name },
+        details: { roleName: trimmedName },
       });
       toast({
         title: "Success",
-        description: `Role "${newRole.name}" created successfully.`,
+        description: `Role "${trimmedName}" created successfully.`,
       });
       router.push("/settings/role-management");
     } catch (error) {
@@ -363,10 +412,10 @@ export default function AddRolePage() {
           </Button>
         </div>
 
-        {/* ── Role Name + Search ── */}
+        {/* ── Role Name + Clone + Search ── */}
         <Card className="mb-5 overflow-hidden rounded-2xl border border-white/70 bg-white/80 shadow-[0_8px_30px_-10px_rgba(2,6,23,0.25)] backdrop-blur">
-          <CardContent className="p-5">
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-3 md:items-end">
+          <CardContent className="p-5 space-y-5">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
               <div>
                 <Label
                   htmlFor="roleName"
@@ -384,10 +433,28 @@ export default function AddRolePage() {
                   className="bg-white/80 border-slate-200"
                 />
               </div>
-              <div className="md:col-span-2">
+              <div>
                 <Label className="text-sm font-semibold text-slate-700 mb-2 block">
-                  Search Permissions
+                  Start from existing role (optional)
                 </Label>
+                <Select value={cloneFromId} onValueChange={handleCloneFrom}>
+                  <SelectTrigger className="bg-white/80 border-slate-200">
+                    <SelectValue placeholder="Start from scratch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {existingRoles.map((role) => (
+                      <SelectItem key={role.id} value={role.id}>
+                        {role.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-sm font-semibold text-slate-700 mb-2 block">
+                Search Permissions
+              </Label>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -427,7 +494,6 @@ export default function AddRolePage() {
                   </div>
                 </div>
               </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -442,7 +508,7 @@ export default function AddRolePage() {
             </CardDescriptionShad>
           </CardHeader>
           <CardContent className="p-0">
-            <ScrollArea className="h-[calc(100vh-22rem)]">
+            <ScrollArea className="h-[calc(100dvh-22rem)]">
               <div className="p-5">
                 <Accordion
                   type="multiple"

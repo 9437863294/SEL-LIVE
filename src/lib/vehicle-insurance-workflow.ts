@@ -172,10 +172,6 @@ export function insuranceWorkflowPriority(daysToExpiry: number): InsuranceRenewa
   return 'Normal';
 }
 
-export function insuranceWorkflowDeadline(tatHours: number, from = new Date()) {
-  return new Date(from.getTime() + Math.max(1, tatHours) * 3_600_000);
-}
-
 export function resolveInsuranceWorkflowAssignment(
   workflowStep: InsuranceWorkflowStep,
   premium: number,

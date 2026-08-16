@@ -2,20 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
-import { AlertTriangle, Download, Loader2, Printer } from "lucide-react";
+import { Download, Loader2, Printer } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
   DEFAULT_RECURRING_WORKFLOW,
-  downloadCsv,
   resolveWorkflowActivation,
   RP_COLLECTIONS,
   currency,
+  recurringDateOnly,
   type PaymentObligation,
   type RecurringPaymentMaster,
   type RecurringWorkflowStep,
 } from "@/lib/recurring-payments";
+import { exportWorkbook } from "@/lib/report-excel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +34,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  ReportAccessDenied,
+  ReportErrorBanner,
+  ReportHeader,
+  ReportLoading,
+  ReportMetricTile,
+} from "./report-ui";
 
 type AutomationLog = {
   id: string;
@@ -68,6 +76,8 @@ export default function AutomationHealthReport() {
   const [workflow, setWorkflow] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
   const [activationDays, setActivationDays] = useState(7);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     // The daily cron logs its runs under organizationId "all" (it isn't scoped to one org),
@@ -83,6 +93,7 @@ export default function AutomationHealthReport() {
           setLogs(
             snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as AutomationLog),
           ),
+        () => setLoadError(true),
       ),
       onSnapshot(
         query(
@@ -95,6 +106,7 @@ export default function AutomationHealthReport() {
               .map((item) => ({ id: item.id, ...item.data() }) as RecurringPaymentMaster)
               .filter((item) => !item.deleted),
           ),
+        () => setLoadError(true),
       ),
       onSnapshot(
         query(
@@ -107,7 +119,10 @@ export default function AutomationHealthReport() {
           );
           setLoading(false);
         },
-        () => setLoading(false),
+        () => {
+          setLoading(false);
+          setLoadError(true);
+        },
       ),
     ];
     (async () => {
@@ -157,71 +172,88 @@ export default function AutomationHealthReport() {
 
   const stuckNeedingAttention = stuck.filter((row) => row.diagnosis.actionable);
 
-  function exportCsv() {
-    downloadCsv(
-      `recurring-automation-health-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Payment", "Vendor", "Due Date", "Owner", "Diagnosis"],
-      stuck.map(({ item, diagnosis }) => [
-        item.title,
-        item.vendorName,
-        item.dueDate,
-        users.find((entry) => entry.id === item.assignedTo)?.name || "Unassigned",
-        diagnosis.label,
-      ]),
-    );
+  async function exportReport() {
+    setIsExporting(true);
+    try {
+      await exportWorkbook(`recurring-automation-health-${recurringDateOnly(new Date())}.xlsx`, [
+        {
+          name: "Stuck obligations",
+          columns: [
+            { header: "Payment", key: "title", width: 30 },
+            { header: "Vendor", key: "vendor", width: 24 },
+            { header: "Due Date", key: "dueDate", width: 14 },
+            { header: "Owner", key: "owner", width: 20 },
+            { header: "Amount", key: "amount", width: 14 },
+            { header: "Diagnosis", key: "diagnosis", width: 40 },
+          ],
+          rows: stuck.map(({ item, diagnosis }) => ({
+            title: item.title,
+            vendor: item.vendorName,
+            dueDate: item.dueDate,
+            owner: users.find((entry) => entry.id === item.assignedTo)?.name || "Unassigned",
+            amount: item.billAmount || item.expectedAmount || 0,
+            diagnosis: diagnosis.label,
+          })),
+        },
+        {
+          name: "Masters not generating",
+          columns: [
+            { header: "Master", key: "title", width: 30 },
+            { header: "Category", key: "category", width: 20 },
+            { header: "Vendor", key: "vendor", width: 24 },
+            { header: "Status", key: "status", width: 16 },
+            { header: "Auto-generation", key: "autoGeneration", width: 18 },
+          ],
+          rows: inactiveMasters.map((item) => ({
+            title: item.title,
+            category: item.category,
+            vendor: item.vendorName,
+            status: item.status,
+            autoGeneration: item.autoGenerationEnabled === false ? "Disabled" : "Enabled",
+          })),
+        },
+      ]);
+    } finally {
+      setIsExporting(false);
+    }
   }
 
-  if (loading)
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin" />
-      </div>
-    );
-  if (!can("View", "Recurring Payments.Reports"))
-    return (
-      <Card>
-        <CardContent className="py-16 text-center">
-          <AlertTriangle className="mx-auto mb-3 h-9 w-9 text-amber-500" />
-          <p className="font-semibold text-muted-foreground">
-            You don&apos;t have permission to view this report.
-          </p>
-        </CardContent>
-      </Card>
-    );
+  if (loading) return <ReportLoading />;
+  if (!can("View", "Recurring Payments.Reports")) return <ReportAccessDenied />;
 
   return (
     <div className="space-y-5">
-      <Card className="border-0 bg-gradient-to-r from-slate-800 to-slate-950 text-white">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Automation & Generation Health</h1>
-            <p className="text-sm text-slate-300">
-              Which masters aren&apos;t generating, which obligations never reached a workflow
-              queue, and why
-            </p>
-          </div>
-          <div className="flex gap-2 print:hidden">
+      <ReportHeader
+        title="Automation & Generation Health"
+        description="Which masters aren't generating, which obligations never reached a workflow queue, and why"
+        actions={
+          <>
             {can("Export", "Recurring Payments.Reports") && (
-              <Button variant="secondary" onClick={exportCsv}>
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
+              <Button variant="secondary" onClick={exportReport} disabled={isExporting}>
+                {isExporting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Export Excel
               </Button>
             )}
             <Button variant="secondary" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
               Print / PDF
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
+      {loadError && <ReportErrorBanner />}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric label="Active masters" value={String(masters.filter((item) => item.status === "Active").length)} />
-        <Metric label="Not active (draft / paused / inactive)" value={String(masters.filter((item) => item.status !== "Active").length)} />
-        <Metric label="Auto-generation disabled" value={String(masters.filter((item) => item.autoGenerationEnabled === false).length)} />
-        <Metric
+        <ReportMetricTile label="Active masters" value={String(masters.filter((item) => item.status === "Active").length)} />
+        <ReportMetricTile label="Not active (draft / paused / inactive)" value={String(masters.filter((item) => item.status !== "Active").length)} />
+        <ReportMetricTile label="Auto-generation disabled" value={String(masters.filter((item) => item.autoGenerationEnabled === false).length)} />
+        <ReportMetricTile
           label="Stuck obligations needing attention"
           value={String(stuckNeedingAttention.length)}
-          tone={stuckNeedingAttention.length ? "warn" : undefined}
+          tone={stuckNeedingAttention.length ? "warning" : "good"}
         />
       </div>
       <Card>
@@ -416,23 +448,4 @@ function formatTimestamp(value: unknown): string {
   const data = value as { toDate?: () => Date; seconds?: number } | null | undefined;
   const date = data?.toDate ? data.toDate() : data?.seconds ? new Date(data.seconds * 1000) : null;
   return date ? date.toLocaleString("en-IN") : "—";
-}
-
-function Metric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "warn";
-}) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-xl font-bold ${tone === "warn" ? "text-amber-600" : ""}`}>{value}</p>
-      </CardContent>
-    </Card>
-  );
 }

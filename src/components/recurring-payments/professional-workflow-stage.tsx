@@ -26,6 +26,7 @@ import {
   BANK_ACCOUNT_REQUIRED_MODES,
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
+  loadWorkingCalendar,
   PAYMENT_MODES,
   resolveAssignees,
   stepStatus,
@@ -37,6 +38,8 @@ import {
   RP_COLLECTIONS,
   currency,
 } from '@/lib/recurring-payments';
+import { addBusinessHours } from '@/lib/working-hours';
+import type { Holiday, WorkingHours } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -78,6 +81,8 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   const organizationId = user?.organizationId || 'default';
   const [workflow, setWorkflow] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
   const [settings, setSettings] = useState<RecurringPaymentSettings>({ ...DEFAULT_RECURRING_PAYMENT_SETTINGS, organizationId });
+  const [workingHours, setWorkingHours] = useState<WorkingHours | null>(null);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<PaymentObligation | null>(null);
@@ -94,14 +99,17 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     (async () => {
       const workflowSnap = await getDoc(doc(db, 'workflows', 'recurring-payments-workflow'));
       if (workflowSnap.exists() && workflowSnap.data().steps?.length) setWorkflow(workflowSnap.data().steps);
-      const [deptSnap, headSnap, subHeadSnap] = await Promise.all([
+      const [deptSnap, headSnap, subHeadSnap, calendar] = await Promise.all([
         getDocs(collection(db, 'departments')),
         getDocs(collection(db, 'accountHeads')),
         getDocs(collection(db, 'subAccountHeads')),
+        loadWorkingCalendar(),
       ]);
       setDepartments(deptSnap.docs.map(item => ({ id: item.id, ...item.data() } as Department)));
       setAccountHeads(headSnap.docs.map(item => ({ id: item.id, ...item.data() } as AccountHead)));
       setSubAccountHeads(subHeadSnap.docs.map(item => ({ id: item.id, ...item.data() } as SubAccountHead)));
+      setWorkingHours(calendar.workingHours);
+      setHolidays(calendar.holidays);
       stopPayments = onSnapshot(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)), snapshot => {
         setPayments(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentObligation)));
         setLoading(false);
@@ -409,7 +417,8 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           currentApprovalLevel,
           approvalCompletedBy,
           stepEnteredAt: Timestamp.now(),
-          workflowDeadline: target ? Timestamp.fromMillis(Date.now() + Math.max(1, target.tat) * 3_600_000) : current.workflowDeadline || null,
+          // Accounts for the org's configured working hours and holidays, not raw calendar time.
+          workflowDeadline: target ? Timestamp.fromMillis(addBusinessHours(new Date(), Math.max(1, target.tat), workingHours, holidays).getTime()) : current.workflowDeadline || null,
         });
         transaction.update(paymentRef, patch);
         transaction.set(auditRef, {

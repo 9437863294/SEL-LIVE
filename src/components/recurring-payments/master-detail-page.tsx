@@ -38,6 +38,7 @@ import {
   buildPaymentObligationFields,
   buildRecurringCycle,
   DEFAULT_RECURRING_WORKFLOW,
+  loadWorkingCalendar,
   matchApprovalRule,
   resolveWorkflowActivation,
   type ApprovalRule,
@@ -48,6 +49,7 @@ import {
   currency,
   maskAccount,
 } from "@/lib/recurring-payments";
+import { addBusinessHours } from "@/lib/working-hours";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -244,9 +246,10 @@ export default function RecurringMasterDetailPage({
     // Don't leave this obligation stuck at "Scheduled" until the next automation run: if it's
     // already due soon enough per the org's workflow-activation window, enter it into the first
     // workflow step immediately, same as the daily automation job would.
-    const [settingsSnap, workflowSnap] = await Promise.all([
+    const [settingsSnap, workflowSnap, calendar] = await Promise.all([
       getDoc(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, "_"))),
       getDoc(doc(db, "workflows", "recurring-payments-workflow")),
+      loadWorkingCalendar(),
     ]);
     const activationDays = Math.min(90, Math.max(0, Number(settingsSnap.data()?.automation?.workflowActivationDays ?? 7)));
     const workflow = (workflowSnap.data()?.steps || DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
@@ -262,7 +265,11 @@ export default function RecurringMasterDetailPage({
             assignees: activation.assignees,
             workflowStartedAt: serverTimestamp(),
             stepEnteredAt: serverTimestamp(),
-            workflowDeadline: Timestamp.fromMillis(activation.workflowDeadlineMs),
+            // Real deadline, not resolveWorkflowActivation's naive approximation — accounts for
+            // the org's configured working hours and holidays.
+            workflowDeadline: Timestamp.fromMillis(
+              addBusinessHours(new Date(), Math.max(1, workflow[0].tat), calendar.workingHours, calendar.holidays).getTime(),
+            ),
           }
         : {}),
       createdAt: serverTimestamp(),

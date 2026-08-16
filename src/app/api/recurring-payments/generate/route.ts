@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import { buildPaymentObligationFields, buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, resolveAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { addBusinessHours, normalizeWorkingHoursDoc } from '@/lib/working-hours';
+import type { Holiday } from '@/lib/types';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dateOnly = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -17,6 +19,14 @@ export async function GET(request: Request) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const targetOrganizationId = String(request.headers.get('x-recurring-organization') || '').trim();
+  // Fetched once for the whole run — every obligation activated below shares the same working
+  // hours/holidays, same as the client-side "Generate now" actions and workflow-stage advances.
+  const [workingHoursSnap, holidaysSnap] = await Promise.all([
+    db.collection('settings').doc('workingHours').get(),
+    db.collection('holidays').get(),
+  ]);
+  const workingHours = normalizeWorkingHoursDoc(workingHoursSnap.data());
+  const holidays = holidaysSnap.docs.map(item => item.data() as Holiday);
   const masters = await db.collection('recurringPaymentMasters').where('status', '==', 'Active').get();
   const masterDocs = targetOrganizationId
     ? masters.docs.filter(item => String(item.data().organizationId || 'default') === targetOrganizationId)
@@ -111,7 +121,7 @@ export async function GET(request: Request) {
         status: stepStatus(firstStep),
         workflowStatus: 'In Progress', stage: firstStep.name, currentStepId: firstStep.id,
         assignees, workflowStartedAt: FieldValue.serverTimestamp(), stepEnteredAt: FieldValue.serverTimestamp(),
-        workflowDeadline: Timestamp.fromMillis(Date.now() + Math.max(1, firstStep.tat) * 3_600_000),
+        workflowDeadline: Timestamp.fromMillis(addBusinessHours(new Date(), Math.max(1, firstStep.tat), workingHours, holidays).getTime()),
         updatedAt: FieldValue.serverTimestamp(),
       });
       for (const assignee of assignees) {

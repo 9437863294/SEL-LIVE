@@ -2,19 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
-import { AlertTriangle, Download, History, Loader2, Printer } from "lucide-react";
+import { Download, History, Loader2, Printer } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
   DEFAULT_RECURRING_WORKFLOW,
-  downloadCsv,
+  loadWorkingCalendar,
   matchesScopeFilter,
   RP_COLLECTIONS,
   currency,
+  recurringDateOnly,
   type PaymentObligation,
   type RecurringWorkflowStep,
 } from "@/lib/recurring-payments";
+import { exportWorkbook } from "@/lib/report-excel";
+import { addBusinessHours } from "@/lib/working-hours";
+import type { Holiday, WorkingHours } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +46,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useGlobalScopes } from "./use-global-scopes";
+import {
+  ReportAccessDenied,
+  ReportErrorBanner,
+  ReportHeader,
+  ReportLoading,
+  ReportMetricTile,
+} from "./report-ui";
 
 // The workflow's own "moves it forward" and "sends it back / ends it" actions — used to decide
 // whether a workflowHistory entry represents a completed step, a rejection, or neither (e.g. "On
@@ -82,6 +93,8 @@ function buildStepReport(
   rows: PaymentObligation[],
   workflow: RecurringWorkflowStep[],
   users: Array<{ id: string; name: string }>,
+  workingHours: WorkingHours | null,
+  holidays: Holiday[],
 ): { stepReport: StepReport; completions: CompletionEvent[] } {
   const report: StepReport = {};
   const completions: CompletionEvent[] = [];
@@ -115,7 +128,11 @@ function buildStepReport(
         stat.completed++;
         const step = stepMap.get(entry.stepName);
         if (step && previousTime) {
-          onTime = entryMillis <= previousTime + step.tat * 3_600_000;
+          // Deadline as of when this step was entered, computed the same working-hours-aware
+          // way it's stored on the obligation at write time — a raw `+ tat hours` comparison
+          // would call a step "on time" or "late" inconsistently with weekends/holidays.
+          const stepDeadlineMillis = addBusinessHours(new Date(previousTime), step.tat, workingHours, holidays).getTime();
+          onTime = entryMillis <= stepDeadlineMillis;
           if (onTime) stat.onTime++;
         }
         completions.push({ paymentId: payment.id, title: payment.title, vendorName: payment.vendorName, stepName: entry.stepName, action: entry.action, userName, comment: entry.comment, timestamp: entry.timestamp, onTime });
@@ -168,7 +185,11 @@ export default function WorkflowCompletionReport() {
   const { activeProjects, activeDepartments } = useGlobalScopes();
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [workflow, setWorkflow] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
+  const [workingHours, setWorkingHours] = useState<WorkingHours | null>(null);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   useEffect(() => {
@@ -176,13 +197,20 @@ export default function WorkflowCompletionReport() {
       const steps = snapshot.data()?.steps as RecurringWorkflowStep[] | undefined;
       if (steps?.length) setWorkflow(steps);
     });
+    loadWorkingCalendar().then(calendar => {
+      setWorkingHours(calendar.workingHours);
+      setHolidays(calendar.holidays);
+    });
     return onSnapshot(
       query(collection(db, RP_COLLECTIONS.payments), where("organizationId", "==", organizationId)),
       snapshot => {
         setPayments(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentObligation)));
         setLoading(false);
       },
-      () => setLoading(false),
+      () => {
+        setLoading(false);
+        setLoadError(true);
+      },
     );
   }, [organizationId]);
 
@@ -219,63 +247,72 @@ export default function WorkflowCompletionReport() {
     return { total: rows.length, totalAmount, paidAmount, outstanding, rejected };
   }, [rows]);
 
-  const { stepReport, completions } = useMemo(() => buildStepReport(rows, workflow, users), [rows, workflow, users]);
+  const { stepReport, completions } = useMemo(
+    () => buildStepReport(rows, workflow, users, workingHours, holidays),
+    [rows, workflow, users, workingHours, holidays],
+  );
 
-  function exportCsv() {
-    downloadCsv(
-      `recurring-workflow-completions-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Completed At", "Payment", "Vendor", "Step", "Action", "By", "On Time", "Comment"],
-      completions.map(item => [
-        formatTimestamp(item.timestamp),
-        item.title,
-        item.vendorName,
-        item.stepName,
-        item.action,
-        item.userName,
-        item.onTime === null ? "—" : item.onTime ? "Yes" : "No",
-        item.comment || "",
-      ]),
-    );
+  async function exportReport() {
+    setIsExporting(true);
+    try {
+      await exportWorkbook(`recurring-workflow-completions-${recurringDateOnly(new Date())}.xlsx`, [
+        {
+          name: "Completion timeline",
+          columns: [
+            { header: "Completed At", key: "completedAt", width: 22 },
+            { header: "Payment", key: "title", width: 30 },
+            { header: "Vendor", key: "vendor", width: 24 },
+            { header: "Step", key: "step", width: 20 },
+            { header: "Action", key: "action", width: 18 },
+            { header: "By", key: "by", width: 20 },
+            { header: "On Time", key: "onTime", width: 12 },
+            { header: "Comment", key: "comment", width: 30 },
+          ],
+          rows: completions.map(item => ({
+            completedAt: formatTimestamp(item.timestamp),
+            title: item.title,
+            vendor: item.vendorName,
+            step: item.stepName,
+            action: item.action,
+            by: item.userName,
+            onTime: item.onTime === null ? "—" : item.onTime ? "Yes" : "No",
+            comment: item.comment || "",
+          })),
+        },
+      ]);
+    } finally {
+      setIsExporting(false);
+    }
   }
 
-  if (loading)
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin" />
-      </div>
-    );
-  if (!can("View", "Recurring Payments.Reports"))
-    return (
-      <Card>
-        <CardContent className="py-16 text-center">
-          <AlertTriangle className="mx-auto mb-3 h-9 w-9 text-amber-500" />
-          <p className="font-semibold text-muted-foreground">You don&apos;t have permission to view this report.</p>
-        </CardContent>
-      </Card>
-    );
+  if (loading) return <ReportLoading />;
+  if (!can("View", "Recurring Payments.Reports")) return <ReportAccessDenied />;
 
   return (
     <div className="space-y-5">
-      <Card className="border-0 bg-gradient-to-r from-cyan-800 to-indigo-900 text-white">
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Workflow Completion Summary</h1>
-            <p className="text-sm text-indigo-100">Totals, step-wise workload and on-time performance, and exactly what completed when</p>
-          </div>
-          <div className="flex gap-2 print:hidden">
+      <ReportHeader
+        title="Workflow Completion Summary"
+        description="Totals, step-wise workload and on-time performance, and exactly what completed when"
+        actions={
+          <>
             {can("Export", "Recurring Payments.Reports") && (
-              <Button variant="secondary" onClick={exportCsv}>
-                <Download className="mr-2 h-4 w-4" />
-                Export CSV
+              <Button variant="secondary" onClick={exportReport} disabled={isExporting}>
+                {isExporting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Export Excel
               </Button>
             )}
             <Button variant="secondary" onClick={() => window.print()}>
               <Printer className="mr-2 h-4 w-4" />
               Print / PDF
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
+      {loadError && <ReportErrorBanner />}
 
       <CollapsibleFilterCard activeCount={activeFilterCount} onClear={() => setFilters(DEFAULT_FILTERS)}>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -341,11 +378,11 @@ export default function WorkflowCompletionReport() {
       </CollapsibleFilterCard>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Metric label="Total payments" value={String(summary.total)} />
-        <Metric label="Total value" value={currency(summary.totalAmount)} />
-        <Metric label="Paid" value={currency(summary.paidAmount)} />
-        <Metric label="Outstanding" value={currency(summary.outstanding)} />
-        <Metric label="Rejected / failed" value={String(summary.rejected)} tone={summary.rejected ? "warn" : undefined} />
+        <ReportMetricTile label="Total payments" value={String(summary.total)} />
+        <ReportMetricTile label="Total value" value={currency(summary.totalAmount)} />
+        <ReportMetricTile label="Paid" value={currency(summary.paidAmount)} />
+        <ReportMetricTile label="Outstanding" value={currency(summary.outstanding)} />
+        <ReportMetricTile label="Rejected / failed" value={String(summary.rejected)} tone={summary.rejected ? "warning" : "good"} />
       </div>
 
       <div>
@@ -441,14 +478,4 @@ export default function WorkflowCompletionReport() {
 
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="space-y-1"><Label className="text-xs font-medium text-muted-foreground">{label}</Label>{children}</div>;
-}
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "warn" }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-xl font-bold ${tone === "warn" ? "text-amber-600" : ""}`}>{value}</p>
-      </CardContent>
-    </Card>
-  );
 }
