@@ -20,7 +20,7 @@ export type PoPlacement = {
   latestPoDate: string;
 };
 
-const APPROVED_STATUSES: MdlOverallStatus[] = ["Approved", "Approved with Comments"];
+export const MDL_APPROVED_STATUSES: MdlOverallStatus[] = ["Approved", "Approved with Comments"];
 
 // A drawing becomes a "pending task" once a purchase order has actually been placed for its
 // BOQ item — that's the point procurement is committed and the drawing needs to be ready —
@@ -36,7 +36,7 @@ export default function MdlPendingTasks({
 }) {
   const pendingRows = useMemo(() => {
     return rows
-      .filter((row) => poInfoByBoqItemId.has(row.item.id) && !APPROVED_STATUSES.includes(row.drawing?.status ?? "Pending"))
+      .filter((row) => poInfoByBoqItemId.has(row.item.id) && !MDL_APPROVED_STATUSES.includes(row.drawing?.status ?? "Pending"))
       .map((row) => ({ ...row, po: poInfoByBoqItemId.get(row.item.id)! }))
       .sort((a, b) => {
         const aOverdue = isMdlOverdue(a.drawing);

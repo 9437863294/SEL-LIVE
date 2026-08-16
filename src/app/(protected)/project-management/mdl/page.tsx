@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowUpDown,
@@ -100,7 +100,7 @@ import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
 import MdlWorkplanCalendar from "@/components/project-management/mdl-calendar";
 import MdlReports from "@/components/project-management/mdl-reports";
 import MdlGanttChart from "@/components/project-management/mdl-gantt";
-import MdlPendingTasks, { type PoPlacement } from "@/components/project-management/mdl-pending-tasks";
+import MdlPendingTasks, { MDL_APPROVED_STATUSES, type PoPlacement } from "@/components/project-management/mdl-pending-tasks";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 
 type ProjectMapping = {
@@ -143,6 +143,7 @@ const emptyForm = (): EditForm => ({
 });
 
 export default function MdlPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
@@ -151,6 +152,16 @@ export default function MdlPage() {
 
   const canView = can("View", MDL_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
   const canEdit = can("Edit", MDL_PERMISSION_RESOURCE);
+
+  // The active view is kept in the URL (`?view=`) so refreshing, sharing a link, or navigating
+  // back doesn't silently reset you to "Pending Tasks".
+  const activeTab = searchParams?.get("view") || "pending";
+  const setActiveTab = (value: string) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value === "pending") params.delete("view");
+    else params.set("view", value);
+    router.replace(`/project-management/mdl?${params.toString()}`);
+  };
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [allBoqItems, setAllBoqItems] = useState<BoqItem[]>([]);
@@ -335,6 +346,16 @@ export default function MdlPage() {
     }
     return map;
   }, [purchaseOrders]);
+
+  // Same definition of "pending" as MdlPendingTasks itself uses, so the sidebar badge always
+  // agrees with what that tab actually shows.
+  const pendingTaskCount = useMemo(
+    () =>
+      mdlRows.filter(
+        (row) => poInfoByBoqItemId.has(row.item.id) && !MDL_APPROVED_STATUSES.includes(row.drawing?.status ?? "Pending"),
+      ).length,
+    [mdlRows, poInfoByBoqItemId],
+  );
 
   const openEditDialog = (item: BoqItem) => {
     const existing = drawings[item.id];
@@ -544,19 +565,26 @@ export default function MdlPage() {
         )}
       </div>
 
-      <Tabs defaultValue="pending" orientation="vertical" className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
         <SidebarTabsList
           items={[
-            { value: "pending", label: "Pending Tasks", icon: ListTodo },
-            { value: "register", label: "Register", icon: Table2 },
-            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays },
-            { value: "gantt", label: "Gantt Chart", icon: GanttChart },
-            { value: "reports", label: "Reports", icon: FileBarChart2 },
+            { value: "pending", label: "Pending Tasks", icon: ListTodo, color: "text-rose-600", bg: "bg-rose-100", count: pendingTaskCount },
+            { value: "register", label: "Register", icon: Table2, color: "text-sky-600", bg: "bg-sky-100" },
+            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays, color: "text-violet-600", bg: "bg-violet-100" },
+            { value: "gantt", label: "Gantt Chart", icon: GanttChart, color: "text-orange-600", bg: "bg-orange-100" },
+            { value: "reports", label: "Reports", icon: FileBarChart2, color: "text-blue-600", bg: "bg-blue-100" },
           ]}
-          activeClassName="data-[state=active]:bg-sky-50 data-[state=active]:text-sky-700"
+          activeValue={activeTab}
+          onChange={setActiveTab}
+          title="MDL Views"
+          description="Pending tasks, register, calendar, Gantt & reports"
+          icon={FileStack}
+          gradient="from-sky-500 to-blue-600"
+          tint="from-sky-500/10 to-blue-500/5"
         />
 
         <div className="min-w-0 flex-1 space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsContent value="pending" className="mt-0">
           <MdlPendingTasks rows={mdlRows} poInfoByBoqItemId={poInfoByBoqItemId} onSelectItem={handleSelectMdlItem} />
         </TabsContent>
@@ -688,8 +716,9 @@ export default function MdlPage() {
         <TabsContent value="reports" className="mt-0">
           <MdlReports rows={mdlRows} onSelectItem={handleSelectMdlItem} />
         </TabsContent>
+        </Tabs>
         </div>
-      </Tabs>
+      </div>
 
       <Dialog open={!!editingBoqItem} onOpenChange={(open) => !open && setEditingBoqItem(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">

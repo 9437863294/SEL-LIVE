@@ -103,6 +103,16 @@ export default function ProjectPurchaseOrdersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<"all" | POStatus>("all");
 
+  // The active view is kept in the URL (`?view=`) so refreshing, sharing a link, or navigating
+  // back doesn't silently reset you to "List" — same pattern as MDL's tabs.
+  const activeTab = searchParams?.get("view") || "list";
+  const setActiveTab = (value: string) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value === "list") params.delete("view");
+    else params.set("view", value);
+    router.replace(`/project-management/purchase-orders?${params.toString()}`);
+  };
+
   const loadData = useCallback(async () => {
     if (!mappingId) {
       setIsLoading(false);
@@ -156,6 +166,12 @@ export default function ProjectPurchaseOrdersPage() {
   const filteredOrders = useMemo(
     () => (statusFilter === "all" ? purchaseOrders : purchaseOrders.filter((po) => po.status === statusFilter)),
     [purchaseOrders, statusFilter],
+  );
+
+  // Orders raised but not yet Received (or Cancelled) — the ones still needing follow-up.
+  const openOrderCount = useMemo(
+    () => purchaseOrders.filter((po) => !["Received", "Cancelled"].includes(po.status)).length,
+    [purchaseOrders],
   );
 
   const supplyBoqItems = useMemo(
@@ -239,7 +255,7 @@ export default function ProjectPurchaseOrdersPage() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
+            <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
               <ArrowLeft className="h-5 w-5" />
             </Link>
           </Button>
@@ -272,19 +288,26 @@ export default function ProjectPurchaseOrdersPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="list" orientation="vertical" className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
         <SidebarTabsList
           items={[
-            { value: "list", label: "List", icon: Table2 },
-            { value: "boq-items", label: "BOQ Items", icon: PackageSearch },
-            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays },
-            { value: "gantt", label: "Gantt Chart", icon: GanttChart },
-            { value: "reports", label: "Reports", icon: FileBarChart2 },
+            { value: "list", label: "List", icon: Table2, color: "text-emerald-600", bg: "bg-emerald-100", count: openOrderCount },
+            { value: "boq-items", label: "BOQ Items", icon: PackageSearch, color: "text-cyan-600", bg: "bg-cyan-100" },
+            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays, color: "text-violet-600", bg: "bg-violet-100" },
+            { value: "gantt", label: "Gantt Chart", icon: GanttChart, color: "text-orange-600", bg: "bg-orange-100" },
+            { value: "reports", label: "Reports", icon: FileBarChart2, color: "text-blue-600", bg: "bg-blue-100" },
           ]}
-          activeClassName="data-[state=active]:bg-emerald-50 data-[state=active]:text-emerald-700"
+          activeValue={activeTab}
+          onChange={setActiveTab}
+          title="Purchase Order Views"
+          description="List, BOQ items, calendar, Gantt & reports"
+          icon={ShoppingCart}
+          gradient="from-emerald-500 to-teal-600"
+          tint="from-emerald-500/10 to-teal-500/5"
         />
 
         <div className="min-w-0 flex-1 space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsContent value="list" className="mt-0">
           <Card className="overflow-hidden border-border/60">
             <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
@@ -376,8 +399,9 @@ export default function ProjectPurchaseOrdersPage() {
         <TabsContent value="reports" className="mt-0">
           <PoReports purchaseOrders={purchaseOrders} boqItemsById={boqItemsById} onSelectPo={goToPo} />
         </TabsContent>
+        </Tabs>
         </div>
-      </Tabs>
+      </div>
     </main>
   );
 }
