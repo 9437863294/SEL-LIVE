@@ -62,6 +62,22 @@ import {
 } from '@/lib/project-management-boq-columns';
 import { PO_COLLECTION, type PurchaseOrder } from '@/lib/purchase-orders';
 import { MDL_COLLECTION, mdlOverallStatusStyles, type MdlDrawing } from '@/lib/mdl';
+import {
+  MC_COLLECTION,
+  INSPECTION_COLLECTION,
+  MDCC_COLLECTION,
+  DI_COLLECTION,
+  GRN_COLLECTION,
+  MVAC_COLLECTION,
+  mcStatusStyles,
+  mdccStatusStyles,
+  type ManufacturingClearance,
+  type InspectionRecord,
+  type MdccRecord,
+  type DiRecord,
+  type GrnRecord,
+  type MvacRecord,
+} from '@/lib/supply-gates';
 import BoqItemDetailsDialog from '@/components/billing-recon/BoqItemDetailsDialog';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -128,6 +144,12 @@ const baseTableHeaders = [
     'JMC/MVAC Amount',
     'Indent Qty',
     'PO Qty',
+    'MC Status',
+    'Inspection Accepted Qty',
+    'MDCC Status',
+    'DI Dispatch Qty',
+    'GRN Accepted Qty',
+    'Material Acceptance Qty',
     'Budget Price',
     'F&I %',
     'F&I Price',
@@ -135,6 +157,18 @@ const baseTableHeaders = [
     'Start Date',
     'End Date',
 ] as const;
+
+// The supply gate chain (Manufacturing Clearance -> Inspection -> MDCC -> DI -> GRN -> MVAC, see
+// src/lib/supply-gates.ts) — one row per BOQ item, each column a live aggregate from that stage's
+// own collection. Only meaningful for items actually placed on an issued PO; see
+// SUPPLY_GATE_STATUS_COLUMNS/SUPPLY_GATE_QTY_COLUMNS below for the "not on a PO yet" blank state.
+const SUPPLY_GATE_STATUS_COLUMNS = new Set(['MC Status', 'MDCC Status']);
+const SUPPLY_GATE_QTY_COLUMNS = new Set([
+  'Inspection Accepted Qty',
+  'DI Dispatch Qty',
+  'GRN Accepted Qty',
+  'Material Acceptance Qty',
+]);
 
 const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
@@ -153,6 +187,12 @@ const HEADER_ROW_BLANK_COLUMNS = new Set([
   'Indent Qty',
   'PO Qty',
   'MDL Status',
+  'MC Status',
+  'Inspection Accepted Qty',
+  'MDCC Status',
+  'DI Dispatch Qty',
+  'GRN Accepted Qty',
+  'Material Acceptance Qty',
 ]);
 
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
@@ -214,6 +254,15 @@ export default function ViewBoqPage() {
   const [indents, setIndents] = useState<IndentRecord[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [mdlDrawings, setMdlDrawings] = useState<MdlDrawing[]>([]);
+  // The supply gate chain — loaded read-only here just to surface each stage's status/qty
+  // alongside Indent Qty/PO Qty. mvacGateRecords is deliberately distinct from mvacEntries above
+  // (the unrelated Billing Recon MVAC quantity-certification records).
+  const [mcRecords, setMcRecords] = useState<ManufacturingClearance[]>([]);
+  const [inspectionRecords, setInspectionRecords] = useState<InspectionRecord[]>([]);
+  const [mdccGateRecords, setMdccGateRecords] = useState<MdccRecord[]>([]);
+  const [diRecords, setDiRecords] = useState<DiRecord[]>([]);
+  const [grnRecords, setGrnRecords] = useState<GrnRecord[]>([]);
+  const [mvacGateRecords, setMvacGateRecords] = useState<MvacRecord[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projectSlug, setProjectSlug] = useState('');
   const [globalProjectId, setGlobalProjectId] = useState('');
@@ -244,6 +293,12 @@ export default function ViewBoqPage() {
           'JMC/MVAC Amount',
           'Indent Qty',
           'PO Qty',
+          'MC Status',
+          'Inspection Accepted Qty',
+          'MDCC Status',
+          'DI Dispatch Qty',
+          'GRN Accepted Qty',
+          'Material Acceptance Qty',
           'Total Amount',
           'Budget Price',
           'F&I %',
@@ -363,8 +418,22 @@ export default function ViewBoqPage() {
       if (!mapping.globalProjectId) throw new Error('Global project is not mapped');
       const projectId = mapping.globalProjectId;
 
-      const [projectSnapshot, boqSnapshot, jmcSnapshot, mvacSnapshot, billsSnapshot, indentSnapshot, poSnapshot, mdlSnapshot] =
-        await Promise.all([
+      const [
+        projectSnapshot,
+        boqSnapshot,
+        jmcSnapshot,
+        mvacSnapshot,
+        billsSnapshot,
+        indentSnapshot,
+        poSnapshot,
+        mdlSnapshot,
+        mcSnapshot,
+        inspectionSnapshot,
+        mdccGateSnapshot,
+        diSnapshot,
+        grnSnapshot,
+        mvacGateSnapshot,
+      ] = await Promise.all([
           getDoc(doc(db, 'projects', projectId)),
           getDocs(collection(db, 'projects', projectId, 'boqItems')),
           getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
@@ -373,6 +442,12 @@ export default function ViewBoqPage() {
           getDocs(collection(db, 'projects', projectId, 'indents')),
           getDocs(collection(db, 'projects', projectId, PO_COLLECTION)),
           getDocs(collection(db, 'projects', projectId, MDL_COLLECTION)),
+          getDocs(collection(db, 'projects', projectId, MC_COLLECTION)),
+          getDocs(collection(db, 'projects', projectId, INSPECTION_COLLECTION)),
+          getDocs(collection(db, 'projects', projectId, MDCC_COLLECTION)),
+          getDocs(collection(db, 'projects', projectId, DI_COLLECTION)),
+          getDocs(collection(db, 'projects', projectId, GRN_COLLECTION)),
+          getDocs(collection(db, 'projects', projectId, MVAC_COLLECTION)),
         ]);
 
       if (!projectSnapshot.exists()) throw new Error('Project not found');
@@ -415,6 +490,12 @@ export default function ViewBoqPage() {
       setIndents(indentSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as IndentRecord)));
       setPurchaseOrders(poSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as PurchaseOrder)));
       setMdlDrawings(mdlSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MdlDrawing)));
+      setMcRecords(mcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as ManufacturingClearance)));
+      setInspectionRecords(inspectionSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as InspectionRecord)));
+      setMdccGateRecords(mdccGateSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MdccRecord)));
+      setDiRecords(diSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as DiRecord)));
+      setGrnRecords(grnSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as GrnRecord)));
+      setMvacGateRecords(mvacGateSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as MvacRecord)));
     } catch (error) {
       console.error(error);
       toast({
@@ -498,6 +579,62 @@ export default function ViewBoqPage() {
     }
     return map;
   }, [mdlDrawings]);
+
+  /** PRE-AGGREGATE THE SUPPLY GATE CHAIN BY BOQ ITEM ID — same one-doc-per-boqItemId convention
+   * as MDL above (see src/lib/supply-gates.ts). */
+  const mcStatusByBoqItemId = useMemo(() => {
+    const map = new Map<string, ManufacturingClearance['status']>();
+    for (const record of mcRecords) {
+      if (!record.boqItemId) continue;
+      map.set(record.boqItemId, record.status ?? 'Pending');
+    }
+    return map;
+  }, [mcRecords]);
+
+  const inspectionQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const record of inspectionRecords) {
+      if (!record.boqItemId) continue;
+      map.set(record.boqItemId, record.qtyAccepted ?? 0);
+    }
+    return map;
+  }, [inspectionRecords]);
+
+  const mdccStatusByBoqItemId = useMemo(() => {
+    const map = new Map<string, MdccRecord['status']>();
+    for (const record of mdccGateRecords) {
+      if (!record.boqItemId) continue;
+      map.set(record.boqItemId, record.status ?? 'Pending');
+    }
+    return map;
+  }, [mdccGateRecords]);
+
+  const diQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const record of diRecords) {
+      if (!record.boqItemId) continue;
+      map.set(record.boqItemId, record.dispatchQty ?? 0);
+    }
+    return map;
+  }, [diRecords]);
+
+  const grnQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const record of grnRecords) {
+      if (!record.boqItemId) continue;
+      map.set(record.boqItemId, record.acceptedQty ?? 0);
+    }
+    return map;
+  }, [grnRecords]);
+
+  const mvacGateQtyByBoqItemId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const record of mvacGateRecords) {
+      if (!record.boqItemId) continue;
+      map.set(record.boqItemId, record.qtyAccepted ?? 0);
+    }
+    return map;
+  }, [mvacGateRecords]);
 
   const getQuantities = useCallback(
     (scope1: string, scope2: string, boqSlNo: string) => {
@@ -664,6 +801,14 @@ export default function ViewBoqPage() {
         const isMdl = String(item.MDL ?? '').trim().toLowerCase() === 'yes';
         return isMdl ? mdlStatusByBoqItemId.get(item.id) ?? 'Pending' : '';
       }
+      // Supply gate chain — only meaningful once the item has actually been placed on a PO.
+      const isOnPo = (poQtyByBoqItemId.get(item.id) ?? 0) > 0;
+      if (key === 'MC Status') return isOnPo ? mcStatusByBoqItemId.get(item.id) ?? 'Pending' : '';
+      if (key === 'Inspection Accepted Qty') return isOnPo ? inspectionQtyByBoqItemId.get(item.id) ?? 0 : 0;
+      if (key === 'MDCC Status') return isOnPo ? mdccStatusByBoqItemId.get(item.id) ?? 'Pending' : '';
+      if (key === 'DI Dispatch Qty') return isOnPo ? diQtyByBoqItemId.get(item.id) ?? 0 : 0;
+      if (key === 'GRN Accepted Qty') return isOnPo ? grnQtyByBoqItemId.get(item.id) ?? 0 : 0;
+      if (key === 'Material Acceptance Qty') return isOnPo ? mvacGateQtyByBoqItemId.get(item.id) ?? 0 : 0;
       if (key === 'Budget Price') return getBudgetValues(item).budgetPrice;
       if (key === 'F&I %') return getBudgetValues(item).fiPercentage;
       if (key === 'F&I Price') return getBudgetValues(item).fiPrice;
@@ -708,7 +853,21 @@ export default function ViewBoqPage() {
     }
 
     return sorted;
-  }, [filteredBoqItems, sortKey, sortDirection, getQuantities, indentQtyByBoqItemId, poQtyByBoqItemId, mdlStatusByBoqItemId]);
+  }, [
+    filteredBoqItems,
+    sortKey,
+    sortDirection,
+    getQuantities,
+    indentQtyByBoqItemId,
+    poQtyByBoqItemId,
+    mdlStatusByBoqItemId,
+    mcStatusByBoqItemId,
+    inspectionQtyByBoqItemId,
+    mdccStatusByBoqItemId,
+    diQtyByBoqItemId,
+    grnQtyByBoqItemId,
+    mvacGateQtyByBoqItemId,
+  ]);
 
   /** ROW ACTIONS **/
   const handleRowClick = (item: BoqItem) => {
@@ -1230,6 +1389,35 @@ export default function ViewBoqPage() {
                                         {status}
                                       </span>
                                     );
+                                  }
+                                } else if (SUPPLY_GATE_STATUS_COLUMNS.has(header) || SUPPLY_GATE_QTY_COLUMNS.has(header)) {
+                                  // Supply gate chain — blank until the item is actually placed on a PO, same
+                                  // "not applicable yet" treatment as MDL Status above.
+                                  const isOnPo = (poQtyByBoqItemId.get(item.id) ?? 0) > 0;
+                                  if (!isOnPo) {
+                                    display = <span className="text-muted-foreground">—</span>;
+                                  } else if (header === 'MC Status') {
+                                    const status = mcStatusByBoqItemId.get(item.id) ?? 'Pending';
+                                    display = (
+                                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', mcStatusStyles[status])}>
+                                        {status}
+                                      </span>
+                                    );
+                                  } else if (header === 'MDCC Status') {
+                                    const status = mdccStatusByBoqItemId.get(item.id) ?? 'Pending';
+                                    display = (
+                                      <span className={cn('inline-flex rounded-full px-2 py-0.5 text-xs font-medium', mdccStatusStyles[status])}>
+                                        {status}
+                                      </span>
+                                    );
+                                  } else if (header === 'Inspection Accepted Qty') {
+                                    display = fmtNum(inspectionQtyByBoqItemId.get(item.id) ?? 0);
+                                  } else if (header === 'DI Dispatch Qty') {
+                                    display = fmtNum(diQtyByBoqItemId.get(item.id) ?? 0);
+                                  } else if (header === 'GRN Accepted Qty') {
+                                    display = fmtNum(grnQtyByBoqItemId.get(item.id) ?? 0);
+                                  } else {
+                                    display = fmtNum(mvacGateQtyByBoqItemId.get(item.id) ?? 0);
                                   }
                                 } else {
                                   const raw = item[header];

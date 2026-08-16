@@ -12,6 +12,20 @@ export type BoqColumnConfig = {
   order: number;
 };
 
+// The supply gate chain (see src/lib/supply-gates.ts) — each column is a live aggregate from that
+// stage's own collection, keyed by boqItemId, same convention as Indent Qty/PO Qty/MDL Status.
+// "Material Acceptance Qty" (not "MVAC Qty") deliberately avoids colliding with the unrelated
+// "JMC/MVAC" quantity-certification columns already on this page (Billing Recon's MVAC, a
+// different concept entirely — see the module note in supply-gates.ts).
+const SUPPLY_GATE_COLUMN_KEYS = [
+  "MC Status",
+  "Inspection Accepted Qty",
+  "MDCC Status",
+  "DI Dispatch Qty",
+  "GRN Accepted Qty",
+  "Material Acceptance Qty",
+];
+
 const costingDefaults = new Set([
   "BOQ SL No",
   "ERP SL NO",
@@ -24,6 +38,7 @@ const costingDefaults = new Set([
   "JMC/MVAC Amount",
   "Indent Qty",
   "PO Qty",
+  ...SUPPLY_GATE_COLUMN_KEYS,
   "Total Amount",
   "Budget Price",
   "F&I %",
@@ -73,6 +88,7 @@ const standardColumnKeys = [
   "JMC/MVAC Amount",
   "Indent Qty",
   "PO Qty",
+  ...SUPPLY_GATE_COLUMN_KEYS,
   "Budget Price",
   "F&I %",
   "F&I Price",
