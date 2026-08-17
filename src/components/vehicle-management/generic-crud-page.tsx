@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { addDoc, collection, deleteDoc, doc, getDocs, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { storage } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import ExcelJS from 'exceljs';
 import {

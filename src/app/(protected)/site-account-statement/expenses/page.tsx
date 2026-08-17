@@ -7,7 +7,7 @@ import {
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { db } from '@/lib/firebase';
-import { storage } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASAttachment, type SASCategory, type SASExpense, type SASPayment, type SASProject,

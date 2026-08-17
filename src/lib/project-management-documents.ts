@@ -3,7 +3,8 @@
 import type { Timestamp } from "firebase/firestore";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
+import { storage } from "@/lib/firebase-storage";
 
 /**
  * The document vault — the blueprint's D3 principle ("documents are first-class objects, not

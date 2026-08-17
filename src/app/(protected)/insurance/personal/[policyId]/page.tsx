@@ -8,7 +8,8 @@ import { ArrowLeft, Edit, Save, Loader2, RefreshCw, X, Eye, FilePlus, RotateCcw 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import { doc, getDoc, updateDoc, collection, getDocs, Timestamp, arrayUnion, runTransaction } from 'firebase/firestore';
 import type { InsurancePolicy, PolicyRenewal, Attachment, EMI } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';

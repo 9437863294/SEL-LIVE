@@ -2,7 +2,8 @@
 
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
+import { storage } from "@/lib/firebase-storage";
 import { BG_COLLECTIONS, BG_PERMISSION_MODULE } from "@/lib/bank-guarantee";
 
 export type PendingBGDocument = {

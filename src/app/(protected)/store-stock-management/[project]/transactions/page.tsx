@@ -35,7 +35,8 @@ import {
   ChevronRight,
   ChevronDown,
 } from 'lucide-react';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import { collection, getDocs, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
 import { useParams, useRouter } from 'next/navigation';
 import type { InventoryLog, EnrichedLogItem, BoqItem, Project } from '@/lib/types';

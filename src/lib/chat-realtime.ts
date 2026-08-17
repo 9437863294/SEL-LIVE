@@ -11,10 +11,16 @@ import {
   ref,
   runTransaction,
   serverTimestamp,
+  getDatabase,
   update,
   type Unsubscribe,
 } from 'firebase/database';
-import { realtimeDb } from '@/lib/firebase';
+import { app } from '@/lib/firebase';
+
+// Owned here rather than in @/lib/firebase so the Realtime Database SDK ships in
+// the chat route's chunk instead of the app shell's initial bundle. Consumers on
+// non-chat pages (the header's unread badge) import this module dynamically.
+const realtimeDb = getDatabase(app);
 import type { ChatConversation, ChatMessage } from '@/lib/chat';
 
 type RealtimeConversation = Omit<ChatConversation, 'id' | 'memberIds'> & {
@@ -35,6 +41,22 @@ function normalizeMemberIds(value: RealtimeConversation['memberIds']) {
   return Object.entries(value || {})
     .filter(([, isMember]) => isMember)
     .map(([memberId]) => memberId);
+}
+
+/**
+ * Realtime Database throws if any value in the payload is `undefined`, which
+ * turns one optional field into a failed send. Drop those keys before writing.
+ */
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(stripUndefined) as unknown as T;
+  if (value === null || typeof value !== 'object') return value;
+  // Sentinels such as serverTimestamp()/increment() must be passed through as-is.
+  if ('.sv' in (value as Record<string, unknown>)) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, stripUndefined(entry)])
+  ) as T;
 }
 
 function normalizeConversation(id: string, value: RealtimeConversation): ChatConversation {
@@ -270,7 +292,7 @@ export async function persistRealtimeMessage(
 ) {
   const messageId = preparedMessageId || newRealtimeKey(messagesPath(conversation.id));
   const updates: Record<string, unknown> = {
-    [`${messagesPath(conversation.id)}/${messageId}`]: message,
+    [`${messagesPath(conversation.id)}/${messageId}`]: stripUndefined(message),
     [`${conversationPath(conversation.id)}/updatedAt`]: serverTimestamp(),
     [`${conversationPath(conversation.id)}/lastMessageAt`]: serverTimestamp(),
     [`${conversationPath(conversation.id)}/lastMessageId`]: messageId,

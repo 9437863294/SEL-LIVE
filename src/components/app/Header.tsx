@@ -26,7 +26,6 @@ import { cn } from '@/lib/utils';
 import { collection, query, where, onSnapshot, getDocs, collectionGroup, orderBy, limit, updateDoc, doc } from 'firebase/firestore';
 import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { subscribeToUserConversations } from '@/lib/chat-conversations-store';
 
 // The header renders on every authenticated page, but these dialogs are only
 // reachable behind a click. Loading them eagerly put ~60KB of dialog code (and
@@ -197,15 +196,29 @@ export default function Header() {
     }
 
     const userId = user.id;
-    return subscribeToUserConversations(userId, {
-      onConversations: (conversations) => {
-        const total = conversations.reduce((sum, conversation) => {
-          return sum + (conversation.unreadCounts?.[userId] || 0);
-        }, 0);
-        setChatUnreadCount(total);
-      },
-      onError: () => setChatUnreadCount(0),
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+
+    // Imported on demand: this pulls in the Realtime Database SDK, and the header
+    // renders on every page. An unread badge isn't worth putting that on the
+    // critical path of routes that have nothing to do with chat.
+    void import('@/lib/chat-conversations-store').then(({ subscribeToUserConversations }) => {
+      if (cancelled) return;
+      unsubscribe = subscribeToUserConversations(userId, {
+        onConversations: (conversations) => {
+          const total = conversations.reduce((sum, conversation) => {
+            return sum + (conversation.unreadCounts?.[userId] || 0);
+          }, 0);
+          setChatUnreadCount(total);
+        },
+        onError: () => setChatUnreadCount(0),
+      });
     });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
   }, [canViewChat, user?.id]);
   
   const handleViewTask = (task: PendingTask) => {

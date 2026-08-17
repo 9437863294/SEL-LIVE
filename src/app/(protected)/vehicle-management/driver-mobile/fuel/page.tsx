@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, getDocs, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useCurrentDriverProfile, useVehicleOptions } from '@/components/vehicle-management/hooks';
 import { useAuth } from '@/components/auth/AuthProvider';

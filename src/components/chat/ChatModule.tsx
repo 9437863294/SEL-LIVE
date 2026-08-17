@@ -29,7 +29,8 @@ import { getDownloadURL, ref as storageRef, uploadBytesResumable, type UploadTas
 import { useSearchParams } from 'next/navigation';
 import type { User } from '@/lib/types';
 import type { Role } from '@/lib/types';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';

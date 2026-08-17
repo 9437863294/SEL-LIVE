@@ -1,8 +1,12 @@
 
 // Import the functions you need from the SDKs you need
+// NOTE: this module is on the critical path of every page, so it deliberately
+// imports only the Firebase SDKs the app shell actually needs at boot — auth and
+// Firestore. Realtime Database (chat) and Storage (uploads) are pulled in by
+// their own consumers so they land in those route chunks instead of the initial
+// bundle. See @/lib/firebase-storage and @/lib/chat-realtime.
 import { initializeApp, getApp, getApps } from "firebase/app";
 import { getFirestore, initializeFirestore, type Firestore } from "firebase/firestore";
-import { getDatabase, type Database } from "firebase/database";
 import {
   browserLocalPersistence,
   browserPopupRedirectResolver,
@@ -13,7 +17,6 @@ import {
   initializeAuth,
   type Auth,
 } from "firebase/auth";
-import { getStorage } from "firebase/storage";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -49,7 +52,6 @@ const createFirestore = (): Firestore => {
 };
 
 const db: Firestore = createFirestore();
-const realtimeDb: Database = getDatabase(app);
 
 const createAuth = (): Auth => {
   if (typeof window === "undefined") {
@@ -73,6 +75,5 @@ const createAuth = (): Auth => {
 };
 
 const auth = createAuth();
-const storage = getStorage(app);
 
-export { app, db, realtimeDb, auth, storage };
+export { app, db, auth };

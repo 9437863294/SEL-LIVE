@@ -45,7 +45,8 @@ import { MoreHorizontal, Calendar as CalendarIcon, Edit, Eye, Loader2, UploadClo
 import ExcelJS from 'exceljs';
 import { Textarea } from '@/components/ui/textarea';
 import { collection, getDocs, addDoc, doc, getDoc, runTransaction, Timestamp, updateDoc, query, where, orderBy, setDoc } from 'firebase/firestore';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import type { Project, Department, Requisition, SerialNumberConfig, WorkflowStep, ActionLog, Attachment, UserSettings, ColumnPref, ExpenseRequest } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';

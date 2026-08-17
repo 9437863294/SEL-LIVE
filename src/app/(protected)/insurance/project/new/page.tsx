@@ -16,7 +16,8 @@ import { Calendar as CalendarIcon, Loader2, Save, ArrowLeft, X, File as FileIcon
 import { cn } from '@/lib/utils';
 import { format, addYears, addMonths } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import { collection, addDoc, Timestamp, getDocs, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { InsuredAsset, InsuranceCompany, PolicyCategory, ProjectInsurancePolicy, Attachment } from '@/lib/types';

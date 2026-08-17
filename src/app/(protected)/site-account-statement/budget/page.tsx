@@ -5,7 +5,7 @@ import {
   addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { storage } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
 import {
   formatINR, SAS_COLLECTIONS,

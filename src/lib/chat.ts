@@ -68,13 +68,17 @@ export interface ChatMessage {
 }
 
 export function createReplyPreview(message: ChatMessage): ChatReplyPreview {
+  const attachmentName = message.attachments?.[0]?.name;
   return {
     messageId: message.id,
     senderId: message.senderId,
     senderName: message.senderName,
-    text: message.deletedAt ? 'This message was deleted' : message.text.slice(0, 180),
+    text: message.deletedAt ? 'This message was deleted' : (message.text || '').slice(0, 180),
     type: message.type,
-    attachmentName: message.attachments?.[0]?.name,
+    // Realtime Database rejects an explicit `undefined` anywhere in the payload,
+    // so the key has to be absent rather than present-and-undefined. Including it
+    // unconditionally made replying to any message without an attachment throw.
+    ...(attachmentName ? { attachmentName } : {}),
   };
 }
 

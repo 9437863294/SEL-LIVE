@@ -24,7 +24,8 @@ import {
   where,
 } from "firebase/firestore";
 import { ref as storageRef, deleteObject } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
+import { storage } from "@/lib/firebase-storage";
 import type { BoqItem } from "@/lib/types";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";

@@ -5,7 +5,8 @@ import {
   addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc,
 } from 'firebase/firestore';
 import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
+import { storage } from '@/lib/firebase-storage';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASAttachment, type SASExpense, type SASPayment, type SASProject,
