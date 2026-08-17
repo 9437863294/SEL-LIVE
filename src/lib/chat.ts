@@ -42,6 +42,11 @@ export interface ChatConversation {
   deliveredAt?: Record<string, ChatTimestamp>;
   typing?: Record<string, number>;
   adminIds?: string[];
+  /**
+   * Per-member archive flag. Archiving is a personal view state on a shared
+   * conversation, so only the members who archived it appear in the map.
+   */
+  archived?: Record<string, boolean>;
 }
 
 export interface ChatMessage {
@@ -128,6 +133,13 @@ export function getConversationPhoto(
   if (conversation.type === 'group') return undefined;
   const otherId = conversation.memberIds.find((id) => id !== currentUserId);
   return otherId ? usersById.get(otherId)?.photoURL : undefined;
+}
+
+export function isConversationArchived(
+  conversation: Pick<ChatConversation, 'archived'>,
+  userId: string
+) {
+  return conversation.archived?.[userId] === true;
 }
 
 export function getInitials(name?: string | null) {

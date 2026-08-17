@@ -1,22 +1,21 @@
 "use client";
 
 /**
- * Survey hub — the same shape as the JMC hub: static screens plus one card per configured
- * workflow stage, so the stages a project has set up are visible and reachable from here.
+ * RFQ hub — the same shape as the JMC, Survey and Indent hubs: static screens plus one card per
+ * configured award-approval stage.
  *
- * The BOQ deviation table that used to live at this path is now at `survey/record`.
+ * The RFQ register that used to live at this path is now at `rfq/register`.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  BarChart3,
-  Compass,
+  FilePlus2,
+  FileSearch,
   GitMerge,
-  History,
   type LucideIcon,
-  Ruler,
   Settings,
+  Table2,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -24,28 +23,28 @@ import type { WorkflowStep } from "@/lib/types";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
-import { useProjectManagementSurveyContext } from "@/components/survey/use-survey-host-context";
-import { SurveyNav } from "@/components/survey/survey-nav";
+import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
+import { RfqNav } from "@/components/rfq/rfq-nav";
 import {
-  SURVEY_GRADIENT,
-  SURVEY_SETTINGS_GRADIENT,
-  SurveyAccessDenied,
-  SurveyCardGridLoadingState,
-  SurveyNavCard,
-  SurveyNavCardGrid,
-  SurveyPageHeader,
-  SurveyPageShell,
-  SurveyProjectNotFound,
-} from "@/components/survey/survey-page-shell";
+  RFQ_GRADIENT,
+  RFQ_SETTINGS_GRADIENT,
+  RfqAccessDenied,
+  RfqCardGridLoadingState,
+  RfqNavCard,
+  RfqNavCardGrid,
+  RfqPageHeader,
+  RfqPageShell,
+  RfqProjectNotFound,
+} from "@/components/rfq/rfq-page-shell";
 import {
-  DEFAULT_SURVEY_STEPS,
-  SURVEY_ENTRY_COLLECTION,
-  SURVEY_WORKFLOW_DOC_ID,
-  isTerminalSurveyStatus,
-  type SurveyEntry,
-} from "@/lib/project-management-survey-workflow";
+  DEFAULT_RFQ_AWARD_STEPS,
+  RFQ_AWARD_APPROVAL_COLLECTION,
+  RFQ_AWARD_WORKFLOW_DOC_ID,
+  isTerminalRfqAwardStatus,
+  type RfqAwardApproval,
+} from "@/lib/project-management-rfq-workflow";
 
-type SurveyItem = {
+type RfqItem = {
   icon: LucideIcon;
   text: string;
   href: string;
@@ -54,11 +53,11 @@ type SurveyItem = {
   gradient?: string;
 };
 
-export default function SurveyHubPage() {
+export default function RfqHubPage() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
-  const { context, isResolving, notFound, projectName } = useProjectManagementSurveyContext(mappingId);
+  const { context, isResolving, notFound, projectName } = useProjectManagementRfqContext(mappingId);
   const { can, isLoading: authIsLoading } = useAuthorization();
 
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
@@ -76,9 +75,8 @@ export default function SurveyHubPage() {
   };
 
   const canViewModule = safeCan("View");
-  const canRecord = safeCan("Record");
+  const canAdd = safeCan("Add");
   const canViewSettings = safeCan("View Settings");
-  const canViewReports = safeCan("View Reports");
 
   const globalProjectId = context.globalProjectId;
 
@@ -90,32 +88,31 @@ export default function SurveyHubPage() {
       setIsWorkflowLoading(true);
       setWorkflowError(null);
       try {
-        const workflowSnapshot = await getDoc(doc(db, "workflows", SURVEY_WORKFLOW_DOC_ID));
+        const workflowSnapshot = await getDoc(doc(db, "workflows", RFQ_AWARD_WORKFLOW_DOC_ID));
         const rawSteps = workflowSnapshot.exists()
           ? ((workflowSnapshot.data()?.steps as WorkflowStep[] | undefined) ?? [])
-          : DEFAULT_SURVEY_STEPS;
+          : DEFAULT_RFQ_AWARD_STEPS;
         const nextSteps = (Array.isArray(rawSteps) ? rawSteps : [])
           .filter((step) => step && step.name)
           .map((step, index) => ({ ...step, id: String(step.id || index + 1) }));
         if (cancelled) return;
         setSteps(nextSteps);
 
-        // Per-stage counts, so the hub shows where work is actually sitting.
         if (globalProjectId) {
-          const entrySnapshot = await getDocs(
-            collection(db, "projects", globalProjectId, SURVEY_ENTRY_COLLECTION),
+          const approvalSnapshot = await getDocs(
+            collection(db, "projects", globalProjectId, RFQ_AWARD_APPROVAL_COLLECTION),
           );
           if (cancelled) return;
           const counts: Record<number, number> = {};
-          entrySnapshot.docs.forEach((entryDoc) => {
-            const entry = entryDoc.data() as SurveyEntry;
-            if (isTerminalSurveyStatus(entry.status)) return;
-            counts[entry.currentStepIndex] = (counts[entry.currentStepIndex] ?? 0) + 1;
+          approvalSnapshot.docs.forEach((approvalDoc) => {
+            const approval = approvalDoc.data() as RfqAwardApproval;
+            if (isTerminalRfqAwardStatus(approval.status)) return;
+            counts[approval.currentStepIndex] = (counts[approval.currentStepIndex] ?? 0) + 1;
           });
           setOpenCountByStep(counts);
         }
       } catch (error) {
-        console.error("Failed to load the survey workflow:", error);
+        console.error("Failed to load the RFQ award workflow:", error);
         if (cancelled) return;
         setWorkflowError("Failed to load workflow configuration.");
         toast({
@@ -133,56 +130,51 @@ export default function SurveyHubPage() {
     };
   }, [authIsLoading, isResolving, globalProjectId, toast]);
 
-  const surveyItems: SurveyItem[] = useMemo(() => {
+  const rfqItems: RfqItem[] = useMemo(() => {
     if (authIsLoading || isWorkflowLoading) return [];
 
-    const recordItem: SurveyItem = {
-      icon: Ruler,
-      text: "Record Survey",
-      href: context.surveyHref("record"),
-      description: "Measure BOQ items and submit surveyed quantities.",
-      disabled: !canRecord || !mappingId,
-    };
+    const head: RfqItem[] = [
+      {
+        icon: FilePlus2,
+        text: "New RFQ",
+        href: context.rfqHref("new"),
+        description: "Bundle indent items and invite vendors to quote.",
+        disabled: !canAdd || !mappingId,
+      },
+      {
+        icon: Table2,
+        text: "RFQ Register",
+        href: context.rfqHref("register"),
+        description: "Every RFQ, its quotes and its awards.",
+        disabled: !canViewModule || !mappingId,
+      },
+    ];
 
-    const stageItems: SurveyItem[] = steps.map((step, index) => {
+    const stageItems: RfqItem[] = steps.map((step, index) => {
       const count = openCountByStep[index] ?? 0;
       return {
         icon: GitMerge,
         text: step.name,
-        href: context.surveyHref(`stage/${step.id}`),
+        href: context.rfqHref(`stage/${step.id}`),
         description: count
-          ? `${count} ${count === 1 ? "survey" : "surveys"} awaiting ${step.name.toLowerCase()}.`
-          : `Tasks for the ${step.name} stage.`,
+          ? `${count} award${count === 1 ? "" : "s"} awaiting ${step.name.toLowerCase()}.`
+          : `Award requests at the ${step.name} stage.`,
         disabled: !canViewModule || !mappingId,
       };
     });
 
-    const tailItems: SurveyItem[] = [
-      {
-        icon: History,
-        text: "Survey Log",
-        href: context.surveyHref("log"),
-        description: "Every survey entry and where it stands.",
-        disabled: !canViewModule || !mappingId,
-      },
-      {
-        icon: BarChart3,
-        text: "Reports",
-        href: context.surveyHref("reports"),
-        description: "Survey coverage and deviation summaries.",
-        disabled: !canViewReports || !mappingId,
-      },
+    const tail: RfqItem[] = [
       {
         icon: Settings,
         text: "Settings",
-        href: context.surveyHref("settings"),
-        description: "Configure the survey approval workflow.",
+        href: context.rfqHref("settings"),
+        description: "Configure the award approval workflow.",
         disabled: !canViewSettings || !mappingId,
-        gradient: SURVEY_SETTINGS_GRADIENT,
+        gradient: RFQ_SETTINGS_GRADIENT,
       },
     ];
 
-    return [recordItem, ...stageItems, ...tailItems];
+    return [...head, ...stageItems, ...tail];
   }, [
     authIsLoading,
     isWorkflowLoading,
@@ -190,44 +182,43 @@ export default function SurveyHubPage() {
     mappingId,
     steps,
     openCountByStep,
-    canRecord,
+    canAdd,
     canViewModule,
-    canViewReports,
     canViewSettings,
   ]);
 
   if (authIsLoading || isResolving || isWorkflowLoading) {
-    return <SurveyCardGridLoadingState tiles={6} />;
+    return <RfqCardGridLoadingState tiles={5} />;
   }
 
   if (!canViewModule) {
-    return <SurveyAccessDenied description="You do not have permission to access the Survey module." />;
+    return <RfqAccessDenied description="You do not have permission to access the RFQ module." />;
   }
 
   if (notFound) {
     return (
-      <SurveyProjectNotFound
-        description="Return to Project Management and choose a project before opening Survey."
+      <RfqProjectNotFound
+        description="Return to Project Management and choose a project before opening RFQs."
         href="/project-management"
       />
     );
   }
 
   return (
-    <SurveyPageShell>
-      <SurveyPageHeader
-        title="Survey"
+    <RfqPageShell>
+      <RfqPageHeader
+        title="RFQ"
         subtitle={
           projectName
-            ? `Record surveyed quantities for ${projectName}, work each stage, and review the log.`
-            : "Record surveyed quantities, work each stage, and review the log."
+            ? `Request quotations for ${projectName}, review awards, and raise purchase orders.`
+            : "Request quotations, review awards, and raise purchase orders."
         }
-        icon={Compass}
+        icon={FileSearch}
         backHref={context.parentHref}
-        gradient={SURVEY_GRADIENT}
+        gradient={RFQ_GRADIENT}
       />
 
-      <SurveyNav context={context} active="hub" />
+      <RfqNav context={context} active="hub" />
 
       {workflowError ? (
         <Card className="border-border/60">
@@ -237,20 +228,20 @@ export default function SurveyHubPage() {
           </CardHeader>
         </Card>
       ) : (
-        <SurveyNavCardGrid>
-          {surveyItems.map((item) => (
-            <SurveyNavCard
+        <RfqNavCardGrid>
+          {rfqItems.map((item) => (
+            <RfqNavCard
               key={`${item.text}-${item.href}`}
               title={item.text}
               description={item.description}
               href={item.href}
               icon={item.icon}
-              gradient={item.gradient ?? SURVEY_GRADIENT}
+              gradient={item.gradient ?? RFQ_GRADIENT}
               disabled={item.href === "#" || item.disabled}
             />
           ))}
-        </SurveyNavCardGrid>
+        </RfqNavCardGrid>
       )}
-    </SurveyPageShell>
+    </RfqPageShell>
   );
 }

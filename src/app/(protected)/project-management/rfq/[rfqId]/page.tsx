@@ -70,17 +70,28 @@ import {
   formatCurrency,
   formatDate,
   formatQuantity,
-  markRfqItemsAwarded,
   rfqStatusStyles,
   toNumber,
   type Rfq,
-  type RfqAwardEntry,
   type RfqItem,
   type RfqQuote,
   type RfqStatus,
 } from "@/lib/rfq";
-import { PO_COLLECTION, generatePoNumber, type PurchaseOrderItem } from "@/lib/purchase-orders";
 import { VENDOR_COLLECTIONS } from "@/lib/vendor-management";
+import { useAuth } from "@/components/auth/AuthProvider";
+import type { WorkflowStep } from "@/lib/types";
+import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
+import {
+  createPurchaseOrdersForAwards,
+  type AwardGroup,
+} from "@/lib/project-management-rfq-awards";
+import { requestRfqAwardApproval } from "@/lib/project-management-rfq-award-entries";
+import {
+  DEFAULT_RFQ_AWARD_STEPS,
+  RFQ_AWARD_WORKFLOW_DOC_ID,
+  rfqAwardRequiresApproval,
+  type RfqLike,
+} from "@/lib/project-management-rfq-workflow";
 
 type ProjectMapping = {
   id: string;
@@ -128,6 +139,7 @@ export default function RfqDetailPage() {
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { user } = useAuth();
 
   const canView = can("View", RFQ_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
   const canSend = can("Send", RFQ_PERMISSION_RESOURCE);
@@ -146,6 +158,8 @@ export default function RfqDetailPage() {
   const [quoteDialogVendorId, setQuoteDialogVendorId] = useState<string | null>(null);
   const [quoteForm, setQuoteForm] = useState<QuoteForm>(emptyQuoteForm([]));
   const [awardSelections, setAwardSelections] = useState<Record<string, string>>({});
+  /** Award approval stages, if this project has configured any. */
+  const [awardSteps, setAwardSteps] = useState<WorkflowStep[]>([]);
 
   const loadRfq = useCallback(async () => {
     if (!mappingId || !rfqId) {
@@ -168,11 +182,21 @@ export default function RfqDetailPage() {
       const rfqData = { id: rfqSnapshot.id, ...rfqSnapshot.data() } as Rfq;
       setRfq(rfqData);
 
-      const [quotesSnapshot, boqSnapshot] = await Promise.all([
+      const [quotesSnapshot, boqSnapshot, workflowSnapshot] = await Promise.all([
         getDocs(collection(db, "projects", mappingData.globalProjectId, RFQ_COLLECTION, rfqId, RFQ_QUOTES_SUBCOLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
+        getDoc(doc(db, "workflows", RFQ_AWARD_WORKFLOW_DOC_ID)),
       ]);
       setQuotes(quotesSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as RfqQuote));
+
+      const rawAwardSteps = workflowSnapshot.exists()
+        ? ((workflowSnapshot.data()?.steps as WorkflowStep[] | undefined) ?? [])
+        : DEFAULT_RFQ_AWARD_STEPS;
+      setAwardSteps(
+        (Array.isArray(rawAwardSteps) ? rawAwardSteps : [])
+          .filter((step) => step && step.name)
+          .map((step, index) => ({ ...step, id: String(step.id || index + 1) })),
+      );
       setBudgetPriceByBoqItemId(
         new Map(boqSnapshot.docs.map((d) => [d.id, toNumber((d.data() as Record<string, unknown>)["Budget Price"])])),
       );
@@ -399,70 +423,98 @@ export default function RfqDetailPage() {
         byVendor.set(vendorId, [...(byVendor.get(vendorId) ?? []), item]);
       });
 
-      let poCount = 0;
-
-      // One vendor group at a time — each award is verified and written transactionally (see
-      // markRfqItemsAwarded), so if this RFQ was also being awarded concurrently from the PO
-      // builder's "From RFQ Quotes" tab, the second attempt on any shared item fails loudly
-      // instead of silently double-awarding it into two purchase orders.
+      // Build each vendor's award once, with rates resolved from their quote. The same shape feeds
+      // both paths below, so an approved award produces exactly the PO a direct award would.
+      const groups: AwardGroup[] = [];
       for (const [vendorId, items] of byVendor.entries()) {
         const quote = quotes.find((q) => q.vendorId === vendorId);
         if (!quote) continue;
+        groups.push({
+          vendorId,
+          vendorName: quote.vendorName,
+          items: items.map((item) => {
+            const quoteItem = quote.items.find((qi) => qi.rfqItemId === item.rfqItemId);
+            const rate = quoteItem?.rate ?? 0;
+            return {
+              rfqItemId: item.rfqItemId,
+              description: item.description,
+              unit: item.unit,
+              qty: item.qty,
+              rate,
+              amount: Math.round(rate * item.qty * 100) / 100,
+              sourceIndentId: item.sourceIndentId,
+              sourceIndentNumber: item.sourceIndentNumber,
+              boqItemId: item.boqItemId,
+            };
+          }),
+        });
+      }
 
-        const poItems: PurchaseOrderItem[] = items.map((item) => {
-          const quoteItem = quote.items.find((qi) => qi.rfqItemId === item.rfqItemId);
-          const rate = quoteItem?.rate ?? 0;
-          return {
+      if (!rfqAwardRequiresApproval(rfq as RfqLike, awardSteps)) {
+        // Legacy RFQ, or no workflow configured — award directly, as this screen always did.
+        const { poCount, itemCount } = await createPurchaseOrdersForAwards({
+          globalProjectId: mapping.globalProjectId,
+          projectMappingId: mapping.id,
+          projectManagementProjectName: mapping.projectName,
+          globalProjectName: mapping.globalProjectName,
+          rfq: { id: rfq.id, rfqNumber: rfq.rfqNumber, rfqDate: rfq.rfqDate },
+          groups,
+        });
+        toast({ title: `Awarded ${itemCount} item(s) across ${poCount} purchase order(s)` });
+        await loadRfq();
+        return;
+      }
+
+      if (!user) throw new Error("You must be signed in to request an award approval.");
+
+      // One approval request per vendor: they are separate decisions, and a reviewer may well
+      // approve one vendor's award and send another back.
+      for (const group of groups) {
+        const groupTotal = group.items.reduce((sum, item) => sum + item.amount, 0);
+        await requestRfqAwardApproval({
+          globalProjectId: mapping.globalProjectId,
+          mappingId,
+          rfq: { id: rfq.id, rfqNumber: rfq.rfqNumber, rfqDate: rfq.rfqDate },
+          vendorId: group.vendorId,
+          vendorName: group.vendorName,
+          items: group.items.map((item) => ({
+            rfqItemId: item.rfqItemId,
+            boqItemId: item.boqItemId,
+            boqSlNo:
+              rfq.items.find((rfqItem) => rfqItem.rfqItemId === item.rfqItemId)?.boqSlNo ?? "",
             description: item.description,
             unit: item.unit,
             qty: item.qty,
-            rate,
-            amount: Math.round(rate * item.qty * 100) / 100,
-            rfqItemId: item.rfqItemId,
-            sourceRfqId: rfq.id,
-            sourceRfqNumber: rfq.rfqNumber,
+            rate: item.rate,
+            amount: item.amount,
             sourceIndentId: item.sourceIndentId,
             sourceIndentNumber: item.sourceIndentNumber,
-            boqItemId: item.boqItemId,
-            indentQty: item.qty,
-          };
+          })),
+          // Snapshotted so a reviewer can see whether this was the cheapest option without
+          // re-opening the RFQ and re-deriving it.
+          lowestLandedCost: bestLandedCost,
+          steps: awardSteps,
+          requestedBy: { id: user.id, name: user.name },
+          resolveAssignees: (step) =>
+            getAssigneeForStep(step, {
+              projectId: mapping.globalProjectId,
+              departmentId: "",
+              amount: groupTotal,
+            }),
+          resolveDeadline: async (step) => {
+            try {
+              return await calculateDeadline(new Date(), step.tat);
+            } catch {
+              return null;
+            }
+          },
         });
-        const totalAmount = poItems.reduce((sum, item) => sum + item.amount, 0);
-
-        const poRef = doc(collection(db, "projects", mapping.globalProjectId, PO_COLLECTION));
-        await setDoc(poRef, {
-          poNumber: generatePoNumber(rfq.rfqDate, poRef.id),
-          poDate: today(),
-          vendorId,
-          vendorName: quote.vendorName,
-          projectMappingId: mapping.id,
-          projectManagementProjectName: mapping.projectName,
-          projectId: mapping.globalProjectId,
-          projectName: mapping.globalProjectName,
-          items: poItems,
-          totalAmount,
-          status: "Draft",
-          sourceRfqIds: [rfq.id],
-          sourceRfqNumbers: [rfq.rfqNumber],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-
-        const awards: RfqAwardEntry[] = items.map((item) => {
-          const quoteItem = quote.items.find((qi) => qi.rfqItemId === item.rfqItemId);
-          return {
-            rfqItemId: item.rfqItemId,
-            awardedVendorId: vendorId,
-            awardedVendorName: quote.vendorName,
-            awardedRate: quoteItem?.rate ?? 0,
-            awardedAmount: quoteItem?.amount ?? 0,
-          };
-        });
-        await markRfqItemsAwarded(db, mapping.globalProjectId, rfq.id, poRef.id, awards);
-        poCount += 1;
       }
 
-      toast({ title: `Awarded ${itemsToProcess.length} item(s) across ${poCount} purchase order(s)` });
+      toast({
+        title: `${groups.length} award request${groups.length === 1 ? "" : "s"} sent for approval`,
+        description: `Routed to ${awardSteps[0]?.name ?? "review"}. The purchase order is raised once approved.`,
+      });
       await loadRfq();
     } catch (error) {
       console.error("Failed to confirm awards:", error);
@@ -736,10 +788,18 @@ export default function RfqDetailPage() {
               </Table>
             </div>
             {canAward && (
-              <div className="flex justify-end p-4">
+              <div className="flex flex-col items-end gap-1 p-4">
+                {rfqAwardRequiresApproval(rfq as RfqLike, awardSteps) && (
+                  <p className="text-xs text-muted-foreground">
+                    Awards go to {awardSteps[0]?.name} for approval. The purchase order is raised
+                    once approved.
+                  </p>
+                )}
                 <Button onClick={() => void handleConfirmAwards()} disabled={isAwarding}>
                   {isAwarding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trophy className="mr-2 h-4 w-4" />}
-                  Confirm Awards
+                  {rfqAwardRequiresApproval(rfq as RfqLike, awardSteps)
+                    ? "Submit Awards for Approval"
+                    : "Confirm Awards"}
                 </Button>
               </div>
             )}

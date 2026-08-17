@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
-import { Loader2, Mic, Paperclip, SendHorizontal, Smile, Square, X } from 'lucide-react';
+import { Camera, Loader2, Mic, Paperclip, SendHorizontal, Smile, Square, X } from 'lucide-react';
 import type { ChatMessage } from '@/lib/chat';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { CameraCaptureDialog } from './CameraCaptureDialog';
 
 const EMOJIS = ['😀', '😂', '😊', '😍', '🥳', '😎', '😢', '😡', '👍', '👏', '🙏', '❤️', '🔥', '✅', '🎉', '💯', '📌', '🤝'];
 
@@ -19,7 +20,8 @@ interface ChatComposerProps {
   editingMessage: ChatMessage | null;
   onCancelContext: () => void;
   onSend: () => Promise<void>;
-  onFilesSelected: (files: File[], voiceDurationSeconds?: number) => Promise<void>;
+  /** Resolves true when every file landed, so callers can keep a failed shot on screen. */
+  onFilesSelected: (files: File[], voiceDurationSeconds?: number) => Promise<boolean>;
   isSending: boolean;
   uploadProgress: number | null;
 }
@@ -43,6 +45,7 @@ export function ChatComposer({
   const recordingStartRef = useRef(0);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -162,6 +165,16 @@ export function ChatComposer({
           >
             <Paperclip className="h-4 w-4" />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 shrink-0 rounded-xl"
+            onClick={() => setCameraOpen(true)}
+            disabled={isSending || uploadProgress !== null || Boolean(editingMessage)}
+            aria-label="Take a photo"
+          >
+            <Camera className="h-4 w-4" />
+          </Button>
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-xl" aria-label="Add emoji">
@@ -227,6 +240,15 @@ export function ChatComposer({
           Enter to send · Shift + Enter for a new line
         </p>
       </div>
+
+      <CameraCaptureDialog
+        open={cameraOpen}
+        onOpenChange={setCameraOpen}
+        caption={draft}
+        onCaptionChange={onDraftChange}
+        onSend={(file) => onFilesSelected([file])}
+        uploadProgress={uploadProgress}
+      />
     </div>
   );
 }

@@ -274,6 +274,21 @@ export async function updateConversation(
   await update(ref(realtimeDb, conversationPath(conversationId)), values);
 }
 
+/**
+ * Archive state lives per member on the shared conversation node. Unarchiving
+ * writes `null` rather than `false` so the map only ever lists the members who
+ * currently have the chat tucked away.
+ */
+export async function setConversationArchived(
+  conversationId: string,
+  userId: string,
+  archived: boolean
+) {
+  await updateConversation(conversationId, {
+    [`archived/${userId}`]: archived ? true : null,
+  });
+}
+
 export async function updateMessage(
   conversationId: string,
   messageId: string,

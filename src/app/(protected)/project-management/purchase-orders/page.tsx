@@ -60,6 +60,7 @@ import PoGanttChart from "@/components/project-management/po-gantt";
 import PoBoqItemsTable from "@/components/project-management/po-boq-items";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
+import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
 
 type ProjectMapping = {
   id: string;
@@ -141,7 +142,8 @@ export default function ProjectPurchaseOrdersPage() {
       setIndents(
         indentSnapshot.docs
           .map((d) => ({ id: d.id, ...d.data() }) as IndentRecord)
-          .filter((indent) => !["Rejected", "Cancelled"].includes(indent.status)),
+          // Only approved indents are orderable; legacy ones are grandfathered.
+          .filter((indent) => indentReservesQuantity(indent)),
       );
     } catch (error) {
       console.error("Failed to load purchase orders:", error);

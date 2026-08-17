@@ -12,7 +12,6 @@ import {
   FileSearch,
   Loader2,
   Plus,
-  ShieldAlert,
   Trash2,
   Users,
 } from "lucide-react";
@@ -55,7 +54,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import {
@@ -65,6 +64,17 @@ import {
   rfqStatusStyles,
   type Rfq,
 } from "@/lib/rfq";
+import { isLegacyRfq, type RfqLike } from "@/lib/project-management-rfq-workflow";
+import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
+import { RfqNav } from "@/components/rfq/rfq-nav";
+import {
+  RFQ_GRADIENT,
+  RfqAccessDenied,
+  RfqLoadingState,
+  RfqPageHeader,
+  RfqPageShell,
+  RfqProjectNotFound,
+} from "@/components/rfq/rfq-page-shell";
 
 type ProjectMapping = {
   id: string;
@@ -73,12 +83,13 @@ type ProjectMapping = {
   globalProjectName: string;
 };
 
-export default function RfqListPage() {
+export default function RfqRegisterPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { context, isResolving, notFound } = useProjectManagementRfqContext(mappingId);
 
   const canView = can("View", RFQ_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
   const canAdd = can("Add", RFQ_PERMISSION_RESOURCE);
@@ -196,79 +207,51 @@ export default function RfqListPage() {
     }
   };
 
-  if (isAuthLoading || isLoading) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-80 w-full" />
-      </main>
-    );
+  if (isAuthLoading || isResolving || isLoading) {
+    return <RfqLoadingState />;
   }
 
   if (!canView) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view RFQs.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </main>
-    );
+    return <RfqAccessDenied description="You do not have permission to view RFQs." />;
   }
 
-  if (!mappingId || !mapping) {
+  if (notFound || !mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Select a project first</CardTitle>
-            <CardDescription>Return to Project Management and choose a project before opening RFQs.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild><Link href="/project-management">Select Project</Link></Button>
-          </CardContent>
-        </Card>
-      </main>
+      <RfqProjectNotFound
+        description="Return to Project Management and choose a project before opening RFQs."
+        href="/project-management"
+      />
     );
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm">
-            <FileSearch className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">RFQ</h1>
-            <p className="text-sm text-muted-foreground">Request quotations from vendors for {mapping.projectName}.</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {rfqs.length > 0 && (
-            <Button variant="outline" onClick={exportRfqs}>
-              <Download className="mr-2 h-4 w-4" /> Export
-            </Button>
-          )}
-          {canAdd && (
-            <Button asChild>
-              <Link href={`/project-management/rfq/new?project=${encodeURIComponent(mappingId)}`}>
-                <Plus className="mr-2 h-4 w-4" /> New RFQ
-              </Link>
-            </Button>
-          )}
-        </div>
-      </div>
+    <RfqPageShell>
+      <RfqPageHeader
+        title="RFQ Register"
+        subtitle={`Request quotations from vendors for ${mapping.projectName}.`}
+        icon={FileSearch}
+        backHref={context.rfqHref()}
+        backLabel="Back to RFQ"
+        gradient={RFQ_GRADIENT}
+        actions={
+          <>
+            {rfqs.length > 0 && (
+              <Button variant="outline" onClick={exportRfqs}>
+                <Download className="mr-2 h-4 w-4" /> Export
+              </Button>
+            )}
+            {canAdd && (
+              <Button asChild>
+                <Link href={context.rfqHref("new")}>
+                  <Plus className="mr-2 h-4 w-4" /> New RFQ
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      <RfqNav context={context} active="register" />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Card><CardContent className="flex items-center gap-3 p-4"><FileSearch className="h-8 w-8 text-violet-600" /><div><p className="text-2xl font-bold">{rfqs.length}</p><p className="text-xs text-muted-foreground">Total RFQs</p></div></CardContent></Card>
@@ -314,6 +297,14 @@ export default function RfqListPage() {
                         <TableCell>{rfq.vendorIds?.length ?? 0}</TableCell>
                         <TableCell>
                           <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${rfqStatusStyles[rfq.status]}`}>{rfq.status}</span>
+                          {isLegacyRfq(rfq as RfqLike) && (
+                            <p
+                              className="mt-1 text-xs text-muted-foreground"
+                              title="Raised before award approval existed — awards on this RFQ create a purchase order directly."
+                            >
+                              Legacy
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
@@ -396,6 +387,6 @@ export default function RfqListPage() {
           </div>
         </CardContent>
       </Card>
-    </main>
+    </RfqPageShell>
   );
 }

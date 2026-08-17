@@ -1,6 +1,6 @@
-
 'use client';
 
+import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
 import React, { useState, useEffect, useMemo, useRef, Fragment, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
@@ -592,7 +592,9 @@ export default function ViewBoqPage() {
   const indentQtyByBoqItemId = useMemo(() => {
     const map = new Map<string, number>();
     for (const indent of indents) {
-      if (['Rejected', 'Cancelled'].includes(indent.status)) continue;
+      // Only approved indents reserve quantity. Ones raised before the approval workflow
+      // existed are grandfathered — see indentReservesQuantity.
+      if (!indentReservesQuantity(indent)) continue;
       for (const it of indent.items ?? []) {
         if (!it.boqItemId) continue;
         map.set(it.boqItemId, (map.get(it.boqItemId) ?? 0) + Number(it.requestedQty || 0));

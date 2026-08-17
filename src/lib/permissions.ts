@@ -541,15 +541,22 @@ export const permissionModules = {
   "Project Management": {
     "View Module": [],
     BOQ: ["View", "Import", "Add Manual", "Delete", "Export"],
-    Indent: ["View", "Add", "Delete"],
+    // Indents route through a configurable approval workflow before their quantities reserve
+    // against the BOQ (see src/lib/project-management-indent-workflow.ts).
+    Indent: ["View", "Add", "Delete", "View Settings", "Edit Settings"],
     "Requirement Planner": ["View", "Edit Schedule"],
-    RFQ: ["View", "Add", "Send", "Enter Quote", "Award", "Delete"],
+    // Awards route through a configurable approval workflow before a purchase order is raised
+    // (see src/lib/project-management-rfq-workflow.ts).
+    RFQ: ["View", "Add", "Send", "Enter Quote", "Award", "Delete", "View Settings", "Edit Settings"],
     "Purchase Orders": ["View", "Add", "Edit", "Delete", "Issue", "Receive", "Cancel"],
     MDL: ["View", "Edit"],
     Supply: ["View"],
     Civil: ["View", "Add", "Edit", "Delete", "Export"],
     Erection: ["View", "Add", "Edit", "Delete", "Export"],
-    Survey: ["View", "Record"],
+    // Surveyed quantities route through a configurable approval workflow before they reach the
+    // BOQ item (see src/lib/project-management-survey-workflow.ts), so Survey now carries the
+    // same settings/reports actions the other workflow-backed modules do.
+    Survey: ["View", "Record", "View Settings", "Edit Settings", "View Reports"],
     Drawing: ["View"],
     "Manufacturing Clearance": ["View", "Clear", "Reject"],
     Inspections: ["View", "Request", "Record Result"],

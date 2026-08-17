@@ -66,7 +66,13 @@ async function deliverChatNotification(
     if (!claim.committed) return;
 
     const firestore = getFirebaseAdminFirestore();
-    const recipientIds: string[] = memberIds.filter((memberId: string) => memberId !== senderUserId);
+    // Archiving a chat mutes it: the reader chose to move it out of their list, so
+    // it should not light up their phone either. The unread count still shows on
+    // the Archived row in the module.
+    const archived = (conversation.archived || {}) as Record<string, unknown>;
+    const recipientIds: string[] = memberIds.filter(
+      (memberId: string) => memberId !== senderUserId && archived[memberId] !== true
+    );
 
     // One subcollection read per recipient. Batched so a large group doesn't open
     // a hundred concurrent Firestore reads at once.

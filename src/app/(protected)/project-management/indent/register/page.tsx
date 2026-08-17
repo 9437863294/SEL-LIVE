@@ -16,7 +16,7 @@ import {
   ListChecks,
   Loader2,
   Plus,
-  ShieldAlert,
+  SendHorizontal,
   Trash2,
 } from "lucide-react";
 import { collection, deleteDoc, doc, getDoc, getDocs } from "firebase/firestore";
@@ -51,11 +51,32 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthorization } from "@/hooks/useAuthorization";
-
-const PERMISSION_RESOURCE = "Project Management.Indent";
+import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
+import { submitIndentForApproval } from "@/lib/project-management-indent-entries";
+import {
+  DEFAULT_INDENT_STEPS,
+  INDENT_PERMISSION_RESOURCE as PERMISSION_RESOURCE,
+  INDENT_WORKFLOW_DOC_ID,
+  indentReservesQuantity,
+  indentStatusStyles,
+  isLegacyIndent,
+  type IndentStatus,
+  type IndentWorkflowFields,
+} from "@/lib/project-management-indent-workflow";
+import { useProjectManagementIndentContext } from "@/components/indent/use-indent-host-context";
+import { IndentNav } from "@/components/indent/indent-nav";
+import {
+  INDENT_GRADIENT,
+  IndentAccessDenied,
+  IndentLoadingState,
+  IndentPageHeader,
+  IndentPageShell,
+  IndentProjectNotFound,
+} from "@/components/indent/indent-page-shell";
+import type { WorkflowStep } from "@/lib/types";
 
 type ProjectMapping = {
   id: string;
@@ -79,8 +100,6 @@ type BoqItem = {
   [key: string]: unknown;
 };
 
-type IndentStatus = "Draft" | "Submitted" | "Approved" | "Rejected" | "Cancelled";
-
 type IndentLineItem = {
   boqItemId: string;
   boqSlNo: string;
@@ -92,7 +111,7 @@ type IndentLineItem = {
   lineTotal: number;
 };
 
-type IndentRecord = {
+type IndentRecord = IndentWorkflowFields & {
   id: string;
   indentNumber: string;
   indentDate: string;
@@ -163,6 +182,11 @@ function normalizeIndentDoc(
           : items.reduce((total, item) => total + toNumber(item.lineTotal), 0),
       createdAt: data.createdAt,
       createdByName: data.createdByName,
+      workflowEnrolled: data.workflowEnrolled,
+      currentStepIndex: data.currentStepIndex,
+      currentStepName: data.currentStepName,
+      assignees: data.assignees,
+      actionLogs: data.actionLogs,
     };
   }
 
@@ -192,15 +216,21 @@ function normalizeIndentDoc(
     totalAmount: lineTotal,
     createdAt: data.createdAt,
     createdByName: data.createdByName,
+    workflowEnrolled: data.workflowEnrolled,
+    currentStepIndex: data.currentStepIndex,
+    currentStepName: data.currentStepName,
+    assignees: data.assignees,
+    actionLogs: data.actionLogs,
   };
 }
 
-export default function ProjectIndentPage() {
+export default function ProjectIndentRegisterPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { context, isResolving, notFound } = useProjectManagementIndentContext(mappingId);
 
   const canView =
     can("View", PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
@@ -212,9 +242,11 @@ export default function ProjectIndentPage() {
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [boqItems, setBoqItems] = useState<BoqItem[]>([]);
   const [indents, setIndents] = useState<IndentRecord[]>([]);
+  const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState("");
+  const [submittingId, setSubmittingId] = useState("");
 
   const loadData = useCallback(async () => {
     if (!mappingId) {
@@ -234,12 +266,22 @@ export default function ProjectIndentPage() {
       } as ProjectMapping;
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
 
-      const [projectSnapshot, boqSnapshot, indentSnapshot] = await Promise.all([
+      const [projectSnapshot, boqSnapshot, indentSnapshot, workflowSnapshot] = await Promise.all([
         getDoc(doc(db, "projects", mappingData.globalProjectId)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "indents")),
+        getDoc(doc(db, "workflows", INDENT_WORKFLOW_DOC_ID)),
       ]);
       if (!projectSnapshot.exists()) throw new Error("Mapped global project not found");
+
+      const rawSteps = workflowSnapshot.exists()
+        ? ((workflowSnapshot.data()?.steps as WorkflowStep[] | undefined) ?? [])
+        : DEFAULT_INDENT_STEPS;
+      setSteps(
+        (Array.isArray(rawSteps) ? rawSteps : [])
+          .filter((step) => step && step.name)
+          .map((step, index) => ({ ...step, id: String(step.id || index + 1) })),
+      );
 
       const nextBoqItems = boqSnapshot.docs
         .map((itemDoc) => ({ id: itemDoc.id, ...itemDoc.data() }) as BoqItem)
@@ -343,6 +385,59 @@ export default function ProjectIndentPage() {
     }
   };
 
+  const handleSubmitForApproval = async (indent: IndentRecord) => {
+    if (!mapping || !user || indent.status !== "Draft") return;
+    setSubmittingId(indent.id);
+    try {
+      const result = await submitIndentForApproval({
+        projectId: mapping.globalProjectId,
+        indentId: indent.id,
+        steps,
+        actor: { id: user.id, name: user.name },
+        resolveAssignees: (step) =>
+          getAssigneeForStep(step, {
+            projectId: mapping.globalProjectId,
+            departmentId: "",
+            amount: toNumber(indent.totalAmount),
+          }),
+        resolveDeadline: async (step) => {
+          try {
+            return await calculateDeadline(new Date(), step.tat);
+          } catch {
+            // Working hours aren't configured — submit anyway, just without a deadline.
+            return null;
+          }
+        },
+      });
+
+      void logUserActivity({
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        module: "Project Management",
+        action: "Submit Indent",
+        details: { indentNumber: indent.indentNumber, project: mapping.projectName },
+      });
+
+      toast({
+        title: result.reserves ? "Indent approved" : "Indent submitted",
+        description: result.reserves
+          ? "No workflow is configured, so it was approved and now reserves BOQ quantity."
+          : `Routed to ${steps[0]?.name ?? "review"}.`,
+      });
+      await loadData();
+    } catch (error) {
+      console.error("Failed to submit indent:", error);
+      toast({
+        title: "Unable to submit indent",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingId("");
+    }
+  };
+
   const toggleExpanded = (indentId: string) => {
     setExpandedIds((current) => {
       const next = new Set(current);
@@ -351,70 +446,34 @@ export default function ProjectIndentPage() {
     });
   };
 
-  if (isAuthLoading || isLoading) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-24 w-full" />
-        <div className="grid gap-3 sm:grid-cols-4">
-          {[1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-24" />)}
-        </div>
-        <Skeleton className="h-80 w-full" />
-      </main>
-    );
+  if (isAuthLoading || isResolving || isLoading) {
+    return <IndentLoadingState />;
   }
 
   if (!canView) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view Project Management indents.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </main>
-    );
+    return <IndentAccessDenied description="You do not have permission to view Project Management indents." />;
   }
 
-  if (!mappingId || !mapping) {
+  if (notFound || !mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Select a project first</CardTitle>
-            <CardDescription>Return to Project Management and choose a project before opening Indent.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild><Link href="/project-management">Select Project</Link></Button>
-          </CardContent>
-        </Card>
-      </main>
+      <IndentProjectNotFound
+        description="Return to Project Management and choose a project before opening Indent."
+        href="/project-management"
+      />
     );
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm">
-            <ListChecks className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Indent</h1>
-            <p className="text-sm text-muted-foreground">Create multi-item material indents against BOQ items for {mapping.projectName}.</p>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-2">
+    <IndentPageShell>
+      <IndentPageHeader
+        title="Indent Register"
+        subtitle={`Multi-item material indents against BOQ items for ${mapping.projectName}.`}
+        icon={ListChecks}
+        backHref={context.indentHref()}
+        backLabel="Back to Indent"
+        gradient={INDENT_GRADIENT}
+        actions={
+          <>
             <Button variant="outline" asChild>
               <Link href={`/project-management/requirement-planner?project=${encodeURIComponent(mappingId)}`}>
                 <CalendarClock className="mr-2 h-4 w-4" /> Requirement Planner
@@ -427,7 +486,7 @@ export default function ProjectIndentPage() {
             )}
             {canAdd && boqItems.length ? (
               <Button asChild>
-                <Link href={`/project-management/indent/new?project=${encodeURIComponent(mappingId)}`}>
+                <Link href={context.indentHref("new")}>
                   <Plus className="mr-2 h-4 w-4" /> New Indent
                 </Link>
               </Button>
@@ -436,19 +495,22 @@ export default function ProjectIndentPage() {
                 <Plus className="mr-2 h-4 w-4" /> New Indent
               </Button>
             )}
-          </div>
-          {!canAdd && (
-            <p className="max-w-xs text-right text-xs text-destructive">
-              You don&apos;t have permission to add indents. Ask an admin to grant &quot;Add&quot; under Project Management &rsaquo; Indent in Role Management.
-            </p>
-          )}
-          {canAdd && !boqItems.length && (
-            <p className="max-w-xs text-right text-xs text-muted-foreground">
-              No BOQ items found for this project. Import the BOQ first.
-            </p>
-          )}
-        </div>
-      </div>
+          </>
+        }
+      />
+
+      <IndentNav context={context} active="register" />
+
+      {!canAdd && (
+        <p className="text-xs text-destructive">
+          You don&apos;t have permission to add indents. Ask an admin to grant &quot;Add&quot; under Project Management &rsaquo; Indent in Role Management.
+        </p>
+      )}
+      {canAdd && !boqItems.length && (
+        <p className="text-xs text-muted-foreground">
+          No BOQ items found for this project. Import the BOQ first.
+        </p>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-4">
         <Card><CardContent className="flex items-center gap-3 p-4"><ClipboardList className="h-8 w-8 text-blue-600" /><div><p className="text-2xl font-bold">{boqItems.length}</p><p className="text-xs text-muted-foreground">BOQ Items</p></div></CardContent></Card>
@@ -460,7 +522,12 @@ export default function ProjectIndentPage() {
       <Card>
         <CardHeader>
           <CardTitle>Indents</CardTitle>
-          <CardDescription>Each indent can contain multiple BOQ items. Draft indents reserve quantity from their linked BOQ items.</CardDescription>
+          <CardDescription>
+            Each indent can contain multiple BOQ items. Only approved indents reserve quantity from
+            their linked BOQ items — submit a draft to send it for approval. Indents raised before
+            the workflow existed are marked <span className="font-medium">Legacy</span> and keep
+            their reservation.
+          </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -497,8 +564,41 @@ export default function ProjectIndentPage() {
                         <TableCell className="whitespace-nowrap">{formatQuantity(totalQty)}</TableCell>
                         <TableCell className="whitespace-nowrap font-medium">{formatCurrency(indent.totalAmount)}</TableCell>
                         <TableCell className="whitespace-nowrap">{formatDate(indent.requiredDate)}</TableCell>
-                        <TableCell><span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700">{indent.status}</span></TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={indentStatusStyles[indent.status] ?? ""}>
+                            {indent.status}
+                          </Badge>
+                          <div className="mt-1 space-y-0.5">
+                            {indent.status === "Submitted" && indent.currentStepName && (
+                              <p className="text-xs text-muted-foreground">at {indent.currentStepName}</p>
+                            )}
+                            {isLegacyIndent(indent) && (
+                              <p className="text-xs text-muted-foreground" title="Raised before the approval workflow existed — keeps its BOQ reservation.">
+                                Legacy
+                              </p>
+                            )}
+                            <p className={`text-xs ${indentReservesQuantity(indent) ? "text-emerald-700" : "text-muted-foreground"}`}>
+                              {indentReservesQuantity(indent) ? "Reserves BOQ qty" : "No reservation"}
+                            </p>
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                          {indent.status === "Draft" && canAdd && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mr-1"
+                              disabled={submittingId === indent.id}
+                              onClick={() => void handleSubmitForApproval(indent)}
+                            >
+                              {submittingId === indent.id ? (
+                                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <SendHorizontal className="mr-1.5 h-3.5 w-3.5" />
+                              )}
+                              Submit
+                            </Button>
+                          )}
                           {indent.status === "Draft" && (
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -575,6 +675,6 @@ export default function ProjectIndentPage() {
           </CardContent>
         </Card>
       )}
-    </main>
+    </IndentPageShell>
   );
 }

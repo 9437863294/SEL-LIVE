@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   addDoc, collection, deleteDoc, doc, getDocs, getAggregateFromServer,
-  orderBy, query, serverTimestamp, sum, updateDoc, where,
+  orderBy, query, serverTimestamp, setDoc, sum, updateDoc, where,
 } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
+import {
+  deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable, type UploadTask,
+} from 'firebase/storage';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import {
@@ -38,9 +40,9 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Calendar, Camera, ChevronLeft, ChevronRight,
+  AlertTriangle, Calendar, Camera, CheckCircle2, ChevronLeft, ChevronRight,
   Download, ExternalLink, File, FileText, Filter, Image, Loader2,
-  Paperclip, Pencil, Plus, Receipt, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
+  Paperclip, Pencil, Plus, Receipt, RotateCw, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ExcelJS from 'exceljs';
@@ -50,6 +52,20 @@ const MODULE    = 'Site Account Statement';
 const RESOURCE  = 'Expenses';
 const ACCEPT    = '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt';
 const MAX_SIZE  = 5 * 1024 * 1024; // 5 MB
+
+/**
+ * A document the user picked in the dialog. Files start uploading to Storage the
+ * moment they are selected — the expense can only be recorded once every one of
+ * them reaches `done`.
+ */
+interface PendingUpload {
+  id: string;
+  file: File;
+  progress: number;                 // 0–100
+  status: 'uploading' | 'done' | 'error';
+  error?: string;
+  attachment?: SASAttachment;       // set once the file lands in the bucket
+}
 
 interface FormState {
   projectId: string;
@@ -122,6 +138,10 @@ export default function SiteExpensesPage() {
   const { field } = useFieldControl('expense');
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  // Expense id the attachments upload under — the row's own id when editing, a
+  // pre-allocated Firestore id when adding (so uploads can start before save).
+  const targetExpenseIdRef = useRef<string>('');
+  const uploadTasksRef     = useRef<Map<string, UploadTask>>(new Map());
 
   const canViewAll = can('View', `${MODULE}.All Projects`);
   const canAdd    = can('Add',    `${MODULE}.${RESOURCE}`);
@@ -138,7 +158,6 @@ export default function SiteExpensesPage() {
   const [staticLoaded,         setStaticLoaded]         = useState(false);
   const [prePeriodExpenseSum,  setPrePeriodExpenseSum]  = useState<number | null>(null);
   const [saving,           setSaving]           = useState(false);
-  const [uploading,        setUploading]        = useState(false);
   const [exporting,        setExporting]        = useState(false);
   const [dialogOpen,       setDialogOpen]       = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -146,7 +165,7 @@ export default function SiteExpensesPage() {
   const [form,             setForm]             = useState<FormState>(blank());
 
   // Attachment state
-  const [pendingFiles,        setPendingFiles]        = useState<File[]>([]);
+  const [uploads,             setUploads]             = useState<PendingUpload[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<SASAttachment[]>([]);
   const [removedAttachments,  setRemovedAttachments]  = useState<SASAttachment[]>([]);
   const [viewDocExpense,      setViewDocExpense]      = useState<SASExpense | null>(null);
@@ -481,15 +500,43 @@ export default function SiteExpensesPage() {
   }
 
   // ── Attachment helpers ────────────────────────────────────────────────────────
-  async function uploadAttachments(expenseId: string, files: File[]): Promise<SASAttachment[]> {
-    return Promise.all(files.map(async file => {
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `siteAccountExpenses/${expenseId}/${Date.now()}-${safeName}`;
-      const sRef = storageRef(storage, path);
-      await uploadBytes(sRef, file);
-      const url = await getDownloadURL(sRef);
-      return { name: file.name, url, storagePath: path, size: file.size, type: file.type || 'application/octet-stream' };
-    }));
+  function patchUpload(id: string, patch: Partial<PendingUpload>) {
+    setUploads(prev => prev.map(u => (u.id === id ? { ...u, ...patch } : u)));
+  }
+
+  function startUpload(item: PendingUpload) {
+    const safeName = item.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `siteAccountExpenses/${targetExpenseIdRef.current}/${Date.now()}-${safeName}`;
+    const contentType = item.file.type || 'application/octet-stream';
+    const task = uploadBytesResumable(storageRef(storage, path), item.file, { contentType });
+    uploadTasksRef.current.set(item.id, task);
+
+    task.on(
+      'state_changed',
+      snap => {
+        const pct = snap.totalBytes > 0 ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
+        patchUpload(item.id, { progress: pct });
+      },
+      err => {
+        uploadTasksRef.current.delete(item.id);
+        // A cancelled task means the user removed the row or closed the dialog.
+        if ((err as any)?.code === 'storage/canceled') return;
+        patchUpload(item.id, { status: 'error', error: err.message });
+      },
+      async () => {
+        uploadTasksRef.current.delete(item.id);
+        try {
+          const url = await getDownloadURL(task.snapshot.ref);
+          patchUpload(item.id, {
+            status: 'done',
+            progress: 100,
+            attachment: { name: item.file.name, url, storagePath: path, size: item.file.size, type: contentType },
+          });
+        } catch (e: any) {
+          patchUpload(item.id, { status: 'error', error: e?.message || 'Could not read the uploaded file.' });
+        }
+      },
+    );
   }
 
   function addFiles(files: File[]) {
@@ -502,7 +549,13 @@ export default function SiteExpensesPage() {
         variant: 'destructive',
       });
     }
-    if (ok.length > 0) setPendingFiles(prev => [...prev, ...ok]);
+    if (ok.length === 0) return;
+    const items: PendingUpload[] = ok.map((file, i) => ({
+      id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+      file, progress: 0, status: 'uploading',
+    }));
+    setUploads(prev => [...prev, ...items]);
+    items.forEach(startUpload);
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -519,8 +572,36 @@ export default function SiteExpensesPage() {
     addFiles(files);
   }
 
-  function handleRemovePending(idx: number) {
-    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
+  function handleRemoveUpload(id: string) {
+    const item = uploads.find(u => u.id === id);
+    const task = uploadTasksRef.current.get(id);
+    if (task) { uploadTasksRef.current.delete(id); task.cancel(); }
+    // Already in the bucket but never committed to the expense — drop it.
+    if (item?.attachment) {
+      void deleteObject(storageRef(storage, item.attachment.storagePath)).catch(() => {});
+    }
+    setUploads(prev => prev.filter(u => u.id !== id));
+  }
+
+  function handleRetryUpload(id: string) {
+    const item = uploads.find(u => u.id === id);
+    if (!item) return;
+    const retried: PendingUpload = { ...item, progress: 0, status: 'uploading', error: undefined };
+    patchUpload(id, retried);
+    startUpload(retried);
+  }
+
+  /** Cancels in-flight uploads and removes files that were uploaded but never saved. */
+  function discardUnsavedUploads() {
+    uploadTasksRef.current.forEach(task => task.cancel());
+    uploadTasksRef.current.clear();
+    const orphans = uploads.filter(u => u.attachment);
+    if (orphans.length > 0) {
+      void Promise.allSettled(
+        orphans.map(u => deleteObject(storageRef(storage, u.attachment!.storagePath)))
+      );
+    }
+    setUploads([]);
   }
 
   function handleRemoveExisting(idx: number) {
@@ -533,10 +614,18 @@ export default function SiteExpensesPage() {
   function openAdd() {
     setEditingRow(null);
     setForm(blank());
-    setPendingFiles([]);
+    setUploads([]);
     setExistingAttachments([]);
     setRemovedAttachments([]);
+    // Reserve the document id up front so attachments can be uploaded to their
+    // final Storage path before the expense itself is written.
+    targetExpenseIdRef.current = doc(collection(db, SAS_COLLECTIONS.expenses)).id;
     setDialogOpen(true);
+  }
+
+  function closeDialog() {
+    discardUnsavedUploads();
+    setDialogOpen(false);
   }
 
   function openEdit(row: SASExpense) {
@@ -553,9 +642,10 @@ export default function SiteExpensesPage() {
       paymentMode: row.paymentMode, vendorPartyName: row.vendorPartyName || '',
       billNo: row.billNo || '', remarks: row.remarks || '',
     });
-    setPendingFiles([]);
+    setUploads([]);
     setExistingAttachments(row.attachments ? [...row.attachments] : []);
     setRemovedAttachments([]);
+    targetExpenseIdRef.current = row.id;
     setDialogOpen(true);
   }
 
@@ -573,6 +663,28 @@ export default function SiteExpensesPage() {
 
   // ── Submit ────────────────────────────────────────────────────────────────────
   async function handleSubmit() {
+    // Nothing is recorded while a document is still in flight — the expense and
+    // its attachments must land together.
+    const stillUploading = uploads.filter(u => u.status === 'uploading');
+    if (stillUploading.length > 0) {
+      toast({
+        title: 'Upload in progress',
+        description: `Wait for ${stillUploading.length} document${stillUploading.length > 1 ? 's' : ''} to finish uploading before recording the expense.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    const failedUploads = uploads.filter(u => u.status === 'error');
+    if (failedUploads.length > 0) {
+      toast({
+        title: 'Upload failed',
+        description: `Retry or remove ${failedUploads.map(u => u.file.name).join(', ')} before recording the expense.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    const uploadedAttachments = uploads.map(u => u.attachment).filter(Boolean) as SASAttachment[];
+
     // Project, Expense Date and Amount always stay mandatory — everything else
     // (including the document upload) follows the Field Control settings.
     if (!form.projectId)        { toast({ title: 'Validation', description: 'Select a project.',         variant: 'destructive' }); return; }
@@ -589,12 +701,11 @@ export default function SiteExpensesPage() {
       billNo: form.billNo,
       narration: form.narration,
       remarks: form.remarks,
-      attachment: pendingFiles.length + existingAttachments.length > 0 ? 'attached' : '',
+      attachment: uploadedAttachments.length + existingAttachments.length > 0 ? 'attached' : '',
     }, field);
     if (missingLabel) { toast({ title: 'Validation', description: `${missingLabel} is required.`, variant: 'destructive' }); return; }
 
     setSaving(true);
-    if (pendingFiles.length > 0) setUploading(true);
     try {
       const baseData = {
         projectId: form.projectId, projectName: form.projectName,
@@ -616,26 +727,20 @@ export default function SiteExpensesPage() {
         await Promise.allSettled(
           removedAttachments.map(a => deleteObject(storageRef(storage, a.storagePath)))
         );
-        // Upload new pending files
-        const newAttachments = await uploadAttachments(editingRow.id, pendingFiles);
-        const finalAttachments = [...existingAttachments, ...newAttachments];
+        // Attachments are already in the bucket — just commit the references.
         await updateDoc(doc(db, SAS_COLLECTIONS.expenses, editingRow.id), {
-          ...baseData, attachments: finalAttachments,
+          ...baseData, attachments: [...existingAttachments, ...uploadedAttachments],
         });
         void log('Edit SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
         toast({ title: 'Updated', description: 'Expense updated.' });
       } else {
-        // Create expense first to get the ID
-        const docRef = await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
-          ...baseData, attachments: [], createdAt: serverTimestamp(),
+        // Write under the id the attachments were uploaded against.
+        await setDoc(doc(db, SAS_COLLECTIONS.expenses, targetExpenseIdRef.current), {
+          ...baseData, attachments: uploadedAttachments, createdAt: serverTimestamp(),
         });
-        // Upload files using the new doc ID
-        const attachments = await uploadAttachments(docRef.id, pendingFiles);
-        if (attachments.length > 0) {
-          await updateDoc(docRef, { attachments });
-        }
+        const count = uploadedAttachments.length;
         void log('Add SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
-        toast({ title: 'Added', description: `Expense recorded${attachments.length > 0 ? ` with ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}` : ''}.` });
+        toast({ title: 'Added', description: `Expense recorded${count > 0 ? ` with ${count} attachment${count > 1 ? 's' : ''}` : ''}.` });
         // Fire budget alerts (fire-and-forget, does not block UI)
         const project = projects.find(p => p.id === form.projectId);
         const period = form.expenseDate.slice(0, 7);
@@ -654,13 +759,14 @@ export default function SiteExpensesPage() {
         }
       }
 
+      // Committed — the uploads now belong to the expense, so don't clean them up.
+      setUploads([]);
       setDialogOpen(false);
       void loadAll();
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setSaving(false);
-      setUploading(false);
     }
   }
 
@@ -706,6 +812,14 @@ export default function SiteExpensesPage() {
     () => openingBalance === null ? null : openingBalance + periodReceipts - totalFiltered,
     [openingBalance, periodReceipts, totalFiltered]
   );
+
+  // ── Upload gating for the expense dialog ──────────────────────────────────────
+  const activeUploads   = uploads.filter(u => u.status === 'uploading');
+  const failedUploads   = uploads.filter(u => u.status === 'error');
+  const isUploading     = activeUploads.length > 0;
+  const overallProgress = isUploading
+    ? Math.round(activeUploads.reduce((s, u) => s + u.progress, 0) / activeUploads.length)
+    : 0;
 
   // ── Export ────────────────────────────────────────────────────────────────────
   async function exportExcel() {
@@ -1212,7 +1326,7 @@ export default function SiteExpensesPage() {
       </Dialog>
 
       {/* Add / Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) setDialogOpen(false); }}>
+      <Dialog open={dialogOpen} onOpenChange={open => { if (!open && !saving) closeDialog(); }}>
         <DialogContent className="max-w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingRow ? 'Edit Expense' : 'Record Site Expense'}</DialogTitle>
@@ -1386,22 +1500,70 @@ export default function SiteExpensesPage() {
                 </div>
               ))}
 
-              {/* Pending files (not yet uploaded) */}
-              {pendingFiles.map((file, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2">
-                  <AttachmentIcon type={file.type} />
-                  <span className="flex-1 text-sm truncate">{file.name}</span>
-                  <span className="text-xs text-muted-foreground shrink-0">{formatSize(file.size)}</span>
-                  <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 shrink-0">Pending</Badge>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0"
-                    onClick={() => handleRemovePending(i)}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+              {/* Files uploading to Storage — each carries its own progress line */}
+              {uploads.map(u => (
+                <div
+                  key={u.id}
+                  className={cn(
+                    'rounded-lg border px-3 py-2',
+                    u.status === 'error' ? 'border-destructive/40 bg-destructive/5'
+                      : u.status === 'done' ? 'border-emerald-300 bg-emerald-50/60'
+                      : 'border-dashed border-blue-300 bg-blue-50/60',
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <AttachmentIcon type={u.file.type} />
+                    <span className="flex-1 text-sm truncate">{u.file.name}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{formatSize(u.file.size)}</span>
+                    {u.status === 'uploading' && (
+                      <span className="text-xs font-semibold text-blue-600 tabular-nums shrink-0">{u.progress}%</span>
+                    )}
+                    {u.status === 'done' && (
+                      <Badge variant="outline" className="text-xs text-emerald-700 border-emerald-300 shrink-0">
+                        <CheckCircle2 className="h-3 w-3 mr-1" />Uploaded
+                      </Badge>
+                    )}
+                    {u.status === 'error' && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs text-amber-700 hover:bg-amber-100 shrink-0"
+                        onClick={() => handleRetryUpload(u.id)}
+                      >
+                        <RotateCw className="h-3 w-3 mr-1" />Retry
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive hover:bg-destructive/10 shrink-0"
+                      onClick={() => handleRemoveUpload(u.id)}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  {/* Thin progress line under the document */}
+                  <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all duration-200',
+                        u.status === 'error' ? 'bg-destructive'
+                          : u.status === 'done' ? 'bg-emerald-500'
+                          : 'bg-blue-500',
+                      )}
+                      style={{ width: `${u.status === 'error' ? 100 : u.progress}%` }}
+                    />
+                  </div>
+
+                  {u.status === 'error' && (
+                    <p className="mt-1 flex items-start gap-1 text-[11px] text-destructive">
+                      <AlertTriangle className="h-3 w-3 mt-px shrink-0" />
+                      <span>Upload failed{u.error ? ` — ${u.error}` : ''}. Retry or remove it to continue.</span>
+                    </p>
+                  )}
                 </div>
               ))}
 
@@ -1433,9 +1595,15 @@ export default function SiteExpensesPage() {
                 </label>
               </div>
 
-              {pendingFiles.length > 0 && (
-                <p className="text-xs text-blue-600">
-                  {pendingFiles.length} file{pendingFiles.length > 1 ? 's' : ''} will be uploaded when you save.
+              {isUploading && (
+                <p className="flex items-center gap-1.5 text-xs text-blue-600">
+                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                  Uploading {activeUploads.length} file{activeUploads.length > 1 ? 's' : ''} — the expense can be recorded once every document is uploaded.
+                </p>
+              )}
+              {!isUploading && failedUploads.length > 0 && (
+                <p className="text-xs text-destructive">
+                  {failedUploads.length} document{failedUploads.length > 1 ? 's' : ''} failed to upload. Retry or remove {failedUploads.length > 1 ? 'them' : 'it'} to record the expense.
                 </p>
               )}
             </div>
@@ -1443,14 +1611,15 @@ export default function SiteExpensesPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={saving} className="bg-rose-600 hover:bg-rose-700 min-w-[130px]">
-              {saving && (
-                uploading
-                  ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Uploading…</>
-                  : <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</>
-              )}
-              {!saving && (editingRow ? 'Save Changes' : 'Record Expense')}
+            <Button variant="outline" onClick={closeDialog} disabled={saving}>Cancel</Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={saving || isUploading || failedUploads.length > 0}
+              className="bg-rose-600 hover:bg-rose-700 min-w-[130px]"
+            >
+              {isUploading && <><Loader2 className="h-4 w-4 animate-spin mr-2" />Uploading {overallProgress}%</>}
+              {!isUploading && saving && <><Loader2 className="h-4 w-4 animate-spin mr-2" />Saving…</>}
+              {!isUploading && !saving && (editingRow ? 'Save Changes' : 'Record Expense')}
             </Button>
           </DialogFooter>
         </DialogContent>

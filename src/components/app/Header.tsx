@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { collection, query, where, onSnapshot, getDocs, collectionGroup, orderBy, limit, updateDoc, doc } from 'firebase/firestore';
 import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { isConversationArchived } from '@/lib/chat';
 
 // The header renders on every authenticated page, but these dialogs are only
 // reachable behind a click. Loading them eagerly put ~60KB of dialog code (and
@@ -206,7 +207,10 @@ export default function Header() {
       if (cancelled) return;
       unsubscribe = subscribeToUserConversations(userId, {
         onConversations: (conversations) => {
+          // Archived chats are deliberately quiet: their unread count stays on the
+          // Archived row inside the module instead of the badge on every page.
           const total = conversations.reduce((sum, conversation) => {
+            if (isConversationArchived(conversation, userId)) return sum;
             return sum + (conversation.unreadCounts?.[userId] || 0);
           }, 0);
           setChatUnreadCount(total);

@@ -82,6 +82,7 @@ import {
 } from "@/lib/rfq";
 import { VENDOR_COLLECTIONS, type Vendor } from "@/lib/vendor-management";
 import type { Client } from "@/lib/types";
+import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
 
 type ProjectMapping = {
   id: string;
@@ -277,7 +278,8 @@ export default function NewProjectPurchaseOrderPage() {
 
         const indentRows = indentSnapshot.docs
           .map((d) => ({ id: d.id, ...d.data() }) as IndentRecord)
-          .filter((indent) => !["Rejected", "Cancelled"].includes(indent.status) && indent.items?.length);
+          // Only approved indents may be drawn on for a PO; legacy ones are grandfathered.
+          .filter((indent) => indentReservesQuantity(indent) && indent.items?.length);
 
         setMapping({ ...mappingData, globalProjectName });
         setVendors(

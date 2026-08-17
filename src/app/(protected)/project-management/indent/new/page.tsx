@@ -42,6 +42,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BoqItemSelector } from "@/components/billing-recon/BoqItemSelector";
 import { BoqMultiSelectDialog } from "@/components/billing-recon/BoqMultiSelectDialog";
 import type { BoqItem } from "@/lib/types";
+import { indentReservesQuantity, type IndentLike } from "@/lib/project-management-indent-workflow";
 
 const PERMISSION_RESOURCE = "Project Management.Indent";
 
@@ -173,8 +174,10 @@ export default function NewIndentPage() {
 
         const used = new Map<string, number>();
         indentSnapshot.docs.forEach((indentDoc) => {
-          const data = indentDoc.data() as { status?: string; items?: any[] };
-          if (["Rejected", "Cancelled"].includes(data.status ?? "")) return;
+          const data = indentDoc.data() as IndentLike & { items?: any[] };
+          // Available quantity is only consumed by indents that actually reserve — a draft
+          // sitting in someone's review queue no longer blocks raising another.
+          if (!indentReservesQuantity(data)) return;
           (Array.isArray(data.items) ? data.items : []).forEach((item) => {
             const id = String(item.boqItemId ?? "");
             if (!id) return;
@@ -365,14 +368,25 @@ export default function NewIndentPage() {
         requiredDate,
         remarks: remarks.trim(),
         status: "Draft",
+        // Marks this indent as workflow-aware. Its absence is what grandfathers indents raised
+        // before the approval workflow existed — see indentReservesQuantity. A new draft reserves
+        // nothing until it has been submitted and approved.
+        workflowEnrolled: true,
+        currentStepIndex: -1,
+        currentStepName: "",
+        assignees: [],
+        actionLogs: [],
         createdAt: serverTimestamp(),
         createdBy: user.id,
         createdByName: user.name ?? "",
         updatedAt: serverTimestamp(),
       });
 
-      toast({ title: "Indent created", description: indentNumber });
-      router.push(`/project-management/indent?project=${encodeURIComponent(mappingId)}`);
+      toast({
+        title: "Indent created",
+        description: `${indentNumber} — submit it from the register to start approval.`,
+      });
+      router.push(`/project-management/indent/register?project=${encodeURIComponent(mappingId)}`);
     } catch (error) {
       console.error("Failed to create indent:", error);
       toast({ title: "Unable to create indent", variant: "destructive" });

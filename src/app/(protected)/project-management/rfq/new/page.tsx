@@ -257,6 +257,10 @@ export default function NewRfqPage() {
         vendorNames: chosenVendors.map((v) => v.vendorName),
         remarks: remarks.trim(),
         status: "Draft",
+        // Marks this RFQ as workflow-aware, so confirming an award on it opens an approval request
+        // instead of creating a purchase order outright. Its absence is what grandfathers RFQs
+        // raised before the award workflow existed — see rfqAwardRequiresApproval.
+        workflowEnrolled: true,
         createdAt: serverTimestamp(),
         createdBy: user.id,
         createdByName: user.name ?? "",

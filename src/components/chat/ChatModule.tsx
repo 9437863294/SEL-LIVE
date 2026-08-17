@@ -8,8 +8,11 @@ import {
   useState,
 } from 'react';
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Info,
   Loader2,
@@ -43,8 +46,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ToastAction } from '@/components/ui/toast';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,6 +70,7 @@ import {
   getInitials,
   getAttachmentKind,
   getMessagePreview,
+  isConversationArchived,
   timestampMillis,
   type ChatAttachment,
   type ChatConversation,
@@ -87,6 +93,7 @@ import {
   newRealtimeKey,
   persistRealtimeMessage,
   realtimeServerTimestamp,
+  setConversationArchived,
   transactMessageReactions,
   transactMessageStars,
   updateConversation,
@@ -109,6 +116,7 @@ export default function ChatModule() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [conversationSearch, setConversationSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const [draft, setDraft] = useState('');
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
@@ -398,14 +406,85 @@ export default function ChatModule() {
     bottomRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length, selectedConversationId]);
 
+  const [activeConversations, archivedConversations] = useMemo(() => {
+    if (!user?.id) return [conversations, [] as ChatConversation[]];
+    const userId = user.id;
+    const active: ChatConversation[] = [];
+    const archived: ChatConversation[] = [];
+    conversations.forEach((conversation) => {
+      (isConversationArchived(conversation, userId) ? archived : active).push(conversation);
+    });
+    return [active, archived];
+  }, [conversations, user?.id]);
+
+  const archivedUnreadCount = useMemo(() => {
+    if (!user?.id) return 0;
+    const userId = user.id;
+    return archivedConversations.reduce(
+      (total, conversation) => total + (conversation.unreadCounts?.[userId] || 0),
+      0
+    );
+  }, [archivedConversations, user?.id]);
+
+  const listedConversations = showArchived ? archivedConversations : activeConversations;
+
   const filteredConversations = useMemo(() => {
     const normalized = conversationSearch.trim().toLowerCase();
-    if (!normalized || !user?.id) return conversations;
-    return conversations.filter((conversation) => {
+    if (!normalized || !user?.id) return listedConversations;
+    return listedConversations.filter((conversation) => {
       const title = getConversationTitle(conversation, user.id, usersById);
       return `${title} ${conversation.lastMessageText || ''}`.toLowerCase().includes(normalized);
     });
-  }, [conversationSearch, conversations, user?.id, usersById]);
+  }, [conversationSearch, listedConversations, user?.id, usersById]);
+
+  // Restoring the last archived chat (from here or another device) leaves nothing
+  // to show, so fall back to the main list instead of an empty screen.
+  useEffect(() => {
+    if (showArchived && !archivedConversations.length) setShowArchived(false);
+  }, [archivedConversations.length, showArchived]);
+
+  const updateArchiveState = useCallback(
+    async (conversation: ChatConversation, archived: boolean) => {
+      if (!user?.id) return;
+      const userId = user.id;
+      try {
+        await setConversationArchived(conversation.id, userId, archived);
+        if (archived) {
+          // The chat just left the list underneath the reader; drop back to it.
+          setSelectedConversationId((current) => (current === conversation.id ? null : current));
+          toast({
+            title: 'Chat archived',
+            description: 'It moved to Archived and will stop sending you notifications.',
+            action: (
+              <ToastAction
+                altText="Undo archiving this chat"
+                onClick={() => {
+                  void setConversationArchived(conversation.id, userId, false).catch((error) => {
+                    console.error('Unable to restore conversation:', error);
+                  });
+                }}
+              >
+                Undo
+              </ToastAction>
+            ),
+          });
+        } else {
+          toast({
+            title: 'Chat restored',
+            description: 'It is back in your conversation list.',
+          });
+        }
+      } catch (error) {
+        console.error('Unable to change the archive state:', error);
+        toast({
+          title: archived ? 'Chat not archived' : 'Chat not restored',
+          description: 'Please try again.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [toast, user?.id]
+  );
 
   const startDirectConversation = useCallback(
     async (otherUser: User) => {
@@ -597,12 +676,12 @@ export default function ChatModule() {
   };
 
   const uploadAttachments = async (files: File[], voiceDurationSeconds?: number) => {
-    if (!selectedConversation || !user?.id || !files.length) return;
+    if (!selectedConversation || !user?.id || !files.length) return false;
     const selectedFiles = files.slice(0, 5);
     const invalid = selectedFiles.find((file) => file.size > MAX_ATTACHMENT_SIZE);
     if (invalid) {
       toast({ title: 'Attachment too large', description: `${invalid.name} exceeds the 25 MB limit.`, variant: 'destructive' });
-      return;
+      return false;
     }
     setUploadProgress(0);
     try {
@@ -638,9 +717,11 @@ export default function ChatModule() {
       }, messageId);
       setDraft('');
       setReplyingTo(null);
+      return true;
     } catch (error) {
       console.error('Attachment upload failed:', error);
       toast({ title: 'Upload failed', description: 'The attachment could not be sent.', variant: 'destructive' });
+      return false;
     } finally {
       setUploadProgress(null);
     }
@@ -872,14 +953,33 @@ export default function ChatModule() {
         >
           <div className="border-b px-4 pb-3 pt-4">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <h1 className="text-xl font-bold tracking-tight">Conversations</h1>
-                <p className="mt-0.5 text-xs text-muted-foreground">Direct messages and team groups</p>
+              <div className="flex min-w-0 items-center gap-2">
+                {showArchived && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="-ml-2 h-9 w-9 shrink-0"
+                    onClick={() => { setShowArchived(false); setConversationSearch(''); }}
+                    aria-label="Back to all conversations"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </Button>
+                )}
+                <div className="min-w-0">
+                  <h1 className="truncate text-xl font-bold tracking-tight">
+                    {showArchived ? 'Archived' : 'Conversations'}
+                  </h1>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {showArchived
+                      ? 'Kept out of the main list and muted'
+                      : 'Direct messages and team groups'}
+                  </p>
+                </div>
               </div>
-              {canSendChat && (
+              {canSendChat && !showArchived && (
                 <Button
                   size="icon"
-                  className="h-9 w-9 rounded-full"
+                  className="h-9 w-9 shrink-0 rounded-full"
                   onClick={() => setNewConversationOpen(true)}
                   aria-label="Start a conversation"
                 >
@@ -892,7 +992,7 @@ export default function ChatModule() {
               <Input
                 value={conversationSearch}
                 onChange={(event) => setConversationSearch(event.target.value)}
-                placeholder="Search conversations"
+                placeholder={showArchived ? 'Search archived' : 'Search conversations'}
                 className="h-9 bg-muted/50 pl-9"
               />
             </div>
@@ -901,24 +1001,54 @@ export default function ChatModule() {
           <ScrollArea className="min-h-0 flex-1">
             {isLoadingConversations ? (
               <ConversationListSkeleton />
-            ) : filteredConversations.length ? (
-              <div className="py-2">
-                {filteredConversations.map((conversation) => (
-                  <ConversationRow
-                    key={conversation.id}
-                    conversation={conversation}
-                    currentUser={user}
-                    usersById={usersById}
-                    selected={conversation.id === selectedConversationId}
-                    onClick={() => setSelectedConversationId(conversation.id)}
-                  />
-                ))}
-              </div>
             ) : (
-              <EmptyConversationList
-                hasSearch={Boolean(conversationSearch.trim())}
-                onStart={() => setNewConversationOpen(true)}
-              />
+              <>
+                {!showArchived && archivedConversations.length > 0 && !conversationSearch.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setShowArchived(true)}
+                    className="flex w-full items-center gap-3 border-b px-4 py-3 text-left transition-colors hover:bg-muted/60"
+                  >
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
+                      <Archive className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">Archived</p>
+                      <p className="text-xs text-muted-foreground">
+                        {archivedConversations.length} chat{archivedConversations.length === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                    {archivedUnreadCount > 0 && (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+                        {archivedUnreadCount > 99 ? '99+' : archivedUnreadCount}
+                      </span>
+                    )}
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </button>
+                )}
+                {filteredConversations.length ? (
+                  <div className="py-2">
+                    {filteredConversations.map((conversation) => (
+                      <ConversationRow
+                        key={conversation.id}
+                        conversation={conversation}
+                        currentUser={user}
+                        usersById={usersById}
+                        selected={conversation.id === selectedConversationId}
+                        isArchived={showArchived}
+                        onClick={() => setSelectedConversationId(conversation.id)}
+                        onToggleArchive={() => void updateArchiveState(conversation, !showArchived)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyConversationList
+                    hasSearch={Boolean(conversationSearch.trim())}
+                    isArchived={showArchived}
+                    onStart={() => setNewConversationOpen(true)}
+                  />
+                )}
+              </>
             )}
           </ScrollArea>
         </aside>
@@ -940,6 +1070,13 @@ export default function ChatModule() {
                 onSearch={() => setMessageSearchOpen((open) => !open)}
                 onInfo={() => selectedConversation.type === 'group' && setGroupInfoOpen(true)}
                 onClearChat={() => setClearChatOpen(true)}
+                isArchived={isConversationArchived(selectedConversation, user.id)}
+                onToggleArchive={() =>
+                  void updateArchiveState(
+                    selectedConversation,
+                    !isConversationArchived(selectedConversation, user.id)
+                  )
+                }
               />
               {messageSearchOpen && (
                 <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 sm:px-5">
@@ -1123,13 +1260,17 @@ function ConversationRow({
   currentUser,
   usersById,
   selected,
+  isArchived,
   onClick,
+  onToggleArchive,
 }: {
   conversation: ChatConversation;
   currentUser: User;
   usersById: Map<string, User>;
   selected: boolean;
+  isArchived: boolean;
   onClick: () => void;
+  onToggleArchive: () => void;
 }) {
   const title = getConversationTitle(conversation, currentUser.id, usersById);
   const photo = getConversationPhoto(conversation, currentUser.id, usersById);
@@ -1138,35 +1279,53 @@ function ConversationRow({
   const fromCurrentUser = conversation.lastMessageSenderId === currentUser.id;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={cn(
-        'relative flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60',
+        'group relative flex w-full items-center gap-3 pl-4 pr-2 transition-colors hover:bg-muted/60',
         selected && 'bg-primary/8 hover:bg-primary/10'
       )}
     >
       {selected && <span className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-primary" />}
-      <ConversationAvatar conversation={conversation} title={title} photo={photo} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <p className={cn('truncate text-sm', unread ? 'font-bold' : 'font-semibold')}>{title}</p>
-          <span className={cn('shrink-0 text-[11px]', unread ? 'font-semibold text-primary' : 'text-muted-foreground')}>
-            {formatConversationTime(conversation.lastMessageAt || conversation.updatedAt)}
-          </span>
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <p className={cn('min-w-0 flex-1 truncate text-xs', unread ? 'font-medium text-foreground' : 'text-muted-foreground')}>
-            {fromCurrentUser && conversation.lastMessageText ? 'You: ' : ''}{lastMessage}
-          </p>
-          {unread > 0 && (
-            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
-              {unread > 99 ? '99+' : unread}
+      {/* The row is a button plus a sibling control, so the archive action is not
+          nested inside the clickable row (which browsers reject). */}
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left"
+      >
+        <ConversationAvatar conversation={conversation} title={title} photo={photo} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className={cn('truncate text-sm', unread ? 'font-bold' : 'font-semibold')}>{title}</p>
+            <span className={cn('shrink-0 text-[11px]', unread ? 'font-semibold text-primary' : 'text-muted-foreground')}>
+              {formatConversationTime(conversation.lastMessageAt || conversation.updatedAt)}
             </span>
-          )}
+          </div>
+          <div className="mt-1 flex items-center gap-2">
+            <p className={cn('min-w-0 flex-1 truncate text-xs', unread ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+              {fromCurrentUser && conversation.lastMessageText ? 'You: ' : ''}{lastMessage}
+            </p>
+            {unread > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+      <Button
+        variant="ghost"
+        size="icon"
+        // Always reachable by touch; on pointer devices it stays out of the way
+        // until the row is hovered or the control itself is focused.
+        className="h-8 w-8 shrink-0 text-muted-foreground md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100"
+        onClick={onToggleArchive}
+        aria-label={isArchived ? `Unarchive chat with ${title}` : `Archive chat with ${title}`}
+        title={isArchived ? 'Unarchive' : 'Archive'}
+      >
+        {isArchived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+      </Button>
+    </div>
   );
 }
 
@@ -1179,6 +1338,8 @@ function ConversationHeader({
   onSearch,
   onInfo,
   onClearChat,
+  isArchived,
+  onToggleArchive,
 }: {
   conversation: ChatConversation;
   currentUser: User;
@@ -1188,6 +1349,8 @@ function ConversationHeader({
   onSearch: () => void;
   onInfo: () => void;
   onClearChat: () => void;
+  isArchived: boolean;
+  onToggleArchive: () => void;
 }) {
   const title = getConversationTitle(conversation, currentUser.id, usersById);
   const photo = getConversationPhoto(conversation, currentUser.id, usersById);
@@ -1214,24 +1377,34 @@ function ConversationHeader({
       </button>
       <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={onSearch} aria-label="Search messages"><Search className="h-4 w-4" /></Button>
       {conversation.type === 'group' && <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={onInfo} aria-label="Group information"><Info className="h-4 w-4" /></Button>}
-      {conversation.type === 'direct' && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" aria-label="Chat options">
-              <MoreVertical className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onSelect={onClearChat}
-              className="text-destructive focus:bg-destructive/10 focus:text-destructive"
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Clear chat
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" aria-label="Chat options">
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={onToggleArchive}>
+            {isArchived ? (
+              <><ArchiveRestore className="mr-2 h-4 w-4" />Unarchive chat</>
+            ) : (
+              <><Archive className="mr-2 h-4 w-4" />Archive chat</>
+            )}
+          </DropdownMenuItem>
+          {conversation.type === 'direct' && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={onClearChat}
+                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Clear chat
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -1266,17 +1439,37 @@ function ConversationAvatar({
   );
 }
 
-function EmptyConversationList({ hasSearch, onStart }: { hasSearch: boolean; onStart: () => void }) {
+function EmptyConversationList({
+  hasSearch,
+  isArchived,
+  onStart,
+}: {
+  hasSearch: boolean;
+  isArchived: boolean;
+  onStart: () => void;
+}) {
   return (
     <div className="flex h-full min-h-72 flex-col items-center justify-center px-6 text-center">
       <div className="rounded-full bg-primary/10 p-4">
-        {hasSearch ? <Search className="h-6 w-6 text-primary" /> : <MessageCircle className="h-6 w-6 text-primary" />}
+        {hasSearch ? (
+          <Search className="h-6 w-6 text-primary" />
+        ) : isArchived ? (
+          <Archive className="h-6 w-6 text-primary" />
+        ) : (
+          <MessageCircle className="h-6 w-6 text-primary" />
+        )}
       </div>
-      <p className="mt-4 text-sm font-semibold">{hasSearch ? 'No matches found' : 'No conversations yet'}</p>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-        {hasSearch ? 'Try a different search term.' : 'Start a direct message or create your first group.'}
+      <p className="mt-4 text-sm font-semibold">
+        {hasSearch ? 'No matches found' : isArchived ? 'Nothing archived' : 'No conversations yet'}
       </p>
-      {!hasSearch && (
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        {hasSearch
+          ? 'Try a different search term.'
+          : isArchived
+            ? 'Archived chats stay here until you restore them.'
+            : 'Start a direct message or create your first group.'}
+      </p>
+      {!hasSearch && !isArchived && (
         <Button size="sm" className="mt-4" onClick={onStart}>
           <MessageSquarePlus className="mr-2 h-4 w-4" /> New conversation
         </Button>

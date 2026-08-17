@@ -868,3 +868,324 @@ test('JMC numbering stays on Billing Recon rules so the two hosts share one sequ
   assert.equal(jmcSlugify(' Acme Corp '), '-acme-corp-');
   assert.equal(jmcSlugify('220kV Substation / Pkg-3'), '220kv-substation--pkg-3');
 });
+
+/* ---------------- Survey approval workflow ---------------- */
+
+test('a survey advances one stage per approval and only certifies at the last one', async () => {
+  const { nextSurveyState, initialSurveyState } = await import(
+    '../src/lib/project-management-survey-workflow.ts'
+  );
+  const steps = [
+    { id: '1', name: 'Verification' },
+    { id: '2', name: 'Certification' },
+  ];
+
+  const start = initialSurveyState(steps);
+  assert.equal(start.status, 'Pending');
+  assert.equal(start.currentStepIndex, 0);
+  // Recording must never write straight through when a workflow exists.
+  assert.equal(start.applyToBoq, false);
+
+  const afterFirst = nextSurveyState('Approve', 0, steps);
+  assert.equal(afterFirst.status, 'In Progress');
+  assert.equal(afterFirst.currentStepIndex, 1);
+  assert.equal(afterFirst.currentStepName, 'Certification');
+  assert.equal(afterFirst.applyToBoq, false);
+
+  const afterLast = nextSurveyState('Approve', 1, steps);
+  assert.equal(afterLast.status, 'Approved');
+  assert.equal(afterLast.currentStepIndex, -1);
+  // Approving the final stage is the single point at which the BOQ item is written.
+  assert.equal(afterLast.applyToBoq, true);
+});
+
+test('rejection closes a survey and correction returns it to the surveyor, neither applying it', async () => {
+  const { nextSurveyState } = await import('../src/lib/project-management-survey-workflow.ts');
+  const steps = [{ id: '1', name: 'Verification' }, { id: '2', name: 'Certification' }];
+
+  const rejected = nextSurveyState('Reject', 1, steps);
+  assert.equal(rejected.status, 'Rejected');
+  assert.equal(rejected.currentStepIndex, -1);
+  assert.equal(rejected.applyToBoq, false);
+
+  // Correction re-enters at the first stage rather than resuming mid-workflow, so a changed
+  // quantity is re-verified from the top.
+  const correction = nextSurveyState('Needs Correction', 1, steps);
+  assert.equal(correction.status, 'Needs Correction');
+  assert.equal(correction.currentStepIndex, 0);
+  assert.equal(correction.currentStepName, 'Verification');
+  assert.equal(correction.applyToBoq, false);
+});
+
+test('with no stages configured a survey applies immediately, preserving pre-workflow behaviour', async () => {
+  const { initialSurveyState } = await import('../src/lib/project-management-survey-workflow.ts');
+  const start = initialSurveyState([]);
+  assert.equal(start.status, 'Approved');
+  assert.equal(start.applyToBoq, true);
+});
+
+test('only the assignees of an open survey entry may act on it', async () => {
+  const { canActOnSurveyEntry } = await import('../src/lib/project-management-survey-workflow.ts');
+  const open = { status: 'Pending', assignees: ['u1', 'u2'], currentStepIndex: 0 };
+
+  assert.equal(canActOnSurveyEntry(open, 'u1'), true);
+  assert.equal(canActOnSurveyEntry(open, 'u3'), false);
+  // A settled entry is nobody's to action, even its former assignee's.
+  assert.equal(canActOnSurveyEntry({ ...open, status: 'Approved' }, 'u1'), false);
+  assert.equal(canActOnSurveyEntry({ ...open, status: 'Rejected' }, 'u1'), false);
+});
+
+test('a stage lists only the open entries currently sitting on it', async () => {
+  const { entriesForStep } = await import('../src/lib/project-management-survey-workflow.ts');
+  const steps = [{ id: '1', name: 'Verification' }, { id: '2', name: 'Certification' }];
+  const entries = [
+    { id: 'a', status: 'Pending', currentStepIndex: 0 },
+    { id: 'b', status: 'In Progress', currentStepIndex: 1 },
+    // Terminal entries have a stale index and must not resurface on any stage.
+    { id: 'c', status: 'Approved', currentStepIndex: 0 },
+  ];
+
+  assert.deepEqual(entriesForStep(entries, '1', steps).map((e) => e.id), ['a']);
+  assert.deepEqual(entriesForStep(entries, '2', steps).map((e) => e.id), ['b']);
+  // A stage removed from the workflow shows nothing rather than throwing.
+  assert.deepEqual(entriesForStep(entries, '99', steps), []);
+});
+
+test('Survey context carries the project handle and stays inert without a mapping', async () => {
+  const { projectManagementSurveyContext } = await import(
+    '../src/lib/project-management-survey-workflow.ts'
+  );
+  const context = projectManagementSurveyContext('map-1', 'global-2');
+  assert.equal(context.surveyHref(), '/project-management/survey?project=map-1');
+  assert.equal(context.surveyHref('record'), '/project-management/survey/record?project=map-1');
+  assert.equal(context.surveyHref('stage/2'), '/project-management/survey/stage/2?project=map-1');
+  assert.equal(context.parentHref, '/project-management/supply?project=map-1');
+
+  const noMapping = projectManagementSurveyContext('', '');
+  assert.equal(noMapping.surveyHref('record'), '#');
+  assert.equal(noMapping.parentHref, '#');
+});
+
+/* ---------------- Indent approval workflow ---------------- */
+
+test('only approved indents reserve BOQ quantity, and legacy ones are grandfathered', async () => {
+  const { indentReservesQuantity, isLegacyIndent } = await import(
+    '../src/lib/project-management-indent-workflow.ts'
+  );
+
+  // Raised before the workflow existed: no marker, so it keeps the reservation it always had.
+  // This is what makes the change migration-free.
+  const legacy = { status: 'Draft' };
+  assert.equal(indentReservesQuantity(legacy), true);
+  assert.equal(isLegacyIndent(legacy), true);
+
+  // Workflow-aware indents only reserve once approved.
+  assert.equal(indentReservesQuantity({ status: 'Draft', workflowEnrolled: true }), false);
+  assert.equal(indentReservesQuantity({ status: 'Submitted', workflowEnrolled: true }), false);
+  assert.equal(indentReservesQuantity({ status: 'Approved', workflowEnrolled: true }), true);
+
+  // Rejected/Cancelled never reserve, workflow or not.
+  assert.equal(indentReservesQuantity({ status: 'Rejected' }), false);
+  assert.equal(indentReservesQuantity({ status: 'Cancelled' }), false);
+  assert.equal(indentReservesQuantity({ status: 'Rejected', workflowEnrolled: true }), false);
+});
+
+test('submitting an indent routes it, and approving the last stage grants the reservation', async () => {
+  const { submitIndentState, nextIndentState } = await import(
+    '../src/lib/project-management-indent-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Review' }, { id: '2', name: 'Approval' }];
+
+  const submitted = submitIndentState(steps);
+  assert.equal(submitted.status, 'Submitted');
+  assert.equal(submitted.currentStepIndex, 0);
+  assert.equal(submitted.reservesOnCommit, false);
+
+  const afterFirst = nextIndentState('Approve', 0, steps);
+  assert.equal(afterFirst.status, 'Submitted');
+  assert.equal(afterFirst.currentStepIndex, 1);
+  assert.equal(afterFirst.reservesOnCommit, false);
+
+  const afterLast = nextIndentState('Approve', 1, steps);
+  assert.equal(afterLast.status, 'Approved');
+  assert.equal(afterLast.currentStepIndex, -1);
+  // Only the final approval turns an indent into one that consumes BOQ quantity.
+  assert.equal(afterLast.reservesOnCommit, true);
+});
+
+test('rejecting closes an indent and Needs Correction returns it to an editable draft', async () => {
+  const { nextIndentState, indentReservesQuantity } = await import(
+    '../src/lib/project-management-indent-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Review' }, { id: '2', name: 'Approval' }];
+
+  const rejected = nextIndentState('Reject', 1, steps);
+  assert.equal(rejected.status, 'Rejected');
+  assert.equal(rejected.reservesOnCommit, false);
+
+  // Correction hands it back as a Draft rather than parking it mid-workflow, so the raiser can
+  // edit quantities and resubmit.
+  const correction = nextIndentState('Needs Correction', 1, steps);
+  assert.equal(correction.status, 'Draft');
+  assert.equal(correction.currentStepIndex, -1);
+  assert.equal(correction.reservesOnCommit, false);
+  // And a corrected draft must not reserve while it sits with the raiser.
+  assert.equal(indentReservesQuantity({ status: 'Draft', workflowEnrolled: true }), false);
+});
+
+test('with no stages configured, submitting an indent approves it outright', async () => {
+  const { submitIndentState } = await import('../src/lib/project-management-indent-workflow.ts');
+  const submitted = submitIndentState([]);
+  assert.equal(submitted.status, 'Approved');
+  assert.equal(submitted.reservesOnCommit, true);
+});
+
+test('an indent stage lists only submitted, workflow-aware indents sitting on it', async () => {
+  const { indentsForStep, canActOnIndent } = await import(
+    '../src/lib/project-management-indent-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Review' }, { id: '2', name: 'Approval' }];
+  const indents = [
+    { id: 'a', status: 'Submitted', workflowEnrolled: true, currentStepIndex: 0 },
+    { id: 'b', status: 'Submitted', workflowEnrolled: true, currentStepIndex: 1 },
+    // A legacy Draft carries no step index and must never surface as a review backlog.
+    { id: 'c', status: 'Draft', currentStepIndex: 0 },
+    { id: 'd', status: 'Approved', workflowEnrolled: true, currentStepIndex: 0 },
+  ];
+
+  assert.deepEqual(indentsForStep(indents, '1', steps).map((i) => i.id), ['a']);
+  assert.deepEqual(indentsForStep(indents, '2', steps).map((i) => i.id), ['b']);
+  assert.deepEqual(indentsForStep(indents, '99', steps), []);
+
+  // A draft is nobody's to action even if it somehow carries assignees.
+  assert.equal(canActOnIndent({ status: 'Draft', assignees: ['u1'] }, 'u1'), false);
+  assert.equal(canActOnIndent({ status: 'Submitted', assignees: ['u1'] }, 'u1'), true);
+  assert.equal(canActOnIndent({ status: 'Submitted', assignees: ['u1'] }, 'u2'), false);
+  assert.equal(canActOnIndent({ status: 'Approved', assignees: ['u1'] }, 'u1'), false);
+});
+
+test('Indent context carries the project handle and stays inert without a mapping', async () => {
+  const { projectManagementIndentContext } = await import(
+    '../src/lib/project-management-indent-workflow.ts'
+  );
+  const context = projectManagementIndentContext('map-1', 'global-2');
+  assert.equal(context.indentHref(), '/project-management/indent?project=map-1');
+  assert.equal(context.indentHref('register'), '/project-management/indent/register?project=map-1');
+  assert.equal(context.indentHref('stage/2'), '/project-management/indent/stage/2?project=map-1');
+  assert.equal(context.parentHref, '/project-management/supply?project=map-1');
+
+  const noMapping = projectManagementIndentContext('', '');
+  assert.equal(noMapping.indentHref('register'), '#');
+  assert.equal(noMapping.parentHref, '#');
+});
+
+/* ---------------- RFQ award approval workflow ---------------- */
+
+test('award approval is required only for workflow-aware RFQs with stages configured', async () => {
+  const { rfqAwardRequiresApproval, isLegacyRfq } = await import(
+    '../src/lib/project-management-rfq-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Award Review' }];
+
+  // Raised before the workflow existed: awards straight to a PO, so nothing mid-negotiation
+  // stalls when the feature is switched on.
+  const legacy = { status: 'Sent' };
+  assert.equal(rfqAwardRequiresApproval(legacy, steps), false);
+  assert.equal(isLegacyRfq(legacy), true);
+
+  assert.equal(rfqAwardRequiresApproval({ status: 'Sent', workflowEnrolled: true }, steps), true);
+  // A project that never configured stages keeps awarding directly.
+  assert.equal(rfqAwardRequiresApproval({ status: 'Sent', workflowEnrolled: true }, []), false);
+});
+
+test('an award advances one stage per approval and only raises the PO at the last one', async () => {
+  const { initialRfqAwardState, nextRfqAwardState } = await import(
+    '../src/lib/project-management-rfq-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Award Review' }, { id: '2', name: 'Award Approval' }];
+
+  const start = initialRfqAwardState(steps);
+  assert.equal(start.status, 'Pending');
+  assert.equal(start.currentStepIndex, 0);
+  assert.equal(start.createsPurchaseOrder, false);
+
+  const afterFirst = nextRfqAwardState('Approve', 0, steps);
+  assert.equal(afterFirst.status, 'In Progress');
+  assert.equal(afterFirst.currentStepIndex, 1);
+  assert.equal(afterFirst.createsPurchaseOrder, false);
+
+  const afterLast = nextRfqAwardState('Approve', 1, steps);
+  assert.equal(afterLast.status, 'Approved');
+  assert.equal(afterLast.currentStepIndex, -1);
+  // The PO is created exactly once, at the final approval.
+  assert.equal(afterLast.createsPurchaseOrder, true);
+});
+
+test('rejecting or returning an award never raises a purchase order', async () => {
+  const { nextRfqAwardState, initialRfqAwardState } = await import(
+    '../src/lib/project-management-rfq-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Award Review' }, { id: '2', name: 'Award Approval' }];
+
+  const rejected = nextRfqAwardState('Reject', 1, steps);
+  assert.equal(rejected.status, 'Rejected');
+  assert.equal(rejected.createsPurchaseOrder, false);
+
+  const correction = nextRfqAwardState('Needs Correction', 1, steps);
+  assert.equal(correction.status, 'Needs Correction');
+  assert.equal(correction.currentStepIndex, 0);
+  assert.equal(correction.createsPurchaseOrder, false);
+
+  // No stages configured means the request is born approved and raises the PO itself.
+  assert.equal(initialRfqAwardState([]).createsPurchaseOrder, true);
+});
+
+test('award premium reports whether the recommended vendor was the cheapest', async () => {
+  const { awardPremium } = await import('../src/lib/project-management-rfq-workflow.ts');
+
+  assert.deepEqual(awardPremium(100, 100), { isLowest: true, premium: 0, premiumPct: 0 });
+  const above = awardPremium(110, 100);
+  assert.equal(above.isLowest, false);
+  assert.equal(above.premium, 10);
+  assert.equal(Math.round(above.premiumPct), 10);
+  // Awarding below the recorded lowest still counts as lowest rather than a negative premium.
+  assert.equal(awardPremium(90, 100).isLowest, true);
+  // With no comparison available, don't imply the award was overpriced.
+  assert.deepEqual(awardPremium(100, undefined), { isLowest: true, premium: 0, premiumPct: 0 });
+  assert.deepEqual(awardPremium(100, 0), { isLowest: true, premium: 0, premiumPct: 0 });
+});
+
+test('only assignees of an open award request may act, and stages list only their own', async () => {
+  const { canActOnRfqAward, rfqAwardsForStep } = await import(
+    '../src/lib/project-management-rfq-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Award Review' }, { id: '2', name: 'Award Approval' }];
+
+  assert.equal(canActOnRfqAward({ status: 'Pending', assignees: ['u1'] }, 'u1'), true);
+  assert.equal(canActOnRfqAward({ status: 'Pending', assignees: ['u1'] }, 'u2'), false);
+  assert.equal(canActOnRfqAward({ status: 'Approved', assignees: ['u1'] }, 'u1'), false);
+
+  const approvals = [
+    { id: 'a', status: 'Pending', currentStepIndex: 0 },
+    { id: 'b', status: 'In Progress', currentStepIndex: 1 },
+    { id: 'c', status: 'Approved', currentStepIndex: 0 },
+  ];
+  assert.deepEqual(rfqAwardsForStep(approvals, '1', steps).map((a) => a.id), ['a']);
+  assert.deepEqual(rfqAwardsForStep(approvals, '2', steps).map((a) => a.id), ['b']);
+  assert.deepEqual(rfqAwardsForStep(approvals, '99', steps), []);
+});
+
+test('RFQ context carries the project handle and stays inert without a mapping', async () => {
+  const { projectManagementRfqContext } = await import(
+    '../src/lib/project-management-rfq-workflow.ts'
+  );
+  const context = projectManagementRfqContext('map-1', 'global-2');
+  assert.equal(context.rfqHref(), '/project-management/rfq?project=map-1');
+  assert.equal(context.rfqHref('register'), '/project-management/rfq/register?project=map-1');
+  assert.equal(context.rfqHref('stage/2'), '/project-management/rfq/stage/2?project=map-1');
+  assert.equal(context.parentHref, '/project-management/supply?project=map-1');
+
+  const noMapping = projectManagementRfqContext('', '');
+  assert.equal(noMapping.rfqHref('register'), '#');
+  assert.equal(noMapping.parentHref, '#');
+});

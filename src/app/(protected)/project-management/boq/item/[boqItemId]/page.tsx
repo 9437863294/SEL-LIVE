@@ -89,6 +89,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { indentReservesQuantity, type IndentLike } from "@/lib/project-management-indent-workflow";
 import {
   Table,
   TableBody,
@@ -303,7 +304,9 @@ export default function BoqItem360Page() {
   const indentLines = useMemo(
     () =>
       indents
-        .filter((indent) => !["Rejected", "Cancelled"].includes(text(indent.status)))
+        // Only approved indents reserve quantity; legacy ones are grandfathered. The double cast
+        // is because this page deliberately holds its registers as raw Firestore maps.
+        .filter((indent) => indentReservesQuantity(indent as unknown as IndentLike))
         .flatMap((indent) =>
           ((indent.items as Array<Record<string, unknown>> | undefined) ?? [])
             .filter((line) => text(line.boqItemId) === boqItemId)
