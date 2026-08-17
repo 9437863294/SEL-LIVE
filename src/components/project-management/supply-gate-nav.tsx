@@ -11,7 +11,9 @@ import { cn } from "@/lib/utils";
  * between them doesn't require going back through the Supply hub every time.
  */
 const STAGES = [
-  { key: "purchase-orders", href: "/project-management/purchase-orders", label: "Purchase Orders", icon: ShoppingCart },
+  // The register, not the PO hub: this bar exists to move between the stages' working screens, and
+  // the hub would add a click for anyone crossing from another gate.
+  { key: "purchase-orders", href: "/project-management/purchase-orders/register", label: "Purchase Orders", icon: ShoppingCart },
   { key: "manufacturing-clearance", href: "/project-management/manufacturing-clearance", label: "Manufacturing Clearance", icon: Factory },
   { key: "inspections", href: "/project-management/inspections", label: "Inspections", icon: ClipboardCheck },
   { key: "mdcc", href: "/project-management/mdcc", label: "MDCC", icon: BadgeCheck },

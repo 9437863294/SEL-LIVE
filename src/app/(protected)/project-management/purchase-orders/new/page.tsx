@@ -632,6 +632,10 @@ export default function NewProjectPurchaseOrderPage() {
         items,
         totalAmount: computedTotal,
         status: "Draft",
+        // Marks this PO as workflow-aware, so issuing it goes through approval when a workflow is
+        // configured. Its absence is what grandfathers POs raised before the issue workflow
+        // existed — see poIssueRequiresApproval.
+        workflowEnrolled: true,
         sourceRfqIds: involvedRfqIds,
         sourceRfqNumbers: involvedRfqNumbers,
         createdAt: serverTimestamp(),

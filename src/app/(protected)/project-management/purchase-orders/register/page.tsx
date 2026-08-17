@@ -119,6 +119,7 @@ export default function PurchaseOrderRegisterPage() {
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [issueApprovals, setIssueApprovals] = useState<PoIssueApproval[]>([]);
   const [boqItemsById, setBoqItemsById] = useState<Map<string, PoBoqItemLite>>(new Map());
   const [indents, setIndents] = useState<IndentRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -146,11 +147,15 @@ export default function PurchaseOrderRegisterPage() {
       const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
 
-      const [poSnapshot, boqSnapshot, indentSnapshot] = await Promise.all([
+      const [poSnapshot, boqSnapshot, indentSnapshot, approvalSnapshot] = await Promise.all([
         getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "indents")),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, PO_ISSUE_APPROVAL_COLLECTION)),
       ]);
+      setIssueApprovals(
+        approvalSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as PoIssueApproval),
+      );
       const rows = poSnapshot.docs
         .map((d) => ({ id: d.id, ...d.data() }) as PurchaseOrder)
         .sort((a, b) => (b.poDate || "").localeCompare(a.poDate || ""));
@@ -340,6 +345,31 @@ export default function PurchaseOrderRegisterPage() {
                           <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${poStatusStyles[po.status]}`}>
                             {po.status}
                           </span>
+                          {(() => {
+                            const openRequest = openIssueRequestForPo(issueApprovals, po.id);
+                            return (
+                              <div className="mt-1 space-y-0.5">
+                                {openRequest && (
+                                  <p className="text-xs text-muted-foreground">
+                                    <span
+                                      className={`rounded px-1.5 py-0.5 ${poIssueStatusStyles[openRequest.status]}`}
+                                    >
+                                      {openRequest.status}
+                                    </span>
+                                    {openRequest.currentStepName ? ` · ${openRequest.currentStepName}` : ""}
+                                  </p>
+                                )}
+                                {isLegacyPo(po as PoLike) && (
+                                  <p
+                                    className="text-xs text-muted-foreground"
+                                    title="Raised before issue approval existed — this PO can be issued directly."
+                                  >
+                                    Legacy
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell>
                           <ArrowRight className="h-4 w-4 text-muted-foreground" />

@@ -108,6 +108,20 @@ import {
   type FlowDownObligation,
   type PurchaseOrder,
 } from "@/lib/purchase-orders";
+import type { WorkflowStep } from "@/lib/types";
+import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
+import { requestPoIssueApproval } from "@/lib/project-management-po-entries";
+import {
+  DEFAULT_PO_ISSUE_STEPS,
+  PO_ISSUE_APPROVAL_COLLECTION,
+  PO_ISSUE_WORKFLOW_DOC_ID,
+  openIssueRequestForPo,
+  poIssueRequiresApproval,
+  poIssueStatusStyles,
+  type PoIssueApproval,
+  type PoIssueException,
+  type PoLike,
+} from "@/lib/project-management-po-workflow";
 import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
 import type { Client } from "@/lib/types";
 import { Textarea } from "@/components/ui/textarea";
@@ -164,6 +178,9 @@ export default function ProjectPurchaseOrderDetailPage() {
   const [datesForm, setDatesForm] = useState({ startDate: "", endDate: "" });
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [isIssueReviewOpen, setIsIssueReviewOpen] = useState(false);
+  /** Issue approval stages, if this project has configured any. */
+  const [issueSteps, setIssueSteps] = useState<WorkflowStep[]>([]);
+  const [issueApprovals, setIssueApprovals] = useState<PoIssueApproval[]>([]);
   const [issueOverrideReason, setIssueOverrideReason] = useState("");
 
   const loadPo = useCallback(async () => {
@@ -179,7 +196,7 @@ export default function ProjectPurchaseOrderDetailPage() {
       if (!mappingData.globalProjectId) throw new Error("Global project is not mapped");
       setMapping(mappingData);
 
-      const [snapshot, boqSnapshot, mdlSnapshot, mcSnapshot, inspectionSnapshot, mdccSnapshot, diSnapshot, grnSnapshot, mvacSnapshot, projectSnapshot, allPoSnapshot, settingsSnapshot] =
+      const [snapshot, boqSnapshot, mdlSnapshot, mcSnapshot, inspectionSnapshot, mdccSnapshot, diSnapshot, grnSnapshot, mvacSnapshot, projectSnapshot, allPoSnapshot, settingsSnapshot, workflowSnapshot, approvalSnapshot] =
         await Promise.all([
           getDoc(doc(db, "projects", mappingData.globalProjectId, PO_COLLECTION, poId)),
           getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
@@ -193,7 +210,21 @@ export default function ProjectPurchaseOrderDetailPage() {
           getDoc(doc(db, "projects", mappingData.globalProjectId)),
           getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
           getDoc(doc(db, "projectManagementSettings", "general")),
+          getDoc(doc(db, "workflows", PO_ISSUE_WORKFLOW_DOC_ID)),
+          getDocs(collection(db, "projects", mappingData.globalProjectId, PO_ISSUE_APPROVAL_COLLECTION)),
         ]);
+
+      const rawIssueSteps = workflowSnapshot.exists()
+        ? ((workflowSnapshot.data()?.steps as WorkflowStep[] | undefined) ?? [])
+        : DEFAULT_PO_ISSUE_STEPS;
+      setIssueSteps(
+        (Array.isArray(rawIssueSteps) ? rawIssueSteps : [])
+          .filter((step) => step && step.name)
+          .map((step, index) => ({ ...step, id: String(step.id || index + 1) })),
+      );
+      setIssueApprovals(
+        approvalSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as PoIssueApproval),
+      );
       setBudgetPriceByBoqItemId(
         new Map(
           boqSnapshot.docs.map((d) => [d.id, toNumber((d.data() as Record<string, unknown>)["Budget Price"])]),
@@ -320,30 +351,102 @@ export default function ProjectPurchaseOrderDetailPage() {
   const hasUnresolvedGaps = flowDownGaps.length > 0 || commitmentExceptions.length > 0;
   const needsIssueOverrideReason = hasUnresolvedGaps && !po?.commitmentOverrideReason && !po?.flowDownOverrideReason;
 
+  const requiresIssueApproval = poIssueRequiresApproval((po as PoLike | null) ?? {}, issueSteps);
+  /** An open request means the PO is already in someone's queue — don't offer Issue again. */
+  const openIssueRequest = po ? openIssueRequestForPo(issueApprovals, po.id) : null;
+
   const handleRequestIssue = () => {
     setIssueOverrideReason("");
+    // The exception review dialog is shown whenever there are gaps, whether the PO then goes
+    // straight to Issued or into the approval workflow — the buyer states their reason either way.
     if (hasUnresolvedGaps) {
       setIsIssueReviewOpen(true);
     } else {
-      void updateStatus("Issued");
+      void handleConfirmIssue();
     }
   };
 
+  /**
+   * Either issues the PO directly, or opens an approval request for it.
+   *
+   * The exceptions and the buyer's stated reason travel onto the request rather than being written
+   * straight onto the PO, so whoever accepts them is recorded as the approver, not the buyer.
+   */
   const handleConfirmIssue = async () => {
     if (!mapping || !po) return;
     if (needsIssueOverrideReason && !issueOverrideReason.trim()) {
       toast({ title: "A reason is required to issue with unresolved gaps", variant: "destructive" });
       return;
     }
+    if (!user) {
+      toast({ title: "You must be signed in to issue a purchase order", variant: "destructive" });
+      return;
+    }
     setIsUpdating(true);
     try {
-      await updateDoc(doc(db, "projects", mapping.globalProjectId, PO_COLLECTION, po.id), {
-        status: "Issued",
-        ...(flowDownGaps.length ? { flowDownOverrideReason: issueOverrideReason.trim() } : {}),
-        ...(commitmentExceptions.length ? { commitmentOverrideReason: issueOverrideReason.trim() } : {}),
-        ...(hasUnresolvedGaps && user ? { issueOverrideBy: user.id, issueOverrideByName: user.name } : {}),
-        updatedAt: serverTimestamp(),
+      const exceptions: PoIssueException[] = [
+        ...flowDownGaps.map((gap) => ({ kind: "flow-down" as const, label: gap.label })),
+        ...commitmentExceptions.map((exception) => ({
+          kind: "commitment" as const,
+          label: `${exception.boqSlNo} — ${exception.description}`,
+          detail: `Committed ${formatCurrency(exception.committedValue)} against a BOQ value of ${formatCurrency(exception.boqValue)}`,
+        })),
+      ];
+
+      const result = await requestPoIssueApproval({
+        globalProjectId: mapping.globalProjectId,
+        mappingId,
+        po: {
+          id: po.id,
+          poNumber: po.poNumber,
+          poDate: po.poDate,
+          vendorId: po.vendorId,
+          vendorName: po.vendorName,
+          totalAmount: po.totalAmount,
+          itemCount: po.items?.length ?? 0,
+        },
+        exceptions,
+        overrideReason: issueOverrideReason.trim() || undefined,
+        steps: issueSteps,
+        requestedBy: { id: user.id, name: user.name },
+        resolveAssignees: (step) =>
+          getAssigneeForStep(step, {
+            projectId: mapping.globalProjectId,
+            departmentId: "",
+            amount: po.totalAmount,
+          }),
+        resolveDeadline: async (step) => {
+          try {
+            return await calculateDeadline(new Date(), step.tat);
+          } catch {
+            return null;
+          }
+        },
       });
+
+      if (!result.issued) {
+        toast({
+          title: "Sent for issue approval",
+          description: `Routed to ${issueSteps[0]?.name ?? "review"}. The PO is issued once approved.`,
+        });
+        if (user) {
+          void logUserActivity({
+            userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+            module: "Project Management",
+            action: "Submit PO for Issue Approval",
+            details: {
+              poNumber: po.poNumber,
+              project: mapping.projectName,
+              exceptions: exceptions.map((exception) => exception.label),
+            },
+          });
+        }
+        setIsIssueReviewOpen(false);
+        await loadPo();
+        return;
+      }
       if (user) {
         void logUserActivity({
           userId: user.id,
@@ -554,11 +657,20 @@ export default function ProjectPurchaseOrderDetailPage() {
           <Button variant="outline" onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" /> Print for Approval
           </Button>
-          {po.status === "Draft" && canIssue && (
+          {po.status === "Draft" && openIssueRequest ? (
+            <span
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium ${poIssueStatusStyles[openIssueRequest.status]}`}
+              title="An issue approval request is already open for this purchase order."
+            >
+              {openIssueRequest.status}
+              {openIssueRequest.currentStepName ? ` · ${openIssueRequest.currentStepName}` : ""}
+            </span>
+          ) : po.status === "Draft" && canIssue ? (
             <Button onClick={handleRequestIssue} disabled={isUpdating}>
-              <Truck className="mr-2 h-4 w-4" /> Mark as Issued
+              <Truck className="mr-2 h-4 w-4" />
+              {requiresIssueApproval ? "Submit for Issue Approval" : "Mark as Issued"}
             </Button>
-          )}
+          ) : null}
           {po.status === "Issued" && canReceive && (
             <Button onClick={() => void updateStatus("Received")} disabled={isUpdating}>
               <PackageCheck className="mr-2 h-4 w-4" /> Mark as Received

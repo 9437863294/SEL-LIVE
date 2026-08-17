@@ -548,7 +548,19 @@ export const permissionModules = {
     // Awards route through a configurable approval workflow before a purchase order is raised
     // (see src/lib/project-management-rfq-workflow.ts).
     RFQ: ["View", "Add", "Send", "Enter Quote", "Award", "Delete", "View Settings", "Edit Settings"],
-    "Purchase Orders": ["View", "Add", "Edit", "Delete", "Issue", "Receive", "Cancel"],
+    // Issuing routes through a configurable approval workflow, since issuing is the point at which
+    // a PO becomes a commitment (see src/lib/project-management-po-workflow.ts).
+    "Purchase Orders": [
+      "View",
+      "Add",
+      "Edit",
+      "Delete",
+      "Issue",
+      "Receive",
+      "Cancel",
+      "View Settings",
+      "Edit Settings",
+    ],
     MDL: ["View", "Edit"],
     Supply: ["View"],
     Civil: ["View", "Add", "Edit", "Delete", "Export"],

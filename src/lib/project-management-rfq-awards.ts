@@ -112,6 +112,9 @@ export async function createPurchaseOrdersForAwards({
       items: poItems,
       totalAmount,
       status: "Draft",
+      // POs born from an approved award are still subject to issue approval — awarding decides
+      // who supplies at what rate, issuing commits the order. See poIssueRequiresApproval.
+      workflowEnrolled: true,
       sourceRfqIds: [rfq.id],
       sourceRfqNumbers: [rfq.rfqNumber],
       createdAt: serverTimestamp(),

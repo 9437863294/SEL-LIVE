@@ -1189,3 +1189,108 @@ test('RFQ context carries the project handle and stays inert without a mapping',
   assert.equal(noMapping.rfqHref('register'), '#');
   assert.equal(noMapping.parentHref, '#');
 });
+
+/* ---------------- PO issue approval workflow ---------------- */
+
+test('issue approval is required only for workflow-aware POs with stages configured', async () => {
+  const { poIssueRequiresApproval, isLegacyPo } = await import(
+    '../src/lib/project-management-po-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Commercial Review' }];
+
+  // Raised before the workflow existed: issues directly, so nothing already in flight stalls.
+  const legacy = { status: 'Draft' };
+  assert.equal(poIssueRequiresApproval(legacy, steps), false);
+  assert.equal(isLegacyPo(legacy), true);
+
+  assert.equal(poIssueRequiresApproval({ status: 'Draft', workflowEnrolled: true }, steps), true);
+  // A project that never configured stages keeps issuing directly.
+  assert.equal(poIssueRequiresApproval({ status: 'Draft', workflowEnrolled: true }, []), false);
+});
+
+test('an issue request advances one stage per approval and only issues at the last one', async () => {
+  const { initialPoIssueState, nextPoIssueState } = await import(
+    '../src/lib/project-management-po-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Commercial Review' }, { id: '2', name: 'Issue Approval' }];
+
+  const start = initialPoIssueState(steps);
+  assert.equal(start.status, 'Pending');
+  assert.equal(start.currentStepIndex, 0);
+  assert.equal(start.issuesPurchaseOrder, false);
+
+  const afterFirst = nextPoIssueState('Approve', 0, steps);
+  assert.equal(afterFirst.status, 'In Progress');
+  assert.equal(afterFirst.currentStepIndex, 1);
+  assert.equal(afterFirst.issuesPurchaseOrder, false);
+
+  const afterLast = nextPoIssueState('Approve', 1, steps);
+  assert.equal(afterLast.status, 'Approved');
+  assert.equal(afterLast.currentStepIndex, -1);
+  // Issuing is the commitment point, and happens exactly once at the final approval.
+  assert.equal(afterLast.issuesPurchaseOrder, true);
+});
+
+test('rejecting or returning an issue request never issues the PO', async () => {
+  const { nextPoIssueState, initialPoIssueState } = await import(
+    '../src/lib/project-management-po-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Commercial Review' }, { id: '2', name: 'Issue Approval' }];
+
+  const rejected = nextPoIssueState('Reject', 1, steps);
+  assert.equal(rejected.status, 'Rejected');
+  assert.equal(rejected.issuesPurchaseOrder, false);
+
+  const correction = nextPoIssueState('Needs Correction', 1, steps);
+  assert.equal(correction.status, 'Needs Correction');
+  assert.equal(correction.currentStepIndex, 0);
+  assert.equal(correction.issuesPurchaseOrder, false);
+
+  // No stages configured means the request is born approved and issues the PO itself.
+  assert.equal(initialPoIssueState([]).issuesPurchaseOrder, true);
+});
+
+test('an open issue request is found per PO so Issue is not offered twice', async () => {
+  const { openIssueRequestForPo, poIssuesForStep, canActOnPoIssue } = await import(
+    '../src/lib/project-management-po-workflow.ts'
+  );
+  const approvals = [
+    { id: 'r1', poId: 'po-1', status: 'Pending', currentStepIndex: 0 },
+    { id: 'r2', poId: 'po-2', status: 'In Progress', currentStepIndex: 1 },
+    // A settled request must not block a fresh submission on the same PO.
+    { id: 'r3', poId: 'po-3', status: 'Rejected', currentStepIndex: -1 },
+  ];
+
+  assert.equal(openIssueRequestForPo(approvals, 'po-1').id, 'r1');
+  assert.equal(openIssueRequestForPo(approvals, 'po-3'), null);
+  assert.equal(openIssueRequestForPo(approvals, 'po-unknown'), null);
+
+  const steps = [{ id: '1', name: 'Commercial Review' }, { id: '2', name: 'Issue Approval' }];
+  assert.deepEqual(poIssuesForStep(approvals, '1', steps).map((a) => a.id), ['r1']);
+  assert.deepEqual(poIssuesForStep(approvals, '2', steps).map((a) => a.id), ['r2']);
+
+  assert.equal(canActOnPoIssue({ status: 'Pending', assignees: ['u1'] }, 'u1'), true);
+  assert.equal(canActOnPoIssue({ status: 'Pending', assignees: ['u1'] }, 'u2'), false);
+  assert.equal(canActOnPoIssue({ status: 'Approved', assignees: ['u1'] }, 'u1'), false);
+});
+
+test('PO context carries the project handle and stays inert without a mapping', async () => {
+  const { projectManagementPoContext } = await import(
+    '../src/lib/project-management-po-workflow.ts'
+  );
+  const context = projectManagementPoContext('map-1', 'global-2');
+  assert.equal(context.poHref(), '/project-management/purchase-orders?project=map-1');
+  assert.equal(
+    context.poHref('register'),
+    '/project-management/purchase-orders/register?project=map-1',
+  );
+  assert.equal(
+    context.poHref('stage/2'),
+    '/project-management/purchase-orders/stage/2?project=map-1',
+  );
+  assert.equal(context.parentHref, '/project-management/supply?project=map-1');
+
+  const noMapping = projectManagementPoContext('', '');
+  assert.equal(noMapping.poHref('register'), '#');
+  assert.equal(noMapping.parentHref, '#');
+});
