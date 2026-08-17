@@ -644,15 +644,17 @@ export default function StagePage() {
     return <JmcLoadingState />;
   }
 
-  if (notFound) {
-    return (
-      <JmcProjectNotFound description="This JMC stage could not be resolved to a project. Open it from a project in Project Management." />
-    );
-  }
-
+  // Access Denied is checked before the project guard, matching the other seven JMC screens: a
+  // user without the right should be told that, not shown which project failed to resolve.
   if (!canView) {
     return (
       <JmcAccessDenied description="You do not have permission to view JMC stage tasks." />
+    );
+  }
+
+  if (notFound) {
+    return (
+      <JmcProjectNotFound description="This JMC stage could not be resolved to a project. Open it from a project in Project Management." />
     );
   }
 
