@@ -11,7 +11,6 @@ import {
   GanttChart,
   PackageSearch,
   Plus,
-  ShieldAlert,
   ShoppingCart,
   Table2,
 } from "lucide-react";
@@ -61,6 +60,24 @@ import PoBoqItemsTable from "@/components/project-management/po-boq-items";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
+import {
+  PO_ISSUE_APPROVAL_COLLECTION,
+  isLegacyPo,
+  openIssueRequestForPo,
+  poIssueStatusStyles,
+  type PoIssueApproval,
+  type PoLike,
+} from "@/lib/project-management-po-workflow";
+import { useProjectManagementPoContext } from "@/components/po/use-po-host-context";
+import { PoNav } from "@/components/po/po-nav";
+import {
+  PO_GRADIENT,
+  PoAccessDenied,
+  PoLoadingState,
+  PoPageHeader,
+  PoPageShell,
+  PoProjectNotFound,
+} from "@/components/po/po-page-shell";
 
 type ProjectMapping = {
   id: string;
@@ -88,12 +105,14 @@ const formatDate = (value?: string) => {
     : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 };
 
-export default function ProjectPurchaseOrdersPage() {
+export default function PurchaseOrderRegisterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+
+  const { context, isResolving, notFound } = useProjectManagementPoContext(mappingId);
 
   const canView = can("View", PO_PERMISSION_RESOURCE) || can("View", "Project Management.RFQ");
   const canAdd = can("Add", PO_PERMISSION_RESOURCE);
@@ -212,84 +231,55 @@ export default function ProjectPurchaseOrdersPage() {
     router.push(`/project-management/purchase-orders/${poId}?project=${encodeURIComponent(mappingId)}`);
   };
 
-  if (isAuthLoading || isLoading) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-80 w-full" />
-      </main>
-    );
+  if (isAuthLoading || isResolving || isLoading) {
+    return <PoLoadingState />;
   }
 
   if (!canView) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view purchase orders.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </main>
-    );
+    return <PoAccessDenied description="You do not have permission to view purchase orders." />;
   }
 
-  if (!mappingId || !mapping) {
+  if (notFound || !mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Select a project first</CardTitle>
-            <CardDescription>Return to Project Management and choose a project before opening purchase orders.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild><Link href="/project-management">Select Project</Link></Button>
-          </CardContent>
-        </Card>
-      </main>
+      <PoProjectNotFound
+        description="Return to Project Management and choose a project before opening purchase orders."
+        href="/project-management"
+      />
     );
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-sm">
-            <ShoppingCart className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold sm:text-3xl">Purchase Orders</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Purchase orders raised against vendors for {mapping.projectName}.</p>
-          </div>
-        </div>
+    <PoPageShell className="space-y-4">
+      <PoPageHeader
+        title="PO Register"
+        subtitle={`Purchase orders raised against vendors for ${mapping.projectName}.`}
+        icon={ShoppingCart}
+        backHref={context.poHref()}
+        backLabel="Back to Purchase Orders"
+        gradient={PO_GRADIENT}
+        actions={
+          <>
+            <Select value={statusFilter} onValueChange={(value: "all" | POStatus) => setStatusFilter(value)}>
+              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                {PO_STATUSES.map((status) => (
+                  <SelectItem key={status} value={status}>{status}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {canAdd && (
+              <Button asChild>
+                <Link href={context.poHref("new")}>
+                  <Plus className="mr-2 h-4 w-4" /> New Purchase Order
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+      />
 
-        <div className="flex items-center gap-2">
-          <Select value={statusFilter} onValueChange={(value: "all" | POStatus) => setStatusFilter(value)}>
-            <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              {PO_STATUSES.map((status) => (
-                <SelectItem key={status} value={status}>{status}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {canAdd && (
-            <Button asChild>
-              <Link href={`/project-management/purchase-orders/new?project=${encodeURIComponent(mappingId)}`}>
-                <Plus className="mr-2 h-4 w-4" /> New Purchase Order
-              </Link>
-            </Button>
-          )}
-        </div>
-      </div>
+      <PoNav context={context} active="register" />
 
       <div className="mb-4">
         <SupplyGateNav mappingId={mappingId} active="purchase-orders" />
@@ -409,6 +399,6 @@ export default function ProjectPurchaseOrdersPage() {
         </Tabs>
         </div>
       </div>
-    </main>
+    </PoPageShell>
   );
 }
