@@ -4,11 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   CheckCircle2,
   Factory,
   Loader2,
-  ShieldAlert,
   XCircle,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
@@ -19,6 +17,28 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
 import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
+import type { WorkflowStep } from "@/lib/types";
+import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
+import { requestMcClearance } from "@/lib/project-management-mc-entries";
+import {
+  DEFAULT_MC_CLEARANCE_STEPS,
+  MC_CLEARANCE_APPROVAL_COLLECTION,
+  MC_CLEARANCE_WORKFLOW_DOC_ID,
+  mcApprovalStatusStyles,
+  mcClearanceRequiresApproval,
+  openMcRequestForBoqItem,
+  type McClearanceApproval,
+} from "@/lib/project-management-mc-workflow";
+import { useProjectManagementMcContext } from "@/components/mc/use-mc-host-context";
+import { McNav } from "@/components/mc/mc-nav";
+import {
+  MC_GRADIENT,
+  McAccessDenied,
+  McLoadingState,
+  McPageHeader,
+  McPageShell,
+  McProjectNotFound,
+} from "@/components/mc/mc-page-shell";
 import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
 import { MDL_COLLECTION, isMdlApproved, mdlOverallStatusStyles, type MdlOverallStatus } from "@/lib/mdl";
 import {
@@ -33,13 +53,7 @@ import {
 } from "@/lib/supply-gates";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -60,7 +74,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
 
 type ProjectMapping = {
   id: string;
@@ -76,12 +89,13 @@ const today = () => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
-export default function ManufacturingClearancePage() {
+export default function ManufacturingClearanceRegisterPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { context, isResolving, notFound } = useProjectManagementMcContext(mappingId);
 
   const canView = can("View", MC_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
   const canClear = can("Clear", MC_PERMISSION_RESOURCE);
@@ -95,6 +109,11 @@ export default function ManufacturingClearancePage() {
   const [mdlStatusByBoqItemId, setMdlStatusByBoqItemId] = useState<Map<string, MdlOverallStatus>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  /** Clearance approval stages, if this project has configured any. */
+  const [clearanceSteps, setClearanceSteps] = useState<WorkflowStep[]>([]);
+  const [clearanceApprovals, setClearanceApprovals] = useState<McClearanceApproval[]>([]);
+
+  const requiresClearanceApproval = mcClearanceRequiresApproval(clearanceSteps);
 
   const [activeItem, setActiveItem] = useState<PoPlacedItem | null>(null);
   const [decisionStatus, setDecisionStatus] = useState<McStatus>("Cleared");
@@ -116,12 +135,26 @@ export default function ManufacturingClearancePage() {
       const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
       setMapping(mappingData);
 
-      const [poSnapshot, boqSnapshot, mcSnapshot, mdlSnapshot] = await Promise.all([
+      const [poSnapshot, boqSnapshot, mcSnapshot, mdlSnapshot, workflowSnapshot, approvalSnapshot] = await Promise.all([
         getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", mappingData.globalProjectId, MC_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, MDL_COLLECTION)),
+        getDoc(doc(db, "workflows", MC_CLEARANCE_WORKFLOW_DOC_ID)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, MC_CLEARANCE_APPROVAL_COLLECTION)),
       ]);
+
+      const rawSteps = workflowSnapshot.exists()
+        ? ((workflowSnapshot.data()?.steps as WorkflowStep[] | undefined) ?? [])
+        : DEFAULT_MC_CLEARANCE_STEPS;
+      setClearanceSteps(
+        (Array.isArray(rawSteps) ? rawSteps : [])
+          .filter((step) => step && step.name)
+          .map((step, index) => ({ ...step, id: String(step.id || index + 1) })),
+      );
+      setClearanceApprovals(
+        approvalSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as McClearanceApproval),
+      );
 
       const purchaseOrders = poSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as PurchaseOrder);
       const placed = buildPoPlacedItems(purchaseOrders);
@@ -197,6 +230,61 @@ export default function ManufacturingClearancePage() {
     }
     setIsSaving(true);
     try {
+      // Clearing opens the gate, so it routes through approval when one is configured. Rejecting
+      // does not: it holds the gate shut and lets nothing proceed, so requiring sign-off to say
+      // "no" would add friction without adding control.
+      if (decisionStatus === "Cleared") {
+        const result = await requestMcClearance({
+          globalProjectId: mapping.globalProjectId,
+          mappingId,
+          item: {
+            boqItemId: activeItem.boqItemId,
+            boqSlNo: activeItem.boqSlNo,
+            description: activeItem.description,
+            poId: activeItem.poId,
+            poNumber: activeItem.poNumber,
+            vendorName: activeItem.vendorName,
+          },
+          clearedDate: decisionDate,
+          remarks: decisionRemarks.trim(),
+          steps: clearanceSteps,
+          requestedBy: { id: user.id, name: user.name },
+          resolveAssignees: (step) =>
+            getAssigneeForStep(step, {
+              projectId: mapping.globalProjectId,
+              departmentId: "",
+              amount: 0,
+            }),
+          resolveDeadline: async (step) => {
+            try {
+              return await calculateDeadline(new Date(), step.tat);
+            } catch {
+              return null;
+            }
+          },
+        });
+
+        void logUserActivity({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: "Project Management",
+          action: result.cleared
+            ? "Mark Manufacturing Clearance as Cleared"
+            : "Submit Manufacturing Clearance for Approval",
+          details: { project: mapping.projectName, boqSlNo: activeItem.boqSlNo, poNumber: activeItem.poNumber },
+        });
+        toast({
+          title: result.cleared ? "Manufacturing clearance cleared" : "Sent for clearance approval",
+          description: result.cleared
+            ? undefined
+            : `Routed to ${clearanceSteps[0]?.name ?? "review"}. The gate opens once approved.`,
+        });
+        setActiveItem(null);
+        await loadData();
+        return;
+      }
+
       await setDoc(
         doc(db, "projects", mapping.globalProjectId, MC_COLLECTION, activeItem.boqItemId),
         {
@@ -234,65 +322,35 @@ export default function ManufacturingClearancePage() {
     }
   };
 
-  if (isAuthLoading || (isLoading && canView)) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-80 w-full" />
-      </main>
-    );
+  if (isAuthLoading || isResolving || (isLoading && canView)) {
+    return <McLoadingState />;
   }
 
   if (!canView) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view this module.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </main>
-    );
+    return <McAccessDenied description="You do not have permission to view manufacturing clearances." />;
   }
 
-  if (!mappingId || !mapping) {
+  if (notFound || !mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Select a project first</CardTitle>
-            <CardDescription>Return to Project Management and choose a project before opening Manufacturing Clearance.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild><Link href="/project-management">Select Project</Link></Button>
-          </CardContent>
-        </Card>
-      </main>
+      <McProjectNotFound
+        description="Return to Project Management and choose a project before opening manufacturing clearance."
+        href="/project-management"
+      />
     );
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-lime-500 to-green-600 shadow-sm">
-          <Factory className="h-5 w-5 text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold">Manufacturing Clearance</h1>
-          <p className="text-sm text-muted-foreground">
-            {rows.length} item{rows.length === 1 ? "" : "s"} on issued purchase orders for {mapping.projectName}
-          </p>
-        </div>
-      </div>
+    <McPageShell>
+      <McPageHeader
+        title="MC Register"
+        subtitle={`${rows.length} item${rows.length === 1 ? "" : "s"} on issued purchase orders for ${mapping.projectName}`}
+        icon={Factory}
+        backHref={context.mcHref()}
+        backLabel="Back to Manufacturing Clearance"
+        gradient={MC_GRADIENT}
+      />
+
+      <McNav context={context} active="register" />
 
       <SupplyGateNav mappingId={mappingId} active="manufacturing-clearance" />
 
@@ -321,6 +379,7 @@ export default function ManufacturingClearancePage() {
                     const mdlStatus = mdlStatusByBoqItemId.get(item.boqItemId) ?? "Pending";
                     const mdlBlocking = mdlRequired && !isMdlApproved(mdlStatus);
                     const canClearThis = canClear && !mdlBlocking;
+                    const openRequest = openMcRequestForBoqItem(clearanceApprovals, item.boqItemId);
                     return (
                       <TableRow key={item.boqItemId}>
                         <TableCell className="whitespace-nowrap">{item.boqSlNo || "—"}</TableCell>
@@ -343,14 +402,28 @@ export default function ManufacturingClearancePage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          {canAct ? (
+                          {openRequest ? (
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-xs font-medium ${mcApprovalStatusStyles[openRequest.status]}`}
+                              title="A clearance approval request is already open for this item."
+                            >
+                              {openRequest.status}
+                              {openRequest.currentStepName ? ` · ${openRequest.currentStepName}` : ""}
+                            </span>
+                          ) : canAct ? (
                             <div className="flex flex-col items-end gap-1">
                               <div className="flex justify-end gap-1">
                                 {canClear && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    title={mdlBlocking ? "Drawing not yet approved" : "Clear"}
+                                    title={
+                                      mdlBlocking
+                                        ? "Drawing not yet approved"
+                                        : requiresClearanceApproval
+                                          ? "Submit for clearance approval"
+                                          : "Clear"
+                                    }
                                     disabled={!canClearThis}
                                     onClick={() => openDecision(item, "Cleared")}
                                   >
@@ -399,7 +472,9 @@ export default function ManufacturingClearancePage() {
       <Dialog open={Boolean(activeItem)} onOpenChange={(open) => !open && setActiveItem(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Mark as {decisionStatus}</DialogTitle>
+            <DialogTitle>
+              {decisionStatus === "Cleared" && requiresClearanceApproval ? "Submit clearance for approval" : `Mark as ${decisionStatus}`}
+            </DialogTitle>
             <DialogDescription>
               {activeItem ? `${activeItem.boqSlNo} — ${activeItem.description}` : ""}
             </DialogDescription>
@@ -418,16 +493,22 @@ export default function ManufacturingClearancePage() {
                 onChange={(e) => setDecisionRemarks(e.target.value)}
               />
             </div>
+            {decisionStatus === "Cleared" && requiresClearanceApproval ? (
+              <p className="text-xs text-muted-foreground">
+                This will be sent to {clearanceSteps[0]?.name} for approval. The gate opens — and
+                inspection becomes available — only once the final stage approves.
+              </p>
+            ) : null}
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={handleSaveDecision} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Save
+              {decisionStatus === "Cleared" && requiresClearanceApproval ? "Submit for approval" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </McPageShell>
   );
 }

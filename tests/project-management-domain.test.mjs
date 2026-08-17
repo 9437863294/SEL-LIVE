@@ -1294,3 +1294,104 @@ test('PO context carries the project handle and stays inert without a mapping', 
   assert.equal(noMapping.poHref('register'), '#');
   assert.equal(noMapping.parentHref, '#');
 });
+
+/* ---------------- Manufacturing clearance approval workflow ---------------- */
+
+test('clearance approval is required only when stages are configured', async () => {
+  const { mcClearanceRequiresApproval } = await import(
+    '../src/lib/project-management-mc-workflow.ts'
+  );
+  // Needs no legacy marker: the meaning of an existing "Cleared" record is unchanged, so only new
+  // clearance decisions route. A project that never configures stages clears directly.
+  assert.equal(mcClearanceRequiresApproval([]), false);
+  assert.equal(mcClearanceRequiresApproval([{ id: '1', name: 'Technical Review' }]), true);
+});
+
+test('a clearance advances one stage per approval and only opens the gate at the last one', async () => {
+  const { initialMcApprovalState, nextMcApprovalState } = await import(
+    '../src/lib/project-management-mc-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Technical Review' }, { id: '2', name: 'Clearance Approval' }];
+
+  const start = initialMcApprovalState(steps);
+  assert.equal(start.status, 'Pending');
+  assert.equal(start.currentStepIndex, 0);
+  // The MC record must stay Pending until the workflow says otherwise.
+  assert.equal(start.clearsManufacturing, false);
+
+  const afterFirst = nextMcApprovalState('Approve', 0, steps);
+  assert.equal(afterFirst.status, 'In Progress');
+  assert.equal(afterFirst.currentStepIndex, 1);
+  assert.equal(afterFirst.clearsManufacturing, false);
+
+  const afterLast = nextMcApprovalState('Approve', 1, steps);
+  assert.equal(afterLast.status, 'Approved');
+  assert.equal(afterLast.currentStepIndex, -1);
+  // Opening the gate happens exactly once, at the final approval.
+  assert.equal(afterLast.clearsManufacturing, true);
+});
+
+test('rejecting or returning a clearance request never opens the gate', async () => {
+  const { nextMcApprovalState, initialMcApprovalState } = await import(
+    '../src/lib/project-management-mc-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'Technical Review' }, { id: '2', name: 'Clearance Approval' }];
+
+  const rejected = nextMcApprovalState('Reject', 1, steps);
+  assert.equal(rejected.status, 'Rejected');
+  assert.equal(rejected.clearsManufacturing, false);
+
+  const correction = nextMcApprovalState('Needs Correction', 1, steps);
+  assert.equal(correction.status, 'Needs Correction');
+  assert.equal(correction.currentStepIndex, 0);
+  assert.equal(correction.clearsManufacturing, false);
+
+  // No stages configured means the request is born approved and clears the gate itself.
+  assert.equal(initialMcApprovalState([]).clearsManufacturing, true);
+});
+
+test('an open clearance request is found per BOQ item so Clear is not offered twice', async () => {
+  const { openMcRequestForBoqItem, mcApprovalsForStep, canActOnMcApproval } = await import(
+    '../src/lib/project-management-mc-workflow.ts'
+  );
+  const approvals = [
+    { id: 'a1', boqItemId: 'b1', status: 'Pending', currentStepIndex: 0 },
+    { id: 'a2', boqItemId: 'b2', status: 'In Progress', currentStepIndex: 1 },
+    // A settled request must not block a fresh attempt on the same item.
+    { id: 'a3', boqItemId: 'b3', status: 'Rejected', currentStepIndex: -1 },
+  ];
+
+  assert.equal(openMcRequestForBoqItem(approvals, 'b1').id, 'a1');
+  assert.equal(openMcRequestForBoqItem(approvals, 'b3'), null);
+  assert.equal(openMcRequestForBoqItem(approvals, 'unknown'), null);
+
+  const steps = [{ id: '1', name: 'Technical Review' }, { id: '2', name: 'Clearance Approval' }];
+  assert.deepEqual(mcApprovalsForStep(approvals, '1', steps).map((a) => a.id), ['a1']);
+  assert.deepEqual(mcApprovalsForStep(approvals, '2', steps).map((a) => a.id), ['a2']);
+  assert.deepEqual(mcApprovalsForStep(approvals, '99', steps), []);
+
+  assert.equal(canActOnMcApproval({ status: 'Pending', assignees: ['u1'] }, 'u1'), true);
+  assert.equal(canActOnMcApproval({ status: 'Pending', assignees: ['u1'] }, 'u2'), false);
+  assert.equal(canActOnMcApproval({ status: 'Approved', assignees: ['u1'] }, 'u1'), false);
+});
+
+test('MC context carries the project handle and stays inert without a mapping', async () => {
+  const { projectManagementMcContext } = await import(
+    '../src/lib/project-management-mc-workflow.ts'
+  );
+  const context = projectManagementMcContext('map-1', 'global-2');
+  assert.equal(context.mcHref(), '/project-management/manufacturing-clearance?project=map-1');
+  assert.equal(
+    context.mcHref('register'),
+    '/project-management/manufacturing-clearance/register?project=map-1',
+  );
+  assert.equal(
+    context.mcHref('stage/2'),
+    '/project-management/manufacturing-clearance/stage/2?project=map-1',
+  );
+  assert.equal(context.parentHref, '/project-management/supply?project=map-1');
+
+  const noMapping = projectManagementMcContext('', '');
+  assert.equal(noMapping.mcHref('register'), '#');
+  assert.equal(noMapping.parentHref, '#');
+});

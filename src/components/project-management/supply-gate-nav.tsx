@@ -14,7 +14,8 @@ const STAGES = [
   // The register, not the PO hub: this bar exists to move between the stages' working screens, and
   // the hub would add a click for anyone crossing from another gate.
   { key: "purchase-orders", href: "/project-management/purchase-orders/register", label: "Purchase Orders", icon: ShoppingCart },
-  { key: "manufacturing-clearance", href: "/project-management/manufacturing-clearance", label: "Manufacturing Clearance", icon: Factory },
+  // The register, for the same reason as purchase-orders above.
+  { key: "manufacturing-clearance", href: "/project-management/manufacturing-clearance/register", label: "Manufacturing Clearance", icon: Factory },
   { key: "inspections", href: "/project-management/inspections", label: "Inspections", icon: ClipboardCheck },
   { key: "mdcc", href: "/project-management/mdcc", label: "MDCC", icon: BadgeCheck },
   { key: "dispatch-instructions", href: "/project-management/dispatch-instructions", label: "Dispatch Instructions", icon: Truck },

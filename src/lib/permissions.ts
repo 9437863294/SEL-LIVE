@@ -570,7 +570,9 @@ export const permissionModules = {
     // same settings/reports actions the other workflow-backed modules do.
     Survey: ["View", "Record", "View Settings", "Edit Settings", "View Reports"],
     Drawing: ["View"],
-    "Manufacturing Clearance": ["View", "Clear", "Reject"],
+    // Clearing routes through a configurable approval workflow, since clearing is what lets a
+    // vendor begin production (see src/lib/project-management-mc-workflow.ts).
+    "Manufacturing Clearance": ["View", "Clear", "Reject", "View Settings", "Edit Settings"],
     Inspections: ["View", "Request", "Record Result"],
     MDCC: ["View", "Request", "Issue"],
     "Dispatch Instructions": ["View", "Issue", "Acknowledge", "Dispatch"],
