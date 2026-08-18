@@ -130,7 +130,7 @@ export default function ProjectManagementPage() {
     {
       show: Boolean(selectedProject && canViewMdl),
       href: `/project-management/mdl?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "MDL",
+      title: "Design & Engineering",
       description: selectedProject
         ? `Track drawing submissions & approvals for ${selectedProject.projectName}.`
         : "Master Drawing List — track drawing submission and approval.",

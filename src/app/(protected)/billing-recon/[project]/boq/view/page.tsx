@@ -993,6 +993,7 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
+        projectId={currentProject?.id}
       />
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

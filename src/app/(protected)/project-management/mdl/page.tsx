@@ -561,7 +561,7 @@ export default function MdlPage() {
             <FileStack className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">MDL — Master Drawing List</h1>
+            <h1 className="text-2xl font-bold">Design &amp; Engineering</h1>
             <p className="text-sm text-muted-foreground">
               Tracks drawing submission &amp; approval for every BOQ item marked MDL = Yes in {mapping.projectName}.
             </p>

@@ -295,7 +295,8 @@ export default function ViewBoqPage() {
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [selectedBoqItem, setSelectedBoqItem] = useState<BoqItem | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-  const [sortKey, setSortKey] = useState<string>('BOQ SL No');
+  // ERP SL NO is the line identity within a project, so the table opens in ERP order.
+  const [sortKey, setSortKey] = useState<string>('ERP SL NO');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Column editor state
@@ -951,7 +952,15 @@ export default function ViewBoqPage() {
         const bVal = getComparableValue(b, sortKey);
 
         if (SL_NO_SORT_KEYS.has(sortKey)) {
-          const cmp = compareSlNoSegments(String(aVal ?? ''), String(bVal ?? ''));
+          const aSlNo = String(aVal ?? '').trim();
+          const bSlNo = String(bVal ?? '').trim();
+          // A blank serial has no place in the sequence — an empty segment parses as 0 and would
+          // otherwise head the list, so park these rows at the end in both directions.
+          if (!aSlNo || !bSlNo) {
+            if (aSlNo === bSlNo) return 0;
+            return aSlNo ? -1 : 1;
+          }
+          const cmp = compareSlNoSegments(aSlNo, bSlNo);
           return sortDirection === 'asc' ? cmp : -cmp;
         }
 
@@ -1687,6 +1696,7 @@ export default function ViewBoqPage() {
         isOpen={isDetailsDialogOpen}
         onOpenChange={setIsDetailsDialogOpen}
         item={selectedBoqItem}
+        projectId={globalProjectId}
       />
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

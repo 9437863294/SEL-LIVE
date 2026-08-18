@@ -34,6 +34,12 @@ interface BoqItemDetailsDialogProps {
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
   item: BoqItem | null;
+  /**
+   * Firestore id of `projects/{id}`. Supply it whenever the caller already knows it: the dialog then
+   * reads the related entries directly instead of scanning every project to match `item.projectSlug`
+   * by name — a lookup that fails outright when the parent project document is missing or unnamed.
+   */
+  projectId?: string;
 }
 
 type MvacItemWithParent = MvacItem & {
@@ -111,7 +117,12 @@ const compositeKey = (scope2: unknown, slNo: unknown) =>
 
 /* ---------- Component ---------- */
 
-export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: BoqItemDetailsDialogProps) {
+export default function BoqItemDetailsDialog({
+  isOpen,
+  onOpenChange,
+  item,
+  projectId,
+}: BoqItemDetailsDialogProps) {
   const { toast } = useToast();
 
   const [selectedJmc, setSelectedJmc] = useState<JmcEntry | null>(null);
@@ -127,24 +138,28 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
 
   /* -------- Fetch related project data (self-contained) -------- */
   const fetchRelatedData = useCallback(async () => {
-    if (!item?.projectSlug) return;
+    const projectSlug = item?.projectSlug;
+    if (!projectId && !projectSlug) return;
     setIsLoading(true);
     try {
-      const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
-      const projectData = projectsSnapshot.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
-        .find((p) => projectMatchesSlug((p as any).projectName || '', item.projectSlug));
+      let resolvedProjectId = projectId ?? '';
 
-      if (!projectData) {
-        throw new Error('Project not found for this BOQ item.');
+      if (!resolvedProjectId) {
+        const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
+        const projectData = projectsSnapshot.docs
+          .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
+          .find((p) => projectMatchesSlug((p as any).projectName || '', projectSlug));
+
+        if (!projectData) {
+          throw new Error('Project not found for this BOQ item.');
+        }
+        resolvedProjectId = (projectData as any).id;
       }
 
-      const projectId = (projectData as any).id;
-
       const [jmcSnapshot, billsSnapshot, mvacSnapshot] = await Promise.all([
-        getDocs(collection(db, 'projects', projectId, 'jmcEntries')),
-        getDocs(collection(db, 'projects', projectId, 'bills')),
-        getDocs(collection(db, 'projects', projectId, 'mvacEntries')),
+        getDocs(collection(db, 'projects', resolvedProjectId, 'jmcEntries')),
+        getDocs(collection(db, 'projects', resolvedProjectId, 'bills')),
+        getDocs(collection(db, 'projects', resolvedProjectId, 'mvacEntries')),
       ]);
 
       setJmcEntries(jmcSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
@@ -157,17 +172,17 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
     } finally {
       setIsLoading(false);
     }
-  }, [item?.projectSlug, toast]);
+  }, [item?.projectSlug, projectId, toast]);
 
   useEffect(() => {
-    if (isOpen && item?.projectSlug) {
+    if (isOpen && (projectId || item?.projectSlug)) {
       fetchRelatedData();
     } else {
         setJmcEntries([]);
         setBills([]);
         setMvacEntries([]);
     }
-  }, [isOpen, item?.projectSlug, fetchRelatedData]);
+  }, [isOpen, item?.projectSlug, projectId, fetchRelatedData]);
 
   /* -------- Data assembly -------- */
   const data = useMemo(() => {
