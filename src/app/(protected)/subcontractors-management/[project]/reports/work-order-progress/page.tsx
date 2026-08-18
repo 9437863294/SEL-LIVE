@@ -15,21 +15,13 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 interface EnrichedWorkOrder extends WorkOrder {
     totalBilled: number;
     progress: number;
 }
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text.toString().toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
-    .replace(/--+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-}
 
 export default function WorkOrderProgressReport() {
     const params = useParams();
@@ -50,7 +42,7 @@ export default function WorkOrderProgressReport() {
             try {
                 const projectsQuery = query(collection(db, 'projects'));
                 const projectsSnapshot = await getDocs(projectsQuery);
-                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
 
                 if (!projectData) {
                     toast({ title: 'Project not found', variant: 'destructive' });

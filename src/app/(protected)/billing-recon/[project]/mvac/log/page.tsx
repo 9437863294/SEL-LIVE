@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import ExcelJS from 'exceljs';
 import { Badge } from '@/components/ui/badge';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* ---------- helpers ---------- */
 function toDateSafe(value: any): Date | null {
@@ -170,11 +171,9 @@ export default function MvacLogPage() {
     try {
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
-      const slugify = (text: string) =>
-        (text || '').toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
         .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Project))
-        .find((p) => slugify((p as any).projectName || '') === projectSlug);
+        .find((p) => projectMatchesSlug((p as any).projectName || '', projectSlug));
 
       if (!projectData) {
         throw new Error('Project not found');
@@ -301,11 +300,9 @@ export default function MvacLogPage() {
     try {
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
-      const slugify = (text: string) =>
-        (text || '').toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
         .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Project))
-        .find((p) => slugify((p as any).projectName || '') === projectSlug);
+        .find((p) => projectMatchesSlug((p as any).projectName || '', projectSlug));
 
       if (!projectData) {
         throw new Error('Project not found');

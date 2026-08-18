@@ -14,6 +14,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 type NavItem = {
   href: string;
@@ -38,8 +39,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     const fetchProject = async () => {
       if (!projectSlug) return;
       const snap = await getDocs(collection(db, 'projects'));
-      const slugify = (t: string) => t.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-      const found = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+      const found = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
       setCurrentProject(found || null);
     };
     fetchProject();

@@ -72,10 +72,16 @@ export interface SASExpense {
   paymentMode: string;
   vendorPartyName: string;
   billNo: string;
+  /** Marked by the person recording the expense — the bill carries GST. */
+  isGstBill?: boolean;
   remarks: string;
   attachments?: SASAttachment[];
   createdAt: any;
+  createdBy?: string;
+  createdByName?: string;
   updatedAt: any;
+  updatedBy?: string;
+  updatedByName?: string;
 }
 
 export interface SASBudget {

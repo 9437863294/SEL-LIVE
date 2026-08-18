@@ -44,6 +44,7 @@ import {
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import { Textarea } from '@/components/ui/textarea';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 
 /* -------- helpers -------- */
@@ -80,15 +81,6 @@ function formatINR(n?: number) {
     }
 }
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text.toString().toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
-    .replace(/--+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-};
 
 
 /* -------- component -------- */
@@ -142,11 +134,9 @@ export default function BillStagePage() {
       // 2) project by slug (cache id)
       const projectsQueryRef = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQueryRef);
-      const slugify = (text: string) =>
-        text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
         .map((d) => ({ id: d.id, ...d.data() } as Project))
-        .find((p) => slugify(p.projectName) === projectSlug);
+        .find((p) => projectMatchesSlug(p.projectName, projectSlug));
 
       if (!projectData) throw new Error('Project not found');
       const pid = projectData.id;

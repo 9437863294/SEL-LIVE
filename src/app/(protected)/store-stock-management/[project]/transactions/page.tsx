@@ -36,6 +36,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { projectMatchesSlug } from '@/lib/project-slug';
 import { storage } from '@/lib/firebase-storage';
 import { collection, getDocs, query, where, writeBatch, doc, orderBy, Timestamp, runTransaction, getDoc } from 'firebase/firestore';
 import { useParams, useRouter } from 'next/navigation';
@@ -109,8 +110,7 @@ export default function TransactionsPage() {
     try {
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
         
         if (!projectData) {
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });

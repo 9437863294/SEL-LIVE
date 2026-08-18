@@ -34,6 +34,7 @@ import { db } from '@/lib/firebase';
 import type { Project as ProjectType } from '@/lib/types'; // If this exists in your codebase
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /** If your local Project type doesn’t already include these fields,
  * uncomment this interface and remove the import above.
@@ -152,7 +153,7 @@ export default function ProjectDashboardPage() {
   }, [isAuthLoading]);
 
   const currentProject = useMemo(
-    () => projects.find((p) => slugify(p.projectName) === projectSlugParam) ?? null,
+    () => projects.find((p) => projectMatchesSlug(p.projectName, projectSlugParam)) ?? null,
     [projects, projectSlugParam]
   );
 
@@ -163,7 +164,7 @@ export default function ProjectDashboardPage() {
   }, [currentProject, projectSlugParam]);
 
   const selectedValue = useMemo(() => {
-    const found = projects.find(p => slugify(p.projectName) === projectSlugParam);
+    const found = projects.find(p => projectMatchesSlug(p.projectName, projectSlugParam));
     return found ? projectSlugParam : undefined;
   }, [projects, projectSlugParam]);
 

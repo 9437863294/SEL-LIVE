@@ -59,6 +59,7 @@ export const SAS_FORM_REGISTRY: Record<SASFormKey, SASFormDef> = {
       { key: 'paymentMode', defaultLabel: 'Payment Mode', defaultRequired: false },
       { key: 'vendorPartyName', defaultLabel: 'Vendor / Party Name', defaultRequired: false },
       { key: 'billNo', defaultLabel: 'Bill No.', defaultRequired: false },
+      { key: 'isGstBill', defaultLabel: 'GST Bill', defaultRequired: false },
       { key: 'narration', defaultLabel: 'Narration', defaultRequired: false },
       { key: 'remarks', defaultLabel: 'Remarks', defaultRequired: false },
       { key: 'attachment', defaultLabel: 'Upload Document', defaultRequired: false },

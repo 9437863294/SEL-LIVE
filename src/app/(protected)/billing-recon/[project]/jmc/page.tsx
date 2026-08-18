@@ -45,8 +45,6 @@ interface JmcCardProps {
 }
 
 /* ---------------- utils ---------------- */
-const slugify = (s: string) =>
-  s.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
 /* ---------------- components ---------------- */
 function JmcCard({ item }: JmcCardProps) {

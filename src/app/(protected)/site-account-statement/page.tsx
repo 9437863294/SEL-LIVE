@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -108,6 +109,7 @@ function QuickExpenseDialog({
   const { toast } = useToast();
   const { log } = useActivityLogger(MODULE);
   const { field } = useFieldControl('expense');
+  const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -123,6 +125,7 @@ function QuickExpenseDialog({
     paymentMode: 'Cash',
     vendorPartyName: '',
     billNo: '',
+    isGstBill: false,
     remarks: '',
   });
 
@@ -162,7 +165,7 @@ function QuickExpenseDialog({
     setForm(f => ({
       ...f,
       expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '',
-      narration: '', expenseAmount: '', vendorPartyName: '', billNo: '', remarks: '',
+      narration: '', expenseAmount: '', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '',
     }));
     setPendingFiles([]);
   }
@@ -178,6 +181,7 @@ function QuickExpenseDialog({
       paymentMode: form.paymentMode,
       vendorPartyName: form.vendorPartyName,
       billNo: form.billNo,
+      isGstBill: form.isGstBill,
       narration: form.narration,
       remarks: form.remarks,
       attachment: pendingFiles.length > 0 ? 'attached' : '',
@@ -198,15 +202,21 @@ function QuickExpenseDialog({
         paymentMode: form.paymentMode,
         vendorPartyName: form.vendorPartyName.trim(),
         billNo: form.billNo.trim(),
+        isGstBill: form.isGstBill,
         remarks: form.remarks.trim(),
         attachments: [],
         createdAt: serverTimestamp(),
+        createdBy: user?.id || '',
+        createdByName: user?.name || '',
         updatedAt: serverTimestamp(),
+        updatedBy: user?.id || '',
+        updatedByName: user?.name || '',
       });
 
       if (pendingFiles.length > 0) {
         const attachments = await uploadAttachments(docRef.id, pendingFiles);
-        await updateDoc(doc(db, SAS_COLLECTIONS.expenses, docRef.id), { attachments, updatedAt: serverTimestamp() });
+        // No updatedAt bump — finishing its own upload is part of recording, not an edit.
+        await updateDoc(doc(db, SAS_COLLECTIONS.expenses, docRef.id), { attachments });
       }
 
       void log('Add SAS Expense (quick)', { project: project.projectName, amount });
@@ -341,6 +351,20 @@ function QuickExpenseDialog({
           <div className="space-y-1.5">
             <Label>{field('billNo').label} {fieldMark(field('billNo'))}</Label>
             <Input value={form.billNo} onChange={e => setF('billNo', e.target.value)} placeholder="Optional" />
+          </div>
+          )}
+
+          {/* GST bill flag */}
+          {field('isGstBill').visible && (
+          <div className="col-span-2">
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border bg-muted/20 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+              <Checkbox
+                checked={form.isGstBill}
+                onCheckedChange={v => setForm(f => ({ ...f, isGstBill: v === true }))}
+              />
+              <span className="text-sm font-medium">Is this a {field('isGstBill').label}?</span>
+              <span className="text-xs text-muted-foreground">Tick if the bill carries GST</span>
+            </label>
           </div>
           )}
 

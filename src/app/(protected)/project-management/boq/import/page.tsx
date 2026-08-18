@@ -479,8 +479,11 @@ export default function ImportBoqPage() {
         if (!mapping.globalProjectId) throw new Error('Global project is not mapped');
 
         const projectSnapshot = await getDoc(doc(db, 'projects', mapping.globalProjectId));
-        if (!projectSnapshot.exists()) throw new Error('Mapped global project not found');
-        const project = { id: projectSnapshot.id, ...projectSnapshot.data() } as Project;
+        // Parent document optional — BOQ items are written to projects/{id}/boqItems, which needs
+        // only the id. Synthesise from the mapping when the parent has not been written.
+        const project = projectSnapshot.exists()
+          ? ({ id: projectSnapshot.id, ...projectSnapshot.data() } as Project)
+          : ({ id: mapping.globalProjectId, projectName: mapping.globalProjectName ?? '' } as Project);
         setCurrentProject(project);
         setProjectSlug(
           (project.projectName || mapping.globalProjectName || '')

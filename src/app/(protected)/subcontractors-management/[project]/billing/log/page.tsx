@@ -88,6 +88,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 
 // Unified Display types
@@ -210,7 +211,7 @@ export default function BillLogPage() {
       );
       setProjects(allProjects);
   
-      const currentProject = allProjects.find(p => slugify(p.projectName) === projectSlug);
+      const currentProject = allProjects.find(p => projectMatchesSlug(p.projectName, projectSlug));
   
       const subsQuery = query(collectionGroup(db, 'subcontractors'));
       const woQuery = query(collectionGroup(db, 'workOrders'));

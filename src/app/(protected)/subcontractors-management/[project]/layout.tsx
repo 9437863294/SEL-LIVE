@@ -26,6 +26,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 export default function ProjectLayout({
   children,
@@ -47,8 +48,7 @@ export default function ProjectLayout({
       };
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
-      const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-      const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+      const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
       setCurrentProject(projectData || null);
     };
     fetchProject();
@@ -75,7 +75,6 @@ export default function ProjectLayout({
   if (projectSlug === 'all') {
     return <div className="p-4 sm:p-6 lg:p-8">{children}</div>;
   }
-
 
   return (
     <div className="flex w-full h-full">

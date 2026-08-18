@@ -44,6 +44,7 @@ import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 const initialBillDetails = {
   proformaNo: '',
@@ -52,17 +53,6 @@ const initialBillDetails = {
   subcontractorId: '',
 };
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text
-    .toString()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-};
 
 type EnrichedBillItem = BillItem & {
   id: string; // Add id to satisfy WorkOrderItem type for the dialog
@@ -106,7 +96,7 @@ export default function CreateProformaPage() {
       const projectSnap = await getDocs(projectsQuery);
       const project = projectSnap.docs
         .map((doc) => ({ id: doc.id, ...doc.data() } as Project))
-        .find((p) => slugify(p.projectName) === projectSlug);
+        .find((p) => projectMatchesSlug(p.projectName, projectSlug));
 
       if (!project) {
         console.error('Project not found from slug:', projectSlug);

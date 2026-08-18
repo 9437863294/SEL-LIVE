@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import ViewMvacEntryDialog from './ViewMvacEntryDialog';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 
 /* ---------- Props ---------- */
@@ -104,7 +105,6 @@ const getScope2 = (x: any): string | undefined => {
   return typeof v === 'string' ? v.trim() : undefined;
 };
 
-const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
 const compositeKey = (scope2: unknown, slNo: unknown) =>
   `${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
@@ -133,7 +133,7 @@ export default function BoqItemDetailsDialog({ isOpen, onOpenChange, item }: Boq
       const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
       const projectData = projectsSnapshot.docs
         .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
-        .find((p) => slugify((p as any).projectName || '') === item.projectSlug);
+        .find((p) => projectMatchesSlug((p as any).projectName || '', item.projectSlug));
 
       if (!projectData) {
         throw new Error('Project not found for this BOQ item.');

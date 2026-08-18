@@ -12,6 +12,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { useParams } from 'next/navigation';
 import type { InventoryLog, BoqItem, Project } from '@/lib/types';
 import { format, subMonths, addMonths } from 'date-fns';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 interface ForecastData {
   month: string;
@@ -45,8 +46,7 @@ export default function AiForecastPage() {
         try {
             const projectsQuery = query(collection(db, 'projects'));
             const projectsSnapshot = await getDocs(projectsQuery);
-            const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-            const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+            const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
 
             if (!projectData) {
                 toast({ title: "Error", description: "Project not found.", variant: "destructive" });

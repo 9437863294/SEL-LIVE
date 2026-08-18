@@ -24,6 +24,7 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* ---------- Helpers ---------- */
 
@@ -159,7 +160,7 @@ export default function PrintProformaBillPage() {
                 ...d.data(),
               } as Project)
           )
-          .find((p) => slugify(p.projectName) === projectSlug);
+          .find((p) => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!projectData) throw new Error('Project not found.');
         setProject(projectData);
@@ -210,8 +211,6 @@ export default function PrintProformaBillPage() {
     }
   }, [isLoading, proformaBill]);
 
-  const slugify = (text: string | undefined) =>
-    text ? text.toString().toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '') : '';
   
   if (isLoading) {
     return <div className="p-8"><Skeleton className="h-[80vh]" /></div>;

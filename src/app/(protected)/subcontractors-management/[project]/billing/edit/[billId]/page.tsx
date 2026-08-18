@@ -32,18 +32,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text
-    .toString()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-};
-
 type EnrichedBillItem = BillItem & {
   orderQty: number;
   jmcCertifiedQty: number;
@@ -173,7 +161,6 @@ export default function EditBillPage() {
     const netPayable = grossAmount - totalDeductions;
     return { subtotal, finalGstAmount, grossAmount, finalRetentionAmount, totalDeductions, netPayable, totalAdvanceDeduction, otherDeduction };
   }, [bill, gstType, gstPercentage, gstAmount, retentionType, retentionPercentage, manualRetentionAmount, otherDeduction, advanceDeductions]);
-
 
   const handleSave = async () => {
     if (!bill || !currentProject) return;

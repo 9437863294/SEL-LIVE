@@ -18,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 export default function AssemblyPage() {
   const params = useParams();
@@ -42,8 +43,7 @@ export default function AssemblyPage() {
     try {
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+        const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!projectData) {
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });

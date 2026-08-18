@@ -1543,3 +1543,70 @@ test('Inspection context carries the project handle and stays inert without a ma
   assert.equal(noMapping.inspectionHref('register'), '#');
   assert.equal(noMapping.parentHref, '#');
 });
+
+/* ---------------- Project slug resolution ---------------- */
+
+test('the two slug forms disagree exactly where a stripped character leaves a double hyphen', async () => {
+  const { projectSlugStrict, projectSlugCanonical } = await import('../src/lib/project-slug.ts');
+
+  // Simple names: both forms agree, so nothing to reconcile.
+  assert.equal(projectSlugStrict('Acme Corp'), 'acme-corp');
+  assert.equal(projectSlugCanonical('Acme Corp'), 'acme-corp');
+
+  // This is the case that produced "Project not found": the picker builds the canonical form into
+  // the URL, the page matched with the strict one.
+  assert.equal(projectSlugStrict('220kV Substation / Pkg-3'), '220kv-substation--pkg-3');
+  assert.equal(projectSlugCanonical('220kV Substation / Pkg-3'), '220kv-substation-pkg-3');
+
+  // Leading/trailing whitespace diverges too.
+  assert.equal(projectSlugStrict(' Acme '), '-acme-');
+  assert.equal(projectSlugCanonical(' Acme '), 'acme');
+
+  // Doubled spaces do NOT diverge: /s+/ collapses a whole whitespace run to one hyphen, so both
+  // forms agree. Only a stripped non-word character or edge whitespace can leave a double hyphen.
+  assert.equal(projectSlugStrict('Acme  Corp'), 'acme-corp');
+  assert.equal(projectSlugCanonical('Acme  Corp'), 'acme-corp');
+});
+
+test('a project resolves from a URL slug built by either variant', async () => {
+  const { resolveProjectBySlug, projectMatchesSlug } = await import('../src/lib/project-slug.ts');
+  const projects = [
+    { id: 'p1', projectName: '220kV Substation / Pkg-3' },
+    { id: 'p2', projectName: 'Acme Corp' },
+  ];
+
+  // Canonical form — what the project picker puts in the href.
+  assert.equal(resolveProjectBySlug(projects, '220kv-substation-pkg-3').id, 'p1');
+  // Strict form — what older links and stored serial-config ids used.
+  assert.equal(resolveProjectBySlug(projects, '220kv-substation--pkg-3').id, 'p1');
+  assert.equal(resolveProjectBySlug(projects, 'acme-corp').id, 'p2');
+
+  assert.equal(projectMatchesSlug('220kV Substation / Pkg-3', '220kv-substation-pkg-3'), true);
+  assert.equal(projectMatchesSlug('220kV Substation / Pkg-3', '220kv-substation--pkg-3'), true);
+  assert.equal(projectMatchesSlug('Acme Corp', 'something-else'), false);
+});
+
+test('slug resolution fails closed rather than guessing', async () => {
+  const { resolveProjectBySlug, projectSlugStrict } = await import('../src/lib/project-slug.ts');
+  const projects = [{ id: 'p1', projectName: 'Acme Corp' }];
+
+  // An unknown slug must not fall back to an arbitrary project — that would silently show one
+  // project's BOQ under another project's URL.
+  assert.equal(resolveProjectBySlug(projects, 'unknown-project'), null);
+  assert.equal(resolveProjectBySlug(projects, ''), null);
+  assert.equal(resolveProjectBySlug([], 'acme-corp'), null);
+
+  // Missing/blank names must not collapse to a slug that matches an empty URL segment.
+  assert.equal(projectSlugStrict(undefined), '');
+  assert.equal(resolveProjectBySlug([{ id: 'x' }], ''), null);
+});
+
+test('strict slug form still matches jmcSlugify, so stored serial-config ids keep resolving', async () => {
+  const { projectSlugStrict } = await import('../src/lib/project-slug.ts');
+  const { jmcSlugify } = await import('../src/lib/jmc-module.ts');
+
+  // These must not drift apart: billingReconSerialConfigs document ids were built with jmcSlugify.
+  for (const name of ['Acme Corp', ' Acme ', '220kV Substation / Pkg-3', 'Acme  Corp', '']) {
+    assert.equal(projectSlugStrict(name), jmcSlugify(name), `mismatch for "${name}"`);
+  }
+});

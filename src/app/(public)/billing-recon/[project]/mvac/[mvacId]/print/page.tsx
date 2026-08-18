@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, getDocs } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* ---------- Helpers ---------- */
 
@@ -41,13 +42,6 @@ type EnrichedMvacItem = MvacItem & {
   previousCertifiedQty: number;
 };
 
-const slugify = (text: string) =>
-  (text || '')
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '');
 
 const getScope1 = (item: any): string => {
   if (!item) return '';
@@ -184,7 +178,7 @@ export default function PrintMvacPage() {
                 ...d.data(),
               } as Project)
           )
-          .find((p) => slugify(p.projectName) === projectSlug);
+          .find((p) => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!projectData) {
           throw new Error('Project not found.');

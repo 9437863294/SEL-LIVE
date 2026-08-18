@@ -18,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, collection, query, getDocs } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* ---------- Helpers ---------- */
 
@@ -109,10 +110,9 @@ export default function PrintBillPage() {
       setIsLoading(true);
       try {
         const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
         const projectData = projectsSnapshot.docs
           .map((d) => ({ id: d.id, ...d.data() } as Project))
-          .find((p) => slugify(p.projectName) === projectSlug);
+          .find((p) => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!projectData) throw new Error('Project not found.');
         setProject(projectData);

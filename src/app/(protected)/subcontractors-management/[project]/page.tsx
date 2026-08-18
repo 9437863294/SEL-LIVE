@@ -25,6 +25,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import AllSubcontractorsDashboard from '@/components/subcontractors-management/AllSubcontractorsDashboard';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 interface SubcontractorCardProps {
   item: {
@@ -123,7 +124,7 @@ export default function SubcontractorsProjectDashboard() {
   }, [isAuthLoading]);
 
   const currentProject = useMemo(
-    () => projects.find((p) => slugify(p.projectName) === projectSlugParam) ?? null,
+    () => projects.find((p) => projectMatchesSlug(p.projectName, projectSlugParam)) ?? null,
     [projects, projectSlugParam]
   );
 
@@ -135,7 +136,7 @@ export default function SubcontractorsProjectDashboard() {
 
   const selectedValue = useMemo(() => {
     if (isAllProjectsView) return 'all';
-    const found = projects.find(p => slugify(p.projectName) === projectSlugParam);
+    const found = projects.find(p => projectMatchesSlug(p.projectName, projectSlugParam));
     return found ? projectSlugParam : undefined;
   }, [projects, projectSlugParam, isAllProjectsView]);
 

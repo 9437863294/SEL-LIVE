@@ -40,20 +40,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* ---------- helpers ---------- */
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text
-    .toString()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
-    .replace(/--+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-};
 
 function toDateSafe(value: any): Date | null {
   if (!value) return null;
@@ -109,7 +99,7 @@ export default function CombinedLogPage() {
               ...doc.data(),
             } as Project)
         )
-        .find((p) => slugify(p.projectName) === projectSlug);
+        .find((p) => projectMatchesSlug(p.projectName, projectSlug));
 
       if (!project) {
         console.error('Project not found');

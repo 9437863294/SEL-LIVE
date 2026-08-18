@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '../ui/select';
 import type { CheckedState } from '@radix-ui/react-checkbox';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 interface JmcItemSelectorDialogProps {
   isOpen: boolean;
@@ -101,10 +102,9 @@ export function JmcItemSelectorDialog({
         // 1. Find the project ID from the slug
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
         const project = projectsSnapshot.docs
             .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-            .find(p => slugify(p.projectName) === projectSlug);
+            .find(p => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!project) {
             throw new Error("Project could not be found from the URL slug.");

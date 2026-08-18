@@ -42,6 +42,7 @@ import { useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
 import type { Project } from '@/lib/types';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 
 type BoqItem = Record<string, any>;
@@ -112,12 +113,10 @@ export default function ImportBoqPage() {
         const projectsQuery = query(collection(db, 'projects'));
         const projectsSnapshot = await getDocs(projectsQuery);
 
-        const slugify = (text: string) =>
-          text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
         const projectData = projectsSnapshot.docs
           .map((d) => ({ id: d.id, ...d.data() } as Project))
-          .find((p) => slugify(p.projectName) === projectSlug);
+          .find((p) => projectMatchesSlug(p.projectName, projectSlug));
 
         if (projectData) {
           setCurrentProject(projectData);

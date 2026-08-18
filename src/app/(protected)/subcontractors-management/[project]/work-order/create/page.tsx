@@ -49,6 +49,7 @@ import { Switch } from '@/components/ui/switch';
 import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
 import { CustomAssemblyDialog } from '@/components/subcontractors-management/CustomAssemblyDialog';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 // UI-level WorkOrderItem — extends backend type with UI-only fields
 type WorkOrderItem = Omit<OriginalWorkOrderItem, 'id' | 'subItems'> & {
@@ -73,17 +74,6 @@ const initialSubItemState: Omit<SubItem, 'id'> = {
   totalAmount: 0,
 };
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text
-    .toString()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-};
 
 export default function CreateWorkOrderPage() {
   const { toast } = useToast();
@@ -110,7 +100,7 @@ export default function CreateWorkOrderPage() {
       const projectsSnapshot = await getDocs(projectsQuery);
       const projectData = projectsSnapshot.docs
         .map(d => ({ id: d.id, ...d.data() } as Project))
-        .find(p => slugify(p.projectName) === projectSlug);
+        .find(p => projectMatchesSlug(p.projectName, projectSlug));
 
       if (!projectData) {
         toast({ title: 'Project not found', variant: 'destructive' });

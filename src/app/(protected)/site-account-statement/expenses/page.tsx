@@ -23,6 +23,7 @@ import { useActivityLogger } from '@/hooks/useActivityLogger';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -80,6 +81,7 @@ interface FormState {
   paymentMode: string;
   vendorPartyName: string;
   billNo: string;
+  isGstBill: boolean;
   remarks: string;
 }
 
@@ -87,7 +89,7 @@ const blank = (): FormState => ({
   projectId: '', projectName: '',
   expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '',
   narration: '', expensedBy: '', expenseDate: '', expenseAmount: '',
-  paymentMode: 'Cash', vendorPartyName: '', billNo: '', remarks: '',
+  paymentMode: 'Cash', vendorPartyName: '', billNo: '', isGstBill: false, remarks: '',
 });
 
 function getMonthRange(fromDate?: string, offset = 0) {
@@ -106,6 +108,11 @@ function getMonthRange(fromDate?: string, offset = 0) {
   const lastDay = new Date(y, m + 1, 0).getDate();
   const end   = `${y}-${String(m + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
   return { start, end, year: y, month: m };
+}
+
+function timestampMillis(ts: any): number | null {
+  const d: Date | null = ts?.toDate?.() ?? (ts?.seconds ? new Date(ts.seconds * 1000) : null);
+  return d && !isNaN(d.getTime()) ? d.getTime() : null;
 }
 
 function formatTimestamp(ts: any): string {
@@ -176,6 +183,7 @@ export default function SiteExpensesPage() {
   const [filterCategory,    setFilterCategory]    = useState('');
   const [filterSubCategory, setFilterSubCategory] = useState('');
   const [filterMode,        setFilterMode]        = useState('');
+  const [filterGstOnly,     setFilterGstOnly]     = useState(false);
   const [filterFrom,        setFilterFrom]        = useState(() => getMonthRange().start);
   const [filterTo,          setFilterTo]          = useState(() => getMonthRange().end);
   const [search,            setSearch]            = useState('');
@@ -455,6 +463,12 @@ export default function SiteExpensesPage() {
     },
     { key: 'vendorPartyName', label: 'Vendor / Party Name', hint: 'Optional' },
     { key: 'billNo',          label: 'Bill No.',            hint: 'Bill or voucher number' },
+    {
+      key: 'isGstBill', label: 'GST Bill',
+      hint: 'Yes / No  (blank means No)',
+      validate: (v) => !v.trim() || /^(yes|no|y|n|true|false|1|0)$/i.test(v.trim())
+        ? null : 'Must be Yes or No',
+    },
     { key: 'remarks',         label: 'Remarks' },
   ], [visibleProjects, mainCategories, subCategories]);
 
@@ -492,10 +506,15 @@ export default function SiteExpensesPage() {
       paymentMode:        mode,
       vendorPartyName:    String(row.vendorPartyName  || '').trim(),
       billNo:             String(row.billNo           || '').trim(),
+      isGstBill:          /^(yes|y|true|1)$/i.test(String(row.isGstBill || '').trim()),
       remarks:            String(row.remarks          || '').trim(),
       attachments:        [],
       createdAt:          serverTimestamp(),
+      createdBy:          user?.id   || '',
+      createdByName:      user?.name || '',
       updatedAt:          serverTimestamp(),
+      updatedBy:          user?.id   || '',
+      updatedByName:      user?.name || '',
     });
   }
 
@@ -640,7 +659,7 @@ export default function SiteExpensesPage() {
       expensedBy: row.expensedBy,
       expenseDate: row.expenseDate, expenseAmount: String(row.expenseAmount),
       paymentMode: row.paymentMode, vendorPartyName: row.vendorPartyName || '',
-      billNo: row.billNo || '', remarks: row.remarks || '',
+      billNo: row.billNo || '', isGstBill: row.isGstBill === true, remarks: row.remarks || '',
     });
     setUploads([]);
     setExistingAttachments(row.attachments ? [...row.attachments] : []);
@@ -699,6 +718,7 @@ export default function SiteExpensesPage() {
       paymentMode: form.paymentMode,
       vendorPartyName: form.vendorPartyName,
       billNo: form.billNo,
+      isGstBill: form.isGstBill,
       narration: form.narration,
       remarks: form.remarks,
       attachment: uploadedAttachments.length + existingAttachments.length > 0 ? 'attached' : '',
@@ -718,8 +738,11 @@ export default function SiteExpensesPage() {
         paymentMode:        form.paymentMode,
         vendorPartyName:    form.vendorPartyName.trim(),
         billNo:             form.billNo.trim(),
+        isGstBill:          form.isGstBill,
         remarks:            form.remarks.trim(),
         updatedAt:          serverTimestamp(),
+        updatedBy:          user?.id   || '',
+        updatedByName:      user?.name || '',
       };
 
       if (editingRow) {
@@ -736,7 +759,11 @@ export default function SiteExpensesPage() {
       } else {
         // Write under the id the attachments were uploaded against.
         await setDoc(doc(db, SAS_COLLECTIONS.expenses, targetExpenseIdRef.current), {
-          ...baseData, attachments: uploadedAttachments, createdAt: serverTimestamp(),
+          ...baseData,
+          attachments:   uploadedAttachments,
+          createdAt:     serverTimestamp(),
+          createdBy:     user?.id   || '',
+          createdByName: user?.name || '',
         });
         const count = uploadedAttachments.length;
         void log('Add SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
@@ -794,6 +821,7 @@ export default function SiteExpensesPage() {
     if (filterCategory    && e.expenseCategory !== filterCategory)                     return false;
     if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory)       return false;
     if (filterMode        && e.paymentMode !== filterMode)                             return false;
+    if (filterGstOnly     && e.isGstBill !== true)                                     return false;
     if (filterFrom        && e.expenseDate < filterFrom)                               return false;
     if (filterTo          && e.expenseDate > filterTo)                                 return false;
     if (search &&
@@ -804,7 +832,7 @@ export default function SiteExpensesPage() {
       !(e.narration          || '').toLowerCase().includes(search.toLowerCase()) &&
       !(e.billNo             || '').toLowerCase().includes(search.toLowerCase())) return false;
     return true;
-  }), [expenses, userProjectIds, filterProject, filterCategory, filterSubCategory, filterMode, filterFrom, filterTo, search]);
+  }), [expenses, userProjectIds, filterProject, filterCategory, filterSubCategory, filterMode, filterGstOnly, filterFrom, filterTo, search]);
 
   const totalFiltered = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
 
@@ -850,17 +878,26 @@ export default function SiteExpensesPage() {
         { header: 'Payment Mode',   key: 'paymentMode',        width: 14 },
         { header: 'Vendor / Party', key: 'vendorPartyName',    width: 22 },
         { header: 'Bill No.',       key: 'billNo',             width: 16 },
+        { header: 'GST Bill',       key: 'gstBillStr',         width: 10 },
         { header: 'Remarks',        key: 'remarks',            width: 30 },
         { header: 'Attachments',    key: 'attachCount',        width: 14 },
+        { header: 'Recorded By',    key: 'createdByName',      width: 20 },
         { header: 'Recorded At',    key: 'createdAtStr',       width: 22 },
+        { header: 'Updated By',     key: 'updatedByName',      width: 20 },
+        { header: 'Updated At',     key: 'updatedAtStr',       width: 22 },
       ];
       ws.getRow(headerRow).font = { bold: true };
       filtered.forEach(e => ws.addRow({
         ...e,
         expenseSubCategory: e.expenseSubCategory || '',
         narration:          e.narration          || '',
+        gstBillStr:         e.isGstBill ? 'Yes' : 'No',
         attachCount:        e.attachments?.length || 0,
+        createdByName:      e.createdByName || '',
         createdAtStr:       formatTimestamp(e.createdAt),
+        updatedByName:      e.updatedByName || '',
+        updatedAtStr:       timestampMillis(e.updatedAt) !== timestampMillis(e.createdAt)
+                              ? formatTimestamp(e.updatedAt) : '',
       }));
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
@@ -925,7 +962,7 @@ export default function SiteExpensesPage() {
 
       {/* Mobile filter toggle */}
       {(() => {
-        const activeCount = [filterProject, filterCategory, filterSubCategory, filterMode, search].filter(Boolean).length;
+        const activeCount = [filterProject, filterCategory, filterSubCategory, filterMode, filterGstOnly, search].filter(Boolean).length;
         return (
           <div className="flex items-center gap-2 sm:hidden">
             <Button variant="outline" size="sm" className="h-9 gap-2 flex-1 justify-center"
@@ -978,6 +1015,16 @@ export default function SiteExpensesPage() {
           <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
           <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
+          {/* Sits under All Modes — shows only expenses flagged as GST bills */}
+          <label
+            className={cn(
+              'flex h-9 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm transition-colors',
+              filterGstOnly ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'bg-white/80 hover:bg-muted/40',
+            )}
+          >
+            <Checkbox checked={filterGstOnly} onCheckedChange={v => setFilterGstOnly(v === true)} />
+            <span className="truncate">GST Bills Only</span>
+          </label>
         </div>
       </div>
 
@@ -1105,7 +1152,14 @@ export default function SiteExpensesPage() {
                       <td className="px-4 py-2.5 text-right font-semibold text-rose-700">{formatINR(row.expenseAmount)}</td>
                       <td className="px-4 py-2.5"><Badge variant="secondary">{row.paymentMode}</Badge></td>
                       <td className="px-4 py-2.5 max-w-[110px] truncate">{row.vendorPartyName || '—'}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{row.billNo || '—'}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                          <span>{row.billNo || '—'}</span>
+                          {row.isGstBill && (
+                            <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-[10px] text-emerald-700 px-1.5 py-0">GST</Badge>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-2.5 text-center">
                         {row.attachments && row.attachments.length > 0 ? (
                           <button
@@ -1223,6 +1277,14 @@ export default function SiteExpensesPage() {
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Bill No.</p>
                   <p className="mt-0.5">{viewExpense.billNo || <span className="text-muted-foreground">—</span>}</p>
                 </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">GST Bill</p>
+                  <p className="mt-0.5">
+                    {viewExpense.isGstBill
+                      ? <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-xs text-emerald-700">Yes</Badge>
+                      : <span className="text-muted-foreground">No</span>}
+                  </p>
+                </div>
                 {viewExpense.narration && (
                   <div className="col-span-2">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Narration</p>
@@ -1235,10 +1297,17 @@ export default function SiteExpensesPage() {
                     <p className="mt-0.5">{viewExpense.remarks}</p>
                   </div>
                 )}
-                <div className="col-span-2 border-t pt-3">
-                  <p className="text-xs text-muted-foreground">Recorded: {formatTimestamp(viewExpense.createdAt)}</p>
-                  {viewExpense.updatedAt && viewExpense.updatedAt !== viewExpense.createdAt && (
-                    <p className="text-xs text-muted-foreground">Updated: {formatTimestamp(viewExpense.updatedAt)}</p>
+                <div className="col-span-2 border-t pt-3 space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Recorded by <span className="font-medium text-slate-700">{viewExpense.createdByName || '—'}</span>
+                    {' '}on {formatTimestamp(viewExpense.createdAt)}
+                  </p>
+                  {/* Only a genuine later edit — a fresh record writes both stamps together. */}
+                  {timestampMillis(viewExpense.updatedAt) !== timestampMillis(viewExpense.createdAt) && (
+                    <p className="text-xs text-muted-foreground">
+                      Updated by <span className="font-medium text-slate-700">{viewExpense.updatedByName || '—'}</span>
+                      {' '}on {formatTimestamp(viewExpense.updatedAt)}
+                    </p>
                   )}
                 </div>
               </div>
@@ -1447,6 +1516,20 @@ export default function SiteExpensesPage() {
             <div className="space-y-1.5">
               <Label>{field('billNo').label} {fieldMark(field('billNo'))}</Label>
               <Input value={form.billNo} onChange={e => setField('billNo', e.target.value)} placeholder="Bill / voucher number" />
+            </div>
+            )}
+
+            {/* GST bill flag */}
+            {field('isGstBill').visible && (
+            <div className="col-span-2">
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border bg-muted/20 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                <Checkbox
+                  checked={form.isGstBill}
+                  onCheckedChange={v => setForm(f => ({ ...f, isGstBill: v === true }))}
+                />
+                <span className="text-sm font-medium">Is this a {field('isGstBill').label}?</span>
+                <span className="text-xs text-muted-foreground">Tick if the bill carries GST</span>
+              </label>
             </div>
             )}
 

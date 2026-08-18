@@ -23,6 +23,7 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { Skeleton } from '@/components/ui/skeleton';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* ---------- Helpers ---------- */
 
@@ -55,13 +56,6 @@ type EnrichedJmcItem = JmcItem & {
   boqSlNo?: string; // ensure we always have a value to show
 };
 
-const slugify = (text: string) =>
-  (text || '')
-    .toString()
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '');
 
 const getScope1 = (item: any): string => {
   if (!item) return '';
@@ -202,7 +196,7 @@ export default function PrintJmcPage() {
           .find(
             (p) =>
               p.projectName &&
-              slugify(p.projectName) === projectSlug
+              projectMatchesSlug(p.projectName, projectSlug)
           );
 
         if (!projectData) {

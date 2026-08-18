@@ -23,6 +23,7 @@ import type { JmcEntry, JmcItem, ActionConfig, Project } from '@/lib/types';
 import { Loader2, Upload, File as FileIcon, X, Maximize, Minimize } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '../ui/progress';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 interface UpdateCertifiedQtyDialogProps {
   isOpen: boolean;
@@ -72,11 +73,9 @@ export function UpdateCertifiedQtyDialog({
     const fetchProject = async () => {
       if (!projectSlug) return;
       const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
-      const slugify = (text: string) =>
-        text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-        .find(p => slugify(p.projectName) === projectSlug);
+        .find(p => projectMatchesSlug(p.projectName, projectSlug));
 
       if (projectData) {
         setCurrentProject(projectData);

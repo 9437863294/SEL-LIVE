@@ -47,6 +47,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Progress } from '@/components/ui/progress';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 
 const slugify = (text: string) => {
@@ -180,7 +181,7 @@ export default function BillingSummaryReport() {
 
   const filteredProjects = useMemo(() => {
     if (filters.project === 'all') return projects;
-    return projects.filter(p => slugify(p.projectName) === filters.project);
+    return projects.filter(p => projectMatchesSlug(p.projectName, filters.project));
   }, [projects, filters.project]);
 
   const filterOptions = useMemo(() => {

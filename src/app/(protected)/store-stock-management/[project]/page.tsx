@@ -38,8 +38,8 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
-const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
 const currency = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -67,7 +67,7 @@ export default function ProjectDashboardPage() {
       const projectsSnapshot = await getDocs(collection(db, 'projects'));
       const project = projectsSnapshot.docs
         .map((projectDocument) => ({ id: projectDocument.id, ...projectDocument.data() }) as Project)
-        .find((candidate) => slugify(candidate.projectName || '') === projectSlug);
+        .find((candidate) => projectMatchesSlug(candidate.projectName || '', projectSlug));
       if (!project) {
         setCurrentProject(null);
         setLoadError('The requested project could not be found.');

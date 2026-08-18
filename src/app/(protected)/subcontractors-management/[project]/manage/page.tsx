@@ -17,16 +17,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text.toString().toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w-]+/g, '')
-    .replace(/--+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-}
 
 export default function ManageSubcontractorsPage() {
   const { toast } = useToast();
@@ -55,7 +47,7 @@ export default function ManageSubcontractorsPage() {
     try {
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
-      const project = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+      const project = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
 
       if (project) {
         setCurrentProject(project);

@@ -15,6 +15,7 @@ import { format } from 'date-fns';
 import type { WorkOrder, Project } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -56,7 +57,7 @@ export default function WorkOrderLogPage() {
         
         let project: Project | undefined;
         if (projectSlug !== 'all') {
-            project = allProjects.find(p => slugify(p.projectName) === projectSlug);
+            project = allProjects.find(p => projectMatchesSlug(p.projectName, projectSlug));
             if (!project) {
                 console.error("Project not found");
                 setIsLoading(false);

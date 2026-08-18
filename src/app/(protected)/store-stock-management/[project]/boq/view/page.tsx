@@ -54,6 +54,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { CheckedState } from '@radix-ui/react-checkbox';
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 
 export type BoqItem = {
@@ -98,7 +99,6 @@ const baseTableHeaders = [
     'JMC/MVAC Amount',
 ] as const;
 
-const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
 
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
@@ -203,7 +203,7 @@ export default function ViewBoqPage() {
       const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
       const projectData = projectsSnapshot.docs
         .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
-        .find((p) => slugify((p as any).projectName || '') === projectSlug);
+        .find((p) => projectMatchesSlug((p as any).projectName || '', projectSlug));
 
       if (!projectData) {
         throw new Error('Project not found');

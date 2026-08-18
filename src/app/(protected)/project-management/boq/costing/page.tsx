@@ -438,9 +438,19 @@ export default function ViewBoqPage() {
     setIsLoading(true);
     try {
       const mappingSnapshot = await getDoc(doc(db, 'projectManagementProjects', mappingId));
-      if (!mappingSnapshot.exists()) throw new Error('Project mapping not found');
+      // These two are genuine setup failures, and they need to say which one they are: the previous
+      // messages were indistinguishable from each other and from a missing global project.
+      if (!mappingSnapshot.exists()) {
+        throw new Error(
+          `This Project Management project no longer exists (mapping id ${mappingId}). Pick a project again from Project Management.`,
+        );
+      }
       const mapping = mappingSnapshot.data() as { globalProjectId?: string; globalProjectName?: string };
-      if (!mapping.globalProjectId) throw new Error('Global project is not mapped');
+      if (!mapping.globalProjectId) {
+        throw new Error(
+          'This project is not mapped to a global project yet. Open Project Management › Settings › Projects and choose one.',
+        );
+      }
       const projectId = mapping.globalProjectId;
 
       const [
@@ -481,10 +491,27 @@ export default function ViewBoqPage() {
           getDoc(doc(db, 'projectManagementSettings', 'general')),
         ]);
 
-      if (!projectSnapshot.exists()) throw new Error('Project not found');
-      const projectData = { id: projectSnapshot.id, ...(projectSnapshot.data() as any) } as Project;
-      const globalProjectName = (projectData as any).projectName ?? mapping.globalProjectName;
-      if (!globalProjectName) throw new Error('Mapped global project not found');
+      // The parent `projects/{id}` document is NOT required by this screen. Everything it reads and
+      // writes lives in subcollections (`boqItems`, `jmcEntries`, the supply gates), all addressable
+      // by id alone, and `currentProject` is only ever used for its `.id`. Demanding the parent doc
+      // exist meant a project whose document is absent — a freshly mapped one, or one whose parent
+      // was never written while its subcollections were — died here with a bare "Project not found"
+      // and rendered an empty table that looked like "no BOQ items".
+      const projectData = projectSnapshot.exists()
+        ? ({ id: projectSnapshot.id, ...(projectSnapshot.data() as any) } as Project)
+        : ({ id: projectId, projectName: mapping.globalProjectName ?? '' } as Project);
+
+      if (!projectSnapshot.exists()) {
+        console.warn(
+          `Global project document projects/${projectId} does not exist; continuing from the ` +
+            `Project Management mapping. BOQ data lives in its subcollections and is unaffected.`,
+        );
+      }
+
+      // Display/slug only — falling back to the id keeps the screen usable rather than failing on a
+      // project that simply has no name recorded yet.
+      const globalProjectName =
+        (projectData as any).projectName || mapping.globalProjectName || projectId;
       const slug = slugify(globalProjectName);
 
       setCurrentProject(projectData);

@@ -45,19 +45,11 @@ import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /**
  * Utilities & types
  */
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text.toString().toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-};
 
 const makeUUID = () => {
   try {
@@ -132,7 +124,7 @@ export default function CreateBillPage() {
         const projectSnap = await getDocs(projectsQuery);
         const project = projectSnap.docs
             .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-            .find(p => slugify(p.projectName) === projectSlug);
+            .find(p => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!project) {
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });

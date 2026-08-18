@@ -30,6 +30,7 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* ---------- local types ---------- */
 type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
@@ -175,7 +176,7 @@ export default function MvacEntryPage() {
         const projectsData = projectsSnapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Project));
         setAllProjects(projectsData);
 
-        const initialProject = projectsData.find((p) => slugify(p.projectName) === projectSlug);
+        const initialProject = projectsData.find((p) => projectMatchesSlug(p.projectName, projectSlug));
         if (initialProject) {
           setSelectedProjectId(initialProject.id);
           setDetails((prev) => ({ ...prev, woNo: (initialProject as any).woNo || '' }));

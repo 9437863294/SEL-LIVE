@@ -272,7 +272,9 @@ export default function ProjectIndentRegisterPage() {
         getDocs(collection(db, "projects", mappingData.globalProjectId, "indents")),
         getDoc(doc(db, "workflows", INDENT_WORKFLOW_DOC_ID)),
       ]);
-      if (!projectSnapshot.exists()) throw new Error("Mapped global project not found");
+      // The parent projects/{id} document is not needed here — the indents and BOQ items this
+      // screen reads live in subcollections, addressable by id alone. Requiring it killed the page
+      // for a freshly mapped project whose parent document has not been written.
 
       const rawSteps = workflowSnapshot.exists()
         ? ((workflowSnapshot.data()?.steps as WorkflowStep[] | undefined) ?? [])

@@ -30,7 +30,7 @@ import { differenceInDays } from 'date-fns';
 import { Label } from '@/components/ui/label';
 import { useParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
-
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 interface AgeingBucket {
     quantity: number;
@@ -88,8 +88,7 @@ export default function AgeingReportPage() {
             try {
                 const projectsQuery = query(collection(db, 'projects'));
                 const projectsSnapshot = await getDocs(projectsQuery);
-                const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => slugify(p.projectName) === projectSlug);
+                const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
 
                 if (!projectData) {
                     toast({ title: "Error", description: "Project not found for ageing report.", variant: "destructive" });

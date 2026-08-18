@@ -41,6 +41,7 @@ import WorkOrderItemSelectorDialog from '@/components/subcontractors-management/
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /**
  * Local WorkOrder shim — add to lib/types.ts later for long-term fix.
@@ -56,17 +57,6 @@ type WorkOrder = {
 };
 
 /** Utilities **/
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text
-    .toString()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-};
 
 const toNumber = (v: any) => {
   const n = Number(v);
@@ -173,7 +163,7 @@ export default function CreateBillPage() {
 
         const project = projectSnap.docs
           .map(d => ({ id: d.id, ...(d.data() as any) } as Project))
-          .find(p => slugify(p.projectName) === projectSlug);
+          .find(p => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!project) {
           toast({ title: 'Error', description: 'Project not found.', variant: 'destructive' });

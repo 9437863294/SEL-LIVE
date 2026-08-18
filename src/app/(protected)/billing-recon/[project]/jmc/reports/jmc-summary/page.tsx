@@ -35,6 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useParams } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 interface SummaryStats {
     totalJMCs: number;
@@ -54,7 +55,6 @@ interface StepWiseReportData {
         }
     }
 }
-
 
 export default function JmcSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -92,8 +92,7 @@ export default function JmcSummaryPage() {
         
         const allProjects = projectsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Project));
         
-        const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
-        const currentProject = allProjects.find(p => slugify(p.projectName) === projectSlug);
+        const currentProject = allProjects.find(p => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!currentProject) {
           console.error("Project not found for slug:", projectSlug);
@@ -158,7 +157,6 @@ export default function JmcSummaryPage() {
         
         setFilteredTasks(items);
     }, [filters, allTasks]);
-
 
   useEffect(() => {
         if (isLoading || allTasks.length === 0) {

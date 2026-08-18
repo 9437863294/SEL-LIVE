@@ -23,6 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { db } from '@/lib/firebase';
 import { collection, getDocs, writeBatch, doc, query, updateDoc, setDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
+import { resolveProjectBySlug } from '@/lib/project-slug';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
@@ -100,7 +101,10 @@ const baseTableHeaders = [
     'JMC/MVAC Amount',
 ] as const;
 
-const slugify = (text: string) => text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+// Resolution goes through the shared helper rather than a local slugify: the project picker builds
+// these URLs with the hyphen-collapsing variant, and matching with the non-collapsing one made any
+// project whose name contains a special character or doubled space fail with "Project not found".
+// See src/lib/project-slug.ts.
 
 const compositeKey = (scope1: unknown, scope2: unknown, slNo: unknown) =>
   `${String(scope1 ?? '').trim().toLowerCase()}__${String(scope2 ?? '').trim().toLowerCase()}__${String(slNo ?? '').trim()}`;
@@ -200,12 +204,22 @@ export default function ViewBoqPage() {
     setIsLoading(true);
     try {
       const projectsSnapshot = await getDocs(query(collection(db, 'projects')));
-      const projectData = projectsSnapshot.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) } as Project))
-        .find((p) => slugify((p as any).projectName || '') === projectSlug);
+      const projectData = resolveProjectBySlug(
+        projectsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as any) } as Project)),
+        projectSlug,
+      );
 
       if (!projectData) {
-        throw new Error('Project not found');
+        // Distinct from a read failure: the project genuinely isn't resolvable from this URL, so
+        // say that rather than reporting it as a BOQ fetch problem.
+        console.error(`No project matches the URL slug "${projectSlug}".`);
+        toast({
+          title: 'Project not found',
+          description: 'This link does not match any project. It may have been renamed or removed.',
+          variant: 'destructive',
+        });
+        setIsLoading(false);
+        return;
       }
       setCurrentProject(projectData);
 

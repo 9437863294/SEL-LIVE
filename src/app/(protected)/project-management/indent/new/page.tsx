@@ -142,7 +142,8 @@ export default function NewIndentPage() {
           getDocs(collection(db, "projects", mappingData.globalProjectId, "indents")),
           getDoc(doc(db, "projectManagementSettings", "general")),
         ]);
-        if (!projectSnapshot.exists()) throw new Error("Mapped global project not found");
+        // Parent document optional: the name already falls back to the mapping, and everything else
+        // this screen reads is in subcollections.
         const globalProjectName =
           (projectSnapshot.data()?.projectName as string | undefined) ?? mappingData.globalProjectName;
 

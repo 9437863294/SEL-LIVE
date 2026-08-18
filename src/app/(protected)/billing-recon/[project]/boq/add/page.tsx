@@ -27,6 +27,7 @@ import type { Project, BoqItem as BoqItemType } from '@/lib/types';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 const initialBoqItem = {
   'Project Name': '',
@@ -51,15 +52,6 @@ const toNum = (v: string) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text.toString().toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-}
 
 
 const SuggestionField = ({
@@ -177,7 +169,7 @@ export default function AddBoqItemPage() {
         if (!alive) return;
         
         const allProjects = pSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-        const pData = allProjects.find(p => slugify(p.projectName) === projectSlug);
+        const pData = allProjects.find(p => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!pData) {
           toast({ title: 'Project not found', description: 'Invalid project URL.', variant: 'destructive' });

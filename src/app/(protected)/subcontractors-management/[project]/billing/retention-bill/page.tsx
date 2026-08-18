@@ -31,6 +31,7 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 const initialDetails = {
     retentionBillNo: '',
@@ -38,15 +39,6 @@ const initialDetails = {
     subcontractorId: '',
 };
 
-const slugify = (text: string) => {
-  if (!text) return '';
-  return text.toString().toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^\w\-]+/g, '')
-    .replace(/\-\-+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '');
-}
 
 export default function CreateRetentionBillPage() {
   const { toast } = useToast();
@@ -70,7 +62,7 @@ export default function CreateRetentionBillPage() {
         const projectSnap = await getDocs(projectsQuery);
         const project = projectSnap.docs
             .map(doc => ({ id: doc.id, ...doc.data() } as Project))
-            .find(p => slugify(p.projectName) === projectSlug);
+            .find(p => projectMatchesSlug(p.projectName, projectSlug));
 
         if (!project) {
             toast({ title: "Error", description: "Project not found.", variant: "destructive" });

@@ -55,6 +55,7 @@ import {
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format, subDays } from 'date-fns';
+import { projectMatchesSlug } from '@/lib/project-slug';
 
 /* -------- helpers -------- */
 function formatINR(n?: number) {
@@ -177,11 +178,9 @@ export default function StagePage() {
       // 2) project by slug (cache id) — safe access to projectName
       const projectsQueryRef = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQueryRef);
-      const slugify = (text: string) =>
-        (text || '').toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
       const projectData = projectsSnapshot.docs
         .map((d) => ({ id: d.id, ...d.data() } as Project))
-        .find((p) => slugify((p as any).projectName || '') === projectSlug);
+        .find((p) => projectMatchesSlug((p as any).projectName || '', projectSlug));
 
       if (!projectData) throw new Error('Project not found');
       const pid = projectData.id;
