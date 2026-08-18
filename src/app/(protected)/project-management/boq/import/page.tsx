@@ -133,18 +133,30 @@ const BASE_IMPORT_FIELDS: ImportField[] = [
   { key: 'Category 1', label: 'Category 1', type: 'text' },
   { key: 'Category 2', label: 'Category 2', type: 'text' },
   { key: 'Category 3', label: 'Category 3', type: 'text' },
-  { key: 'ERP SL NO', label: 'ERP SL NO', type: 'text', aliases: ['ERP Serial No'] },
+  {
+    key: 'ERP SL NO',
+    label: 'ERP SL NO',
+    type: 'text',
+    aliases: ['ERP Serial No'],
+    hint: 'Unique within the same Scope 1 and Scope 2',
+  },
   {
     key: 'BOQ SL No',
     label: 'BOQ SL No',
     type: 'text',
     required: true,
     aliases: ['BOQ Serial No', 'SL No', 'SL. No.'],
-    hint: 'Unique within the same Scope 1 and Scope 2',
   },
   { key: 'Description', label: 'Description', type: 'text', required: true },
   { key: 'Unit', label: 'Unit', type: 'text', aliases: ['UOM'] },
-  { key: 'QTY', label: 'QTY', type: 'number', required: true, aliases: ['Quantity'] },
+  {
+    key: 'QTY',
+    label: 'QTY',
+    type: 'number',
+    required: true,
+    aliases: ['Quantity'],
+    hint: 'Column must be mapped; blank or 0 is imported as 0',
+  },
   { key: 'Unit Rate', label: 'Unit Rate', type: 'number', aliases: ['Rate', 'Unit Price'] },
   { key: 'Total Amount', label: 'Total Amount', type: 'number', aliases: ['Amount'] },
   { key: 'Budget Price', label: 'Budget Price', type: 'number' },
@@ -209,6 +221,14 @@ const SAMPLE_ROWS: Array<Record<string, string | number>> = [
   },
 ];
 
+// Decimal precision for the numeric fields that need snapping. Fields absent from this map keep the
+// precision the sheet supplied.
+const AMOUNT_DECIMALS = 2;
+const FIELD_DECIMALS: Record<string, number> = {
+  QTY: 4,
+  'Budget Price': AMOUNT_DECIMALS,
+};
+
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 function isBlank(value: unknown) {
@@ -219,10 +239,10 @@ function isEmptyRow(row: BoqItem) {
   return Object.values(row).every(isBlank);
 }
 
-// Matches boq/add/page.tsx's manual-entry dedup key exactly, so the same Scope1+Scope2+BOQ SL No
-// combination is rejected whether an item is entered manually or brought in via import.
-const compositeKey = (scope1: string, scope2: string, boqSlNo: string) =>
-  `${scope1.trim().toLowerCase()}__${scope2.trim().toLowerCase()}__${boqSlNo.trim().toLowerCase()}`;
+// Identity of a BOQ line is Scope1+Scope2+ERP SL NO — the ERP serial is the number carried across
+// from ERP, so it is what must stay unique within a scope. BOQ SL No repeats freely across scopes.
+const compositeKey = (scope1: string, scope2: string, erpSlNo: string) =>
+  `${scope1.trim().toLowerCase()}__${scope2.trim().toLowerCase()}__${erpSlNo.trim().toLowerCase()}`;
 
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -349,6 +369,14 @@ function toDateOnly(value: unknown): string {
     return buildDateOnly(Number(indianMatch[3]), Number(indianMatch[2]), Number(indianMatch[1]));
   }
   return '';
+}
+
+// Excel arithmetic hands us values such as 200.70000000000002; every numeric field is snapped to a
+// fixed precision so the stored value matches what the sheet means.
+function roundTo(value: number, decimals: number) {
+  if (!Number.isFinite(value)) return 0;
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
 }
 
 function parseNumber(value: unknown): { value: number; valid: boolean; empty: boolean } {
@@ -495,14 +523,18 @@ export default function ImportBoqPage() {
         const itemsSnapshot = await getDocs(collection(db, 'projects', project.id, 'boqItems'));
         setExistingKeys(
           new Set(
-            itemsSnapshot.docs.map((itemDoc) => {
-              const data = itemDoc.data() as Record<string, unknown>;
-              return compositeKey(
-                String(data['Scope 1'] ?? ''),
-                String(data['Scope 2'] ?? ''),
-                String(data['BOQ SL No'] ?? data['SL. No.'] ?? ''),
-              );
-            }),
+            itemsSnapshot.docs
+              .map((itemDoc) => {
+                const data = itemDoc.data() as Record<string, unknown>;
+                return {
+                  scope1: String(data['Scope 1'] ?? ''),
+                  scope2: String(data['Scope 2'] ?? ''),
+                  erpSlNo: String(data['ERP SL NO'] ?? data['ERP Serial No'] ?? '').trim(),
+                };
+              })
+              // Items saved without an ERP serial carry no identity to clash against.
+              .filter((item) => item.erpSlNo)
+              .map((item) => compositeKey(item.scope1, item.scope2, item.erpSlNo)),
           ),
         );
       } catch (error) {
@@ -749,10 +781,9 @@ export default function ImportBoqPage() {
       return;
     }
 
-    // Tracks Scope1+Scope2+BOQ SL No combinations already seen — either previously imported/added
+    // Tracks Scope1+Scope2+ERP SL NO combinations already seen — either previously imported/added
     // for this project, or earlier in this same file — so re-importing an overlapping sheet (or a
-    // sheet with its own repeated rows) is flagged instead of silently creating duplicate items,
-    // matching the same check the manual Add page already enforces.
+    // sheet with its own repeated rows) is flagged instead of silently creating duplicate items.
     const seenKeys = new Set<string>();
 
     const nextRows: ValidatedRow[] = rawRows.map((rawRow, rowIndex) => {
@@ -776,11 +807,12 @@ export default function ImportBoqPage() {
 
         if (field.type === 'number' || field.type === 'percentage') {
           const parsed = parseNumber(rawValue);
-          data[field.key] = parsed.value;
-          // A row with no Unit and no QTY is a BOQ section header (e.g. "14  BUS BAR & CIRCUIT
-          // MATERIALS") grouping the rows below it, not an incomplete line item — let it through.
-          const isSectionHeaderRow = field.key === 'QTY' && !String(data['Unit'] ?? '').trim();
-          if (field.required && parsed.empty && !isSectionHeaderRow) {
+          const decimals = FIELD_DECIMALS[field.key];
+          data[field.key] = decimals === undefined ? parsed.value : roundTo(parsed.value, decimals);
+          // BOQ sheets legitimately carry zero or blank quantities — section headers (e.g. "14  BUS
+          // BAR & CIRCUIT MATERIALS") grouping the rows below them, and provisional items whose qty
+          // is not measured yet. Both import as QTY 0 instead of failing validation.
+          if (field.required && parsed.empty && field.key !== 'QTY') {
             errors.push(`${field.label} is required.`);
           }
           if (!parsed.valid && field.key !== 'Budget Price') {
@@ -830,16 +862,15 @@ export default function ImportBoqPage() {
         quantity &&
         unitRate
       ) {
-        data['Total Amount'] = Math.round(quantity * unitRate * 100) / 100;
+        data['Total Amount'] = roundTo(quantity * unitRate, AMOUNT_DECIMALS);
       }
 
       const parsedBudgetPrice = Number(data['Budget Price'] ?? 0);
       const parsedFiPercentage = Number(data['F&I %'] ?? 0);
       const budgetPrice = Number.isFinite(parsedBudgetPrice) ? parsedBudgetPrice : 0;
       const fiPercentage = Number.isFinite(parsedFiPercentage) ? parsedFiPercentage : 0;
-      const fiPrice = Math.round(((budgetPrice * fiPercentage) / 100) * 100) / 100;
-      data['F&I Price'] = fiPrice;
-      data['Total Budget Price'] = Math.round(budgetPrice * quantity * 100) / 100;
+      data['F&I Price'] = roundTo((budgetPrice * fiPercentage) / 100, AMOUNT_DECIMALS);
+      data['Total Budget Price'] = roundTo(budgetPrice * quantity, AMOUNT_DECIMALS);
 
       const startDate = String(data['Start Date'] ?? '');
       const endDate = String(data['End Date'] ?? '');
@@ -849,13 +880,13 @@ export default function ImportBoqPage() {
         errors.push('End Date cannot be before Start Date.');
       }
 
-      const boqSlNo = String(data['BOQ SL No'] ?? data['SL. No.'] ?? '').trim();
-      if (boqSlNo) {
-        const key = compositeKey(String(data['Scope 1'] ?? ''), String(data['Scope 2'] ?? ''), boqSlNo);
+      const erpSlNo = String(data['ERP SL NO'] ?? data['ERP Serial No'] ?? '').trim();
+      if (erpSlNo) {
+        const key = compositeKey(String(data['Scope 1'] ?? ''), String(data['Scope 2'] ?? ''), erpSlNo);
         if (existingKeys.has(key)) {
-          errors.push('This Scope 1 + Scope 2 + BOQ SL No already exists in this project.');
+          errors.push('This Scope 1 + Scope 2 + ERP SL NO already exists in this project.');
         } else if (seenKeys.has(key)) {
-          errors.push('Duplicate of another row in this file (same Scope 1 + Scope 2 + BOQ SL No).');
+          errors.push('Duplicate of another row in this file (same Scope 1 + Scope 2 + ERP SL NO).');
         }
         seenKeys.add(key);
       }
@@ -1243,6 +1274,7 @@ export default function ImportBoqPage() {
                   <TableRow>
                     <TableHead>Excel row</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>ERP SL NO</TableHead>
                     <TableHead>BOQ SL No</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>QTY</TableHead>
@@ -1265,6 +1297,7 @@ export default function ImportBoqPage() {
                           <XCircle className="h-5 w-5 text-red-600" />
                         )}
                       </TableCell>
+                      <TableCell>{String(row.data['ERP SL NO'] ?? '') || '—'}</TableCell>
                       <TableCell>{String(row.data['BOQ SL No'] ?? '')}</TableCell>
                       <TableCell className="max-w-64 truncate" title={String(row.data.Description ?? '')}>
                         {String(row.data.Description ?? '')}
@@ -1286,7 +1319,7 @@ export default function ImportBoqPage() {
                       </TableCell>
                     </TableRow>
                   )) : (
-                    <TableRow><TableCell colSpan={11} className="h-28 text-center">No rows match this filter.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={12} className="h-28 text-center">No rows match this filter.</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
