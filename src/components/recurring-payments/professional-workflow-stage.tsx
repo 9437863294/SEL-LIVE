@@ -19,7 +19,6 @@ import { AlertTriangle, CheckCircle2, Clock3, Eye, FileText, Loader2, MoreHorizo
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { createExpenseRequest } from '@/ai';
 import type { AccountHead, Department, SubAccountHead } from '@/lib/types';
@@ -71,7 +70,6 @@ const VERIFICATION_CHECKLIST = [
 
 export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageId: string }) {
   const { user } = useAuth();
-  const { can } = useAuthorization();
   const { toast } = useToast();
   const { field: submitBillField } = useFieldControl('submitBill');
   const { field: verifyField } = useFieldControl('verifyBill');
@@ -131,17 +129,12 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
     return () => { stopPayments(); stopSettings(); };
   }, [organizationId]);
 
-  const stage = useMemo(() => {
-    const configured = workflow.find(item => item.id === stageId);
-    if (!configured) return undefined;
-    const actions = configured.actions.filter(item => {
-      if (['Approve', 'Reject', 'Return for Correction'].includes(item)) return can(item === 'Return for Correction' ? 'Return' : item, 'Recurring Payments.Approvals') || can('Approve', 'Recurring Payments.Payments');
-      if (item === 'Verify') return can('Verify', 'Recurring Payments.Payments') || can('Approve', 'Recurring Payments.Payments');
-      if (['Record Payment', 'Payment Failed', 'Close'].includes(item)) return can(item === 'Close' ? 'Close Payment' : 'Record Payment', 'Recurring Payments.Payment Processing') || can('Record Payment', 'Recurring Payments.Payments');
-      return can('Edit', 'Recurring Payments.Payments');
-    });
-    return { ...configured, actions };
-  }, [can, stageId, workflow]);
+  // The step's configured actions are offered as-is. Every surface that can run one is already
+  // restricted to the payment's own assignees — the table dropdown only renders for rows in
+  // `pending`, the dialog needs `canAct`, and the transaction below re-checks the assignee list —
+  // so being assigned the action is the authority to perform it. Filtering these by role
+  // permission on top of that only blocked the person the workflow had explicitly named.
+  const stage = useMemo(() => workflow.find(item => item.id === stageId), [stageId, workflow]);
 
   const pending = useMemo(() => payments
     .filter(payment => payment.currentStepId === stageId && (payment.assignees || []).includes(user?.id || '') && !['Completed', 'Rejected'].includes(payment.workflowStatus || ''))

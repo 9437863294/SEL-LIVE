@@ -27,6 +27,7 @@ import {
 import { db } from '@/lib/firebase';
 import { DEFAULT_RECURRING_WORKFLOW, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useAssignedWorkflowSteps } from './use-assigned-workflow';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -47,6 +48,8 @@ type NavItem = {
   color: string;
   bg: string;
   group: string;
+  /** Set on workflow-step entries so an assignee of that step can reach it without the role. */
+  stepId?: string;
 };
 
 const coreItems: NavItem[] = [
@@ -86,6 +89,7 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
   const pathname = usePathname();
   const safePathname = pathname || '';
   const { can, isLoading: authLoading } = useAuthorization();
+  const { assignedStepIds, hasAssignedWork, loading: assignmentsLoading } = useAssignedWorkflowSteps();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<RecurringWorkflowStep[]>(DEFAULT_RECURRING_WORKFLOW);
 
@@ -114,16 +118,24 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
       color: palette.color,
       bg: palette.bg,
       group: 'workflow',
+      stepId: step.id,
     };
   });
 
+  // Whoever the workflow named on a step gets that step's queue — and the approval centre when
+  // the step is an approval — without needing the matching role permission on top.
+  const assignedApproval = workflowSteps.some(
+    (step) => assignedStepIds.has(step.id) && step.name.toLowerCase().includes('approval'),
+  );
   const navItems = [...coreItems, ...workflowItems, ...managementItems].filter(
     (item) =>
       can('View', `Recurring Payments.${item.resource}`) ||
       (['Approvals', 'Payment Processing'].includes(item.resource) &&
-        can('View', 'Recurring Payments.Payments')),
+        can('View', 'Recurring Payments.Payments')) ||
+      (!!item.stepId && assignedStepIds.has(item.stepId)) ||
+      (item.href === '/recurring-payments/approvals' && assignedApproval),
   );
-  const canViewModule = can('View Module', 'Recurring Payments');
+  const canViewModule = can('View Module', 'Recurring Payments') || hasAssignedWork;
   const currentPageAllowed = safePathname.startsWith('/recurring-payments/settings/workflow')
     ? can('View Workflow', 'Recurring Payments.Settings')
     : navItems.some((item) => matchesPath(safePathname, item.href));
@@ -169,15 +181,20 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
     });
   };
 
+  const loader = (
+    <div className="flex min-h-[60vh] items-center justify-center">
+      <Loader2 className="h-7 w-7 animate-spin text-emerald-600" />
+    </div>
+  );
+
   if (authLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin text-emerald-600" />
-      </div>
-    );
+    return loader;
   }
 
   if (!canViewModule) {
+    // Assignment-only access resolves a moment after the role check does — wait for it rather
+    // than flashing "Access denied" at a user whose queue is about to grant them the page.
+    if (assignmentsLoading) return loader;
     return (
       <div className="w-full p-6">
         <Card>
@@ -282,7 +299,7 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
         </aside>
 
         <main className="recurring-payments-content min-w-0">
-          {currentPageAllowed ? children : pageAccessDenied}
+          {currentPageAllowed ? children : assignmentsLoading ? loader : pageAccessDenied}
         </main>
       </div>
     </div>
