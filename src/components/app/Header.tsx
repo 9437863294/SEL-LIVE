@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle, MessageCircle } from 'lucide-react';
@@ -27,6 +27,14 @@ import { collection, query, where, onSnapshot, getDocs, collectionGroup, orderBy
 import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { isConversationArchived } from '@/lib/chat';
+import {
+  fetchRoleTargetedNotifications,
+  markNotificationRead,
+  markNotificationsRead,
+  normalizeNotification,
+  type NormalizedNotification,
+} from '@/lib/notifications';
+import { moduleBadgeClass } from '@/lib/activity-modules';
 
 // The header renders on every authenticated page, but these dialogs are only
 // reachable behind a click. Loading them eagerly put ~60KB of dialog code (and
@@ -86,7 +94,9 @@ export default function Header() {
   const { can } = useAuthorization();
   
   const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<NormalizedNotification[]>([]);
+  /** Notifications addressed to the user's role rather than to them. See the loader below. */
+  const [roleAlerts, setRoleAlerts] = useState<NormalizedNotification[]>([]);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -102,6 +112,8 @@ export default function Header() {
   useEffect(() => {
     if (!user || isImpersonating) {
         setPendingTasks([]);
+        setAlerts([]);
+        setRoleAlerts([]);
         return;
     }
 
@@ -179,28 +191,59 @@ export default function Header() {
     });
     unsubscribes.push(unsubscribeJmc);
 
-    // Listen for unread notifications for this user — budget alerts as well as recurring
-    // payment workflow/reminder notifications (an owner's payment entering their workflow
-    // queue, or a due-date reminder). Without including these types here, an owner had no way
-    // to see a generated recurring payment via the bell at all, even once it was correctly
-    // assigned to them.
+    // Every unread notification addressed to this user, whatever module raised it.
+    //
+    // This deliberately does NOT filter on `type`. It used to carry
+    // where('type', 'in', ['budget_alert', 'recurring_payment_workflow',
+    // 'recurring_payment_reminder']), which meant a module could only reach the bell
+    // by having its type added here — so tat_escalation, step_entry and
+    // workflow_complete were all written to Firestore and displayed to nobody. Any
+    // new producer now shows up without touching this file.
     const alertQuery = query(
       collection(db, 'userNotifications'),
       where('userId', '==', user.id),
-      where('type', 'in', ['budget_alert', 'recurring_payment_workflow', 'recurring_payment_reminder']),
       where('read', '==', false),
       orderBy('createdAt', 'desc'),
-      limit(20)
+      limit(30)
     );
     const unsubscribeAlerts = onSnapshot(alertQuery, snap => {
-      setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, () => {});
+      setAlerts(snap.docs.map(d => normalizeNotification(d.id, d.data())));
+    }, (error) => {
+      // This listener previously swallowed every error with an empty callback, so a
+      // missing composite index looked identical to having no notifications. The
+      // index it needs (userId, read, createdAt desc) is declared in
+      // firestore.indexes.json; say so rather than failing silently.
+      if ((error as { code?: string }).code === 'failed-precondition') {
+        console.error(
+          'Notifications need a Firestore composite index on userNotifications '
+          + '(userId, read, createdAt desc) that has not been deployed yet. '
+          + 'Run: firebase deploy --only firestore:indexes\nOriginal error:',
+          error,
+        );
+        return;
+      }
+      console.error('Error fetching notifications:', error);
+    });
     unsubscribes.push(unsubscribeAlerts);
 
+    // Notifications addressed to a role rather than to a user. The bank-guarantee
+    // and letter-of-credit services raise theirs from inside a Firestore transaction,
+    // where roles cannot be resolved to users, so they write one document carrying
+    // `targetRoles` and no `userId` — which the listener above cannot see.
+    //
+    // Held in its own state rather than merged into `alerts`, because the listener
+    // above replaces that array wholesale on every snapshot and would drop them.
+    let cancelled = false;
+    void fetchRoleTargetedNotifications(user.role).then(roleTargeted => {
+      if (!cancelled) setRoleAlerts(roleTargeted);
+    });
+    unsubscribes.push(() => { cancelled = true; });
+
     return () => unsubscribes.forEach(unsub => unsub());
-    // Keyed on the id, not the object: unrelated profile edits (theme, etc.)
-    // shouldn't tear down and rebuild every listener.
-  }, [user?.id, isImpersonating]);
+    // Keyed on the id and role, not the whole object: unrelated profile edits
+    // (theme, etc.) shouldn't tear down and rebuild every listener, but the legacy
+    // role-notification read above is scoped by role, so a role change has to re-run it.
+  }, [user?.id, user?.role, isImpersonating]);
 
   useEffect(() => {
     if (!user?.id || !canViewChat) {
@@ -253,8 +296,27 @@ export default function Header() {
     }
   };
   
+  // Live notifications plus the historical role-targeted ones, newest first.
+  const visibleAlerts = useMemo(() => {
+    const seen = new Set(alerts.map(item => item.id));
+    const merged = [...alerts, ...roleAlerts.filter(item => !seen.has(item.id))];
+    return merged.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+  }, [alerts, roleAlerts]);
+
   async function markAlertRead(alertId: string) {
-    try { await updateDoc(doc(db, 'userNotifications', alertId), { read: true }); } catch {}
+    // Drop it locally first. The live listener removes read notifications on its own,
+    // but the legacy role-targeted ones aren't streamed, so nothing else would.
+    setRoleAlerts(prev => prev.filter(item => item.id !== alertId));
+    // Writes both `read: true` and `status: 'READ'`, so the legacy documents that
+    // track read state as a string also stop counting as unread.
+    await markNotificationRead(alertId);
+  }
+
+  async function markAllAlertsRead() {
+    const ids = visibleAlerts.map(item => item.id);
+    if (!ids.length) return;
+    setRoleAlerts([]);
+    await markNotificationsRead(ids);
   }
 
   const refreshTasks = () => {
@@ -370,7 +432,7 @@ export default function Header() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
                     <Bell className="h-5 w-5" />
-                    {(pendingTasks.length + alerts.length) > 0 && (
+                    {(pendingTasks.length + visibleAlerts.length) > 0 && (
                       <span className="absolute top-1 right-1 flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
@@ -399,10 +461,26 @@ export default function Header() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
-                  <DropdownMenuLabel>Notifications ({alerts.length})</DropdownMenuLabel>
+                  <div className="flex items-center justify-between pr-1">
+                    <DropdownMenuLabel>Notifications ({visibleAlerts.length})</DropdownMenuLabel>
+                    {visibleAlerts.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs font-normal text-muted-foreground"
+                        onClick={(event) => {
+                          // Keep the menu open so clearing the list is visible.
+                          event.preventDefault();
+                          void markAllAlertsRead();
+                        }}
+                      >
+                        Mark all read
+                      </Button>
+                    )}
+                  </div>
                   <DropdownMenuSeparator />
-                  {alerts.length > 0 ? (
-                    alerts.map(alert => (
+                  {visibleAlerts.length > 0 ? (
+                    visibleAlerts.map(alert => (
                       <DropdownMenuItem
                         key={alert.id}
                         onSelect={() => {
@@ -411,14 +489,24 @@ export default function Header() {
                         }}
                       >
                         <div className="flex items-start gap-2 w-full">
-                          {alert.type === 'budget_alert' ? (
-                            <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${(alert.pctUsed ?? 0) >= 100 ? 'text-red-500' : 'text-amber-500'}`} />
+                          {alert.severity === 'CRITICAL' ? (
+                            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-red-500" />
+                          ) : alert.severity === 'WARNING' ? (
+                            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-500" />
                           ) : (
                             <Bell className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
                           )}
-                          <div className="flex flex-col min-w-0">
+                          <div className="flex flex-col min-w-0 gap-0.5">
                             <span className="font-semibold truncate">{alert.title}</span>
                             <span className="text-xs text-muted-foreground line-clamp-2">{alert.body}</span>
+                            {alert.module && alert.module !== 'Unknown' && (
+                              <span className={cn(
+                                'mt-0.5 w-fit rounded border px-1 text-[10px] leading-4',
+                                moduleBadgeClass(alert.module),
+                              )}>
+                                {alert.module}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </DropdownMenuItem>

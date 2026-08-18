@@ -43,6 +43,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -326,8 +327,13 @@ export default function WorkflowConfigurationPage() {
         await setDoc(workflowRef, { steps: steps });
         await logUserActivity({
             userId: user.id,
+            userName: user.name,
+            userEmail: user.email,
+            module: ACTIVITY_MODULES.SITE_FUND_REQUISITION,
             action: 'Update Site Fund Workflow',
-            details: { stepCount: steps.length }
+            details: { stepCount: steps.length, workflow: 'site-fund-requisition-2' },
+            recordId: 'site-fund-requisition-2-workflow',
+            recordRef: 'Site Fund Requisition 2 Workflow',
         });
         toast({ title: 'Success', description: 'Workflow configuration saved.' });
     } catch (error) {

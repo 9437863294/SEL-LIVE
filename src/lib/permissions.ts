@@ -16,7 +16,7 @@ export const permissionModules = {
     Documents: ["View", "Upload", "Archive", "Download"],
     Approvals: ["View", "Approve", "Reject", "Return"],
     Reports: ["View", "Export"],
-    "Import & Reconciliation": ["View", "Import", "Export Exceptions"],
+    "Import & Reconciliation": ["View", "Import", "Export Exceptions", "Export"],
     Settings: ["View", "Edit"],
   },
   "Chat System": {

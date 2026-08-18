@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 const modules = [
     { id: 'site-fund-requisition', name: 'Site Fund Requisition' },
@@ -98,8 +99,15 @@ export default function SerialNoConfigurationPage() {
             await setDoc(doc(db, 'serialNumberConfigs', selectedModule), config);
             await logUserActivity({
                 userId: user.id,
+                userName: user.name,
+                userEmail: user.email,
+                // `module` is which module the log row files under, not which module's
+                // serial config was edited — that stays in details as configuredModule.
+                module: ACTIVITY_MODULES.SETTINGS,
                 action: 'Update Serial No. Config',
-                details: { module: selectedModule, newConfig: config }
+                details: { configuredModule: selectedModule, newConfig: config },
+                recordId: selectedModule,
+                recordRef: selectedModule,
             });
             toast({ title: 'Success', description: 'Configuration saved successfully.' });
         } catch (error) {

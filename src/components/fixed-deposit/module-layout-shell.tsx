@@ -12,6 +12,7 @@ import {
   FilePlus2,
   FileDown,
   FileText,
+  FileUp,
   Landmark,
   ListTree,
   Menu,
@@ -42,7 +43,8 @@ const sections: Section[] = [
   { href: '/fixed-deposit/releases', label: 'Assignment Releases', resource: 'Releases', icon: Unlink, color: 'text-orange-700', bg: 'bg-orange-50' },
   { href: '/fixed-deposit/approvals', label: 'Pending Approvals', resource: 'Approvals', icon: ClipboardCheck, color: 'text-violet-700', bg: 'bg-violet-50' },
   { href: '/fixed-deposit/reports', label: 'Reports', resource: 'Reports', icon: FileText, color: 'text-blue-700', bg: 'bg-blue-50' },
-  { href: '/fixed-deposit/import', label: 'Import & Reconcile', resource: 'Import & Reconciliation', icon: FileDown, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+  { href: '/fixed-deposit/import', label: 'Import & Reconcile', resource: 'Import & Reconciliation', icon: FileUp, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+  { href: '/fixed-deposit/export', label: 'Export Centre', resource: 'FD Register', icon: FileDown, color: 'text-fuchsia-700', bg: 'bg-fuchsia-50' },
   { href: '/fixed-deposit/settings', label: 'Settings', resource: 'Settings', icon: Settings2, color: 'text-slate-700', bg: 'bg-slate-100' },
 ];
 

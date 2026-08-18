@@ -13,6 +13,10 @@ import {
 import { compareCreatedAtDesc, computeRenewalMeta, formatVehicleTimestamp, getVehicleComplianceRequirements, toVehicleCode, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { syncVehicleComplianceStatus } from '@/components/vehicle-management/compliance-sync';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { actorFromUser, withCreateAudit, withUpdateAudit } from '@/lib/audit-fields';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import { diffFields } from '@/lib/activity-logger';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -201,7 +205,9 @@ const buildLatestComplianceMap = (
 
 export default function VehicleMasterPage() {
   const { toast } = useToast();
-  const { log } = useActivityLogger('Vehicle Management');
+  const { log } = useActivityLogger(ACTIVITY_MODULES.VEHICLE_MANAGEMENT);
+  const { user } = useAuth();
+  const actor = useMemo(() => actorFromUser(user), [user]);
   const { can } = useAuthorization();
   const { field } = useFieldControl('vehicleMaster');
   const { options: departmentOptions, map: departmentMap } = useDepartmentOptions();
@@ -515,8 +521,7 @@ export default function VehicleMasterPage() {
       requireFitness: row.requireFitness || 'Yes',
       requireRoadTax: row.requireRoadTax || 'Yes',
       requirePermit: row.requirePermit || 'Yes',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      ...withCreateAudit(actor),
     });
     knownVehicleNumbersRef.current.add(vehicleNumber);
   };
@@ -632,19 +637,22 @@ export default function VehicleMasterPage() {
       basePayload.requirePermit = requirements.permit ? 'Yes' : 'No';
 
       let savedId = '';
+      // Captured before the write so the activity log can report what actually
+      // changed rather than just that a save happened.
+      const changedFields = editingRow ? diffFields(editingRow as Record<string, any>, basePayload) : {};
+
       if (editingRow) {
         savedId = String(editingRow.id);
         basePayload.vehicleId = editingRow.vehicleId || '';
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, savedId), {
           ...basePayload,
-          updatedAt: serverTimestamp(),
+          ...withUpdateAudit(actor),
         });
       } else {
         basePayload.vehicleId = toVehicleCode(Date.now() % 1000000);
         const created = await addDoc(collection(db, VEHICLE_COLLECTIONS.vehicleMaster), {
           ...basePayload,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+          ...withCreateAudit(actor),
         });
         savedId = created.id;
       }
@@ -664,12 +672,14 @@ export default function VehicleMasterPage() {
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.driver, previousDriverId), {
           assignedVehicleId: '',
           assignedVehicleNumber: '',
+          ...withUpdateAudit(actor),
         });
       }
       if (nextDriverId) {
         await updateDoc(doc(db, VEHICLE_COLLECTIONS.driver, nextDriverId), {
           assignedVehicleId: savedId,
           assignedVehicleNumber: String(basePayload.vehicleNumber || ''),
+          ...withUpdateAudit(actor),
         });
       }
       if (previousDriverId !== nextDriverId) {
@@ -683,14 +693,22 @@ export default function VehicleMasterPage() {
           action: nextDriverId ? (previousDriverId ? 'Reassigned' : 'Assigned') : 'Unassigned',
           source: 'Vehicle Master',
           eventDate: new Date().toISOString(),
-          createdAt: serverTimestamp(),
+          ...withCreateAudit(actor),
         });
       }
 
       if (editingRow) {
-        await log('Edit Vehicle', { vehicleNumber: form.vehicleNumber, vehicleId: editingRow?.id });
+        await log(
+          'Edit Vehicle',
+          { vehicleNumber: form.vehicleNumber, changes: changedFields },
+          { recordId: savedId, recordRef: String(form.vehicleNumber || '') },
+        );
       } else {
-        await log('Add Vehicle', { vehicleNumber: form.vehicleNumber, vehicleType: form.vehicleType });
+        await log(
+          'Add Vehicle',
+          { vehicleNumber: form.vehicleNumber, vehicleType: form.vehicleType },
+          { recordId: savedId, recordRef: String(form.vehicleNumber || '') },
+        );
       }
       toast({
         title: editingRow ? 'Updated' : 'Created',
@@ -744,7 +762,17 @@ export default function VehicleMasterPage() {
         return;
       }
       await deleteDoc(doc(db, VEHICLE_COLLECTIONS.vehicleMaster, String(deleteRow.id)));
-      await log('Delete Vehicle', { vehicleNumber: deleteRow?.vehicleNumber, vehicleId: deleteRow?.id });
+      // The record is gone, so the log row is now the only trace of it — capture the
+      // identifying fields rather than just the ID, which no longer resolves.
+      await log(
+        'Delete Vehicle',
+        {
+          vehicleNumber: deleteRow?.vehicleNumber,
+          vehicleType: deleteRow?.vehicleType,
+          deletedRecord: { ...deleteRow },
+        },
+        { recordId: String(deleteRow.id), recordRef: String(deleteRow?.vehicleNumber || '') },
+      );
       toast({ title: 'Deleted', description: 'Vehicle deleted successfully.' });
       setDeleteRow(null);
       await loadRows();

@@ -756,6 +756,25 @@ export const assignmentOutstanding = (
     ),
   );
 
+/**
+ * Initials-based organization code used inside an FD reference number
+ * (`FD/{code}/{FY}/0001`). Shared by the create form and the importer so a migrated
+ * deposit and a hand-keyed one are numbered identically.
+ */
+export const fdOrgCode = (name: string) => {
+  const words = (name || "").trim().split(/\s+/).filter(Boolean);
+  const initials = words
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+  return (
+    (initials.length >= 2 ? initials : name || "")
+      .replace(/[^A-Za-z0-9]/g, "")
+      .slice(0, 8)
+      .toUpperCase() || "ORG"
+  );
+};
+
 export const financialYearForDate = (
   value?: Timestamp | Date | string | null,
 ) => {

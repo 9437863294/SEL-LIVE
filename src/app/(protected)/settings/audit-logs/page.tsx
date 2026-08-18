@@ -1,17 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import ExcelJS from 'exceljs';
 import {
   collection, getDocs, limit, orderBy,
-  query, startAfter, QueryDocumentSnapshot, where,
+  query, startAfter, QueryDocumentSnapshot, Timestamp, where,
+  type QueryConstraint,
 } from 'firebase/firestore';
 import {
   Activity, ArrowLeft, Download, Filter,
   Loader2, RefreshCw, Search, X,
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
+import { ACTIVITY_MODULE_NAMES, canonicalModuleName, moduleBadgeClass } from '@/lib/activity-modules';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,6 +34,10 @@ interface AuditLog {
   module: string;
   action: string;
   details: Record<string, any>;
+  recordId: string | null;
+  recordRef: string | null;
+  /** Set on server-written rows: 'server' | 'api' | 'cron' | 'webhook'. */
+  source?: string | null;
   sessionId: string | null;
   ipAddress: string | null;
   userAgent: string | null;
@@ -58,24 +64,9 @@ const formatDetails = (details: Record<string, any>): string => {
     .join(' · ');
 };
 
-const MODULE_COLORS: Record<string, string> = {
-  'Vehicle Management':    'bg-cyan-50 text-cyan-700 border-cyan-200',
-  'Daily Requisition':     'bg-violet-50 text-violet-700 border-violet-200',
-  'Billing Recon':         'bg-blue-50 text-blue-700 border-blue-200',
-  'Expenses':              'bg-amber-50 text-amber-700 border-amber-200',
-  'Bank Balance':          'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'Loan':                  'bg-teal-50 text-teal-700 border-teal-200',
-  'Insurance':             'bg-indigo-50 text-indigo-700 border-indigo-200',
-  'Settings':              'bg-slate-100 text-slate-700 border-slate-200',
-  'Daily Requisition Settings': 'bg-purple-50 text-purple-700 border-purple-200',
-  'Site Fund Requisition': 'bg-orange-50 text-orange-700 border-orange-200',
-  'Subcontractors':        'bg-rose-50 text-rose-700 border-rose-200',
-  'Employee':              'bg-green-50 text-green-700 border-green-200',
-  'Driver Management':     'bg-sky-50 text-sky-700 border-sky-200',
-};
-
-const moduleBadgeClass = (module: string) =>
-  MODULE_COLORS[module] ?? 'bg-slate-50 text-slate-600 border-slate-200';
+// Module colours and the canonical module list now live in @/lib/activity-modules,
+// so the badge palette and the filter options stay in step with the names producers
+// actually write.
 
 // ─── page ─────────────────────────────────────────────────────────────────────
 
@@ -97,45 +88,70 @@ export default function AuditLogsPage() {
   const [dateTo, setDateTo] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
-  // ── unique modules from loaded logs ──
-  const availableModules = useMemo(() => {
-    const s = new Set(logs.map((l) => l.module).filter(Boolean));
-    return ['All', ...Array.from(s).sort()];
-  }, [logs]);
+  // ── module options ──
+  // Sourced from the registry rather than from the loaded rows. Deriving them from
+  // `logs` meant a module could only be filtered for once one of its actions
+  // happened to be on the current page, so the rarely-used modules a reviewer most
+  // wants to audit were the ones missing from the dropdown.
+  const availableModules = useMemo(
+    () => ['All', ...[...ACTIVITY_MODULE_NAMES].sort()],
+    [],
+  );
 
   // ── filtered rows ──
+  // Module and date are applied by the Firestore query (see loadLogs), so they hold
+  // across the whole collection. Only free-text search is client-side: Firestore has
+  // no substring operator, so it can only match what has been paged in — the UI says
+  // so next to the box.
   const filtered = useMemo(() => {
-    let rows = logs;
-    if (moduleFilter !== 'All') rows = rows.filter((l) => l.module === moduleFilter);
-    if (dateFrom) rows = rows.filter((l) => l.timestamp && new Date(l.timestamp.seconds * 1000) >= new Date(dateFrom));
-    if (dateTo) rows = rows.filter((l) => l.timestamp && new Date(l.timestamp.seconds * 1000) <= new Date(dateTo + 'T23:59:59'));
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      rows = rows.filter((l) =>
-        (l.userName ?? '').toLowerCase().includes(q) ||
-        (l.userEmail ?? '').toLowerCase().includes(q) ||
-        (l.module ?? '').toLowerCase().includes(q) ||
-        (l.action ?? '').toLowerCase().includes(q) ||
-        (l.ipAddress ?? '').includes(q) ||
-        formatDetails(l.details).toLowerCase().includes(q)
-      );
-    }
-    return rows;
-  }, [logs, moduleFilter, dateFrom, dateTo, search]);
+    if (!search.trim()) return logs;
+    const q = search.toLowerCase();
+    return logs.filter((l) =>
+      (l.userName ?? '').toLowerCase().includes(q) ||
+      (l.userEmail ?? '').toLowerCase().includes(q) ||
+      (l.module ?? '').toLowerCase().includes(q) ||
+      (l.action ?? '').toLowerCase().includes(q) ||
+      (l.recordRef ?? '').toLowerCase().includes(q) ||
+      (l.ipAddress ?? '').includes(q) ||
+      formatDetails(l.details).toLowerCase().includes(q)
+    );
+  }, [logs, search]);
 
   // ── load ──
-  const loadLogs = async (isRefresh = true) => {
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadLogs = useCallback(async (isRefresh = true, cursor: QueryDocumentSnapshot | null = null) => {
     if (isRefresh) setIsLoading(true);
     else setIsLoadingMore(true);
+    setLoadError(null);
     try {
+      // Module and date bounds are pushed into the query so they filter the whole
+      // collection. They used to be applied in the browser over the 50 most recent
+      // rows, which meant asking for "Expenses in March" searched only the newest
+      // page and reported "no logs found" whenever March had scrolled off it.
+      const constraints: QueryConstraint[] = [];
+      if (moduleFilter !== 'All') constraints.push(where('module', '==', moduleFilter));
+      if (dateFrom) {
+        constraints.push(where('timestamp', '>=', Timestamp.fromDate(new Date(`${dateFrom}T00:00:00`))));
+      }
+      if (dateTo) {
+        constraints.push(where('timestamp', '<=', Timestamp.fromDate(new Date(`${dateTo}T23:59:59.999`))));
+      }
+
       const q = query(
         collection(db, 'userLogs'),
+        ...constraints,
         orderBy('timestamp', 'desc'),
-        ...(isRefresh ? [] : lastDoc ? [startAfter(lastDoc)] : []),
+        ...(cursor ? [startAfter(cursor)] : []),
         limit(PAGE_SIZE)
       );
       const snap = await getDocs(q);
-      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as AuditLog));
+      const rows = snap.docs.map((d) => {
+        const data = d.data();
+        // Old rows carry module names written before the registry existed; resolve
+        // them so they group and colour with the current name.
+        return { id: d.id, ...data, module: canonicalModuleName(data.module) } as AuditLog;
+      });
       if (isRefresh) {
         setLogs(rows);
       } else {
@@ -145,16 +161,27 @@ export default function AuditLogsPage() {
       setHasMore(snap.docs.length === PAGE_SIZE);
     } catch (err) {
       console.error('Failed to load audit logs', err);
+      setLoadError(
+        (err as { code?: string }).code === 'failed-precondition'
+          ? 'Filtering by module or date needs a Firestore index that has not been deployed yet. Run: firebase deploy --only firestore:indexes'
+          : 'Could not load audit logs. Check your connection and try again.'
+      );
     } finally {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  };
+  }, [moduleFilter, dateFrom, dateTo]);
 
+  // Re-query whenever a server-side filter changes, resetting pagination — keeping
+  // the old cursor would page into the previous filter's result set.
   useEffect(() => {
-    if (canView) loadLogs();
-    else setIsLoading(false);
-  }, [canView]);
+    if (canView) {
+      setLastDoc(null);
+      void loadLogs(true, null);
+    } else {
+      setIsLoading(false);
+    }
+  }, [canView, loadLogs]);
 
   // ── export ──
   const exportExcel = async () => {
@@ -169,7 +196,9 @@ export default function AuditLogsPage() {
         { header: 'User Email', key: 'userEmail', width: 30 },
         { header: 'Module', key: 'module', width: 24 },
         { header: 'Action', key: 'action', width: 28 },
+        { header: 'Record', key: 'recordRef', width: 22 },
         { header: 'Details', key: 'details', width: 60 },
+        { header: 'Source', key: 'source', width: 10 },
         { header: 'IP Address', key: 'ipAddress', width: 16 },
         { header: 'Session ID', key: 'sessionId', width: 36 },
       ];
@@ -180,7 +209,10 @@ export default function AuditLogsPage() {
           userEmail: l.userEmail ?? '',
           module: l.module ?? '',
           action: l.action ?? '',
+          recordRef: l.recordRef ?? l.recordId ?? '',
           details: formatDetails(l.details),
+          // Blank for browser-written rows; 'cron'/'api' marks an automated action.
+          source: l.source ?? 'user',
           ipAddress: l.ipAddress ?? '',
           sessionId: l.sessionId ?? '',
         })
@@ -256,7 +288,7 @@ export default function AuditLogsPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => loadLogs(true)} disabled={isLoading} className="gap-1.5 bg-white">
+            <Button variant="outline" size="sm" onClick={() => loadLogs(true, null)} disabled={isLoading} className="gap-1.5 bg-white">
               <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
@@ -276,7 +308,7 @@ export default function AuditLogsPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search user, module, action, IP…"
+              placeholder="Search loaded rows — user, action, record, IP…"
               className="pl-8 bg-white/85 h-9 text-sm"
             />
             {search && (
@@ -322,9 +354,22 @@ export default function AuditLogsPage() {
                 <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-8 text-sm bg-white" />
               </div>
             </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Module and date filter the full history. The search box narrows the rows
+              already loaded — use the filters, then Load More, to reach further back.
+            </p>
           </Card>
         )}
       </div>
+
+      {loadError && (
+        <Card className="border-red-200 bg-red-50/60">
+          <CardContent className="flex items-start gap-2 p-3">
+            <X className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <p className="text-xs text-red-700">{loadError}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Table */}
       <Card className="overflow-hidden">
@@ -416,7 +461,7 @@ export default function AuditLogsPage() {
           {/* Load more */}
           {!isLoading && hasMore && (
             <div className="flex items-center justify-center border-t p-3">
-              <Button variant="outline" size="sm" onClick={() => loadLogs(false)} disabled={isLoadingMore} className="gap-1.5">
+              <Button variant="outline" size="sm" onClick={() => loadLogs(false, lastDoc)} disabled={isLoadingMore} className="gap-1.5">
                 {isLoadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {isLoadingMore ? 'Loading…' : `Load ${PAGE_SIZE} More`}
               </Button>

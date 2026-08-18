@@ -25,6 +25,7 @@ import {
   blankFixedDeposit,
   calculateEligibleValue,
   calculateMaturity,
+  fdOrgCode,
   financialYearForDate,
   formatFdCurrency,
   type FixedDeposit,
@@ -42,11 +43,6 @@ import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 
 const toTimestamp = (value: string) => Timestamp.fromDate(new Date(`${value}T12:00:00`));
-const orgCode = (name: string) => {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  const initials = words.map((word) => word[0]).join('').toUpperCase();
-  return (initials.length >= 2 ? initials : name).replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase() || 'ORG';
-};
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return <Card className="border-white/80 bg-white/90 shadow-sm"><CardHeader className="pb-4"><CardTitle className="text-base">{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{children}</CardContent></Card>;
@@ -106,7 +102,7 @@ export default function NewFixedDepositForm() {
   const holderSuggestions = useMemo(() => Array.from(new Set(existingDeposits.filter((fd) => fd.organizationId === organizationId).map((fd) => fd.holderName).filter(Boolean))).sort(), [existingDeposits, organizationId]);
   const calculation = useMemo(() => calculateMaturity({ principal: Number(draft.principalAmount), annualRate: Number(draft.interestRate), tenureDays: Number(draft.tenureDays) || undefined, tenureMonths: Number(draft.tenureMonths) || undefined, method: draft.interestCalculationMethod, frequency: draft.interestPaymentFrequency, manualMaturityAmount: Number(draft.maturityAmount), tdsPercentage: settings.tdsPercentage }), [draft.interestCalculationMethod, draft.interestPaymentFrequency, draft.interestRate, draft.maturityAmount, draft.principalAmount, draft.tenureDays, draft.tenureMonths, settings.tdsPercentage]);
   const eligibleValue = calculateEligibleValue(Number(draft.principalAmount), Number(draft.eligibleMarginPercentage));
-  const referencePreview = `${settings.referencePrefix}/${orgCode(organizationName)}/${financialYearForDate(draft.valueDate)}/####`;
+  const referencePreview = `${settings.referencePrefix}/${fdOrgCode(organizationName)}/${financialYearForDate(draft.valueDate)}/####`;
 
   const update = <K extends keyof FixedDepositDraft>(key: K, value: FixedDepositDraft[K]) => {
     setDraft((current) => {
@@ -155,7 +151,7 @@ export default function NewFixedDepositForm() {
         const [counter, unique] = await Promise.all([transaction.get(counterRef), transaction.get(uniqueRef)]);
         if (unique.exists()) throw new Error('This FD number already exists for the selected organization and bank.');
         const nextSequence = Number(counter.data()?.nextSequence || 1);
-        referenceNumber = `${settings.referencePrefix}/${orgCode(organizationName)}/${financialYear}/${String(nextSequence).padStart(4, '0')}`;
+        referenceNumber = `${settings.referencePrefix}/${fdOrgCode(organizationName)}/${financialYear}/${String(nextSequence).padStart(4, '0')}`;
         transaction.set(counterRef, { organizationId, financialYear, nextSequence: nextSequence + 1, updatedAt: Timestamp.now() }, { merge: true });
         transaction.set(uniqueRef, { organizationId, bankId: selectedBank.id, fdNumber: draft.fdNumber.trim(), fdId: newFdRef.id, createdAt: Timestamp.now() });
         const now = Timestamp.now();
