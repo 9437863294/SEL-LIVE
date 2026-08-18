@@ -573,7 +573,9 @@ export const permissionModules = {
     // Clearing routes through a configurable approval workflow, since clearing is what lets a
     // vendor begin production (see src/lib/project-management-mc-workflow.ts).
     "Manufacturing Clearance": ["View", "Clear", "Reject", "View Settings", "Edit Settings"],
-    Inspections: ["View", "Request", "Record Result"],
+    // A passing result routes through a configurable approval workflow, since passing is what
+    // opens the MDCC gate (see src/lib/project-management-inspection-workflow.ts).
+    Inspections: ["View", "Request", "Record Result", "View Settings", "Edit Settings"],
     MDCC: ["View", "Request", "Issue"],
     "Dispatch Instructions": ["View", "Issue", "Acknowledge", "Dispatch"],
     GRN: ["View", "Record"],

@@ -16,7 +16,8 @@ const STAGES = [
   { key: "purchase-orders", href: "/project-management/purchase-orders/register", label: "Purchase Orders", icon: ShoppingCart },
   // The register, for the same reason as purchase-orders above.
   { key: "manufacturing-clearance", href: "/project-management/manufacturing-clearance/register", label: "Manufacturing Clearance", icon: Factory },
-  { key: "inspections", href: "/project-management/inspections", label: "Inspections", icon: ClipboardCheck },
+  // The register, for the same reason as the two above.
+  { key: "inspections", href: "/project-management/inspections/register", label: "Inspections", icon: ClipboardCheck },
   { key: "mdcc", href: "/project-management/mdcc", label: "MDCC", icon: BadgeCheck },
   { key: "dispatch-instructions", href: "/project-management/dispatch-instructions", label: "Dispatch Instructions", icon: Truck },
   { key: "grn", href: "/project-management/grn", label: "GRN", icon: PackageCheck },

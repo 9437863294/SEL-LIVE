@@ -1395,3 +1395,151 @@ test('MC context carries the project handle and stays inert without a mapping', 
   assert.equal(noMapping.mcHref('register'), '#');
   assert.equal(noMapping.parentHref, '#');
 });
+
+/* ---------------- Inspection result approval workflow ---------------- */
+
+test('only passing inspection results route, and only when stages are configured', async () => {
+  const { inspectionResultRequiresApproval, inspectionResultIsRouted } = await import(
+    '../src/lib/project-management-inspection-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'QA Review' }];
+
+  // Passing is what opens the MDCC gate, so those are the results that need review.
+  assert.equal(inspectionResultIsRouted('Passed'), true);
+  assert.equal(inspectionResultIsRouted('Passed with Punch Items'), true);
+  // A failure holds the gate shut and must stay immediate — it also keeps the re-inspection loop
+  // (Failed -> Request again) working.
+  assert.equal(inspectionResultIsRouted('Failed'), false);
+
+  assert.equal(inspectionResultRequiresApproval('Passed', steps), true);
+  assert.equal(inspectionResultRequiresApproval('Failed', steps), false);
+  // A project that never configured stages records directly.
+  assert.equal(inspectionResultRequiresApproval('Passed', []), false);
+});
+
+test('a result advances one stage per approval and only records at the last one', async () => {
+  const { initialInspectionApprovalState, nextInspectionApprovalState } = await import(
+    '../src/lib/project-management-inspection-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'QA Review' }, { id: '2', name: 'Result Approval' }];
+
+  const start = initialInspectionApprovalState(steps);
+  assert.equal(start.status, 'Pending');
+  assert.equal(start.currentStepIndex, 0);
+  assert.equal(start.recordsResult, false);
+
+  const afterFirst = nextInspectionApprovalState('Approve', 0, steps);
+  assert.equal(afterFirst.status, 'In Progress');
+  assert.equal(afterFirst.currentStepIndex, 1);
+  assert.equal(afterFirst.recordsResult, false);
+
+  const afterLast = nextInspectionApprovalState('Approve', 1, steps);
+  assert.equal(afterLast.status, 'Approved');
+  assert.equal(afterLast.currentStepIndex, -1);
+  // Recording the result is what opens MDCC, and happens exactly once.
+  assert.equal(afterLast.recordsResult, true);
+
+  assert.equal(initialInspectionApprovalState([]).recordsResult, true);
+});
+
+test('rejecting a result request refuses it without recording a failure', async () => {
+  const { nextInspectionApprovalState } = await import(
+    '../src/lib/project-management-inspection-workflow.ts'
+  );
+  const steps = [{ id: '1', name: 'QA Review' }, { id: '2', name: 'Result Approval' }];
+
+  const rejected = nextInspectionApprovalState('Reject', 1, steps);
+  assert.equal(rejected.status, 'Rejected');
+  // Crucially not a recorded result: a failure is a substantive finding only an inspector records.
+  assert.equal(rejected.recordsResult, false);
+
+  const correction = nextInspectionApprovalState('Needs Correction', 1, steps);
+  assert.equal(correction.status, 'Needs Correction');
+  assert.equal(correction.currentStepIndex, 0);
+  assert.equal(correction.recordsResult, false);
+});
+
+test('result concerns call out rejected quantity and punch items that would block MDCC', async () => {
+  const { inspectionResultConcerns } = await import(
+    '../src/lib/project-management-inspection-workflow.ts'
+  );
+
+  assert.deepEqual(
+    inspectionResultConcerns({ result: 'Passed', qtyRejected: 0, punchItems: [] }),
+    [],
+  );
+
+  const rejectedOnly = inspectionResultConcerns({
+    result: 'Passed',
+    qtyRejected: 3,
+    punchItems: [],
+  });
+  assert.equal(rejectedOnly.length, 1);
+  assert.match(rejectedOnly[0], /3 unit\(s\) rejected/);
+
+  // Critical/Major open punch is what hasOpenBlockingPunch treats as blocking MDCC; Minor is not.
+  const blocking = inspectionResultConcerns({
+    result: 'Passed with Punch Items',
+    qtyRejected: 0,
+    punchItems: [
+      { punchId: 'p1', description: 'x', severity: 'Critical', closed: false },
+      { punchId: 'p2', description: 'y', severity: 'Minor', closed: false },
+      { punchId: 'p3', description: 'z', severity: 'Major', closed: true },
+    ],
+  });
+  assert.match(blocking.join(' | '), /1 open punch item that will block MDCC/);
+  assert.match(blocking.join(' | '), /1 open minor punch item/);
+
+  // A closed blocking punch is not a concern.
+  assert.deepEqual(
+    inspectionResultConcerns({
+      result: 'Passed with Punch Items',
+      qtyRejected: 0,
+      punchItems: [{ punchId: 'p1', description: 'x', severity: 'Critical', closed: true }],
+    }),
+    [],
+  );
+});
+
+test('an open result request is found per BOQ item so recording is not offered twice', async () => {
+  const { openInspectionRequestForBoqItem, inspectionApprovalsForStep, canActOnInspectionApproval } =
+    await import('../src/lib/project-management-inspection-workflow.ts');
+  const approvals = [
+    { id: 'r1', boqItemId: 'b1', status: 'Pending', currentStepIndex: 0 },
+    { id: 'r2', boqItemId: 'b2', status: 'In Progress', currentStepIndex: 1 },
+    { id: 'r3', boqItemId: 'b3', status: 'Rejected', currentStepIndex: -1 },
+  ];
+
+  assert.equal(openInspectionRequestForBoqItem(approvals, 'b1').id, 'r1');
+  // A refused request must not block re-recording once the inspector reworks it.
+  assert.equal(openInspectionRequestForBoqItem(approvals, 'b3'), null);
+
+  const steps = [{ id: '1', name: 'QA Review' }, { id: '2', name: 'Result Approval' }];
+  assert.deepEqual(inspectionApprovalsForStep(approvals, '1', steps).map((a) => a.id), ['r1']);
+  assert.deepEqual(inspectionApprovalsForStep(approvals, '99', steps), []);
+
+  assert.equal(canActOnInspectionApproval({ status: 'Pending', assignees: ['u1'] }, 'u1'), true);
+  assert.equal(canActOnInspectionApproval({ status: 'Pending', assignees: ['u1'] }, 'u2'), false);
+  assert.equal(canActOnInspectionApproval({ status: 'Approved', assignees: ['u1'] }, 'u1'), false);
+});
+
+test('Inspection context carries the project handle and stays inert without a mapping', async () => {
+  const { projectManagementInspectionContext } = await import(
+    '../src/lib/project-management-inspection-workflow.ts'
+  );
+  const context = projectManagementInspectionContext('map-1', 'global-2');
+  assert.equal(context.inspectionHref(), '/project-management/inspections?project=map-1');
+  assert.equal(
+    context.inspectionHref('register'),
+    '/project-management/inspections/register?project=map-1',
+  );
+  assert.equal(
+    context.inspectionHref('stage/2'),
+    '/project-management/inspections/stage/2?project=map-1',
+  );
+  assert.equal(context.parentHref, '/project-management/supply?project=map-1');
+
+  const noMapping = projectManagementInspectionContext('', '');
+  assert.equal(noMapping.inspectionHref('register'), '#');
+  assert.equal(noMapping.parentHref, '#');
+});

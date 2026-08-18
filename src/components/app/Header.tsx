@@ -163,6 +163,18 @@ export default function Header() {
             return [...otherTasks, ...jmcTasks].sort((a,b) => b.createdAt.toMillis() - a.createdAt.toMillis());
         });
     }, (error) => {
+        // A collection-group query on `assignees array-contains` needs a COLLECTION_GROUP-scoped
+        // index. It's declared in firestore.indexes.json, but until that is deployed this listener
+        // fails and retries — which shows up as repeated Firestore 'Listen' transport errors and an
+        // empty JMC section in the bell, with nothing explaining why. Say so explicitly.
+        if ((error as { code?: string }).code === 'failed-precondition') {
+            console.error(
+                'JMC tasks need a Firestore collection-group index that has not been deployed yet. ' +
+                'Run: firebase deploy --only firestore:indexes\nOriginal error:',
+                error,
+            );
+            return;
+        }
         console.error("Error fetching JMC tasks:", error);
     });
     unsubscribes.push(unsubscribeJmc);

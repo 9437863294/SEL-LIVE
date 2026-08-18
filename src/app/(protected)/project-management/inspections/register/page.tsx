@@ -12,7 +12,6 @@ import {
   Loader2,
   Paperclip,
   Plus,
-  ShieldAlert,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -24,6 +23,28 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
 import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
+import type { WorkflowStep } from "@/lib/types";
+import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
+import { requestInspectionResult } from "@/lib/project-management-inspection-entries";
+import {
+  DEFAULT_INSPECTION_RESULT_STEPS,
+  INSPECTION_RESULT_APPROVAL_COLLECTION,
+  INSPECTION_RESULT_WORKFLOW_DOC_ID,
+  inspectionApprovalStatusStyles,
+  inspectionResultRequiresApproval,
+  openInspectionRequestForBoqItem,
+  type InspectionResultApproval,
+} from "@/lib/project-management-inspection-workflow";
+import { useProjectManagementInspectionContext } from "@/components/inspection/use-inspection-host-context";
+import { InspectionNav } from "@/components/inspection/inspection-nav";
+import {
+  INSPECTION_GRADIENT,
+  InspectionAccessDenied,
+  InspectionLoadingState,
+  InspectionPageHeader,
+  InspectionPageShell,
+  InspectionProjectNotFound,
+} from "@/components/inspection/inspection-page-shell";
 import { uploadProjectManagementDocument } from "@/lib/project-management-documents";
 import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
 import { MDL_COLLECTION, isMdlApproved, type MdlOverallStatus } from "@/lib/mdl";
@@ -106,7 +127,7 @@ const emptyPunchRow = (): PunchItem => ({
   closed: false,
 });
 
-export default function InspectionsPage() {
+export default function InspectionRegisterPage() {
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
@@ -114,6 +135,8 @@ export default function InspectionsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canView = can("View", INSPECTION_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
+  const { context, isResolving, notFound } = useProjectManagementInspectionContext(mappingId);
+
   const canRequest = can("Request", INSPECTION_PERMISSION_RESOURCE);
   const canRecord = can("Record Result", INSPECTION_PERMISSION_RESOURCE);
 
@@ -125,6 +148,9 @@ export default function InspectionsPage() {
   const [mdlStatusByBoqItemId, setMdlStatusByBoqItemId] = useState<Map<string, MdlOverallStatus>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  /** Result approval stages, if this project has configured any. */
+  const [resultSteps, setResultSteps] = useState<WorkflowStep[]>([]);
+  const [resultApprovals, setResultApprovals] = useState<InspectionResultApproval[]>([]);
 
   const [requestItem, setRequestItem] = useState<PoPlacedItem | null>(null);
   const [requestedDate, setRequestedDate] = useState(today());
@@ -156,13 +182,27 @@ export default function InspectionsPage() {
       const mappingData = { id: mappingSnapshot.id, ...mappingSnapshot.data() } as ProjectMapping;
       setMapping(mappingData);
 
-      const [poSnapshot, boqSnapshot, mcSnapshot, inspectionSnapshot, mdlSnapshot] = await Promise.all([
+      const [poSnapshot, boqSnapshot, mcSnapshot, inspectionSnapshot, mdlSnapshot, workflowSnapshot, approvalSnapshot] = await Promise.all([
         getDocs(collection(db, "projects", mappingData.globalProjectId, PO_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, "boqItems")),
         getDocs(collection(db, "projects", mappingData.globalProjectId, MC_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, INSPECTION_COLLECTION)),
         getDocs(collection(db, "projects", mappingData.globalProjectId, MDL_COLLECTION)),
+        getDoc(doc(db, "workflows", INSPECTION_RESULT_WORKFLOW_DOC_ID)),
+        getDocs(collection(db, "projects", mappingData.globalProjectId, INSPECTION_RESULT_APPROVAL_COLLECTION)),
       ]);
+
+      const rawSteps = workflowSnapshot.exists()
+        ? ((workflowSnapshot.data()?.steps as WorkflowStep[] | undefined) ?? [])
+        : DEFAULT_INSPECTION_RESULT_STEPS;
+      setResultSteps(
+        (Array.isArray(rawSteps) ? rawSteps : [])
+          .filter((step) => step && step.name)
+          .map((step, index) => ({ ...step, id: String(step.id || index + 1) })),
+      );
+      setResultApprovals(
+        approvalSnapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as InspectionResultApproval),
+      );
 
       const purchaseOrders = poSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as PurchaseOrder);
       const placed = buildPoPlacedItems(purchaseOrders);
@@ -373,6 +413,70 @@ export default function InspectionsPage() {
       const punchItems =
         resultStatus === "Passed with Punch Items" ? punchRows.map((row) => ({ ...row, description: row.description.trim() })) : [];
 
+      // A passing result opens the MDCC gate, so it routes through approval when one is configured.
+      // "Failed" does not: a failure holds the gate shut and lets nothing proceed, and keeping it
+      // immediate preserves the Failed → re-request loop.
+      if (inspectionResultRequiresApproval(resultStatus, resultSteps)) {
+        const result = await requestInspectionResult({
+          globalProjectId: mapping.globalProjectId,
+          mappingId,
+          item: {
+            boqItemId: resultItem.boqItemId,
+            boqSlNo: resultItem.boqSlNo,
+            description: resultItem.description,
+            poId: resultItem.poId,
+            poNumber: resultItem.poNumber,
+          },
+          result: resultStatus,
+          inspectionDate,
+          inspectorName: inspectorName.trim(),
+          remarks: remarks.trim(),
+          qtyOffered: offered,
+          qtyAccepted: accepted,
+          qtyRejected: rejected,
+          punchItems,
+          serials: parsedSerials,
+          ...(reportDocumentId ? { reportDocumentId, reportFileName, reportFileUrl } : {}),
+          steps: resultSteps,
+          requestedBy: { id: user.id, name: user.name },
+          resolveAssignees: (step) =>
+            getAssigneeForStep(step, {
+              projectId: mapping.globalProjectId,
+              departmentId: "",
+              amount: 0,
+            }),
+          resolveDeadline: async (step) => {
+            try {
+              return await calculateDeadline(new Date(), step.tat);
+            } catch {
+              return null;
+            }
+          },
+        });
+
+        void logUserActivity({
+          userId: user.id,
+          userName: user.name,
+          userEmail: user.email,
+          module: "Project Management",
+          action: result.recorded
+            ? `Record Inspection Result: ${resultStatus}`
+            : `Submit Inspection Result for Approval: ${resultStatus}`,
+          details: { project: mapping.projectName, boqSlNo: resultItem.boqSlNo, poNumber: resultItem.poNumber },
+        });
+        toast({
+          title: result.recorded
+            ? `Inspection recorded as ${resultStatus.toLowerCase()}`
+            : "Sent for result approval",
+          description: result.recorded
+            ? undefined
+            : `Routed to ${resultSteps[0]?.name ?? "review"}. The result is recorded once approved.`,
+        });
+        setResultItem(null);
+        await loadData();
+        return;
+      }
+
       await setDoc(
         doc(db, "projects", mapping.globalProjectId, INSPECTION_COLLECTION, resultItem.boqItemId),
         {
@@ -413,75 +517,45 @@ export default function InspectionsPage() {
     }
   };
 
-  if (isAuthLoading || (isLoading && canView)) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-80 w-full" />
-      </main>
-    );
+  if (isAuthLoading || isResolving || (isLoading && canView)) {
+    return <InspectionLoadingState />;
   }
 
   if (!canView) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view this module.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </main>
-    );
+    return <InspectionAccessDenied description="You do not have permission to view inspections." />;
   }
 
-  if (!mappingId || !mapping) {
+  if (notFound || !mappingId || !mapping) {
     return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Select a project first</CardTitle>
-            <CardDescription>Return to Project Management and choose a project before opening Inspections.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild><Link href="/project-management">Select Project</Link></Button>
-          </CardContent>
-        </Card>
-      </main>
+      <InspectionProjectNotFound
+        description="Return to Project Management and choose a project before opening inspections."
+        href="/project-management"
+      />
     );
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
-              <ArrowLeft className="h-5 w-5" />
+    <InspectionPageShell>
+      <InspectionPageHeader
+        title="Inspection Register"
+        subtitle={`${rows.length} item${rows.length === 1 ? "" : "s"} on issued purchase orders for ${mapping.projectName}`}
+        icon={ClipboardCheck}
+        backHref={context.inspectionHref()}
+        backLabel="Back to Inspections"
+        gradient={INSPECTION_GRADIENT}
+        actions={
+          <Button variant="outline" asChild>
+            <Link
+              href={`/project-management/documents?project=${encodeURIComponent(mappingId)}&category=${encodeURIComponent("Inspection Report")}`}
+            >
+              <FolderOpen className="mr-2 h-4 w-4" />
+              View Inspection Reports
             </Link>
           </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm">
-            <ClipboardCheck className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Inspections</h1>
-            <p className="text-sm text-muted-foreground">
-              {rows.length} item{rows.length === 1 ? "" : "s"} on issued purchase orders for {mapping.projectName}
-            </p>
-          </div>
-        </div>
-        <Button variant="outline" asChild>
-          <Link
-            href={`/project-management/documents?project=${encodeURIComponent(mappingId)}&category=${encodeURIComponent("Inspection Report")}`}
-          >
-            <FolderOpen className="mr-2 h-4 w-4" />
-            View Inspection Reports
-          </Link>
-        </Button>
-      </div>
+        }
+      />
+
+      <InspectionNav context={context} active="register" />
 
       <SupplyGateNav mappingId={mappingId} active="inspections" />
 
@@ -513,6 +587,8 @@ export default function InspectionsPage() {
                       canRequest && canRequestInspection(mcStatus) && (status === "Not Requested" || status === "Failed");
                     const canRecordThis = canRecord && status === "Requested";
                     const openPunchCount = (inspection?.punchItems ?? []).filter((p) => !p.closed).length;
+                    // Named to avoid colliding with the openRequest() dialog opener above.
+                    const openResultRequest = openInspectionRequestForBoqItem(resultApprovals, item.boqItemId);
                     return (
                       <TableRow key={item.boqItemId}>
                         <TableCell className="whitespace-nowrap">{item.boqSlNo || "—"}</TableCell>
@@ -562,12 +638,21 @@ export default function InspectionsPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            {canRequestThis && (
+                            {openResultRequest ? (
+                              <span
+                                className={`rounded px-1.5 py-0.5 text-xs font-medium ${inspectionApprovalStatusStyles[openResultRequest.status]}`}
+                                title="A result approval request is already open for this item."
+                              >
+                                {openResultRequest.status}
+                                {openResultRequest.currentStepName ? ` · ${openResultRequest.currentStepName}` : ""}
+                              </span>
+                            ) : null}
+                            {!openResultRequest && canRequestThis && (
                               <Button variant="outline" size="sm" onClick={() => openRequest(item)}>
                                 {status === "Failed" ? "Re-request" : "Request"}
                               </Button>
                             )}
-                            {canRecordThis && (
+                            {!openResultRequest && canRecordThis && (
                               <>
                                 <Button variant="ghost" size="icon" title="Passed" onClick={() => openResult(item, "Passed")}>
                                   <CheckCircle2 className="h-4 w-4 text-emerald-600" />
@@ -781,16 +866,23 @@ export default function InspectionsPage() {
                 onChange={(e) => setRemarks(e.target.value)}
               />
             </div>
+            {inspectionResultRequiresApproval(resultStatus, resultSteps) ? (
+              <p className="text-xs text-muted-foreground">
+                A passing result opens the MDCC gate, so this will be sent to{" "}
+                {resultSteps[0]?.name} for approval. The inspection stays Requested until the final
+                stage approves.
+              </p>
+            ) : null}
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={handleSaveResult} disabled={isSaving}>
               {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Save
+              {inspectionResultRequiresApproval(resultStatus, resultSteps) ? "Submit for approval" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </InspectionPageShell>
   );
 }

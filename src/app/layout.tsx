@@ -22,6 +22,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html
       lang="en"
       className={`font-body antialiased ${inter.variable}`}
+      // globals.css sets `scroll-behavior: smooth` on html. Next needs this attribute to know the
+      // smooth scroll is intentional, otherwise it warns and route transitions animate the scroll
+      // reset instead of jumping.
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
       <body>
