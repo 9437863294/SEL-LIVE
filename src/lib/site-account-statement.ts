@@ -48,7 +48,11 @@ export interface SASPayment {
   remarks: string;
   attachments?: SASAttachment[];
   createdAt: any;
+  createdBy?: string;
+  createdByName?: string;
   updatedAt: any;
+  updatedBy?: string;
+  updatedByName?: string;
 }
 
 export interface SASAttachment {

@@ -1279,11 +1279,12 @@ export default function SiteExpensesPage() {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">GST Bill</p>
-                  <p className="mt-0.5">
+                  {/* div, not p — Badge renders a div and cannot nest inside a paragraph. */}
+                  <div className="mt-0.5">
                     {viewExpense.isGstBill
                       ? <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-xs text-emerald-700">Yes</Badge>
                       : <span className="text-muted-foreground">No</span>}
-                  </p>
+                  </div>
                 </div>
                 {viewExpense.narration && (
                   <div className="col-span-2">

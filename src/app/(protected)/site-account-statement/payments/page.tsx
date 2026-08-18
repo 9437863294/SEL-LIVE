@@ -95,6 +95,11 @@ function AttachmentIcon({ type }: { type: string }) {
   return <File className="h-4 w-4 text-slate-400 shrink-0" />;
 }
 
+function timestampMillis(ts: any): number | null {
+  const d: Date | null = ts?.toDate?.() ?? (ts?.seconds ? new Date(ts.seconds * 1000) : null);
+  return d && !isNaN(d.getTime()) ? d.getTime() : null;
+}
+
 function formatTimestamp(ts: any): string {
   if (!ts) return '—';
   const d: Date | null = ts?.toDate?.() ?? (ts?.seconds ? new Date(ts.seconds * 1000) : null);
@@ -323,7 +328,11 @@ export default function PaymentsPage() {
       remarks:        String(row.remarks        || '').trim(),
       attachments:    [],
       createdAt:      serverTimestamp(),
+      createdBy:      user?.id   || '',
+      createdByName:  user?.name || '',
       updatedAt:      serverTimestamp(),
+      updatedBy:      user?.id   || '',
+      updatedByName:  user?.name || '',
     });
   }
 
@@ -417,6 +426,8 @@ export default function PaymentsPage() {
         receivedBy:     form.receivedBy.trim(),
         remarks:        form.remarks.trim(),
         updatedAt:      serverTimestamp(),
+        updatedBy:      user?.id   || '',
+        updatedByName:  user?.name || '',
       };
       if (editingRow) {
         await Promise.allSettled(
@@ -431,7 +442,11 @@ export default function PaymentsPage() {
         toast({ title: 'Updated', description: 'Payment updated.' });
       } else {
         const docRef = await addDoc(collection(db, SAS_COLLECTIONS.payments), {
-          ...baseData, attachments: [], createdAt: serverTimestamp(),
+          ...baseData,
+          attachments:   [],
+          createdAt:     serverTimestamp(),
+          createdBy:     user?.id   || '',
+          createdByName: user?.name || '',
         });
         const attachments = await uploadAttachments(docRef.id, pendingFiles);
         if (attachments.length > 0) {
@@ -509,10 +524,20 @@ export default function PaymentsPage() {
         { header: 'Reference No.', key: 'referenceNo',    width: 20 },
         { header: 'Received By',   key: 'receivedBy',     width: 20 },
         { header: 'Remarks',       key: 'remarks',        width: 30 },
+        { header: 'Recorded By',   key: 'createdByName',  width: 20 },
         { header: 'Recorded At',   key: 'createdAtStr',   width: 22 },
+        { header: 'Updated By',    key: 'updatedByName',  width: 20 },
+        { header: 'Updated At',    key: 'updatedAtStr',   width: 22 },
       ];
       ws.getRow(headerRow).font = { bold: true };
-      filtered.forEach(p => ws.addRow({ ...p, createdAtStr: formatTimestamp(p.createdAt) }));
+      filtered.forEach(p => ws.addRow({
+        ...p,
+        createdByName: p.createdByName || '',
+        createdAtStr:  formatTimestamp(p.createdAt),
+        updatedByName: p.updatedByName || '',
+        updatedAtStr:  timestampMillis(p.updatedAt) !== timestampMillis(p.createdAt)
+                         ? formatTimestamp(p.updatedAt) : '',
+      }));
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
       const a = document.createElement('a');
@@ -810,8 +835,18 @@ export default function PaymentsPage() {
                     <p className="mt-0.5">{viewPayment.remarks}</p>
                   </div>
                 )}
-                <div className="col-span-2 border-t pt-3">
-                  <p className="text-xs text-muted-foreground">Recorded: {formatTimestamp(viewPayment.createdAt)}</p>
+                <div className="col-span-2 border-t pt-3 space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Recorded by <span className="font-medium text-slate-700">{viewPayment.createdByName || '—'}</span>
+                    {' '}on {formatTimestamp(viewPayment.createdAt)}
+                  </p>
+                  {/* Only a genuine later edit — a fresh record writes both stamps together. */}
+                  {timestampMillis(viewPayment.updatedAt) !== timestampMillis(viewPayment.createdAt) && (
+                    <p className="text-xs text-muted-foreground">
+                      Updated by <span className="font-medium text-slate-700">{viewPayment.updatedByName || '—'}</span>
+                      {' '}on {formatTimestamp(viewPayment.updatedAt)}
+                    </p>
+                  )}
                 </div>
               </div>
 
