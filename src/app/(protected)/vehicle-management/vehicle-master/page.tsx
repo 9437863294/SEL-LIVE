@@ -232,6 +232,7 @@ export default function VehicleMasterPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [form, setForm] = useState<VehicleFormState>(buildInitialState());
   const [detailsVehicle, setDetailsVehicle] = useState<VehicleRow | null>(null);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   const knownVehicleNumbersRef = useRef(new Set<string>());
 
   const loadRows = async () => {
@@ -258,10 +259,36 @@ export default function VehicleMasterPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A vehicle number must appear only once. Legacy data can still hold repeats, so the
+  // earliest-created record per number is treated as the original registration and the
+  // later ones are hidden as duplicates (rows are sorted newest-first, so the last
+  // occurrence while iterating is the oldest one).
+  const duplicateIds = useMemo(() => {
+    const originalIdByNumber = new Map<string, string>();
+    rows.forEach((row) => {
+      const key = normalizeVehicleNumber(row.vehicleNumber || row.registrationNo);
+      if (key) originalIdByNumber.set(key, String(row.id));
+    });
+    const originals = new Set(originalIdByNumber.values());
+    return new Set(
+      rows
+        .filter((row) => {
+          const key = normalizeVehicleNumber(row.vehicleNumber || row.registrationNo);
+          return key ? !originals.has(String(row.id)) : false;
+        })
+        .map((row) => String(row.id))
+    );
+  }, [rows]);
+
+  const visibleRows = useMemo(
+    () => (showDuplicates ? rows : rows.filter((row) => !duplicateIds.has(String(row.id)))),
+    [duplicateIds, rows, showDuplicates]
+  );
+
   const filteredRows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return rows;
-    return rows.filter((row) =>
+    if (!term) return visibleRows;
+    return visibleRows.filter((row) =>
       [
         row.vehicleId,
         row.vehicleNumber,
@@ -277,8 +304,20 @@ export default function VehicleMasterPage() {
         .map((value) => String(value || '').toLowerCase())
         .some((value) => value.includes(term))
     );
-  }, [query, rows]);
+  }, [query, visibleRows]);
   const vehiclePagination = useVehicleTablePagination(filteredRows);
+
+  // Live duplicate feedback while typing a vehicle number in the add/edit dialog.
+  const duplicateVehicleNumber = useMemo(() => {
+    const normalized = normalizeVehicleNumber(form.vehicleNumber);
+    if (!normalized) return '';
+    const clash = rows.some(
+      (row) =>
+        String(row.id) !== String(editingRow?.id || '') &&
+        normalizeVehicleNumber(row.vehicleNumber || row.registrationNo) === normalized
+    );
+    return clash ? normalized : '';
+  }, [editingRow, form.vehicleNumber, rows]);
 
   const exportExcel = async () => {
     if (!canExport || isExporting) return;
@@ -401,7 +440,18 @@ export default function VehicleMasterPage() {
   };
 
   const VEHICLE_IMPORT_FIELDS: ImportField[] = [
-    { key: 'vehicleNumber', label: 'Vehicle Number', required: true, hint: 'e.g. MH12AB1234', validate: (v) => v.trim() ? null : 'Cannot be empty' },
+    {
+      key: 'vehicleNumber',
+      label: 'Vehicle Number',
+      required: true,
+      hint: 'e.g. MH12AB1234 — must not already exist',
+      validate: (v) => {
+        const normalized = normalizeVehicleNumber(v);
+        if (!normalized) return 'Cannot be empty';
+        if (knownVehicleNumbersRef.current.has(normalized)) return `${normalized} is already in Vehicle Master`;
+        return null;
+      },
+    },
     { key: 'vehicleType', label: 'Vehicle Type', required: true },
     { key: 'vehicleCategory', label: 'Vehicle Category', required: true, hint: 'Commercial / Passenger / Light / Heavy …' },
     { key: 'brand', label: 'Brand', required: true },
@@ -726,7 +776,7 @@ export default function VehicleMasterPage() {
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
             <Badge variant="outline" className="col-span-2 w-fit bg-white/70 sm:col-span-1">
-              {rows.length} records
+              {rows.length - duplicateIds.size} records
             </Badge>
             <Button variant="outline" onClick={() => void loadRows()} className="h-11 bg-white/80 hover:bg-white sm:h-10">
               Refresh
@@ -758,6 +808,22 @@ export default function VehicleMasterPage() {
             onChange={(event) => setQuery(event.target.value)}
             className="h-11 w-full border-slate-200 bg-white focus-visible:ring-emerald-400/40 sm:h-10 sm:max-w-xs"
           />
+          {duplicateIds.size > 0 && (
+            <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                {duplicateIds.size} record{duplicateIds.size === 1 ? '' : 's'} repeat a vehicle number that is already
+                registered. Only the original record for each number is listed.
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowDuplicates((prev) => !prev)}
+                className="h-8 shrink-0 border-amber-300 bg-white px-3 text-amber-800 hover:bg-amber-100"
+              >
+                {showDuplicates ? 'Hide duplicates' : 'Review duplicates'}
+              </Button>
+            </div>
+          )}
           {/* Mobile card view */}
           <div className="space-y-2.5 sm:hidden">
             {isLoading ? (
@@ -771,7 +837,14 @@ export default function VehicleMasterPage() {
                 <div key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="cursor-pointer rounded-xl border border-white/70 bg-white/85 p-4 shadow-sm active:scale-[0.99] transition-transform">
                   <div className="mb-3 flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-sm font-semibold text-slate-800">{row.vehicleNumber || '-'}</p>
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
+                        {row.vehicleNumber || '-'}
+                        {duplicateIds.has(String(row.id)) && (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            Duplicate
+                          </span>
+                        )}
+                      </p>
                       <p className="text-xs text-muted-foreground">{row.vehicleType || '-'} · {row.fuelType || '-'}</p>
                     </div>
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
@@ -840,9 +913,25 @@ export default function VehicleMasterPage() {
                   ))
                 ) : (
                   vehiclePagination.paginatedRows.map((row) => (
-                    <TableRow key={String(row.id)} onClick={() => setDetailsVehicle(row)} className="h-14 cursor-pointer hover:bg-emerald-50/70">
+                    <TableRow
+                      key={String(row.id)}
+                      onClick={() => setDetailsVehicle(row)}
+                      className={cn(
+                        'h-14 cursor-pointer hover:bg-emerald-50/70',
+                        duplicateIds.has(String(row.id)) && 'bg-amber-50/70 hover:bg-amber-50'
+                      )}
+                    >
                       <TableCell className="whitespace-nowrap font-medium">{row.vehicleId || '-'}</TableCell>
-                      <TableCell className="whitespace-nowrap font-semibold text-slate-800">{row.vehicleNumber || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap font-semibold text-slate-800">
+                        <span className="flex items-center gap-1.5">
+                          {row.vehicleNumber || '-'}
+                          {duplicateIds.has(String(row.id)) && (
+                            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                              Duplicate
+                            </span>
+                          )}
+                        </span>
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">{row.vehicleType || '-'}</TableCell>
                       <TableCell className="max-w-[180px] truncate whitespace-nowrap" title={String(row.assignedDepartmentName || '')}>{row.assignedDepartmentName || '-'}</TableCell>
                       <TableCell className="max-w-[240px] truncate whitespace-nowrap" title={String(row.assignedProjectName || '')}>{row.assignedProjectName || '-'}</TableCell>
@@ -907,7 +996,22 @@ export default function VehicleMasterPage() {
               <FormSection className="lg:col-span-2" icon={<CarFront className="h-4 w-4" />} title="Vehicle identity" description="Registration and manufacturing details" tone="emerald">
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
                 <Field label={`${field('vehicleNumber').label} *`}>
-                  <Input value={form.vehicleNumber} onChange={(e) => setField('vehicleNumber', normalizeVehicleNumber(e.target.value))} autoCapitalize="characters" placeholder="e.g. MH12AB1234" className="h-11 uppercase tracking-wide sm:h-9" />
+                  <Input
+                    value={form.vehicleNumber}
+                    onChange={(e) => setField('vehicleNumber', normalizeVehicleNumber(e.target.value))}
+                    autoCapitalize="characters"
+                    placeholder="e.g. MH12AB1234"
+                    aria-invalid={!!duplicateVehicleNumber}
+                    className={cn(
+                      'h-11 uppercase tracking-wide sm:h-9',
+                      duplicateVehicleNumber && 'border-rose-300 focus-visible:ring-rose-400/40'
+                    )}
+                  />
+                  {duplicateVehicleNumber && (
+                    <p className="text-[11px] font-medium text-rose-600">
+                      {duplicateVehicleNumber} is already registered. Open that vehicle to update it instead.
+                    </p>
+                  )}
                 </Field>
                 {field('vehicleType').visible && <SelectField label={labelWithMark(field('vehicleType'))} value={form.vehicleType} onValueChange={(v) => setField('vehicleType', v)} options={vehicleTypeOptions} />}
                 {field('vehicleCategory').visible && <SelectField label={labelWithMark(field('vehicleCategory'))} value={form.vehicleCategory} onValueChange={(v) => setField('vehicleCategory', v)} options={vehicleCategoryOptions} />}
@@ -1007,7 +1111,7 @@ export default function VehicleMasterPage() {
             <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-11 sm:h-10">
               Cancel
             </Button>
-            <Button onClick={() => void submit()} disabled={isSaving} className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700 sm:h-10">
+            <Button onClick={() => void submit()} disabled={isSaving || !!duplicateVehicleNumber} className="h-11 bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:from-emerald-600 hover:to-teal-700 sm:h-10">
               {isSaving ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
               {editingRow ? 'Update Vehicle' : 'Register Vehicle'}
             </Button>
