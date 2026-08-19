@@ -28,9 +28,10 @@ import type { Requisition, Project, Department, JmcEntry } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { isConversationArchived } from '@/lib/chat';
 import {
+  countUnreadNotifications,
   fetchRoleTargetedNotifications,
+  markAllNotificationsReadForUser,
   markNotificationRead,
-  markNotificationsRead,
   normalizeNotification,
   type NormalizedNotification,
 } from '@/lib/notifications';
@@ -83,6 +84,13 @@ function ImpersonationBanner() {
 
 type PendingTask = (Requisition & { taskType: 'requisition' }) | (JmcEntry & { taskType: 'jmc' });
 
+/**
+ * How many unread notifications the bell streams. The list scrolls, so this is a
+ * cost ceiling on the live listener rather than a display limit; the label shows
+ * the true unread total whenever there is more than this.
+ */
+const BELL_ALERT_LIMIT = 50;
+
 
 export default function Header() {
   const pathname = usePathname();
@@ -97,6 +105,16 @@ export default function Header() {
   const [alerts, setAlerts] = useState<NormalizedNotification[]>([]);
   /** Notifications addressed to the user's role rather than to them. See the loader below. */
   const [roleAlerts, setRoleAlerts] = useState<NormalizedNotification[]>([]);
+  /**
+   * Alerts hidden the moment they are read, before Firestore confirms it. The
+   * listener drops a notification only once the write lands, so without this a
+   * slow round-trip left the item sitting in the list looking like the click was
+   * ignored. Restored if the write turns out to have failed.
+   */
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(new Set());
+  /** Unread count past what the listener streams; null until known or unavailable. */
+  const [unreadTotal, setUnreadTotal] = useState<number | null>(null);
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -114,6 +132,8 @@ export default function Header() {
         setPendingTasks([]);
         setAlerts([]);
         setRoleAlerts([]);
+        setDismissedAlertIds(new Set());
+        setUnreadTotal(null);
         return;
     }
 
@@ -204,10 +224,18 @@ export default function Header() {
       where('userId', '==', user.id),
       where('read', '==', false),
       orderBy('createdAt', 'desc'),
-      limit(30)
+      limit(BELL_ALERT_LIMIT)
     );
+    const userId = user.id;
     const unsubscribeAlerts = onSnapshot(alertQuery, snap => {
       setAlerts(snap.docs.map(d => normalizeNotification(d.id, d.data())));
+      // Only when the listener is saturated is there anything the list cannot show,
+      // and only then is the aggregation query worth paying for.
+      if (snap.size < BELL_ALERT_LIMIT) {
+        setUnreadTotal(snap.size);
+      } else {
+        void countUnreadNotifications(userId).then(setUnreadTotal);
+      }
     }, (error) => {
       // This listener previously swallowed every error with an empty callback, so a
       // missing composite index looked identical to having no notifications. The
@@ -300,23 +328,76 @@ export default function Header() {
   const visibleAlerts = useMemo(() => {
     const seen = new Set(alerts.map(item => item.id));
     const merged = [...alerts, ...roleAlerts.filter(item => !seen.has(item.id))];
-    return merged.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
-  }, [alerts, roleAlerts]);
+    return merged
+      .filter(item => !dismissedAlertIds.has(item.id))
+      .sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+  }, [alerts, roleAlerts, dismissedAlertIds]);
+
+  /**
+   * Put notifications back in the list after a failed write.
+   *
+   * Ids are otherwise never removed from the dismissed set, which is safe: they are
+   * Firestore document ids, so one can never come back attached to a different
+   * notification, and the set only grows by what the user reads in a session.
+   */
+  const restoreAlerts = (ids: string[]) => {
+    if (!ids.length) return;
+    setDismissedAlertIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+  };
 
   async function markAlertRead(alertId: string) {
-    // Drop it locally first. The live listener removes read notifications on its own,
-    // but the legacy role-targeted ones aren't streamed, so nothing else would.
-    setRoleAlerts(prev => prev.filter(item => item.id !== alertId));
+    // Hide it now, and drop the legacy role-targeted copy for good: those aren't
+    // streamed, so nothing else would ever remove them.
+    setDismissedAlertIds(prev => new Set(prev).add(alertId));
     // Writes both `read: true` and `status: 'READ'`, so the legacy documents that
     // track read state as a string also stop counting as unread.
-    await markNotificationRead(alertId);
+    const ok = await markNotificationRead(alertId);
+    if (ok) {
+      setRoleAlerts(prev => prev.filter(item => item.id !== alertId));
+      setUnreadTotal(prev => (prev === null ? prev : Math.max(0, prev - 1)));
+    } else {
+      restoreAlerts([alertId]);
+      toast({
+        variant: 'destructive',
+        title: 'Could not mark as read',
+        description: 'The notification is still unread. Please try again.',
+      });
+    }
   }
 
   async function markAllAlertsRead() {
-    const ids = visibleAlerts.map(item => item.id);
-    if (!ids.length) return;
-    setRoleAlerts([]);
-    await markNotificationsRead(ids);
+    if (!user?.id || isMarkingAllRead) return;
+    const shown = visibleAlerts.map(item => item.id);
+    if (!shown.length) return;
+
+    setIsMarkingAllRead(true);
+    setDismissedAlertIds(prev => new Set([...prev, ...shown]));
+    try {
+      // Sweeps every unread notification, not just the page the bell is holding —
+      // marking only the visible ones let the listener backfill the next unread
+      // batch, so the list appeared not to clear at all.
+      const { marked, failed, truncated } = await markAllNotificationsReadForUser(
+        user.id,
+        user.role,
+      );
+      setRoleAlerts(prev => prev.filter(item => failed.includes(item.id)));
+      restoreAlerts(failed);
+      if (failed.length || truncated) {
+        toast({
+          variant: 'destructive',
+          title: truncated ? 'Some notifications are still unread' : 'Some could not be cleared',
+          description: truncated
+            ? `Cleared ${marked}. There were too many to clear at once — try again.`
+            : `Cleared ${marked}, but ${failed.length} could not be updated.`,
+        });
+      }
+    } finally {
+      setIsMarkingAllRead(false);
+    }
   }
 
   const refreshTasks = () => {
@@ -441,32 +522,49 @@ export default function Header() {
                     <span className="sr-only">Notifications</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-[min(320px,calc(100vw-1rem))]">
+                {/*
+                  Height is capped to what Radix measures as available below the
+                  trigger, and each list scrolls inside it — an unread backlog used
+                  to render as one column taller than the viewport, with the oldest
+                  notifications unreachable.
+                */}
+                <DropdownMenuContent
+                  align="end"
+                  className="flex max-h-[min(34rem,var(--radix-dropdown-menu-content-available-height))] w-[min(320px,calc(100vw-1rem))] flex-col"
+                >
                   <DropdownMenuLabel>Pending Tasks ({pendingTasks.length})</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  {pendingTasks.length > 0 ? (
-                    pendingTasks.map(task => (
-                        <DropdownMenuItem key={task.id} onSelect={() => handleViewTask(task)}>
-                          <div className="flex flex-col">
-                            <span className="font-semibold">
-                                {task.taskType === 'requisition' ? (task as Requisition).requisitionId : (task as JmcEntry).jmcNo}
-                            </span>
-                            <span className="text-xs text-muted-foreground">{task.stage}</span>
-                          </div>
-                        </DropdownMenuItem>
-                    ))
-                  ) : (
-                    <DropdownMenuItem disabled>
-                      <p className="text-sm text-muted-foreground">No pending tasks.</p>
-                    </DropdownMenuItem>
-                  )}
+                  <div className="max-h-40 shrink-0 overflow-y-auto">
+                    {pendingTasks.length > 0 ? (
+                      pendingTasks.map(task => (
+                          <DropdownMenuItem key={task.id} onSelect={() => handleViewTask(task)}>
+                            <div className="flex flex-col">
+                              <span className="font-semibold">
+                                  {task.taskType === 'requisition' ? (task as Requisition).requisitionId : (task as JmcEntry).jmcNo}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{task.stage}</span>
+                            </div>
+                          </DropdownMenuItem>
+                      ))
+                    ) : (
+                      <DropdownMenuItem disabled>
+                        <p className="text-sm text-muted-foreground">No pending tasks.</p>
+                      </DropdownMenuItem>
+                    )}
+                  </div>
                   <DropdownMenuSeparator />
                   <div className="flex items-center justify-between pr-1">
-                    <DropdownMenuLabel>Notifications ({visibleAlerts.length})</DropdownMenuLabel>
+                    <DropdownMenuLabel>
+                      {/* "of N" only when the listener's page is smaller than the backlog. */}
+                      Notifications ({visibleAlerts.length > 0 && unreadTotal !== null && unreadTotal > visibleAlerts.length
+                        ? `${visibleAlerts.length} of ${unreadTotal}`
+                        : visibleAlerts.length})
+                    </DropdownMenuLabel>
                     {visibleAlerts.length > 0 && (
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={isMarkingAllRead}
                         className="h-6 px-2 text-xs font-normal text-muted-foreground"
                         onClick={(event) => {
                           // Keep the menu open so clearing the list is visible.
@@ -474,11 +572,21 @@ export default function Header() {
                           void markAllAlertsRead();
                         }}
                       >
-                        Mark all read
+                        {isMarkingAllRead ? (
+                          <>
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            Clearing
+                          </>
+                        ) : (
+                          'Mark all read'
+                        )}
                       </Button>
                     )}
                   </div>
                   <DropdownMenuSeparator />
+                  {/* max-h as well as flex-1: the list still scrolls if the Radix
+                      available-height variable is not resolved. */}
+                  <div className="max-h-[60vh] min-h-0 flex-1 overflow-y-auto">
                   {visibleAlerts.length > 0 ? (
                     visibleAlerts.map(alert => (
                       <DropdownMenuItem
@@ -516,6 +624,7 @@ export default function Header() {
                       <p className="text-sm text-muted-foreground">No notifications.</p>
                     </DropdownMenuItem>
                   )}
+                  </div>
                 </DropdownMenuContent>
               </DropdownMenu>
 

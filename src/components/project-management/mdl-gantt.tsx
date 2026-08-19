@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { isMdlOverdue, type MdlRow } from "@/lib/mdl";
+import { getMdlRollup, type MdlRow } from "@/lib/mdl";
 import GanttChart, { type GanttRow } from "@/components/project-management/gantt-chart";
 
 const STATUS_BAR_COLORS: Record<string, string> = {
@@ -31,17 +31,19 @@ export default function MdlGanttChart({
   const ganttRows = useMemo<GanttRow[]>(
     () =>
       rows
-        .filter((row) => row.drawing?.plannedStartDate && row.drawing?.plannedEndDate)
-        .map(({ item, drawing }) => {
-          const status = drawing?.status ?? "Pending";
-          const overdue = isMdlOverdue(drawing);
+        // Rolled up so an item with sub-drawings spans the full window its drawings occupy.
+        .map(({ item, drawing }) => ({ item, rollup: getMdlRollup(drawing) }))
+        .filter(({ rollup }) => rollup.plannedStartDate && rollup.plannedEndDate)
+        .map(({ item, rollup }) => {
+          const { status, overdue } = rollup;
           const boqSlNo = item["BOQ SL No"];
+          const progress = rollup.subTotal ? ` · ${rollup.subApproved}/${rollup.subTotal} drawings` : "";
           return {
             id: item.id,
             label: String(item.Description ?? "Untitled drawing"),
-            sublabel: boqSlNo ? `SL ${boqSlNo} · ${status}` : status,
-            start: drawing?.plannedStartDate ?? "",
-            end: drawing?.plannedEndDate ?? "",
+            sublabel: `${boqSlNo ? `SL ${boqSlNo} · ` : ""}${status}${progress}`,
+            start: rollup.plannedStartDate,
+            end: rollup.plannedEndDate,
             barLabel: status,
             colorClass: overdue ? "bg-red-700" : STATUS_BAR_COLORS[status] ?? "bg-slate-400",
           };

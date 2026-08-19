@@ -1610,3 +1610,373 @@ test('strict slug form still matches jmcSlugify, so stored serial-config ids kee
     assert.equal(projectSlugStrict(name), jmcSlugify(name), `mismatch for "${name}"`);
   }
 });
+
+// --- MDL sub-drawings ------------------------------------------------------------------
+// A BOQ item can need several drawings (GA, foundation, schematic), each with its own
+// submission cycle. getMdlRollup collapses the item's own record plus every sub-drawing into
+// the one summary the register, pending list, calendar, Gantt and reports all display.
+
+const mdlRevisions = (overrides = {}) =>
+  ['R0', 'R1', 'R2', 'R3'].map((round) => ({
+    round,
+    submissionDate: '',
+    comments: '',
+    commentsDate: '',
+    ...(overrides[round] ?? {}),
+  }));
+
+const mdlSub = (overrides = {}) => ({
+  id: overrides.id ?? 'sub-1',
+  title: 'GA Drawing',
+  docNo: '',
+  drawingNo: '',
+  plannedStartDate: '',
+  plannedEndDate: '',
+  revisions: mdlRevisions(),
+  approveDate: '',
+  status: 'Pending',
+  remark: '',
+  ...overrides,
+});
+
+const mdlParent = (overrides = {}) => ({
+  id: 'boq-1',
+  boqItemId: 'boq-1',
+  boqSlNo: '2',
+  docNo: '',
+  drawingNo: '',
+  plannedStartDate: '',
+  plannedEndDate: '',
+  revisions: mdlRevisions(),
+  approveDate: '',
+  status: 'Pending',
+  remark: '',
+  ...overrides,
+});
+
+test('an item with no sub-drawings rolls up to exactly its own record', async () => {
+  const { getMdlRollup } = await import('../src/lib/mdl.ts');
+  const today = new Date('2026-08-19T00:00:00');
+
+  const drawing = mdlParent({
+    plannedStartDate: '2026-01-01',
+    plannedEndDate: '2026-02-01',
+    approveDate: '2026-01-28',
+    status: 'Approved',
+    remark: 'Cleared',
+    firstSubmittedOn: '2026-01-05',
+  });
+  const rollup = getMdlRollup(drawing, today);
+
+  // Existing single-drawing behaviour must be untouched — every field passes straight through.
+  assert.equal(rollup.status, 'Approved');
+  assert.equal(rollup.plannedStartDate, '2026-01-01');
+  assert.equal(rollup.plannedEndDate, '2026-02-01');
+  assert.equal(rollup.approveDate, '2026-01-28');
+  assert.equal(rollup.remark, 'Cleared');
+  assert.equal(rollup.firstSubmittedOn, '2026-01-05');
+  assert.equal(rollup.overdue, false);
+  assert.equal(rollup.subTotal, 0);
+  assert.equal(rollup.subApproved, 0);
+
+  // No record at all still reads as Pending rather than throwing.
+  assert.equal(getMdlRollup(undefined, today).status, 'Pending');
+});
+
+test('roll-up status: rejection dominates, everything must be approved before the item is', async () => {
+  const { rollUpMdlStatuses } = await import('../src/lib/mdl.ts');
+
+  assert.equal(rollUpMdlStatuses([]), 'Pending');
+  assert.equal(rollUpMdlStatuses(['Pending', 'Pending']), 'Pending');
+  // One kicked-back drawing is the thing that needs attention, whatever the others say.
+  assert.equal(rollUpMdlStatuses(['Approved', 'Rejected']), 'Rejected');
+  assert.equal(rollUpMdlStatuses(['Approved', 'Approved']), 'Approved');
+  // "Approved with Comments" is still approved, but the item as a whole carries the caveat.
+  assert.equal(rollUpMdlStatuses(['Approved', 'Approved with Comments']), 'Approved with Comments');
+  // A single outstanding drawing keeps the whole item off "Approved".
+  assert.equal(rollUpMdlStatuses(['Approved', 'Pending']), 'In Progress');
+  assert.equal(rollUpMdlStatuses(['Pending', 'In Progress']), 'In Progress');
+});
+
+test('a container item placeholder Pending does not hold back its sub-drawings', async () => {
+  const { getMdlRollup } = await import('../src/lib/mdl.ts');
+  const today = new Date('2026-08-19T00:00:00');
+
+  // Created implicitly when the first sub-drawing was added: no doc no, no drawing no, no
+  // revisions of its own. Its own "Pending" is a placeholder, not real outstanding work.
+  const container = mdlParent({
+    subDrawings: [
+      mdlSub({ id: 's1', status: 'Approved', approveDate: '2026-03-01' }),
+      mdlSub({ id: 's2', status: 'Approved', approveDate: '2026-04-01' }),
+    ],
+  });
+  const rollup = getMdlRollup(container, today);
+
+  assert.equal(rollup.status, 'Approved');
+  assert.equal(rollup.subTotal, 2);
+  assert.equal(rollup.subApproved, 2);
+  // Once approved, the item's approve date is the last of its drawings to clear.
+  assert.equal(rollup.approveDate, '2026-04-01');
+});
+
+test('an item that has a drawing of its own counts that drawing alongside its sub-drawings', async () => {
+  const { getMdlRollup } = await import('../src/lib/mdl.ts');
+  const today = new Date('2026-08-19T00:00:00');
+
+  const withOwnDrawing = mdlParent({
+    docNo: 'DOC-1',
+    drawingNo: 'DRW-1',
+    status: 'Approved',
+    approveDate: '2026-02-01',
+    subDrawings: [mdlSub({ id: 's1', status: 'Pending' })],
+  });
+
+  // The parent's own drawing is approved, but the item is not done until the sub-drawing is.
+  assert.equal(getMdlRollup(withOwnDrawing, today).status, 'In Progress');
+  assert.equal(getMdlRollup(withOwnDrawing, today).subApproved, 0);
+
+  // A parent whose only sign of its own work is a submission still counts as a unit.
+  const submittedOnly = mdlParent({
+    status: 'Rejected',
+    revisions: mdlRevisions({ R0: { submissionDate: '2026-01-10', status: 'Rejected' } }),
+    subDrawings: [mdlSub({ id: 's1', status: 'Approved' })],
+  });
+  assert.equal(getMdlRollup(submittedOnly, today).status, 'Rejected');
+});
+
+test('the item spans the widest planned window across itself and its sub-drawings', async () => {
+  const { getMdlRollup } = await import('../src/lib/mdl.ts');
+  const today = new Date('2026-08-19T00:00:00');
+
+  const rollup = getMdlRollup(
+    mdlParent({
+      docNo: 'DOC-1',
+      plannedStartDate: '2026-02-01',
+      plannedEndDate: '2026-03-01',
+      status: 'Approved',
+      subDrawings: [
+        mdlSub({ id: 's1', plannedStartDate: '2026-01-15', plannedEndDate: '2026-02-20', status: 'Approved' }),
+        mdlSub({ id: 's2', plannedStartDate: '2026-03-10', plannedEndDate: '2026-04-15', status: 'Approved' }),
+      ],
+    }),
+    today,
+  );
+
+  assert.equal(rollup.plannedStartDate, '2026-01-15');
+  assert.equal(rollup.plannedEndDate, '2026-04-15');
+});
+
+test('a late sub-drawing marks the item overdue, and a later one never masks a late parent', async () => {
+  const { getMdlRollup } = await import('../src/lib/mdl.ts');
+  const today = new Date('2026-03-01T00:00:00');
+
+  // The parent's own drawing was due in January and is still not approved. The sub-drawing
+  // runs to December, so the item's *window* extends well past today — but the item is still
+  // overdue, which is why callers read rollup.overdue instead of testing plannedEndDate.
+  const lateParent = mdlParent({
+    docNo: 'DOC-1',
+    plannedEndDate: '2026-01-10',
+    status: 'In Progress',
+    subDrawings: [mdlSub({ id: 's1', plannedEndDate: '2026-12-31', status: 'Pending' })],
+  });
+  const lateParentRollup = getMdlRollup(lateParent, today);
+  assert.equal(lateParentRollup.plannedEndDate, '2026-12-31');
+  assert.equal(lateParentRollup.overdue, true);
+
+  // The mirror case: the parent is comfortably in future, one sub-drawing has slipped.
+  const lateSub = mdlParent({
+    docNo: 'DOC-1',
+    plannedEndDate: '2026-06-30',
+    status: 'In Progress',
+    subDrawings: [
+      mdlSub({ id: 's1', plannedEndDate: '2026-02-01', status: 'Pending' }),
+      mdlSub({ id: 's2', plannedEndDate: '2026-06-01', status: 'Approved' }),
+    ],
+  });
+  assert.equal(getMdlRollup(lateSub, today).overdue, true);
+
+  // Nothing late anywhere.
+  const onTime = mdlParent({
+    docNo: 'DOC-1',
+    plannedEndDate: '2026-06-30',
+    status: 'In Progress',
+    subDrawings: [mdlSub({ id: 's1', plannedEndDate: '2026-05-01', status: 'Pending' })],
+  });
+  assert.equal(getMdlRollup(onTime, today).overdue, false);
+
+  // A container's placeholder record must not report the item overdue on its own account.
+  const container = mdlParent({
+    plannedEndDate: '',
+    subDrawings: [mdlSub({ id: 's1', plannedEndDate: '2026-12-01', status: 'Pending' })],
+  });
+  assert.equal(getMdlRollup(container, today).overdue, false);
+});
+
+test('cycle age measures from the earliest submission anywhere on the item', async () => {
+  const { computeMdlCycleAgeDays, getMdlRollup } = await import('../src/lib/mdl.ts');
+  const today = new Date('2026-03-01T00:00:00');
+
+  // A sub-drawing submitted before the parent's own first submission sets the clock — the
+  // item has been in the drawing cycle since January, not since February.
+  const rollup = getMdlRollup(
+    mdlParent({
+      docNo: 'DOC-1',
+      status: 'In Progress',
+      firstSubmittedOn: '2026-02-01',
+      subDrawings: [mdlSub({ id: 's1', status: 'Pending', firstSubmittedOn: '2026-01-01' })],
+    }),
+    today,
+  );
+
+  assert.equal(rollup.firstSubmittedOn, '2026-01-01');
+  assert.equal(computeMdlCycleAgeDays(rollup, today), 59);
+
+  // Nothing submitted anywhere yet leaves nothing to measure from.
+  const untouched = getMdlRollup(mdlParent({ subDrawings: [mdlSub({ id: 's1' })] }), today);
+  assert.equal(untouched.firstSubmittedOn, undefined);
+  assert.equal(computeMdlCycleAgeDays(untouched, today), null);
+});
+
+test('being assigned a sub-drawing is itself the authority to edit it', async () => {
+  const { canEditMdlSubDrawing } = await import('../src/lib/mdl.ts');
+
+  const assigned = { assignedToId: 'user-1' };
+
+  // The assignee can act without carrying Edit on the register — the whole point of assigning.
+  assert.equal(canEditMdlSubDrawing(assigned, 'user-1', false), true);
+  // Someone else without the permission cannot.
+  assert.equal(canEditMdlSubDrawing(assigned, 'user-2', false), false);
+  // But Edit on the register still covers everyone's sub-drawings.
+  assert.equal(canEditMdlSubDrawing(assigned, 'user-2', true), true);
+  // An unassigned sub-drawing needs the register permission, and a missing user id must never
+  // match an unassigned drawing's missing assignee.
+  assert.equal(canEditMdlSubDrawing({}, undefined, false), false);
+  assert.equal(canEditMdlSubDrawing({}, 'user-1', false), false);
+  assert.equal(canEditMdlSubDrawing({}, undefined, true), true);
+});
+
+test('the furthest revision round across an item accounts for its sub-drawings', async () => {
+  const { getLatestRevisionAcrossItem } = await import('../src/lib/mdl.ts');
+
+  // The parent sits at R0 but a sub-drawing has already been through two resubmissions, so the
+  // item as a whole is at R2 — reporting R0 would understate how stuck it is.
+  const item = mdlParent({
+    revisions: mdlRevisions({ R0: { submissionDate: '2026-01-01', status: 'Under Review' } }),
+    subDrawings: [
+      mdlSub({
+        id: 's1',
+        revisions: mdlRevisions({
+          R0: { submissionDate: '2026-01-02', status: 'Rejected' },
+          R1: { submissionDate: '2026-02-02', status: 'Rejected' },
+          R2: { submissionDate: '2026-03-02', status: 'Under Review' },
+        }),
+      }),
+    ],
+  });
+  assert.equal(getLatestRevisionAcrossItem(item).round, 'R2');
+
+  // Nothing submitted anywhere.
+  assert.equal(getLatestRevisionAcrossItem(mdlParent()), null);
+  assert.equal(getLatestRevisionAcrossItem(undefined), null);
+});
+
+test('outline numbering pairs a parent row with its sub-drawing rows', async () => {
+  const { mdlOutlineNo } = await import('../src/lib/mdl.ts');
+
+  // The register and the pending list share this so "1.2" means the same row in both.
+  assert.equal(mdlOutlineNo(0), '1');
+  assert.equal(mdlOutlineNo(0, 0), '1.1');
+  assert.equal(mdlOutlineNo(0, 1), '1.2');
+  assert.equal(mdlOutlineNo(4, 2), '5.3');
+});
+
+test('a drawing becomes a pending task once a PO is placed or it is planned in the register', async () => {
+  const { isMdlPendingTask } = await import('../src/lib/mdl.ts');
+
+  // Flagged MDL = Yes but never touched, and no PO: stays out, or the queue would list every
+  // untouched line in the BOQ.
+  assert.equal(isMdlPendingTask(undefined, false), false);
+  // A purchase order is placed against an item nobody has drawn yet — procurement is committed,
+  // so the drawing is now owed.
+  assert.equal(isMdlPendingTask(undefined, true), true);
+  // Planning it in the register is a commitment too: this is the case that used to go missing,
+  // because the queue only ever looked at purchase orders.
+  assert.equal(
+    isMdlPendingTask(mdlParent({ plannedStartDate: '2026-03-01', plannedEndDate: '2026-04-01' }), false),
+    true,
+  );
+  // Adding a sub-drawing to an item creates its record, so the item shows up the same way.
+  assert.equal(isMdlPendingTask(mdlParent({ subDrawings: [mdlSub({ id: 's1' })] }), false), true);
+
+  // Approved work drops off the queue whether or not a PO exists.
+  assert.equal(isMdlPendingTask(mdlParent({ docNo: 'DOC-1', status: 'Approved' }), true), false);
+  assert.equal(isMdlPendingTask(mdlParent({ docNo: 'DOC-1', status: 'Approved with Comments' }), false), false);
+
+  // Rolled up: the item's own drawing is approved but a sub-drawing is not, so it stays pending.
+  assert.equal(
+    isMdlPendingTask(
+      mdlParent({ docNo: 'DOC-1', status: 'Approved', subDrawings: [mdlSub({ id: 's1', status: 'Pending' })] }),
+      false,
+    ),
+    true,
+  );
+  // …and drops off only once every sub-drawing has cleared too.
+  assert.equal(
+    isMdlPendingTask(
+      mdlParent({ docNo: 'DOC-1', status: 'Approved', subDrawings: [mdlSub({ id: 's1', status: 'Approved' })] }),
+      true,
+    ),
+    false,
+  );
+});
+
+test('a sub-drawing stage tracks the vendor to us to client chain', async () => {
+  const { computeMdlDrawingStage } = await import('../src/lib/mdl.ts');
+
+  // On the checklist, but no purchase order for the item yet — nobody owes anything.
+  assert.equal(computeMdlDrawingStage(mdlSub(), false), 'Planned');
+  // The PO is placed, so the vendor now owes us this drawing. This is the "ask to collect" state
+  // the Drawing page lists.
+  assert.equal(computeMdlDrawingStage(mdlSub(), true), 'Awaiting Vendor');
+  // Collected on the Drawing page — now it needs reviewing and sending to the client.
+  const collected = mdlSub({ status: 'In Progress', collection: { receivedOn: '2026-04-01' } });
+  assert.equal(computeMdlDrawingStage(collected, true), 'Ready for Review');
+  // Submitted to the client under R0.
+  const submitted = mdlSub({
+    status: 'In Progress',
+    collection: { receivedOn: '2026-04-01' },
+    revisions: mdlRevisions({ R0: { submissionDate: '2026-04-05', status: 'Under Review' } }),
+  });
+  assert.equal(computeMdlDrawingStage(submitted, true), 'With Client');
+  // The client's verdict wins over everything behind it.
+  assert.equal(computeMdlDrawingStage({ ...submitted, status: 'Approved' }, true), 'Approved');
+  assert.equal(computeMdlDrawingStage({ ...submitted, status: 'Approved with Comments' }, true), 'Approved');
+  assert.equal(computeMdlDrawingStage({ ...submitted, status: 'Rejected' }, true), 'Rejected');
+
+  // A collection recorded against an item whose PO was later cancelled still reads as collected —
+  // the drawing is physically in hand, so it must not fall back to "Planned".
+  assert.equal(computeMdlDrawingStage(collected, false), 'Ready for Review');
+});
+
+test('an item reports how many of its drawings are collected, not just approved', async () => {
+  const { getMdlRollup } = await import('../src/lib/mdl.ts');
+  const today = new Date('2026-08-19T00:00:00');
+
+  const rollup = getMdlRollup(
+    mdlParent({
+      subDrawings: [
+        mdlSub({ id: 's1', status: 'Approved', collection: { receivedOn: '2026-03-01' } }),
+        mdlSub({ id: 's2', status: 'In Progress', collection: { receivedOn: '2026-04-01' } }),
+        mdlSub({ id: 's3', status: 'Pending' }),
+      ],
+    }),
+    today,
+  );
+
+  // Drives the item row's progress bar: two of three drawings are in from the vendor, one of
+  // those has been cleared by the client.
+  assert.equal(rollup.subTotal, 3);
+  assert.equal(rollup.subCollected, 2);
+  assert.equal(rollup.subApproved, 1);
+  assert.equal(rollup.status, 'In Progress');
+});

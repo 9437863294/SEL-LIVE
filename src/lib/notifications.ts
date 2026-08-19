@@ -3,6 +3,7 @@
 import {
   addDoc,
   collection,
+  getCountFromServer,
   getDocs,
   limit,
   orderBy,
@@ -322,39 +323,168 @@ export async function fetchRoleTargetedNotifications(
   }
 }
 
+/* ── marking read ──────────────────────────────────────────────────────────── */
+
 /**
- * Mark a notification read, writing both the boolean and the string form so the
- * legacy documents that are filtered on `status` also stop showing as unread.
+ * Both the boolean and the string form of read state: the legacy documents are
+ * filtered on `status`, so writing only `read` left them showing as unread.
  */
-export async function markNotificationRead(notificationId: string): Promise<void> {
+const readFields = () => ({
+  read: true,
+  status: 'READ',
+  readAt: serverTimestamp(),
+});
+
+/** Outcome of marking one or more notifications read. */
+export interface MarkReadResult {
+  /** How many documents were successfully marked read. */
+  marked: number;
+  /** IDs that could not be marked — deleted, denied by rules, or offline. */
+  failed: string[];
+  /** True when a sweep hit its safety cap and unread notifications remain. */
+  truncated: boolean;
+}
+
+/**
+ * Mark a notification read.
+ *
+ * @returns whether the write succeeded, so the caller can restore the item in the
+ *   list instead of hiding something that is still unread.
+ */
+export async function markNotificationRead(notificationId: string): Promise<boolean> {
   try {
-    await updateDoc(doc(db, 'userNotifications', notificationId), {
-      read: true,
-      status: 'READ',
-      readAt: serverTimestamp(),
-    });
+    await updateDoc(doc(db, 'userNotifications', notificationId), readFields());
+    return true;
   } catch (err) {
     console.error('[notifications] Failed to mark notification read:', err);
+    return false;
   }
 }
 
-/** Mark many notifications read in one batch — backs the bell's "mark all read". */
-export async function markNotificationsRead(notificationIds: string[]): Promise<void> {
-  const ids = notificationIds.filter(Boolean);
-  if (!ids.length) return;
-  try {
-    for (const group of chunk(ids, 400)) {
+/**
+ * Mark a known list of notifications read.
+ *
+ * Batches are atomic, so a single deleted document or one rule denial used to
+ * reject every write alongside it — with the error swallowed, "mark all read"
+ * then appeared to do nothing at all. A failed batch is therefore retried one
+ * document at a time so the rest of the list still clears, and the IDs that
+ * genuinely could not be written are reported back.
+ */
+export async function markNotificationsRead(notificationIds: string[]): Promise<MarkReadResult> {
+  const ids = [...new Set(notificationIds.filter(Boolean))];
+  const result: MarkReadResult = { marked: 0, failed: [], truncated: false };
+  if (!ids.length) return result;
+
+  for (const group of chunk(ids, 400)) {
+    try {
       const batch = writeBatch(db);
       group.forEach((id) => {
-        batch.update(doc(db, 'userNotifications', id), {
-          read: true,
-          status: 'READ',
-          readAt: serverTimestamp(),
-        });
+        batch.update(doc(db, 'userNotifications', id), readFields());
       });
       await batch.commit();
+      result.marked += group.length;
+    } catch (err) {
+      console.error(
+        '[notifications] Batch mark-read failed; retrying document by document:',
+        err,
+      );
+      const outcomes = await Promise.allSettled(
+        group.map((id) => updateDoc(doc(db, 'userNotifications', id), readFields())),
+      );
+      outcomes.forEach((outcome, index) => {
+        if (outcome.status === 'fulfilled') result.marked += 1;
+        else result.failed.push(group[index]);
+      });
+    }
+  }
+  return result;
+}
+
+/** Documents read per sweep pass, and the number of passes before giving up. */
+const SWEEP_PAGE = 300;
+const SWEEP_MAX_PASSES = 20;
+
+/**
+ * Mark every unread notification for a user read — not just the ones the bell has
+ * loaded.
+ *
+ * The bell holds a capped listener (see BELL_ALERT_LIMIT in @/components/app/Header),
+ * so marking only what is on screen cleared that page and let the listener
+ * immediately backfill the next unread ones. To the user the list never emptied.
+ * This sweeps the collection instead, in pages, until nothing unread is left.
+ */
+export async function markAllNotificationsReadForUser(
+  userId: string,
+  role?: string | null,
+): Promise<MarkReadResult> {
+  const total: MarkReadResult = { marked: 0, failed: [], truncated: false };
+  if (!userId) return total;
+
+  // Documents that failed a write stay unread, so the next page returns them
+  // again. Remembering them is what stops the sweep from looping forever.
+  const failed = new Set<string>();
+
+  const absorb = (result: MarkReadResult) => {
+    total.marked += result.marked;
+    result.failed.forEach((id) => failed.add(id));
+  };
+
+  try {
+    for (let pass = 0; pass < SWEEP_MAX_PASSES; pass += 1) {
+      const snap = await getDocs(
+        query(
+          collection(db, 'userNotifications'),
+          where('userId', '==', userId),
+          where('read', '==', false),
+          orderBy('createdAt', 'desc'),
+          limit(SWEEP_PAGE),
+        ),
+      );
+      if (snap.empty) break;
+
+      const pending = snap.docs.map((entry) => entry.id).filter((id) => !failed.has(id));
+      // Everything still unread is something we already know we cannot write.
+      if (!pending.length) break;
+
+      absorb(await markNotificationsRead(pending));
+
+      if (snap.size < SWEEP_PAGE) break;
+      if (pass === SWEEP_MAX_PASSES - 1) total.truncated = true;
     }
   } catch (err) {
-    console.error('[notifications] Failed to mark notifications read:', err);
+    console.error('[notifications] Failed to sweep unread notifications:', err);
+    total.truncated = true;
+  }
+
+  // Role-targeted documents carry no userId, so the sweep above cannot see them.
+  const roleTargeted = await fetchRoleTargetedNotifications(role, SWEEP_PAGE);
+  if (roleTargeted.length) {
+    absorb(await markNotificationsRead(roleTargeted.map((item) => item.id)));
+  }
+
+  total.failed = [...failed];
+  return total;
+}
+
+/**
+ * The true number of unread notifications for a user, past the bell's page size.
+ *
+ * An aggregation query, so it costs a fraction of a read rather than one per
+ * document — cheap enough to refresh whenever the listener reports it is capped.
+ */
+export async function countUnreadNotifications(userId: string): Promise<number | null> {
+  if (!userId) return 0;
+  try {
+    const snap = await getCountFromServer(
+      query(
+        collection(db, 'userNotifications'),
+        where('userId', '==', userId),
+        where('read', '==', false),
+      ),
+    );
+    return snap.data().count;
+  } catch (err) {
+    console.error('[notifications] Failed to count unread notifications:', err);
+    return null;
   }
 }

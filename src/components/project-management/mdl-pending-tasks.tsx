@@ -1,16 +1,20 @@
 "use client";
 
 import { useMemo } from "react";
-import { ClipboardCheck, ListTodo } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, ListTodo } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
-  MDL_CLOSED_STATUSES,
   computeMdlCycleAgeDays,
   formatMdlDate,
+  getMdlRollup,
+  getMdlSubDrawings,
+  isMdlApproved,
   isMdlOverdue,
+  isMdlPendingTask,
+  mdlOutlineNo,
   mdlOverallStatusStyles,
   type MdlRow,
 } from "@/lib/mdl";
@@ -21,13 +25,15 @@ export type PoPlacement = {
   latestPoDate: string;
 };
 
-// Alias kept for callers already importing this name — same array as mdl.ts's own
-// MDL_CLOSED_STATUSES, so the two never drift apart.
-export const MDL_APPROVED_STATUSES = MDL_CLOSED_STATUSES;
-
-// A drawing becomes a "pending task" once a purchase order has actually been placed for its
-// BOQ item — that's the point procurement is committed and the drawing needs to be ready —
-// and it hasn't reached an approved state yet.
+// A drawing is outstanding work once somebody has committed to it, and it hasn't reached an
+// approved state. There are two ways to commit: a purchase order gets placed for the BOQ item
+// (procurement is committed, the drawing has to be ready), or the drawing simply gets planned
+// in the register — saving an item's own record or adding a sub-drawing to it. Items that are
+// merely flagged MDL = Yes and never touched stay out, so the queue doesn't fill up with
+// hundreds of untouched lines.
+//
+// Items that carry sub-drawings are judged on their rolled-up state and list every sub-drawing
+// beneath them as 1.1, 1.2, … so the outstanding work is visible without opening each item.
 export default function MdlPendingTasks({
   rows,
   poInfoByBoqItemId,
@@ -35,17 +41,23 @@ export default function MdlPendingTasks({
 }: {
   rows: MdlRow[];
   poInfoByBoqItemId: Map<string, PoPlacement>;
-  onSelectItem: (boqItemId: string) => void;
+  onSelectItem: (boqItemId: string, subDrawingId?: string) => void;
 }) {
   const pendingRows = useMemo(() => {
     return rows
-      .filter((row) => poInfoByBoqItemId.has(row.item.id) && !MDL_APPROVED_STATUSES.includes(row.drawing?.status ?? "Pending"))
-      .map((row) => ({ ...row, po: poInfoByBoqItemId.get(row.item.id)! }))
+      .map((row) => ({
+        ...row,
+        rollup: getMdlRollup(row.drawing),
+        po: poInfoByBoqItemId.get(row.item.id),
+      }))
+      .filter((row) => isMdlPendingTask(row.drawing, Boolean(row.po)))
       .sort((a, b) => {
-        const aOverdue = isMdlOverdue(a.drawing);
-        const bOverdue = isMdlOverdue(b.drawing);
-        if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
-        return (b.po.latestPoDate || "").localeCompare(a.po.latestPoDate || "");
+        if (a.rollup.overdue !== b.rollup.overdue) return a.rollup.overdue ? -1 : 1;
+        // Procurement already committed outranks a drawing that has only been planned.
+        if (!!a.po !== !!b.po) return a.po ? -1 : 1;
+        if (a.po && b.po) return (b.po.latestPoDate || "").localeCompare(a.po.latestPoDate || "");
+        // Planned-only rows queue by what falls due soonest, with undated ones last.
+        return (a.rollup.plannedEndDate || "9999-12-31").localeCompare(b.rollup.plannedEndDate || "9999-12-31");
       });
   }, [rows, poInfoByBoqItemId]);
 
@@ -56,7 +68,8 @@ export default function MdlPendingTasks({
           <ListTodo className="h-4 w-4" /> Pending Tasks
         </CardTitle>
         <CardDescription>
-          Drawings that still need action even though a purchase order has already been placed for that item.
+          Drawings that still need action — either a purchase order has already been placed for the item, or the drawing
+          has been planned in the register.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -65,9 +78,9 @@ export default function MdlPendingTasks({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-12">SL NO</TableHead>
+                  <TableHead className="w-16">SL NO</TableHead>
                   <TableHead>BOQ SL No</TableHead>
-                  <TableHead className="min-w-[200px]">Item</TableHead>
+                  <TableHead className="min-w-[240px]">Item / Drawing</TableHead>
                   <TableHead>PO Number</TableHead>
                   <TableHead>Vendor</TableHead>
                   <TableHead>PO Date</TableHead>
@@ -78,23 +91,50 @@ export default function MdlPendingTasks({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pendingRows.map(({ item, drawing, po }, index) => {
-                  const overdue = isMdlOverdue(drawing);
-                  const cycleAgeDays = computeMdlCycleAgeDays(drawing);
-                  return (
-                    <TableRow key={item.id} className="cursor-pointer" onClick={() => onSelectItem(item.id)}>
-                      <TableCell>{index + 1}</TableCell>
+                {pendingRows.map(({ item, drawing, rollup, po }, index) => {
+                  const overdue = rollup.overdue;
+                  const cycleAgeDays = computeMdlCycleAgeDays(rollup);
+                  const subDrawings = getMdlSubDrawings(drawing);
+                  return [
+                    <TableRow
+                      key={item.id}
+                      className={cn("cursor-pointer", subDrawings.length && "border-b-0 bg-muted/30")}
+                      onClick={() => onSelectItem(item.id)}
+                    >
+                      <TableCell className="font-semibold">{mdlOutlineNo(index)}.</TableCell>
                       <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
-                      <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>
+                      <TableCell className="max-w-xs truncate font-medium" title={String(item.Description ?? "")}>
                         {String(item.Description ?? "—")}
+                        {subDrawings.length > 0 && (
+                          <span className="ml-2 whitespace-nowrap rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                            {rollup.subApproved}/{rollup.subTotal} drawings approved
+                          </span>
+                        )}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs">{po.poNumbers.join(", ")}</TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{po.vendorNames.join(", ")}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatMdlDate(po.latestPoDate)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">
+                        {po ? (
+                          po.poNumbers.join(", ")
+                        ) : (
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            No PO yet
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {po?.vendorNames.join(", ") || "—"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{po ? formatMdlDate(po.latestPoDate) : "—"}</TableCell>
                       <TableCell className="whitespace-nowrap">
-                        <span className={overdue ? "font-medium text-red-600" : ""}>{formatMdlDate(drawing?.plannedEndDate)}</span>
+                        <span className={overdue ? "font-medium text-red-600" : ""}>{formatMdlDate(rollup.plannedEndDate)}</span>
                         {overdue && (
-                          <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                          <span
+                            className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
+                            title={
+                              rollup.subTotal
+                                ? "This item has a drawing past its planned end date — see the rows below"
+                                : undefined
+                            }
+                          >
                             Overdue
                           </span>
                         )}
@@ -105,8 +145,8 @@ export default function MdlPendingTasks({
                         ) : "—"}
                       </TableCell>
                       <TableCell>
-                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[drawing?.status ?? "Pending"])}>
-                          {drawing?.status ?? "Pending"}
+                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-medium", mdlOverallStatusStyles[rollup.status])}>
+                          {rollup.status}
                         </span>
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -114,8 +154,65 @@ export default function MdlPendingTasks({
                           Update
                         </Button>
                       </TableCell>
-                    </TableRow>
-                  );
+                    </TableRow>,
+                    ...subDrawings.map((sub, subIndex) => {
+                      const subOverdue = isMdlOverdue(sub);
+                      const subCycleAgeDays = computeMdlCycleAgeDays(sub);
+                      const subApproved = isMdlApproved(sub.status);
+                      return (
+                        <TableRow
+                          key={`${item.id}-${sub.id}`}
+                          className={cn(
+                            "cursor-pointer border-b-0 last:border-b",
+                            subApproved && "text-muted-foreground",
+                          )}
+                          onClick={() => onSelectItem(item.id, sub.id)}
+                        >
+                          <TableCell className="pl-6 text-xs tabular-nums text-muted-foreground">
+                            {mdlOutlineNo(index, subIndex)}.
+                          </TableCell>
+                          <TableCell />
+                          <TableCell className="max-w-xs" title={sub.title}>
+                            <div className="flex items-center gap-1.5 border-l-2 border-muted pl-3">
+                              {subApproved && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                              <span className="truncate text-sm">{sub.title || "Untitled drawing"}</span>
+                            </div>
+                            {sub.assignedToName && (
+                              <p className="truncate pl-3 text-[11px] text-muted-foreground">
+                                Assigned to {sub.assignedToName}
+                              </p>
+                            )}
+                          </TableCell>
+                          <TableCell />
+                          <TableCell />
+                          <TableCell />
+                          <TableCell className="whitespace-nowrap text-sm">
+                            <span className={subOverdue ? "font-medium text-red-600" : ""}>{formatMdlDate(sub.plannedEndDate)}</span>
+                            {subOverdue && (
+                              <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                                Overdue
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-sm">
+                            {subCycleAgeDays != null ? (
+                              <span className={subCycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>{subCycleAgeDays}d</span>
+                            ) : "—"}
+                          </TableCell>
+                          <TableCell>
+                            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", mdlOverallStatusStyles[sub.status])}>
+                              {sub.status}
+                            </span>
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="sm" onClick={() => onSelectItem(item.id, sub.id)}>
+                              Update
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }),
+                  ];
                 })}
               </TableBody>
             </Table>
@@ -124,7 +221,8 @@ export default function MdlPendingTasks({
           <div className="flex flex-col items-center gap-3 p-8 text-center">
             <ClipboardCheck className="h-10 w-10 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Nothing pending — every MDL item with a placed purchase order already has an approved drawing.
+              Nothing pending — every planned drawing, and every item with a purchase order placed, has already been
+              approved.
             </p>
           </div>
         )}

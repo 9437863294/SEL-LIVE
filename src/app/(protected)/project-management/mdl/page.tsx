@@ -7,9 +7,12 @@ import {
   ArrowLeft,
   ArrowUpDown,
   CalendarDays,
+  CheckCircle2,
+  ChevronRight,
   FileBarChart2,
   FileStack,
   GanttChart,
+  Layers,
   ListPlus,
   ListTodo,
   Loader2,
@@ -19,6 +22,7 @@ import {
   Search,
   ShieldAlert,
   Table2,
+  Trash2,
 } from "lucide-react";
 import {
   collection,
@@ -53,6 +57,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -82,14 +96,24 @@ import {
   MDL_PERMISSION_RESOURCE,
   MDL_REVISION_ROUNDS,
   MDL_REVISION_STATUSES,
+  canEditMdlSubDrawing,
   computeMdlCycleAgeDays,
+  computeMdlDrawingStage,
   countVisibleRevisions,
   earliestSubmissionDate,
   emptyRevisions,
+  emptySubDrawing,
   formatMdlDate,
   getLatestRevision,
+  getLatestRevisionAcrossItem,
+  getMdlRollup,
+  getMdlSubDrawings,
+  isMdlApproved,
   isMdlOverdue,
+  isMdlPendingTask,
   isRevisionRejected,
+  mdlDrawingStageStyles,
+  mdlOutlineNo,
   mdlOverallStatusStyles,
   mdlRevisionStatusStyles,
   type MdlDrawing,
@@ -98,12 +122,13 @@ import {
   type MdlRevisionRound,
   type MdlRevisionStatus,
   type MdlRow,
+  type MdlSubDrawing,
 } from "@/lib/mdl";
 import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
 import MdlWorkplanCalendar from "@/components/project-management/mdl-calendar";
 import MdlReports from "@/components/project-management/mdl-reports";
 import MdlGanttChart from "@/components/project-management/mdl-gantt";
-import MdlPendingTasks, { MDL_APPROVED_STATUSES, type PoPlacement } from "@/components/project-management/mdl-pending-tasks";
+import MdlPendingTasks, { type PoPlacement } from "@/components/project-management/mdl-pending-tasks";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 
 type ProjectMapping = {
@@ -124,6 +149,9 @@ type BoqItem = {
 };
 
 type EditForm = {
+  // Used only when the dialog is editing a sub-drawing, ignored for the parent item's own record.
+  title: string;
+  assignedToId: string;
   docNo: string;
   drawingNo: string;
   plannedStartDate: string;
@@ -135,6 +163,8 @@ type EditForm = {
 };
 
 const emptyForm = (): EditForm => ({
+  title: "",
+  assignedToId: "",
   docNo: "",
   drawingNo: "",
   plannedStartDate: "",
@@ -145,16 +175,33 @@ const emptyForm = (): EditForm => ({
   remark: "",
 });
 
+// The dialog edits either a BOQ item's own drawing (sub === null) or one of its sub-drawings.
+// A brand-new sub-drawing is carried here too, with an id minted up front so its uploads can
+// be filed under it before it has ever been saved. `isNew` keeps the add form down to just
+// naming the drawing — the vendor collection, client submission and verdict all come later.
+type EditTarget = { item: BoqItem; sub: MdlSubDrawing | null; isNew: boolean };
+
+// A specific sub-drawing on a specific item, for the delete confirmation.
+type SubDrawingRef = { item: BoqItem; sub: MdlSubDrawing };
+
+// Sentinel for "nobody assigned" — Radix Select cannot hold an empty string value.
+const UNASSIGNED = "none";
+
 export default function MdlPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, users } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canView = can("View", MDL_PERMISSION_RESOURCE) || can("View", "Project Management.BOQ");
   const canEdit = can("Edit", MDL_PERMISSION_RESOURCE);
+
+  const assignableUsers = useMemo(
+    () => users.filter((candidate) => candidate.status === "Active").sort((a, b) => a.name.localeCompare(b.name)),
+    [users],
+  );
 
   // The active view is kept in the URL (`?view=`) so refreshing, sharing a link, or navigating
   // back doesn't silently reset you to "Pending Tasks".
@@ -172,10 +219,15 @@ export default function MdlPage() {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [editingBoqItem, setEditingBoqItem] = useState<BoqItem | null>(null);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [form, setForm] = useState<EditForm>(emptyForm());
   const [pendingFiles, setPendingFiles] = useState<Partial<Record<MdlRevisionRound, File>>>({});
   const [visibleRounds, setVisibleRounds] = useState(1);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [subToDelete, setSubToDelete] = useState<SubDrawingRef | null>(null);
+  const [isDeletingSub, setIsDeletingSub] = useState(false);
+  const [itemToRemove, setItemToRemove] = useState<BoqItem | null>(null);
+  const [isRemovingItem, setIsRemovingItem] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [addSearch, setAddSearch] = useState("");
   const [selectedToAdd, setSelectedToAdd] = useState<Set<string>>(new Set());
@@ -350,42 +402,74 @@ export default function MdlPage() {
     return map;
   }, [purchaseOrders]);
 
-  // Same definition of "pending" as MdlPendingTasks itself uses, so the sidebar badge always
-  // agrees with what that tab actually shows.
+  // Shares isMdlPendingTask with the Pending Tasks tab, so the badge always matches the list.
   const pendingTaskCount = useMemo(
-    () =>
-      mdlRows.filter(
-        (row) => poInfoByBoqItemId.has(row.item.id) && !MDL_APPROVED_STATUSES.includes(row.drawing?.status ?? "Pending"),
-      ).length,
+    () => mdlRows.filter((row) => isMdlPendingTask(row.drawing, poInfoByBoqItemId.has(row.item.id))).length,
     [mdlRows, poInfoByBoqItemId],
   );
 
-  const openEditDialog = (item: BoqItem) => {
-    const existing = drawings[item.id];
+  const toggleExpanded = (itemId: string) => {
+    setExpandedItems((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
+
+  // Opens the shared drawing dialog on either a BOQ item's own record (sub === null) or one of
+  // its sub-drawings, seeding the form from whichever of the two is being edited.
+  const openDrawingDialog = (item: BoqItem, sub: MdlSubDrawing | null, isNew = false) => {
+    const source = sub ?? drawings[item.id];
     const revisions =
-      existing?.revisions?.length === MDL_REVISION_ROUNDS.length ? existing.revisions : emptyRevisions();
+      source?.revisions?.length === MDL_REVISION_ROUNDS.length ? source.revisions : emptyRevisions();
     setForm(
-      existing
+      source
         ? {
-            docNo: existing.docNo ?? "",
-            drawingNo: existing.drawingNo ?? "",
-            plannedStartDate: existing.plannedStartDate ?? "",
-            plannedEndDate: existing.plannedEndDate ?? "",
+            title: sub?.title ?? "",
+            assignedToId: sub?.assignedToId ?? "",
+            docNo: source.docNo ?? "",
+            drawingNo: source.drawingNo ?? "",
+            plannedStartDate: source.plannedStartDate ?? "",
+            plannedEndDate: source.plannedEndDate ?? "",
             revisions,
-            approveDate: existing.approveDate ?? "",
-            status: existing.status ?? "Pending",
-            remark: existing.remark ?? "",
+            approveDate: source.approveDate ?? "",
+            status: source.status ?? "Pending",
+            remark: source.remark ?? "",
           }
         : emptyForm(),
     );
     setVisibleRounds(countVisibleRevisions(revisions));
     setPendingFiles({});
-    setEditingBoqItem(item);
+    setEditTarget({ item, sub, isNew });
   };
 
-  const handleSelectMdlItem = (boqItemId: string) => {
+  // Only active users can be picked, but a sub-drawing assigned before someone was deactivated
+  // keeps them in the list — dropping them would silently unassign the drawing the next time
+  // anyone saved an unrelated field on it.
+  const assigneeOptions = useMemo(() => {
+    const options = assignableUsers.map((candidate) => ({ id: candidate.id, name: candidate.name }));
+    const assigned = editTarget?.sub;
+    if (assigned?.assignedToId && !options.some((option) => option.id === assigned.assignedToId)) {
+      options.unshift({ id: assigned.assignedToId, name: `${assigned.assignedToName || "Unknown user"} (inactive)` });
+    }
+    return options;
+  }, [assignableUsers, editTarget]);
+
+  const openNewSubDrawing = (item: BoqItem) => {
+    setExpandedItems((current) => new Set(current).add(item.id));
+    openDrawingDialog(item, emptySubDrawing(crypto.randomUUID()), true);
+  };
+
+  const handleSelectMdlItem = (boqItemId: string, subDrawingId?: string) => {
     const item = allBoqItems.find((candidate) => candidate.id === boqItemId);
-    if (item) openEditDialog(item);
+    if (!item) return;
+    if (!subDrawingId) {
+      openDrawingDialog(item, null);
+      return;
+    }
+    const sub = getMdlSubDrawings(drawings[boqItemId]).find((candidate) => candidate.id === subDrawingId);
+    if (sub) openDrawingDialog(item, sub);
   };
 
   const toggleSelectedToAdd = (itemId: string, checked: boolean) => {
@@ -427,9 +511,22 @@ export default function MdlPage() {
   };
 
   const handleSave = async () => {
-    if (!mapping || !user || !editingBoqItem) return;
+    if (!mapping || !user || !editTarget) return;
+    const { item: editingBoqItem, sub: editingSub } = editTarget;
 
-    if (!form.plannedStartDate || !form.plannedEndDate) {
+    if (editingSub && !form.title.trim()) {
+      toast({
+        title: "Name the sub-drawing",
+        description: "Give it a title such as “GA Drawing” or “Foundation Drawing” before saving.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Sub-drawings are planned as a checklist first: a name is enough to create one, and the
+    // dates, the vendor's drawing and the client submission all follow later. Only the item's
+    // own record still insists on a planned window up front.
+    if (!editingSub && (!form.plannedStartDate || !form.plannedEndDate)) {
       toast({
         title: "Planned dates are required",
         description: "Set both the planned start and end date before saving.",
@@ -437,7 +534,7 @@ export default function MdlPage() {
       });
       return;
     }
-    if (form.plannedEndDate < form.plannedStartDate) {
+    if (form.plannedStartDate && form.plannedEndDate && form.plannedEndDate < form.plannedStartDate) {
       toast({
         title: "Check the planned dates",
         description: "Planned end date cannot be before the planned start date.",
@@ -460,12 +557,19 @@ export default function MdlPage() {
 
     setIsSaving(true);
     try {
+      const parentRef = doc(db, "projects", mapping.globalProjectId, MDL_COLLECTION, editingBoqItem.id);
+      const existingParent = drawings[editingBoqItem.id];
+      const existingSubs = getMdlSubDrawings(existingParent);
+      // Sub-drawing uploads are filed under their own id so two sub-drawings on the same item
+      // can each hold an R0 without colliding.
+      const uploadPrefix = `project-management/mdl/${mapping.globalProjectId}/${editingBoqItem.id}${editingSub ? `/${editingSub.id}` : ""}`;
+
       const revisions = await Promise.all(
         form.revisions.map(async (rev) => {
           const file = pendingFiles[rev.round];
           if (!file) return rev;
           const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
-          const path = `project-management/mdl/${mapping.globalProjectId}/${editingBoqItem.id}/${rev.round}-${Date.now()}-${safeName}`;
+          const path = `${uploadPrefix}/${rev.round}-${Date.now()}-${safeName}`;
           const target = storageRef(storage, path);
           await uploadBytes(target, file);
           const fileUrl = await getDownloadURL(target);
@@ -473,30 +577,98 @@ export default function MdlPage() {
         }),
       );
 
-      // Set once, from the earliest submission across all revisions, and never moved afterward —
-      // see computeMdlCycleAgeDays in mdl.ts for why this must never reset on a later revision.
-      const existingFirstSubmittedOn = drawings[editingBoqItem.id]?.firstSubmittedOn;
-      const firstSubmittedOn = existingFirstSubmittedOn ?? earliestSubmissionDate(revisions);
+      if (editingSub) {
+        const previous = existingSubs.find((candidate) => candidate.id === editingSub.id);
+        // Same never-reset rule as the parent record — see computeMdlCycleAgeDays in mdl.ts.
+        const firstSubmittedOn = previous?.firstSubmittedOn ?? earliestSubmissionDate(revisions);
+        // Resolved from the full directory, not just the active users, and falling back to the
+        // stored name so a deactivated assignee is preserved rather than blanked.
+        const assignee = form.assignedToId
+          ? {
+              assignedToId: form.assignedToId,
+              assignedToName:
+                users.find((candidate) => candidate.id === form.assignedToId)?.name ?? previous?.assignedToName ?? "",
+            }
+          : null;
+        // Sentinel timestamps are illegal inside array elements, so these are plain ISO strings.
+        const nowIso = new Date().toISOString();
+        const nextSub: MdlSubDrawing = {
+          id: editingSub.id,
+          title: form.title.trim(),
+          docNo: form.docNo.trim(),
+          drawingNo: form.drawingNo.trim(),
+          plannedStartDate: form.plannedStartDate,
+          plannedEndDate: form.plannedEndDate,
+          revisions,
+          approveDate: form.approveDate,
+          status: form.status,
+          remark: form.remark.trim(),
+          ...(firstSubmittedOn ? { firstSubmittedOn } : {}),
+          ...(assignee ?? {}),
+          createdAt: previous?.createdAt ?? nowIso,
+          createdBy: previous?.createdBy ?? user.id,
+          createdByName: previous?.createdByName ?? user.name ?? "",
+          updatedAt: nowIso,
+          updatedBy: user.id,
+          updatedByName: user.name ?? "",
+        };
+        const nextSubs = previous
+          ? existingSubs.map((candidate) => (candidate.id === nextSub.id ? nextSub : candidate))
+          : [...existingSubs, nextSub];
 
-      await setDoc(doc(db, "projects", mapping.globalProjectId, MDL_COLLECTION, editingBoqItem.id), {
-        boqItemId: editingBoqItem.id,
-        boqSlNo: String(editingBoqItem["BOQ SL No"] ?? ""),
-        docNo: form.docNo.trim(),
-        drawingNo: form.drawingNo.trim(),
-        plannedStartDate: form.plannedStartDate,
-        plannedEndDate: form.plannedEndDate,
-        revisions,
-        approveDate: form.approveDate,
-        status: form.status,
-        remark: form.remark.trim(),
-        ...(firstSubmittedOn ? { firstSubmittedOn } : {}),
-        createdAt: drawings[editingBoqItem.id]?.createdAt ?? serverTimestamp(),
-        createdBy: drawings[editingBoqItem.id]?.createdBy ?? user.id,
-        createdByName: drawings[editingBoqItem.id]?.createdByName ?? user.name ?? "",
-        updatedAt: serverTimestamp(),
-      });
-      toast({ title: "Drawing record saved" });
-      setEditingBoqItem(null);
+        if (existingParent) {
+          await updateDoc(parentRef, { subDrawings: nextSubs, updatedAt: serverTimestamp() });
+        } else {
+          // First sub-drawing on an item that has no record of its own yet — create the parent
+          // as a container. Its dates and status stay empty and get rolled up from its children.
+          await setDoc(parentRef, {
+            boqItemId: editingBoqItem.id,
+            boqSlNo: String(editingBoqItem["BOQ SL No"] ?? ""),
+            docNo: "",
+            drawingNo: "",
+            plannedStartDate: "",
+            plannedEndDate: "",
+            revisions: emptyRevisions(),
+            approveDate: "",
+            status: "Pending" satisfies MdlOverallStatus,
+            remark: "",
+            subDrawings: nextSubs,
+            createdAt: serverTimestamp(),
+            createdBy: user.id,
+            createdByName: user.name ?? "",
+            updatedAt: serverTimestamp(),
+          });
+        }
+        toast({ title: previous ? "Sub-drawing updated" : "Sub-drawing added" });
+      } else {
+        // Set once, from the earliest submission across all revisions, and never moved afterward —
+        // see computeMdlCycleAgeDays in mdl.ts for why this must never reset on a later revision.
+        const firstSubmittedOn = existingParent?.firstSubmittedOn ?? earliestSubmissionDate(revisions);
+
+        await setDoc(parentRef, {
+          boqItemId: editingBoqItem.id,
+          boqSlNo: String(editingBoqItem["BOQ SL No"] ?? ""),
+          docNo: form.docNo.trim(),
+          drawingNo: form.drawingNo.trim(),
+          plannedStartDate: form.plannedStartDate,
+          plannedEndDate: form.plannedEndDate,
+          revisions,
+          approveDate: form.approveDate,
+          status: form.status,
+          remark: form.remark.trim(),
+          // This is a full overwrite, so the item's sub-drawings have to be carried through
+          // explicitly or saving the parent would silently delete every one of them.
+          subDrawings: existingSubs,
+          ...(firstSubmittedOn ? { firstSubmittedOn } : {}),
+          createdAt: existingParent?.createdAt ?? serverTimestamp(),
+          createdBy: existingParent?.createdBy ?? user.id,
+          createdByName: existingParent?.createdByName ?? user.name ?? "",
+          updatedAt: serverTimestamp(),
+        });
+        toast({ title: "Drawing record saved" });
+      }
+
+      setEditTarget(null);
       setPendingFiles({});
       await loadData();
     } catch (error) {
@@ -504,6 +676,48 @@ export default function MdlPage() {
       toast({ title: "Unable to save drawing record", variant: "destructive" });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSubDrawing = async () => {
+    if (!mapping || !subToDelete?.sub) return;
+    const { item, sub } = subToDelete;
+    setIsDeletingSub(true);
+    try {
+      const remaining = getMdlSubDrawings(drawings[item.id]).filter((candidate) => candidate.id !== sub.id);
+      await updateDoc(doc(db, "projects", mapping.globalProjectId, MDL_COLLECTION, item.id), {
+        subDrawings: remaining,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Sub-drawing removed" });
+      setSubToDelete(null);
+      await loadData();
+    } catch (error) {
+      console.error("Failed to delete MDL sub-drawing:", error);
+      toast({ title: "Unable to remove sub-drawing", variant: "destructive" });
+    } finally {
+      setIsDeletingSub(false);
+    }
+  };
+
+  // The reverse of "Add BOQ Item": clears the MDL flag so the item leaves this register and
+  // becomes available to add again. The mdlDrawings record is deliberately left in place — every
+  // downstream consumer (Manufacturing Clearance, supply gates, BOQ traceability) checks the
+  // MDL flag before it looks at the drawing, so a lingering record changes nothing, and keeping
+  // it means re-adding an item restores its drawings instead of losing the history.
+  const handleRemoveFromRegister = async () => {
+    if (!mapping || !itemToRemove) return;
+    setIsRemovingItem(true);
+    try {
+      await updateDoc(doc(db, "projects", mapping.globalProjectId, "boqItems", itemToRemove.id), { MDL: "No" });
+      toast({ title: "Item removed from the MDL register" });
+      setItemToRemove(null);
+      await loadData();
+    } catch (error) {
+      console.error("Failed to remove BOQ item from MDL:", error);
+      toast({ title: "Unable to remove item", variant: "destructive" });
+    } finally {
+      setIsRemovingItem(false);
     }
   };
 
@@ -612,9 +826,9 @@ export default function MdlPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-12">SL NO</TableHead>
+                          <TableHead className="w-16">SL NO</TableHead>
                           <TableHead>BOQ SL No</TableHead>
-                          <TableHead>Item Description</TableHead>
+                          <TableHead className="min-w-[240px]">Item Description</TableHead>
                           <TableHead>Doc No.</TableHead>
                           <TableHead>Drawing No.</TableHead>
                           <TableHead>Planned Start</TableHead>
@@ -624,31 +838,91 @@ export default function MdlPage() {
                           <TableHead>Approve Date</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Remark</TableHead>
-                          <TableHead className="w-12" />
+                          <TableHead className="w-32" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {items.map((item, index) => {
                           const drawing = drawings[item.id];
-                          const latest = drawing ? getLatestRevision(drawing.revisions ?? []) : null;
-                          const overdue = isMdlOverdue(drawing);
-                          const cycleAgeDays = computeMdlCycleAgeDays(drawing);
-                          return (
-                            <TableRow key={item.id}>
-                              <TableCell>{index + 1}</TableCell>
+                          // Everything on the parent row reads from the roll-up, so an item with
+                          // sub-drawings summarises them instead of showing an empty container.
+                          const rollup = getMdlRollup(drawing);
+                          const latest = getLatestRevisionAcrossItem(drawing);
+                          const overdue = rollup.overdue;
+                          const cycleAgeDays = computeMdlCycleAgeDays(rollup);
+                          const subDrawings = getMdlSubDrawings(drawing);
+                          const isExpanded = expandedItems.has(item.id);
+                          const approvedPct = rollup.subTotal
+                            ? Math.round((rollup.subApproved / rollup.subTotal) * 100)
+                            : 0;
+                          const collectedPct = rollup.subTotal
+                            ? Math.round((rollup.subCollected / rollup.subTotal) * 100)
+                            : 0;
+                          return [
+                            <TableRow
+                              key={item.id}
+                              className={cn(
+                                subDrawings.length && "cursor-pointer",
+                                subDrawings.length && isExpanded && "border-b-0 bg-muted/30",
+                              )}
+                              // Clicking anywhere on an item with sub-drawings opens its list; the
+                              // action buttons stop propagation so they still do their own thing.
+                              onClick={subDrawings.length ? () => toggleExpanded(item.id) : undefined}
+                            >
+                              <TableCell className="font-medium">{mdlOutlineNo(index)}.</TableCell>
                               <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
-                              <TableCell className="max-w-xs truncate" title={String(item.Description ?? "")}>
-                                {String(item.Description ?? "—")}
+                              <TableCell className="max-w-xs">
+                                <div className="flex items-center gap-1">
+                                  {subDrawings.length ? (
+                                    <ChevronRight
+                                      aria-hidden
+                                      className={cn("h-4 w-4 shrink-0 transition-transform", isExpanded && "rotate-90")}
+                                    />
+                                  ) : (
+                                    <span className="w-4 shrink-0" />
+                                  )}
+                                  <span className="truncate" title={String(item.Description ?? "")}>
+                                    {String(item.Description ?? "—")}
+                                  </span>
+                                </div>
+                                {subDrawings.length > 0 && (
+                                  <div className="mt-1 flex items-center gap-2 pl-5">
+                                    <div
+                                      className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted"
+                                      role="img"
+                                      aria-label={`${rollup.subApproved} of ${rollup.subTotal} drawings approved, ${rollup.subCollected} collected`}
+                                    >
+                                      {/* Collected sits behind approved, so the bar reads as
+                                          progress along the vendor → client chain. */}
+                                      <div className="relative h-full w-full">
+                                        <div className="absolute inset-y-0 left-0 bg-sky-300" style={{ width: `${collectedPct}%` }} />
+                                        <div className="absolute inset-y-0 left-0 bg-emerald-500" style={{ width: `${approvedPct}%` }} />
+                                      </div>
+                                    </div>
+                                    <span className="flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+                                      <Layers className="h-2.5 w-2.5" />
+                                      {rollup.subApproved}/{rollup.subTotal} approved
+                                      {rollup.subCollected > rollup.subApproved && ` · ${rollup.subCollected} collected`}
+                                    </span>
+                                  </div>
+                                )}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">{drawing?.docNo || "—"}</TableCell>
                               <TableCell className="max-w-xs truncate" title={drawing?.drawingNo}>{drawing?.drawingNo || "—"}</TableCell>
-                              <TableCell className="whitespace-nowrap">{formatMdlDate(drawing?.plannedStartDate)}</TableCell>
+                              <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.plannedStartDate)}</TableCell>
                               <TableCell className="whitespace-nowrap">
                                 <span className={overdue ? "font-medium text-red-600" : ""}>
-                                  {formatMdlDate(drawing?.plannedEndDate)}
+                                  {formatMdlDate(rollup.plannedEndDate)}
                                 </span>
                                 {overdue && (
-                                  <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                                  <span
+                                    className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
+                                    title={
+                                      rollup.subTotal
+                                        ? "This item has a drawing past its planned end date — expand to see which"
+                                        : undefined
+                                    }
+                                  >
                                     Overdue
                                   </span>
                                 )}
@@ -667,20 +941,156 @@ export default function MdlPage() {
                                   </span>
                                 ) : "—"}
                               </TableCell>
-                              <TableCell className="whitespace-nowrap">{formatMdlDate(drawing?.approveDate)}</TableCell>
+                              <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.approveDate)}</TableCell>
                               <TableCell>
-                                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[drawing?.status ?? "Pending"]}`}>
-                                  {drawing?.status ?? "Pending"}
+                                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[rollup.status]}`}>
+                                  {rollup.status}
                                 </span>
                               </TableCell>
                               <TableCell className="max-w-xs truncate" title={drawing?.remark}>{drawing?.remark || "—"}</TableCell>
-                              <TableCell>
-                                <Button variant="ghost" size="icon" onClick={() => openEditDialog(item)} disabled={!canEdit} aria-label={`Edit ${item.Description}`}>
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center">
+                                  <Button variant="ghost" size="icon" onClick={() => openDrawingDialog(item, null)} disabled={!canEdit} aria-label={`Edit ${item.Description}`}>
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                  {canEdit && (
+                                    <>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => openNewSubDrawing(item)}
+                                        aria-label={`Add a sub-drawing to ${item.Description}`}
+                                        title="Add sub-drawing"
+                                      >
+                                        <Plus className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => setItemToRemove(item)}
+                                        aria-label={`Remove ${item.Description} from the MDL register`}
+                                        title="Remove from MDL register"
+                                      >
+                                        <Trash2 className="h-4 w-4 text-destructive" />
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
                               </TableCell>
-                            </TableRow>
-                          );
+                            </TableRow>,
+                            ...(isExpanded
+                              ? subDrawings.map((sub, subIndex) => {
+                                  const subLatest = getLatestRevision(sub.revisions ?? []);
+                                  const subOverdue = isMdlOverdue(sub);
+                                  const subCycleAgeDays = computeMdlCycleAgeDays(sub);
+                                  const subStage = computeMdlDrawingStage(sub, poInfoByBoqItemId.has(item.id));
+                                  // Being the assignee is itself the authority to edit this
+                                  // drawing, whether or not the role carries Edit on the register.
+                                  const canEditThisSub = canEditMdlSubDrawing(sub, user?.id, canEdit);
+                                  return (
+                                    <TableRow key={`${item.id}-${sub.id}`} className="border-b-0 last:border-b">
+                                      <TableCell className="pl-6 text-xs tabular-nums text-muted-foreground">
+                                        {mdlOutlineNo(index, subIndex)}.
+                                      </TableCell>
+                                      <TableCell />
+                                      <TableCell className="max-w-xs">
+                                        <div className="flex items-center gap-1.5 border-l-2 border-muted pl-4">
+                                          {isMdlApproved(sub.status) && (
+                                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                                          )}
+                                          <span className="truncate text-sm" title={sub.title}>
+                                            {sub.title || "Untitled drawing"}
+                                          </span>
+                                          <span
+                                            className={cn(
+                                              "shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                                              mdlDrawingStageStyles[subStage],
+                                            )}
+                                          >
+                                            {subStage}
+                                          </span>
+                                        </div>
+                                        <p className="truncate pl-4 text-[11px] text-muted-foreground">
+                                          {sub.assignedToName ? `Assigned to ${sub.assignedToName}` : "Unassigned"}
+                                          {sub.collection?.fileUrl && (
+                                            <>
+                                              {" · "}
+                                              <a
+                                                href={sub.collection.fileUrl}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="text-primary underline underline-offset-2"
+                                              >
+                                                Vendor drawing
+                                              </a>
+                                            </>
+                                          )}
+                                        </p>
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap text-sm">{sub.docNo || "—"}</TableCell>
+                                      <TableCell className="max-w-xs truncate text-sm" title={sub.drawingNo}>{sub.drawingNo || "—"}</TableCell>
+                                      <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(sub.plannedStartDate)}</TableCell>
+                                      <TableCell className="whitespace-nowrap text-sm">
+                                        <span className={subOverdue ? "font-medium text-red-600" : ""}>
+                                          {formatMdlDate(sub.plannedEndDate)}
+                                        </span>
+                                        {subOverdue && (
+                                          <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                                            Overdue
+                                          </span>
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap">
+                                        {subLatest ? (
+                                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${subLatest.status ? mdlRevisionStatusStyles[subLatest.status] : "bg-muted text-muted-foreground"}`}>
+                                            {subLatest.round}{subLatest.status ? ` · ${subLatest.status}` : ""}
+                                          </span>
+                                        ) : "—"}
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap text-sm">
+                                        {subCycleAgeDays != null ? (
+                                          <span className={subCycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>
+                                            {subCycleAgeDays}d
+                                          </span>
+                                        ) : "—"}
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(sub.approveDate)}</TableCell>
+                                      <TableCell>
+                                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${mdlOverallStatusStyles[sub.status]}`}>
+                                          {sub.status}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="max-w-xs truncate text-sm" title={sub.remark}>{sub.remark || "—"}</TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center">
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => openDrawingDialog(item, sub)}
+                                            disabled={!canEditThisSub}
+                                            aria-label={`Edit sub-drawing ${sub.title || "untitled"}`}
+                                          >
+                                            <Pencil className="h-3.5 w-3.5" />
+                                          </Button>
+                                          {canEdit && (
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              onClick={() => setSubToDelete({ item, sub })}
+                                              aria-label={`Remove sub-drawing ${sub.title || "untitled"}`}
+                                              title="Remove sub-drawing"
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })
+                              : []),
+                          ];
                         })}
                       </TableBody>
                     </Table>
@@ -738,17 +1148,55 @@ export default function MdlPage() {
         </div>
       </div>
 
-      <Dialog open={!!editingBoqItem} onOpenChange={(open) => !open && setEditingBoqItem(null)}>
+      <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Drawing Details</DialogTitle>
+            <DialogTitle>
+              {editTarget?.isNew ? "Add Sub-drawing" : editTarget?.sub ? "Sub-drawing Details" : "Drawing Details"}
+            </DialogTitle>
             <DialogDescription>
-              {editingBoqItem?.["BOQ SL No"] ? `BOQ SL No ${editingBoqItem["BOQ SL No"]} · ` : ""}
-              {editingBoqItem?.Description}
+              {editTarget?.item["BOQ SL No"] ? `BOQ SL No ${editTarget.item["BOQ SL No"]} · ` : ""}
+              {editTarget?.item.Description}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
+            {editTarget?.sub && (
+              <div className="grid gap-4 rounded-lg border bg-muted/30 p-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="sub-title">
+                    Sub-drawing Title <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="sub-title"
+                    value={form.title}
+                    onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))}
+                    placeholder="e.g. GA Drawing, Foundation Drawing"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="sub-assignee">Assigned To</Label>
+                  <Select
+                    value={form.assignedToId || UNASSIGNED}
+                    onValueChange={(value) =>
+                      setForm((c) => ({ ...c, assignedToId: value === UNASSIGNED ? "" : value }))
+                    }
+                  >
+                    <SelectTrigger id="sub-assignee"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                      {assigneeOptions.map((candidate) => (
+                        <SelectItem key={candidate.id} value={candidate.id}>{candidate.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    The assignee can update this sub-drawing even without Edit rights on the register.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="doc-no">Doc No.</Label>
@@ -759,21 +1207,25 @@ export default function MdlPage() {
                 <Input id="drawing-no" value={form.drawingNo} onChange={(e) => setForm((c) => ({ ...c, drawingNo: e.target.value }))} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="planned-start-date">Planned Start Date <span className="text-destructive">*</span></Label>
+                <Label htmlFor="planned-start-date">
+                  Planned Start Date {editTarget?.sub ? <span className="text-muted-foreground">(optional)</span> : <span className="text-destructive">*</span>}
+                </Label>
                 <Input
                   id="planned-start-date"
                   type="date"
-                  required
+                  required={!editTarget?.sub}
                   value={form.plannedStartDate}
                   onChange={(e) => setForm((c) => ({ ...c, plannedStartDate: e.target.value }))}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="planned-end-date">Planned End Date <span className="text-destructive">*</span></Label>
+                <Label htmlFor="planned-end-date">
+                  Planned End Date {editTarget?.sub ? <span className="text-muted-foreground">(optional)</span> : <span className="text-destructive">*</span>}
+                </Label>
                 <Input
                   id="planned-end-date"
                   type="date"
-                  required
+                  required={!editTarget?.sub}
                   min={form.plannedStartDate || undefined}
                   value={form.plannedEndDate}
                   onChange={(e) => setForm((c) => ({ ...c, plannedEndDate: e.target.value }))}
@@ -781,12 +1233,82 @@ export default function MdlPage() {
               </div>
             </div>
 
+            {editTarget?.sub && !editTarget.isNew && (
+              <div className="rounded-lg border p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Collected from Vendor</p>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                      mdlDrawingStageStyles[
+                        computeMdlDrawingStage(editTarget.sub, poInfoByBoqItemId.has(editTarget.item.id))
+                      ],
+                    )}
+                  >
+                    {computeMdlDrawingStage(editTarget.sub, poInfoByBoqItemId.has(editTarget.item.id))}
+                  </span>
+                </div>
+                {editTarget.sub.collection?.receivedOn ? (
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <p>
+                      Received {formatMdlDate(editTarget.sub.collection.receivedOn)}
+                      {editTarget.sub.collection.vendorName ? ` from ${editTarget.sub.collection.vendorName}` : ""}
+                      {editTarget.sub.collection.receivedByName ? ` · recorded by ${editTarget.sub.collection.receivedByName}` : ""}
+                    </p>
+                    {editTarget.sub.collection.remark && <p>{editTarget.sub.collection.remark}</p>}
+                    {editTarget.sub.collection.fileUrl && (
+                      <a
+                        href={editTarget.sub.collection.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-2"
+                      >
+                        <Paperclip className="h-3 w-3" />
+                        {editTarget.sub.collection.fileName || "Open vendor drawing"}
+                      </a>
+                    )}
+                    <p className="pt-1">Review it, then record the client submission below.</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Not collected yet. Vendor drawings are received on the{" "}
+                    <Link
+                      href={`/project-management/drawing?project=${encodeURIComponent(mappingId)}`}
+                      className="font-medium text-primary underline underline-offset-2"
+                    >
+                      Drawing page
+                    </Link>
+                    , then reviewed and submitted to the client here.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {editTarget?.isNew ? (
+              // Adding a sub-drawing is pure planning: name it and move on. The vendor collection,
+              // the client submission rounds and the verdict all get filled in later, from the
+              // Drawing page and from this same dialog once the drawing exists.
+              <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
+                Just name the drawing for now. Once a purchase order is placed for this item it appears on the{" "}
+                <Link
+                  href={`/project-management/drawing?project=${encodeURIComponent(mappingId)}`}
+                  className="font-medium text-primary underline underline-offset-2"
+                >
+                  Drawing page
+                </Link>{" "}
+                to collect from the vendor — then come back here to review it, submit it to the client and set its
+                status.
+              </p>
+            ) : (
+              <>
             <div className="h-px bg-border" />
 
             <div className="space-y-3">
               <div>
-                <p className="text-sm font-medium">Revision Submissions</p>
-                <p className="text-xs text-muted-foreground">Each submission needs its drawing attached.</p>
+                <p className="text-sm font-medium">Submission to Client</p>
+                <p className="text-xs text-muted-foreground">
+                  Optional while planning. Once you submit a round to the client, attach the drawing that went with it.
+                </p>
               </div>
               {form.revisions.slice(0, visibleRounds).map((revision) => {
                 const pendingFile = pendingFiles[revision.round];
@@ -902,13 +1424,21 @@ export default function MdlPage() {
               <Label htmlFor="remark">Remark</Label>
               <Textarea id="remark" value={form.remark} onChange={(e) => setForm((c) => ({ ...c, remark: e.target.value }))} placeholder="Optional" />
             </div>
+              </>
+            )}
           </div>
 
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleSave()} disabled={isSaving}>
-              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Pencil className="mr-2 h-4 w-4" />}
-              Save
+              {isSaving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : editTarget?.isNew ? (
+                <Plus className="mr-2 h-4 w-4" />
+              ) : (
+                <Pencil className="mr-2 h-4 w-4" />
+              )}
+              {editTarget?.isNew ? "Add Sub-drawing" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1037,6 +1567,75 @@ export default function MdlPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!subToDelete} onOpenChange={(open) => !open && setSubToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this sub-drawing?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &ldquo;{subToDelete?.sub?.title || "Untitled drawing"}&rdquo; will be removed from{" "}
+              {String(subToDelete?.item.Description ?? "this item")}, along with its revision history. Uploaded files
+              stay in storage but will no longer be linked. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingSub}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDeleteSubDrawing();
+              }}
+              disabled={isDeletingSub}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeletingSub ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!itemToRemove} onOpenChange={(open) => !open && setItemToRemove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this item from the MDL register?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  {String(itemToRemove?.Description ?? "This item")} will no longer be tracked for drawing submission,
+                  and will stop requiring drawing approval before Manufacturing Clearance.
+                </p>
+                {itemToRemove && drawings[itemToRemove.id] && (
+                  <p className="rounded-md bg-muted p-2 text-xs">
+                    Its drawing record
+                    {getMdlSubDrawings(drawings[itemToRemove.id]).length
+                      ? ` and ${getMdlSubDrawings(drawings[itemToRemove.id]).length} sub-drawing${
+                          getMdlSubDrawings(drawings[itemToRemove.id]).length === 1 ? "" : "s"
+                        }`
+                      : ""}{" "}
+                    is kept, so adding the item back later restores everything as it is now.
+                  </p>
+                )}
+                <p className="text-xs">You can add it again at any time with “Add BOQ Item”.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRemovingItem}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleRemoveFromRegister();
+              }}
+              disabled={isRemovingItem}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isRemovingItem ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Remove from Register
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

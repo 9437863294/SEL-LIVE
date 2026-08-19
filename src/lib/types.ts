@@ -613,7 +613,7 @@ export const permissionModules = {
     GRN: ["View", "Record"],
     MVAC: ["View", "Request", "Verify", "Sign", "Release Billing"],
     Documents: ["View", "Add", "Delete"],
-    Drawing: ["View"],
+    Drawing: ["View", "Collect"],
     Civil: ["View", "Add", "Edit", "Delete", "Export"],
     Erection: ["View", "Add", "Edit", "Delete", "Export"],
     Clients: ["View", "Add", "Edit", "Delete"],

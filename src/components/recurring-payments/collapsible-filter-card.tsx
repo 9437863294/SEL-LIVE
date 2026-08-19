@@ -29,28 +29,26 @@ export default function CollapsibleFilterCard({
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="print:hidden">
       <Card>
-        <CollapsibleTrigger className="w-full">
-          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+        {/* The trigger sits inside the header instead of wrapping it: "Clear filters" is a real
+            button, and HTML forbids nesting a <button> inside another one (React flags it as a
+            hydration error). Keeping them siblings also means the clear action no longer has to
+            stop propagation to avoid toggling the panel. */}
+        <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
+          <CollapsibleTrigger className="flex flex-1 items-center justify-between gap-3 text-left">
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">{title}</CardTitle>
               {activeCount > 0 && <Badge variant="secondary">{activeCount} active</Badge>}
             </div>
-            <div className="flex items-center gap-2">
-              {activeCount > 0 && onClear && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={event => { event.stopPropagation(); onClear(); }}
-                >
-                  <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                  Clear filters
-                </Button>
-              )}
-              <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
-            </div>
-          </CardHeader>
-        </CollapsibleTrigger>
+            <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+          </CollapsibleTrigger>
+          {activeCount > 0 && onClear && (
+            <Button variant="ghost" size="sm" onClick={onClear}>
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+              Clear filters
+            </Button>
+          )}
+        </CardHeader>
         <CollapsibleContent>
           <CardContent className="space-y-3 pt-0">{children}</CardContent>
         </CollapsibleContent>
