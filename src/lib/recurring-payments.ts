@@ -1,14 +1,17 @@
 import type { Timestamp } from 'firebase/firestore';
-import type { RecurrenceRuleInput, RecurringCycle } from './recurring-payments-schedule';
+import type { ActivationTimingPayment, RecurrenceRuleInput, RecurringCycle } from './recurring-payments-schedule';
+import { isWorkflowActivationDue } from './recurring-payments-schedule';
 export { loadWorkingCalendar } from './working-hours-client';
 // The schedule math lives in its own dependency-free module (see recurring-payments-schedule.ts)
 // but stays reachable from here, so every consumer keeps importing the module from one place.
 export {
+  actionableRecurringCycle,
   BILL_DATE_RULES,
   buildRecurringCycle,
   buildRecurringCycleSchedule,
   describeRecurrence,
   DUE_DATE_RULES,
+  isWorkflowActivationDue,
   normalizeDueDateRule,
   pendingRecurringCycles,
   recurrenceLeadDays,
@@ -17,6 +20,7 @@ export {
   type DueDateRule,
   type LegacyDueDateRule,
   type RecurrenceFrequency,
+  type ActivationTimingPayment,
   type RecurrenceOptions,
   type RecurrenceRuleInput,
   type RecurringCycle,
@@ -493,6 +497,7 @@ type AssigneeResolutionPayment = Pick<PaymentObligation,
   'assignedTo' | 'backupAssignedTo' | 'verifierId' | 'approverId' | 'accountsProcessorId' |
   'billAmount' | 'expectedAmount' | 'approvalLevels' | 'approvalMode' | 'approvalCompletedBy' | 'currentApprovalLevel'>;
 
+
 /**
  * Resolves which user id(s) a workflow step's task should be assigned to for a given payment
  * obligation, based on the step's configured assignment type — and, for approval steps, the
@@ -558,9 +563,9 @@ export type WorkflowActivation = {
 };
 
 /**
- * Decides whether a payment obligation should enter the workflow's first step right now — i.e.
- * its due date already falls inside the organization's configured activation window — and, if
- * so, who it should be assigned to.
+ * Decides whether a payment obligation should enter the workflow's first step right now — per
+ * `isWorkflowActivationDue`, i.e. its bill is expected or its due date is inside the organization's
+ * activation window — and, if so, who it should be assigned to.
  *
  * This exists so a manually-generated obligation (the "Generate now" actions on the master form
  * and master detail pages) doesn't sit at status "Scheduled" with no owner until the next daily
@@ -580,13 +585,11 @@ export type WorkflowActivation = {
  */
 export function resolveWorkflowActivation(
   step: RecurringWorkflowStep | undefined,
-  payment: AssigneeResolutionPayment & { dueDate: string },
+  payment: AssigneeResolutionPayment & ActivationTimingPayment,
   options: { activationDays: number; today: Date },
 ): WorkflowActivation | null {
   if (!step) return null;
-  const due = new Date(`${payment.dueDate}T00:00:00`);
-  const daysUntilDue = Math.round((due.getTime() - options.today.getTime()) / 86_400_000);
-  if (daysUntilDue > options.activationDays) return null;
+  if (!isWorkflowActivationDue(payment, options)) return null;
   const assignees = resolveAssignees(step, payment);
   if (!assignees.length) return null;
   return {

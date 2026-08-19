@@ -38,9 +38,9 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
+  actionableRecurringCycle,
   BILL_DATE_RULES,
   buildPaymentObligationFields,
-  buildRecurringCycle,
   buildRecurringCycleSchedule,
   currency,
   DEFAULT_PAYMENT_CATEGORIES,
@@ -50,6 +50,7 @@ import {
   loadWorkingCalendar,
   matchApprovalRule,
   normalizeDueDateRule,
+  recurringDateOnly,
   resolveWorkflowActivation,
   type ApprovalRule,
   type RecurrenceRuleInput,
@@ -437,9 +438,11 @@ export default function RecurringMasterFormPage({
       });
       let activationStage: string | null = null;
       if (intent === "generate") {
-        // Same rule object the preview reads, so what gets written is what the user was shown.
+        // Same rule object the preview reads, so what gets written is what the user was shown —
+        // and the same cycle automation would pick, which for an arrears-billed master is the
+        // closed period whose bill has arrived rather than the period today falls inside.
         const cycle = recurrenceRules
-          ? buildRecurringCycle(recurrenceRules, new Date(), scheduleOptions)
+          ? actionableRecurringCycle(recurrenceRules, new Date(), scheduleOptions)
           : null;
         if (cycle) {
           const cycleKey = `${organizationId}_${masterRef.id}_${cycle.key}`;
@@ -1266,6 +1269,9 @@ function Section({
     </Card>
   );
 }
+/** ISO form of today, for comparing against a cycle's own ISO dates without re-parsing either. */
+const todayIso = recurringDateOnly(new Date());
+
 /** Formats an ISO date as `dd MMM yyyy` — the schedule is read as dates, not as ISO strings. */
 const showDate = (value: string) =>
   new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", {
@@ -1330,6 +1336,13 @@ function SchedulePreview({
                   </td>
                   <td className="py-1.5 pr-3 text-muted-foreground">
                     {autoGenerationEnabled ? showDate(cycle.generationDate) : "Manual only"}
+                    {/* A closed period whose bill has already arrived is generated on the next run;
+                        without saying so, it reads as though the row shouldn't be there yet. */}
+                    {cycle.generationDate <= todayIso && (
+                      <span className="ml-1 whitespace-nowrap font-medium text-emerald-700">
+                        · due now
+                      </span>
+                    )}
                   </td>
                   <td className="py-1.5 pr-3">{showDate(cycle.expectedBillDate)}</td>
                   <td className="py-1.5 pr-3 font-semibold">

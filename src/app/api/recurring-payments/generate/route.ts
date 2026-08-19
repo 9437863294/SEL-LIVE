@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
-import { buildPaymentObligationFields, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, pendingRecurringCycles, resolveAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { buildPaymentObligationFields, DEFAULT_RECURRING_WORKFLOW, isWorkflowActivationDue, matchApprovalRule, pendingRecurringCycles, resolveAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { addBusinessHours, makeIsWorkingDay, normalizeWorkingHoursDoc } from '@/lib/working-hours';
 import type { Holiday } from '@/lib/types';
 
@@ -106,9 +106,9 @@ export async function GET(request: Request) {
       const organizationId = String(payment.organizationId || 'default');
       const settings = (await db.collection('recurringPaymentSettings').doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')).get()).data();
       const activationDays = Math.min(90, Math.max(0, Number(settings?.automation?.workflowActivationDays ?? 7)));
-      const due = new Date(`${payment.dueDate}T00:00:00`);
-      const daysUntilDue = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-      if (daysUntilDue > activationDays) continue;
+      // Shared with the client-side generate actions rather than re-derived here, so an obligation
+      // enters its first step on the same day whichever path created it.
+      if (!isWorkflowActivationDue(payment, { activationDays, today })) continue;
       const assignees = resolveAssignees(firstStep, payment);
       if (!assignees.length) {
         // Don't fail silently: without this, a payment with no resolvable owner (missing

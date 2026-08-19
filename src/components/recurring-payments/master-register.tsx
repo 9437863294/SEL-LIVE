@@ -37,6 +37,7 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
   buildPaymentObligationFields,
+  actionableRecurringCycle,
   buildRecurringCycle,
   pendingRecurringCycles,
   currency,
@@ -728,7 +729,9 @@ export default function RecurringMasterRegister() {
               </TableHeader>
               <TableBody>
                 {visible.map((master) => {
-                  const cycle = buildRecurringCycle(master, new Date());
+                  // The cycle actually awaiting payment, which for arrears-billed masters is the
+                  // closed period whose bill has arrived — not the period today sits inside.
+                  const cycle = actionableRecurringCycle(master, new Date());
                   return (
                     <TableRow key={master.id}>
                       <TableCell className="whitespace-nowrap">

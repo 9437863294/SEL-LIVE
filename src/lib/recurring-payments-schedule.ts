@@ -336,6 +336,11 @@ export function buildRecurringCycle(master: RecurrenceRuleInput, asOf = new Date
 /**
  * The next `count` cycles from `from` (or from the master's start date, whichever is later), for
  * previewing a schedule before it's saved. Stops early at the master's end date.
+ *
+ * Starts at the earliest cycle still awaiting generation rather than strictly at the cycle
+ * containing `from`. Under arrears billing those differ (see `pendingRecurringCycles`), and a
+ * preview that opened at the current period would hide the very obligation automation is about to
+ * create — the closed period whose bill has just arrived and is already due.
  */
 export function buildRecurringCycleSchedule(
   master: RecurrenceRuleInput,
@@ -345,7 +350,10 @@ export function buildRecurringCycleSchedule(
   const masterStart = localDate(master.startDate);
   if (Number.isNaN(masterStart.getTime())) return [];
   const anchor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-  const firstIndex = Math.max(0, cycleIndexAt(master, anchor < masterStart ? masterStart : anchor));
+  const pending = pendingRecurringCycles(master, anchor, options);
+  const firstIndex = pending.length
+    ? pending[0].index
+    : Math.max(0, cycleIndexAt(master, anchor < masterStart ? masterStart : anchor));
   const cycles: RecurringCycle[] = [];
   for (let offset = 0; cycles.length < count && offset < count + 12; offset += 1) {
     const cycle = buildCycleAtIndex(master, firstIndex + offset, options);
@@ -357,32 +365,106 @@ export function buildRecurringCycleSchedule(
 
 /**
  * Cycles whose generation date has already arrived and whose obligation should therefore exist by
- * now — the current cycle if it's inside its lead-time window, plus any upcoming cycle that is.
- * Empty when nothing is due yet, so a caller must not treat an empty result as "outside the
+ * now. Empty when nothing is due yet, so a caller must not treat an empty result as "outside the
  * master's date range"; use `buildRecurringCycle` to tell those two cases apart.
  *
- * A cycle whose window opened long ago still comes back, so a run that was missed (automation
- * paused, cron down) catches up on the next run instead of skipping the cycle forever. The
- * lookahead exists because a long lead time puts the next cycle's obligation due for creation
- * while today still sits inside the current period; the caller skips the ones already written.
+ * This deliberately searches *backwards* as well as forwards, because the cycle that needs an
+ * obligation today is often not the cycle today falls inside. Under arrears billing the bill
+ * arrives after the period it covers, so a cycle's generation date lands in the *following* period:
+ * a 17th-to-16th telecom account billed on the 18th has its 17 Jul – 16 Aug bill generated on
+ * 17 Aug, by which point today is already inside the 17 Aug – 16 Sep cycle. Looking only forward
+ * from the current cycle skipped that obligation permanently — the bill would arrive, be due, and
+ * go overdue without the system ever creating a record for it.
+ *
+ * `lookbehind` is bounded rather than open-ended so that activating a master with an old start date
+ * backfills only the last few cycles instead of its entire history. That bound is the reason a
+ * long automation outage can still drop cycles beyond it — deliberate, since silently generating a
+ * year of untracked obligations is worse than the gap.
+ *
+ * The lookahead covers the opposite case: a long lead time puts the next cycle's obligation due for
+ * creation while today still sits inside the current one. Callers skip the ones already written.
  */
 export function pendingRecurringCycles(
   master: RecurrenceRuleInput,
   asOf = new Date(),
-  options: RecurrenceOptions & { lookahead?: number } = {},
+  options: RecurrenceOptions & { lookahead?: number; lookbehind?: number } = {},
 ): RecurringCycle[] {
   const today = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
   const current = buildRecurringCycle(master, today, options);
   if (!current) return [];
+  const lookahead = Math.max(0, options.lookahead ?? 2);
+  const lookbehind = Math.max(0, options.lookbehind ?? 3);
   const cycles: RecurringCycle[] = [];
-  for (let offset = 0; offset <= Math.max(0, options.lookahead ?? 2); offset += 1) {
-    const cycle = offset === 0 ? current : buildCycleAtIndex(master, current.index + offset, options);
-    if (!cycle) break;
-    // Cycles are chronological, so the first one still ahead of its window ends the search.
+  for (let index = Math.max(0, current.index - lookbehind); index <= current.index + lookahead; index += 1) {
+    const cycle = index === current.index ? current : buildCycleAtIndex(master, index, options);
+    if (!cycle) {
+      // Only the end-date clamp yields a null, which can't happen for a cycle before the current
+      // one — so this always means the master has run out of future cycles.
+      if (index > current.index) break;
+      continue;
+    }
+    // Generation dates advance with the cycle index, so the first one still ahead of its window
+    // ends the search — no later cycle can qualify either.
     if (localDate(cycle.generationDate) > today) break;
     cycles.push(cycle);
   }
   return cycles;
+}
+
+/**
+ * The cycle a manual "generate now" should create, and the one worth showing as a master's current
+ * position: the earliest cycle still awaiting an obligation, falling back to the cycle today sits
+ * inside when nothing is due yet.
+ *
+ * Manual generation must not use `buildRecurringCycle` directly. Under arrears billing the cycle
+ * containing today is *not* the one that needs generating — its bill hasn't been raised yet — so
+ * generating it produces an obligation for a period the vendor hasn't billed while the closed
+ * period whose bill is already due stays missing. Automation resolves that through
+ * `pendingRecurringCycles`; routing every manual path through here keeps the two in agreement.
+ */
+export function actionableRecurringCycle(
+  master: RecurrenceRuleInput,
+  asOf = new Date(),
+  options: RecurrenceOptions = {},
+): RecurringCycle | null {
+  return pendingRecurringCycles(master, asOf, options)[0] || buildRecurringCycle(master, asOf, options);
+}
+
+/** The timing fields an obligation needs for its workflow to be scheduled; a structural subset of `PaymentObligation`. */
+export interface ActivationTimingPayment {
+  dueDate: string;
+  expectedBillDate?: string;
+}
+
+/**
+ * Whether an obligation should be in its workflow's first step by `today`.
+ *
+ * Two triggers, whichever comes first:
+ *
+ * 1. **Its bill is expected.** The first step is Bill Collection, and that step has real work to do
+ *    the moment the vendor's bill exists. This is the trigger that matters under arrears billing,
+ *    where the gap between bill date and due date is routinely wider than an organization's
+ *    activation window — a telecom bill raised on the 18th and due on the 5th is 18 days apart, so
+ *    a 7-day window left the obligation sitting Scheduled and *unassigned* for eleven days, through
+ *    exactly the period its owner was meant to be chasing the bill. Anchoring only to the due date
+ *    also made the master's own lead time pointless: the record was created early, then hidden.
+ * 2. **Its due date is inside the organization's activation window.** Retained as the backstop for
+ *    obligations with no expected bill date at all — manual payments, and anything generated before
+ *    the bill date became computable — which must keep behaving exactly as they did.
+ *
+ * Lives here rather than beside the workflow helpers because it is schedule arithmetic, and because
+ * both the client generate actions and the Admin-SDK cron sweep need it; those two had already
+ * drifted into separate inline copies of the due-date rule.
+ */
+export function isWorkflowActivationDue(
+  payment: ActivationTimingPayment,
+  options: { activationDays: number; today: Date },
+): boolean {
+  // Callers pass `new Date()`, so normalize to midnight before any day arithmetic — otherwise the
+  // time of day skews the rounding and activation can land a day early or late.
+  const today = new Date(options.today.getFullYear(), options.today.getMonth(), options.today.getDate());
+  if (payment.expectedBillDate && localDate(payment.expectedBillDate) <= today) return true;
+  return Math.round((localDate(payment.dueDate).getTime() - today.getTime()) / DAY_MS) <= options.activationDays;
 }
 
 /** One-line plain-English summary of a master's schedule rules, shown wherever the schedule is configured or reviewed. */

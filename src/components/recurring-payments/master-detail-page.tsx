@@ -35,8 +35,8 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
+  actionableRecurringCycle,
   buildPaymentObligationFields,
-  buildRecurringCycle,
   DEFAULT_RECURRING_WORKFLOW,
   describeRecurrence,
   loadWorkingCalendar,
@@ -144,8 +144,10 @@ export default function RecurringMasterDetailPage({
     return () => stops.forEach((stop) => stop());
   }, [masterId, organizationId]);
 
+  // The cycle awaiting an obligation, not merely the one today falls inside — under arrears billing
+  // those differ, and it's the former that "Generate now" must create and this page must report.
   const nextCycle = useMemo(
-    () => (master ? buildRecurringCycle(master, new Date()) : null),
+    () => (master ? actionableRecurringCycle(master, new Date()) : null),
     [master],
   );
 
@@ -202,7 +204,7 @@ export default function RecurringMasterDetailPage({
     );
     if ((await getDoc(paymentRef)).exists())
       return toast({
-        title: "The current cycle already exists",
+        title: `The cycle ${nextCycle.billingPeriodStart} to ${nextCycle.billingPeriodEnd} already exists`,
         variant: "destructive",
       });
     const ruleSnapshot = await getDocs(

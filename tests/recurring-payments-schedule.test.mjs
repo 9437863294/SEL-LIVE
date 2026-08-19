@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 // Imported from the schedule module rather than `recurring-payments.ts`, which re-exports a
 // Firestore-client helper that only resolves inside the bundler.
 import {
+  actionableRecurringCycle,
   buildRecurringCycle,
   buildRecurringCycleSchedule,
   describeRecurrence,
+  isWorkflowActivationDue,
   normalizeDueDateRule,
   pendingRecurringCycles,
   recurrenceLeadDays,
@@ -177,17 +179,24 @@ test('pending cycles include a lookahead cycle already inside its lead-time wind
   const eager = { ...utilityMaster, generateLeadDays: 40 };
   // On 25 Sep the Oct cycle's bill date (31 Oct) is 36 days out — inside a 40-day lead time.
   const cycles = pendingRecurringCycles(eager, asOf('2026-09-25'));
-  assert.deepEqual(cycles.map((cycle) => cycle.key), ['2026-09', '2026-10']);
+  assert.deepEqual(cycles.map((cycle) => cycle.key), ['2026-08', '2026-09', '2026-10']);
 });
 
-test('nothing is pending while the current cycle is still ahead of its lead-time window', () => {
-  // Bill isn't expected until 30 Sep and the lead time is one day, so on 10 Sep the obligation
+test('nothing is pending while the first cycle is still ahead of its lead-time window', () => {
+  // Bill isn't expected until 31 Aug and the lead time is one day, so on 20 Aug the obligation
   // must not exist yet — the lead time is the whole point of the setting.
-  assert.deepEqual(pendingRecurringCycles(utilityMaster, asOf('2026-09-10')), []);
+  assert.deepEqual(pendingRecurringCycles(utilityMaster, asOf('2026-08-20')), []);
   assert.deepEqual(
-    pendingRecurringCycles(utilityMaster, asOf('2026-09-29')).map((cycle) => cycle.key),
-    ['2026-09'],
+    pendingRecurringCycles(utilityMaster, asOf('2026-08-30')).map((cycle) => cycle.key),
+    ['2026-08'],
   );
+});
+
+test('a closed cycle whose bill has arrived stays pending until it is written', () => {
+  // On 10 Sep the August period has closed and its bill (31 Aug) is due 25 Sep, so it is still
+  // owed an obligation even though today sits in the September period.
+  const cycles = pendingRecurringCycles(utilityMaster, asOf('2026-09-10'));
+  assert.deepEqual(cycles.map((cycle) => cycle.key), ['2026-08']);
 });
 
 test('a cycle whose window opened long ago still comes back so a missed run catches up', () => {
@@ -197,15 +206,15 @@ test('a cycle whose window opened long ago still comes back so a missed run catc
     { ...utilityMaster, generateLeadDays: 25 },
     asOf('2026-10-28'),
   );
-  assert.deepEqual(cycles.map((cycle) => cycle.key), ['2026-10']);
+  assert.ok(cycles.some((cycle) => cycle.key === '2026-10'));
 });
 
 test('pending cycles are empty outside the master date range, distinctly from not-yet-due', () => {
   assert.deepEqual(pendingRecurringCycles(utilityMaster, asOf('2026-08-01')), []);
   assert.equal(buildRecurringCycle(utilityMaster, asOf('2026-08-01')), null);
   // Not yet due: empty pending list, but the cycle itself resolves.
-  assert.deepEqual(pendingRecurringCycles(utilityMaster, asOf('2026-09-10')), []);
-  assert.ok(buildRecurringCycle(utilityMaster, asOf('2026-09-10')));
+  assert.deepEqual(pendingRecurringCycles(utilityMaster, asOf('2026-08-20')), []);
+  assert.ok(buildRecurringCycle(utilityMaster, asOf('2026-08-20')));
 });
 
 /**
@@ -259,6 +268,101 @@ test('an anchor day past a short month clamps rather than skipping the period', 
   const cycle = buildRecurringCycle(master, asOf('2027-02-10'));
   assert.equal(cycle.billingPeriodStart, '2027-01-31');
   assert.equal(cycle.billingPeriodEnd, '2027-02-27');
+});
+
+test('an arrears cycle is generated after its period closes, not skipped', () => {
+  // The reported defect: on 19 Aug the 17 Jul – 16 Aug period has closed, but its bill is dated
+  // 18 Aug and due 5 Sep, so its obligation must exist. Looking only forward from the cycle
+  // containing today found nothing at all and dropped that bill permanently.
+  const cycles = pendingRecurringCycles(telecomMaster, asOf('2026-08-19'));
+  const july = cycles.find((cycle) => cycle.billingPeriodStart === '2026-07-17');
+  assert.ok(july, 'the closed July cycle must be pending generation');
+  assert.equal(july.expectedBillDate, '2026-08-18');
+  assert.equal(july.dueDate, '2026-09-05');
+  // The cycle today actually falls inside is not yet due — its bill arrives 18 Sep.
+  assert.ok(!cycles.some((cycle) => cycle.billingPeriodStart === '2026-08-17'));
+});
+
+test('lookbehind is bounded so activating an old master does not backfill its history', () => {
+  const old = { ...telecomMaster, startDate: '2024-01-17' };
+  const cycles = pendingRecurringCycles(old, asOf('2026-08-19'));
+  assert.equal(cycles.length, 3, 'three cycles back, not two and a half years of them');
+  assert.equal(cycles.at(-1).billingPeriodStart, '2026-07-17');
+  assert.deepEqual(
+    pendingRecurringCycles(old, asOf('2026-08-19'), { lookbehind: 0 }),
+    [],
+    'with no lookbehind the arrears cycle is missed, which is what the default guards against',
+  );
+});
+
+test('manual generation targets the same cycle automation would', () => {
+  // A master started on its own anchor day: on 19 Aug the only cycle that exists is 17 Jul – 16 Aug,
+  // whose bill (18 Aug) is due 5 Sep. "Generate now" previously created 17 Aug – 16 Sep instead —
+  // a period the vendor has not billed — leaving the outstanding one missing.
+  const master = { ...telecomMaster, startDate: '2026-07-17' };
+  const today = asOf('2026-08-19');
+  const actionable = actionableRecurringCycle(master, today);
+  assert.equal(actionable.billingPeriodStart, '2026-07-17');
+  assert.equal(actionable.billingPeriodEnd, '2026-08-16');
+  assert.equal(actionable.dueDate, '2026-09-05');
+  // Whereas the cycle today merely falls inside is the wrong one to write.
+  assert.equal(buildRecurringCycle(master, today).billingPeriodStart, '2026-08-17');
+  assert.equal(actionable.key, pendingRecurringCycles(master, today)[0].key);
+});
+
+test('manual generation falls back to the current cycle when nothing is pending', () => {
+  // Nothing is due yet on 20 Aug, but "Generate now" must still offer a cycle to create.
+  assert.deepEqual(pendingRecurringCycles(utilityMaster, asOf('2026-08-20')), []);
+  assert.equal(
+    actionableRecurringCycle(utilityMaster, asOf('2026-08-20')).key,
+    buildRecurringCycle(utilityMaster, asOf('2026-08-20')).key,
+  );
+  // And nothing at all outside the master's date range.
+  assert.equal(actionableRecurringCycle(utilityMaster, asOf('2026-08-01')), null);
+});
+
+test('the preview opens on the earliest cycle still awaiting generation', () => {
+  // Otherwise the form hides the obligation automation is about to create.
+  const cycles = buildRecurringCycleSchedule(telecomMaster, { from: asOf('2026-08-19'), count: 3 });
+  assert.equal(cycles[0].billingPeriodStart, '2026-06-17');
+  assert.deepEqual(
+    cycles.map((cycle) => cycle.dueDate),
+    ['2026-08-05', '2026-09-05', '2026-10-05'],
+  );
+});
+
+test('workflow activation starts when the bill is expected, not only near the due date', () => {
+  // The reported defect: bill raised 18 Aug, due 5 Sep, org activation window 7 days. Anchored to
+  // the due date alone the obligation stayed Scheduled and unassigned until 29 Aug — through the
+  // whole period its owner was supposed to be collecting that bill.
+  const payment = { dueDate: '2026-09-05', expectedBillDate: '2026-08-18' };
+  const options = { activationDays: 7 };
+  assert.equal(isWorkflowActivationDue(payment, { ...options, today: asOf('2026-08-17') }), false);
+  assert.equal(isWorkflowActivationDue(payment, { ...options, today: asOf('2026-08-18') }), true);
+  assert.equal(isWorkflowActivationDue(payment, { ...options, today: asOf('2026-08-19') }), true);
+});
+
+test('the due-date activation window still applies when no bill date is stored', () => {
+  // Manual payments and pre-rewrite obligations have no expectedBillDate and must not change.
+  const legacy = { dueDate: '2026-09-05' };
+  const options = { activationDays: 7 };
+  assert.equal(isWorkflowActivationDue(legacy, { ...options, today: asOf('2026-08-19') }), false);
+  assert.equal(isWorkflowActivationDue(legacy, { ...options, today: asOf('2026-08-29') }), true);
+  // And an obligation already overdue is always activation-due.
+  assert.equal(isWorkflowActivationDue(legacy, { ...options, today: asOf('2026-10-01') }), true);
+});
+
+test('activation timing ignores the time of day it is evaluated at', () => {
+  const payment = { dueDate: '2026-09-05' };
+  const options = { activationDays: 7 };
+  // 29 Aug is exactly 7 days out; the answer must not flip with the clock.
+  for (const hour of ['T00:30:00', 'T13:45:00', 'T23:15:00']) {
+    assert.equal(
+      isWorkflowActivationDue(payment, { ...options, today: new Date(`2026-08-29${hour}`) }),
+      true,
+      `failed at ${hour}`,
+    );
+  }
 });
 
 test('describeRecurrence names the anchored period window', () => {
