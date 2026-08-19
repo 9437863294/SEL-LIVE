@@ -12,10 +12,13 @@ export function ControlledField({
   setting,
   children,
   className = 'space-y-1.5',
+  help,
 }: {
   setting: RPFieldSetting;
   children: React.ReactNode;
   className?: string;
+  /** Optional hint under the input, for fields whose label alone can't convey what a value means. */
+  help?: string;
 }) {
   if (!setting.visible) return null;
   return (
@@ -25,6 +28,7 @@ export function ControlledField({
         {setting.required && <span className="text-destructive"> *</span>}
       </Label>
       {children}
+      {help && <p className="text-xs text-muted-foreground">{help}</p>}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
-import { buildPaymentObligationFields, buildRecurringCycle, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, resolveAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
-import { addBusinessHours, normalizeWorkingHoursDoc } from '@/lib/working-hours';
+import { buildPaymentObligationFields, DEFAULT_RECURRING_WORKFLOW, matchApprovalRule, pendingRecurringCycles, resolveAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { addBusinessHours, makeIsWorkingDay, normalizeWorkingHoursDoc } from '@/lib/working-hours';
 import type { Holiday } from '@/lib/types';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -27,6 +27,9 @@ export async function GET(request: Request) {
   ]);
   const workingHours = normalizeWorkingHoursDoc(workingHoursSnap.data());
   const holidays = holidaysSnap.docs.map(item => item.data() as Holiday);
+  // Shared with the schedule math so a "last working day of month" due date lands on the same date
+  // the org's own calendar would pick, not just a naive Mon–Fri guess.
+  const isWorkingDay = makeIsWorkingDay(workingHours, holidays);
   const masters = await db.collection('recurringPaymentMasters').where('status', '==', 'Active').get();
   const masterDocs = targetOrganizationId
     ? masters.docs.filter(item => String(item.data().organizationId || 'default') === targetOrganizationId)
@@ -45,44 +48,47 @@ export async function GET(request: Request) {
     const settingsRef = db.collection('recurringPaymentSettings').doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_'));
     const settings = (await settingsRef.get()).data();
     if (settings?.automation?.enabled === false) { disabled++; continue; }
-    const cycle = buildRecurringCycle(master, now);
-    if (!cycle) { skipped++; continue; }
-    // Generate this cycle's obligation once its due date is within the master's own
-    // "generate before due date" lead time — a per-master days-before-due setting, not a
-    // fixed calendar day-of-month. If the cron missed earlier runs (automation was paused,
-    // etc.), the obligation still generates immediately rather than waiting for a full
-    // lead-time window that has already passed.
-    const generateBeforeDueDays = Math.min(90, Math.max(0, Number(master.generateBeforeDueDays ?? 7)));
-    const cycleDueDate = new Date(`${cycle.dueDate}T00:00:00`);
-    const daysUntilCycleDue = Math.round((cycleDueDate.getTime() - today.getTime()) / 86_400_000);
-    if (daysUntilCycleDue > generateBeforeDueDays) { skipped++; continue; }
-    const cycleKey = `${organizationId}_${masterDoc.id}_${cycle.key}`;
-    const paymentRef = db.collection('paymentObligations').doc(cycleKey.replace(/[^a-zA-Z0-9_-]/g, '_'));
-    if ((await paymentRef.get()).exists) { skipped++; continue; }
-    const approvalRules = await db.collection('recurringPaymentApprovalRules')
-      .where('organizationId', '==', organizationId).where('active', '==', true).get();
-    const amount = Number(master.amount || 0);
-    const matchedRule = matchApprovalRule(
-      approvalRules.docs.map(rule => ({ id: rule.id, ...rule.data() }) as ApprovalRule),
-      { amount, category: master.category, projectId: master.projectId, projectName: master.projectName },
-    );
-    await paymentRef.create({
-      ...buildPaymentObligationFields({
-        organizationId, masterId: masterDoc.id, cycle, generatedAutomatically: true,
-        title: master.title, category: master.category, vendorName: master.vendorName,
-        branchId: master.branchId, branchName: master.branchName,
-        projectId: master.projectId, projectName: master.projectName,
-        departmentId: master.departmentId, department: master.department,
-        costCentre: master.costCentre, ledger: master.ledger, amountType: master.amountType,
-        accountNumber: master.accountNumber,
-        amount, maximumAmount: master.maximumAmount,
-        assignedTo: master.assignedTo, backupAssignedTo: master.backupAssignedTo,
-        verifierId: master.verifierId, approverId: master.approverId,
-        accountsProcessorId: master.accountsProcessorId, approvalRule: matchedRule,
-      }),
-      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
-    });
-    generated++;
+    // Each cycle carries its own generation date — the expected bill date minus the master's lead
+    // time — so this only has to ask which cycles are already due for creation. A long lead time
+    // can put the next cycle inside its window while today still sits in the current period, hence
+    // more than one candidate. If the cron missed earlier runs (automation was paused, etc.), the
+    // obligation still generates immediately rather than waiting for a window that already passed.
+    const cycles = pendingRecurringCycles(master, now, { isWorkingDay });
+    if (!cycles.length) { skipped++; continue; }
+    let approvalRules: ApprovalRule[] | null = null;
+    for (const cycle of cycles) {
+      const cycleKey = `${organizationId}_${masterDoc.id}_${cycle.key}`;
+      const paymentRef = db.collection('paymentObligations').doc(cycleKey.replace(/[^a-zA-Z0-9_-]/g, '_'));
+      if ((await paymentRef.get()).exists) { skipped++; continue; }
+      // Loaded lazily and reused across this master's cycles — most runs generate nothing and
+      // shouldn't pay for the query at all.
+      if (!approvalRules) {
+        const ruleSnap = await db.collection('recurringPaymentApprovalRules')
+          .where('organizationId', '==', organizationId).where('active', '==', true).get();
+        approvalRules = ruleSnap.docs.map(rule => ({ id: rule.id, ...rule.data() }) as ApprovalRule);
+      }
+      const amount = Number(master.amount || 0);
+      const matchedRule = matchApprovalRule(approvalRules, {
+        amount, category: master.category, projectId: master.projectId, projectName: master.projectName,
+      });
+      await paymentRef.create({
+        ...buildPaymentObligationFields({
+          organizationId, masterId: masterDoc.id, cycle, generatedAutomatically: true,
+          title: master.title, category: master.category, vendorName: master.vendorName,
+          branchId: master.branchId, branchName: master.branchName,
+          projectId: master.projectId, projectName: master.projectName,
+          departmentId: master.departmentId, department: master.department,
+          costCentre: master.costCentre, ledger: master.ledger, amountType: master.amountType,
+          accountNumber: master.accountNumber,
+          amount, maximumAmount: master.maximumAmount,
+          assignedTo: master.assignedTo, backupAssignedTo: master.backupAssignedTo,
+          verifierId: master.verifierId, approverId: master.approverId,
+          accountsProcessorId: master.accountsProcessorId, approvalRule: matchedRule,
+        }),
+        createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+      });
+      generated++;
+    }
   }
 
   // Move scheduled obligations into the configured workflow at the activation threshold.

@@ -36,6 +36,25 @@ export function normalizeWorkingHoursDoc(data: unknown): WorkingHours | null {
 }
 
 /**
+ * Builds a day-granularity working-day predicate from the same configuration `addBusinessHours`
+ * uses. Needed by schedule rules that only care whether a calendar date is a working day at all
+ * (e.g. Recurring Payments' "last working day of month" due rule), with no TAT to consume.
+ * Falls back to Mon–Fri when working hours aren't configured, matching `addBusinessHours`'
+ * behavior of degrading rather than failing.
+ */
+export function makeIsWorkingDay(
+  workingHours: WorkingHours | null | undefined,
+  holidays: Holiday[] = [],
+): (date: Date) => boolean {
+  const holidayKeys = new Set(holidays.map((item) => item.date));
+  return (date: Date) => {
+    if (holidayKeys.has(normalizeDateKey(date))) return false;
+    if (!workingHours) return date.getDay() !== 0 && date.getDay() !== 6;
+    return workingHours[date.toLocaleDateString('en-US', { weekday: 'long' })]?.isWorkDay === true;
+  };
+}
+
+/**
  * Advances `startDate` by `tatHours` of actual working time — skipping non-working days (per the
  * weekly schedule) and configured holidays, and clamping time-of-day to within each working day's
  * start/end window. If `workingHours` is null/undefined (not yet configured, or couldn't be

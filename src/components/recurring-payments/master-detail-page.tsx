@@ -38,6 +38,7 @@ import {
   buildPaymentObligationFields,
   buildRecurringCycle,
   DEFAULT_RECURRING_WORKFLOW,
+  describeRecurrence,
   loadWorkingCalendar,
   matchApprovalRule,
   resolveWorkflowActivation,
@@ -405,6 +406,10 @@ export default function RecurringMasterDetailPage({
               label="Next generation"
               value={nextCycle?.billingPeriodStart || "—"}
             />
+            <Header
+              label="Bill expected"
+              value={nextCycle?.expectedBillDate || "—"}
+            />
             <Header label="Next due date" value={nextCycle?.dueDate || "—"} />
           </div>
         </CardContent>
@@ -447,10 +452,6 @@ export default function RecurringMasterDetailPage({
                 value={`${master.startDate}${master.endDate ? ` to ${master.endDate}` : ""}`}
               />
               <Info
-                label="Due rule"
-                value={`${master.dueDateRule || "Fixed day"} · ${master.dueDay}`}
-              />
-              <Info
                 label="Auto-generation"
                 value={
                   master.autoGenerationEnabled === false
@@ -462,6 +463,28 @@ export default function RecurringMasterDetailPage({
                 label="Variance tolerance"
                 value={`${master.varianceTolerancePercent || 20}%`}
               />
+              {/* The rule fields on their own don't answer "when is the next bill due?", so show the
+                  rules as a sentence alongside the dates they actually resolve to this cycle. */}
+              <div className="sm:col-span-2 lg:col-span-4 space-y-2 rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Schedule rules
+                </p>
+                <p className="text-sm">{describeRecurrence(master)}</p>
+                {nextCycle && (
+                  <div className="grid gap-3 pt-1 sm:grid-cols-2 lg:grid-cols-4">
+                    <Info
+                      label="Current cycle"
+                      value={`${nextCycle.billingPeriodStart} to ${nextCycle.billingPeriodEnd}`}
+                    />
+                    <Info
+                      label="Bill expected"
+                      value={nextCycle.expectedBillDate}
+                    />
+                    <Info label="Payment due" value={nextCycle.dueDate} />
+                    <Info label="Overdue after" value={nextCycle.overdueDate} />
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

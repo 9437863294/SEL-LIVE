@@ -38,6 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   buildPaymentObligationFields,
   buildRecurringCycle,
+  pendingRecurringCycles,
   currency,
   DEFAULT_RECURRING_WORKFLOW,
   loadWorkingCalendar,
@@ -49,7 +50,7 @@ import {
   type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
-import { addBusinessHours } from "@/lib/working-hours";
+import { addBusinessHours, makeIsWorkingDay } from "@/lib/working-hours";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -269,6 +270,12 @@ export default function RecurringMasterRegister() {
         DEFAULT_RECURRING_WORKFLOW) as RecurringWorkflowStep[];
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      // Shared with the schedule math so a "last working day of month" due date resolves against
+      // the org's own calendar here exactly as it does in the cron.
+      const isWorkingDay = makeIsWorkingDay(
+        calendar.workingHours,
+        calendar.holidays,
+      );
 
       let generated = 0;
       let workflowTriggered = 0;
@@ -280,26 +287,18 @@ export default function RecurringMasterRegister() {
       const commits: Promise<void>[] = [];
 
       for (const master of eligible) {
-        const cycle = buildRecurringCycle(master, now);
-        if (!cycle) {
-          outsideDatesCount++;
+        // Same rule as the daily automation route: every cycle carries its own generation date
+        // (expected bill date minus the master's lead time), so this only asks which cycles are
+        // already due for creation — catching up immediately on any window that already passed.
+        const cycles = pendingRecurringCycles(master, now, { isWorkingDay });
+        if (!cycles.length) {
+          // An empty list means either the master has no cycle at all right now, or its cycle
+          // simply hasn't reached its lead-time window yet — different outcomes to report.
+          if (buildRecurringCycle(master, now)) notYetDueCount++;
+          else outsideDatesCount++;
           continue;
         }
-        // Same lead-time rule as the daily automation route: generate once the cycle's due date
-        // is within the master's own "generate before due" window, catching up immediately for
-        // any master whose window has already passed rather than skipping it.
-        const generateBeforeDueDays = Math.min(
-          90,
-          Math.max(0, Number(master.generateBeforeDueDays ?? 7)),
-        );
-        const dueDate = new Date(`${cycle.dueDate}T00:00:00`);
-        const daysUntilDue = Math.round(
-          (dueDate.getTime() - today.getTime()) / 86_400_000,
-        );
-        if (daysUntilDue > generateBeforeDueDays) {
-          notYetDueCount++;
-          continue;
-        }
+        for (const cycle of cycles) {
         const cycleKey = `${organizationId}_${master.id}_${cycle.key}`;
         const docId = cycleKey.replace(/[^a-zA-Z0-9_-]/g, "_");
         if (existingIds.has(docId)) {
@@ -379,6 +378,7 @@ export default function RecurringMasterRegister() {
           commits.push(batch.commit());
           batch = writeBatch(db);
           batchWrites = 0;
+        }
         }
       }
       if (batchWrites > 0) commits.push(batch.commit());

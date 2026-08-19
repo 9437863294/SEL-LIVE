@@ -1,5 +1,26 @@
 import type { Timestamp } from 'firebase/firestore';
+import type { RecurrenceRuleInput, RecurringCycle } from './recurring-payments-schedule';
 export { loadWorkingCalendar } from './working-hours-client';
+// The schedule math lives in its own dependency-free module (see recurring-payments-schedule.ts)
+// but stays reachable from here, so every consumer keeps importing the module from one place.
+export {
+  BILL_DATE_RULES,
+  buildRecurringCycle,
+  buildRecurringCycleSchedule,
+  describeRecurrence,
+  DUE_DATE_RULES,
+  normalizeDueDateRule,
+  pendingRecurringCycles,
+  recurrenceLeadDays,
+  recurringDateOnly,
+  type BillDateRule,
+  type DueDateRule,
+  type LegacyDueDateRule,
+  type RecurrenceFrequency,
+  type RecurrenceOptions,
+  type RecurrenceRuleInput,
+  type RecurringCycle,
+} from './recurring-payments-schedule';
 
 export const RP_COLLECTIONS = {
   masters: 'recurringPaymentMasters',
@@ -165,7 +186,12 @@ export type PaymentStatus = 'Draft' | 'Scheduled' | 'Generated' | 'Awaiting Bill
   'Pending Approval' | 'Approved' | 'Payment Processing' | 'Partially Paid' | 'Paid' | 'Closed' |
   'Returned for Correction' | 'Rejected' | 'Disputed' | 'Payment Failed' | 'Paid Receipt Pending' | 'On Hold' | 'Waived' | 'Cancelled' | 'Overdue';
 
-export interface RecurringPaymentMaster {
+/**
+ * Extends `RecurrenceRuleInput` so a master can be handed straight to the schedule functions in
+ * `recurring-payments-schedule.ts` — the recurrence fields (`frequency`, `startDate`, `endDate`,
+ * `billDateRule`, `dueDay`, `gracePeriodDays`, lead time, …) are declared there, once.
+ */
+export interface RecurringPaymentMaster extends RecurrenceRuleInput {
   id: string;
   organizationId: string;
   organizationName?: string;
@@ -184,7 +210,6 @@ export interface RecurringPaymentMaster {
   costCentre?: string;
   ledger?: string;
   budgetHead?: string;
-  frequency: 'Weekly' | 'Monthly' | 'Bi-monthly' | 'Quarterly' | 'Half-yearly' | 'Yearly' | 'Renewable' | 'Custom';
   amountType: 'Fixed' | 'Variable' | 'Estimated';
   amount: number;
   maximumAmount?: number;
@@ -192,16 +217,12 @@ export interface RecurringPaymentMaster {
   tdsApplicable?: boolean;
   gstApplicable?: boolean;
   securityDeposit?: number;
-  dueDay: number;
+  /** @deprecated Free-text note superseded by `frequency` + `billDateRule`. Kept so saved docs still typecheck. */
   billingCycle?: string;
+  /** @deprecated Free-text note superseded by `billDateRule` + `generateLeadDays`. */
   generationDateRule?: string;
-  dueDateRule?: 'Fixed day of month' | 'Days after bill date' | 'Days after generation date' | 'Last working day' | 'Custom date logic';
-  gracePeriodDays?: number;
   autoGenerationEnabled?: boolean;
-  generateBeforeDueDays?: number;
   varianceTolerancePercent?: number;
-  startDate: string;
-  endDate?: string;
   assignedTo?: string;
   assignedToName?: string;
   backupAssignedTo?: string;
@@ -216,7 +237,6 @@ export interface RecurringPaymentMaster {
   reminderRecipients?: string[];
   escalationRecipients?: string[];
   notificationChannels?: string[];
-  customIntervalDays?: number;
   categoryDetails?: Record<string, string | number | boolean>;
   masterDocuments?: Array<{ reference: string; fileName: string; fileType: string; fileSize: number; documentType: string; uploadedBy: string; uploadedAt: Timestamp; version: number }>;
   status: 'Draft' | 'Active' | 'Inactive' | 'Paused';
@@ -248,7 +268,11 @@ export interface PaymentObligation {
   vendorName: string;
   billingPeriodStart: string;
   billingPeriodEnd: string;
+  /** When the vendor's bill is expected — distinct from `billDate`, which is the date on the bill actually received. */
+  expectedBillDate?: string;
   dueDate: string;
+  /** `dueDate` + the master's grace period; the date after which the obligation reads as Overdue. */
+  overdueDate?: string;
   expectedAmount: number;
   maximumAmount?: number;
   billAmount?: number;
@@ -298,106 +322,21 @@ export interface PaymentObligation {
   updatedAt?: Timestamp;
 }
 
-export interface RecurringCycle {
-  key: string;
-  label: string;
-  billingPeriodStart: string;
-  billingPeriodEnd: string;
-  dueDate: string;
-}
-
-const padDatePart = (value: number) => String(value).padStart(2, '0');
-
-export function recurringDateOnly(date: Date) {
-  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
-}
-
-function localDate(value: string) {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function isoWeek(date: Date) {
-  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-  return { year: utc.getUTCFullYear(), week: Math.ceil((((utc.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7) };
-}
-
-/**
- * Returns the billing cycle containing `asOf`. The cycle key is stable, so both
- * browser and cron generation can safely use organization + master + cycle.
- */
-export function buildRecurringCycle(master: Pick<RecurringPaymentMaster, 'frequency' | 'startDate' | 'endDate' | 'dueDay' | 'customIntervalDays'>, asOf = new Date()): RecurringCycle | null {
-  const today = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
-  const masterStart = localDate(master.startDate);
-  const masterEnd = master.endDate ? localDate(master.endDate) : null;
-  if (today < masterStart || (masterEnd && today > masterEnd)) return null;
-
-  let nominalStart: Date;
-  let nominalEnd: Date;
-  let key: string;
-
-  if (master.frequency === 'Weekly') {
-    const weekday = today.getDay() || 7;
-    nominalStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - weekday + 1);
-    nominalEnd = new Date(nominalStart.getFullYear(), nominalStart.getMonth(), nominalStart.getDate() + 6);
-    const week = isoWeek(nominalStart);
-    key = `${week.year}-W${padDatePart(week.week)}`;
-  } else if (master.frequency === 'Renewable') {
-    const elapsedMonths = Math.max(0, (today.getFullYear() - masterStart.getFullYear()) * 12 + today.getMonth() - masterStart.getMonth());
-    const cycleNumber = Math.floor(elapsedMonths / 12);
-    nominalStart = new Date(masterStart.getFullYear() + cycleNumber, masterStart.getMonth(), masterStart.getDate());
-    if (today < nominalStart) nominalStart = new Date(nominalStart.getFullYear() - 1, nominalStart.getMonth(), nominalStart.getDate());
-    nominalEnd = new Date(nominalStart.getFullYear() + 1, nominalStart.getMonth(), nominalStart.getDate() - 1);
-    key = `R${nominalStart.getFullYear()}-${padDatePart(nominalStart.getMonth() + 1)}-${padDatePart(nominalStart.getDate())}`;
-  } else if (master.frequency === 'Custom') {
-    const interval = Math.max(1, Number(master.customIntervalDays || 30));
-    const elapsed = Math.max(0, Math.floor((today.getTime() - masterStart.getTime()) / 86_400_000));
-    const cycleNumber = Math.floor(elapsed / interval);
-    nominalStart = new Date(masterStart.getFullYear(), masterStart.getMonth(), masterStart.getDate() + cycleNumber * interval);
-    nominalEnd = new Date(nominalStart.getFullYear(), nominalStart.getMonth(), nominalStart.getDate() + interval - 1);
-    key = `C${String(cycleNumber + 1).padStart(4, '0')}-${recurringDateOnly(nominalStart)}`;
-  } else {
-    const months = master.frequency === 'Bi-monthly' ? 2 : master.frequency === 'Quarterly' ? 3 : master.frequency === 'Half-yearly' ? 6 : master.frequency === 'Yearly' ? 12 : 1;
-    const monthIndex = today.getFullYear() * 12 + today.getMonth();
-    const bucket = Math.floor(monthIndex / months) * months;
-    nominalStart = new Date(Math.floor(bucket / 12), bucket % 12, 1);
-    nominalEnd = new Date(nominalStart.getFullYear(), nominalStart.getMonth() + months, 0);
-    const suffix = months === 1 ? '' : `-${months}M`;
-    key = `${nominalStart.getFullYear()}-${padDatePart(nominalStart.getMonth() + 1)}${suffix}`;
-  }
-
-  const periodStart = nominalStart < masterStart ? masterStart : nominalStart;
-  const periodEnd = masterEnd && nominalEnd > masterEnd ? masterEnd : nominalEnd;
-  if (periodStart > periodEnd) return null;
-  const spanDays = Math.max(1, Math.round((periodEnd.getTime() - periodStart.getTime()) / 86_400_000) + 1);
-  const dueOffset = Math.min(spanDays - 1, Math.max(0, Number(master.dueDay || 1) - 1));
-  const due = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate() + dueOffset);
-
-  return {
-    key,
-    label: master.frequency === 'Weekly'
-      ? `Week ${isoWeek(nominalStart).week}, ${isoWeek(nominalStart).year}`
-      : ['Custom', 'Renewable'].includes(master.frequency)
-        ? `${recurringDateOnly(periodStart)} to ${recurringDateOnly(periodEnd)}`
-        : nominalStart.toLocaleString('en-IN', { month: 'short', year: 'numeric' }),
-    billingPeriodStart: recurringDateOnly(periodStart),
-    billingPeriodEnd: recurringDateOnly(periodEnd),
-    dueDate: recurringDateOnly(due),
-  };
-}
-
 export const currency = (value: number) => new Intl.NumberFormat('en-IN', {
   style: 'currency', currency: 'INR', maximumFractionDigits: 0,
 }).format(value || 0);
 
+/**
+ * Reads a payment as Overdue once its grace period has also elapsed. `overdueDate` is stamped onto
+ * the obligation at generation from the master's grace period; obligations written before grace was
+ * honored (and manual payments, which have no master) fall back to the due date itself.
+ */
 export function effectiveStatus(payment: PaymentObligation): PaymentStatus {
   if (!['Paid', 'Closed', 'Cancelled', 'Waived'].includes(payment.status)) {
-    const due = new Date(`${payment.dueDate}T00:00:00`);
+    const lastAcceptable = new Date(`${payment.overdueDate || payment.dueDate}T00:00:00`);
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    if (due < today) return 'Overdue';
+    if (lastAcceptable < today) return 'Overdue';
   }
   return payment.status;
 }
@@ -521,7 +460,9 @@ export function buildPaymentObligationFields(input: GeneratedObligationInput) {
     accountNumber: input.accountNumber || '',
     billingPeriodStart: cycle.billingPeriodStart,
     billingPeriodEnd: cycle.billingPeriodEnd,
+    expectedBillDate: cycle.expectedBillDate,
     dueDate: cycle.dueDate,
+    overdueDate: cycle.overdueDate,
     expectedAmount: input.amount,
     maximumAmount: Number(input.maximumAmount || 0),
     paidAmount: 0,

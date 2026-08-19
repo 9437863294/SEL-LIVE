@@ -38,20 +38,26 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
+  BILL_DATE_RULES,
   buildPaymentObligationFields,
   buildRecurringCycle,
+  buildRecurringCycleSchedule,
   currency,
   DEFAULT_PAYMENT_CATEGORIES,
   DEFAULT_RECURRING_WORKFLOW,
+  describeRecurrence,
+  DUE_DATE_RULES,
   loadWorkingCalendar,
   matchApprovalRule,
+  normalizeDueDateRule,
   resolveWorkflowActivation,
   type ApprovalRule,
+  type RecurrenceRuleInput,
   type RecurringPaymentMaster,
   type RecurringWorkflowStep,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
-import { addBusinessHours } from "@/lib/working-hours";
+import { addBusinessHours, makeIsWorkingDay } from "@/lib/working-hours";
 import { ControlledField, ControlledToggleLabel } from "./controlled-field";
 import {
   useFieldControl,
@@ -84,17 +90,52 @@ type NamedRecord = { id: string; name: string; status?: string };
 const blank: Partial<RecurringPaymentMaster> = {
   frequency: "Monthly",
   amountType: "Fixed",
-  dueDay: 5,
   status: "Draft",
   autoGenerationEnabled: true,
-  generateBeforeDueDays: 7,
-  dueDateRule: "Fixed day of month",
+  generateLeadDays: 7,
+  gracePeriodDays: 0,
+  periodAnchorDay: 1,
+  // New masters default to the utility/service pattern — the bill arrives after the period it
+  // covers, and payment is due a number of days after that bill. Masters saved before the schedule
+  // became computable have no bill rule at all and fall back to "Start of billing period", which is
+  // what reproduces the due date they already resolved to (see resolveExpectedBillDate).
+  billDateRule: "End of billing period",
+  billDayOffset: 1,
+  dueDateRule: "Days after bill date",
+  dueDay: 15,
   approvalConfiguration: "Default rule",
   highVarianceAdditionalApproval: true,
   notificationChannels: ["inApp", "email"],
   tdsApplicable: false,
   gstApplicable: false,
 };
+
+/**
+ * Loads a saved master into the form without letting `blank`'s new-master defaults overwrite the
+ * schedule it was actually saved with. A master written before the schedule became computable has
+ * no `billDateRule`/`generateLeadDays`, so spreading `blank` under it would silently re-anchor its
+ * bill date and reset its lead time on the next edit. Instead the legacy values are carried across
+ * to the fields that replaced them, and legacy due-rule wording is mapped onto a selectable option.
+ */
+function hydrateMasterDraft(
+  id: string,
+  data: Partial<RecurringPaymentMaster>,
+): Partial<RecurringPaymentMaster> {
+  return {
+    ...blank,
+    ...data,
+    id,
+    billDateRule: data.billDateRule || "Start of billing period",
+    billDayOffset: Number(data.billDayOffset ?? 1),
+    dueDateRule: normalizeDueDateRule(data.dueDateRule),
+    dueDay: Number(data.dueDay ?? blank.dueDay ?? 1),
+    generateLeadDays: Number(
+      data.generateLeadDays ?? data.generateBeforeDueDays ?? 7,
+    ),
+    gracePeriodDays: Number(data.gracePeriodDays || 0),
+    periodAnchorDay: Number(data.periodAnchorDay || 1),
+  };
+}
 
 export default function RecurringMasterFormPage({
   masterId,
@@ -113,6 +154,9 @@ export default function RecurringMasterFormPage({
   const [vendors, setVendors] = useState<NamedRecord[]>([]);
   const [categories, setCategories] = useState<NamedRecord[]>([]);
   const [rules, setRules] = useState<ApprovalRule[]>([]);
+  // Only needed so the schedule preview resolves a "last working day of month" due date against the
+  // org's real calendar; until it arrives the math falls back to Mon–Fri.
+  const [calendar, setCalendar] = useState<Awaited<ReturnType<typeof loadWorkingCalendar>> | null>(null);
   const [loading, setLoading] = useState(!!masterId);
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof RecurringPaymentMaster>(
@@ -161,16 +205,17 @@ export default function RecurringMasterFormPage({
             ),
           );
           if (masterSnapshot && masterSnapshot.exists())
-            setDraft({
-              ...blank,
-              id: masterSnapshot.id,
-              ...masterSnapshot.data(),
-            } as RecurringPaymentMaster);
+            setDraft(
+              hydrateMasterDraft(masterSnapshot.id, masterSnapshot.data()),
+            );
           setLoading(false);
         },
       )
       .catch(() => setLoading(false));
   }, [masterId, organizationId]);
+  useEffect(() => {
+    loadWorkingCalendar().then(setCalendar).catch(() => undefined);
+  }, []);
   const netAmount = Number(draft.amount || 0) + Number(draft.taxAmount || 0);
   // Mirrors the exact checks `save()` runs before writing — surfaced here so the sidebar can show
   // what's blocking submission live, instead of the user only finding out from a toast after
@@ -201,28 +246,51 @@ export default function RecurringMasterFormPage({
     draft.frequency,
     draft.customIntervalDays,
   ]);
-  const previewCycle = useMemo(() => {
+  // The exact rule set the schedule math consumes, so the preview below and what automation will
+  // actually generate can never drift apart — both read this one object.
+  const recurrenceRules: RecurrenceRuleInput | null = useMemo(() => {
     if (!draft.frequency || !draft.startDate) return null;
-    return buildRecurringCycle(
-      {
-        frequency: draft.frequency,
-        startDate: draft.startDate,
-        endDate: draft.endDate,
-        dueDay: Number(draft.dueDay || 1),
-        customIntervalDays:
-          draft.frequency === "Custom"
-            ? Number(draft.customIntervalDays || 30)
-            : undefined,
-      },
-      new Date(),
-    );
+    return {
+      frequency: draft.frequency,
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+      periodAnchorDay: Number(draft.periodAnchorDay || 1),
+      billDateRule: draft.billDateRule,
+      billDayOffset: Number(draft.billDayOffset ?? 1),
+      dueDateRule: draft.dueDateRule,
+      dueDay: Number(draft.dueDay ?? 1),
+      gracePeriodDays: Number(draft.gracePeriodDays || 0),
+      generateLeadDays: Number(draft.generateLeadDays ?? 7),
+      customIntervalDays:
+        draft.frequency === "Custom"
+          ? Number(draft.customIntervalDays || 30)
+          : undefined,
+    };
   }, [
     draft.frequency,
     draft.startDate,
     draft.endDate,
+    draft.periodAnchorDay,
+    draft.billDateRule,
+    draft.billDayOffset,
+    draft.dueDateRule,
     draft.dueDay,
+    draft.gracePeriodDays,
+    draft.generateLeadDays,
     draft.customIntervalDays,
   ]);
+  const scheduleOptions = useMemo(
+    () => ({ isWorkingDay: makeIsWorkingDay(calendar?.workingHours, calendar?.holidays) }),
+    [calendar],
+  );
+  const schedulePreview = useMemo(
+    () =>
+      recurrenceRules
+        ? buildRecurringCycleSchedule(recurrenceRules, { ...scheduleOptions, count: 3 })
+        : [],
+    [recurrenceRules, scheduleOptions],
+  );
+  const previewCycle = schedulePreview[0] || null;
   const ownerPreview = users.find((item) => item.id === draft.assignedTo);
   async function uploadDocuments(form: FormData, id: string) {
     const files = form
@@ -328,9 +396,11 @@ export default function RecurringMasterFormPage({
         maximumAmount: Number(draft.maximumAmount || 0),
         taxAmount: Number(draft.taxAmount || 0),
         securityDeposit: Number(draft.securityDeposit || 0),
-        dueDay: Number(draft.dueDay || 1),
-        gracePeriodDays: Number(draft.gracePeriodDays || 0),
-        generateBeforeDueDays: Number(draft.generateBeforeDueDays || 7),
+        dueDay: Math.max(0, Number(draft.dueDay ?? 1)),
+        billDayOffset: Math.max(0, Number(draft.billDayOffset ?? 1)),
+        periodAnchorDay: Math.min(31, Math.max(1, Number(draft.periodAnchorDay || 1))),
+        gracePeriodDays: Math.max(0, Number(draft.gracePeriodDays || 0)),
+        generateLeadDays: Math.max(0, Number(draft.generateLeadDays ?? 7)),
         customIntervalDays:
           draft.frequency === "Custom"
             ? Number(draft.customIntervalDays || 30)
@@ -367,19 +437,10 @@ export default function RecurringMasterFormPage({
       });
       let activationStage: string | null = null;
       if (intent === "generate") {
-        const cycle = buildRecurringCycle(
-          {
-            frequency: draft.frequency!,
-            startDate: draft.startDate,
-            endDate: draft.endDate,
-            dueDay: Number(draft.dueDay || 1),
-            customIntervalDays:
-              draft.frequency === "Custom"
-                ? Number(draft.customIntervalDays || 30)
-                : undefined,
-          },
-          new Date(),
-        );
+        // Same rule object the preview reads, so what gets written is what the user was shown.
+        const cycle = recurrenceRules
+          ? buildRecurringCycle(recurrenceRules, new Date(), scheduleOptions)
+          : null;
         if (cycle) {
           const cycleKey = `${organizationId}_${masterRef.id}_${cycle.key}`;
           const paymentRef = doc(
@@ -659,8 +720,8 @@ export default function RecurringMasterFormPage({
         </Section>
         <Section
           icon={Settings2}
-          title="Recurrence settings"
-          description="How often this generates, and when the next cycle falls due."
+          title="Billing period"
+          description="How often a cycle occurs, and the window of service each cycle covers."
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <ControlledField setting={field("frequency")}>
@@ -717,85 +778,159 @@ export default function RecurringMasterFormPage({
                 onChange={(event) => set("endDate", event.target.value)}
               />
             </ControlledField>
-            <ControlledField setting={field("billingCycle")}>
-              <Input
-                value={draft.billingCycle || ""}
-                onChange={(event) => set("billingCycle", event.target.value)}
-              />
-            </ControlledField>
-            <ControlledField setting={field("generationDateRule")}>
-              <Input
-                value={draft.generationDateRule || ""}
-                onChange={(event) =>
-                  set("generationDateRule", event.target.value)
-                }
-              />
-            </ControlledField>
-            <ControlledField setting={field("dueDateRule")}>
-              <Select
-                value={draft.dueDateRule}
-                onValueChange={(value) =>
-                  set(
-                    "dueDateRule",
-                    value as RecurringPaymentMaster["dueDateRule"],
-                  )
-                }
+            {/* Only the month-based frequencies have a month day to anchor to; Weekly, Custom and
+                Renewable periods already run from the master's start date. */}
+            {!["Weekly", "Custom", "Renewable"].includes(draft.frequency || "") && (
+              <ControlledField
+                setting={field("periodAnchorDay")}
+                help="1 for calendar months. Use 17 for a vendor who bills the 17th to the 16th."
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[
-                    "Fixed day of month",
-                    "Days after bill date",
-                    "Days after generation date",
-                    "Last working day",
-                    "Custom date logic",
-                  ].map((item) => (
-                    <SelectItem value={item} key={item}>
-                      {item}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </ControlledField>
-            <ControlledField setting={field("dueDay")}>
-              <Input
-                type="number"
-                min="1"
-                max="28"
-                value={draft.dueDay || 1}
-                onChange={(event) => set("dueDay", Number(event.target.value))}
-              />
-            </ControlledField>
-            <ControlledField setting={field("gracePeriodDays")}>
-              <Input
-                type="number"
-                min="0"
-                value={draft.gracePeriodDays || 0}
-                onChange={(event) =>
-                  set("gracePeriodDays", Number(event.target.value))
-                }
-              />
-            </ControlledField>
-            <ControlledField setting={field("generateBeforeDueDays")}>
-              <Input
-                type="number"
-                min="0"
-                max="365"
-                value={draft.generateBeforeDueDays || 7}
-                onChange={(event) =>
-                  set("generateBeforeDueDays", Number(event.target.value))
-                }
-              />
-            </ControlledField>
-            {field("autoGenerationEnabled").visible && (
-              <Toggle
-                label={<ControlledToggleLabel setting={field("autoGenerationEnabled")} />}
-                checked={draft.autoGenerationEnabled !== false}
-                onChange={(value) => set("autoGenerationEnabled", value)}
-              />
+                <Input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={draft.periodAnchorDay ?? 1}
+                  onChange={(event) =>
+                    set("periodAnchorDay", Number(event.target.value))
+                  }
+                />
+              </ControlledField>
             )}
+          </div>
+        </Section>
+        <Section
+          icon={CalendarClock}
+          title="Bill and due dates"
+          description="Each cycle's dates derive from each other in order: billing period → bill date → due date → overdue date. The obligation record itself is created a lead time before the bill date."
+        >
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <ControlledField setting={field("billDateRule")}>
+                {/* Falls back to the same rule resolveExpectedBillDate does, so the dropdown can
+                    never display a rule the calculation isn't actually using. */}
+                <Select
+                  value={draft.billDateRule || "Start of billing period"}
+                  onValueChange={(value) =>
+                    set("billDateRule", value as RecurringPaymentMaster["billDateRule"])
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BILL_DATE_RULES.map((item) => (
+                      <SelectItem value={item} key={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ControlledField>
+              {/* Only the two offset-driven bill rules have a number to configure; the period-anchored
+                  ones would show an input that changes nothing. */}
+              {["Fixed day of month", "Days after period end"].includes(
+                draft.billDateRule || "",
+              ) && (
+                <ControlledField
+                  setting={{
+                    ...field("billDayOffset"),
+                    label:
+                      draft.billDateRule === "Fixed day of month"
+                        ? "Bill day of month"
+                        : "Days after period end",
+                  }}
+                >
+                  <Input
+                    type="number"
+                    min="0"
+                    max={draft.billDateRule === "Fixed day of month" ? "31" : "90"}
+                    value={draft.billDayOffset ?? 1}
+                    onChange={(event) =>
+                      set("billDayOffset", Number(event.target.value))
+                    }
+                  />
+                </ControlledField>
+              )}
+              <ControlledField setting={field("dueDateRule")}>
+                <Select
+                  value={normalizeDueDateRule(draft.dueDateRule)}
+                  onValueChange={(value) =>
+                    set("dueDateRule", value as RecurringPaymentMaster["dueDateRule"])
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DUE_DATE_RULES.map((item) => (
+                      <SelectItem value={item} key={item}>
+                        {item}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </ControlledField>
+              {/* "Last day / last working day of month" and "Same as bill date" need no number. */}
+              {["Days after bill date", "Fixed day of month"].includes(
+                normalizeDueDateRule(draft.dueDateRule),
+              ) && (
+                <ControlledField
+                  setting={{
+                    ...field("dueDay"),
+                    label:
+                      normalizeDueDateRule(draft.dueDateRule) === "Fixed day of month"
+                        ? "Due day of month"
+                        : "Days after bill date",
+                  }}
+                >
+                  <Input
+                    type="number"
+                    min="0"
+                    max={
+                      normalizeDueDateRule(draft.dueDateRule) === "Fixed day of month"
+                        ? "31"
+                        : "180"
+                    }
+                    value={draft.dueDay ?? 1}
+                    onChange={(event) => set("dueDay", Number(event.target.value))}
+                  />
+                </ControlledField>
+              )}
+              <ControlledField setting={field("gracePeriodDays")}>
+                <Input
+                  type="number"
+                  min="0"
+                  max="90"
+                  value={draft.gracePeriodDays ?? 0}
+                  onChange={(event) =>
+                    set("gracePeriodDays", Number(event.target.value))
+                  }
+                />
+              </ControlledField>
+              <ControlledField setting={field("generateLeadDays")}>
+                <Input
+                  type="number"
+                  min="0"
+                  max="365"
+                  value={draft.generateLeadDays ?? 7}
+                  onChange={(event) =>
+                    set("generateLeadDays", Number(event.target.value))
+                  }
+                />
+              </ControlledField>
+              {field("autoGenerationEnabled").visible && (
+                <Toggle
+                  label={<ControlledToggleLabel setting={field("autoGenerationEnabled")} />}
+                  checked={draft.autoGenerationEnabled !== false}
+                  onChange={(value) => set("autoGenerationEnabled", value)}
+                />
+              )}
+            </div>
+            <SchedulePreview
+              rules={recurrenceRules}
+              cycles={schedulePreview}
+              autoGenerationEnabled={draft.autoGenerationEnabled !== false}
+            />
           </div>
         </Section>
         <Section
@@ -1131,6 +1266,98 @@ function Section({
     </Card>
   );
 }
+/** Formats an ISO date as `dd MMM yyyy` — the schedule is read as dates, not as ISO strings. */
+const showDate = (value: string) =>
+  new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+/**
+ * Resolves the configured rules into the actual dates of the next few cycles. Without this the
+ * rule fields above are unanswerable from the form alone — a user can pick "days after bill date"
+ * and a lead time with no way to tell what date a bill will be generated on or when it falls due,
+ * which is exactly how the previous layout read.
+ */
+function SchedulePreview({
+  rules,
+  cycles,
+  autoGenerationEnabled,
+}: {
+  rules: RecurrenceRuleInput | null;
+  cycles: ReturnType<typeof buildRecurringCycleSchedule>;
+  autoGenerationEnabled: boolean;
+}) {
+  if (!rules)
+    return (
+      <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+        Pick a frequency and start date to see when bills will be generated and
+        when they fall due.
+      </div>
+    );
+  return (
+    <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+      <div>
+        <p className="flex items-center gap-1.5 text-sm font-semibold">
+          <CalendarClock className="h-4 w-4 text-indigo-600" />
+          Resulting schedule
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {describeRecurrence(rules)}
+        </p>
+      </div>
+      {cycles.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[36rem] text-left text-xs">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="pb-1.5 pr-3 font-medium">Cycle</th>
+                <th className="pb-1.5 pr-3 font-medium">Billing period</th>
+                <th className="pb-1.5 pr-3 font-medium">Obligation created</th>
+                <th className="pb-1.5 pr-3 font-medium">Bill expected</th>
+                <th className="pb-1.5 pr-3 font-medium">Payment due</th>
+                <th className="pb-1.5 font-medium">Overdue after</th>
+              </tr>
+            </thead>
+            <tbody className="align-top">
+              {cycles.map((cycle) => (
+                <tr key={cycle.key} className="border-t">
+                  <td className="py-1.5 pr-3 font-medium">{cycle.label}</td>
+                  <td className="py-1.5 pr-3 text-muted-foreground">
+                    {showDate(cycle.billingPeriodStart)} –{" "}
+                    {showDate(cycle.billingPeriodEnd)}
+                  </td>
+                  <td className="py-1.5 pr-3 text-muted-foreground">
+                    {autoGenerationEnabled ? showDate(cycle.generationDate) : "Manual only"}
+                  </td>
+                  <td className="py-1.5 pr-3">{showDate(cycle.expectedBillDate)}</td>
+                  <td className="py-1.5 pr-3 font-semibold">
+                    {showDate(cycle.dueDate)}
+                  </td>
+                  <td className="py-1.5 text-muted-foreground">
+                    {showDate(cycle.overdueDate)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No cycles fall between the start and end dates — check the date range.
+        </p>
+      )}
+      {!autoGenerationEnabled && (
+        <p className="text-xs text-amber-700">
+          Auto-generation is off, so nothing is created on its own. The dates
+          above still apply to obligations generated manually from the master.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SummarySidebar({
   draft,
   owner,
@@ -1140,7 +1367,7 @@ function SummarySidebar({
   draft: Partial<RecurringPaymentMaster>;
   owner?: { name: string };
   missingRequired: string[];
-  previewCycle: { label: string; dueDate: string } | null;
+  previewCycle: { label: string; dueDate: string; expectedBillDate: string } | null;
 }) {
   return (
     <Card className="lg:sticky lg:top-4">
@@ -1178,7 +1405,8 @@ function SummarySidebar({
                 {previewCycle.label}
               </p>
               <p className="text-xs text-muted-foreground">
-                Due {previewCycle.dueDate}
+                Bill {showDate(previewCycle.expectedBillDate)} · due{" "}
+                {showDate(previewCycle.dueDate)}
               </p>
             </>
           ) : (
