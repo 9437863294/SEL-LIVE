@@ -6,10 +6,8 @@
  * Links are built through the host context, so every one carries the `?project=` handle forward.
  */
 
-import Link from "next/link";
 import { History, LayoutGrid, Ruler, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { PillNav } from "@/components/shared/pill-nav";
 import type { PmSurveyContext } from "@/lib/project-management-survey-workflow";
 
 const SCREENS = [
@@ -33,25 +31,16 @@ export function SurveyNav({
   hidden?: SurveyNavKey[];
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {SCREENS.filter((screen) => !hidden.includes(screen.key)).map((screen) => {
-        const Icon = screen.icon;
-        const isActive = screen.key === active;
-        return (
-          <Button
-            key={screen.key}
-            variant={isActive ? "default" : "outline"}
-            size="sm"
-            asChild
-            className={cn(isActive && "pointer-events-none")}
-          >
-            <Link href={context.surveyHref(screen.suffix)}>
-              <Icon className="mr-1.5 h-3.5 w-3.5" />
-              {screen.label}
-            </Link>
-          </Button>
-        );
-      })}
-    </div>
+    <PillNav
+      label="Survey screens"
+      active={active}
+      gradient="from-cyan-600 to-sky-600"
+      items={SCREENS.filter((screen) => !hidden.includes(screen.key)).map((screen) => ({
+        key: screen.key,
+        label: screen.label,
+        icon: screen.icon,
+        href: context.surveyHref(screen.suffix),
+      }))}
+    />
   );
 }

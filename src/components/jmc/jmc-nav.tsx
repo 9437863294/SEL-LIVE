@@ -11,10 +11,8 @@
  * Links are built through the host context, so every one carries the `?project=` handle forward.
  */
 
-import Link from "next/link";
 import { BarChart3, FilePlus, History, LayoutGrid, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { PillNav } from "@/components/shared/pill-nav";
 import type { PmJmcContext } from "@/lib/jmc-module";
 
 const SCREENS = [
@@ -39,25 +37,16 @@ export function JmcNav({
   hidden?: JmcNavKey[];
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {SCREENS.filter((screen) => !hidden.includes(screen.key)).map((screen) => {
-        const Icon = screen.icon;
-        const isActive = screen.key === active;
-        return (
-          <Button
-            key={screen.key}
-            variant={isActive ? "default" : "outline"}
-            size="sm"
-            asChild
-            className={cn(isActive && "pointer-events-none")}
-          >
-            <Link href={context.jmcHref(screen.suffix)}>
-              <Icon className="mr-1.5 h-3.5 w-3.5" />
-              {screen.label}
-            </Link>
-          </Button>
-        );
-      })}
-    </div>
+    <PillNav
+      label="JMC screens"
+      active={active}
+      gradient="from-orange-600 to-amber-600"
+      items={SCREENS.filter((screen) => !hidden.includes(screen.key)).map((screen) => ({
+        key: screen.key,
+        label: screen.label,
+        icon: screen.icon,
+        href: context.jmcHref(screen.suffix),
+      }))}
+    />
   );
 }

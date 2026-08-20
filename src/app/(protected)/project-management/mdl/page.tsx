@@ -21,6 +21,7 @@ import {
   Plus,
   Search,
   ShieldAlert,
+  ShoppingCart,
   Table2,
   Trash2,
 } from "lucide-react";
@@ -108,6 +109,7 @@ import {
   getLatestRevisionAcrossItem,
   getMdlRollup,
   getMdlSubDrawings,
+  groupMdlRowsByPo,
   isMdlApproved,
   isMdlOverdue,
   isMdlPendingTask,
@@ -116,6 +118,7 @@ import {
   mdlOutlineNo,
   mdlOverallStatusStyles,
   mdlRevisionStatusStyles,
+  summariseMdlRows,
   type MdlDrawing,
   type MdlOverallStatus,
   type MdlRevision,
@@ -128,7 +131,7 @@ import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
 import MdlWorkplanCalendar from "@/components/project-management/mdl-calendar";
 import MdlReports from "@/components/project-management/mdl-reports";
 import MdlGanttChart from "@/components/project-management/mdl-gantt";
-import MdlPendingTasks, { type PoPlacement } from "@/components/project-management/mdl-pending-tasks";
+import MdlPendingTasks from "@/components/project-management/mdl-pending-tasks";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
 
 type ProjectMapping = {
@@ -152,6 +155,10 @@ type EditForm = {
   // Used only when the dialog is editing a sub-drawing, ignored for the parent item's own record.
   title: string;
   assignedToId: string;
+  // Whether the client's rejection needs a fresh drawing from the vendor rather than a
+  // resubmission of the copy we already hold.
+  recollectFromVendor: boolean;
+  recollectReason: string;
   docNo: string;
   drawingNo: string;
   plannedStartDate: string;
@@ -165,6 +172,8 @@ type EditForm = {
 const emptyForm = (): EditForm => ({
   title: "",
   assignedToId: "",
+  recollectFromVendor: false,
+  recollectReason: "",
   docNo: "",
   drawingNo: "",
   plannedStartDate: "",
@@ -183,6 +192,14 @@ type EditTarget = { item: BoqItem; sub: MdlSubDrawing | null; isNew: boolean };
 
 // A specific sub-drawing on a specific item, for the delete confirmation.
 type SubDrawingRef = { item: BoqItem; sub: MdlSubDrawing };
+
+// MdlRow with this page's own concrete BOQ item shape, so grouping and the shared table renderer
+// keep access to fields like "BOQ SL No" that MdlBoqItem only exposes as unknown.
+type MdlItemRow = { item: BoqItem; drawing?: MdlDrawing };
+
+// Purchase orders placed against a BOQ item, flattened. The views group by individual PO, but a
+// plain "is this item under any live PO?" lookup is still what decides a drawing's stage.
+type PoPlacement = { poNumbers: string[]; vendorNames: string[]; latestPoDate: string };
 
 // Sentinel for "nobody assigned" — Radix Select cannot hold an empty string value.
 const UNASSIGNED = "none";
@@ -370,19 +387,26 @@ export default function MdlPage() {
     }
   };
 
-  const groups = useMemo(() => {
-    const map = new Map<string, BoqItem[]>();
-    for (const item of boqItems) {
-      const scope = String(item["Scope 1"] ?? "").trim() || "Ungrouped";
-      map.set(scope, [...(map.get(scope) ?? []), item]);
-    }
-    return Array.from(map.entries());
-  }, [boqItems]);
-
-  const mdlRows = useMemo<MdlRow[]>(
+  const mdlRows = useMemo<MdlItemRow[]>(
     () => boqItems.map((item) => ({ item, drawing: drawings[item.id] })),
     [boqItems, drawings],
   );
+
+  // Purchase order → BOQ item → sub-drawing. Items not on any live PO fall back to the Scope 1
+  // grouping the register has always used, so nothing marked MDL = Yes disappears from view.
+  const { groups: poGroups, ungrouped: unorderedRows } = useMemo(
+    () => groupMdlRowsByPo(mdlRows, purchaseOrders),
+    [mdlRows, purchaseOrders],
+  );
+
+  const scopeGroups = useMemo(() => {
+    const map = new Map<string, MdlRow[]>();
+    for (const row of unorderedRows) {
+      const scope = String(row.item["Scope 1"] ?? "").trim() || "Ungrouped";
+      map.set(scope, [...(map.get(scope) ?? []), row]);
+    }
+    return Array.from(map.entries());
+  }, [unorderedRows]);
 
   // Which BOQ items have an active (non-cancelled) purchase order placed against them —
   // that's the trigger for a drawing becoming a "pending task".
@@ -428,6 +452,8 @@ export default function MdlPage() {
         ? {
             title: sub?.title ?? "",
             assignedToId: sub?.assignedToId ?? "",
+            recollectFromVendor: Boolean(sub?.recollectionRequested),
+            recollectReason: sub?.recollectionRequested?.reason ?? "",
             docNo: source.docNo ?? "",
             drawingNo: source.drawingNo ?? "",
             plannedStartDate: source.plannedStartDate ?? "",
@@ -592,6 +618,21 @@ export default function MdlPage() {
           : null;
         // Sentinel timestamps are illegal inside array elements, so these are plain ISO strings.
         const nowIso = new Date().toISOString();
+
+        // Approving the drawing settles the vendor's obligation for good, so it always clears any
+        // outstanding request for a replacement — an approved drawing must never reappear in the
+        // Drawing page's collection queue.
+        const wantsRecollection = form.recollectFromVendor && !isMdlApproved(form.status);
+        const recollectionRequested = wantsRecollection
+          ? {
+              // Preserved across edits so the age of the request doesn't reset every save.
+              requestedOn: previous?.recollectionRequested?.requestedOn ?? nowIso.slice(0, 10),
+              ...(form.recollectReason.trim() ? { reason: form.recollectReason.trim() } : {}),
+              ...(getLatestRevision(revisions)?.round ? { afterRound: getLatestRevision(revisions)!.round } : {}),
+              requestedBy: previous?.recollectionRequested?.requestedBy ?? user.id,
+              requestedByName: previous?.recollectionRequested?.requestedByName ?? user.name ?? "",
+            }
+          : null;
         const nextSub: MdlSubDrawing = {
           id: editingSub.id,
           title: form.title.trim(),
@@ -605,6 +646,11 @@ export default function MdlPage() {
           remark: form.remark.trim(),
           ...(firstSubmittedOn ? { firstSubmittedOn } : {}),
           ...(assignee ?? {}),
+          // Carried through explicitly: this rebuilds the sub-drawing from scratch, so anything
+          // the Drawing page owns has to be copied over or saving here would wipe it.
+          ...(previous?.collection ? { collection: previous.collection } : {}),
+          ...(previous?.previousCollections?.length ? { previousCollections: previous.previousCollections } : {}),
+          ...(recollectionRequested ? { recollectionRequested } : {}),
           createdAt: previous?.createdAt ?? nowIso,
           createdBy: previous?.createdBy ?? user.id,
           createdByName: previous?.createdByName ?? user.name ?? "",
@@ -721,112 +767,15 @@ export default function MdlPage() {
     }
   };
 
-  if (isAuthLoading || isLoading) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-        <Skeleton className="h-9 w-64" />
-        <Skeleton className="h-80 w-full" />
-      </main>
-    );
-  }
-
-  if (!canView) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Access Denied</CardTitle>
-            <CardDescription>You do not have permission to view the MDL register.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center p-8">
-            <ShieldAlert className="h-16 w-16 text-destructive" />
-          </CardContent>
-        </Card>
-      </main>
-    );
-  }
-
-  if (!mappingId || !mapping) {
-    return (
-      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Select a project first</CardTitle>
-            <CardDescription>Return to Project Management and choose a project before opening the MDL register.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild><Link href="/project-management">Select Project</Link></Button>
-          </CardContent>
-        </Card>
-      </main>
-    );
-  }
-
-  return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-sm">
-            <FileStack className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Design &amp; Engineering</h1>
-            <p className="text-sm text-muted-foreground">
-              Tracks drawing submission &amp; approval for every BOQ item marked MDL = Yes in {mapping.projectName}.
-            </p>
-          </div>
-        </div>
-        {canEdit && (
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <ListPlus className="mr-2 h-4 w-4" /> Add BOQ Item
-          </Button>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
-        <SidebarTabsList
-          items={[
-            { value: "pending", label: "Pending Tasks", icon: ListTodo, color: "text-rose-600", bg: "bg-rose-100", count: pendingTaskCount },
-            { value: "register", label: "Register", icon: Table2, color: "text-sky-600", bg: "bg-sky-100" },
-            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays, color: "text-violet-600", bg: "bg-violet-100" },
-            { value: "gantt", label: "Gantt Chart", icon: GanttChart, color: "text-orange-600", bg: "bg-orange-100" },
-            { value: "reports", label: "Reports", icon: FileBarChart2, color: "text-blue-600", bg: "bg-blue-100" },
-          ]}
-          activeValue={activeTab}
-          onChange={setActiveTab}
-          title="MDL Views"
-          description="Pending tasks, register, calendar, Gantt & reports"
-          icon={FileStack}
-          gradient="from-sky-500 to-blue-600"
-          tint="from-sky-500/10 to-blue-500/5"
-        />
-
-        <div className="min-w-0 flex-1 space-y-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsContent value="pending" className="mt-0">
-          <MdlPendingTasks rows={mdlRows} poInfoByBoqItemId={poInfoByBoqItemId} onSelectItem={handleSelectMdlItem} />
-        </TabsContent>
-
-        <TabsContent value="register" className="mt-0 space-y-5">
-          {groups.length ? (
-            groups.map(([scope, items]) => (
-              <Card key={scope} className="overflow-hidden border-border/60">
-                <div className="h-1 w-full bg-gradient-to-r from-sky-500 to-blue-600" />
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">{scope}</CardTitle>
-                  <CardDescription>{items.length} drawing{items.length === 1 ? "" : "s"}</CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
+  // Shared by the purchase-order groups and the Scope 1 groups beneath them: the rows are
+  // identical, only the outline numbering differs. `prefix` carries the enclosing group’s index
+  // so a PO’s items read 1.1, 1.2 and their sub-drawings 1.1.1, 1.1.2.
+  const registerTable = (rows: MdlItemRow[], prefix: number[]) => (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-16">SL NO</TableHead>
+                          <TableHead className="w-20">SL NO</TableHead>
                           <TableHead>BOQ SL No</TableHead>
                           <TableHead className="min-w-[240px]">Item Description</TableHead>
                           <TableHead>Doc No.</TableHead>
@@ -842,8 +791,7 @@ export default function MdlPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {items.map((item, index) => {
-                          const drawing = drawings[item.id];
+                        {rows.map(({ item, drawing }, index) => {
                           // Everything on the parent row reads from the roll-up, so an item with
                           // sub-drawings summarises them instead of showing an empty container.
                           const rollup = getMdlRollup(drawing);
@@ -869,7 +817,7 @@ export default function MdlPage() {
                               // action buttons stop propagation so they still do their own thing.
                               onClick={subDrawings.length ? () => toggleExpanded(item.id) : undefined}
                             >
-                              <TableCell className="font-medium">{mdlOutlineNo(index)}.</TableCell>
+                              <TableCell className="font-medium">{mdlOutlineNo(...prefix, index)}.</TableCell>
                               <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
                               <TableCell className="max-w-xs">
                                 <div className="flex items-center gap-1">
@@ -990,7 +938,7 @@ export default function MdlPage() {
                                   return (
                                     <TableRow key={`${item.id}-${sub.id}`} className="border-b-0 last:border-b">
                                       <TableCell className="pl-6 text-xs tabular-nums text-muted-foreground">
-                                        {mdlOutlineNo(index, subIndex)}.
+                                        {mdlOutlineNo(...prefix, index, subIndex)}.
                                       </TableCell>
                                       <TableCell />
                                       <TableCell className="max-w-xs">
@@ -1095,9 +1043,150 @@ export default function MdlPage() {
                       </TableBody>
                     </Table>
                   </div>
-                </CardContent>
-              </Card>
-            ))
+  );
+
+  if (isAuthLoading || isLoading) {
+    return (
+      <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
+        <Skeleton className="h-9 w-64" />
+        <Skeleton className="h-80 w-full" />
+      </main>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>You do not have permission to view the MDL register.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center p-8">
+            <ShieldAlert className="h-16 w-16 text-destructive" />
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  if (!mappingId || !mapping) {
+    return (
+      <main className="min-h-[calc(100dvh-4rem)] p-4 sm:p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Select a project first</CardTitle>
+            <CardDescription>Return to Project Management and choose a project before opening the MDL register.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild><Link href="/project-management">Select Project</Link></Button>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+          </Button>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-sm">
+            <FileStack className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold">Design &amp; Engineering</h1>
+            <p className="text-sm text-muted-foreground">
+              Tracks drawing submission &amp; approval for every BOQ item marked MDL = Yes in {mapping.projectName}.
+            </p>
+          </div>
+        </div>
+        {canEdit && (
+          <Button onClick={() => setIsAddDialogOpen(true)}>
+            <ListPlus className="mr-2 h-4 w-4" /> Add BOQ Item
+          </Button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+        <SidebarTabsList
+          items={[
+            { value: "pending", label: "Pending Tasks", icon: ListTodo, color: "text-rose-600", bg: "bg-rose-100", count: pendingTaskCount },
+            { value: "register", label: "Register", icon: Table2, color: "text-sky-600", bg: "bg-sky-100" },
+            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays, color: "text-violet-600", bg: "bg-violet-100" },
+            { value: "gantt", label: "Gantt Chart", icon: GanttChart, color: "text-orange-600", bg: "bg-orange-100" },
+            { value: "reports", label: "Reports", icon: FileBarChart2, color: "text-blue-600", bg: "bg-blue-100" },
+          ]}
+          activeValue={activeTab}
+          onChange={setActiveTab}
+          title="MDL Views"
+          description="Pending tasks, register, calendar, Gantt & reports"
+          icon={FileStack}
+          gradient="from-sky-500 to-blue-600"
+          tint="from-sky-500/10 to-blue-500/5"
+        />
+
+        <div className="min-w-0 flex-1 space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsContent value="pending" className="mt-0">
+          <MdlPendingTasks
+            rows={mdlRows}
+            purchaseOrders={purchaseOrders}
+            mappingId={mappingId}
+            onSelectItem={handleSelectMdlItem}
+          />
+        </TabsContent>
+
+        <TabsContent value="register" className="mt-0 space-y-5">
+          {poGroups.length || scopeGroups.length ? (
+            <>
+              {poGroups.map((group, groupIndex) => {
+                const summary = summariseMdlRows(group.rows);
+                return (
+                  <Card key={group.po.poId} className="overflow-hidden border-border/60">
+                    <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
+                    <CardHeader className="pb-3">
+                      <CardTitle className="flex flex-wrap items-center gap-2 text-base">
+                        <span className="text-muted-foreground">{mdlOutlineNo(groupIndex)}.</span>
+                        <ShoppingCart className="h-4 w-4 text-emerald-600" />
+                        <Link
+                          href={`/project-management/purchase-orders/${group.po.poId}?project=${encodeURIComponent(mappingId)}`}
+                          className="hover:underline"
+                        >
+                          {group.po.poNumber}
+                        </Link>
+                        {group.po.vendorName && (
+                          <span className="text-sm font-normal text-muted-foreground">{group.po.vendorName}</span>
+                        )}
+                      </CardTitle>
+                      <CardDescription>
+                        Ordered {formatMdlDate(group.po.poDate)} · {group.rows.length} item
+                        {group.rows.length === 1 ? "" : "s"} · {summary.approved}/{summary.drawings} drawing
+                        {summary.drawings === 1 ? "" : "s"} approved
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0">{registerTable(group.rows, [groupIndex])}</CardContent>
+                  </Card>
+                );
+              })}
+
+              {scopeGroups.map(([scope, rows]) => (
+                <Card key={scope} className="overflow-hidden border-border/60">
+                  <div className="h-1 w-full bg-gradient-to-r from-sky-500 to-blue-600" />
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">{scope}</CardTitle>
+                    <CardDescription>
+                      Not on a purchase order yet · {rows.length} item{rows.length === 1 ? "" : "s"}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">{registerTable(rows, [])}</CardContent>
+                </Card>
+              ))}
+            </>
           ) : (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center gap-3 p-8 text-center">
@@ -1268,6 +1357,40 @@ export default function MdlPage() {
                       </a>
                     )}
                     <p className="pt-1">Review it, then record the client submission below.</p>
+
+                    {isMdlApproved(form.status) ? (
+                      <p className="mt-2 rounded-md bg-emerald-50 p-2 text-emerald-800">
+                        Approved — the vendor has nothing further to supply for this drawing. It stays approved for any
+                        later purchase order on this item, so it will not be asked for again.
+                      </p>
+                    ) : (
+                      <div className="mt-2 space-y-2 rounded-md border border-rose-200 bg-rose-50 p-2">
+                        <label className="flex items-start gap-2 text-rose-900">
+                          <Checkbox
+                            className="mt-0.5"
+                            checked={form.recollectFromVendor}
+                            onCheckedChange={(state) =>
+                              setForm((c) => ({ ...c, recollectFromVendor: state === true }))
+                            }
+                          />
+                          <span>
+                            <span className="font-medium">Needs a fresh drawing from the vendor</span>
+                            <span className="block text-[11px]">
+                              Tick this when the rejection can&apos;t be answered with the copy we already hold. It puts
+                              the drawing back on the Drawing page to collect again.
+                            </span>
+                          </span>
+                        </label>
+                        {form.recollectFromVendor && (
+                          <Input
+                            value={form.recollectReason}
+                            onChange={(e) => setForm((c) => ({ ...c, recollectReason: e.target.value }))}
+                            placeholder="What the vendor needs to correct (optional)"
+                            className="h-8 bg-white text-xs"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">

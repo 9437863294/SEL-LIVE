@@ -1980,3 +1980,176 @@ test('an item reports how many of its drawings are collected, not just approved'
   assert.equal(rollup.subApproved, 1);
   assert.equal(rollup.status, 'In Progress');
 });
+
+test('an approved drawing is settled with the vendor, including for later purchase orders', async () => {
+  const { isAwaitingVendorCollection } = await import('../src/lib/mdl.ts');
+
+  // Nothing is owed until a purchase order exists.
+  assert.equal(isAwaitingVendorCollection(mdlSub(), false), false);
+  // PO placed, never collected — the vendor owes it.
+  assert.equal(isAwaitingVendorCollection(mdlSub(), true), true);
+  // Collected — obligation met while it goes through review and client submission.
+  const collected = mdlSub({ status: 'In Progress', collection: { receivedOn: '2026-04-01' } });
+  assert.equal(isAwaitingVendorCollection(collected, true), false);
+
+  // Approved: settled for good. A second purchase order on the same BOQ item must not ask the
+  // vendor for the same drawing again — that standing approval is what the new PO relies on.
+  const approved = mdlSub({ status: 'Approved', collection: { receivedOn: '2026-04-01' } });
+  assert.equal(isAwaitingVendorCollection(approved, true), false);
+  const approvedWithComments = mdlSub({
+    status: 'Approved with Comments',
+    collection: { receivedOn: '2026-04-01' },
+  });
+  assert.equal(isAwaitingVendorCollection(approvedWithComments, true), false);
+
+  // Even an approved drawing that somehow still carries a stale re-collection request stays
+  // settled — approval outranks the request.
+  assert.equal(
+    isAwaitingVendorCollection(
+      { ...approved, recollectionRequested: { requestedOn: '2026-03-01' } },
+      true,
+    ),
+    false,
+  );
+});
+
+test('rejection alone does not reopen collection; an explicit request does', async () => {
+  const { isAwaitingVendorCollection, computeMdlDrawingStage } = await import('../src/lib/mdl.ts');
+
+  // The client rejected it, but most rejections are answered by resubmitting the copy we hold —
+  // so the vendor is not automatically asked for a new one.
+  const rejected = mdlSub({
+    status: 'Rejected',
+    collection: { receivedOn: '2026-04-01' },
+    revisions: mdlRevisions({ R0: { submissionDate: '2026-04-05', status: 'Rejected' } }),
+  });
+  assert.equal(isAwaitingVendorCollection(rejected, true), false);
+  assert.equal(computeMdlDrawingStage(rejected, true), 'Rejected');
+
+  // Once the reviewer records that a fresh drawing is needed, the vendor owes it again.
+  const needsReplacement = {
+    ...rejected,
+    recollectionRequested: { requestedOn: '2026-04-10', reason: 'Wrong terminal spacing', afterRound: 'R0' },
+  };
+  assert.equal(isAwaitingVendorCollection(needsReplacement, true), true);
+  // And the actionable stage is the vendor's, not the client's.
+  assert.equal(computeMdlDrawingStage(needsReplacement, true), 'Re-collect from Vendor');
+
+  // Collecting the replacement clears the request, which is what settles it again.
+  const { recollectionRequested: _cleared, ...replaced } = needsReplacement;
+  const replacement = { ...replaced, collection: { receivedOn: '2026-04-20' } };
+  assert.equal(isAwaitingVendorCollection(replacement, true), false);
+  assert.equal(computeMdlDrawingStage(replacement, true), 'Rejected');
+
+  // A replacement request on an item whose PO was cancelled owes nothing — there is no live
+  // purchase order to collect against.
+  assert.equal(isAwaitingVendorCollection(needsReplacement, false), false);
+});
+
+test('MDL rows group as purchase order then BOQ item, newest order first', async () => {
+  const { groupMdlRowsByPo } = await import('../src/lib/mdl.ts');
+
+  const rows = [
+    { item: { id: 'a', 'BOQ SL No': '1' }, drawing: mdlParent({ id: 'a' }) },
+    { item: { id: 'b', 'BOQ SL No': '2' }, drawing: mdlParent({ id: 'b' }) },
+    { item: { id: 'c', 'BOQ SL No': '3' } },
+  ];
+  const pos = [
+    { id: 'po-1', poNumber: 'PO-001', poDate: '2026-01-10', vendorName: 'Hitachi', items: [{ boqItemId: 'b' }] },
+    { id: 'po-2', poNumber: 'PO-002', poDate: '2026-03-05', vendorName: 'Siemens', items: [{ boqItemId: 'a' }] },
+  ];
+
+  const { groups, ungrouped } = groupMdlRowsByPo(rows, pos);
+
+  // Most recent commitment leads.
+  assert.deepEqual(groups.map((group) => group.po.poNumber), ['PO-002', 'PO-001']);
+  assert.equal(groups[0].po.vendorName, 'Siemens');
+  assert.deepEqual(groups[0].rows.map((row) => row.item.id), ['a']);
+  assert.deepEqual(groups[1].rows.map((row) => row.item.id), ['b']);
+  // Item 'c' is on no purchase order, so the caller decides how to present it.
+  assert.deepEqual(ungrouped.map((row) => row.item.id), ['c']);
+});
+
+test('an item on two purchase orders appears under both', async () => {
+  const { groupMdlRowsByPo } = await import('../src/lib/mdl.ts');
+
+  const rows = [{ item: { id: 'a' }, drawing: mdlParent({ id: 'a' }) }];
+  const { groups, ungrouped } = groupMdlRowsByPo(rows, [
+    { id: 'po-1', poNumber: 'PO-001', poDate: '2026-01-10', items: [{ boqItemId: 'a' }] },
+    { id: 'po-2', poNumber: 'PO-002', poDate: '2026-02-10', items: [{ boqItemId: 'a' }] },
+  ]);
+
+  // Both POs are waiting on the same drawings, so filing it under only the first would hide what
+  // the second is blocked on.
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups.map((group) => group.rows.length), [1, 1]);
+  assert.equal(ungrouped.length, 0);
+});
+
+test('grouping skips cancelled orders, empty orders and repeated lines', async () => {
+  const { groupMdlRowsByPo } = await import('../src/lib/mdl.ts');
+
+  const rows = [
+    { item: { id: 'a' }, drawing: mdlParent({ id: 'a' }) },
+    { item: { id: 'b' }, drawing: mdlParent({ id: 'b' }) },
+  ];
+  const { groups, ungrouped } = groupMdlRowsByPo(rows, [
+    // Cancelled: commits nothing, so item 'a' is not under order.
+    { id: 'po-1', poNumber: 'PO-001', poDate: '2026-01-10', status: 'Cancelled', items: [{ boqItemId: 'a' }] },
+    // Only covers items that aren't MDL-tracked, so it contributes no group at all.
+    { id: 'po-2', poNumber: 'PO-002', poDate: '2026-02-10', items: [{ boqItemId: 'not-mdl' }] },
+    // The same BOQ item on two lines is still one set of drawings.
+    {
+      id: 'po-3',
+      poNumber: 'PO-003',
+      poDate: '2026-03-10',
+      items: [{ boqItemId: 'b' }, { boqItemId: 'b' }, { boqItemId: undefined }],
+    },
+  ]);
+
+  assert.deepEqual(groups.map((group) => group.po.poNumber), ['PO-003']);
+  assert.deepEqual(groups[0].rows.map((row) => row.item.id), ['b']);
+  assert.deepEqual(ungrouped.map((row) => row.item.id), ['a']);
+
+  // No purchase orders at all leaves everything ungrouped rather than throwing.
+  const bare = groupMdlRowsByPo(rows, []);
+  assert.equal(bare.groups.length, 0);
+  assert.equal(bare.ungrouped.length, 2);
+});
+
+test('a purchase order group summarises the drawings it is waiting on', async () => {
+  const { summariseMdlRows } = await import('../src/lib/mdl.ts');
+
+  const summary = summariseMdlRows([
+    // Three sub-drawings, one cleared by the client.
+    {
+      item: { id: 'a' },
+      drawing: mdlParent({
+        subDrawings: [
+          mdlSub({ id: 's1', status: 'Approved' }),
+          mdlSub({ id: 's2', status: 'In Progress' }),
+          mdlSub({ id: 's3', status: 'Pending' }),
+        ],
+      }),
+    },
+    // No sub-drawings planned: the item's own record is the one drawing it has.
+    { item: { id: 'b' }, drawing: mdlParent({ docNo: 'DOC-1', status: 'Approved' }) },
+    // No record at all still counts as one drawing owed.
+    { item: { id: 'c' } },
+  ]);
+
+  assert.equal(summary.drawings, 5);
+  assert.equal(summary.approved, 2);
+});
+
+test('outline numbering extends to purchase order, item and sub-drawing', async () => {
+  const { mdlOutlineNo } = await import('../src/lib/mdl.ts');
+
+  // Three levels now: PO 1 → its second item → that item's third drawing.
+  assert.equal(mdlOutlineNo(0), '1');
+  assert.equal(mdlOutlineNo(0, 1), '1.2');
+  assert.equal(mdlOutlineNo(0, 1, 2), '1.2.3');
+  // Spreading an empty prefix leaves the un-ordered groups reading 1, 1.1 as before.
+  assert.equal(mdlOutlineNo(...[], 0), '1');
+  assert.equal(mdlOutlineNo(...[], 0, 1), '1.2');
+});

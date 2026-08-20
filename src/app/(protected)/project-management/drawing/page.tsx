@@ -13,6 +13,7 @@ import {
   Loader2,
   Paperclip,
   PenTool,
+  RotateCcw,
   Search,
   ShieldAlert,
   Truck,
@@ -55,6 +56,7 @@ import {
   computeMdlDrawingStage,
   formatMdlDate,
   getMdlSubDrawings,
+  isAwaitingVendorCollection,
   isCollectedFromVendor,
   mdlDrawingStageStyles,
   mdlOutlineNo,
@@ -228,19 +230,29 @@ export default function DrawingPage() {
     );
   }, [allRows, search]);
 
+  // Every row here already has a purchase order, so the only question left is whether the vendor
+  // still owes the drawing — approved drawings are settled and never come back.
   const pendingRows = useMemo(
     () =>
       filteredRows
-        .filter((row) => !isCollectedFromVendor(row.sub))
-        // Oldest purchase order first: the vendor has owed those the longest.
-        .sort((a, b) => (a.latestPoDate || "").localeCompare(b.latestPoDate || "")),
+        .filter((row) => isAwaitingVendorCollection(row.sub, true))
+        // Replacements the client is waiting on come first, then the oldest purchase orders,
+        // since the vendor has owed those the longest.
+        .sort((a, b) => {
+          const aRedo = Boolean(a.sub.recollectionRequested);
+          const bRedo = Boolean(b.sub.recollectionRequested);
+          if (aRedo !== bRedo) return aRedo ? -1 : 1;
+          return (a.latestPoDate || "").localeCompare(b.latestPoDate || "");
+        }),
     [filteredRows],
   );
 
   const collectedRows = useMemo(
     () =>
       filteredRows
-        .filter((row) => isCollectedFromVendor(row.sub))
+        // A drawing waiting on a replacement is listed as outstanding, not as collected, even
+        // though we still hold the copy the vendor sent the first time.
+        .filter((row) => isCollectedFromVendor(row.sub) && !isAwaitingVendorCollection(row.sub, true))
         .sort((a, b) => (b.sub.collection?.receivedOn || "").localeCompare(a.sub.collection?.receivedOn || "")),
     [filteredRows],
   );
@@ -277,11 +289,15 @@ export default function DrawingPage() {
       toast({ title: "Received date is required", variant: "destructive" });
       return;
     }
-    const alreadyHasFile = Boolean(collecting.sub.collection?.fileUrl);
-    if (!pendingFile && !alreadyHasFile) {
+    // A replacement always needs the new file — the whole point of the request was that the copy
+    // we already hold isn't acceptable.
+    const needsFreshFile = Boolean(collecting.sub.recollectionRequested) || !collecting.sub.collection?.fileUrl;
+    if (!pendingFile && needsFreshFile) {
       toast({
         title: "Attach the vendor's drawing",
-        description: "Collecting a drawing means recording the file the vendor handed over.",
+        description: collecting.sub.recollectionRequested
+          ? "Attach the replacement the vendor sent — the rejected copy stays on the record separately."
+          : "Collecting a drawing means recording the file the vendor handed over.",
         variant: "destructive",
       });
       return;
@@ -303,28 +319,39 @@ export default function DrawingPage() {
         file = { fileUrl: await getDownloadURL(target), fileName: pendingFile.name, filePath: path };
       }
 
-      const nextSubs = getMdlSubDrawings(drawings[item.id]).map((candidate) =>
-        candidate.id === sub.id
-          ? {
-              ...candidate,
-              collection: {
-                receivedOn: form.receivedOn,
-                ...(form.vendorName.trim() ? { vendorName: form.vendorName.trim() } : {}),
-                ...(form.remark.trim() ? { remark: form.remark.trim() } : {}),
-                ...(file.fileUrl ? file : {}),
-                receivedBy: user.id,
-                receivedByName: user.name ?? "",
-              },
-              // Collecting from the vendor is real movement on the drawing, so an untouched
-              // sub-drawing stops reading as Pending. Anything further along is left alone.
-              status: candidate.status === "Pending" ? ("In Progress" as const) : candidate.status,
-              // ISO string, not serverTimestamp() — Firestore rejects sentinels inside arrays.
-              updatedAt: new Date().toISOString(),
-              updatedBy: user.id,
-              updatedByName: user.name ?? "",
-            }
-          : candidate,
-      );
+      // Replacing a rejected drawing: keep the copy the vendor sent last time on the record
+      // rather than overwriting it away.
+      const isReplacement = Boolean(sub.recollectionRequested) && Boolean(sub.collection);
+      const history = [
+        ...(sub.previousCollections ?? []),
+        ...(isReplacement && sub.collection ? [sub.collection] : []),
+      ];
+
+      const nextSubs = getMdlSubDrawings(drawings[item.id]).map((candidate) => {
+        if (candidate.id !== sub.id) return candidate;
+        // Rebuilt rather than spread-and-patched so recollectionRequested is dropped: collecting
+        // the replacement is what settles the request.
+        const { recollectionRequested: _cleared, ...rest } = candidate;
+        return {
+          ...rest,
+          collection: {
+            receivedOn: form.receivedOn,
+            ...(form.vendorName.trim() ? { vendorName: form.vendorName.trim() } : {}),
+            ...(form.remark.trim() ? { remark: form.remark.trim() } : {}),
+            ...(file.fileUrl ? file : {}),
+            receivedBy: user.id,
+            receivedByName: user.name ?? "",
+          },
+          ...(history.length ? { previousCollections: history } : {}),
+          // Collecting from the vendor is real movement on the drawing, so an untouched
+          // sub-drawing stops reading as Pending. Anything further along is left alone.
+          status: candidate.status === "Pending" ? ("In Progress" as const) : candidate.status,
+          // ISO string, not serverTimestamp() — Firestore rejects sentinels inside arrays.
+          updatedAt: new Date().toISOString(),
+          updatedBy: user.id,
+          updatedByName: user.name ?? "",
+        };
+      });
 
       await updateDoc(doc(db, "projects", mapping.globalProjectId, MDL_COLLECTION, item.id), {
         subDrawings: nextSubs,
@@ -419,6 +446,14 @@ export default function DrawingPage() {
                     {String(item.Description ?? "—")}
                     {sub.assignedToName ? ` · ${sub.assignedToName}` : ""}
                   </p>
+                  {sub.recollectionRequested && (
+                    <p className="mt-0.5 text-[11px] text-rose-700">
+                      <RotateCcw className="mr-1 inline h-3 w-3" />
+                      Replacement requested {formatMdlDate(sub.recollectionRequested.requestedOn)}
+                      {sub.recollectionRequested.afterRound ? ` after ${sub.recollectionRequested.afterRound}` : ""}
+                      {sub.recollectionRequested.reason ? ` — ${sub.recollectionRequested.reason}` : ""}
+                    </p>
+                  )}
                 </TableCell>
                 <TableCell className="max-w-[160px] truncate text-xs text-muted-foreground" title={row.vendorNames.join(", ")}>
                   {sub.collection?.vendorName || row.vendorNames.join(", ") || "—"}
@@ -448,7 +483,7 @@ export default function DrawingPage() {
                       onClick={() => openCollectDialog(row)}
                       disabled={!canCollectThis}
                     >
-                      {mode === "pending" ? "Collect" : "Update"}
+                      {mode === "collected" ? "Update" : sub.recollectionRequested ? "Re-collect" : "Collect"}
                     </Button>
                   </div>
                 </TableCell>
@@ -622,7 +657,11 @@ export default function DrawingPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {collecting && isCollectedFromVendor(collecting.sub) ? "Update Collection" : "Collect Drawing from Vendor"}
+              {collecting?.sub.recollectionRequested
+                ? "Re-collect Drawing from Vendor"
+                : collecting && isCollectedFromVendor(collecting.sub)
+                  ? "Update Collection"
+                  : "Collect Drawing from Vendor"}
             </DialogTitle>
             <DialogDescription>
               {collecting?.sub.title || "Untitled drawing"} · {String(collecting?.item.Description ?? "")}
@@ -630,6 +669,26 @@ export default function DrawingPage() {
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
+            {collecting?.sub.recollectionRequested && (
+              <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-900">
+                <p className="font-medium">
+                  A replacement was requested on {formatMdlDate(collecting.sub.recollectionRequested.requestedOn)}
+                  {collecting.sub.recollectionRequested.afterRound
+                    ? ` after ${collecting.sub.recollectionRequested.afterRound} was rejected`
+                    : ""}
+                  {collecting.sub.recollectionRequested.requestedByName
+                    ? ` by ${collecting.sub.recollectionRequested.requestedByName}`
+                    : ""}
+                  .
+                </p>
+                {collecting.sub.recollectionRequested.reason && (
+                  <p className="mt-0.5">{collecting.sub.recollectionRequested.reason}</p>
+                )}
+                <p className="mt-1">
+                  Recording the new drawing clears the request. The copy you already hold is kept on the record.
+                </p>
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="received-on">
@@ -666,7 +725,10 @@ export default function DrawingPage() {
 
             <div className="space-y-2">
               <Label htmlFor="vendor-drawing">
-                Vendor Drawing {!collecting?.sub.collection?.fileUrl && <span className="text-destructive">*</span>}
+                {collecting?.sub.recollectionRequested ? "Replacement Drawing" : "Vendor Drawing"}{" "}
+                {(collecting?.sub.recollectionRequested || !collecting?.sub.collection?.fileUrl) && (
+                  <span className="text-destructive">*</span>
+                )}
               </Label>
               <Input
                 id="vendor-drawing"

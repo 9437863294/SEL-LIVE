@@ -62,6 +62,20 @@ export interface MdlVendorCollection {
   receivedByName?: string;
 }
 
+// Recorded when a review sends the drawing back past us to the vendor: the client rejected it
+// and said a fresh copy has to come from the vendor before it can be resubmitted. This is what
+// reopens a drawing the vendor had already settled — a rejection on its own does not, because
+// most rejections are resubmitted from the copy we already hold. Cleared automatically once the
+// replacement is collected.
+export interface MdlRecollectionRequest {
+  requestedOn: string;
+  reason?: string;
+  /** The submission round that was kicked back, for context on the Drawing page. */
+  afterRound?: MdlRevisionRound;
+  requestedBy?: string;
+  requestedByName?: string;
+}
+
 // One of several drawings needed for a single BOQ item — e.g. a GA drawing, a foundation
 // drawing and a schematic all hanging off one isolator. Each carries its own submission
 // cycle, so it mirrors MdlDrawing's fields, plus a title and the person responsible for it.
@@ -81,6 +95,11 @@ export interface MdlSubDrawing {
   firstSubmittedOn?: string;
   // Set on the Drawing page when the vendor hands the drawing over. Absent until then.
   collection?: MdlVendorCollection;
+  // Earlier handovers, kept so replacing a rejected drawing doesn't erase the record of what
+  // the vendor supplied the first time.
+  previousCollections?: MdlVendorCollection[];
+  // Present only while the vendor owes us a replacement — see MdlRecollectionRequest.
+  recollectionRequested?: MdlRecollectionRequest;
   // Whoever is responsible for this drawing. Being assigned is itself the authority to edit
   // it — see canEditMdlSubDrawing.
   assignedToId?: string;
@@ -320,6 +339,7 @@ export function getMdlRollup(drawing?: MdlDrawing, today: Date = new Date()): Md
 export const MDL_DRAWING_STAGES = [
   "Planned",
   "Awaiting Vendor",
+  "Re-collect from Vendor",
   "Ready for Review",
   "With Client",
   "Approved",
@@ -327,13 +347,24 @@ export const MDL_DRAWING_STAGES = [
 ] as const;
 export type MdlDrawingStage = (typeof MDL_DRAWING_STAGES)[number];
 
+type MdlDrawingProgress = Pick<
+  MdlSubDrawing,
+  "status" | "revisions" | "collection" | "recollectionRequested"
+>;
+
 export function computeMdlDrawingStage(
-  sub: Pick<MdlSubDrawing, "status" | "revisions" | "collection">,
+  sub: MdlDrawingProgress,
   hasPurchaseOrder: boolean,
 ): MdlDrawingStage {
   // Checked most-advanced first: whatever the drawing has actually reached wins over what an
   // earlier step would imply.
+  //
+  // Approval comes before everything, including a re-collection request, so a drawing the client
+  // has cleared is settled for good and can never be pulled back into the vendor queue.
   if (isMdlApproved(sub.status)) return "Approved";
+  // A live re-collection request outranks the rejection that caused it: the actionable state is
+  // "the vendor owes us a replacement", not "the client said no".
+  if (sub.recollectionRequested && hasPurchaseOrder) return "Re-collect from Vendor";
   if (sub.status === "Rejected") return "Rejected";
   if ((sub.revisions ?? []).some(hasRevisionData)) return "With Client";
   if (sub.collection?.receivedOn) return "Ready for Review";
@@ -344,11 +375,32 @@ export function computeMdlDrawingStage(
 export const mdlDrawingStageStyles: Record<MdlDrawingStage, string> = {
   Planned: "bg-muted text-muted-foreground",
   "Awaiting Vendor": "bg-orange-100 text-orange-700",
+  "Re-collect from Vendor": "bg-rose-100 text-rose-700",
   "Ready for Review": "bg-violet-100 text-violet-700",
   "With Client": "bg-blue-100 text-blue-700",
   Approved: "bg-emerald-100 text-emerald-700",
   Rejected: "bg-red-100 text-red-700",
 };
+
+// Whether the vendor still owes us this drawing — the one rule the Drawing page's queue runs on.
+//
+// A purchase order is what makes the vendor owe a drawing, but the obligation is settled for good
+// once the client approves it. Approval attaches to the drawing, not to the purchase order, so a
+// later PO on the same BOQ item never asks the vendor for the same approved drawing again — that
+// standing approval is exactly what the new PO's clearance relies on.
+//
+// The only way a settled drawing reopens is an explicit re-collection request: the client rejected
+// it and the reviewer recorded that a fresh copy must come from the vendor. Rejection alone does
+// not reopen it, because most rejections are resubmitted from the copy we already hold.
+export function isAwaitingVendorCollection(
+  sub: MdlDrawingProgress,
+  hasPurchaseOrder: boolean,
+): boolean {
+  if (!hasPurchaseOrder) return false;
+  if (isMdlApproved(sub.status)) return false;
+  if (sub.recollectionRequested) return true;
+  return !isCollectedFromVendor(sub);
+}
 
 // A drawing is outstanding work once somebody has committed to it and it hasn't reached an
 // approved state. There are two ways to commit: a purchase order gets placed for the BOQ item
@@ -382,10 +434,11 @@ export const canEditMdlSubDrawing = (
   canEditRegister = false,
 ): boolean => canEditRegister || (Boolean(userId) && sub.assignedToId === userId);
 
-// "1", then "1.1", "1.2" beneath it — the outline numbering the register and pending list share
-// so a row's number means the same thing in both views.
-export const mdlOutlineNo = (parentIndex: number, childIndex?: number): string =>
-  childIndex == null ? `${parentIndex + 1}` : `${parentIndex + 1}.${childIndex + 1}`;
+// Outline numbering shared by the register and the pending list, so a row's number means the
+// same thing in both views. Takes one index per level: purchase order, then BOQ item, then
+// sub-drawing — mdlOutlineNo(0) is "1", mdlOutlineNo(0, 1) is "1.2", mdlOutlineNo(0, 1, 2) is
+// "1.2.3".
+export const mdlOutlineNo = (...indexes: number[]): string => indexes.map((index) => index + 1).join(".");
 
 // Minimal shape the calendar/report views need from a BOQ item — the actual BOQ item
 // type carries many more fields, but it structurally satisfies this.
@@ -399,4 +452,102 @@ export interface MdlBoqItem {
 export interface MdlRow {
   item: MdlBoqItem;
   drawing?: MdlDrawing;
+}
+
+// The purchase order a set of drawings hangs off — just the fields the MDL views display.
+export interface MdlPoRef {
+  poId: string;
+  poNumber: string;
+  poDate: string;
+  vendorName: string;
+}
+
+// Generic over the row type so callers keep their own concrete BOQ item shape through grouping
+// instead of having it widened to MdlBoqItem.
+export interface MdlPoGroup<T extends MdlRow = MdlRow> {
+  po: MdlPoRef;
+  rows: T[];
+}
+
+// Minimal shape groupMdlRowsByPo needs from a purchase order; PurchaseOrder satisfies it.
+export interface MdlGroupablePo {
+  id: string;
+  poNumber: string;
+  poDate: string;
+  vendorName?: string;
+  status?: string;
+  items?: { boqItemId?: string }[];
+}
+
+// Organises the MDL views as purchase order → BOQ item → sub-drawing, which is the order the work
+// actually happens in: procurement commits to a PO, the PO covers BOQ items, and each item needs
+// its own set of drawings.
+//
+// An item ordered on more than one live PO appears under each of them — every one of those POs is
+// waiting on those drawings, so filing the item under only the first would understate what a
+// later PO is blocked on. Cancelled POs are skipped, and items on no live PO come back as
+// `ungrouped` for the caller to present however that view wants.
+export function groupMdlRowsByPo<T extends MdlRow>(
+  rows: T[],
+  purchaseOrders: MdlGroupablePo[],
+): { groups: MdlPoGroup<T>[]; ungrouped: T[] } {
+  const rowByItemId = new Map(rows.map((row) => [row.item.id, row]));
+  // Rows arrive in BOQ SL No order; groups keep that order rather than PO line order so a row
+  // sits in the same place in every view.
+  const orderByItemId = new Map(rows.map((row, index) => [row.item.id, index]));
+  const groupedItemIds = new Set<string>();
+  const groups: MdlPoGroup<T>[] = [];
+
+  for (const po of purchaseOrders) {
+    if (po.status === "Cancelled") continue;
+    const seen = new Set<string>();
+    const poRows: T[] = [];
+    for (const line of po.items ?? []) {
+      const itemId = line.boqItemId;
+      // A PO can list the same BOQ item on several lines; the drawings are still one set.
+      if (!itemId || seen.has(itemId)) continue;
+      const row = rowByItemId.get(itemId);
+      if (!row) continue;
+      seen.add(itemId);
+      poRows.push(row);
+      groupedItemIds.add(itemId);
+    }
+    if (!poRows.length) continue;
+    poRows.sort((a, b) => (orderByItemId.get(a.item.id) ?? 0) - (orderByItemId.get(b.item.id) ?? 0));
+    groups.push({
+      po: {
+        poId: po.id,
+        poNumber: po.poNumber,
+        poDate: po.poDate,
+        vendorName: po.vendorName ?? "",
+      },
+      rows: poRows,
+    });
+  }
+
+  // Newest purchase order first, so the most recent commitment leads.
+  groups.sort(
+    (a, b) =>
+      (b.po.poDate || "").localeCompare(a.po.poDate || "") || a.po.poNumber.localeCompare(b.po.poNumber),
+  );
+
+  return { groups, ungrouped: rows.filter((row) => !groupedItemIds.has(row.item.id)) };
+}
+
+// How far a set of drawings has got, for a purchase order group's header line.
+export function summariseMdlRows(rows: MdlRow[]): { drawings: number; approved: number } {
+  let drawings = 0;
+  let approved = 0;
+  for (const { drawing } of rows) {
+    const subs = getMdlSubDrawings(drawing);
+    if (subs.length) {
+      drawings += subs.length;
+      approved += subs.filter((sub) => isMdlApproved(sub.status)).length;
+    } else {
+      // No sub-drawings planned yet: the item's own record is the one drawing it has.
+      drawings += 1;
+      if (isMdlApproved(drawing?.status)) approved += 1;
+    }
+  }
+  return { drawings, approved };
 }

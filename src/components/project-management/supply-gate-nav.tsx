@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { BadgeCheck, ClipboardCheck, Factory, FileCheck2, PackageCheck, ShoppingCart, Truck } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { PillNav } from "@/components/shared/pill-nav";
 
 /**
  * The seven stages a manufactured BOQ item moves through after being placed on a PO — shown as a
@@ -26,25 +24,16 @@ const STAGES = [
 
 export function SupplyGateNav({ mappingId, active }: { mappingId: string; active: (typeof STAGES)[number]["key"] }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {STAGES.map((stage) => {
-        const Icon = stage.icon;
-        const isActive = stage.key === active;
-        return (
-          <Button
-            key={stage.key}
-            variant={isActive ? "default" : "outline"}
-            size="sm"
-            asChild
-            className={cn(isActive && "pointer-events-none")}
-          >
-            <Link href={`${stage.href}?project=${encodeURIComponent(mappingId)}`}>
-              <Icon className="mr-1.5 h-3.5 w-3.5" />
-              {stage.label}
-            </Link>
-          </Button>
-        );
-      })}
-    </div>
+    <PillNav
+      label="Supply stages"
+      active={active}
+      gradient="from-violet-600 to-purple-600"
+      items={STAGES.map((stage) => ({
+        key: stage.key,
+        label: stage.label,
+        icon: stage.icon,
+        href: `${stage.href}?project=${encodeURIComponent(mappingId)}`,
+      }))}
+    />
   );
 }
