@@ -141,8 +141,12 @@ export default function ChatModule() {
   const [olderMessages, setOlderMessages] = useState<ChatMessage[]>([]);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [hasMoreHistory, setHasMoreHistory] = useState(true);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const messageScrollRef = useRef<HTMLDivElement>(null);
+  const messageContentRef = useRef<HTMLDivElement>(null);
+  /** The conversation the view has already been dropped to the bottom of. */
+  const landedConversationRef = useRef<string | null>(null);
+  /** Whether the reader is sitting at the newest message and wants to follow it. */
+  const stickToBottomRef = useRef(true);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingHeartbeatRef = useRef<number>(0);
 
@@ -394,17 +398,58 @@ export default function ChatModule() {
     }).catch((error) => console.error('Unable to mark conversation as read:', error));
   }, [selectedConversationId, selectedUnreadCount, user?.id]);
 
-  useEffect(() => {
-    // Switching conversations always lands at the newest message. For an incoming
-    // message, only follow if the reader is already near the bottom — otherwise
-    // reading back through history got yanked away on every new arrival.
+  const scrollToLatest = useCallback(() => {
     const container = messageScrollRef.current;
-    const isNearBottom =
-      !container ||
-      container.scrollHeight - container.scrollTop - container.clientHeight < 120;
-    if (!isNearBottom) return;
-    bottomRef.current?.scrollIntoView({ block: 'end' });
-  }, [messages.length, selectedConversationId]);
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+  }, []);
+
+  useEffect(() => {
+    // Opening a conversation lands on its newest message however long the history
+    // is. The near-bottom test only decides whether to follow *later* arrivals —
+    // applying it to the landing left every chat taller than the viewport parked
+    // at the top of the loaded page, because a fresh list starts at scrollTop 0.
+    if (!selectedConversationId) {
+      // Leaving the chat unmounts the scroller, so its position is gone: the next
+      // visit has to land again even if it is the same conversation.
+      landedConversationRef.current = null;
+      return;
+    }
+    if (isLoadingMessages) return;
+    if (landedConversationRef.current !== selectedConversationId) {
+      landedConversationRef.current = selectedConversationId;
+      stickToBottomRef.current = true;
+      scrollToLatest();
+      return;
+    }
+    if (stickToBottomRef.current) scrollToLatest();
+  }, [isLoadingMessages, messages.length, scrollToLatest, selectedConversationId]);
+
+  useEffect(() => {
+    // Attachments carry no intrinsic size until they load, so the list keeps
+    // growing after the scroll above and the view drifts off the newest message.
+    // Re-pin on each height change while the reader is at the bottom; once they
+    // scroll up into history, leave the viewport where they put it.
+    const container = messageScrollRef.current;
+    const content = messageContentRef.current;
+    if (!container || !content || typeof ResizeObserver === 'undefined') return;
+
+    const trackScrollPosition = () => {
+      stickToBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    };
+    container.addEventListener('scroll', trackScrollPosition, { passive: true });
+
+    const observer = new ResizeObserver(() => {
+      if (stickToBottomRef.current) scrollToLatest();
+    });
+    observer.observe(content);
+
+    return () => {
+      container.removeEventListener('scroll', trackScrollPosition);
+      observer.disconnect();
+    };
+  }, [scrollToLatest, selectedConversationId]);
 
   const [activeConversations, archivedConversations] = useMemo(() => {
     if (!user?.id) return [conversations, [] as ChatConversation[]];
@@ -1097,7 +1142,7 @@ export default function ChatModule() {
                 </div>
               )}
               <div ref={messageScrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-6">
-                <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-end">
+                <div ref={messageContentRef} className="mx-auto flex min-h-full max-w-3xl flex-col justify-end">
                   {isLoadingMessages ? (
                     <MessageListSkeleton />
                   ) : visibleMessages.length ? (
@@ -1150,7 +1195,6 @@ export default function ChatModule() {
                       </p>
                     </div>
                   )}
-                  <div ref={bottomRef} />
                 </div>
               </div>
               {canSendChat ? (
