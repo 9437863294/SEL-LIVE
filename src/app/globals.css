@@ -561,3 +561,143 @@ main {
     line-height: 1.75rem;
   }
 }
+
+/* ─── Tour, Travel & Expense: mobile comfort ──────────────────────────────────
+   Mirrors the vm-* system used by Vehicle Management: 44px minimum tap targets,
+   horizontally scrollable tab strips, safe-area padding at the bottom of the
+   scroll and of sticky/action bars, and compacted ShadCN card padding. Applied
+   from the module shell (.tt-module-root), so every screen in the module gets it
+   without each one remembering to.                                            */
+@media (max-width: 640px) {
+  .tt-module-root {
+    overflow-x: clip;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+  .tt-module-root h1,
+  .tt-module-root h2 {
+    overflow-wrap: anywhere;
+  }
+  /* Thumb-sized controls. Switches keep their own size, and checkbox/radio/file
+     inputs would look broken stretched to 44px. */
+  .tt-module-root button:not([role="switch"]),
+  .tt-module-root [role="button"]:not([role="switch"]),
+  .tt-module-root [role="combobox"],
+  .tt-module-root input,
+  .tt-module-root select {
+    min-height: 2.75rem;
+  }
+  .tt-module-root input[type="checkbox"],
+  .tt-module-root input[type="radio"],
+  .tt-module-root input[type="file"] {
+    min-height: 0;
+  }
+  /* Table cells opt out: a register's inline "Verify" button must stay compact
+     or a row becomes three lines tall. The cards shown on mobile carry the
+     full-size actions instead. */
+  .tt-module-root td button,
+  .tt-module-root th button {
+    min-height: 2rem;
+  }
+  .tt-module-root [role="tablist"] {
+    max-width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .tt-module-root [role="tablist"]::-webkit-scrollbar {
+    display: none;
+  }
+  .tt-module-root [role="tab"] {
+    min-height: 2.75rem;
+    white-space: nowrap;
+  }
+  /* Reduce ShadCN's default p-6/px-6/py-6 inside the module's cards. */
+  .tt-module-root [class~="p-6"] {
+    padding: 0.875rem;
+  }
+  .tt-module-root [class~="px-6"] {
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+  }
+  .tt-module-root [class~="py-6"] {
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+  }
+
+  /* Full-screen dialogs. A travel form in a centred 512px modal on a phone
+     leaves the fields squeezed into the middle third of the screen. */
+  .tt-mobile-dialog {
+    inset: 0 !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    transform: none !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 !important;
+  }
+  .tt-mobile-dialog .tt-dialog-header {
+    flex-shrink: 0;
+    padding: 1rem 3rem 0.75rem 1rem;
+    border-bottom: 1px solid rgb(226 232 240);
+  }
+  .tt-mobile-dialog .tt-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.875rem;
+  }
+  /* Notices and callouts sitting between the header and the body keep their natural height and
+     pick up the dialog gutter, since only .tt-dialog-body is the scroll area. */
+  .tt-mobile-dialog > *:not(.tt-dialog-header):not(.tt-dialog-body):not(.tt-dialog-footer):not(button) {
+    flex-shrink: 0;
+    margin: 0.875rem 0.875rem 0;
+  }
+  .tt-mobile-dialog .tt-dialog-footer {
+    flex-shrink: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    border-top: 1px solid rgb(226 232 240);
+    background: white;
+    padding: 0.75rem 0.75rem calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+  .tt-mobile-dialog .tt-dialog-footer > * {
+    width: 100%;
+    margin: 0 !important;
+  }
+  .tt-mobile-dialog button,
+  .tt-mobile-dialog [role="button"],
+  .tt-mobile-dialog [role="combobox"],
+  .tt-mobile-dialog input {
+    min-height: 2.75rem;
+  }
+  .tt-mobile-dialog input[type="checkbox"],
+  .tt-mobile-dialog input[type="radio"],
+  .tt-mobile-dialog input[type="file"] {
+    min-height: 0;
+  }
+
+  /* Spinner arrows on number fields are unusable at thumb size, and the numeric keypad already
+     provides the increment. */
+  .tt-module-root input[type='number'] {
+    appearance: textfield;
+  }
+  .tt-module-root input[type='number']::-webkit-inner-spin-button,
+  .tt-module-root input[type='number']::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
+  /* The tour form's sticky save bar has to clear the home indicator. */
+  .tt-sticky-actions {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+}

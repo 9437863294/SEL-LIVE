@@ -27,8 +27,10 @@
     "test:inventory": "node --experimental-strip-types --test tests/inventory-domain.test.mjs",
     "test:project-management": "node --experimental-strip-types --test tests/project-management-domain.test.mjs",
     "test:recurring-payments": "node --experimental-strip-types --test tests/recurring-payments-schedule.test.mjs",
+    "test:tour-travel": "node --experimental-strip-types --test tests/tour-travel-domain.test.mjs",
     "typecheck:inventory": "tsc -p tsconfig.inventory.json",
-    "typecheck:project-management": "tsc -p tsconfig.project-management.json"
+    "typecheck:project-management": "tsc -p tsconfig.project-management.json",
+    "typecheck:tour-travel": "tsc -p tsconfig.tour-travel.json"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

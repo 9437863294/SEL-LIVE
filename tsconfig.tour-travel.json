@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/tour-travel/**/*.ts",
+    "src/app/(protected)/tour-travel/**/*.tsx",
+    "src/components/tour-travel/**/*.ts",
+    "src/components/tour-travel/**/*.tsx",
+    "src/lib/tour-travel.ts",
+    "src/lib/tour-travel-policy.ts",
+    "src/lib/tour-travel-service.ts"
+  ],
+  "exclude": ["node_modules"]
+}
