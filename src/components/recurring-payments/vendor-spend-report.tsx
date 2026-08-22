@@ -256,6 +256,11 @@ export default function VendorSpendReport() {
       <ReportHeader
         title="Vendor Spend & Ageing"
         description="Total billed, paid and outstanding value per vendor, with overdue ageing"
+        hero={{
+          label: "Outstanding",
+          value: currency(totals.outstanding),
+          hint: `across ${totals.vendorCount} vendor(s)`,
+        }}
         actions={
           <>
             {can("Export", "Recurring Payments.Reports") && (

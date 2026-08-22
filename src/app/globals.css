@@ -278,6 +278,15 @@ main {
      pointer off the table first. */
 }
 
+/* Numeric columns in this module are right-aligned by convention. Equal-width digits make the
+   rupee amounts line up down the column, so a reader compares magnitudes by position instead of
+   counting digits. Deliberately scoped to right-aligned cells — proportional figures stay on the
+   headline numbers, where tabular digits make a value like 121 look gapped. */
+.recurring-payments-content th.text-right,
+.recurring-payments-content td.text-right {
+  font-variant-numeric: tabular-nums;
+}
+
 .recurring-payments-content thead th {
   position: sticky;
   top: 0;

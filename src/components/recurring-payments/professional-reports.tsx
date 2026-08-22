@@ -165,6 +165,11 @@ export default function RecurringPaymentReports() {
       <ReportHeader
         title="Recurring Payment Analytics"
         description="Cash-flow, category, vendor, trend and overdue analysis"
+        hero={{
+          label: "Open outflow, next 30 days",
+          value: currency(outflow(30)),
+          hint: `${open.length} obligation(s) still open`,
+        }}
         actions={
           <>
             {can('Export', 'Recurring Payments.Reports') && (

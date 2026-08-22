@@ -355,6 +355,13 @@ export default function RecurringReportRoutePage({
       <ReportHeader
         title={titles[kind][0]}
         description={titles[kind][1]}
+        // Each report kind leads with the figure it is actually about: what's owed for the
+        // forward-looking views, what's been billed for the expense summary.
+        hero={{
+          label: kind === "expenses" ? "Confirmed bill total" : "Expected total",
+          value: currency(kind === "expenses" ? confirmed : expected),
+          hint: `${rows.length.toLocaleString("en-IN")} obligation(s) in scope`,
+        }}
         actions={
           <>
             {can("Export", "Recurring Payments.Reports") && (

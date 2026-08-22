@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import {
   Activity,
@@ -9,7 +9,6 @@ import {
   Car,
   ChevronDown,
   ChevronRight,
-  Fuel,
   Gauge,
   Landmark,
   Leaf,
@@ -18,7 +17,6 @@ import {
   Shield,
   TrendingDown,
   TrendingUp,
-  Wrench,
 } from 'lucide-react';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
@@ -32,6 +30,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -105,12 +105,24 @@ function progressColor(score: number) {
   return 'bg-red-500';
 }
 
+function gradeBg(grade: string) {
+  return (
+    {
+      A: 'bg-emerald-100',
+      B: 'bg-cyan-100',
+      C: 'bg-yellow-100',
+      D: 'bg-orange-100',
+      F: 'bg-red-100',
+    }[grade] ?? 'bg-gray-100'
+  );
+}
+
 function statusBadge(status: string) {
-  if (status === 'Expired') return <Badge className="bg-red-100 text-red-700 border-red-200">{status}</Badge>;
-  if (status === 'Due Soon') return <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">{status}</Badge>;
-  if (status === 'Valid') return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">{status}</Badge>;
-  if (status === 'Not Applicable') return <Badge className="bg-slate-100 text-slate-600 border-slate-200">{status}</Badge>;
-  return <Badge variant="outline">{status}</Badge>;
+  if (status === 'Expired') return <Badge className="h-4.5 border-red-200 bg-red-100 px-1.5 text-[10px] text-red-700">{status}</Badge>;
+  if (status === 'Due Soon') return <Badge className="h-4.5 border-yellow-200 bg-yellow-100 px-1.5 text-[10px] text-yellow-700">{status}</Badge>;
+  if (status === 'Valid') return <Badge className="h-4.5 border-emerald-200 bg-emerald-100 px-1.5 text-[10px] text-emerald-700">{status}</Badge>;
+  if (status === 'Not Applicable') return <Badge className="h-4.5 border-slate-200 bg-slate-100 px-1.5 text-[10px] text-slate-600">{status}</Badge>;
+  return <Badge variant="outline" className="h-4.5 px-1.5 text-[10px]">{status}</Badge>;
 }
 
 const isTruthy = (value: unknown): boolean | null => {
@@ -355,43 +367,44 @@ export default function VehicleHealthPage() {
       {/* Header */}
       <Card className="vm-panel-strong overflow-hidden">
         <div className="h-1 w-full bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-600 animate-bb-gradient" />
-        <CardHeader className="flex flex-col gap-3 px-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-6">
-          <div>
-            <CardTitle className="flex items-center gap-2 tracking-tight">
-              <Activity className="h-5 w-5 text-emerald-500" />
-              Vehicle Health Dashboard
+        <CardHeader className="flex flex-row items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-sm tracking-tight sm:text-base">
+              <Activity className="h-4 w-4 shrink-0 text-emerald-500" />
+              Vehicle Health
             </CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">
               Compliance score is calculated only on applicable documents by vehicle type/category/fuel.
             </p>
           </div>
           <button
             onClick={load}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium text-foreground backdrop-blur transition-colors hover:bg-white/20 sm:w-auto"
+            className="flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white/80 px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-white"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
+            <span className="hidden sm:inline">Refresh</span>
           </button>
         </CardHeader>
       </Card>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4">
+      {/* Summary Stats — small, refined tiles. 2 columns below ~480px so labels never
+          truncate mid-word (4 equal columns left no room for "Fleet Score"/"Critical" on
+          a true phone-width screen). */}
+      <div className="grid grid-cols-2 gap-2 min-[480px]:grid-cols-4">
         {[
-          { label: 'Total Vehicles', value: summary.total, icon: Car, color: 'from-blue-500 to-indigo-600' },
-          { label: 'Fleet Health Score', value: `${summary.avgScore}%`, icon: Gauge, color: 'from-cyan-500 to-teal-600' },
-          { label: 'Healthy (≥75)', value: summary.healthy, icon: TrendingUp, color: 'from-emerald-500 to-green-600' },
-          { label: 'Critical (<35)', value: summary.critical, icon: TrendingDown, color: 'from-red-500 to-rose-600' },
+          { label: 'Vehicles', value: summary.total, icon: Car, color: 'from-blue-500 to-indigo-600' },
+          { label: 'Fleet Score', value: `${summary.avgScore}%`, icon: Gauge, color: 'from-cyan-500 to-teal-600' },
+          { label: 'Healthy', value: summary.healthy, icon: TrendingUp, color: 'from-emerald-500 to-green-600' },
+          { label: 'Critical', value: summary.critical, icon: TrendingDown, color: 'from-red-500 to-rose-600' },
         ].map((stat) => (
           <Card key={stat.label} className="vm-panel-strong overflow-hidden">
-            <div className={`h-0.5 w-full bg-gradient-to-r ${stat.color}`} />
-            <CardContent className="flex min-w-0 items-center gap-2 p-3 sm:gap-3 sm:p-4">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${stat.color} shadow-lg`}>
-                <stat.icon className="h-5 w-5 text-white" />
+            <CardContent className="flex min-w-0 items-center gap-1.5 p-2 sm:gap-2 sm:p-2.5">
+              <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br sm:h-8 sm:w-8 ${stat.color}`}>
+                <stat.icon className="h-3.5 w-3.5 text-white sm:h-4 sm:w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-muted-foreground">{stat.label}</p>
-                <p className="text-2xl font-bold tracking-tight">{isLoading ? '—' : stat.value}</p>
+                <p className="truncate text-[10px] leading-tight text-muted-foreground sm:text-xs">{stat.label}</p>
+                <p className="text-sm font-bold leading-tight tracking-tight sm:text-lg">{isLoading ? '—' : stat.value}</p>
               </div>
             </CardContent>
           </Card>
@@ -405,32 +418,30 @@ export default function VehicleHealthPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search vehicle, type, fuel…"
-            className="bg-white/85 pl-9"
+            className="h-9 bg-white/85 pl-9 text-sm"
           />
-          <Activity className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Activity className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex flex-wrap items-center gap-1.5">
         {/* Grade filter pills — scrollable on mobile */}
-        <div className="flex w-full flex-shrink-0 gap-1 overflow-x-auto pb-0.5 sm:w-auto">
+        <div className="flex flex-shrink-0 gap-1 overflow-x-auto">
           {(['All', 'A', 'B', 'C', 'D', 'F'] as const).map((g) => {
             const active = gradeFilter === g;
             const colorMap: Record<string, string> = {
-              All: 'border-emerald-400 bg-emerald-50 text-emerald-700',
-              A: 'border-emerald-400 bg-emerald-50 text-emerald-700',
-              B: 'border-cyan-400 bg-cyan-50 text-cyan-700',
-              C: 'border-yellow-400 bg-yellow-50 text-yellow-700',
-              D: 'border-orange-400 bg-orange-50 text-orange-700',
-              F: 'border-red-400 bg-red-50 text-red-700',
+              All: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+              A: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+              B: 'border-cyan-300 bg-cyan-50 text-cyan-700',
+              C: 'border-yellow-300 bg-yellow-50 text-yellow-700',
+              D: 'border-orange-300 bg-orange-50 text-orange-700',
+              F: 'border-red-300 bg-red-50 text-red-700',
             };
             return (
               <button
                 key={g}
                 onClick={() => setGradeFilter(g)}
-                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                  active
-                    ? colorMap[g]
-                    : 'border-white/20 bg-white/10 text-muted-foreground hover:bg-white/20'
+                className={`h-7 rounded-md border px-2 text-[11px] font-semibold transition-colors ${
+                  active ? colorMap[g] : 'border-transparent bg-slate-100 text-muted-foreground hover:bg-slate-200'
                 }`}
                 title={g === 'All' ? 'All grades' : `Grade ${g}${gradeCounts[g] ? ` (${gradeCounts[g]})` : ''}`}
               >
@@ -441,15 +452,15 @@ export default function VehicleHealthPage() {
         </div>
 
         {/* Sort pills */}
-        <div className="flex w-full gap-1 overflow-x-auto sm:w-auto">
+        <div className="flex flex-shrink-0 gap-1 overflow-x-auto">
           {(['score', 'vehicleNumber', 'expired'] as const).map((key) => (
             <button
               key={key}
               onClick={() => setSortKey(key)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`h-7 rounded-md border px-2 text-[11px] font-medium transition-colors ${
                 sortKey === key
-                  ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
-                  : 'border-white/20 bg-white/10 text-muted-foreground hover:bg-white/20'
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                  : 'border-transparent bg-slate-100 text-muted-foreground hover:bg-slate-200'
               }`}
             >
               {key === 'score' ? 'Score ↑' : key === 'vehicleNumber' ? 'A–Z' : 'Expired ↓'}
@@ -459,177 +470,123 @@ export default function VehicleHealthPage() {
 
         <Link
           href="/vehicle-management/renewals"
-          className="flex min-h-11 w-full items-center justify-center gap-1 rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-1.5 text-xs font-semibold text-white shadow transition-opacity hover:opacity-90 sm:ml-auto sm:min-h-0 sm:w-auto"
+          className="ml-auto flex h-7 items-center gap-1 rounded-md bg-gradient-to-r from-rose-500 to-orange-500 px-2.5 text-[11px] font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
         >
-          <AlertTriangle className="h-3.5 w-3.5" />
+          <AlertTriangle className="h-3 w-3" />
           Renewals Hub
         </Link>
         </div>
       </div>
 
-      {/* Vehicle Cards */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
-        </div>
-      ) : filteredList.length === 0 ? (
-        <Card className="vm-panel flex items-center justify-center py-20">
-          <p className="text-sm text-muted-foreground">No vehicles found. Add vehicles in Vehicle Master.</p>
-        </Card>
-      ) : (
-        <div className="space-y-2.5">
-          {filteredList.map((v) => {
-            const isExpanded = expandedId === v.id;
-            return (
-              <Card key={v.id} className="vm-panel-strong overflow-hidden transition-all">
-                <div
-                  className={`h-0.5 w-full bg-gradient-to-r ${
-                    v.grade === 'A'
-                      ? 'from-emerald-400 to-green-500'
-                      : v.grade === 'B'
-                      ? 'from-cyan-400 to-teal-500'
-                      : v.grade === 'C'
-                      ? 'from-yellow-400 to-amber-500'
-                      : v.grade === 'D'
-                      ? 'from-orange-400 to-amber-600'
-                      : 'from-red-500 to-rose-600'
-                  }`}
-                />
-                {/* Summary Row */}
-                <button
-                  className="w-full text-left"
-                  onClick={() => setExpandedId(isExpanded ? null : v.id)}
-                >
-                  <CardContent className="flex flex-wrap items-center gap-4 p-4 sm:flex-nowrap">
-                    {/* Grade Badge */}
-                    <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border-2 ${
-                      v.grade === 'A' ? 'border-emerald-400 bg-emerald-50' :
-                      v.grade === 'B' ? 'border-cyan-400 bg-cyan-50' :
-                      v.grade === 'C' ? 'border-yellow-400 bg-yellow-50' :
-                      v.grade === 'D' ? 'border-orange-400 bg-orange-50' :
-                      'border-red-400 bg-red-50'
-                    }`}>
-                      <span className={`text-2xl font-black ${gradeColor(v.grade)}`}>{v.grade}</span>
-                    </div>
-
-                    {/* Vehicle Info */}
-                    <div className="flex-1 space-y-1 min-w-0">
-                      <p className="text-base font-bold tracking-tight truncate">{v.vehicleNumber || '—'}</p>
-                      <p className="text-xs text-muted-foreground">{v.vehicleType} · {v.fuelType}</p>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="flex-1 space-y-1.5 min-w-[120px]">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Health Score</span>
-                        <span className={`font-semibold ${gradeColor(v.grade)}`}>{v.score}%</span>
-                      </div>
-                      <div className="relative h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div
-                          className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${progressColor(v.score)}`}
-                          style={{ width: `${v.score}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Counts */}
-                    <div className="flex items-center gap-3 text-center">
-                      {v.expired > 0 && (
-                        <div className="rounded-lg bg-red-50 border border-red-200 px-2 py-1">
-                          <p className="text-xs font-bold text-red-700">{v.expired}</p>
-                          <p className="text-[10px] text-red-500">Expired</p>
-                        </div>
-                      )}
-                      {v.dueSoon > 0 && (
-                        <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-2 py-1">
-                          <p className="text-xs font-bold text-yellow-700">{v.dueSoon}</p>
-                          <p className="text-[10px] text-yellow-500">Due Soon</p>
-                        </div>
-                      )}
-                      {v.missing > 0 && (
-                        <div className="rounded-lg bg-gray-50 border border-gray-200 px-2 py-1">
-                          <p className="text-xs font-bold text-gray-600">{v.missing}</p>
-                          <p className="text-[10px] text-gray-400">Missing</p>
-                        </div>
-                      )}
-                      {v.notApplicable > 0 && (
-                        <div className="rounded-lg bg-slate-50 border border-slate-200 px-2 py-1">
-                          <p className="text-xs font-bold text-slate-600">{v.notApplicable}</p>
-                          <p className="text-[10px] text-slate-500">N/A</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Expand */}
-                    <div className="shrink-0 text-muted-foreground">
-                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                    </div>
-                  </CardContent>
-                </button>
-
-                {/* Expanded Detail */}
-                {isExpanded && (
-                  <CardContent className="border-t border-white/10 bg-white/5 px-4 pb-5 pt-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                      {v.alerts.map((alert) => {
-                        const cat = DOC_CATEGORIES.find((c) => c.label === alert.category);
-                        return (
-                          <div
-                            key={alert.category}
-                            className={`rounded-xl border p-3 ${
-                              alert.status === 'Expired'
-                                ? 'border-red-200 bg-red-50/70'
-                                : alert.status === 'Due Soon'
-                                ? 'border-yellow-200 bg-yellow-50/70'
-                                : alert.status === 'Not Applicable'
-                                ? 'border-slate-200 bg-slate-50/70'
-                                : alert.status === 'Missing'
-                                ? 'border-gray-200 bg-gray-50/70'
-                                : 'border-emerald-200 bg-emerald-50/70'
-                            }`}
-                          >
-                            <div className="mb-1.5 flex items-center gap-1.5">
-                              {cat && <cat.icon className="h-3.5 w-3.5 text-muted-foreground" />}
-                              <span className="text-xs font-semibold text-muted-foreground">{alert.category}</span>
+      {/* Vehicle list — compact table, minimum row height, click a row to expand details */}
+      <Card className="vm-panel-strong overflow-hidden">
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="space-y-1.5 p-3">
+              {[1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="h-9 w-full" />)}
+            </div>
+          ) : filteredList.length === 0 ? (
+            <div className="flex items-center justify-center px-4 py-16 text-center">
+              <p className="text-sm text-muted-foreground">No vehicles found. Add vehicles in Vehicle Master.</p>
+            </div>
+          ) : (
+            <div className="overflow-auto rounded-b-lg h-[calc(100vh-330px)]">
+              <table className="w-full caption-bottom text-sm">
+                <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                  <TableRow className="h-8">
+                    <TableHead className="w-11 px-2">Grade</TableHead>
+                    <TableHead className="px-2">Vehicle</TableHead>
+                    <TableHead className="w-36 px-2">Score</TableHead>
+                    <TableHead className="w-16 px-2 text-center">Expired</TableHead>
+                    <TableHead className="w-16 px-2 text-center">Due Soon</TableHead>
+                    <TableHead className="w-16 px-2 text-center">Missing</TableHead>
+                    <TableHead className="w-14 px-2 text-center">N/A</TableHead>
+                    <TableHead className="w-8 px-2" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredList.map((v) => {
+                    const isExpanded = expandedId === v.id;
+                    return (
+                      <Fragment key={v.id}>
+                        <TableRow
+                          className="h-9 cursor-pointer transition-colors hover:bg-emerald-50/50"
+                          onClick={() => setExpandedId(isExpanded ? null : v.id)}
+                        >
+                          <TableCell className="px-2 py-1">
+                            <span className={cn('inline-flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold', gradeBg(v.grade), gradeColor(v.grade))}>
+                              {v.grade}
+                            </span>
+                          </TableCell>
+                          <TableCell className="px-2 py-1">
+                            <p className="truncate font-medium leading-tight">{v.vehicleNumber || '—'}</p>
+                            <p className="truncate text-[11px] leading-tight text-muted-foreground">
+                              {[v.vehicleType, v.fuelType].filter(Boolean).join(' · ') || '—'}
+                            </p>
+                          </TableCell>
+                          <TableCell className="px-2 py-1">
+                            <div className="flex items-center gap-2">
+                              <div className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-gray-100">
+                                <div className={cn('h-full rounded-full', progressColor(v.score))} style={{ width: `${v.score}%` }} />
+                              </div>
+                              <span className={cn('text-xs font-semibold tabular-nums', gradeColor(v.grade))}>{v.score}%</span>
                             </div>
-                            {statusBadge(alert.status)}
-                            {alert.expiryDate && (
-                              <p className="mt-1.5 text-[11px] text-muted-foreground">
-                                Exp: {alert.expiryDate}
-                              </p>
-                            )}
-                            {alert.status === 'Missing' && cat && (
-                              <Link
-                                href={`${cat.addHref}?add=1&vid=${encodeURIComponent(v.id)}&vnum=${encodeURIComponent(v.vehicleNumber)}`}
-                                className="mt-1.5 inline-flex items-center text-[11px] font-semibold text-emerald-700 hover:underline"
-                              >
-                                Add {alert.category} →
-                              </Link>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Meta row */}
-                    <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground border-t border-white/10 pt-3">
-                      <span>Applicable Docs: <strong>{v.totalDocs}</strong></span>
-                      <span>🔧 Last Service: <strong>{v.lastMaintenanceDate || 'Not recorded'}</strong></span>
-                      <span>⛽ Mileage: <strong>{v.fuelHealthLabel}</strong></span>
-                      <Link
-                        href={`/vehicle-management/renewals`}
-                        className="ml-auto text-emerald-600 hover:underline font-medium"
-                      >
-                        View Renewals →
-                      </Link>
-                    </div>
-                  </CardContent>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                          </TableCell>
+                          <TableCell className="px-2 py-1 text-center text-xs font-semibold text-red-600">{v.expired || '–'}</TableCell>
+                          <TableCell className="px-2 py-1 text-center text-xs font-semibold text-yellow-600">{v.dueSoon || '–'}</TableCell>
+                          <TableCell className="px-2 py-1 text-center text-xs font-semibold text-slate-500">{v.missing || '–'}</TableCell>
+                          <TableCell className="px-2 py-1 text-center text-xs text-slate-400">{v.notApplicable || '–'}</TableCell>
+                          <TableCell className="px-2 py-1 text-right">
+                            {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
+                            <TableCell colSpan={8} className="px-3 py-2.5">
+                              <div className="flex flex-wrap gap-1.5">
+                                {v.alerts.map((alert) => {
+                                  const cat = DOC_CATEGORIES.find((c) => c.label === alert.category);
+                                  const chip = (
+                                    <span className="inline-flex items-center gap-1.5 rounded-md border border-black/5 bg-white px-2 py-1 text-[11px] shadow-sm">
+                                      {cat && <cat.icon className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                                      <span className="font-medium text-slate-600">{alert.category}</span>
+                                      {statusBadge(alert.status)}
+                                      {alert.expiryDate && <span className="text-muted-foreground">{alert.expiryDate}</span>}
+                                    </span>
+                                  );
+                                  return alert.status === 'Missing' && cat ? (
+                                    <Link
+                                      key={alert.category}
+                                      href={`${cat.addHref}?add=1&vid=${encodeURIComponent(v.id)}&vnum=${encodeURIComponent(v.vehicleNumber)}`}
+                                      className="transition-opacity hover:opacity-80"
+                                    >
+                                      {chip}
+                                    </Link>
+                                  ) : (
+                                    <span key={alert.category}>{chip}</span>
+                                  );
+                                })}
+                              </div>
+                              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                                <span>Applicable docs: <strong className="text-slate-600">{v.totalDocs}</strong></span>
+                                <span>Last service: <strong className="text-slate-600">{v.lastMaintenanceDate || 'Not recorded'}</strong></span>
+                                <span>Mileage: <strong className="text-slate-600">{v.fuelHealthLabel}</strong></span>
+                                <Link href="/vehicle-management/renewals" className="ml-auto font-medium text-emerald-600 hover:underline">
+                                  View Renewals →
+                                </Link>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </TableBody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

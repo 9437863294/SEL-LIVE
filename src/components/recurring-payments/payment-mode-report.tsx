@@ -207,6 +207,7 @@ export default function PaymentModeReport() {
       <ReportHeader
         title="Payment Mode & Bank Reconciliation"
         description="How recorded payments actually moved — by mode, bank account and who recorded them"
+        hero={{ label: "Total recorded", value: currency(total), hint: "net of TDS and deductions shown below" }}
         actions={
           <>
             {can("Export", "Recurring Payments.Reports") && (

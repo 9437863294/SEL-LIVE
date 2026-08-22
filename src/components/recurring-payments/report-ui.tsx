@@ -1,6 +1,11 @@
 "use client";
 
-import { AlertTriangle, Loader2 } from "lucide-react";
+import {
+  AlertOctagon,
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -12,6 +17,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -23,29 +29,70 @@ import { TableScrollArea } from "./module-table-card";
  * hero banner (six different gradients across seven screens, none reliably matching the module's
  * actual emerald/teal brand), metric tile, loading/permission-denied block, and name/count/amount
  * summary table. Centralizing them here means the whole section now looks and behaves like one
- * product, a palette change only has to happen once, and print styling (dark hero → print-safe)
- * is baked in everywhere instead of only on the overview dashboard.
+ * product, a palette change only has to happen once, and print styling is baked in everywhere
+ * instead of only on the overview dashboard.
  */
 
-export const REPORT_HERO_GRADIENT = "from-emerald-700 to-teal-700";
+/**
+ * Visualization tokens.
+ *
+ * `#059669` is the module's emerald, validated against both card surfaces (white in light mode,
+ * `#1f1f21` in dark): inside the lightness band, above the chroma floor, and ≥3:1 contrast in each
+ * mode. The dark step is selected rather than flipped — `#0e9f6e` reads brighter against the dark
+ * card while still sitting inside the dark band.
+ *
+ * There is deliberately **one** bar colour, not a ramp. The things these tables rank — vendors,
+ * payment modes, bank accounts, categories — are nominal, with no inherent order, so shading each
+ * bar darker-where-longer would double-encode the length as hue and spend the only free channel
+ * restating what the bar already says.
+ */
+const BAR_FILL = "bg-[#059669] dark:bg-[#0e9f6e]";
+const BAR_TRACK = "bg-emerald-100/70 dark:bg-emerald-950";
+
+const inr = (value: number) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
 
 export function ReportHeader({
   title,
   description,
+  hero,
   actions,
 }: {
   title: string;
   description: string;
+  /** The one number this report leads with. At most one per page — the KPI tiles carry the rest. */
+  hero?: { label: string; value: string; hint?: string };
   actions?: React.ReactNode;
 }) {
   return (
-    <Card className={`border-0 bg-gradient-to-r ${REPORT_HERO_GRADIENT} text-white print:border print:bg-white print:text-black`}>
-      <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{title}</h1>
-          <p className="text-sm text-emerald-50 print:text-slate-600">{description}</p>
+    <Card>
+      <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          {/* A hairline emerald rule instead of the old full-bleed gradient: a large saturated
+              block reads loud at page scale and forced every value on top of it to fight the
+              background. The accent now marks the page without competing with the data. */}
+          <div className="mb-2 h-0.5 w-10 rounded-full bg-[#059669] dark:bg-[#0e9f6e]" />
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
         </div>
-        {actions && <div className="flex gap-2 print:hidden">{actions}</div>}
+        <div className="flex flex-col items-start gap-3 sm:items-end">
+          {actions && <div className="flex flex-wrap gap-2 print:hidden">{actions}</div>}
+          {hero && (
+            <div className="sm:text-right">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">{hero.label}</p>
+              {/* Proportional figures, not tabular: at display size, equal-width digits make a
+                  number like 121 look gapped. tabular-nums belongs in the columns below. */}
+              <p className="text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
+                {hero.value}
+              </p>
+              {hero.hint && <p className="text-xs text-muted-foreground">{hero.hint}</p>}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
@@ -88,11 +135,33 @@ export function ReportErrorBanner({
   );
 }
 
+/**
+ * Status tones. Measured against this module's own emerald/amber/rose, the amber↔emerald pair sits
+ * at CVD ΔE 7.9 — inside the band that is only legal alongside a second, non-colour channel. So a
+ * non-neutral tone always renders its own shape-distinct icon (tick / triangle / octagon), even
+ * when the caller passes none: the tone may never be the only thing carrying the meaning.
+ */
 const METRIC_TONES = {
-  neutral: { chip: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300", value: "" },
-  good: { chip: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400", value: "" },
-  warning: { chip: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400", value: "text-amber-600 dark:text-amber-400" },
-  critical: { chip: "bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400", value: "text-rose-600 dark:text-rose-400" },
+  neutral: {
+    chip: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+    value: "",
+    icon: undefined,
+  },
+  good: {
+    chip: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400",
+    value: "",
+    icon: CheckCircle2,
+  },
+  warning: {
+    chip: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
+    value: "text-amber-700 dark:text-amber-400",
+    icon: AlertTriangle,
+  },
+  critical: {
+    chip: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400",
+    value: "text-rose-700 dark:text-rose-400",
+    icon: AlertOctagon,
+  },
 } as const;
 
 export function ReportMetricTile({
@@ -100,23 +169,30 @@ export function ReportMetricTile({
   value,
   icon: Icon,
   tone = "neutral",
+  hint,
 }: {
   label: string;
   value: string;
   icon?: React.ElementType;
   tone?: keyof typeof METRIC_TONES;
+  /** Short qualifier under the value — the period or basis it covers. */
+  hint?: string;
 }) {
   const palette = METRIC_TONES[tone];
+  const Glyph = Icon || palette.icon;
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardContent className="flex items-start justify-between gap-3 p-4">
-        <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className={`mt-1 text-xl font-bold ${palette.value}`}>{value}</p>
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-muted-foreground">{label}</p>
+          <p className={`mt-1.5 text-2xl font-semibold leading-none tracking-tight ${palette.value}`}>
+            {value}
+          </p>
+          {hint && <p className="mt-1.5 text-[11px] leading-tight text-muted-foreground">{hint}</p>}
         </div>
-        {Icon && (
-          <div className={`rounded-lg p-2 ${palette.chip}`}>
-            <Icon className="h-4 w-4" />
+        {Glyph && (
+          <div className={`shrink-0 rounded-lg p-2 ${palette.chip}`}>
+            <Glyph className="h-4 w-4" />
           </div>
         )}
       </CardContent>
@@ -124,6 +200,21 @@ export function ReportMetricTile({
   );
 }
 
+/**
+ * Name / count / amount ranking, with the amount also drawn as a bar.
+ *
+ * The bar is the point of this component: a column of currency strings makes the reader compare
+ * digit counts, while length is read at a glance. Every bar is the same colour — see `BAR_FILL`
+ * for why a ramp would be wrong here.
+ *
+ * Bar length is the share of the **total**, matching the percentage printed beside it. Scaling to
+ * the largest row instead would read better as a magnitude comparison, but under a column headed
+ * "Share of total" it would put a full-width bar next to a label saying 55% — the mark contradicting
+ * its own number. The bar and its label have to state the same fact.
+ *
+ * The bar is `aria-hidden`: it restates the amount already in the adjacent column, so announcing
+ * it again would just make the row twice as long to hear. Nothing is available only as a bar.
+ */
 export function ReportSummaryTable({
   title,
   description,
@@ -141,6 +232,10 @@ export function ReportSummaryTable({
   countHeader?: string;
   emptyLabel?: string;
 }) {
+  const ranked = [...rows].sort((a, b) => b.amount - a.amount);
+  const total = ranked.reduce((sum, row) => sum + (row.amount || 0), 0);
+  const magnitude = ranked.reduce((sum, row) => sum + Math.abs(row.amount || 0), 0);
+  const totalCount = ranked.reduce((sum, row) => sum + (row.count || 0), 0);
   return (
     <Card className="min-w-0">
       <CardHeader className="py-4">
@@ -149,40 +244,83 @@ export function ReportSummaryTable({
           {title}
         </CardTitle>
         <CardDescription>
-          {[`${rows.length.toLocaleString("en-IN")} row${rows.length === 1 ? "" : "s"}`, description]
+          {[
+            `${ranked.length.toLocaleString("en-IN")} row${ranked.length === 1 ? "" : "s"}`,
+            description,
+          ]
             .filter(Boolean)
             .join(" · ")}
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
         <TableScrollArea>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{nameHeader}</TableHead>
-              <TableHead className="text-right">{countHeader}</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.name}>
-                <TableCell>{row.name}</TableCell>
-                <TableCell className="text-right">{row.count}</TableCell>
-                <TableCell className="text-right font-semibold">
-                  {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(row.amount || 0)}
-                </TableCell>
-              </TableRow>
-            ))}
-            {!rows.length && (
+          <Table className="[&_td]:py-2 [&_th]:h-9">
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
-                  {emptyLabel}
-                </TableCell>
+                <TableHead>{nameHeader}</TableHead>
+                <TableHead className="text-right">{countHeader}</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="w-[34%] min-w-40">Share of total</TableHead>
               </TableRow>
+            </TableHeader>
+            <TableBody>
+              {ranked.map((row) => {
+                const amount = row.amount || 0;
+                const sharePct = magnitude ? (Math.abs(amount) / magnitude) * 100 : 0;
+                // A row worth a fraction of a percent still isn't nothing, and "0.0%" claims it is.
+                const shareLabel = !magnitude
+                  ? "—"
+                  : amount && sharePct < 0.05
+                    ? "<0.1%"
+                    : `${sharePct.toFixed(1)}%`;
+                return (
+                  <TableRow key={row.name}>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.count.toLocaleString("en-IN")}
+                    </TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">
+                      {inr(amount)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className={`h-2 flex-1 overflow-hidden rounded-[4px] ${BAR_TRACK}`} aria-hidden="true">
+                          {/* Square at the baseline, 4px rounded at the data end. `min-w` keeps a
+                              small-but-nonzero value from rendering as nothing at all. */}
+                          <div
+                            className={`h-full rounded-r-[4px] ${BAR_FILL} ${amount ? "min-w-[2px]" : ""}`}
+                            style={{ width: `${Math.max(0, Math.min(100, sharePct))}%` }}
+                          />
+                        </div>
+                        <span className="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                          {shareLabel}
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!ranked.length && (
+                <TableRow>
+                  <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
+                    {emptyLabel}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+            {ranked.length > 1 && (
+              <TableFooter>
+                <TableRow>
+                  <TableCell className="font-semibold">Total</TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">
+                    {totalCount.toLocaleString("en-IN")}
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">{inr(total)}</TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableFooter>
             )}
-          </TableBody>
-        </Table>
+          </Table>
         </TableScrollArea>
       </CardContent>
     </Card>

@@ -293,6 +293,11 @@ export default function WorkflowCompletionReport() {
     <div className="space-y-5">
       <ReportHeader
         title="Workflow Completion Summary"
+        hero={{
+          label: "Total value",
+          value: currency(summary.totalAmount),
+          hint: `${summary.total} payment(s)`,
+        }}
         description="Totals, step-wise workload and on-time performance, and exactly what completed when"
         actions={
           <>

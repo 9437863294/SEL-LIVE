@@ -228,6 +228,13 @@ export default function AutomationHealthReport() {
     <div className="space-y-5">
       <ReportHeader
         title="Automation & Generation Health"
+        // This report exists to surface problems, so it leads with the count that needs someone
+        // to act rather than with a total that looks reassuring.
+        hero={{
+          label: "Needing attention",
+          value: String(stuckNeedingAttention.length),
+          hint: `of ${stuck.length} obligation(s) stuck before a workflow queue`,
+        }}
         description="Which masters aren't generating, which obligations never reached a workflow queue, and why"
         actions={
           <>

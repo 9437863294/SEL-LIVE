@@ -252,6 +252,11 @@ export default function PendingWorkReport() {
     <div className="space-y-5">
       <ReportHeader
         title="Pending Work Aging"
+        hero={{
+          label: "Value awaiting action",
+          value: currency(summary.value),
+          hint: `${summary.total} obligation(s) in the workflow`,
+        }}
         description="Every obligation currently sitting inside the workflow — which step, how long, and who's holding it"
         actions={
           <>
