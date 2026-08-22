@@ -69,6 +69,9 @@ export default function ModuleCard({
         return "/loan";
       case "Recurring Payments":
         return "/recurring-payments";
+      // The slug fallback below would produce "hr-&-recruitment", so this needs naming explicitly.
+      case "HR & Recruitment":
+        return "/hr";
       case "Letter of Credit Management":
         return "/letter-of-credit";
       case "Bank Guarantee Management":

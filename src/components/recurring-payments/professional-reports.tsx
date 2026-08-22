@@ -6,13 +6,14 @@ import { BarChart3, CalendarClock, FileSpreadsheet, Loader2, Printer, Store, Tag
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { PaymentObligation, RP_COLLECTIONS, currency, effectiveStatus, matchesScopeFilter, recurringDateOnly } from '@/lib/recurring-payments';
+import { PaymentObligation, RP_COLLECTIONS, currency, effectiveStatus, matchesScopeFilter, recurringDateOnly, visibleObligations } from '@/lib/recurring-payments';
 import { exportWorkbook } from '@/lib/report-excel';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import CollapsibleFilterCard from './collapsible-filter-card';
+import { TableScrollArea } from './module-table-card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useGlobalScopes } from './use-global-scopes';
@@ -43,7 +44,7 @@ export default function RecurringPaymentReports() {
     () => onSnapshot(
       query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)),
       snap => {
-        setPayments(snap.docs.map(d => ({ id: d.id, ...d.data(), status: effectiveStatus({ id: d.id, ...d.data() } as PaymentObligation) } as PaymentObligation)));
+        setPayments(visibleObligations(snap.docs.map(d => ({ id: d.id, ...d.data(), status: effectiveStatus({ id: d.id, ...d.data() } as PaymentObligation) } as PaymentObligation))));
         setLoading(false);
       },
       () => {
@@ -224,6 +225,7 @@ export default function RecurringPaymentReports() {
           <CardDescription>Expected vs. billed vs. paid, over the trailing 6 months — excludes cancelled/waived</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
+          <TableScrollArea>
           <Table>
             <TableHeader>
               <TableRow>
@@ -248,6 +250,7 @@ export default function RecurringPaymentReports() {
               ))}
             </TableBody>
           </Table>
+          </TableScrollArea>
         </CardContent>
       </Card>
 
@@ -257,6 +260,7 @@ export default function RecurringPaymentReports() {
           <CardDescription>Outstanding obligations grouped by days past due</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
+          <TableScrollArea>
           <Table>
             <TableHeader>
               <TableRow>
@@ -275,6 +279,7 @@ export default function RecurringPaymentReports() {
               ))}
             </TableBody>
           </Table>
+          </TableScrollArea>
         </CardContent>
       </Card>
     </div>

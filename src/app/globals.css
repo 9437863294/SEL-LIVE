@@ -259,14 +259,116 @@ main {
   }
 }
 
-@media (max-width: 640px) {
-  .recurring-payments-content {
-    overflow-x: clip;
-  }
+/* Every table in Recurring Payments is a self-contained frame.
+   A register is a dozen mostly-nowrap columns wide, so the page itself used to scroll sideways to
+   reach the last column and downwards past hundreds of rows — the data escaped the table and took
+   the layout with it. These rules bound the table instead: it scrolls inside its own viewport, in
+   both directions, with the header row pinned, and the page never moves.
 
+   Targeted with `:has(> table)` so it applies to every table in the module — including any added
+   later — rather than depending on each call site remembering a wrapper. That selector matches the
+   scroll container the shared `Table` component already renders, so there is exactly one
+   scrollport per table and the sticky header has something to stick to. */
+.recurring-payments-content div:has(> table) {
+  max-height: min(70vh, 42rem);
+  overflow: auto;
+  /* Scroll chaining is deliberately left at the default. Containing it would mean that on the
+     report pages, which stack three or four tables, a wheel gesture over the first one stops dead
+     at its last row instead of carrying on to the next — the reader would have to know to move the
+     pointer off the table first. */
+}
+
+.recurring-payments-content thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* Opaque, because rows scroll underneath it. */
+  background-color: hsl(var(--card));
+  /* Tailwind's preflight sets `border-collapse: collapse`, under which a sticky cell's own border
+     is not painted — an inset shadow is the standard substitute. */
+  box-shadow: inset 0 -1px 0 hsl(var(--border));
+}
+
+.recurring-payments-content {
+  /* The frame above only holds if this column can actually shrink; `min-width: auto` on a grid item
+     would otherwise let a wide table size the column, which is what defeated the table's own
+     overflow. `clip` rather than `hidden` so it doesn't become a scroll container and break the
+     sticky action bars and headers inside it. */
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+@media (max-width: 640px) {
   .recurring-payments-content h1,
   .recurring-payments-content h2 {
     overflow-wrap: anywhere;
+  }
+}
+
+/* Printing a Recurring Payments record.
+   `window.print()` otherwise renders the live app: module sidebar, decorative gradient blobs, a
+   dark header whose white text disappears on paper, and every interactive control. A page that
+   wants to print a document marks it `.rp-print-document` and everything else is suppressed here,
+   so the printable output is a real note rather than a screenshot. */
+@media print {
+  .rp-print-hide,
+  .recurring-payments-theme aside,
+  .recurring-payments-theme .pointer-events-none {
+    display: none !important;
+  }
+
+  /* The shell's sidebar/content grid, collapsed so the document uses the whole sheet. Targeted by
+     its own class rather than `.recurring-payments-theme .grid` — that would also flatten the
+     print note's internal column layouts, which are what make it readable. */
+  .rp-shell-grid {
+    display: block !important;
+  }
+
+  /* Colour-managed surfaces cost ink and print unreliably; force the document to plain black on
+     white and let the layout carry the structure. */
+  .rp-print-document,
+  .rp-print-document * {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .rp-print-document {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Strip the module's page padding so the note occupies the full sheet. */
+  .recurring-payments-theme {
+    padding: 0 !important;
+  }
+
+  /* The on-screen table frame must not survive onto paper: a bounded, scrollable viewport would
+     print as a cropped 42rem box, and a pinned header would repeat over the clipped rows. */
+  .recurring-payments-content div:has(> table),
+  .rp-print-document div:has(> table) {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .recurring-payments-content thead th,
+  .rp-print-document thead th {
+    position: static !important;
+    box-shadow: none !important;
+  }
+
+  /* Keep table rows and signature blocks from splitting across sheets. */
+  .rp-print-document tr,
+  .rp-print-document .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  @page {
+    margin: 14mm 12mm;
   }
 }
 
@@ -700,4 +802,155 @@ main {
   .tt-sticky-actions {
     padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
   }
+}
+
+/* ─── HR Requirement Management: mobile comfort ───────────────────────────────
+   Mirrors the vm-* and tt-* systems: 44px minimum tap targets, horizontally
+   scrollable tab strips (the requirement workspace of spec section 16 has
+   fourteen), safe-area padding, and compacted ShadCN card padding. Applied from
+   the module shell (.hr-module-root) so every screen inherits it without each
+   one remembering to.
+
+   Kept as its own block rather than folded into the tt-* selectors: the two
+   modules ship independently, and a shared block means a mobile tweak for
+   travel silently changes HR.                                                */
+@media (max-width: 640px) {
+  .hr-module-root {
+    overflow-x: clip;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+  .hr-module-root h1,
+  .hr-module-root h2 {
+    overflow-wrap: anywhere;
+  }
+  .hr-module-root button:not([role="switch"]),
+  .hr-module-root [role="button"]:not([role="switch"]),
+  .hr-module-root [role="combobox"],
+  .hr-module-root input,
+  .hr-module-root select {
+    min-height: 2.75rem;
+  }
+  .hr-module-root input[type="checkbox"],
+  .hr-module-root input[type="radio"],
+  .hr-module-root input[type="file"] {
+    min-height: 0;
+  }
+  /* Table cells opt out: a register's inline action button must stay compact or
+     a row becomes three lines tall. The mobile cards carry full-size actions. */
+  .hr-module-root td button,
+  .hr-module-root th button {
+    min-height: 2rem;
+  }
+  .hr-module-root [role="tablist"] {
+    max-width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .hr-module-root [role="tablist"]::-webkit-scrollbar {
+    display: none;
+  }
+  .hr-module-root [role="tab"] {
+    min-height: 2.75rem;
+    white-space: nowrap;
+  }
+  .hr-module-root [class~="p-6"] {
+    padding: 0.875rem;
+  }
+  .hr-module-root [class~="px-6"] {
+    padding-left: 0.875rem;
+    padding-right: 0.875rem;
+  }
+  .hr-module-root [class~="py-6"] {
+    padding-top: 0.875rem;
+    padding-bottom: 0.875rem;
+  }
+
+  /* Full-screen dialogs. The requirement wizard and the interview feedback form
+     in a centred 512px modal leave the fields squeezed into the middle third. */
+  .hr-mobile-dialog {
+    inset: 0 !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    transform: none !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 !important;
+  }
+  .hr-mobile-dialog .hr-dialog-header {
+    flex-shrink: 0;
+    padding: 1rem 3rem 0.75rem 1rem;
+    border-bottom: 1px solid rgb(226 232 240);
+  }
+  .hr-mobile-dialog .hr-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.875rem;
+  }
+  .hr-mobile-dialog > *:not(.hr-dialog-header):not(.hr-dialog-body):not(.hr-dialog-footer):not(button) {
+    flex-shrink: 0;
+    margin: 0.875rem 0.875rem 0;
+  }
+  .hr-mobile-dialog .hr-dialog-footer {
+    flex-shrink: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    border-top: 1px solid rgb(226 232 240);
+    background: white;
+    padding: 0.75rem 0.75rem calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+  .hr-mobile-dialog .hr-dialog-footer > * {
+    width: 100%;
+    margin: 0 !important;
+  }
+  .hr-mobile-dialog button,
+  .hr-mobile-dialog [role="button"],
+  .hr-mobile-dialog [role="combobox"],
+  .hr-mobile-dialog input {
+    min-height: 2.75rem;
+  }
+  .hr-mobile-dialog input[type="checkbox"],
+  .hr-mobile-dialog input[type="radio"],
+  .hr-mobile-dialog input[type="file"] {
+    min-height: 0;
+  }
+
+  .hr-module-root input[type='number'] {
+    appearance: textfield;
+  }
+  .hr-module-root input[type='number']::-webkit-inner-spin-button,
+  .hr-module-root input[type='number']::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
+  /* The requirement wizard's sticky save bar has to clear the home indicator. */
+  .hr-sticky-actions {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+}
+
+/* The pipeline board of spec section 22 is a horizontal scroller at every width:
+   twelve stages never fit a laptop viewport, so the columns keep a usable width
+   and the board scrolls rather than crushing each stage to 90px. */
+.hr-pipeline-board {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 0.5rem;
+}
+.hr-pipeline-board > * {
+  flex: 0 0 15rem;
+  min-width: 15rem;
 }

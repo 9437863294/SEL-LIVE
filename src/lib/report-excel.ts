@@ -39,6 +39,32 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(anchor.href);
 }
 
+/**
+ * Single-sheet export for reports whose rows are already shaped as `{ 'Column header': value }`.
+ *
+ * Columns are derived from the first row's keys, so a caller that builds its rows in the order it
+ * wants them read doesn't also have to maintain a parallel column spec that can drift out of step
+ * with it. Width is estimated from the header, which is close enough for a register and avoids
+ * every caller guessing pixel counts. Use `exportWorkbook` directly when a report needs several
+ * sheets or specific widths.
+ */
+export async function exportRowsToExcel(
+  title: string,
+  rows: Array<Record<string, unknown>>,
+  options: { filename?: string; sheetName?: string } = {},
+) {
+  const headers = Object.keys(rows[0] || {});
+  await exportWorkbook(options.filename || `${title}.xlsx`, [
+    {
+      // Excel rejects sheet names over 31 characters or containing []:*?/\ — trim rather than throw
+      // on a report whose title is a sentence.
+      name: (options.sheetName || title).replace(/[[\]:*?/\\]/g, ' ').slice(0, 31) || 'Sheet1',
+      columns: headers.map(header => ({ header, key: header, width: Math.min(40, Math.max(12, header.length + 4)) })),
+      rows,
+    },
+  ]);
+}
+
 /** Builds a workbook from one or more sheets and triggers a browser download of the .xlsx file. */
 export async function exportWorkbook(filename: string, sheets: ExcelSheet[]) {
   const ExcelJS = (await import('exceljs')).default;

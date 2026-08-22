@@ -15,6 +15,7 @@ import {
   type PaymentObligation,
   type RecurringPaymentMaster,
   type RecurringWorkflowStep,
+  visibleObligations,
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
 import { Badge } from "@/components/ui/badge";
@@ -115,7 +116,9 @@ export default function AutomationHealthReport() {
         ),
         (snapshot) => {
           setPayments(
-            snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as PaymentObligation),
+            visibleObligations(
+              snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as PaymentObligation),
+            ),
           );
           setLoading(false);
         },

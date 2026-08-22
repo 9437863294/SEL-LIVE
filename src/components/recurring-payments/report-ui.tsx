@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TableScrollArea } from "./module-table-card";
 
 /**
  * Shared chrome for the Recurring Payments "Reports" section. Every report hand-rolled its own
@@ -141,15 +142,20 @@ export function ReportSummaryTable({
   emptyLabel?: string;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+    <Card className="min-w-0">
+      <CardHeader className="py-4">
+        <CardTitle className="flex items-center gap-2 text-base">
           {Icon && <Icon className="h-5 w-5 text-emerald-600" />}
           {title}
         </CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
+        <CardDescription>
+          {[`${rows.length.toLocaleString("en-IN")} row${rows.length === 1 ? "" : "s"}`, description]
+            .filter(Boolean)
+            .join(" · ")}
+        </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
+        <TableScrollArea>
         <Table>
           <TableHeader>
             <TableRow>
@@ -177,6 +183,7 @@ export function ReportSummaryTable({
             )}
           </TableBody>
         </Table>
+        </TableScrollArea>
       </CardContent>
     </Card>
   );

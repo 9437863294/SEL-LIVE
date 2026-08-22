@@ -19,6 +19,7 @@ import {
   RP_COLLECTIONS,
   currency,
   effectiveStatus,
+  visibleObligations,
 } from "@/lib/recurring-payments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CollapsibleFilterCard from "./collapsible-filter-card";
+import ModuleTableCard from "./module-table-card";
 import { useGlobalScopes } from "./use-global-scopes";
 const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DEFAULT_FILTERS = {
@@ -85,16 +87,18 @@ export default function AdvancedPaymentCalendar() {
         ),
         (snapshot) => {
           setPayments(
-            snapshot.docs.map(
-              (item) =>
-                ({
-                  id: item.id,
-                  ...item.data(),
-                  status: effectiveStatus({
+            visibleObligations(
+              snapshot.docs.map(
+                (item) =>
+                  ({
                     id: item.id,
                     ...item.data(),
-                  } as PaymentObligation),
-                }) as PaymentObligation,
+                    status: effectiveStatus({
+                      id: item.id,
+                      ...item.data(),
+                    } as PaymentObligation),
+                  }) as PaymentObligation,
+              ),
             ),
           );
           setLoading(false);
@@ -480,8 +484,12 @@ function CalendarTable({
   onOpen: (item: PaymentObligation) => void;
 }) {
   return (
-    <Card>
-      <CardContent className="p-0">
+    <ModuleTableCard
+      title="Payments in this period"
+      description="Ordered by due date"
+      count={rows.length}
+      countNoun="payment"
+    >
         <Table>
           <TableHeader>
             <TableRow>
@@ -524,8 +532,7 @@ function CalendarTable({
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </ModuleTableCard>
   );
 }
 function PaymentSummary({

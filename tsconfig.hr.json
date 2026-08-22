@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/hr/**/*.ts",
+    "src/app/(protected)/hr/**/*.tsx",
+    "src/components/hr/**/*.ts",
+    "src/components/hr/**/*.tsx",
+    "src/lib/hr-policy.ts",
+    "src/lib/hr-requirement.ts",
+    "src/lib/hr-requirement-service.ts"
+  ],
+  "exclude": ["node_modules"]
+}

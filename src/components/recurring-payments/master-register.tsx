@@ -54,13 +54,7 @@ import {
 import { addBusinessHours, makeIsWorkingDay } from "@/lib/working-hours";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import CollapsibleFilterCard from "./collapsible-filter-card";
 import {
   DropdownMenu,
@@ -700,14 +694,10 @@ export default function RecurringMasterRegister() {
           </Select>
         </div>
       </CollapsibleFilterCard>
+      {/* No card header here: the page banner above already names this list, so a "Master register"
+          title plus a count restated the same thing twice in a row. */}
       <Card>
-        <CardHeader>
-          <CardTitle>Master register</CardTitle>
-          <CardDescription>
-            {rows.length} organization-scoped template(s)
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pt-6">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>

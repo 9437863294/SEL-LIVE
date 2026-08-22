@@ -322,8 +322,46 @@ export interface PaymentObligation {
   stepEnteredAt?: Timestamp;
   documentReferences?: Array<{ stepId: string; action: string; reference: string; addedBy: string; addedAt: Timestamp; category?: string; fileType?: string; version?: number }>;
   workflowHistory?: RecurringWorkflowHistoryEntry[];
+  /**
+   * Soft-delete marker. An obligation carries financial history — transactions, approvals, an audit
+   * trail — so "Delete" hides the record and leaves all of it intact and reportable, exactly as
+   * masters already do. Every list and report must filter on this; `visibleObligations` is the one
+   * place that decides what "visible" means.
+   */
+  deleted?: boolean;
+  deletedAt?: Timestamp;
+  deletedBy?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+}
+
+/**
+ * Drops soft-deleted obligations from a list. Firestore can't filter on a field that most existing
+ * documents don't have at all, so this is applied client-side after the snapshot rather than as a
+ * `where('deleted', '==', false)` — which would silently match nothing for every record written
+ * before the flag existed.
+ */
+export function visibleObligations<T extends { deleted?: boolean }>(payments: T[]): T[] {
+  return payments.filter((payment) => payment.deleted !== true);
+}
+
+/** Statuses at which an obligation's own fields may still be corrected in place. */
+const EDITABLE_OBLIGATION_STATUSES: PaymentStatus[] = ['Draft', 'Scheduled', 'Generated', 'Awaiting Bill', 'Bill Received', 'Returned for Correction'];
+
+/**
+ * Whether an obligation is still open to direct field edits.
+ *
+ * Editing stops once the payment has been verified or approved: the amount, vendor and period are
+ * what somebody signed off on, so changing them afterwards would leave an approval attached to
+ * figures that no longer exist. Later corrections go through the workflow ("Return for Correction")
+ * or through Cancel/Delete instead.
+ *
+ * Shared by the edit form's own lock and by every surface that offers an Edit action, so a user is
+ * never handed an Edit button that leads to a form refusing to save — the two had already drifted
+ * into separate status lists.
+ */
+export function isObligationEditable(payment: Pick<PaymentObligation, 'status' | 'deleted'>): boolean {
+  return payment.deleted !== true && EDITABLE_OBLIGATION_STATUSES.includes(payment.status);
 }
 
 export const currency = (value: number) => new Intl.NumberFormat('en-IN', {

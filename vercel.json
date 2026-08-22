@@ -15,6 +15,10 @@
     {
       "path": "/api/fixed-deposit/daily-controls",
       "schedule": "45 0 * * *"
+    },
+    {
+      "path": "/api/hr/sla",
+      "schedule": "0 1 * * *"
     }
   ]
 }

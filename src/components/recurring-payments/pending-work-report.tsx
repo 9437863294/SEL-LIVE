@@ -14,6 +14,7 @@ import {
   recurringDateOnly,
   type PaymentObligation,
   type RecurringWorkflowStep,
+  visibleObligations,
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
 import { Badge } from "@/components/ui/badge";
@@ -115,7 +116,7 @@ export default function PendingWorkReport() {
     return onSnapshot(
       query(collection(db, RP_COLLECTIONS.payments), where("organizationId", "==", organizationId)),
       (snapshot) => {
-        setPayments(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as PaymentObligation));
+        setPayments(visibleObligations(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as PaymentObligation)));
         setLoading(false);
       },
       () => {

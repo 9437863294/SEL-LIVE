@@ -14,6 +14,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import {
+  isObligationEditable,
   type PaymentObligation,
   RP_COLLECTIONS,
 } from "@/lib/recurring-payments";
@@ -151,12 +152,7 @@ export default function PaymentEditPage({ paymentId }: { paymentId: string }) {
         </CardContent>
       </Card>
     );
-  const locked = ![
-    "Draft",
-    "Generated",
-    "Awaiting Bill",
-    "Returned for Correction",
-  ].includes(payment.status);
+  const locked = !isObligationEditable(payment);
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <div className="flex items-center gap-3">

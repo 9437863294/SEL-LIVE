@@ -13,6 +13,7 @@ import {
   runTransaction,
   serverTimestamp,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import {
   getDownloadURL,
@@ -28,10 +29,13 @@ import {
   FileText,
   IndianRupee,
   Loader2,
+  MoreHorizontal,
+  Pencil,
   Plus,
   ReceiptText,
   Search,
   ShieldCheck,
+  Trash2,
   WalletCards,
 } from "lucide-react";
 import { db } from "@/lib/firebase";
@@ -47,17 +51,20 @@ import {
   RP_COLLECTIONS,
   currency,
   effectiveStatus,
+  isObligationEditable,
+  visibleObligations,
 } from "@/lib/recurring-payments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import CollapsibleFilterCard from "./collapsible-filter-card";
+import ModuleTableCard from "./module-table-card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -134,8 +141,10 @@ export default function RecurringPaymentRegister() {
         ),
         (snap) => {
           setPayments(
-            snap.docs.map(
-              (d) => ({ id: d.id, ...d.data() }) as PaymentObligation,
+            visibleObligations(
+              snap.docs.map(
+                (d) => ({ id: d.id, ...d.data() }) as PaymentObligation,
+              ),
             ),
           );
           setLoading(false);
@@ -221,6 +230,61 @@ export default function RecurringPaymentRegister() {
   const canRecord =
     can("Record Payment", "Recurring Payments.Payment Processing") ||
     can("Record Payment", "Recurring Payments.Payments");
+  const canEdit = can("Edit", "Recurring Payments.Payments");
+  const canDelete = can("Delete", "Recurring Payments.Payments");
+
+  /**
+   * Hides an obligation without destroying it. A payment carries transactions, approvals and an
+   * audit trail that has to stay reportable, so this sets the soft-delete flag and writes its own
+   * audit entry — the same treatment a deleted master gets. A payment with money already recorded
+   * against it is refused outright: hiding a settled obligation would silently drop it out of the
+   * paid totals every report reconciles against.
+   */
+  async function softDelete(payment: PaymentObligation) {
+    if (!user || !canDelete) return;
+    if (Number(payment.paidAmount || payment.settledAmount || 0) > 0)
+      return toast({
+        title: "This payment has recorded transactions",
+        description:
+          "Cancel it instead — deleting a settled obligation would remove it from paid totals.",
+        variant: "destructive",
+      });
+    if (
+      !window.confirm(
+        `Delete "${payment.title}"? The record is hidden from lists and reports but retained for audit.`,
+      )
+    )
+      return;
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), {
+        deleted: true,
+        deletedAt: serverTimestamp(),
+        deletedBy: user.id,
+        updatedAt: serverTimestamp(),
+      });
+      batch.set(
+        doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)),
+        {
+          organizationId,
+          paymentId: payment.id,
+          action: "Payment deleted",
+          summary: `${payment.title} (${payment.status}) hidden from registers and reports`,
+          page: "/recurring-payments/payments",
+          recordId: payment.id,
+          previousValue: { deleted: false, status: payment.status },
+          newValue: { deleted: true },
+          userId: user.id,
+          userName: user.name,
+          createdAt: serverTimestamp(),
+        },
+      );
+      await batch.commit();
+      toast({ title: "Payment deleted and retained for audit" });
+    } catch {
+      toast({ title: "Payment could not be deleted", variant: "destructive" });
+    }
+  }
   const exportCsv = () => {
     const data = [
       [
@@ -438,13 +502,16 @@ export default function RecurringPaymentRegister() {
           </div>
         </div>
       </CollapsibleFilterCard>
-      <Card>
-        <CardHeader>
-          <CardTitle>All payment obligations</CardTitle>
-          <CardDescription>{rows.length} matching record(s)</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <ModuleTableCard
+        title="All payment obligations"
+        description={
+          activeFilterCount
+            ? `${activeFilterCount} filter(s) applied`
+            : "Every cycle raised for this organization"
+        }
+        count={rows.length}
+        countNoun="obligation"
+      >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -527,16 +594,20 @@ export default function RecurringPaymentRegister() {
                       <TableCell className="max-w-40 truncate whitespace-nowrap">
                         {payment.stage || "—"}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <div className="flex gap-1">
+                      <TableCell
+                        className="whitespace-nowrap text-right"
+                        // The row itself opens the payment, so anything in this cell has to stop
+                        // the click from also navigating away mid-action.
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-end gap-1">
                           {canRecord &&
                             !payment.currentStepId &&
                             !finalStatuses.includes(payment.status) && (
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                                onClick={() => {
                                   setSelected(payment);
                                   setRecordOpen(true);
                                 }}
@@ -545,15 +616,59 @@ export default function RecurringPaymentRegister() {
                                 Payment
                               </Button>
                             )}
-                          {payment.currentStepId && (
-                            <Link
-                              href={`/recurring-payments/stage/${payment.currentStepId}`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Button size="icon" variant="ghost">
-                                <ExternalLink className="h-4 w-4" />
-                              </Button>
-                            </Link>
+                          {(canEdit || canDelete || payment.currentStepId) && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="icon" variant="ghost">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onSelect={() =>
+                                    router.push(
+                                      `/recurring-payments/payments/${payment.id}`,
+                                    )
+                                  }
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  View details
+                                </DropdownMenuItem>
+                                {canEdit && isObligationEditable(payment) && (
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      router.push(
+                                        `/recurring-payments/payments/${payment.id}/edit`,
+                                      )
+                                    }
+                                  >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit payment
+                                  </DropdownMenuItem>
+                                )}
+                                {payment.currentStepId && (
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      router.push(
+                                        `/recurring-payments/stage/${payment.currentStepId}`,
+                                      )
+                                    }
+                                  >
+                                    <ExternalLink className="mr-2 h-4 w-4" />
+                                    Open workflow step
+                                  </DropdownMenuItem>
+                                )}
+                                {canDelete && (
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onSelect={() => softDelete(payment)}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete payment
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           )}
                         </div>
                       </TableCell>
@@ -573,9 +688,7 @@ export default function RecurringPaymentRegister() {
                 )}
               </TableBody>
             </Table>
-          </div>
-        </CardContent>
-      </Card>
+      </ModuleTableCard>
       <PaymentDetail
         payment={selected}
         users={users}

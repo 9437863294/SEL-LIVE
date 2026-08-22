@@ -37,6 +37,7 @@ import {
   RP_COLLECTIONS,
   currency,
   effectiveStatus,
+  visibleObligations,
 } from "@/lib/recurring-payments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,8 +109,10 @@ export default function ProfessionalRecurringDashboard() {
         ),
         (snapshot) => {
           setPayments(
-            snapshot.docs.map(
-              (item) => ({ id: item.id, ...item.data() }) as PaymentObligation,
+            visibleObligations(
+              snapshot.docs.map(
+                (item) => ({ id: item.id, ...item.data() }) as PaymentObligation,
+              ),
             ),
           );
           setLoading(false);

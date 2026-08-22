@@ -13,6 +13,7 @@ import {
   effectiveStatus,
   recurringDateOnly,
   type PaymentObligation,
+  visibleObligations,
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
 import type { RecurringVendor } from "./vendor-management";
@@ -101,13 +102,15 @@ export default function VendorSpendReport() {
         query(collection(db, RP_COLLECTIONS.payments), where("organizationId", "==", organizationId)),
         (snapshot) => {
           setPayments(
-            snapshot.docs.map(
-              (item) =>
-                ({
-                  id: item.id,
-                  ...item.data(),
-                  status: effectiveStatus({ id: item.id, ...item.data() } as PaymentObligation),
-                }) as PaymentObligation,
+            visibleObligations(
+              snapshot.docs.map(
+                (item) =>
+                  ({
+                    id: item.id,
+                    ...item.data(),
+                    status: effectiveStatus({ id: item.id, ...item.data() } as PaymentObligation),
+                  }) as PaymentObligation,
+              ),
             ),
           );
           setLoading(false);

@@ -127,13 +127,19 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
   const assignedApproval = workflowSteps.some(
     (step) => assignedStepIds.has(step.id) && step.name.toLowerCase().includes('approval'),
   );
-  const navItems = [...coreItems, ...workflowItems, ...managementItems].filter(
-    (item) =>
-      can('View', `Recurring Payments.${item.resource}`) ||
-      (['Approvals', 'Payment Processing'].includes(item.resource) &&
-        can('View', 'Recurring Payments.Payments')) ||
-      (!!item.stepId && assignedStepIds.has(item.stepId)) ||
-      (item.href === '/recurring-payments/approvals' && assignedApproval),
+  const navItems = [...coreItems, ...workflowItems, ...managementItems].filter((item) =>
+    item.stepId
+      // Assignment is the *only* gate on a workflow step queue, deliberately narrower than the
+      // rest of the module. A step page renders nothing but the signed-in user's own assigned
+      // tasks, so a role permission on its own surfaced a page that could only ever be empty —
+      // and implied the holder had work waiting when the workflow had never named them. Anyone
+      // needing oversight of other people's queues uses All Payments or the reports, which are
+      // built to show the whole organization.
+      ? assignedStepIds.has(item.stepId)
+      : can('View', `Recurring Payments.${item.resource}`) ||
+        (['Approvals', 'Payment Processing'].includes(item.resource) &&
+          can('View', 'Recurring Payments.Payments')) ||
+        (item.href === '/recurring-payments/approvals' && assignedApproval),
   );
   const canViewModule = can('View Module', 'Recurring Payments') || hasAssignedWork;
   const currentPageAllowed = safePathname.startsWith('/recurring-payments/settings/workflow')
@@ -210,17 +216,27 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
     );
   }
 
+  // A workflow step is refused for a different reason than everything else — the user may well
+  // hold the role permission and simply have no task here — so saying "no permission" would send
+  // them to an administrator who has nothing to change.
+  const stageRefused = safePathname.startsWith('/recurring-payments/stage/');
   const pageAccessDenied = (
     <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
       <CardContent className="space-y-3 py-16 text-center">
         <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
         <div>
-          <p className="font-semibold text-slate-800">Access denied</p>
+          <p className="font-semibold text-slate-800">
+            {stageRefused ? 'No tasks assigned to you at this step' : 'Access denied'}
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            You do not have permission to view this Recurring Payments page.
+            {stageRefused
+              ? 'A workflow step only shows the tasks it has assigned to you, and none are currently with you here.'
+              : 'You do not have permission to view this Recurring Payments page.'}
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Contact your administrator to request access.
+            {stageRefused
+              ? 'The step reappears in the menu as soon as a payment reaches you at it.'
+              : 'Contact your administrator to request access.'}
           </p>
         </div>
       </CardContent>
@@ -235,7 +251,8 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
         <div className="absolute bottom-[6%] right-[10%] h-64 w-64 rounded-full bg-teal-300/20 blur-3xl" />
       </div>
 
-      <div className="mb-3 lg:hidden">
+      {/* `lg:hidden` is a min-width query, so this bar would still print on a wide sheet. */}
+      <div className="mb-3 lg:hidden print:hidden">
         <Card className="border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
           <CardContent className="flex items-center gap-3 px-3 py-2.5">
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
@@ -278,7 +295,7 @@ export default function RecurringPaymentsLayoutShell({ children }: { children: R
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
+      <div className="rp-shell-grid grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
         <aside className="hidden lg:sticky lg:top-20 lg:block">
           <Card className="overflow-hidden border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
             <div className="border-b border-white/50 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 px-4 py-3">

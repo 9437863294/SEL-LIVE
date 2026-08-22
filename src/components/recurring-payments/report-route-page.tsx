@@ -22,6 +22,7 @@ import {
   currency,
   effectiveStatus,
   recurringDateOnly,
+  visibleObligations,
 } from "@/lib/recurring-payments";
 import { exportWorkbook } from "@/lib/report-excel";
 import { Badge } from "@/components/ui/badge";
@@ -142,16 +143,18 @@ export default function RecurringReportRoutePage({
         ),
         (snapshot) => {
           setPayments(
-            snapshot.docs.map(
-              (item) =>
-                ({
-                  id: item.id,
-                  ...item.data(),
-                  status: effectiveStatus({
+            visibleObligations(
+              snapshot.docs.map(
+                (item) =>
+                  ({
                     id: item.id,
                     ...item.data(),
-                  } as PaymentObligation),
-                }) as PaymentObligation,
+                    status: effectiveStatus({
+                      id: item.id,
+                      ...item.data(),
+                    } as PaymentObligation),
+                  }) as PaymentObligation,
+              ),
             ),
           );
           setLoading(false);

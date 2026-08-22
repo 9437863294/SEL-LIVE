@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { AlertTriangle, ArrowLeft, BellRing, CheckCircle2, Edit3, ExternalLink, FileText, History, Loader2, MessageSquare, Printer, ReceiptText, Send, ShieldCheck, UploadCloud, WalletCards } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, BellRing, CheckCircle2, Edit3, ExternalLink, FileText, History, Loader2, MessageSquare, Pencil, Printer, ReceiptText, Send, ShieldCheck, Trash2, UploadCloud, WalletCards } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -17,6 +17,7 @@ import {
   PAYMENT_MODES,
   RP_COLLECTIONS,
   currency,
+  isObligationEditable,
   maskAccount,
   type PaymentMode,
   type PaymentObligation,
@@ -24,6 +25,7 @@ import {
   type RecurringPaymentAuditLog,
   type RecurringPaymentSettings,
 } from '@/lib/recurring-payments';
+import PaymentPrintNote from './payment-print-note';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -211,11 +213,46 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
     toast({ title: 'Payment cancelled and retained for audit' });
   }
 
+  /**
+   * Soft-deletes the obligation — see `visibleObligations`. Deliberately distinct from Cancel:
+   * cancelling keeps the payment on the register as a closed, visible decision, whereas deleting
+   * withdraws a record that should never have existed (a duplicate, a master misconfiguration)
+   * while preserving its audit trail. Refused once money is recorded against it, because hiding a
+   * settled obligation would pull it out of the paid totals reports reconcile against.
+   */
+  async function deletePayment() {
+    if (!payment || !user || !can('Delete', 'Recurring Payments.Payments')) return;
+    if (Number(payment.paidAmount || payment.settledAmount || 0) > 0)
+      return toast({
+        title: 'This payment has recorded transactions',
+        description: 'Cancel it instead — deleting a settled obligation would remove it from paid totals.',
+        variant: 'destructive',
+      });
+    if (!window.confirm('Delete this payment obligation? It is hidden from all registers and reports, and the audit history is retained.')) return;
+    const batch = writeBatch(db);
+    batch.update(doc(db, RP_COLLECTIONS.payments, payment.id), { deleted: true, deletedAt: serverTimestamp(), deletedBy: user.id, updatedAt: serverTimestamp() });
+    batch.set(doc(collection(db, RP_COLLECTIONS.payments, payment.id, RP_COLLECTIONS.auditLogs)), { organizationId, paymentId: payment.id, action: 'Payment deleted', summary: `${payment.title} (${payment.status}) hidden from registers and reports`, page: `/recurring-payments/payments/${payment.id}`, recordId: payment.id, previousValue: { deleted: false, status: payment.status }, newValue: { deleted: true }, userId: user.id, userName: user.name, createdAt: serverTimestamp() });
+    await batch.commit();
+    toast({ title: 'Payment deleted and retained for audit' });
+    router.push('/recurring-payments/payments');
+  }
+
   if (loading) return <div className="flex min-h-[55vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>;
   if (!payment) return <Card><CardContent className="py-16 text-center"><AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber-500" /><p className="font-semibold">Payment not found or access denied</p><Button className="mt-4" variant="outline" onClick={() => router.push('/recurring-payments/payments')}>Back to payments</Button></CardContent></Card>;
 
   return <>
-    <div className="space-y-5"><Card className="border-0 bg-gradient-to-r from-slate-950 via-indigo-950 to-violet-900 text-white"><CardContent className="space-y-4 p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div className="flex gap-3"><Button variant="secondary" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold">{payment.title}</h1><Badge className="bg-white/15 text-white hover:bg-white/20">{payment.status}</Badge><Badge variant="outline" className="border-white/30 text-white">{payment.priority || 'Normal'}</Badge></div><p className="mt-1 text-sm text-indigo-100">Payment ID {payment.id} · {payment.vendorName} · {payment.sourceType || 'Recurring'}</p><p className={`mt-1 text-sm ${days < 0 ? 'text-red-300' : 'text-indigo-200'}`}>{days < 0 ? `${Math.abs(days)} day(s) overdue` : days === 0 ? 'Due today' : `Due in ${days} day(s)`}</p></div></div><div className="flex flex-wrap gap-2 print:hidden"><Button variant="secondary" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print note</Button>{can('Edit', 'Recurring Payments.Payments') && ['Draft', 'Generated', 'Awaiting Bill', 'Returned for Correction'].includes(payment.status) && <Link href={`/recurring-payments/payments/${payment.id}/edit`}><Button variant="secondary">Edit</Button></Link>}{canAct && <Link href={`/recurring-payments/stage/${payment.currentStepId}`}><Button className="bg-white text-indigo-800 hover:bg-indigo-50"><ExternalLink className="mr-2 h-4 w-4" />Open assigned action</Button></Link>}{can('Record Payment', 'Recurring Payments.Payments') && ['Approved', 'Payment Processing', 'Partially Paid'].includes(payment.status) && <Link href={`/recurring-payments/payments/${payment.id}/record-payment`}><Button className="bg-emerald-500 hover:bg-emerald-400"><WalletCards className="mr-2 h-4 w-4" />Record payment</Button></Link>}{can('Cancel', 'Recurring Payments.Payments') && !['Closed', 'Cancelled'].includes(payment.status) && <Button variant="destructive" onClick={cancelPayment}>Cancel</Button>}</div></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><HeaderInfo label="Organization" value={user?.organizationName || organizationId} /><HeaderInfo label="Branch / project" value={payment.projectName || payment.branchName || 'Organization-wide'} /><HeaderInfo label="Due date" value={payment.dueDate} /><HeaderInfo label="Owner" value={userName(payment.assignedTo, users)} /><HeaderInfo label="Current stage" value={payment.stage || '—'} /></div></CardContent></Card>
+    {/* The printable document. Rendered alongside the live UI rather than in a separate route so
+        it always reflects the record currently on screen; `@media print` swaps which is visible. */}
+    <div className="rp-print-document">
+      <PaymentPrintNote
+        payment={payment}
+        organizationName={user?.organizationName || organizationId}
+        ownerName={userName(payment.assignedTo, users)}
+        approverNames={(payment.approvalLevels || []).map(id => userName(id, users))}
+        transactions={transactions}
+      />
+    </div>
+    <div className="space-y-5 rp-print-hide"><Card className="border-0 bg-gradient-to-r from-slate-950 via-indigo-950 to-violet-900 text-white"><CardContent className="space-y-4 p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div className="flex gap-3"><Button variant="secondary" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold">{payment.title}</h1><Badge className="bg-white/15 text-white hover:bg-white/20">{payment.status}</Badge><Badge variant="outline" className="border-white/30 text-white">{payment.priority || 'Normal'}</Badge></div><p className="mt-1 text-sm text-indigo-100">Payment ID {payment.id} · {payment.vendorName} · {payment.sourceType || 'Recurring'}</p><p className={`mt-1 text-sm ${days < 0 ? 'text-red-300' : 'text-indigo-200'}`}>{days < 0 ? `${Math.abs(days)} day(s) overdue` : days === 0 ? 'Due today' : `Due in ${days} day(s)`}</p></div></div><div className="flex flex-wrap gap-2 print:hidden"><Button variant="secondary" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print note</Button>{can('Edit', 'Recurring Payments.Payments') && isObligationEditable(payment) && <Link href={`/recurring-payments/payments/${payment.id}/edit`}><Button variant="secondary"><Pencil className="mr-2 h-4 w-4" />Edit</Button></Link>}{can('Delete', 'Recurring Payments.Payments') && <Button variant="destructive" onClick={deletePayment}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>}{canAct && <Link href={`/recurring-payments/stage/${payment.currentStepId}`}><Button className="bg-white text-indigo-800 hover:bg-indigo-50"><ExternalLink className="mr-2 h-4 w-4" />Open assigned action</Button></Link>}{can('Record Payment', 'Recurring Payments.Payments') && ['Approved', 'Payment Processing', 'Partially Paid'].includes(payment.status) && <Link href={`/recurring-payments/payments/${payment.id}/record-payment`}><Button className="bg-emerald-500 hover:bg-emerald-400"><WalletCards className="mr-2 h-4 w-4" />Record payment</Button></Link>}{can('Cancel', 'Recurring Payments.Payments') && !['Closed', 'Cancelled'].includes(payment.status) && <Button variant="destructive" onClick={cancelPayment}>Cancel</Button>}</div></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><HeaderInfo label="Organization" value={user?.organizationName || organizationId} /><HeaderInfo label="Branch / project" value={payment.projectName || payment.branchName || 'Organization-wide'} /><HeaderInfo label="Due date" value={payment.dueDate} /><HeaderInfo label="Owner" value={userName(payment.assignedTo, users)} /><HeaderInfo label="Current stage" value={payment.stage || '—'} /></div></CardContent></Card>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-6"><Metric label="Expected" value={currency(payment.expectedAmount)} /><Metric label="Bill" value={currency(payment.billAmount || 0)} /><Metric label="Approved" value={currency(payment.approvedAmount || payment.netPayableAmount || payment.billAmount || 0)} /><Metric label="Paid" value={currency(payment.paidAmount || 0)} /><Metric label="Balance" value={currency(outstanding)} /><Metric label="Variance" value={`${Number(payment.variancePercent || 0).toFixed(1)}%`} alert={payment.varianceWarning} /></div>
     <Tabs defaultValue="overview"><TabsList className="flex h-auto flex-wrap"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="bill">Bill Details</TabsTrigger><TabsTrigger value="approval">Approval Workflow</TabsTrigger><TabsTrigger value="transactions">Transactions</TabsTrigger><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="comments">Comments</TabsTrigger><TabsTrigger value="notifications">Notifications</TabsTrigger><TabsTrigger value="audit">Audit Log</TabsTrigger></TabsList>
       <TabsContent value="overview"><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"><Info label="Billing period" value={`${payment.billingPeriodStart} to ${payment.billingPeriodEnd}`} /><Info label="Bill number" value={payment.billNumber || 'Not received'} /><Info label="Bill date" value={payment.billDate || payment.billReceivedDate || '—'} /><Info label="Category" value={payment.category} /><Info label="Vendor" value={payment.vendorName} /><Info label="Account reference" value={maskAccount(payment.accountNumber) || '—'} /><Info label="Cost centre" value={payment.costCentre || '—'} /><Info label="General ledger" value={payment.ledger || '—'} /><Info label="Description" value={payment.description || '—'} />{payment.expenseRequestNo && <Info label="Expense request no." value={payment.expenseRequestNo} />}</CardContent></Card></TabsContent>

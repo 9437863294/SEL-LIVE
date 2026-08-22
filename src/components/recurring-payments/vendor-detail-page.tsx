@@ -9,13 +9,14 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
-import { type PaymentObligation, RP_COLLECTIONS, currency, maskAccount } from '@/lib/recurring-payments';
+import { type PaymentObligation, RP_COLLECTIONS, currency, maskAccount, visibleObligations } from '@/lib/recurring-payments';
 import type { RecurringVendor } from './vendor-management';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import ModuleTableCard from './module-table-card';
 
 type AuditRecord = { id: string; action: string; summary?: string; userName?: string; createdAt?: unknown };
 
@@ -39,7 +40,7 @@ export default function VendorDetailPage({ vendorId }: { vendorId: string }) {
         setLoading(false);
       }, () => setLoading(false)),
       onSnapshot(query(collection(db, RP_COLLECTIONS.payments), where('organizationId', '==', organizationId)), snapshot => {
-        setAllPayments(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentObligation)));
+        setAllPayments(visibleObligations(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentObligation))));
       }),
       onSnapshot(query(collection(vendorRef, RP_COLLECTIONS.auditLogs), orderBy('createdAt', 'desc')), snapshot => {
         setAudit(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as AuditRecord)));
@@ -76,5 +77,5 @@ export default function VendorDetailPage({ vendorId }: { vendorId: string }) {
 
 function Metric({ label, value }: { label: string; value: string }) { return <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></CardContent></Card>; }
 function Info({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 font-medium">{value}</p></div>; }
-function PaymentTable({ rows, onOpen }: { rows: PaymentObligation[]; onOpen: (id: string) => void }) { return <Card><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Due date</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{rows.map(item => <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpen(item.id)}><TableCell>{item.title}</TableCell><TableCell>{item.dueDate}</TableCell><TableCell className="text-right">{currency(item.billAmount || item.expectedAmount)}</TableCell><TableCell><Badge variant="outline">{item.status}</Badge></TableCell></TableRow>)}{!rows.length && <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">No payments found.</TableCell></TableRow>}</TableBody></Table></CardContent></Card>; }
+function PaymentTable({ rows, onOpen }: { rows: PaymentObligation[]; onOpen: (id: string) => void }) { return <ModuleTableCard title="Payment obligations" description="Obligations raised against this vendor" count={rows.length} countNoun="payment"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Due date</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>{rows.map(item => <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpen(item.id)}><TableCell>{item.title}</TableCell><TableCell>{item.dueDate}</TableCell><TableCell className="text-right">{currency(item.billAmount || item.expectedAmount)}</TableCell><TableCell><Badge variant="outline">{item.status}</Badge></TableCell></TableRow>)}{!rows.length && <TableRow><TableCell colSpan={4} className="h-24 text-center text-muted-foreground">No payments found.</TableCell></TableRow>}</TableBody></Table></ModuleTableCard>; }
 function formatTimestamp(value: unknown) { const timestamp = value as { toDate?: () => Date; seconds?: number } | null; if (timestamp?.toDate) return timestamp.toDate().toLocaleString('en-IN'); if (timestamp?.seconds) return new Date(timestamp.seconds * 1000).toLocaleString('en-IN'); return '—'; }

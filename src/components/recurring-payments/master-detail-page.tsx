@@ -49,6 +49,7 @@ import {
   RP_COLLECTIONS,
   currency,
   maskAccount,
+  visibleObligations,
 } from "@/lib/recurring-payments";
 import { addBusinessHours } from "@/lib/working-hours";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +70,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ModuleTableCard from "./module-table-card";
 
 type AuditRecord = {
   id: string;
@@ -118,12 +120,12 @@ export default function RecurringMasterDetailPage({
         ),
         (snapshot) => {
           setPayments(
-            snapshot.docs
-              .map(
+            visibleObligations(
+              snapshot.docs.map(
                 (item) =>
                   ({ id: item.id, ...item.data() }) as PaymentObligation,
-              )
-              .sort((a, b) => b.dueDate.localeCompare(a.dueDate)),
+              ),
+            ).sort((a, b) => b.dueDate.localeCompare(a.dueDate)),
           );
         },
       ),
@@ -593,8 +595,12 @@ function PaymentTable({
   onOpen: (id: string) => void;
 }) {
   return (
-    <Card>
-      <CardContent className="p-0">
+    <ModuleTableCard
+      title="Generated payment obligations"
+      description="One row per billing cycle generated from this master"
+      count={payments.length}
+      countNoun="cycle"
+    >
         <Table>
           <TableHeader>
             <TableRow>
@@ -641,8 +647,7 @@ function PaymentTable({
             )}
           </TableBody>
         </Table>
-      </CardContent>
-    </Card>
+    </ModuleTableCard>
   );
 }
 function Header({ label, value }: { label: string; value: string }) {

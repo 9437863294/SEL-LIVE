@@ -58,6 +58,9 @@ export const moduleIconRegistry: Record<string, ModuleIconEntry> = {
   ShieldCheck: { Icon: ShieldCheckIcon, gradient: "from-blue-500 to-sky-600" },
   Shield: { Icon: ShieldUmbrellaIcon, gradient: "from-green-600 to-emerald-700" },
   IdBadge: { Icon: IdBadgeIcon, gradient: "from-pink-500 to-rose-600" },
+  // HR & Recruitment. Reuses the ID-badge glyph — a manpower module is about people records — with
+  // the indigo/violet accent the module's own screens carry.
+  Users: { Icon: IdBadgeIcon, gradient: "from-indigo-500 to-violet-600" },
   Truck: { Icon: TruckIcon, gradient: "from-orange-600 to-amber-700" },
   SteeringWheel: { Icon: SteeringWheelIcon, gradient: "from-lime-500 to-green-600" },
   Package: { Icon: StackedBoxesIcon, gradient: "from-yellow-500 to-amber-600" },
