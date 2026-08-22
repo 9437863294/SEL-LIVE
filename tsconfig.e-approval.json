@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/e-approval/**/*.ts",
+    "src/app/(protected)/e-approval/**/*.tsx",
+    "src/app/api/e-approval/**/*.ts",
+    "src/components/e-approval/**/*.ts",
+    "src/components/e-approval/**/*.tsx",
+    "src/lib/e-approval-policy.ts",
+    "src/lib/e-approval.ts",
+    "src/lib/e-approval-service.ts"
+  ],
+  "exclude": ["node_modules"]
+}

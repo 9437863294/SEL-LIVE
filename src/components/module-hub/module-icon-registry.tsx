@@ -67,6 +67,9 @@ export const moduleIconRegistry: Record<string, ModuleIconEntry> = {
   FolderKanban: { Icon: KanbanIcon, gradient: "from-violet-500 to-fuchsia-600" },
   ShoppingCart: { Icon: StorefrontIcon, gradient: "from-purple-600 to-indigo-700" },
   LedgerChart: { Icon: LedgerChartIcon, gradient: "from-indigo-600 to-blue-700" },
+  // E-Approval / E-Notesheet. The wax-seal glyph rather than a clipboard: what the module produces
+  // is a signed note, and the seal reads that way at 16px where a tick does not.
+  Stamp: { Icon: EnvelopeSealIcon, gradient: "from-sky-500 to-indigo-600" },
   Settings: { Icon: GearIcon, gradient: "from-slate-500 to-slate-700" },
 };
 

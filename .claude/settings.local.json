@@ -61,7 +61,10 @@
       "Bash(sed -i 's|from \"\\\\./project-management-variations\"|from \"./project-management-variations.ts\"|' src/lib/boq-quantity-control.ts)",
       "Bash(node --experimental-strip-types -e \"Promise.all\\([import\\('./src/lib/boq-traceability.ts'\\),import\\('./src/lib/boq-quantity-control.ts'\\)]\\).then\\(\\([a,b]\\)=>console.log\\('IMPORT OK:',typeof a.buildBoqTimeline,typeof b.reconcileBoqQuantities\\)\\).catch\\(e=>console.log\\('IMPORT FAIL:',e.code,e.message.slice\\(0,140\\)\\)\\)\")",
       "Bash(echo \"scoped EXIT:$?\")",
-      "Bash(python3 -)"
+      "Bash(python3 -)",
+      "Bash(echo \"EXIT=$?\")",
+      "Read(//c/Users/Ashish/.claude/projects/d--Application-Dev-SEL-Live/memory/**)",
+      "Bash(printf -- \"- [ESLint broken repo-wide]\\(eslint-broken-repo-wide.md\\) — lint crashes on every file; use tsc + node tests instead.\\\\n\")"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

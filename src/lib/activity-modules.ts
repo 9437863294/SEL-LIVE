@@ -23,6 +23,7 @@ export const ACTIVITY_MODULES = {
   CHAT_SYSTEM: 'Chat System',
   DAILY_REQUISITION: 'Daily Requisition',
   DRIVER_MANAGEMENT: 'Driver Management',
+  E_APPROVAL: 'E-Approval',
   EMPLOYEE: 'Employee',
   EXPENSES: 'Expenses',
   FIXED_DEPOSIT: 'Fixed Deposit Management',

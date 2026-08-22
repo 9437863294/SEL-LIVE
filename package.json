@@ -32,7 +32,9 @@
     "typecheck:inventory": "tsc -p tsconfig.inventory.json",
     "typecheck:project-management": "tsc -p tsconfig.project-management.json",
     "typecheck:tour-travel": "tsc -p tsconfig.tour-travel.json",
-    "typecheck:hr": "tsc -p tsconfig.hr.json"
+    "typecheck:hr": "tsc -p tsconfig.hr.json",
+    "test:e-approval": "node --experimental-strip-types --test tests/e-approval-domain.test.mjs",
+    "typecheck:e-approval": "tsc -p tsconfig.e-approval.json"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

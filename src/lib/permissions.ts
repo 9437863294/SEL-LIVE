@@ -24,6 +24,44 @@ export const permissionModules = {
     Conversations: ["View", "Send"],
     Groups: ["Create"],
   },
+  // Spec section 26. Note what is *not* here: there is no "Approve", "Verify" or "Return"
+  // permission. Being assigned a step is the authority to act on it — a verifier a Director picked
+  // is authorised by that assignment, and requiring a matching role permission on top is how a file
+  // ends up parked with somebody who cannot move it. These permissions gate who can *raise* and
+  // *see* approvals, and who can administer the workflow.
+  "E-Approval": {
+    "View Module": [],
+    Dashboard: ["View"],
+    Requests: [
+      "Create",
+      "Edit",
+      "Delete Draft",
+      "Cancel",
+      "View Own",
+      "View Department",
+      "View All",
+      "View Confidential",
+      "Export",
+      "Print",
+    ],
+    Inbox: ["View"],
+    Comments: ["Add", "Edit Own", "Retract Own"],
+    Attachments: ["Upload", "Download"],
+    "Audit Trail": ["View"],
+    Reports: ["View", "Export"],
+    Delegations: ["View", "Add", "Edit", "Delete"],
+    Administration: {
+      View: [],
+      "Approval Types": ["View", "Add", "Edit", "Delete"],
+      "Workflow Templates": ["View", "Add", "Edit", "Delete"],
+      "Approval Matrix": ["View", "Add", "Edit", "Delete"],
+      "Department Routing": ["View", "Edit"],
+      "SLA & Escalation": ["View", "Edit"],
+      Numbering: ["View", "Edit"],
+      "Notification Rules": ["View", "Edit"],
+      Settings: ["View", "Edit"],
+    },
+  },
   "Site Fund Requisition": [
     "View Module",
     "Create Requisition",
