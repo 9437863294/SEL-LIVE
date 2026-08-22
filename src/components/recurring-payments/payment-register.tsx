@@ -512,7 +512,9 @@ export default function RecurringPaymentRegister() {
         count={rows.length}
         countNoun="obligation"
       >
-            <Table>
+            {/* Compact rows, matching the masters register: twelve columns of single-line values,
+                so the default 1rem cell padding and 3rem header only cost vertical space. */}
+            <Table className="[&_td]:py-2 [&_th]:h-9">
               <TableHeader>
                 <TableRow>
                   <TableHead>Payment</TableHead>
@@ -600,6 +602,9 @@ export default function RecurringPaymentRegister() {
                         // the click from also navigating away mid-action.
                         onClick={(e) => e.stopPropagation()}
                       >
+                        {/* Both controls below are trimmed under their default heights (sm is
+                            2.25rem, icon 2.5rem) because either one on its own would set the row
+                            height, leaving the reduced cell padding with no effect. */}
                         <div className="flex items-center justify-end gap-1">
                           {canRecord &&
                             !payment.currentStepId &&
@@ -607,6 +612,7 @@ export default function RecurringPaymentRegister() {
                               <Button
                                 size="sm"
                                 variant="outline"
+                                className="h-7 px-2 text-xs"
                                 onClick={() => {
                                   setSelected(payment);
                                   setRecordOpen(true);
@@ -619,7 +625,7 @@ export default function RecurringPaymentRegister() {
                           {(canEdit || canDelete || payment.currentStepId) && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button size="icon" variant="ghost">
+                                <Button size="icon" variant="ghost" className="h-7 w-7">
                                   <MoreHorizontal className="h-4 w-4" />
                                 </Button>
                               </DropdownMenuTrigger>

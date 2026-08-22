@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Building2,
   ClipboardList,
+  FileBarChart2,
   FileStack,
   FolderKanban,
   FolderOpen,
@@ -35,7 +36,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
-import ProjectControlTower from "@/components/project-management/project-control-tower";
 
 const MODULE_NAME = "Project Management";
 const PROJECTS_COLLECTION = "projectManagementProjects";
@@ -116,9 +116,8 @@ export default function ProjectManagementPage() {
   // material is procured, then civil work, then erection.
   const linkGroups = [
     {
-      key: "register",
-      title: "Project Register",
-      caption: "Works without selecting a project",
+      key: "overview",
+      title: "Overview",
       icon: FolderKanban,
       links: [
         {
@@ -130,12 +129,21 @@ export default function ProjectManagementPage() {
           icon: FolderKanban,
           gradient: "from-indigo-500 to-blue-600",
         },
+        {
+          show: Boolean(selectedProject && canViewBoq),
+          href: `/project-management/reports?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+          title: "Reports",
+          description: selectedProject
+            ? `Control tower indicators for ${selectedProject.projectName}.`
+            : "Commercial, engineering, procurement and site-control indicators.",
+          icon: FileBarChart2,
+          gradient: "from-blue-500 to-indigo-600",
+        },
       ],
     },
     {
       key: "data",
       title: "Project Data",
-      caption: "Quantities, rates and files",
       icon: ClipboardList,
       links: [
         {
@@ -163,7 +171,6 @@ export default function ProjectManagementPage() {
     {
       key: "scopes",
       title: "Delivery Scopes",
-      caption: "Design → supply → civil → erection",
       icon: Layers,
       links: [
         {
@@ -211,7 +218,6 @@ export default function ProjectManagementPage() {
     {
       key: "configuration",
       title: "Configuration",
-      caption: "Mappings and module setup",
       icon: Settings,
       links: [
         {
@@ -238,9 +244,10 @@ export default function ProjectManagementPage() {
       <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
         <Skeleton className="h-28 w-full rounded-xl" />
         <Skeleton className="h-40 w-full max-w-2xl rounded-xl" />
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-28 rounded-xl" />
+        {/* Same column counts as the real card grid, so the layout doesn't jump on load. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-16 rounded-xl" />
           ))}
         </div>
       </main>
@@ -334,12 +341,9 @@ export default function ProjectManagementPage() {
               </h2>
               {/* Hairline carries the eye across the row and keeps the heading from floating. */}
               <span aria-hidden className="h-px flex-1 bg-border" />
-              <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
-                {group.caption}
-              </span>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {group.links.map((link) => (
                 <Link
                   key={link.title}
@@ -383,10 +387,6 @@ export default function ProjectManagementPage() {
           </Card>
         )}
       </div>
-
-      {selectedProject && canViewBoq && (
-        <ProjectControlTower mapping={selectedProject} />
-      )}
     </main>
   );
 }

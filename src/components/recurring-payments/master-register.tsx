@@ -699,19 +699,22 @@ export default function RecurringMasterRegister() {
       <Card>
         <CardContent className="space-y-4 pt-6">
           <div className="overflow-x-auto">
-            <Table>
+            {/* Compact rows: this register is thirteen columns of single-line values, so the
+                default 1rem cell padding and 3rem header just spent vertical space on nothing.
+                Halving it fits roughly twice as many masters in the table's frame. */}
+            <Table className="[&_td]:py-2 [&_th]:h-9">
               <TableHeader>
                 <TableRow>
                   <TableHead>Master</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Scope</TableHead>
-                  <TableHead>Department / cost centre</TableHead>
+                  <TableHead>Department</TableHead>
                   <TableHead>Vendor</TableHead>
                   <TableHead>Account</TableHead>
                   <TableHead>Frequency</TableHead>
-                  <TableHead>Next due</TableHead>
-                  <TableHead className="text-right">Expected amount</TableHead>
-                  <TableHead>Amount type</TableHead>
+                  <TableHead>Next Due</TableHead>
+                  <TableHead className="text-right">Expected Amount</TableHead>
+                  <TableHead>Amount Type</TableHead>
                   <TableHead>Owner</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead />
@@ -779,7 +782,9 @@ export default function RecurringMasterRegister() {
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button size="icon" variant="ghost">
+                            {/* The default icon button is 2.5rem tall and was setting the row
+                                height on its own, so trimming cell padding alone changed little. */}
+                            <Button size="icon" variant="ghost" className="h-7 w-7">
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
