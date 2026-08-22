@@ -11,6 +11,7 @@ import {
   FolderKanban,
   FolderOpen,
   HardHat,
+  Layers,
   Package,
   Settings,
   ShieldAlert,
@@ -107,85 +108,130 @@ export default function ProjectManagementPage() {
     router.replace(`/project-management?project=${encodeURIComponent(projectId)}`);
   };
 
-  const quickLinks = [
+  // Grouped rather than one flat grid: eight same-sized cards in a row gave no clue that Projects
+  // and Settings work without a project selected while the rest don't, or that Design & Engineering
+  // through Erection are the four delivery scopes rather than four unrelated screens.
+  //
+  // Within Delivery Scopes the order follows the project lifecycle — drawings get approved, then
+  // material is procured, then civil work, then erection.
+  const linkGroups = [
     {
-      // Project-independent: the register lists every project, so it does not need one selected.
-      show: canViewModule,
-      href: "/project-management/projects",
-      title: "Projects",
-      description: "Every project with its code, scope, manager, schedule and status.",
+      key: "register",
+      title: "Project Register",
+      caption: "Works without selecting a project",
       icon: FolderKanban,
-      gradient: "from-indigo-500 to-blue-600",
+      links: [
+        {
+          // Project-independent: the register lists every project, so it does not need one selected.
+          show: canViewModule,
+          href: "/project-management/projects",
+          title: "Projects",
+          description: "Every project with its code, scope, manager, schedule and status.",
+          icon: FolderKanban,
+          gradient: "from-indigo-500 to-blue-600",
+        },
+      ],
     },
     {
-      show: Boolean(selectedProject && canViewBoq),
-      href: `/project-management/boq?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "BOQ",
-      description: selectedProject
-        ? `Manage BOQ data for ${selectedProject.projectName}.`
-        : "Manage BOQ costing and operational BOQs.",
+      key: "data",
+      title: "Project Data",
+      caption: "Quantities, rates and files",
       icon: ClipboardList,
-      gradient: "from-emerald-500 to-teal-600",
+      links: [
+        {
+          show: Boolean(selectedProject && canViewBoq),
+          href: `/project-management/boq?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+          title: "BOQ",
+          description: selectedProject
+            ? `Manage BOQ data for ${selectedProject.projectName}.`
+            : "Manage BOQ costing and operational BOQs.",
+          icon: ClipboardList,
+          gradient: "from-emerald-500 to-teal-600",
+        },
+        {
+          show: Boolean(selectedProject && canViewDocuments),
+          href: `/project-management/documents?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+          title: "Documents",
+          description: selectedProject
+            ? `Drawings, QC certificates, and other files for ${selectedProject.projectName}.`
+            : "Drawings, QC certificates, and other project files.",
+          icon: FolderOpen,
+          gradient: "from-purple-500 to-fuchsia-600",
+        },
+      ],
     },
     {
-      show: Boolean(selectedProject && canViewMdl),
-      href: `/project-management/mdl?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "Design & Engineering",
-      description: selectedProject
-        ? `Track drawing submissions & approvals for ${selectedProject.projectName}.`
-        : "Master Drawing List — track drawing submission and approval.",
-      icon: FileStack,
-      gradient: "from-sky-500 to-blue-600",
+      key: "scopes",
+      title: "Delivery Scopes",
+      caption: "Design → supply → civil → erection",
+      icon: Layers,
+      links: [
+        {
+          show: Boolean(selectedProject && canViewMdl),
+          href: `/project-management/mdl?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+          title: "Design & Engineering",
+          description: selectedProject
+            ? `Track drawing submissions & approvals for ${selectedProject.projectName}.`
+            : "Master Drawing List — track drawing submission and approval.",
+          icon: FileStack,
+          gradient: "from-sky-500 to-blue-600",
+        },
+        {
+          show: Boolean(selectedProject && canViewSupply),
+          href: `/project-management/supply?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+          title: "Supply",
+          description: selectedProject
+            ? `Track supply scope items for ${selectedProject.projectName}.`
+            : "Track supply scope BOQ items.",
+          icon: Package,
+          gradient: "from-cyan-500 to-blue-600",
+        },
+        {
+          show: Boolean(selectedProject && canViewCivil),
+          href: `/project-management/civil?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+          title: "Civil",
+          description: selectedProject
+            ? `Track civil scope items for ${selectedProject.projectName}.`
+            : "Track civil scope BOQ items.",
+          icon: Building2,
+          gradient: "from-stone-500 to-stone-700",
+        },
+        {
+          show: Boolean(selectedProject && canViewErection),
+          href: `/project-management/erection?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
+          title: "Erection",
+          description: selectedProject
+            ? `Track erection scope items for ${selectedProject.projectName}.`
+            : "Track erection scope BOQ items.",
+          icon: HardHat,
+          gradient: "from-orange-500 to-red-600",
+        },
+      ],
     },
     {
-      show: Boolean(selectedProject && canViewSupply),
-      href: `/project-management/supply?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "Supply",
-      description: selectedProject
-        ? `Track supply scope items for ${selectedProject.projectName}.`
-        : "Track supply scope BOQ items.",
-      icon: Package,
-      gradient: "from-cyan-500 to-blue-600",
-    },
-    {
-      show: Boolean(selectedProject && canViewCivil),
-      href: `/project-management/civil?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "Civil",
-      description: selectedProject
-        ? `Track civil scope items for ${selectedProject.projectName}.`
-        : "Track civil scope BOQ items.",
-      icon: Building2,
-      gradient: "from-stone-500 to-stone-700",
-    },
-    {
-      show: Boolean(selectedProject && canViewErection),
-      href: `/project-management/erection?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "Erection",
-      description: selectedProject
-        ? `Track erection scope items for ${selectedProject.projectName}.`
-        : "Track erection scope BOQ items.",
-      icon: HardHat,
-      gradient: "from-orange-500 to-red-600",
-    },
-    {
-      show: Boolean(selectedProject && canViewDocuments),
-      href: `/project-management/documents?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
-      title: "Documents",
-      description: selectedProject
-        ? `Drawings, QC certificates, and other files for ${selectedProject.projectName}.`
-        : "Drawings, QC certificates, and other project files.",
-      icon: FolderOpen,
-      gradient: "from-purple-500 to-fuchsia-600",
-    },
-    {
-      show: canViewSettings,
-      href: "/project-management/settings",
-      title: "Settings",
-      description: "Manage project mappings and configure Project Management.",
+      key: "configuration",
+      title: "Configuration",
+      caption: "Mappings and module setup",
       icon: Settings,
-      gradient: "from-slate-500 to-slate-700",
+      links: [
+        {
+          show: canViewSettings,
+          href: "/project-management/settings",
+          title: "Settings",
+          description: "Manage project mappings and configure Project Management.",
+          icon: Settings,
+          gradient: "from-slate-500 to-slate-700",
+        },
+      ],
     },
-  ].filter((link) => link.show);
+  ]
+    .map((group) => ({ ...group, links: group.links.filter((link) => link.show) }))
+    .filter((group) => group.links.length);
+
+  // Project Data and Delivery Scopes are empty until a project is chosen. Without saying so the
+  // page just looks short, as though those screens didn't exist for this user.
+  const awaitingProjectChoice =
+    !selectedProject && projects.length > 0 && (canViewBoq || canViewMdl || canViewSupply);
 
   if (isAuthLoading) {
     return (
@@ -277,30 +323,65 @@ export default function ProjectManagementPage() {
         </CardContent>
       </Card>
 
-      {/* ── Quick access ─────────────────────────────────────────────────── */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-        {quickLinks.map((link) => (
-          <Link key={link.title} href={link.href} className="group no-underline">
-            <Card className="h-full overflow-hidden border-border/60 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-              <div className={cn("h-1 w-full bg-gradient-to-r", link.gradient)} />
-              <CardContent className="flex items-center gap-2.5 p-3">
-                <div
-                  className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm",
-                    link.gradient,
-                  )}
+      {/* ── Quick access, grouped ────────────────────────────────────────── */}
+      <div className="space-y-5">
+        {linkGroups.map((group) => (
+          <section key={group.key} className="space-y-2.5">
+            <div className="flex items-center gap-2">
+              <group.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {group.title}
+              </h2>
+              {/* Hairline carries the eye across the row and keeps the heading from floating. */}
+              <span aria-hidden className="h-px flex-1 bg-border" />
+              <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">
+                {group.caption}
+              </span>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {group.links.map((link) => (
+                <Link
+                  key={link.title}
+                  href={link.href}
+                  className="group rounded-xl no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <link.icon className="h-4 w-4 text-white" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold leading-tight">{link.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">{link.description}</p>
-                </div>
-                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1" />
-              </CardContent>
-            </Card>
-          </Link>
+                  <Card className="h-full overflow-hidden border-border/60 transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-md">
+                    <div className={cn("h-1 w-full bg-gradient-to-r", link.gradient)} />
+                    <CardContent className="flex items-center gap-2.5 p-3">
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm transition-transform duration-200 group-hover:scale-105",
+                          link.gradient,
+                        )}
+                      >
+                        <link.icon className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold leading-tight">{link.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">{link.description}</p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1" />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </section>
         ))}
+
+        {awaitingProjectChoice && (
+          <Card className="border-dashed bg-muted/30">
+            <CardContent className="flex items-center gap-2.5 p-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+                <FolderKanban className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Select a project above to open its BOQ, documents and the four delivery scopes.
+              </p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {selectedProject && canViewBoq && (
