@@ -32,7 +32,8 @@ import {
   terminateSession,
   updateSessionActivity,
 } from '@/lib/session-manager';
-import { unregisterCurrentChatPushDevice } from '@/lib/chat-push-client';
+import { unregisterCurrentPushDevice } from '@/lib/chat-push-client';
+import { unregisterWebPushDevice } from '@/lib/web-push-client';
 import { stopNativeAndroidUserLocation } from '@/lib/native-user-location';
 
 /** Upper bound on how long the app shell waits for the first permissions read. */
@@ -129,7 +130,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           roleUnsubscribeRef.current = null;
         }
 
-        await unregisterCurrentChatPushDevice();
+        // Both are no-ops on the platform they don't apply to. Dropping the token on
+        // sign-out matters most on shared machines and handsets, where the next user
+        // would otherwise keep receiving the previous one's approvals and alerts.
+        await unregisterCurrentPushDevice();
+        await unregisterWebPushDevice();
         await stopNativeAndroidUserLocation().catch(() => {});
         await signOut(auth);
         localStorage.clear();

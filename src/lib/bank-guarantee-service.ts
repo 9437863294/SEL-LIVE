@@ -28,6 +28,7 @@ import {
 } from "@/lib/fixed-deposit-service";
 import { missingBGDocumentTypes } from "@/lib/bank-guarantee-documents";
 import { loadBGSettings } from "@/lib/bank-guarantee-settings";
+import { requestPushDelivery } from "@/lib/notifications";
 import {
   BG_COLLECTIONS,
   BG_PERMISSION_MODULE,
@@ -186,7 +187,8 @@ function notify(
     recordId?: string;
   },
 ) {
-  transaction.set(doc(collection(db, BG_COLLECTIONS.notifications)), {
+  const reference = doc(collection(db, BG_COLLECTIONS.notifications));
+  transaction.set(reference, {
     organizationId: actor.organizationId,
     module: BG_PERMISSION_MODULE,
     type: "BANK_GUARANTEE",
@@ -197,6 +199,10 @@ function notify(
     createdBy: actor.userId,
     createdAt: now(),
   });
+  // Returned so the caller can request push delivery once the transaction commits.
+  // The ID is generated here rather than by the server, so it is known before the
+  // write lands — which is what makes pushing after the commit possible at all.
+  return reference.id;
 }
 
 function audit(
@@ -451,7 +457,11 @@ export async function submitBGRequest(requestId: string, actor: BGActor) {
     throw new Error(
       `Upload required request documents: ${missingDocuments.join(", ")}.`,
     );
-  return runTransaction(db, async (transaction) => {
+  // Captured from inside the transaction so push can be requested once it commits.
+  // A retried transaction overwrites this with the successful attempt's ID, which is
+  // the one that actually exists.
+  let raisedNotificationId = "";
+  const submitted = await runTransaction(db, async (transaction) => {
     const ref = doc(db, BG_COLLECTIONS.requests, requestId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists()) throw new Error("BG request was not found.");
@@ -486,7 +496,7 @@ export async function submitBGRequest(requestId: string, actor: BGActor) {
       newValue: { status: "PENDING_PROJECT_APPROVAL" },
       page: "/bank-guarantee/approvals",
     });
-    notify(transaction, actor, {
+    raisedNotificationId = notify(transaction, actor, {
       title: "BG request pending project verification",
       message: `${request.referenceNumber} is ready for project verification.`,
       targetRoles: ["Project User", "Project Head"],
@@ -494,6 +504,8 @@ export async function submitBGRequest(requestId: string, actor: BGActor) {
       recordId: requestId,
     });
   });
+  await requestPushDelivery([raisedNotificationId]);
+  return submitted;
 }
 
 export async function decideBGRequest(
@@ -505,7 +517,8 @@ export async function decideBGRequest(
   if (action !== "APPROVE" && !comments.trim())
     throw new Error("Decision remarks are required.");
   const settings = await loadBGSettings(actor.organizationId);
-  return runTransaction(db, async (transaction) => {
+  let raisedNotificationId = "";
+  const decided = await runTransaction(db, async (transaction) => {
     const requestRef = doc(db, BG_COLLECTIONS.requests, requestId);
     const snapshot = await transaction.get(requestRef);
     if (!snapshot.exists()) throw new Error("BG request was not found.");
@@ -684,7 +697,7 @@ export async function decideBGRequest(
       reason: comments,
       page: "/bank-guarantee/approvals",
     });
-    notify(transaction, actor, {
+    raisedNotificationId = notify(transaction, actor, {
       title:
         status === "APPROVED"
           ? "BG request approved for issuance"
@@ -700,6 +713,8 @@ export async function decideBGRequest(
     });
     return status;
   });
+  await requestPushDelivery([raisedNotificationId]);
+  return decided;
 }
 
 export async function cancelBGRequest(
@@ -792,7 +807,8 @@ export async function issueBankGuarantee(
         item.status,
       ),
     );
-  return runTransaction(db, async (transaction) => {
+  let raisedNotificationId = "";
+  const issued = await runTransaction(db, async (transaction) => {
     const requestRef = doc(db, BG_COLLECTIONS.requests, input.requestId);
     const uniqueRef = doc(
       db,
@@ -1173,7 +1189,7 @@ export async function issueBankGuarantee(
       },
       page: `/bank-guarantee/${bgRef.id}`,
     });
-    notify(transaction, actor, {
+    raisedNotificationId = notify(transaction, actor, {
       title: "Bank Guarantee issued",
       message: `${input.bankBgNumber} was issued for ${request.beneficiaryName}.`,
       targetRoles: [
@@ -1186,6 +1202,8 @@ export async function issueBankGuarantee(
     });
     return bgRef.id;
   });
+  await requestPushDelivery([raisedNotificationId]);
+  return issued;
 }
 
 export async function createBGExtension(

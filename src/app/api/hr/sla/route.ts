@@ -17,6 +17,9 @@ import {
   type JoiningRecord,
   type PreJoiningDocument,
 } from '@/lib/hr-requirement';
+import { dispatchNotificationServer } from '@/lib/notifications-server';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import type { NotificationPayload } from '@/lib/notifications';
 
 /**
  * The HR module's daily sweep: SLA escalations (spec section 41), offer expiry (section 29) and
@@ -96,21 +99,17 @@ export async function GET(request: Request) {
     userIds: string[],
     payload: { title: string; body: string; link: string; itemId: string; itemRef?: string; severity: string },
   ) => {
-    const targets = [...new Set(userIds.filter(Boolean))];
-    if (targets.length === 0) return 0;
-    const batch = db.batch();
-    for (const userId of targets) {
-      batch.set(db.collection('userNotifications').doc(), {
-        userId,
-        type: 'tat_escalation',
-        module: 'HR & Recruitment',
+    // Delegated to the shared dispatcher so an SLA breach also reaches the
+    // recipient's phone and browser, not just the in-app bell.
+    return dispatchNotificationServer(
+      { userIds },
+      {
         ...payload,
-        read: false,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    }
-    await batch.commit();
-    return targets.length;
+        type: 'tat_escalation',
+        module: ACTIVITY_MODULES.HR_RECRUITMENT,
+        severity: payload.severity as NotificationPayload['severity'],
+      },
+    );
   };
 
   let requirementsChecked = 0;

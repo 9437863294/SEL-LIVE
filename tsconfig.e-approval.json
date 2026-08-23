@@ -11,8 +11,11 @@
     "src/components/e-approval/**/*.ts",
     "src/components/e-approval/**/*.tsx",
     "src/lib/e-approval-policy.ts",
+    "src/lib/e-approval-analytics.ts",
     "src/lib/e-approval.ts",
     "src/lib/e-approval-service.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

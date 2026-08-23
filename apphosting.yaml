@@ -52,6 +52,18 @@ env:
     availability:
       - RUNTIME
 
+  # ── Firebase Cloud Messaging (web push) ─────────────────────────────
+  # Public key half of the Web Push VAPID pair (Console > Project settings >
+  # Cloud Messaging > Web Push certificates). Public by design — it ships to the
+  # browser — so a plain value rather than a secret, same as the reCAPTCHA site key.
+  #
+  # BUILD, not RUNTIME: Next.js inlines NEXT_PUBLIC_* at build time, so a runtime-only
+  # value would be undefined in the browser and web push would silently stay off.
+  - variable: NEXT_PUBLIC_FIREBASE_VAPID_KEY
+    value: BGupBUFchPYG27fXZr9-3ElK5uD1kP8-MXbS5DWEcS5DSQ_hgXQnQO_OwFmBvHJ7wUxvG7QTKtFjz8mKB6hSKG8
+    availability:
+      - BUILD
+
   # ── Firebase Admin SDK (server-side routes) ─────────────────────────
   - variable: FIREBASE_PROJECT_ID
     secret: firebase-project-id

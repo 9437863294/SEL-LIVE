@@ -8,7 +8,7 @@ import { ModuleProvider } from '@/context/ModuleContext';
 import { Suspense } from 'react';
 import { ClientSessionHandler } from '@/components/auth/ClientSessionHandler';
 import ProgressBar from '@/components/app/ProgressBar';
-import { ChatPushNotificationsLoader } from '@/components/chat/ChatPushNotificationsLoader';
+import { PushNotificationsLoader } from '@/components/notifications/PushNotificationsLoader';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -35,7 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Suspense fallback={null}>
             <ClientSessionHandler />
           </Suspense>
-          <ChatPushNotificationsLoader />
+          <PushNotificationsLoader />
           <ModuleProvider>
             {children}
             <Toaster />

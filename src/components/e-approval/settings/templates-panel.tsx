@@ -1,15 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Plus, Save, Sparkles, Trash2, Workflow } from 'lucide-react';
+import { ArrowRight, Copy, Pencil, Sparkles, Trash2, Workflow } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import {
   describeEApprovalAssignment,
@@ -26,13 +23,56 @@ import {
   seedEApprovalTemplates,
   type EApprovalServiceActor,
 } from '@/lib/e-approval-service';
-import { EApprovalEmptyState } from '../shared';
+import { Field } from '../page-header';
 import type { EApprovalDirectory } from '../hooks';
 import { WorkflowStepEditor } from './workflow-step-editor';
+import {
+  matchesSearch,
+  SettingsAddButton,
+  SettingsEmpty,
+  SettingsFormDialog,
+  SettingsList,
+  SettingsRow,
+  SettingsToolbar,
+  useSettingsDraft,
+} from './settings-ui';
 
 type Draft = Partial<EApprovalTemplateRecord> & { steps: EApprovalTemplateStep[] };
 
-/** Workflow templates and the visual builder of spec sections 12 and 27. */
+/** The chain as a single readable line — the thing you actually scan a workflow list for. */
+function ChainPreview({ steps }: { steps: EApprovalTemplateStep[] }) {
+  if (!steps.length) {
+    return <span className="text-[11px] text-amber-700">No stages — this workflow would approve nothing.</span>;
+  }
+  return (
+    <ol className="flex flex-wrap items-center gap-1">
+      {steps.map((step, index) => (
+        <li key={step.id ?? index} className="flex items-center gap-1">
+          {index > 0 && <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/50" aria-hidden />}
+          <span
+            className={
+              step.assignments?.length
+                ? 'rounded bg-muted px-1.5 py-0.5 text-[11px]'
+                : 'rounded border border-dashed border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800'
+            }
+          >
+            {step.name}
+            {step.assignments?.length ? (
+              <span className="text-muted-foreground">
+                {' · '}
+                {step.assignments.map(describeEApprovalAssignment).join(step.groupMode === 'Any' ? ' or ' : ' & ')}
+              </span>
+            ) : (
+              ' · unassigned'
+            )}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** Workflow templates and the stage builder. */
 export function WorkflowTemplatesPanel({
   serviceActor,
   directory,
@@ -47,9 +87,10 @@ export function WorkflowTemplatesPanel({
   const { toast } = useToast();
   const [rows, setRows] = useState<EApprovalTemplateRecord[]>([]);
   const [types, setTypes] = useState<EApprovalType[]>([]);
-  const [draft, setDraft] = useState<Draft | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const [seeding, setSeeding] = useState(false);
+  const form = useSettingsDraft<Draft>();
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -70,15 +111,15 @@ export function WorkflowTemplatesPanel({
   }, [load]);
 
   const save = async () => {
-    if (!serviceActor || !draft?.name?.trim()) {
+    if (!serviceActor || !form.draft?.name?.trim()) {
       toast({ variant: 'destructive', title: 'A name is required.' });
       return;
     }
-    setBusy(true);
+    form.setBusy(true);
     try {
-      await saveEApprovalTemplate({ ...draft, name: draft.name.trim() }, serviceActor);
+      await saveEApprovalTemplate({ ...form.draft, name: form.draft.name.trim() }, serviceActor);
       toast({ title: 'Workflow saved' });
-      setDraft(null);
+      form.close();
       void load();
     } catch (error) {
       toast({
@@ -87,216 +128,229 @@ export function WorkflowTemplatesPanel({
         description: error instanceof Error ? error.message : 'Something went wrong.',
       });
     } finally {
-      setBusy(false);
+      form.setBusy(false);
     }
   };
 
   const seed = async () => {
     if (!serviceActor) return;
-    setBusy(true);
+    setSeeding(true);
     try {
       const written = await seedEApprovalTemplates(serviceActor);
       toast({
-        title: written ? `${written} sample workflow${written > 1 ? 's' : ''} added` : 'Sample workflows already exist',
-        description: written ? 'Assign real people to the stages before using them.' : undefined,
+        title: written ? `${written} sample workflow${written > 1 ? 's' : ''} added` : 'Samples already exist',
+        description: written ? 'Their stages are role-based — assign real people before using them.' : undefined,
       });
       void load();
     } finally {
-      setBusy(false);
+      setSeeding(false);
     }
   };
 
+  const visible = rows.filter((row) => matchesSearch(search, row.name, row.description));
+  const add = () => form.setDraft({ name: '', steps: [], active: true });
+  const duplicate = (row: EApprovalTemplateRecord) =>
+    form.setDraft({ ...row, id: undefined, name: `${row.name} (copy)`, steps: row.steps ?? [] });
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 px-3 py-2.5 sm:px-4">
-        <div>
-          <CardTitle className="flex items-center gap-1.5 text-sm">
-            <Workflow className="h-4 w-4" /> Workflow Templates
-          </CardTitle>
-          <CardDescription className="text-xs">
-            A named chain of stages. Templates are what the approval matrix points at, and what an employee can pick
-            directly on the form.
-          </CardDescription>
-        </div>
-        {canEdit && (
-          <div className="flex shrink-0 gap-1.5">
-            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void seed()} disabled={busy}>
-              <Sparkles className="h-3.5 w-3.5" /> Add samples
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 gap-1.5"
-              onClick={() => setDraft({ name: '', steps: [], active: true })}
-            >
-              <Plus className="h-3.5 w-3.5" /> New workflow
-            </Button>
-          </div>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-2 px-3 pb-3 sm:px-4">
-        {draft && (
-          <div className="space-y-3 rounded-lg border bg-muted/20 p-2.5">
-            <div className="grid gap-2 sm:grid-cols-3">
-              <div>
-                <Label className="text-xs">Name</Label>
-                <Input
-                  value={draft.name ?? ''}
-                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                  placeholder="Purchase Approval"
-                  className="mt-1 h-8 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Approval type</Label>
-                <Select
-                  value={draft.approvalTypeId ?? 'ANY'}
-                  onValueChange={(next) => setDraft({ ...draft, approvalTypeId: next === 'ANY' ? undefined : next })}
-                >
-                  <SelectTrigger className="mt-1 h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ANY">Any type</SelectItem>
-                    {types.map((type) => (
-                      <SelectItem key={type.id} value={type.id}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Department</Label>
-                <Select
-                  value={draft.departmentId ?? 'ANY'}
-                  onValueChange={(next) => setDraft({ ...draft, departmentId: next === 'ANY' ? undefined : next })}
-                >
-                  <SelectTrigger className="mt-1 h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ANY">Any department</SelectItem>
-                    {directory.departments.map((department) => (
-                      <SelectItem key={department.id} value={department.id}>
-                        {department.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="sm:col-span-3">
-                <Label className="text-xs">Description</Label>
-                <Input
-                  value={draft.description ?? ''}
-                  onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-                  className="mt-1 h-8 text-sm"
-                />
-              </div>
-            </div>
+    <div className="space-y-3">
+      <SettingsToolbar
+        count={rows.length}
+        noun="workflow"
+        search={search}
+        onSearch={setSearch}
+        action={
+          canEdit && (
+            <span className="flex gap-1.5">
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void seed()} disabled={seeding}>
+                <Sparkles className="h-3.5 w-3.5" /> Samples
+              </Button>
+              <SettingsAddButton label="New workflow" onClick={add} />
+            </span>
+          )
+        }
+      />
 
-            <div>
-              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stages</Label>
-              <div className="mt-1">
-                <WorkflowStepEditor
-                  steps={draft.steps}
-                  onChange={(steps) => setDraft({ ...draft, steps })}
-                  directory={directory}
-                  defaultSlaHours={defaultSlaHours}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 text-xs">
-                <Checkbox
-                  checked={draft.active !== false}
-                  onCheckedChange={(checked) => setDraft({ ...draft, active: checked === true })}
-                />
-                Active
-              </label>
-              <div className="flex gap-1.5">
-                <Button size="sm" variant="outline" className="h-8" onClick={() => setDraft(null)}>
-                  Cancel
-                </Button>
-                <Button size="sm" className="h-8 gap-1.5" onClick={() => void save()} disabled={busy}>
-                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isLoading ? (
-          <Skeleton className="h-24 w-full" />
-        ) : rows.length === 0 ? (
-          <EApprovalEmptyState
+      <SettingsList
+        isLoading={isLoading}
+        isEmpty={!visible.length}
+        empty={
+          <SettingsEmpty
             icon={Workflow}
-            title="No workflows configured"
-            description="Add the samples to see the shape of one, then assign your own approvers."
+            title={rows.length ? 'Nothing matches that search' : 'No workflows configured'}
+            description={
+              rows.length
+                ? undefined
+                : 'A workflow is a named chain of stages. Add the samples to see the shape of one, then assign your own approvers.'
+            }
+            action={
+              canEdit && !rows.length ? (
+                <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void seed()}>
+                  <Sparkles className="h-3.5 w-3.5" /> Add sample workflows
+                </Button>
+              ) : undefined
+            }
           />
-        ) : (
-          <div className="space-y-2">
-            {rows.map((row) => (
-              <div key={row.id} className="rounded-lg border p-2.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium">{row.name}</p>
-                  {row.active === false && (
-                    <Badge variant="outline" className="text-[10px]">
-                      Inactive
-                    </Badge>
-                  )}
+        }
+      >
+        {visible.map((row) => {
+          const steps = row.steps ?? [];
+          const unassigned = steps.filter((step) => !step.assignments?.length).length;
+          return (
+            <SettingsRow
+              key={row.id}
+              muted={row.active === false}
+              title={row.name}
+              badges={
+                <>
                   <Badge variant="outline" className="text-[10px]">
-                    {(row.steps ?? []).length} stages
+                    {steps.length} stage{steps.length === 1 ? '' : 's'}
                   </Badge>
                   {row.approvalTypeId && (
                     <Badge variant="secondary" className="text-[10px]">
                       {types.find((type) => type.id === row.approvalTypeId)?.name ?? 'type'}
                     </Badge>
                   )}
-                  {canEdit && (
-                    <div className="ml-auto flex gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => setDraft({ ...row, steps: row.steps ?? [] })}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0 text-destructive"
-                        onClick={async () => {
-                          if (!serviceActor) return;
-                          await deleteEApprovalConfigRecord(E_APPROVAL_COLLECTIONS.templates, row.id, serviceActor);
-                          void load();
-                        }}
-                        aria-label={`Delete ${row.name}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                  {unassigned > 0 && (
+                    <Badge variant="outline" className="border-amber-300 bg-amber-50 text-[10px] text-amber-800">
+                      {unassigned} unassigned
+                    </Badge>
                   )}
-                </div>
-                <ol className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                  {(row.steps ?? []).map((step, index) => (
-                    <li key={step.id ?? index} className="flex items-center gap-1">
-                      {index > 0 && <span aria-hidden>→</span>}
-                      <span className="rounded bg-muted px-1.5 py-0.5">
-                        {step.name}
-                        {step.assignments?.length
-                          ? ` (${step.assignments.map(describeEApprovalAssignment).join(', ')})`
-                          : ' (unassigned)'}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                  {row.active === false && (
+                    <Badge variant="outline" className="text-[10px]">
+                      Inactive
+                    </Badge>
+                  )}
+                </>
+              }
+              subtitle={row.description || undefined}
+              detail={<ChainPreview steps={steps} />}
+              actions={
+                canEdit && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                      onClick={() => duplicate(row)}
+                      aria-label={`Duplicate ${row.name}`}
+                      title="Duplicate"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0"
+                      onClick={() => form.setDraft({ ...row, steps })}
+                      aria-label={`Edit ${row.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-destructive"
+                      onClick={async () => {
+                        if (!serviceActor) return;
+                        await deleteEApprovalConfigRecord(E_APPROVAL_COLLECTIONS.templates, row.id, serviceActor);
+                        void load();
+                      }}
+                      aria-label={`Delete ${row.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                )
+              }
+            />
+          );
+        })}
+      </SettingsList>
+
+      {/* Wide, because the stage builder needs the room — a chain squeezed into 512px is unreadable. */}
+      <SettingsFormDialog
+        open={form.open}
+        onOpenChange={(next) => !next && form.close()}
+        title={form.draft?.id ? 'Edit workflow' : 'New workflow'}
+        description="Stages run in order. A stage with more than one approver runs them in parallel."
+        wide
+        busy={form.busy}
+        canSave={Boolean(form.draft?.name?.trim())}
+        onSave={() => void save()}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Name" required className="sm:col-span-3">
+            <Input
+              value={form.draft?.name ?? ''}
+              onChange={(event) => form.patch({ name: event.target.value })}
+              placeholder="Purchase Approval"
+              className="h-9"
+            />
+          </Field>
+          <Field label="Approval type" hint="Restricts where this workflow is offered.">
+            <Select
+              value={form.draft?.approvalTypeId ?? 'ANY'}
+              onValueChange={(next) => form.patch({ approvalTypeId: next === 'ANY' ? undefined : next })}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ANY">Any type</SelectItem>
+                {types.map((type) => (
+                  <SelectItem key={type.id} value={type.id}>
+                    {type.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Department">
+            <Select
+              value={form.draft?.departmentId ?? 'ANY'}
+              onValueChange={(next) => form.patch({ departmentId: next === 'ANY' ? undefined : next })}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ANY">Any department</SelectItem>
+                {directory.departments.map((department) => (
+                  <SelectItem key={department.id} value={department.id}>
+                    {department.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Description">
+            <Input
+              value={form.draft?.description ?? ''}
+              onChange={(event) => form.patch({ description: event.target.value })}
+              className="h-9"
+            />
+          </Field>
+        </div>
+
+        <div className="border-t pt-3">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Stages</p>
+          <WorkflowStepEditor
+            steps={form.draft?.steps ?? []}
+            onChange={(steps) => form.patch({ steps })}
+            directory={directory}
+            defaultSlaHours={defaultSlaHours}
+          />
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-2 border-t pt-3">
+          <Checkbox
+            checked={form.draft?.active !== false}
+            onCheckedChange={(checked) => form.patch({ active: checked === true })}
+          />
+          <span className="text-xs font-medium">Active — offered on new requests and to the approval matrix</span>
+        </label>
+      </SettingsFormDialog>
+    </div>
   );
 }

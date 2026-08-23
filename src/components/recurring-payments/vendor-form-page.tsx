@@ -17,6 +17,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { dispatchNotification } from '@/lib/notifications';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 type BankSnapshot = Pick<RecurringVendor, 'bankName' | 'maskedAccountNumber' | 'ifsc'>;
 
@@ -97,24 +99,32 @@ export default function VendorFormPage({ vendorId }: { vendorId?: string }) {
         createdAt: serverTimestamp(),
       });
 
+      await batch.commit();
+
       if (bankChanged) {
         const recipients = users.filter(item => /admin|accounts/i.test(item.role || '') && item.organizationId === organizationId);
-        for (const recipient of recipients) {
-          batch.set(doc(collection(db, 'userNotifications')), {
-            userId: recipient.id,
+        // Dispatched after the commit rather than inside the batch. Batching it made
+        // the alert atomic with the save, but the dispatcher also has to send the
+        // mobile/web push — and a push about a banking change is not something to
+        // send from inside a transaction that may still roll back. Notifying once the
+        // change is durable is the safer ordering for a payment-detail change.
+        await dispatchNotification(
+          { userIds: recipients.map(item => item.id) },
+          {
             type: 'vendor_bank_change',
             title: `Vendor banking information updated: ${vendor.name}`,
             body: 'Review the previous and new masked banking values in the vendor audit log.',
-            module: 'Recurring Payments',
+            module: ACTIVITY_MODULES.RECURRING_PAYMENTS,
+            // Fraud-relevant: someone changing where money goes should not be a
+            // notification anyone has to go looking for.
+            severity: 'CRITICAL',
             itemId: reference.id,
+            itemRef: vendor.name,
             link: `/recurring-payments/vendors/${reference.id}`,
-            read: false,
-            createdAt: serverTimestamp(),
-          });
-        }
+          },
+        );
       }
 
-      await batch.commit();
       toast({ title: vendorId ? 'Vendor updated' : 'Vendor created' });
       router.push(`/recurring-payments/vendors/${reference.id}`);
     } catch {

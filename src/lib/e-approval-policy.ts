@@ -722,11 +722,24 @@ export function eApprovalSlaState(
 
 export type EApprovalEscalationKind = 'Reminder' | 'Escalation' | 'Notify Requester';
 
+/**
+ * How far up an escalation has travelled.
+ *
+ * Separate from `afterHours` because management reporting asks "how many reached Level 3?", not "how
+ * many crossed 72 hours" — the hour threshold is the trigger, the level is the severity, and an
+ * organisation that retunes its thresholds must not thereby rewrite its own escalation history.
+ */
+export const E_APPROVAL_ESCALATION_LEVELS = ['Level 1', 'Level 2', 'Level 3', 'Management'] as const;
+
+export type EApprovalEscalationLevel = (typeof E_APPROVAL_ESCALATION_LEVELS)[number];
+
 export interface EApprovalEscalationRule {
   id: string;
   /** Hours after the step became active. 0 fires the assignment notification. */
   afterHours: number;
   kind: EApprovalEscalationKind;
+  /** Severity band, for level analysis. A plain reminder need not carry one. */
+  level?: EApprovalEscalationLevel;
   /** Extra recipients — the HOD for an escalation, for example. */
   targets?: EApprovalAssignment[];
   label?: string;
@@ -736,11 +749,18 @@ export interface EApprovalEscalationRule {
 
 /** The 0/24/48/72/96-hour ladder of spec section 22, as the shipped default. */
 export const DEFAULT_E_APPROVAL_ESCALATION_LADDER: EApprovalEscalationRule[] = [
+  // The assignment notification carries no level: nothing has gone wrong yet.
   { id: 'assign', afterHours: 0, kind: 'Reminder', label: 'Assignment notification' },
-  { id: 'remind-24', afterHours: 24, kind: 'Reminder', label: 'Reminder' },
-  { id: 'remind-48', afterHours: 48, kind: 'Reminder', label: 'Second reminder' },
-  { id: 'escalate-72', afterHours: 72, kind: 'Escalation', label: 'Escalate to HOD' },
-  { id: 'notify-96', afterHours: 96, kind: 'Notify Requester', label: 'Notify HOD and requester' },
+  { id: 'remind-24', afterHours: 24, kind: 'Reminder', level: 'Level 1', label: 'Reminder' },
+  { id: 'remind-48', afterHours: 48, kind: 'Reminder', level: 'Level 2', label: 'Second reminder' },
+  { id: 'escalate-72', afterHours: 72, kind: 'Escalation', level: 'Level 3', label: 'Escalate to HOD' },
+  {
+    id: 'notify-96',
+    afterHours: 96,
+    kind: 'Notify Requester',
+    level: 'Management',
+    label: 'Notify HOD and requester',
+  },
 ];
 
 export interface DueEApprovalEscalation {

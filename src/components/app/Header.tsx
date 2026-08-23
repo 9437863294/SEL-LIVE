@@ -255,9 +255,11 @@ export default function Header() {
     unsubscribes.push(unsubscribeAlerts);
 
     // Notifications addressed to a role rather than to a user. The bank-guarantee
-    // and letter-of-credit services raise theirs from inside a Firestore transaction,
-    // where roles cannot be resolved to users, so they write one document carrying
-    // `targetRoles` and no `userId` — which the listener above cannot see.
+    // service raises its alerts from inside a Firestore transaction, where roles
+    // cannot be resolved to users, so it writes one document carrying `targetRoles`
+    // and no `userId` — which the listener above cannot see. Also covers the
+    // fixed-deposit maturity alerts already in the database from before delivery was
+    // centralised.
     //
     // Held in its own state rather than merged into `alerts`, because the listener
     // above replaces that array wholesale on every snapshot and would drop them.

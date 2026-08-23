@@ -96,7 +96,13 @@ async function deliverChatNotification(
     const devicesByToken = new Map<string, PushDevice>();
     deviceSnapshots.forEach((snapshot) => {
       snapshot.docs.forEach((deviceDocument) => {
-        const pushToken = String(deviceDocument.data().token || '').trim();
+        const deviceData = deviceDocument.data();
+        // Devices belonging to users who cannot see chat stay registered so they
+        // still receive other modules' alerts, but must not be sent chat messages.
+        // Absent means an older registration, which predates non-chat push and was
+        // therefore only ever created for a chat-permitted user.
+        if (deviceData.chatEnabled === false) return;
+        const pushToken = String(deviceData.token || '').trim();
         if (pushToken) devicesByToken.set(pushToken, { token: pushToken, ref: deviceDocument.ref });
       });
     });

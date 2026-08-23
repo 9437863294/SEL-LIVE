@@ -12,6 +12,8 @@ import {
 } from '@/lib/vehicle-insurance-workflow';
 import { getVehicleComplianceRequirements, VEHICLE_COLLECTIONS } from '@/lib/vehicle-management';
 import { addBusinessHours, normalizeWorkingHoursDoc } from '@/lib/working-hours';
+import { dispatchNotificationOnce } from '@/lib/notifications-server';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import type { Holiday, User } from '@/lib/types';
 
 export async function GET(request: Request) {
@@ -108,21 +110,25 @@ export async function GET(request: Request) {
         stepName: history.stepName,
         createdAt: nowTimestamp,
       });
-      for (const assigneeId of assignment.assigneeIds) {
-        await db.collection('userNotifications').doc(`insurance_start_${caseRef.id}_${assigneeId}`).set({
-          userId: assigneeId,
+      // One dispatch for all assignees rather than a write per assignee, so the
+      // renewal also reaches their phones and browsers. `module` was the lowercase
+      // 'insurance', which filed these under a module of their own in the audit
+      // viewer; the dispatcher canonicalises it.
+      await dispatchNotificationOnce(
+        { userIds: assignment.assigneeIds },
+        {
           type: 'step_entry',
           title: 'Insurance renewal assigned',
           body: `${policy.vehicleNumber || policy.policyNumber || 'Insurance policy'} requires renewal`,
-          module: 'insurance',
+          module: ACTIVITY_MODULES.INSURANCE,
+          severity: 'WARNING',
           itemId: caseRef.id,
           itemRef: String(policy.vehicleNumber || policy.policyNumber || ''),
           stepName: firstStep.name,
           link: `/vehicle-management/insurance/workflow?case=${caseRef.id}`,
-          read: false,
-          createdAt: nowTimestamp,
-        }, { merge: false });
-      }
+        },
+        `insurance_start_${caseRef.id}`,
+      );
       created++;
     }
   }
@@ -154,25 +160,25 @@ export async function GET(request: Request) {
     if (deadline >= now) {
       const hoursRemaining = (deadline.getTime() - now.getTime()) / 3_600_000;
       if (config.reminderBeforeHours > 0 && hoursRemaining <= config.reminderBeforeHours) {
-        for (const assigneeId of Array.isArray(caseRow.assigneeIds) ? caseRow.assigneeIds : []) {
-          const reminderId = `insurance_tat_${caseDoc.id}_${caseRow.currentStepId}_${deadline.getTime()}_${assigneeId}`;
-          const reminderRef = db.collection('userNotifications').doc(reminderId);
-          if ((await reminderRef.get()).exists) continue;
-          await reminderRef.set({
-            userId: assigneeId,
+        // The dedupe key carries the deadline, so a rescheduled step reminds again
+        // while repeat passes over the same deadline stay quiet. Replaces a
+        // read-then-write per assignee, which both cost an extra round trip and left
+        // a window for two overlapping runs to remind twice.
+        reminders += await dispatchNotificationOnce(
+          { userIds: Array.isArray(caseRow.assigneeIds) ? caseRow.assigneeIds : [] },
+          {
             type: 'step_entry',
             title: 'Insurance workflow TAT reminder',
             body: `${caseRow.vehicleNumber || caseRow.policyNumber || 'Insurance renewal'} is due in ${Math.max(1, Math.ceil(hoursRemaining))} hour(s)`,
-            module: 'insurance',
+            module: ACTIVITY_MODULES.INSURANCE,
+            severity: 'WARNING',
             itemId: caseDoc.id,
             itemRef: String(caseRow.vehicleNumber || caseRow.policyNumber || ''),
             stepName: String(caseRow.currentStepName || ''),
             link: `/vehicle-management/insurance/workflow?case=${caseDoc.id}`,
-            read: false,
-            createdAt: nowTimestamp,
-          });
-          reminders++;
-        }
+          },
+          `insurance_tat_${caseDoc.id}_${caseRow.currentStepId}_${deadline.getTime()}`,
+        );
       }
       continue;
     }
@@ -212,20 +218,23 @@ export async function GET(request: Request) {
       createdAt: nowTimestamp,
     });
     if (nextUser) {
-      const notificationId = `insurance_escalation_${caseDoc.id}_${Number(caseRow.escalationLevel || 0) + 1}_${nextUser.id}`;
-      await db.collection('userNotifications').doc(notificationId).set({
-        userId: nextUser.id,
-        type: 'tat_escalation',
-        title: 'Insurance TAT escalated',
-        body: `${caseRow.vehicleNumber || caseRow.policyNumber || 'Insurance renewal'} requires action`,
-        module: 'insurance',
-        itemId: caseDoc.id,
-        itemRef: String(caseRow.vehicleNumber || caseRow.policyNumber || ''),
-        stepName: workflowStep.name,
-        link: `/vehicle-management/insurance/workflow?case=${caseDoc.id}`,
-        read: false,
-        createdAt: nowTimestamp,
-      }, { merge: false });
+      await dispatchNotificationOnce(
+        { userIds: [nextUser.id] },
+        {
+          type: 'tat_escalation',
+          title: 'Insurance TAT escalated',
+          body: `${caseRow.vehicleNumber || caseRow.policyNumber || 'Insurance renewal'} requires action`,
+          module: ACTIVITY_MODULES.INSURANCE,
+          severity: 'CRITICAL',
+          itemId: caseDoc.id,
+          itemRef: String(caseRow.vehicleNumber || caseRow.policyNumber || ''),
+          stepName: workflowStep.name,
+          link: `/vehicle-management/insurance/workflow?case=${caseDoc.id}`,
+        },
+        // Escalation level is part of the key, so each successive escalation alerts
+        // again rather than being suppressed as a duplicate of the previous one.
+        `insurance_escalation_${caseDoc.id}_${Number(caseRow.escalationLevel || 0) + 1}`,
+      );
     }
     escalated++;
   }

@@ -155,6 +155,65 @@ await dispatchNotification(
   the action that triggered it — check the return value (recipients reached) if the
   caller cares.
 
+### Push (mobile + web)
+
+Every dispatched notification is also delivered as a push — Android, iOS and the
+browser. Producers do not opt in; `dispatchNotification` and
+`dispatchNotificationServer` handle it.
+
+```text
+                       ┌─ browser ─┐
+dispatchNotification ──┤           ├─→ POST /api/notifications/push ─┐
+        (client)       └───────────┘        (IDs only, see below)    │
+                                                                     ├─→ sendPushToUsers
+dispatchNotificationServer ──────────────────────────────────────────┘      (FCM sendEach)
+        (API routes, cron)
+```
+
+- **The client cannot reach FCM** (that needs admin credentials), so it writes the
+  notification documents and posts their **IDs** to `/api/notifications/push`. The
+  route reads the payload back out of Firestore. It deliberately does not accept a
+  title, body and recipient list — an endpoint that did would let any signed-in user
+  push arbitrary text to anyone in the organisation.
+- **Tokens live in `users/{userId}/pushDevices/{sha256(token)}`** with
+  `{token, platform, enabled, chatEnabled}`, shared by all three platforms.
+- **Delivery never blocks the caller.** Both the route and `sendPushToUsers` swallow
+  failures; a push that does not land is a degraded delivery, not a failed save.
+- **Dead tokens are pruned** when FCM reports them unregistered, so per-alert cost
+  does not grow with uninstalls.
+- **Scheduled jobs push only newly-created notifications.** `dispatchNotificationOnce`
+  tracks which recipients' documents it actually created and pushes to those only —
+  otherwise a daily sweep would re-alert everyone on every pass.
+- **`collapseKey`** replaces rather than stacks a device notification (Android `tag`,
+  APNs `threadId`, web `tag`), so repeated alerts about one record don't bury the rest.
+
+#### Configuration this depends on
+
+| Platform | Requirement | If missing |
+| --- | --- | --- |
+| Web | `NEXT_PUBLIC_FIREBASE_VAPID_KEY` (Firebase Console → Project settings → Cloud Messaging → Web Push certificates) | Registration is skipped with a console warning; web push stays off |
+| Web | `public/firebase-messaging-sw.js` served at that exact path | FCM cannot register a background handler |
+| iOS | APNs auth key uploaded to Firebase | FCM rejects the send and the token is pruned as invalid |
+| Android | Already configured | — |
+
+The service worker duplicates the Firebase config from `src/lib/firebase.ts` because
+a worker runs outside the bundler and cannot import app modules. Those values are
+public client identifiers, not secrets — but keep the two in step.
+
+#### Android channels
+
+Two, so a user can silence one without losing the other:
+`sel_chat_messages` (chat) and `sel_module_alerts` (approvals, escalations, reminders).
+
+#### `chatEnabled`
+
+Device registration used to be gated on Chat System permission, and actively
+*unregistered* the device when the user lacked it — so a user without chat access had
+no token and could receive nothing from any module. Registration is now
+unconditional; the permission travels on the device record as `chatEnabled`, and
+`api/chat/notify` skips devices where it is `false`. Absent means an older
+registration, which only ever existed for a chat-permitted user.
+
 ### Role-targeted notifications
 
 The bank-guarantee and letter-of-credit services raise alerts from inside a Firestore
@@ -177,7 +236,7 @@ than touching fields directly.
 Filtering and delivery both depend on composite indexes declared in
 `firestore.indexes.json`. After changing a query, deploy them:
 
-```
+```sh
 firebase deploy --only firestore:indexes
 ```
 
@@ -200,7 +259,10 @@ Worth knowing, because the old shapes are still in the database:
   trace. `activity-logger-server.ts` closes that.
 - **Notifications had three incompatible schemas** in one collection, and the bell
   read one of them behind a three-type allowlist. Fixed-deposit maturity alerts and
-  every bank-guarantee/letter-of-credit alert were written and shown to nobody.
+  every bank-guarantee alert were written and shown to nobody.
+- **Push existed only for chat, only on Android.** The web app had no service worker
+  and never imported `firebase/messaging`; the iOS app registered nothing because the
+  platform check was `!== 'android'`. Every other module's alerts stopped at the bell.
 
 ### Still outstanding
 

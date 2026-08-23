@@ -108,7 +108,24 @@ export function EApprovalSettingsPanel({
 
   return (
     <div className="space-y-3">
-      <Card>
+      <nav className="flex flex-wrap gap-1.5 rounded-lg border bg-muted/30 px-2 py-2">
+        {[
+          { id: 'change-control', label: 'Change control' },
+          { id: 'approver-powers', label: 'Approver powers' },
+          { id: 'recall-reverse', label: 'Recall & reverse' },
+          { id: 'reminders', label: 'Reminders' },
+          { id: 'numbering', label: 'Numbering' },
+        ].map((section) => (
+          <a
+            key={section.id}
+            href={`#${section.id}`}
+            className="rounded-full border bg-background px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-sky-300 hover:text-sky-700"
+          >
+            {section.label}
+          </a>
+        ))}
+      </nav>
+      <Card id="change-control" className="scroll-mt-20">
         <CardHeader className="px-3 py-2.5 sm:px-4">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <ShieldCheck className="h-4 w-4" /> Change Control
@@ -191,7 +208,7 @@ export function EApprovalSettingsPanel({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="approver-powers" className="scroll-mt-20">
         <CardHeader className="px-3 py-2.5 sm:px-4">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <Users className="h-4 w-4" /> What approvers may do
@@ -261,7 +278,7 @@ export function EApprovalSettingsPanel({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="recall-reverse" className="scroll-mt-20">
         <CardHeader className="px-3 py-2.5 sm:px-4">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <Undo2 className="h-4 w-4" /> Recall &amp; Reverse
@@ -352,7 +369,7 @@ export function EApprovalSettingsPanel({
       </Card>
 
 
-      <Card>
+      <Card id="reminders" className="scroll-mt-20">
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 px-3 py-2.5 sm:px-4">
           <div>
             <CardTitle className="flex items-center gap-1.5 text-sm">
@@ -462,7 +479,7 @@ export function EApprovalSettingsPanel({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="numbering" className="scroll-mt-20">
         <CardHeader className="px-3 py-2.5 sm:px-4">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <Hash className="h-4 w-4" /> Numbering

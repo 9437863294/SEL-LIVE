@@ -14,8 +14,9 @@
 
 import { NextResponse } from 'next/server';
 import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
-import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import type { WorkflowStep } from '@/lib/types';
+import { dispatchNotificationOnce } from '@/lib/notifications-server';
 
 /* ── Firebase Admin init (lazy, singleton) ──────────────────────── */
 function getAdminApp(): App {
@@ -139,39 +140,41 @@ export async function GET(request: Request) {
 
         if (elapsed < thresholdHours) continue; // not yet due
 
-        /* 4 — Skip if we already sent an escalation for this step */
-        const existingSnap = await db
-          .collection('userNotifications')
-          .where('itemId', '==', itemDoc.id)
-          .where('type', '==', 'tat_escalation')
-          .where('stepName', '==', step.name)
-          .limit(1)
-          .get();
-
-        if (!existingSnap.empty) continue;
-
-        /* 5 — Write notification */
+        /* 4 — Write notification, deliver push, and don't repeat for this step */
         const itemRef = String(item[mod.refField] ?? itemDoc.id);
         const elapsed1dp = elapsed.toFixed(1);
 
-        await db.collection('userNotifications').add({
-          userId: escalationUserId,
-          type: 'tat_escalation',
-          title: `TAT Alert: ${step.name}`,
-          body: `${itemRef} has been at "${step.name}" for ${elapsed1dp}h (TAT: ${tatHours}h). Action required.`,
-          module: mod.workflowDocId,
-          itemId: itemDoc.id,
-          itemRef,
-          stepName: step.name,
-          link: `${mod.linkPrefix}`,
-          read: false,
-          createdAt: FieldValue.serverTimestamp(),
-        });
+        // Dispatching replaces a direct write plus a preceding "have we already sent
+        // this?" query. The deterministic dedupe key does that job in the write
+        // itself, which also closes the race the query left open: two overlapping
+        // cron invocations could both find nothing and both escalate.
+        //
+        // It also means the escalation now reaches the assignee's phone and browser.
+        // The direct write only ever populated the in-app bell — and until the bell
+        // stopped filtering on a type allowlist, 'tat_escalation' was not even
+        // displayed there, so these alerts reached nobody at all.
+        const delivered = await dispatchNotificationOnce(
+          { userIds: [escalationUserId] },
+          {
+            type: 'tat_escalation',
+            title: `TAT Alert: ${step.name}`,
+            body: `${itemRef} has been at "${step.name}" for ${elapsed1dp}h (TAT: ${tatHours}h). Action required.`,
+            module: mod.workflowDocId,
+            severity: 'CRITICAL',
+            itemId: itemDoc.id,
+            itemRef,
+            stepName: step.name,
+            link: mod.linkPrefix,
+          },
+          `tat_${mod.workflowDocId}_${itemDoc.id}_${stepId}`,
+        );
 
-        /* 6 — Mark item as escalation-notified so we don't fire again */
+        /* 5 — Mark item as escalation-notified so we don't fire again */
         await itemDoc.ref.update({ escalationNotifiedStepId: stepId });
 
-        totalEscalated++;
+        // A repeat pass finds the notification already created and delivers to nobody.
+        // Counting that as an escalation would overstate what the run actually did.
+        if (delivered) totalEscalated++;
       }
     } catch (err) {
       const msg = `[${mod.workflowDocId}] ${err instanceof Error ? err.message : String(err)}`;

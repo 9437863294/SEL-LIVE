@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 import { getFirebaseAdminFirestore } from './firebase-admin';
 import { canonicalModuleName } from './activity-modules';
+import { sendPushToUsers } from './push-server';
 import type { NotificationPayload, NotificationRecipients } from './notifications';
 
 /**
@@ -82,6 +83,21 @@ export async function dispatchNotificationServer(
       });
       await batch.commit();
     }
+
+    // Push after the documents are committed, so the bell and the phone never
+    // disagree — a push that arrives for a notification that failed to save would
+    // open a record with nothing to show.
+    await sendPushToUsers(targets, {
+      title: payload.title,
+      body: payload.body,
+      link: payload.link,
+      module: payload.module,
+      type: payload.type,
+      itemId: payload.itemId,
+      severity: payload.severity ?? 'INFO',
+      collapseKey: payload.itemId ? `${payload.type}_${payload.itemId}` : undefined,
+    });
+
     return targets.length;
   } catch (err) {
     console.error('[notifications-server] Failed to dispatch notification:', err);
@@ -122,32 +138,51 @@ export async function dispatchNotificationOnce(
       createdAt: FieldValue.serverTimestamp(),
     };
 
-    let delivered = 0;
     // Deterministic document ID per (event, recipient), written with create() so a
     // repeat run is a no-op. set({merge:false}) would also avoid duplicates, but it
     // would overwrite the stored document — resetting `read` to false and
     // resurrecting an alert the user had already dismissed on every scheduled pass.
     // These have to be individual writes: one create() failing inside a batch
     // aborts the whole batch, and on a partial re-run most of them will fail.
+    const freshlyNotified: string[] = [];
     for (const group of chunk(targets, 50)) {
       const results = await Promise.all(
         group.map(async (userId) => {
           const id = `${safeKey}__${userId}`.slice(0, 1500);
           try {
             await db.collection('userNotifications').doc(id).create({ ...body, userId });
-            return true;
+            return userId;
           } catch (err) {
             // ALREADY_EXISTS (code 6) means this recipient was notified on an
             // earlier run — the expected path, not a failure.
-            if ((err as { code?: number }).code === 6) return false;
+            if ((err as { code?: number }).code === 6) return null;
             console.error('[notifications-server] Failed to create notification:', err);
-            return false;
+            return null;
           }
         }),
       );
-      delivered += results.filter(Boolean).length;
+      results.forEach((userId) => { if (userId) freshlyNotified.push(userId); });
     }
-    return delivered;
+
+    // Push only to the recipients whose document was newly created. Pushing to the
+    // whole target list would re-alert everyone on every scheduled pass, which is
+    // the exact repetition the dedupe key exists to prevent.
+    if (freshlyNotified.length) {
+      await sendPushToUsers(freshlyNotified, {
+        title: payload.title,
+        body: payload.body,
+        link: payload.link,
+        module: payload.module,
+        type: payload.type,
+        itemId: payload.itemId,
+        severity: payload.severity ?? 'INFO',
+        // Keyed on the event, so successive alerts about one record replace each
+        // other on the device rather than stacking up over days.
+        collapseKey: safeKey,
+      });
+    }
+
+    return freshlyNotified.length;
   } catch (err) {
     console.error('[notifications-server] Failed to dispatch deduped notification:', err);
     return 0;

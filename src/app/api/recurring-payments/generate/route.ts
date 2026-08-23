@@ -3,6 +3,8 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import { buildPaymentObligationFields, DEFAULT_RECURRING_WORKFLOW, isWorkflowActivationDue, matchApprovalRule, pendingRecurringCycles, resolveAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { addBusinessHours, makeIsWorkingDay, normalizeWorkingHoursDoc } from '@/lib/working-hours';
+import { dispatchNotificationOnce } from '@/lib/notifications-server';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 import type { Holiday } from '@/lib/types';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -130,14 +132,21 @@ export async function GET(request: Request) {
         workflowDeadline: Timestamp.fromMillis(addBusinessHours(new Date(), Math.max(1, firstStep.tat), workingHours, holidays).getTime()),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      for (const assignee of assignees) {
-        await db.collection('userNotifications').doc(`recurring_start_${paymentDoc.id}_${assignee}`).set({
-          userId: assignee, type: 'recurring_payment_workflow', title: `Action required: ${firstStep.name}`,
+      await dispatchNotificationOnce(
+        { userIds: assignees },
+        {
+          type: 'recurring_payment_workflow',
+          title: `Action required: ${firstStep.name}`,
           body: `${payment.title} is due on ${payment.dueDate} and has entered your workflow queue.`,
-          module: 'Recurring Payments', itemId: paymentDoc.id,
-          link: `/recurring-payments/stage/${firstStep.id}`, read: false, createdAt: FieldValue.serverTimestamp(),
-        }, { merge: false });
-      }
+          module: ACTIVITY_MODULES.RECURRING_PAYMENTS,
+          severity: 'WARNING',
+          itemId: paymentDoc.id,
+          itemRef: String(payment.title || ''),
+          stepName: firstStep.name,
+          link: `/recurring-payments/stage/${firstStep.id}`,
+        },
+        `recurring_start_${paymentDoc.id}`,
+      );
       workflowTriggered++;
     }
   }
@@ -169,13 +178,21 @@ export async function GET(request: Request) {
       status: 'Pending', attempts: 0, createdAt: FieldValue.serverTimestamp(),
     });
     if (notification.inApp && payment.assignedTo) {
-      await db.collection('userNotifications').doc(`recurring_${queueId}`).set({
-        userId: payment.assignedTo, type: 'recurring_payment_reminder',
-        title: daysUntilDue < 0 ? `Overdue: ${payment.title}` : `Payment due: ${payment.title}`,
-        body: daysUntilDue < 0 ? `Payment was due ${Math.abs(daysUntilDue)} day(s) ago.` : daysUntilDue === 0 ? 'Payment is due today.' : `Payment is due in ${daysUntilDue} day(s).`,
-        module: 'Recurring Payments', itemId: paymentDoc.id,
-        link: '/recurring-payments/payments', read: false, createdAt: FieldValue.serverTimestamp(),
-      }, { merge: false });
+      await dispatchNotificationOnce(
+        { userIds: [String(payment.assignedTo)] },
+        {
+          type: 'recurring_payment_reminder',
+          title: daysUntilDue < 0 ? `Overdue: ${payment.title}` : `Payment due: ${payment.title}`,
+          body: daysUntilDue < 0 ? `Payment was due ${Math.abs(daysUntilDue)} day(s) ago.` : daysUntilDue === 0 ? 'Payment is due today.' : `Payment is due in ${daysUntilDue} day(s).`,
+          module: ACTIVITY_MODULES.RECURRING_PAYMENTS,
+          // An overdue payment is not the same urgency as a heads-up a week out.
+          severity: daysUntilDue < 0 ? 'CRITICAL' : daysUntilDue === 0 ? 'WARNING' : 'INFO',
+          itemId: paymentDoc.id,
+          itemRef: String(payment.title || ''),
+          link: '/recurring-payments/payments',
+        },
+        `recurring_${queueId}`,
+      );
     }
     remindersQueued++;
   }

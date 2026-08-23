@@ -30,8 +30,8 @@ import { canonicalModuleName } from './activity-modules';
  *   3. {targetRoles, type, title, message, pageUrl, status: 'ACTIVE'} — BG/LC
  *
  * The bell only ever queried `userId == me`, so shapes 2 and 3 — every alert the
- * bank-guarantee, letter-of-credit and fixed-deposit modules raised — were written
- * to Firestore and shown to nobody. Role-targeted recipients are now resolved to
+ * bank-guarantee and fixed-deposit modules raised — were written to Firestore and
+ * shown to nobody. Role-targeted recipients are now resolved to
  * concrete users at write time so that delivery stays a single indexed query, and
  * `normalizeNotification` still reads the two legacy shapes so alerts already in
  * the database render rather than being silently dropped.
@@ -110,7 +110,7 @@ export async function createUserNotification(
   userId: string,
   payload: NotificationPayload,
 ): Promise<void> {
-  await addDoc(collection(db, 'userNotifications'), {
+  const created = await addDoc(collection(db, 'userNotifications'), {
     userId,
     ...payload,
     module: canonicalModuleName(payload.module),
@@ -118,6 +118,9 @@ export async function createUserNotification(
     read: false,
     createdAt: serverTimestamp(),
   });
+  // Same push path as dispatchNotification, so a single-recipient alert reaches the
+  // phone too rather than only the bell.
+  await requestPushDelivery([created.id]);
 }
 
 /** Firestore caps `in` filters at 30 values. */
@@ -187,18 +190,61 @@ export async function dispatchNotification(
       createdAt: serverTimestamp(),
     };
 
+    // IDs are generated client-side so they can be handed to the push route once the
+    // documents are committed.
+    const createdIds: string[] = [];
+
     // One batch per 400 recipients, comfortably inside the 500-write limit.
     for (const group of chunk(targets, 400)) {
       const batch = writeBatch(db);
       group.forEach((userId) => {
-        batch.set(doc(collection(db, 'userNotifications')), { ...body, userId });
+        const ref = doc(collection(db, 'userNotifications'));
+        batch.set(ref, { ...body, userId });
+        createdIds.push(ref.id);
       });
       await batch.commit();
     }
+
+    // Mobile and web push. Requested after the commit so a notification never
+    // arrives on a phone before it exists in the database, and awaited only as far
+    // as the 202 — actual FCM delivery continues server-side.
+    await requestPushDelivery(createdIds);
+
     return targets.length;
   } catch (err) {
     console.error('[notifications] Failed to dispatch notification:', err);
     return 0;
+  }
+}
+
+/**
+ * Ask the server to push notifications that have just been written.
+ *
+ * FCM needs admin credentials, so the browser cannot send directly. It passes the
+ * document IDs and the route reads the payload back out of Firestore — see
+ * app/api/notifications/push/route.ts for why it is not given the text directly.
+ *
+ * Never throws: an alert that is in the bell but failed to reach a phone is a
+ * degraded delivery, not a failed save.
+ */
+export async function requestPushDelivery(notificationIds: string[]): Promise<void> {
+  if (!notificationIds.length) return;
+  try {
+    const { auth } = await import('./firebase');
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
+    const idToken = await firebaseUser.getIdToken();
+
+    await fetch('/api/notifications/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ notificationIds }),
+    });
+  } catch (err) {
+    console.warn('[notifications] Push delivery could not be requested:', err);
   }
 }
 
@@ -277,12 +323,12 @@ export function normalizeNotification(
  * Fetch unread notifications addressed to a role rather than to a user.
  *
  * `dispatchNotification` fans roles out to users at write time, but the
- * bank-guarantee and letter-of-credit services raise their alerts from inside a
- * Firestore transaction, where resolving roles is not possible — a transaction's
- * reads must all precede its writes, and the role membership lookup would have to
- * happen mid-write. Those producers therefore write one document carrying
- * `targetRoles`, and this is how it reaches a recipient. It also covers the
- * fixed-deposit alerts written that way before delivery was centralised.
+ * bank-guarantee service raises its alerts from inside a Firestore transaction,
+ * where resolving roles is not possible — a transaction's reads must all precede its
+ * writes, and the role membership lookup would have to happen mid-write. It
+ * therefore writes one document carrying `targetRoles`, and this is how it reaches a
+ * recipient. It also covers the fixed-deposit maturity alerts, which were written
+ * that way before delivery was centralised and are still in the database.
  *
  * Deliberately not a live listener: role-targeted documents are written rarely and
  * an `array-contains` listener on a collection this size is not worth holding open

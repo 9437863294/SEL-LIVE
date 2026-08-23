@@ -6,6 +6,9 @@ import { resolveAuthenticatedAppUserId } from '@/lib/chat-push-server';
 
 export const runtime = 'nodejs';
 
+/** Device platforms push delivery knows how to tailor a message for. */
+const PLATFORMS = new Set(['android', 'ios', 'web']);
+
 function getBearerToken(request: Request) {
   const authorization = request.headers.get('authorization') || '';
   return authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
@@ -40,8 +43,17 @@ export async function POST(request: Request) {
 
     await deviceRef.set({
       token,
-      platform: body?.platform === 'ios' ? 'ios' : 'android',
+      // 'web' joins the native platforms now that browsers register here too. The
+      // value drives per-platform FCM options (APNs headers, Android channel,
+      // webpush link) in lib/push-server.ts, so an unrecognised value would silently
+      // get Android treatment — hence the explicit allowlist rather than a passthrough.
+      platform: PLATFORMS.has(body?.platform) ? body.platform : 'android',
       enabled: true,
+      // Whether this device should receive chat pushes specifically. Module alerts go
+      // to every enabled device; chat is suppressed for users who cannot see it,
+      // which is how the old "unregister the device entirely" behaviour is preserved
+      // without also cutting off every other module's notifications.
+      chatEnabled: body?.chatEnabled !== false,
       updatedAt: FieldValue.serverTimestamp(),
       registeredAt: FieldValue.serverTimestamp(),
     }, { merge: true });

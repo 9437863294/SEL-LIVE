@@ -13,6 +13,8 @@ import {
   type EApprovalSettingsRecord,
   type EApprovalStep,
 } from '@/lib/e-approval';
+import { dispatchNotificationServer } from '@/lib/notifications-server';
+import type { NotificationPayload } from '@/lib/notifications';
 
 /**
  * The E-Approval reminder and escalation sweep (spec section 22).
@@ -116,20 +118,18 @@ export async function GET(request: Request) {
       type: string;
     },
   ): Promise<number> => {
-    const targets = [...new Set(userIds.filter(Boolean))];
-    if (!targets.length) return 0;
-    const batch = db.batch();
-    for (const userId of targets) {
-      batch.set(db.collection('userNotifications').doc(), {
-        userId,
-        module: E_APPROVAL_ACTIVITY_MODULE,
+    // Delegated to the shared dispatcher rather than writing the documents here, so
+    // an approval escalation also reaches the approver's phone and browser instead of
+    // only the in-app bell. Same recipients, same fields — it fans out one document
+    // per user exactly as this did.
+    return dispatchNotificationServer(
+      { userIds },
+      {
         ...payload,
-        read: false,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    }
-    await batch.commit();
-    return targets.length;
+        module: E_APPROVAL_ACTIVITY_MODULE,
+        severity: payload.severity as NotificationPayload['severity'],
+      },
+    );
   };
 
   let requestsChecked = 0;

@@ -1,17 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { GitBranch, Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowRight, FlaskConical, GitBranch, Pencil, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import {
   E_APPROVAL_COLLECTIONS,
   resolveEApprovalRouting,
@@ -27,17 +25,37 @@ import {
   saveEApprovalRule,
   type EApprovalServiceActor,
 } from '@/lib/e-approval-service';
-import { EApprovalEmptyState } from '../shared';
+import { Field } from '../page-header';
 import { formatEApprovalAmount, type EApprovalDirectory } from '../hooks';
+import {
+  matchesSearch,
+  SettingsAddButton,
+  SettingsEmpty,
+  SettingsFormDialog,
+  SettingsList,
+  SettingsRow,
+  SettingsToolbar,
+  useSettingsDraft,
+} from './settings-ui';
 
 type Draft = Partial<EApprovalRuleRecord>;
 
+const band = (row: EApprovalRuleRecord) => {
+  const from = row.minAmount == null ? null : formatEApprovalAmount(row.minAmount);
+  const to = row.maxAmount == null ? null : formatEApprovalAmount(row.maxAmount);
+  if (from == null && to == null) return 'Any amount';
+  if (to == null) return `${from} and above`;
+  if (from == null) return `Up to ${to}`;
+  return `${from} – ${to}`;
+};
+
 /**
- * The approval matrix of spec section 13 — amount bands and their chains.
+ * The approval matrix (spec section 13).
  *
- * The tester at the bottom exists because an approval matrix is the one piece of configuration whose
- * mistakes are invisible until a real file takes the wrong route. Entering a type and an amount and
- * seeing which rule wins turns "I think this is right" into "this is what will happen".
+ * The tester is not a nicety. An approval matrix is the one piece of configuration whose mistakes are
+ * invisible until a real note-sheet takes the wrong route, and by then it has been seen by the wrong
+ * people. Entering a type and an amount and watching which rule wins turns "I think this is right"
+ * into "this is what will happen".
  */
 export function ApprovalMatrixPanel({
   serviceActor,
@@ -52,9 +70,9 @@ export function ApprovalMatrixPanel({
   const [rows, setRows] = useState<EApprovalRuleRecord[]>([]);
   const [templates, setTemplates] = useState<EApprovalTemplateRecord[]>([]);
   const [types, setTypes] = useState<EApprovalType[]>([]);
-  const [draft, setDraft] = useState<Draft | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const form = useSettingsDraft<Draft>();
 
   const [testType, setTestType] = useState('ANY');
   const [testDepartment, setTestDepartment] = useState('ANY');
@@ -96,21 +114,23 @@ export function ApprovalMatrixPanel({
     [rows, testType, testDepartment, testAmount],
   );
 
+  const templateName = (templateId?: string) => templates.find((row) => row.id === templateId)?.name ?? '—';
+
   const save = async () => {
-    if (!serviceActor || !draft) return;
-    if (!draft.templateId) {
-      toast({ variant: 'destructive', title: 'Choose the workflow this band routes to.' });
+    if (!serviceActor || !form.draft) return;
+    if (!form.draft.templateId) {
+      toast({ variant: 'destructive', title: 'Choose the workflow this rule routes to.' });
       return;
     }
-    if (draft.minAmount != null && draft.maxAmount != null && draft.maxAmount < draft.minAmount) {
+    if (form.draft.minAmount != null && form.draft.maxAmount != null && form.draft.maxAmount < form.draft.minAmount) {
       toast({ variant: 'destructive', title: 'The upper bound cannot be below the lower bound.' });
       return;
     }
-    setBusy(true);
+    form.setBusy(true);
     try {
-      await saveEApprovalRule(draft, serviceActor);
+      await saveEApprovalRule(form.draft, serviceActor);
       toast({ title: 'Rule saved' });
-      setDraft(null);
+      form.close();
       void load();
     } catch (error) {
       toast({
@@ -119,260 +139,127 @@ export function ApprovalMatrixPanel({
         description: error instanceof Error ? error.message : 'Something went wrong.',
       });
     } finally {
-      setBusy(false);
+      form.setBusy(false);
     }
   };
 
-  const templateName = (templateId?: string) => templates.find((row) => row.id === templateId)?.name ?? '—';
+  const visible = rows.filter((row) =>
+    matchesSearch(search, row.name, types.find((type) => type.id === row.approvalTypeId)?.name, templateName(row.templateId)),
+  );
+  const add = () => form.setDraft({ active: true, minAmount: 0 });
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 px-3 py-2.5 sm:px-4">
-        <div>
-          <CardTitle className="flex items-center gap-1.5 text-sm">
-            <GitBranch className="h-4 w-4" /> Approval Matrix
-          </CardTitle>
-          <CardDescription className="text-xs">
-            Which chain a request takes, by type, department, project and amount. The most specific rule wins; between
-            two equally specific rules, the narrower amount band does.
-          </CardDescription>
-        </div>
-        {canEdit && (
-          <Button size="sm" className="h-8 gap-1.5" onClick={() => setDraft({ active: true, minAmount: 0 })}>
-            <Plus className="h-3.5 w-3.5" /> New rule
-          </Button>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-3 px-3 pb-3 sm:px-4">
-        {draft && (
-          <div className="space-y-2 rounded-lg border bg-muted/20 p-2.5">
-            <div className="grid gap-2 sm:grid-cols-3">
-              <div className="sm:col-span-3">
-                <Label className="text-xs">Rule name</Label>
-                <Input
-                  value={draft.name ?? ''}
-                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                  placeholder="Purchase above ₹5 lakh"
-                  className="mt-1 h-8 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Approval type</Label>
-                <Select
-                  value={draft.approvalTypeId ?? 'ANY'}
-                  onValueChange={(next) => setDraft({ ...draft, approvalTypeId: next === 'ANY' ? undefined : next })}
-                >
-                  <SelectTrigger className="mt-1 h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ANY">Any type</SelectItem>
-                    {types.map((type) => (
-                      <SelectItem key={type.id} value={type.id}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Department</Label>
-                <Select
-                  value={draft.departmentId ?? 'ANY'}
-                  onValueChange={(next) => setDraft({ ...draft, departmentId: next === 'ANY' ? undefined : next })}
-                >
-                  <SelectTrigger className="mt-1 h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ANY">Any department</SelectItem>
-                    {directory.departments.map((department) => (
-                      <SelectItem key={department.id} value={department.id}>
-                        {department.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Project</Label>
-                <Select
-                  value={draft.projectId ?? 'ANY'}
-                  onValueChange={(next) => setDraft({ ...draft, projectId: next === 'ANY' ? undefined : next })}
-                >
-                  <SelectTrigger className="mt-1 h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ANY">Any project</SelectItem>
-                    {directory.projects.map((project) => (
-                      <SelectItem key={project.id} value={project.id}>
-                        {project.projectName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Amount from (₹)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={draft.minAmount ?? ''}
-                  onChange={(event) =>
-                    setDraft({ ...draft, minAmount: event.target.value === '' ? null : Number(event.target.value) })
-                  }
-                  className="mt-1 h-8 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Amount to (₹)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={draft.maxAmount ?? ''}
-                  onChange={(event) =>
-                    setDraft({ ...draft, maxAmount: event.target.value === '' ? null : Number(event.target.value) })
-                  }
-                  placeholder="No upper limit"
-                  className="mt-1 h-8 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Route to workflow</Label>
-                <Select
-                  value={draft.templateId ?? ''}
-                  onValueChange={(next) => setDraft({ ...draft, templateId: next })}
-                >
-                  <SelectTrigger className="mt-1 h-8 text-xs">
-                    <SelectValue placeholder="Select a workflow" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates
-                      .filter((template) => template.active !== false)
-                      .map((template) => (
-                        <SelectItem key={template.id} value={template.id}>
-                          {template.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-xs">Priority (tie-break)</Label>
-                <Input
-                  type="number"
-                  value={draft.priority ?? 0}
-                  onChange={(event) => setDraft({ ...draft, priority: Number(event.target.value) || 0 })}
-                  className="mt-1 h-8 text-sm"
-                />
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 text-xs">
-                <Checkbox
-                  checked={draft.active !== false}
-                  onCheckedChange={(checked) => setDraft({ ...draft, active: checked === true })}
-                />
-                Active
-              </label>
-              <div className="flex gap-1.5">
-                <Button size="sm" variant="outline" className="h-8" onClick={() => setDraft(null)}>
-                  Cancel
-                </Button>
-                <Button size="sm" className="h-8 gap-1.5" onClick={() => void save()} disabled={busy}>
-                  {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
+    <div className="space-y-3">
+      <SettingsToolbar
+        count={rows.length}
+        noun="rule"
+        search={search}
+        onSearch={setSearch}
+        action={canEdit ? <SettingsAddButton label="New rule" onClick={add} /> : undefined}
+      />
 
-        {isLoading ? (
-          <Skeleton className="h-24 w-full" />
-        ) : rows.length === 0 ? (
-          <EApprovalEmptyState
+      <SettingsList
+        isLoading={isLoading}
+        isEmpty={!visible.length}
+        empty={
+          <SettingsEmpty
             icon={GitBranch}
-            title="No matrix rules"
-            description="Without a rule, employees have to name their approvers on the form."
+            title={rows.length ? 'Nothing matches that search' : 'No matrix rules'}
+            description={
+              rows.length
+                ? undefined
+                : 'Without a rule, an employee has to name their approvers on the form every time. Add a band per amount range and point each at a workflow.'
+            }
+            action={canEdit && !rows.length ? <SettingsAddButton label="Add the first rule" onClick={add} /> : undefined}
           />
-        ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/40">
-                  <TableHead>Rule</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Department</TableHead>
-                  <TableHead className="text-right">From</TableHead>
-                  <TableHead className="text-right">To</TableHead>
-                  <TableHead>Workflow</TableHead>
-                  <TableHead>State</TableHead>
-                  {canEdit && <TableHead />}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.id} className={winner?.id === row.id ? 'bg-emerald-50' : undefined}>
-                    <TableCell className="text-xs font-medium">{row.name || '—'}</TableCell>
-                    <TableCell className="text-xs">
-                      {row.approvalTypeId ? types.find((type) => type.id === row.approvalTypeId)?.name ?? '—' : 'Any'}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {row.departmentId ? directory.departmentById.get(row.departmentId)?.name ?? '—' : 'Any'}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
-                      {row.minAmount == null ? '—' : formatEApprovalAmount(row.minAmount)}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-right text-xs tabular-nums">
-                      {row.maxAmount == null ? 'No limit' : formatEApprovalAmount(row.maxAmount)}
-                    </TableCell>
-                    <TableCell className="text-xs">{templateName(row.templateId)}</TableCell>
-                    <TableCell>
-                      {row.active === false ? (
-                        <Badge variant="outline" className="text-[10px]">
-                          Inactive
-                        </Badge>
-                      ) : winner?.id === row.id ? (
-                        <Badge className="bg-emerald-600 text-[10px] hover:bg-emerald-600">Matches the test</Badge>
-                      ) : null}
-                    </TableCell>
-                    {canEdit && (
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setDraft(row)}>
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0 text-destructive"
-                            onClick={async () => {
-                              if (!serviceActor) return;
-                              await deleteEApprovalConfigRecord(E_APPROVAL_COLLECTIONS.rules, row.id, serviceActor);
-                              void load();
-                            }}
-                            aria-label="Delete rule"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+        }
+      >
+        {visible.map((row) => (
+          <SettingsRow
+            key={row.id}
+            muted={row.active === false}
+            className={winner?.id === row.id ? 'bg-emerald-50/70 hover:bg-emerald-50' : undefined}
+            title={row.name || band(row)}
+            badges={
+              <>
+                <Badge variant="outline" className="text-[10px]">
+                  {band(row)}
+                </Badge>
+                {row.approvalTypeId && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {types.find((type) => type.id === row.approvalTypeId)?.name ?? 'type'}
+                  </Badge>
+                )}
+                {row.departmentId && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {directory.departmentById.get(row.departmentId)?.name ?? 'department'}
+                  </Badge>
+                )}
+                {(row.priority ?? 0) !== 0 && (
+                  <Badge variant="outline" className="text-[10px]">
+                    priority {row.priority}
+                  </Badge>
+                )}
+                {row.active === false && (
+                  <Badge variant="outline" className="text-[10px]">
+                    Inactive
+                  </Badge>
+                )}
+                {winner?.id === row.id && (
+                  <Badge className="bg-emerald-600 text-[10px] hover:bg-emerald-600">Matches the test</Badge>
+                )}
+              </>
+            }
+            subtitle={
+              <span className="flex items-center gap-1">
+                routes to <ArrowRight className="h-3 w-3" />
+                <span className="font-medium text-slate-700">{templateName(row.templateId)}</span>
+              </span>
+            }
+            actions={
+              canEdit && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0"
+                    onClick={() => form.setDraft(row)}
+                    aria-label="Edit rule"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-destructive"
+                    onClick={async () => {
+                      if (!serviceActor) return;
+                      await deleteEApprovalConfigRecord(E_APPROVAL_COLLECTIONS.rules, row.id, serviceActor);
+                      void load();
+                    }}
+                    aria-label="Delete rule"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )
+            }
+          />
+        ))}
+      </SettingsList>
 
-        <div className="rounded-lg border bg-sky-50/50 p-2.5">
-          <p className="text-xs font-semibold">Test the matrix</p>
-          <div className="mt-1.5 flex flex-wrap items-end gap-2">
-            <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">Type</Label>
+      <Card className="border-sky-200 bg-sky-50/50">
+        <CardContent className="px-3 py-3">
+          <p className="flex items-center gap-1.5 text-sm font-semibold">
+            <FlaskConical className="h-4 w-4 text-sky-600" /> Test the matrix
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            The matching rule is highlighted in the list above.
+          </p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            <Field label="Type">
               <Select value={testType} onValueChange={setTestType}>
-                <SelectTrigger className="mt-0.5 h-8 w-[160px] text-xs">
+                <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -384,11 +271,10 @@ export function ApprovalMatrixPanel({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">Department</Label>
+            </Field>
+            <Field label="Department">
               <Select value={testDepartment} onValueChange={setTestDepartment}>
-                <SelectTrigger className="mt-0.5 h-8 w-[160px] text-xs">
+                <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -400,29 +286,158 @@ export function ApprovalMatrixPanel({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <Label className="text-[10px] uppercase text-muted-foreground">Amount</Label>
+            </Field>
+            <Field label="Amount">
               <Input
                 type="number"
                 value={testAmount}
                 onChange={(event) => setTestAmount(event.target.value)}
-                className="mt-0.5 h-8 w-32 text-xs"
+                className="h-8 text-xs"
               />
-            </div>
-            <p className="text-xs">
-              {winner ? (
-                <>
-                  Routes to <span className="font-semibold">{templateName(winner.templateId)}</span>
-                  {winner.name ? ` via “${winner.name}”` : ''}
-                </>
-              ) : (
-                <span className="text-amber-700">No rule matches — the requester would have to name the approvers.</span>
-              )}
-            </p>
+            </Field>
           </div>
+          <p className={cn('mt-2 rounded-md border px-2.5 py-2 text-xs', winner ? 'bg-white' : 'border-amber-200 bg-amber-50 text-amber-900')}>
+            {winner ? (
+              <>
+                Routes to <span className="font-semibold">{templateName(winner.templateId)}</span>
+                {winner.name ? ` via “${winner.name}”` : ''}.
+              </>
+            ) : (
+              'No rule matches — the requester would have to name the approvers themselves.'
+            )}
+          </p>
+        </CardContent>
+      </Card>
+
+      <SettingsFormDialog
+        open={form.open}
+        onOpenChange={(next) => !next && form.close()}
+        title={form.draft?.id ? 'Edit rule' : 'New matrix rule'}
+        description="Unset criteria match everything. The most specific rule wins; between two equally specific ones, the narrower amount band does."
+        busy={form.busy}
+        canSave={Boolean(form.draft?.templateId)}
+        onSave={() => void save()}
+      >
+        <Field label="Rule name" hint="Shown in the list and in the routing preview on the create form.">
+          <Input
+            value={form.draft?.name ?? ''}
+            onChange={(event) => form.patch({ name: event.target.value })}
+            placeholder="Purchase above ₹5 lakh"
+            className="h-9"
+          />
+        </Field>
+
+        <Field label="Routes to workflow" required>
+          <Select value={form.draft?.templateId ?? ''} onValueChange={(next) => form.patch({ templateId: next })}>
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Select a workflow" />
+            </SelectTrigger>
+            <SelectContent>
+              {templates
+                .filter((template) => template.active !== false)
+                .map((template) => (
+                  <SelectItem key={template.id} value={template.id}>
+                    {template.name} · {(template.steps ?? []).length} stages
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Amount from (₹)">
+            <Input
+              type="number"
+              min={0}
+              value={form.draft?.minAmount ?? ''}
+              onChange={(event) => form.patch({ minAmount: event.target.value === '' ? null : Number(event.target.value) })}
+              className="h-9"
+            />
+          </Field>
+          <Field label="Amount to (₹)" hint="Blank means no upper limit.">
+            <Input
+              type="number"
+              min={0}
+              value={form.draft?.maxAmount ?? ''}
+              onChange={(event) => form.patch({ maxAmount: event.target.value === '' ? null : Number(event.target.value) })}
+              className="h-9"
+            />
+          </Field>
         </div>
-      </CardContent>
-    </Card>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Approval type">
+            <Select
+              value={form.draft?.approvalTypeId ?? 'ANY'}
+              onValueChange={(next) => form.patch({ approvalTypeId: next === 'ANY' ? undefined : next })}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ANY">Any type</SelectItem>
+                {types.map((type) => (
+                  <SelectItem key={type.id} value={type.id}>
+                    {type.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Department">
+            <Select
+              value={form.draft?.departmentId ?? 'ANY'}
+              onValueChange={(next) => form.patch({ departmentId: next === 'ANY' ? undefined : next })}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ANY">Any department</SelectItem>
+                {directory.departments.map((department) => (
+                  <SelectItem key={department.id} value={department.id}>
+                    {department.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Project">
+            <Select
+              value={form.draft?.projectId ?? 'ANY'}
+              onValueChange={(next) => form.patch({ projectId: next === 'ANY' ? undefined : next })}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ANY">Any project</SelectItem>
+                {directory.projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.projectName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Priority" hint="Breaks a tie between equally specific rules; higher wins.">
+            <Input
+              type="number"
+              value={form.draft?.priority ?? 0}
+              onChange={(event) => form.patch({ priority: Number(event.target.value) || 0 })}
+              className="h-9"
+            />
+          </Field>
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-2 border-t pt-3">
+          <Checkbox
+            checked={form.draft?.active !== false}
+            onCheckedChange={(checked) => form.patch({ active: checked === true })}
+          />
+          <span className="text-xs font-medium">Active — an inactive rule never matches</span>
+        </label>
+      </SettingsFormDialog>
+    </div>
   );
 }

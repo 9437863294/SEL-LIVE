@@ -939,6 +939,74 @@ export async function performEApprovalAction(
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Analytics data loading
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface EApprovalAnalyticsData {
+  requests: EApprovalRequest[];
+  steps: EApprovalStep[];
+  events: EApprovalHistoryEntry[];
+  loadedAt: string;
+  /** True when a collection hit its cap, so a screen can say the numbers are partial. */
+  truncated: boolean;
+}
+
+/**
+ * Every row the reporting layer needs, in three collection queries.
+ *
+ * Three, not one-per-approval. The obvious implementation — fetch the requests, then fetch each one's
+ * steps — is four hundred round trips for four hundred approvals, and it gets slower exactly as the
+ * organisation it is reporting on grows. Steps and history are queried directly and joined in memory
+ * by `approvalId`.
+ *
+ * `truncated` is returned rather than silently capping, because a bottleneck report that quietly
+ * omits the oldest third of the backlog is worse than one that admits it is partial.
+ */
+export async function loadEApprovalAnalyticsData(
+  organizationId?: string,
+  options: { requestLimit?: number; stepLimit?: number; eventLimit?: number; includeEvents?: boolean } = {},
+): Promise<EApprovalAnalyticsData> {
+  const requestLimit = options.requestLimit ?? 2000;
+  const stepLimit = options.stepLimit ?? 8000;
+  const eventLimit = options.eventLimit ?? 8000;
+
+  const [requestSnap, stepSnap, eventSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, E_APPROVAL_COLLECTIONS.requests),
+        ...scopeQuery(organizationId),
+        orderBy('createdAt', 'desc'),
+        fsLimit(requestLimit),
+      ),
+    ),
+    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.steps), ...scopeQuery(organizationId), fsLimit(stepLimit))),
+    options.includeEvents === false
+      ? Promise.resolve(null)
+      : getDocs(
+          query(collection(db, E_APPROVAL_COLLECTIONS.history), ...scopeQuery(organizationId), fsLimit(eventLimit)),
+        ),
+  ]);
+
+  const requests = mapDocs<EApprovalRequest>(requestSnap.docs).filter((row) => row.isDeleted !== true);
+  // Steps and events are scoped to the requests actually loaded, so a rollup can never count a step
+  // whose parent request fell outside the window and thus is not in any denominator.
+  const requestIds = new Set(requests.map((row) => row.id));
+  const steps = mapDocs<EApprovalStep>(stepSnap.docs).filter((step) => requestIds.has(step.approvalId));
+  const events = eventSnap
+    ? mapDocs<EApprovalHistoryEntry>(eventSnap.docs).filter((event) => requestIds.has(event.approvalId))
+    : [];
+
+  return {
+    requests,
+    steps,
+    events,
+    loadedAt: nowIso(),
+    truncated:
+      requestSnap.size >= requestLimit || stepSnap.size >= stepLimit || (eventSnap?.size ?? 0) >= eventLimit,
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Recall and reverse
  * ---------------------------------------------------------------------------------------------- */
 

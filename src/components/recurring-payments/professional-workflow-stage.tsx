@@ -56,6 +56,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { ControlledField } from './controlled-field';
 import ModuleTableCard from './module-table-card';
 import { useFieldControl, validateFieldControlRequirements, type RPFieldSetting } from './use-field-control';
+import { dispatchNotification } from '@/lib/notifications';
+import { ACTIVITY_MODULES } from '@/lib/activity-modules';
 
 const FORWARD_ACTIONS = ['Submit Bill', 'Verify', 'Approve', 'Record Payment', 'Close', 'Create Expense Request'];
 const COMMENT_REQUIRED = ['Return for Correction', 'Reject', 'Dispute', 'On Hold', 'Payment Failed'];
@@ -431,19 +433,22 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
         });
       });
 
-      for (const assignee of [...new Set(notify)]) {
-        await setDoc(doc(collection(db, 'userNotifications')), {
-          userId: assignee,
+      // One dispatch instead of a write per assignee: it fans out the same documents
+      // and then delivers the mobile/web push, which the direct writes never did.
+      await dispatchNotification(
+        { userIds: [...new Set(notify)] },
+        {
           type: 'recurring_payment_workflow',
           title: `Action required: ${destination}`,
           body: `${selected.title} has moved to your workflow queue.`,
-          module: 'Recurring Payments',
+          module: ACTIVITY_MODULES.RECURRING_PAYMENTS,
+          severity: 'WARNING',
           itemId: selected.id,
+          itemRef: selected.title,
+          stepName: destination,
           link: destinationStepId ? `/recurring-payments/stage/${destinationStepId}` : '/recurring-payments/payments',
-          read: false,
-          createdAt: Timestamp.now(),
-        });
-      }
+        },
+      );
       toast({
         title: action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created` : `${action} completed`,
         description: destination === stage.name ? 'The item remains in your queue for the next action.' : `Moved to ${destination}.`,
