@@ -66,7 +66,10 @@
       "Read(//c/Users/Ashish/.claude/projects/d--Application-Dev-SEL-Live/memory/**)",
       "Bash(printf -- \"- [ESLint broken repo-wide]\\(eslint-broken-repo-wide.md\\) — lint crashes on every file; use tsc + node tests instead.\\\\n\")",
       "Bash(node --experimental-strip-types --test tests/e-approval-domain.test.mjs)",
-      "Bash(echo \"TYPECHECK=$?\")"
+      "Bash(echo \"TYPECHECK=$?\")",
+      "Bash(nslookup seltech.store)",
+      "Bash(echo \"--- exit=$? ---\")",
+      "Bash(nslookup www.seltech.store)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"
