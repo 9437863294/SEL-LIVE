@@ -157,14 +157,15 @@ export function EApprovalReportsHub() {
                   <area.icon className={cn('h-5 w-5', area.iconColor)} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold leading-tight">
+                  {/* A div wrapper, not a paragraph — Badge is a block element and cannot sit in one. */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold leading-tight">
                     <span className="min-w-0">{area.text}</span>
                     {planned && (
                       <Badge variant="outline" className="shrink-0 text-[9px] font-normal">
                         Not built
                       </Badge>
                     )}
-                  </p>
+                  </div>
                   <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{area.description}</p>
                 </div>
                 {!planned && (

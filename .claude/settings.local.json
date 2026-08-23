@@ -70,7 +70,8 @@
       "Bash(nslookup seltech.store)",
       "Bash(echo \"--- exit=$? ---\")",
       "Bash(nslookup www.seltech.store)",
-      "Bash(grep -n \"Settings.Policies\\\\|Settings\\\\`\\)\" src/components/e-approval/hooks.ts)"
+      "Bash(grep -n \"Settings.Policies\\\\|Settings\\\\`\\)\" src/components/e-approval/hooks.ts)",
+      "Read(//tmp/**)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

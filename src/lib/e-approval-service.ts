@@ -124,9 +124,46 @@ const requireActor = (actor: EApprovalServiceActor | null | undefined): EApprova
 
 const nowIso = () => new Date().toISOString();
 
-/** Firestore rejects `undefined`; a draft form legitimately leaves half its fields unset. */
-const pruneUndefined = <T extends Record<string, unknown>>(value: T): T =>
-  Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined)) as T;
+/**
+ * Only plain objects are safe to rebuild key-by-key.
+ *
+ * Firestore sentinels (`serverTimestamp()`), `Timestamp` and `Date` are class
+ * instances: recursing into one and reassembling it with `Object.fromEntries` would
+ * hand Firestore a plain object where it expected the real type, turning a working
+ * timestamp into a meaningless `{}`.
+ */
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (typeof value !== 'object' || value === null) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+/**
+ * Firestore rejects `undefined`; a draft form legitimately leaves half its fields unset.
+ *
+ * Recursive, because Firestore rejects `undefined` at *any* depth, not just at the top
+ * level. A history event carries `undo`, which nests `steps: EApprovalStepRecord[]` and
+ * `request: EApprovalRequestState` — both full of optional fields. A shallow prune sees
+ * that `undo` itself is defined, passes it through untouched, and every unset optional
+ * inside it reaches Firestore, which fails the whole batch with "Unsupported field
+ * value: undefined". That took out submitting any approval whose action was undoable.
+ */
+const pruneUndefined = <T>(value: T): T => {
+  if (Array.isArray(value)) {
+    // Dropping an undefined element would shift every later index, so this only
+    // recurses into elements. A genuinely undefined element is a bug worth surfacing
+    // as a Firestore error rather than silently renumbering the array.
+    return value.map((entry) => pruneUndefined(entry)) as unknown as T;
+  }
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .map(([key, entry]) => [key, pruneUndefined(entry)]),
+    ) as T;
+  }
+  return value;
+};
 
 /** Firestore document ids for engine-created steps, so nothing is renumbered on write. */
 const firestoreIdFactory = () => () => doc(collection(db, E_APPROVAL_COLLECTIONS.steps)).id;
