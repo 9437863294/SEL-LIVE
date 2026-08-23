@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowLeft,
   History,
   Layers,
   MessageSquare,
@@ -40,6 +39,7 @@ import {
   EApprovalStatusBadge,
 } from '@/components/e-approval/shared';
 import { WorkflowTimeline } from '@/components/e-approval/workflow-timeline';
+import { PageHeader } from '@/components/e-approval/page-header';
 import {
   formatEApprovalAmount,
   formatEApprovalDate,
@@ -151,61 +151,54 @@ export default function EApprovalDetailPage() {
 
   return (
     <div className="min-w-0 space-y-3">
-      <Card>
-        <CardHeader className="gap-2 px-3 py-2.5 sm:px-4 sm:py-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Button asChild size="sm" variant="ghost" className="-ml-2 h-7 gap-1 px-1.5 text-xs">
-                  <Link href={`${E_APPROVAL_BASE_PATH}/inbox`}>
-                    <ArrowLeft className="h-3.5 w-3.5" /> Inbox
-                  </Link>
-                </Button>
-                <span className="font-mono text-xs text-muted-foreground">{request.referenceNo || 'Draft'}</span>
-                <EApprovalStatusBadge status={request.status} />
-                <EApprovalPriorityBadge priority={request.priority} />
-                <EApprovalConfidentialBadge confidential={request.confidential} />
-                {request.version > 1 && (
-                  <Badge variant="outline" className="text-[10px]">
-                    Version {request.version}
-                  </Badge>
-                )}
-              </div>
-              <CardTitle className="mt-1 text-base sm:text-lg">{request.subject}</CardTitle>
-              <CardDescription className="text-xs">
-                Raised by {request.requesterName || 'a colleague'}
-                {request.departmentName ? ` · ${request.departmentName}` : ''}
-                {request.submittedAt ? ` · submitted ${formatEApprovalDateTime(request.submittedAt)}` : ''}
-              </CardDescription>
-            </div>
-            <div className="flex shrink-0 flex-wrap gap-1.5">
-              {request.amount != null && (
-                <div className="rounded-lg border bg-muted/30 px-3 py-1.5 text-right">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Amount</p>
-                  <p className="text-base font-bold tabular-nums">{formatEApprovalAmount(request.amount)}</p>
-                </div>
-              )}
-              <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void load()}>
-                <RefreshCw className="h-3.5 w-3.5" />
+      <PageHeader
+        title={request.subject}
+        description={`Raised by ${request.requesterName || 'a colleague'}${
+          request.departmentName ? ` · ${request.departmentName}` : ''
+        }${request.submittedAt ? ` · submitted ${formatEApprovalDateTime(request.submittedAt)}` : ''}`}
+        backHref={`${E_APPROVAL_BASE_PATH}/inbox`}
+        backLabel="Inbox"
+        meta={[
+          { label: 'Reference', value: <span className="font-mono">{request.referenceNo || 'Draft'}</span> },
+          { label: 'Status', value: <EApprovalStatusBadge status={request.status} /> },
+          ...(request.amount != null
+            ? [
+                {
+                  label: 'Amount',
+                  value: <span className="text-sm font-semibold">{formatEApprovalAmount(request.amount)}</span>,
+                },
+              ]
+            : []),
+          ...(request.priority !== 'Normal'
+            ? [{ label: 'Priority', value: <EApprovalPriorityBadge priority={request.priority} /> }]
+            : []),
+          ...(request.confidential
+            ? [{ label: 'Access', value: <EApprovalConfidentialBadge confidential /> }]
+            : []),
+          ...(request.version > 1 ? [{ label: 'Version', value: request.version }] : []),
+        ]}
+        actions={
+          <>
+            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void load()} aria-label="Refresh">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+            {editable && permissions.canEdit && (
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
+                <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}/edit`}>
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </Link>
               </Button>
-              {editable && permissions.canEdit && (
-                <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
-                  <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}/edit`}>
-                    <Pencil className="h-3.5 w-3.5" /> Edit
-                  </Link>
-                </Button>
-              )}
-              {permissions.canPrint && (
-                <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
-                  <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}/print`}>
-                    <Printer className="h-3.5 w-3.5" /> Note
-                  </Link>
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+            )}
+            {permissions.canPrint && (
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
+                <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}/print`}>
+                  <Printer className="h-3.5 w-3.5" /> Approval note
+                </Link>
+              </Button>
+            )}
+          </>
+        }
+      />
 
       <ResponsibilityCard request={request} steps={steps} />
 

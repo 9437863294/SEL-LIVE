@@ -27,6 +27,8 @@ import {
   eApprovalTimeline,
   EApprovalRuleError,
   financialYearForEApprovalDate,
+  describeActiveAssignees,
+  describeEApprovalSubject,
   formatEApprovalDuration,
   isChildEApprovalStep,
   resolveDueEApprovalEscalations,
@@ -860,7 +862,9 @@ test('escalating moves the step to the senior authority with a fresh clock', () 
   const step = state.steps.find((candidate) => candidate.name.includes('escalated'));
   assert.equal(step.assignment.userId, 'u-dir');
   assert.equal(step.startedAt, '2026-08-24T11:00:00.000Z');
-  assert.equal(state.notifications.at(-1).severity, 'WARNING');
+  // By kind, not by position: the hand-off notice to the requester is raised after this one.
+  assert.equal(state.notifications.find((intent) => intent.kind === 'Escalated').severity, 'WARNING');
+  assert.equal(state.notifications.find((intent) => intent.kind === 'Moved').title, 'Now with Director');
 });
 
 /* ── reject, hold, cancel ────────────────────────────────────────────────────────────────────── */
@@ -1284,4 +1288,106 @@ test('the reducer never mutates what it was given', () => {
 test('an unsigned actor cannot act at all', () => {
   const state = submitted();
   assert.throws(() => act(state, { kind: 'Approve', actor: {} }), /signed in/i);
+});
+
+/* ── the requester is told who has the file (spec section 21) ─────────────────────────────────── */
+
+test('submitting tells the requester who it went to', () => {
+  const state = act(scenario(serialChain, { subject: 'Purchase of Safety Equipment' }), {
+    kind: 'Submit',
+    actor: requester,
+    now: '2026-08-22T10:00:00.000Z',
+  });
+  const moved = state.notifications.find((intent) => intent.kind === 'Moved');
+  assert.ok(moved, 'a Moved intent is raised');
+  assert.deepEqual(moved.userIds, ['u-req']);
+  assert.equal(moved.title, 'Now with Manager');
+  assert.match(moved.body, /Purchase of Safety Equipment/);
+  assert.match(moved.body, /Pending with Manager/);
+});
+
+test('every hand-off tells the requester, naming the new holder', () => {
+  let state = submitted();
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-mgr' }, now: '2026-08-22T10:30:00.000Z' });
+  assert.equal(state.notifications.find((intent) => intent.kind === 'Moved')?.title, 'Now with Finance Manager');
+
+  state = act(state, {
+    kind: 'Forward',
+    actor: { userId: 'u-fin' },
+    targets: [user('u-ed', 'ED')],
+    reason: 'ED should decide this.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(state.notifications.find((intent) => intent.kind === 'Moved')?.title, 'Now with ED');
+
+  state = act(state, {
+    kind: 'Send For Verification',
+    actor: { userId: 'u-ed' },
+    targets: [user('u-acc', 'Accounts')],
+    now: '2026-08-22T11:30:00.000Z',
+  });
+  assert.equal(
+    state.notifications.find((intent) => intent.kind === 'Moved')?.title,
+    'Now with Accounts',
+    'a verification is a hand-off too — the requester is told where the file actually is',
+  );
+});
+
+test('the requester is not notified about their own desk, or about a closed request', () => {
+  // Returned to the requester: they hold it, and the Returned intent already says so.
+  let state = submitted();
+  state = act(state, {
+    kind: 'Return',
+    actor: { userId: 'u-mgr' },
+    returnTo: 'REQUESTER',
+    reason: 'Attach the quotation.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(state.notifications.some((intent) => intent.kind === 'Moved'), false);
+  assert.equal(state.notifications.some((intent) => intent.kind === 'Returned'), true);
+
+  // Final approval: the Approved intent covers it.
+  let done = submitted([{ id: 't1', name: 'Manager', assignments: [user('u-mgr', 'Manager')] }]);
+  done = act(done, { kind: 'Approve', actor: { userId: 'u-mgr' }, now: '2026-08-22T11:00:00.000Z' });
+  assert.equal(done.notifications.some((intent) => intent.kind === 'Moved'), false);
+  assert.equal(done.notifications.some((intent) => intent.kind === 'Approved'), true);
+});
+
+test('an action that does not move the file raises no hand-off notice', () => {
+  let state = submitted();
+  state = act(state, {
+    kind: 'Delegate',
+    actor: { userId: 'u-mgr' },
+    targets: [user('u-cfo', 'CFO')],
+    reason: 'On leave.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  // Delegation adds an authorised actor; the step is still the Manager's, so nothing "moved".
+  assert.equal(state.notifications.some((intent) => intent.kind === 'Moved'), false);
+  assert.equal(state.notifications.some((intent) => intent.kind === 'Delegated'), true);
+});
+
+test('assignment notifications name the subject and the requester', () => {
+  const state = act(scenario(serialChain, { subject: 'New Vehicle Purchase' }), {
+    kind: 'Submit',
+    actor: requester,
+    now: '2026-08-22T10:00:00.000Z',
+  });
+  const assigned = state.notifications.find((intent) => intent.kind === 'Assigned');
+  assert.equal(assigned.title, 'Approval required: Manager');
+  assert.match(assigned.body, /EA\/2026-27\/00001 — New Vehicle Purchase/);
+  assert.match(assigned.body, /raised by Debaprasad/);
+  assert.deepEqual(assigned.userIds, ['u-mgr']);
+});
+
+test('a subject-less request still describes itself', () => {
+  assert.equal(describeEApprovalSubject({ referenceNo: 'EA/1' }), 'EA/1');
+  assert.equal(describeEApprovalSubject({ subject: 'Only a subject' }), 'Only a subject');
+  assert.equal(describeEApprovalSubject({}), 'An approval request');
+});
+
+test('active assignees are reported for the "pending with whom" comparison', () => {
+  let state = submitted(parallelChain('All'));
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-hod' }, now: '2026-08-22T11:00:00.000Z' });
+  assert.deepEqual(describeActiveAssignees(state.steps), ['Commercial', 'Finance', 'Legal']);
 });

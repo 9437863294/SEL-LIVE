@@ -2,12 +2,13 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { E_APPROVAL_PERMISSION_RESOURCE } from '@/lib/e-approval';
+import { E_APPROVAL_BASE_PATH, E_APPROVAL_PERMISSION_RESOURCE } from '@/lib/e-approval';
 import { ApprovalMatrixPanel } from '@/components/e-approval/admin/matrix-panel';
 import { ApprovalTypesPanel } from '@/components/e-approval/admin/types-panel';
 import { DepartmentRoutingPanel } from '@/components/e-approval/admin/routing-panel';
 import { EApprovalSettingsPanel } from '@/components/e-approval/admin/settings-panel';
 import { WorkflowTemplatesPanel } from '@/components/e-approval/admin/templates-panel';
+import { PageHeader } from '@/components/e-approval/page-header';
 import {
   useEApprovalActor,
   useEApprovalDirectory,
@@ -48,14 +49,12 @@ export default function EApprovalAdminPage() {
 
   return (
     <div className="space-y-3">
-      <Card>
-        <CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3">
-          <CardTitle className="text-base">Administration</CardTitle>
-          <CardDescription className="text-xs">
-            Approval types, workflows, the approval matrix, department routing, change control, numbering and reminders.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        title="Administration"
+        description="Approval types, workflows, the approval matrix, department routing, change control, numbering and reminders."
+        backHref={E_APPROVAL_BASE_PATH}
+        backLabel="Dashboard"
+      />
 
       <Tabs defaultValue="types">
         <TabsList className="flex w-full flex-wrap justify-start gap-1 bg-muted/50">

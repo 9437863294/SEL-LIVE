@@ -94,133 +94,144 @@ export function WorkflowTimeline({
   );
 }
 
-function TimelineNode({
-  node,
-  isLast,
-  onSelectStep,
-  now,
-}: {
+interface NodeProps {
   node: EApprovalTimelineNode;
   isLast: boolean;
   onSelectStep?: (step: EApprovalStepRecord) => void;
   now?: string;
-}) {
+}
+
+/**
+ * One list item of the timeline.
+ *
+ * Split from `NodeBody` so the recursion never puts an `<li>` straight inside an `<li>`: a nested
+ * level is its own `<ol>`, and only this component emits the item wrapper. That is both valid HTML
+ * and what screen readers need to announce the verification chain as a sub-list rather than as a
+ * sibling of the approval that raised it.
+ */
+function TimelineNode(props: NodeProps) {
+  return (
+    <li className="relative">
+      <NodeBody {...props} />
+    </li>
+  );
+}
+
+function NodeBody({ node, isLast, onSelectStep, now }: NodeProps) {
   const [expanded, setExpanded] = useState(true);
   const step = node.step;
   const Icon = statusIcon[step.status] ?? CircleDashed;
   const hasChildren = node.children.length > 0;
 
   return (
-    <li className="relative">
-      <div className="flex gap-2.5">
-        <div className="flex flex-col items-center">
-          <span
-            className={cn(
-              'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-2',
-              statusRing[step.status],
-            )}
-          >
-            <Icon className="h-3.5 w-3.5" />
-          </span>
-          {(!isLast || hasChildren) && <span className="mt-1 w-px flex-1 bg-border" aria-hidden />}
-        </div>
-
-        <div className="min-w-0 flex-1 pb-3">
-          <button
-            type="button"
-            onClick={() => onSelectStep?.(step)}
-            disabled={!onSelectStep}
-            className={cn(
-              'block w-full rounded-md px-2 py-1 text-left transition-colors',
-              onSelectStep && 'hover:bg-muted/60',
-            )}
-          >
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-sm font-semibold">{node.label}</span>
-              {step.type !== 'APPROVAL' && (
-                <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
-                  {step.type === 'CLARIFICATION' ? 'Clarification' : step.type === 'REVIEW' ? 'Review' : 'Verification'}
-                </Badge>
-              )}
-              <EApprovalOutcomeBadge outcome={step.outcome} />
-              {step.status === 'Active' && <EApprovalSlaBadge step={step} now={now} />}
-              {step.reopened && (
-                <Badge variant="outline" className="border-orange-200 bg-orange-50 text-[10px] text-orange-700">
-                  Re-opened
-                </Badge>
-              )}
-              {step.groupMode && step.groupMode !== 'Single' && (
-                <Badge variant="outline" className="text-[10px]">
-                  {step.groupMode === 'All' ? 'All must approve' : step.groupMode === 'Any' ? 'Any one' : 'N of M'}
-                </Badge>
-              )}
-            </div>
-
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {node.assigneeLabel}
-              {step.ownedByName && ` · taken by ${step.ownedByName}`}
-              {step.delegatedToName && ` · delegated to ${step.delegatedToName}`}
-            </p>
-
-            {(step.startedAt || step.completedAt) && (
-              <p className="mt-0.5 text-[11px] text-muted-foreground/80">
-                {step.completedAt
-                  ? `${step.actedByName || 'Acted'} · ${formatEApprovalDateTime(step.completedAt)}`
-                  : `Pending since ${formatEApprovalDateTime(step.startedAt)}`}
-                {step.onBehalfOfName && ` (on behalf of ${step.onBehalfOfName})`}
-              </p>
-            )}
-
-            {step.instruction && (
-              <p className="mt-1 rounded border-l-2 border-sky-200 bg-sky-50/60 px-2 py-1 text-[11px] text-slate-700">
-                {step.instruction}
-              </p>
-            )}
-            {step.comment && (
-              <p className="mt-1 rounded border-l-2 border-slate-200 bg-muted/40 px-2 py-1 text-[11px] italic text-slate-700">
-                “{step.comment}”
-              </p>
-            )}
-          </button>
-
-          {hasChildren && (
-            <div className="mt-1">
-              <button
-                type="button"
-                onClick={() => setExpanded((value) => !value)}
-                className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
-              >
-                <ChevronDown className={cn('h-3 w-3 transition-transform', !expanded && '-rotate-90')} />
-                {node.children.length} {node.children.length === 1 ? 'sub-task' : 'sub-tasks'}
-              </button>
-
-              {expanded && (
-                <div className="mt-1 space-y-1 border-l-2 border-dashed border-violet-200 pl-3">
-                  {node.children.map((child, index) => (
-                    <div key={child.step.id}>
-                      <div className="flex items-center gap-1 text-[10px] text-violet-600">
-                        <ArrowRight className="h-3 w-3" /> sent for{' '}
-                        {child.step.type === 'CLARIFICATION' ? 'clarification' : 'verification'}
-                      </div>
-                      <TimelineNode
-                        node={child}
-                        isLast={index === node.children.length - 1}
-                        onSelectStep={onSelectStep}
-                        now={now}
-                      />
-                      {(child.step.status === 'Completed' || child.step.status === 'Returned') && (
-                        <div className="-mt-2 mb-1 flex items-center gap-1 text-[10px] text-violet-600">
-                          <ArrowDownLeft className="h-3 w-3" /> returned to {node.assigneeLabel}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+    <div className="flex gap-2.5">
+      <div className="flex flex-col items-center">
+        <span
+          className={cn(
+            'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-2',
+            statusRing[step.status],
           )}
-        </div>
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        {(!isLast || hasChildren) && <span className="mt-1 w-px flex-1 bg-border" aria-hidden />}
       </div>
-    </li>
+
+      <div className="min-w-0 flex-1 pb-3">
+        <button
+          type="button"
+          onClick={() => onSelectStep?.(step)}
+          disabled={!onSelectStep}
+          className={cn(
+            'block w-full rounded-md px-2 py-1 text-left transition-colors',
+            onSelectStep && 'hover:bg-muted/60',
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-semibold">{node.label}</span>
+            {step.type !== 'APPROVAL' && (
+              <Badge variant="outline" className="border-violet-200 bg-violet-50 text-[10px] text-violet-700">
+                {step.type === 'CLARIFICATION' ? 'Clarification' : step.type === 'REVIEW' ? 'Review' : 'Verification'}
+              </Badge>
+            )}
+            <EApprovalOutcomeBadge outcome={step.outcome} />
+            {step.status === 'Active' && <EApprovalSlaBadge step={step} now={now} />}
+            {step.reopened && (
+              <Badge variant="outline" className="border-orange-200 bg-orange-50 text-[10px] text-orange-700">
+                Re-opened
+              </Badge>
+            )}
+            {step.groupMode && step.groupMode !== 'Single' && (
+              <Badge variant="outline" className="text-[10px]">
+                {step.groupMode === 'All' ? 'All must approve' : step.groupMode === 'Any' ? 'Any one' : 'N of M'}
+              </Badge>
+            )}
+          </div>
+
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {node.assigneeLabel}
+            {step.ownedByName && ` · taken by ${step.ownedByName}`}
+            {step.delegatedToName && ` · delegated to ${step.delegatedToName}`}
+          </p>
+
+          {(step.startedAt || step.completedAt) && (
+            <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+              {step.completedAt
+                ? `${step.actedByName || 'Acted'} · ${formatEApprovalDateTime(step.completedAt)}`
+                : `Pending since ${formatEApprovalDateTime(step.startedAt)}`}
+              {step.onBehalfOfName && ` (on behalf of ${step.onBehalfOfName})`}
+            </p>
+          )}
+
+          {step.instruction && (
+            <p className="mt-1 rounded border-l-2 border-sky-200 bg-sky-50/60 px-2 py-1 text-[11px] text-slate-700">
+              {step.instruction}
+            </p>
+          )}
+          {step.comment && (
+            <p className="mt-1 rounded border-l-2 border-slate-200 bg-muted/40 px-2 py-1 text-[11px] italic text-slate-700">
+              “{step.comment}”
+            </p>
+          )}
+        </button>
+
+        {hasChildren && (
+          <div className="mt-1">
+            <button
+              type="button"
+              onClick={() => setExpanded((value) => !value)}
+              className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
+            >
+              <ChevronDown className={cn('h-3 w-3 transition-transform', !expanded && '-rotate-90')} />
+              {node.children.length} {node.children.length === 1 ? 'sub-task' : 'sub-tasks'}
+            </button>
+
+            {expanded && (
+              <ol className="mt-1 space-y-1 border-l-2 border-dashed border-violet-200 pl-3">
+                {node.children.map((child, index) => (
+                  <li key={child.step.id} className="relative">
+                    <div className="flex items-center gap-1 text-[10px] text-violet-600">
+                      <ArrowRight className="h-3 w-3" /> sent for{' '}
+                      {child.step.type === 'CLARIFICATION' ? 'clarification' : 'verification'}
+                    </div>
+                    <NodeBody
+                      node={child}
+                      isLast={index === node.children.length - 1}
+                      onSelectStep={onSelectStep}
+                      now={now}
+                    />
+                    {(child.step.status === 'Completed' || child.step.status === 'Returned') && (
+                      <div className="-mt-2 mb-1 flex items-center gap-1 text-[10px] text-violet-600">
+                        <ArrowDownLeft className="h-3 w-3" /> returned to {node.assigneeLabel}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

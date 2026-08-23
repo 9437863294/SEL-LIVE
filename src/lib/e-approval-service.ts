@@ -294,23 +294,34 @@ export async function loadEApprovalActorContext(
   actor: EApprovalServiceActor,
 ): Promise<EApprovalActor> {
   const who = requireActor(actor);
-  const [routing, delegations] = await Promise.all([
+  const [routing, delegations, departments] = await Promise.all([
     listEApprovalDepartmentRouting(who.organizationId),
     listEApprovalDelegations(who.organizationId),
+    getDocs(collection(db, 'departments')),
   ]);
   const mine = routing.filter(
     (row) => row.active !== false && (row.headUserId === who.userId || (row.memberUserIds ?? []).includes(who.userId)),
   );
+  // Fallback: departments this user heads according to the organisation's own department master.
+  // Without it, a request addressed to a department reaches nobody until an administrator has
+  // configured routing — and "send it to Finance" has to work on day one, before anybody has
+  // configured anything. A configured routing document still wins; this only fills the gap.
+  const headedByMe = departments.docs
+    .filter((entry) => (entry.data() as { head?: string }).head === who.userId)
+    .map((entry) => entry.id);
+
   return {
     userId: who.userId,
     userName: who.userName,
     designation: who.designation,
     departmentId: who.departmentId,
     departmentIds: Array.from(
-      new Set([who.departmentId, ...mine.map((row) => row.departmentId)].filter(Boolean) as string[]),
+      new Set(
+        [who.departmentId, ...mine.map((row) => row.departmentId), ...headedByMe].filter(Boolean) as string[],
+      ),
     ),
     role: who.role,
-    isDepartmentHead: mine.some((row) => row.headUserId === who.userId),
+    isDepartmentHead: mine.some((row) => row.headUserId === who.userId) || headedByMe.length > 0,
     delegations: delegations
       .filter((row) => row.active !== false)
       .map(
@@ -330,17 +341,30 @@ export async function loadEApprovalActorContext(
   };
 }
 
-/** Concrete users behind a department assignment, for notification delivery. */
+/**
+ * Concrete users behind a department assignment, for notification delivery.
+ *
+ * Falls back to the department master's own `head` when no routing document exists, so a request
+ * sent to a department is never delivered to nobody. An unconfigured department reaching its head is
+ * the safe failure; reaching silence is not.
+ */
 async function resolveDepartmentUserIds(departmentIds: string[]): Promise<string[]> {
   if (!departmentIds.length) return [];
   const rows = await Promise.all(
     departmentIds.map(async (departmentId) => {
       const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.departmentRouting, departmentId));
-      if (!snapshot.exists()) return [] as string[];
-      const routing = snapshot.data() as EApprovalDepartmentRouting;
-      // A 'Head' step notifies only the head; the other modes notify everybody who could pick it up.
-      if (routing.mode === 'Head') return [routing.headUserId].filter(Boolean) as string[];
-      return [routing.headUserId, ...(routing.memberUserIds ?? [])].filter(Boolean) as string[];
+      if (snapshot.exists()) {
+        const routing = snapshot.data() as EApprovalDepartmentRouting;
+        const members =
+          // A 'Head' step notifies only the head; other modes notify everybody who could pick it up.
+          routing.mode === 'Head'
+            ? ([routing.headUserId].filter(Boolean) as string[])
+            : ([routing.headUserId, ...(routing.memberUserIds ?? [])].filter(Boolean) as string[]);
+        if (members.length) return members;
+      }
+      const department = await getDoc(doc(db, 'departments', departmentId));
+      const head = (department.data() as { head?: string } | undefined)?.head;
+      return head ? [head] : [];
     }),
   );
   return Array.from(new Set(rows.flat()));
@@ -730,7 +754,10 @@ export async function submitEApproval(
   const settings = await loadEApprovalSettings(who.organizationId);
   const routing = await resolveEApprovalRoutingForDraft(
     {
-      adHocSteps: undefined,
+      // The approvers the requester named on the form, saved with the draft. Dropping these here is
+      // what made an ad-hoc request — the ordinary "send this to Finance" case — fail at submission
+      // with "no approver could be determined" despite an approver having been chosen.
+      adHocSteps: request.adHocSteps,
       templateId: request.templateId,
       approvalTypeId: request.approvalTypeId,
       departmentId: request.departmentId,
@@ -959,6 +986,7 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
   const state: EApprovalRequestState = {
     id: request.id,
     referenceNo: request.referenceNo,
+    subject: request.subject,
     status: request.status,
     version: request.version ?? 1,
     requesterId: request.requesterId,
@@ -1134,7 +1162,9 @@ async function deliverEApprovalNotifications(
     await dispatchNotification(
       { userIds, roles: intent.roles },
       {
-        type: 'approval_required',
+        // 'Moved' is the requester being kept informed, not somebody being asked to act, so it does
+        // not carry the type the bell renders as a call to action.
+        type: intent.kind === 'Moved' ? 'record_assigned' : 'approval_required',
         title: intent.title,
         body: intent.body,
         module: ACTIVITY_MODULES.E_APPROVAL,

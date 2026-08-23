@@ -2,10 +2,12 @@
 
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ApprovalForm } from '@/components/e-approval/approval-form';
+import { PageHeader } from '@/components/e-approval/page-header';
+import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
 import { useEApprovalActor, useEApprovalPermissions } from '@/components/e-approval/hooks';
 
 export default function CreateEApprovalPage() {
-  const { serviceActor } = useEApprovalActor();
+  const { serviceActor, user } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
 
   if (!permissions.isLoading && !permissions.canCreate) {
@@ -21,14 +23,17 @@ export default function CreateEApprovalPage() {
 
   return (
     <div className="space-y-3">
-      <Card>
-        <CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3">
-          <CardTitle className="text-base">Create Approval</CardTitle>
-          <CardDescription className="text-xs">
-            Attachments can be added once the draft is saved.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <PageHeader
+        title="New approval"
+        description="A note-sheet, routed for approval. Only the first approver has to be named — the rest of the chain is built by whoever holds the file."
+        backHref={E_APPROVAL_BASE_PATH}
+        backLabel="Dashboard"
+        meta={[
+          { label: 'Raised by', value: user?.name || '—' },
+          { label: 'Reference', value: <span className="text-muted-foreground">allotted on submission</span> },
+          { label: 'Status', value: 'Draft' },
+        ]}
+      />
       <ApprovalForm serviceActor={serviceActor} />
     </div>
   );

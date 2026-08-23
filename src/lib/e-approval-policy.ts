@@ -485,6 +485,9 @@ export interface EApprovalReassignment {
 export interface EApprovalRequestState {
   id: string;
   referenceNo?: string;
+  /** Carried purely so notifications can name the thing being approved rather than only its
+   * reference number — "EA/FIN/2026-27/00125" tells the recipient nothing on a phone lock screen. */
+  subject?: string;
   status: EApprovalStatus;
   version: number;
   requesterId: string;
@@ -1241,6 +1244,23 @@ export function eApprovalPendingLabel(
   return `${verb} ${shown}${extra}`;
 }
 
+/** Assignee labels of every active step, sorted so two reads can be compared for "did it move?". */
+export function describeActiveAssignees(steps: EApprovalStepRecord[]): string[] {
+  return Array.from(
+    new Set(activeEApprovalSteps(steps).map((step) => describeEApprovalAssignment(step.assignment))),
+  ).sort();
+}
+
+/** "EA/FIN/2026-27/00125 — Purchase of Safety Equipment", for a notification title or body. */
+export function describeEApprovalSubject(
+  request: Pick<EApprovalRequestState, 'referenceNo' | 'subject'>,
+): string {
+  const reference = request.referenceNo?.trim();
+  const subject = request.subject?.trim();
+  if (reference && subject) return `${reference} — ${subject}`;
+  return reference || subject || 'An approval request';
+}
+
 /**
  * The request status implied by the live steps.
  *
@@ -1573,6 +1593,8 @@ export interface EApprovalEvent {
 
 export type EApprovalNotificationKind =
   | 'Assigned'
+  /** Requester-facing: the file has moved, and this is who holds it now. */
+  | 'Moved'
   | 'Verification Assigned'
   | 'Clarification Requested'
   | 'Returned'
@@ -1787,7 +1809,7 @@ function advancePrimaryChain(
       kind: 'Approved',
       userIds: [request.requesterId],
       title: 'Approval completed',
-      body: `${request.referenceNo || 'Your request'} has been approved.`,
+      body: `${describeEApprovalSubject(request)} has been fully approved.`,
     });
     return;
   }
@@ -1797,8 +1819,11 @@ function advancePrimaryChain(
   notifications.push({
     kind: 'Assigned',
     ...assignmentRecipients(group.map((step) => step.assignment)),
-    title: 'Approval required',
-    body: `${request.referenceNo || 'A request'} is pending your approval.`,
+    title: `Approval required: ${group[0].name}`,
+    // Names the requester: an approver deciding what to open first goes by who is waiting on them.
+    body: `${describeEApprovalSubject(request)}${
+      request.requesterName ? `, raised by ${request.requesterName}` : ''
+    }, is pending your approval.`,
   });
 }
 
@@ -1855,7 +1880,7 @@ function completeAndAdvance(
       kind: 'Assigned',
       ...stepRecipients(parent, request.requesterId),
       title: step.type === 'CLARIFICATION' ? 'Clarification received' : 'Verification complete',
-      body: `${request.referenceNo || 'A request'} is back with you for action.`,
+      body: `${describeEApprovalSubject(request)} is back with you for action.`,
     });
     request.status = deriveEApprovalStatus(steps) ?? 'Pending Approval';
     return;
@@ -1896,7 +1921,7 @@ function completeAndAdvance(
       kind: 'Rejected',
       userIds: [request.requesterId],
       title: 'Approval rejected',
-      body: `${request.referenceNo || 'Your request'} did not obtain the required approvals at ${step.name}.`,
+      body: `${describeEApprovalSubject(request)} did not obtain the required approvals at ${step.name}.`,
       severity: 'WARNING',
     });
     return;
@@ -1982,6 +2007,41 @@ export function applyEApprovalAction(
   const events: EApprovalEvent[] = [];
   const notifications: EApprovalNotificationIntent[] = [];
 
+  /** Who held the file before this action, so the exit can tell whether it moved and to whom. */
+  const heldBefore = describeActiveAssignees(stepRecords);
+
+  /**
+   * The single exit from the reducer.
+   *
+   * Every branch returns through here so the requester is told who the file went to *once*, from one
+   * place, whatever moved it — approve, forward, verify, delegate, escalate or resubmit. Emitting
+   * that intent at each of the twenty-odd transition sites instead is how three of them end up
+   * silently not doing it, which is exactly the "pending with whom?" problem the module exists to
+   * kill.
+   */
+  const finish = (): EApprovalTransition => {
+    // Pointers first: the notice below quotes `pendingLabel`, which is only correct once refreshed.
+    refreshPointers(request, steps);
+    const heldAfter = describeActiveAssignees(steps);
+    const movedOn = heldAfter.length > 0 && heldAfter.join('|') !== heldBefore.join('|');
+    // Not when the requester is the one now holding it (they can see that), and not when the request
+    // has closed — the Approved/Rejected/Returned intents already say so, more precisely.
+    const requesterHoldsIt = activeEApprovalSteps(steps).some(
+      (step) =>
+        (step.assignment.kind === 'User' && step.assignment.userId === request.requesterId) ||
+        step.assignment.kind === 'Requester',
+    );
+    if (movedOn && !requesterHoldsIt && !isTerminalEApprovalStatus(request.status)) {
+      notifications.push({
+        kind: 'Moved',
+        userIds: [request.requesterId],
+        title: `Now with ${heldAfter.join(' & ')}`,
+        body: `${describeEApprovalSubject(request)} — ${request.pendingLabel || `pending with ${heldAfter.join(' & ')}`}.`,
+      });
+    }
+    return { request, steps, events, notifications };
+  };
+
   const pushEvent = (event: Omit<EApprovalEvent, 'at' | 'actorId' | 'actorName'>) => {
     events.push({ at: now, actorId: actor.userId, actorName: actor.userName, version: request.version, ...event });
   };
@@ -2003,8 +2063,7 @@ export function applyEApprovalAction(
     if (!isTerminalEApprovalStatus(request.status)) {
       request.status = deriveEApprovalStatus(steps) ?? 'Pending Approval';
     }
-    refreshPointers(request, steps);
-    return { request, steps, events, notifications };
+    return finish();
   }
 
   if (input.kind === 'Cancel') {
@@ -2029,8 +2088,7 @@ export function applyEApprovalAction(
       reason: input.reason,
       summary: `Cancelled by ${actorLabel(actor)}${input.reason ? ` — ${input.reason}` : ''}`,
     });
-    refreshPointers(request, steps);
-    return { request, steps, events, notifications };
+    return finish();
   }
 
   if (input.kind === 'Resubmit') {
@@ -2101,7 +2159,7 @@ export function applyEApprovalAction(
         kind: 'Modified',
         userIds: supersededActors,
         title: 'Approval content modified',
-        body: `${request.referenceNo || 'A request'} you approved has been modified (${describeEApprovalMaterialChange(change)}). Your approval has been superseded.`,
+        body: `${describeEApprovalSubject(request)} you approved has been modified (${describeEApprovalMaterialChange(change)}). Your approval has been superseded.`,
         severity: 'WARNING',
       });
       request.status = 'Resubmitted';
@@ -2119,7 +2177,7 @@ export function applyEApprovalAction(
         kind: 'Assigned',
         ...stepRecipients(resume, request.requesterId),
         title: 'Approval resubmitted',
-        body: `${request.referenceNo || 'A request'} has been resubmitted for your action.`,
+        body: `${describeEApprovalSubject(request)} has been resubmitted for your action.`,
       });
     }
     request.returnResumeStepId = null;
@@ -2128,8 +2186,7 @@ export function applyEApprovalAction(
     if (!isTerminalEApprovalStatus(request.status)) {
       request.status = deriveEApprovalStatus(steps) ?? request.status;
     }
-    refreshPointers(request, steps);
-    return { request, steps, events, notifications };
+    return finish();
   }
 
   if (input.kind === 'Add Participant') {
@@ -2144,10 +2201,9 @@ export function applyEApprovalAction(
       kind: 'Assigned',
       userIds: added,
       title: 'Added to an approval',
-      body: `You have been added to ${request.referenceNo || 'an approval'} for visibility.`,
+      body: `You have been added to ${describeEApprovalSubject(request)} for visibility.`,
     });
-    refreshPointers(request, steps);
-    return { request, steps, events, notifications };
+    return finish();
   }
 
   /* ── everything else acts on a step ────────────────────────────────────────────────────────── */
@@ -2195,8 +2251,7 @@ export function applyEApprovalAction(
       stepType: step.type,
       summary: `${actorLabel(actor)} took ownership of "${step.name}" from the ${describeEApprovalAssignment(step.assignment)}`,
     });
-    refreshPointers(request, steps);
-    return { request, steps, events, notifications };
+    return finish();
   }
 
   if (input.kind === 'Resume') {
@@ -2214,8 +2269,7 @@ export function applyEApprovalAction(
       stepType: step.type,
       summary: `Hold released by ${actorLabel(actor)}`,
     });
-    refreshPointers(request, steps);
-    return { request, steps, events, notifications };
+    return finish();
   }
 
   if (
@@ -2364,8 +2418,8 @@ export function applyEApprovalAction(
         ...assignmentRecipients(targets),
         title: input.kind === 'Send For Verification' ? 'Verification required' : 'Clarification required',
         body: input.instruction
-          ? `${request.referenceNo || 'A request'}: ${input.instruction}`
-          : `${request.referenceNo || 'A request'} needs your ${
+          ? `${describeEApprovalSubject(request)}: ${input.instruction}`
+          : `${describeEApprovalSubject(request)} needs your ${
               input.kind === 'Send For Verification' ? 'verification' : 'clarification'
             }.`,
       });
@@ -2415,7 +2469,7 @@ export function applyEApprovalAction(
           kind: 'Returned',
           userIds: [request.requesterId],
           title: 'Approval returned',
-          body: `${request.referenceNo || 'Your request'} was returned by ${actorLabel(actor)}: ${
+          body: `${describeEApprovalSubject(request)} was returned by ${actorLabel(actor)}: ${
             input.reason || input.comment || 'see comments'
           }`,
           severity: 'WARNING',
@@ -2472,7 +2526,7 @@ export function applyEApprovalAction(
         kind: 'Returned',
         ...stepRecipients(target, request.requesterId),
         title: 'Approval returned to you',
-        body: `${request.referenceNo || 'A request'} was returned to you by ${actorLabel(actor)}: ${
+        body: `${describeEApprovalSubject(request)} was returned to you by ${actorLabel(actor)}: ${
           input.reason || input.comment || 'see comments'
         }`,
         severity: 'WARNING',
@@ -2540,7 +2594,7 @@ export function applyEApprovalAction(
             : input.kind === 'Forward'
               ? 'Approval forwarded to you'
               : 'Approval escalated to you',
-        body: `${request.referenceNo || 'A request'} now needs your action.`,
+        body: `${describeEApprovalSubject(request)} now needs your action.`,
         severity: input.kind === 'Escalate' ? 'WARNING' : 'INFO',
       });
       request.status = deriveEApprovalStatus(steps) ?? request.status;
@@ -2619,7 +2673,7 @@ export function applyEApprovalAction(
         kind: 'Rejected',
         userIds: [request.requesterId],
         title: 'Approval rejected',
-        body: `${request.referenceNo || 'Your request'} was rejected by ${actorLabel(actor)}: ${
+        body: `${describeEApprovalSubject(request)} was rejected by ${actorLabel(actor)}: ${
           input.reason || input.comment || 'see comments'
         }`,
         severity: 'WARNING',
@@ -2645,7 +2699,7 @@ export function applyEApprovalAction(
         kind: 'On Hold',
         userIds: [request.requesterId],
         title: 'Approval on hold',
-        body: `${request.referenceNo || 'Your request'} was put on hold by ${actorLabel(actor)}.`,
+        body: `${describeEApprovalSubject(request)} was put on hold by ${actorLabel(actor)}.`,
         severity: 'WARNING',
       });
       break;
@@ -2655,8 +2709,7 @@ export function applyEApprovalAction(
       throw new EApprovalRuleError(`Unsupported action "${input.kind}".`);
   }
 
-  refreshPointers(request, steps);
-  return { request, steps, events, notifications };
+  return finish();
 }
 
 /* ------------------------------------------------------------------------------------------------

@@ -135,6 +135,9 @@ export interface EApprovalRequest extends EApprovalAuditFields {
   version: number;
   templateId?: string;
   ruleId?: string;
+  /** Approvers named on the form. Persisted with the draft, because the chain is only built at
+   * submission — and by then the form is gone. */
+  adHocSteps?: EApprovalTemplateStep[];
   currentStepIds?: string[];
   currentAssigneeIds?: string[];
   currentDepartmentIds?: string[];

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Download, RefreshCw } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -25,6 +25,7 @@ import { useToast } from '@/hooks/use-toast';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import {
   eApprovalAgeingBucket,
+  E_APPROVAL_BASE_PATH,
   isOpenEApprovalStatus,
   isTerminalEApprovalStatus,
   type EApprovalRequest,
@@ -32,6 +33,7 @@ import {
 } from '@/lib/e-approval';
 import { listEApprovals, listEApprovalSteps } from '@/lib/e-approval-service';
 import { EApprovalEmptyState } from '@/components/e-approval/shared';
+import { PageHeader } from '@/components/e-approval/page-header';
 import {
   formatEApprovalAmount,
   formatEApprovalDate,
@@ -224,28 +226,27 @@ export default function EApprovalReportsPage() {
 
   return (
     <div className="space-y-3">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 px-3 py-2.5 sm:px-4 sm:py-3">
-          <div>
-            <CardTitle className="flex items-center gap-1.5 text-base">
-              <BarChart3 className="h-4 w-4" /> Reports
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Across the most recent 400 approvals. Turnaround is measured per step and excludes paused time.
-            </CardDescription>
-          </div>
-          <div className="flex shrink-0 gap-1.5">
+      <PageHeader
+        title="Reports"
+        description="Across the most recent 400 approvals. Turnaround is measured per step and excludes paused time, so an approver is only answerable for the time they actually held the file."
+        backHref={E_APPROVAL_BASE_PATH}
+        backLabel="Dashboard"
+        actions={
+          <>
             <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void load()} disabled={isLoading}>
-              <RefreshCw className={isLoading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} /> Refresh
+              <RefreshCw className={isLoading ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
             {permissions.canExport && (
               <Button size="sm" className="h-8 gap-1.5" onClick={() => void exportRegister()} disabled={!requests.length}>
                 <Download className="h-3.5 w-3.5" /> Export register
               </Button>
             )}
-          </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-2 px-3 pb-3 sm:grid-cols-5 sm:px-4">
+          </>
+        }
+      />
+      <Card>
+        <CardContent className="grid grid-cols-2 gap-2 px-3 py-3 sm:grid-cols-5 sm:px-4">
           {[
             { label: 'Total', value: summary.total },
             { label: 'Open', value: summary.open },

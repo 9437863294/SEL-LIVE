@@ -92,7 +92,10 @@ export function AssigneePicker({
 
   return (
     <div className="space-y-2">
-      <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</Label>
+      {/* An empty label means the surrounding section already names this control. */}
+      {label !== '' && (
+        <Label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</Label>
+      )}
 
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -122,7 +125,7 @@ export function AssigneePicker({
       )}
 
       {!disabled && (
-        <div className="rounded-lg border bg-muted/20 p-2">
+        <div className="rounded-lg border bg-muted/20 p-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <Button
               type="button"
@@ -202,7 +205,7 @@ export function AssigneePicker({
             className="mt-2 h-8 text-xs"
           />
 
-          <ScrollArea className="mt-1.5 h-40 rounded-md border bg-background">
+          <ScrollArea className="mt-1.5 h-32 rounded-md border bg-background">
             <div className="p-1">
               {kind === 'User' &&
                 filteredUsers.map((row) => {

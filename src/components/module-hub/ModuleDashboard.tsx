@@ -20,6 +20,7 @@ const moduleIcons: Record<string, string> = {
   Expenses: "Receipt",
   Settings: "Settings",
   "Chat System": "MessageSquare",
+  "E-Approval": "Stamp",
   Loan: "Coins",
   "Recurring Payments": "RefreshCard",
   "Letter of Credit Management": "BookOpenCheck",
@@ -47,6 +48,8 @@ const moduleDescriptions: Record<string, string> = {
   Expenses: "Track and manage project expenses.",
   Settings: "Manage application-wide settings.",
   "Chat System": "Message colleagues directly or collaborate in groups.",
+  "E-Approval":
+    "Raise note-sheets and route them through approval, verification and clarification.",
   Loan: "Manage and track loan activities.",
   "Recurring Payments":
     "Manage recurring bills, approvals, due dates, and payments.",

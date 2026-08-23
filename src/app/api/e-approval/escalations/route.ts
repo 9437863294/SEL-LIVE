@@ -75,13 +75,20 @@ export async function GET(request: Request) {
     if (cached) return cached;
     const snapshot = await db.collection(E_APPROVAL_COLLECTIONS.departmentRouting).doc(departmentId).get();
     const routing = snapshot.data() as EApprovalDepartmentRouting | undefined;
-    const resolved = routing
+    let resolved = routing
       ? headOnly || routing.mode === 'Head'
         ? [routing.headUserId].filter(Boolean as unknown as (value?: string) => value is string)
         : [routing.headUserId, ...(routing.memberUserIds || [])].filter(
             Boolean as unknown as (value?: string) => value is string,
           )
       : [];
+    if (!resolved.length) {
+      // Same fallback the client service uses: an unconfigured department still reaches its head,
+      // so a reminder is never sent to nobody.
+      const department = await db.collection('departments').doc(departmentId).get();
+      const head = (department.data() as { head?: string } | undefined)?.head;
+      resolved = head ? [head] : [];
+    }
     departmentCache.set(key, resolved);
     return resolved;
   };
