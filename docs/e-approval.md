@@ -15,7 +15,7 @@ intended to call this engine rather than each building their own approval logic.
 | `src/components/e-approval/*` | Screens and shared UI. `admin/*` holds the configuration panels. |
 | `src/app/(protected)/e-approval/*` | Routes. |
 | `src/app/api/e-approval/escalations/route.ts` | Admin-SDK reminder/escalation sweep, for a scheduler. |
-| `tests/e-approval-domain.test.mjs` | 71 engine tests. `npm run test:e-approval`. |
+| `tests/e-approval-domain.test.mjs` | 89 engine tests. `npm run test:e-approval`. |
 | `tsconfig.e-approval.json` | Module-scoped typecheck. `npm run typecheck:e-approval`. |
 
 ## The one idea everything rests on
@@ -196,17 +196,17 @@ requester notification. `resolveDueEApprovalEscalations` excludes paused time an
 each step records the rules already fired — so the sweep is safe to run as often as you like.
 
 Schedule `GET /api/e-approval/escalations` (guard it with `CRON_SECRET`). It can also be run on demand
-from Administration → Control & SLA → **Run now**.
+from Settings → Policies → **Run now**.
 
 ## Setting it up
 
-1. **Administration → Approval Types** — add the types your organisation raises note-sheets for.
+1. **Settings → Approval Types** — add the types your organisation raises note-sheets for.
 2. **Workflows** — *Add samples* seeds the three chains from the spec (Purchase, Leave Exception,
    Site Expense) with role-based stages; assign real people or roles to them.
 3. **Approval Matrix** — amount bands per type/department, each pointing at a workflow. Use the tester
    at the bottom to confirm a given type and amount routes where you expect.
 4. **Department Routing** — for every department that will receive department-addressed steps.
-5. **Control & SLA** — change-control fields, restart policy, numbering, reminder ladder.
+5. **Policies** — change-control fields, approver powers, recall/reverse windows, reminder ladder, numbering.
 6. **Module Hub** — add a module titled `E-Approval` with icon `Stamp`; the card links to
    `/e-approval` automatically.
 7. **Roles** — grant `E-Approval` permissions. Remember there is no "Approve" permission by design.
@@ -226,3 +226,85 @@ Stated plainly so nobody hunts for them:
 - **Other modules calling the engine** — the engine is ready for it (`submitEApproval` +
   `performEApprovalAction` take everything they need), but no existing module has been migrated onto
   it.
+
+## Recall and reverse (taking an action back)
+
+Two distinct powers, deliberately kept apart the way approval and verification are:
+
+| | **Recall** | **Reverse** |
+| --- | --- | --- |
+| Who | the person who performed it | somebody holding `Reversals → Reverse Any` |
+| What | a *dispatch* — verification, clarification, forward, delegate, add approver, escalate | a *decision* — approve, verify, return, reject, hold, take ownership (and dispatches) |
+| Window | `recallWindowMinutes`, default **15** | `reverseWindowHours`, default **24** |
+| Permission | none — it is your own dispatch, the window is the control | yes, explicitly |
+
+Both additionally require that the action is **the most recent structural action on the file** and has
+not already been undone. That guard is what keeps recall honest: once the verifier has replied, taking
+the request back would erase their work rather than your mistake, so it becomes a reversal instead.
+Comments and reminders in between do not block anything — neither moved the file.
+
+Neither power deletes. The original action stays in `eApprovalHistory` and the undo is appended after
+it, carrying `undidEventId`, who did it and why.
+
+### How it works
+
+Every action stores a snapshot of what it changed, on its own history entry, in `EApprovalEvent.undo`:
+the pre-action state of each step it touched, the ids of steps it created, and the whole pre-action
+request. That record is produced by **diffing the step list before and after the transition**, not by
+hand-written inverse logic per action — so a new action is undoable for free and there is no second
+definition of "the inverse of a forward" to drift out of step.
+
+Undoing therefore replays a snapshot rather than computing an inverse. Two consequences worth knowing:
+
+- The request is **replaced** from the snapshot, not merged into it. `Object.assign` alone would leave
+  a field the action *introduced* — `holdReason` on a hold, `rejectionReason` on a rejection — still
+  sitting there explaining a state the file is no longer in.
+- Steps a recall removes are **deleted**, not cancelled. Within a fifteen-minute window nothing
+  happened worth recording beyond the recall itself; a cancelled step in somebody's history for a
+  dispatch that was taken back in two minutes is noise.
+
+`tests/e-approval-domain.test.mjs` pins this down by round-tripping: dispatch, recall, and assert the
+request and step list are byte-for-byte what they were before.
+
+### Where it appears
+
+On the **Activity** tab of an approval, against the entry itself. The author sees *Recall* with the
+time remaining; once that window closes, a user with the permission sees *Reverse*. Both open a dialog
+that names what is being undone and takes a reason (required for a reversal). Whoever the work was
+taken back from is notified that it has been withdrawn and no action is needed.
+
+Windows and on/off switches live in **Settings → Policies → Recall & Reverse**.
+
+## Settings
+
+A hub at `/e-approval/settings` with one card per section, each opening its own page — the same shape as
+`site-account-statement/settings-hub.tsx`. One name, one place: this is what other modules in the app call
+Settings, so it is called that here too.
+
+| Section | Route | Answers |
+| --- | --- | --- |
+| **Approval Types** | `settings/types` | what can people raise? |
+| **Workflows** | `settings/workflows` | what chains exist? |
+| **Approval Matrix** | `settings/matrix` | which chain does a request take? |
+| **Department Routing** | `settings/departments` | who does a department step actually reach? |
+| **Policies** | `settings/policies` | change control · approver powers · recall & reverse · reminders · numbering |
+| **Delegations** | `/e-approval/delegations` | substitute approvers (surfaced here, lives outside settings) |
+
+Cards are filtered by the viewer's `Settings.<node>` permission, and each page re-checks its own node
+through `SettingsSection` — so a section cannot ship with its gate forgotten. A user with View but
+not Edit gets the page in read-only, labelled as such.
+
+**Why pages and not tabs.** Tabs hid four of five sections behind a click, left no room to say what a
+section was for, and put unrelated forms on one screen where a stray Save could touch something the
+person was not looking at.
+
+**Why Policies is still one page.** Every setting on it lives in the same Firestore settings document.
+Splitting one document across five pages with five Save buttons is how a save on one page silently
+reverts an edit made on another. Within it the cards run most-consequential first — change control,
+approver powers, recall & reverse, reminders, and numbering last.
+
+Two groupings were fixed on the way. *Approval Matrix* and *Department Routing* both answer "who gets
+it" and now sit adjacent in the hub. And the four switches governing nesting, return-to-any-step and
+approve-&-complete used to live inside the **Change Control** card, which they have nothing to do
+with; they are now their own **What approvers may do** card, described as what they are —
+organisation-wide ceilings a workflow stage can lower but never raise.

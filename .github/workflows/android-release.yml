@@ -1,0 +1,162 @@
+# Builds the signed Android release APK.
+#
+# The mobile app is a Capacitor shell that loads the live site (see capacitor.config.ts), so this
+# workflow deliberately does NOT run `next build` — there is no web bundle to ship inside the APK,
+# and skipping it keeps the job free of every build-time secret the web app needs.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64    base64 of your .jks keystore  (see docs/mobile-apk-build.md)
+#   ANDROID_KEYSTORE_PASSWORD  the keystore password
+#   ANDROID_KEY_ALIAS          the key alias inside the keystore
+#   ANDROID_KEY_PASSWORD       the key password (often the same as the keystore password)
+#
+# Optional repository variable:
+#   CAPACITOR_LIVE_URL         defaults to https://seltech.store
+#
+# Run it from the Actions tab ("Run workflow"), or push a tag like v1.2.
+
+name: Android release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which app to build
+        type: choice
+        default: full
+        options: [full, driver]
+      version_name:
+        description: 'Override versionName (optional, e.g. 1.2)'
+        type: string
+        required: false
+      version_code:
+        description: 'Override versionCode — required to be unique and increasing for Play Store uploads'
+        type: string
+        required: false
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Build signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      TARGET: ${{ github.event.inputs.target || 'full' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fail before spending ten minutes on a build that cannot be signed.
+      - name: Check signing secrets are present
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$KEYSTORE_BASE64" ]   && missing="$missing ANDROID_KEYSTORE_BASE64"
+          [ -z "$KEYSTORE_PASSWORD" ] && missing="$missing ANDROID_KEYSTORE_PASSWORD"
+          [ -z "$KEY_ALIAS" ]         && missing="$missing ANDROID_KEY_ALIAS"
+          [ -z "$KEY_PASSWORD" ]      && missing="$missing ANDROID_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — see docs/mobile-apk-build.md"
+            exit 1
+          fi
+          echo "All four signing secrets are set."
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # Regenerates android/app/src/main/assets/capacitor.config.json (gitignored) from
+      # capacitor.config.ts. There is no .env in CI, so every value comes from this env block.
+      - name: Sync Capacitor
+        env:
+          APP_TARGET: ${{ env.TARGET }}
+          CAPACITOR_APP_ID: ${{ env.TARGET == 'driver' && 'com.sel.driver' || 'com.sel' }}
+          CAPACITOR_APP_NAME: ${{ env.TARGET == 'driver' && 'SEL Driver' || 'SEL' }}
+          CAPACITOR_START_PATH: ${{ env.TARGET == 'driver' && '/driver-management/mobile-hub' || '/' }}
+          CAPACITOR_LIVE_URL: ${{ vars.CAPACITOR_LIVE_URL || 'https://seltech.store' }}
+        run: |
+          npx cap sync android
+          echo "--- generated config ---"
+          cat android/app/src/main/assets/capacitor.config.json
+
+      - name: Write the keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          # Size only — never echo the contents or the passwords.
+          echo "Keystore written: $(stat -c%s "$RUNNER_TEMP/release.keystore") bytes"
+
+      - name: Build the release APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          ARGS=""
+          if [ -n "${{ github.event.inputs.version_name }}" ]; then
+            ARGS="$ARGS -PversionNameOverride=${{ github.event.inputs.version_name }}"
+          fi
+          if [ -n "${{ github.event.inputs.version_code }}" ]; then
+            ARGS="$ARGS -PversionCodeOverride=${{ github.event.inputs.version_code }}"
+          fi
+          ./gradlew assembleRelease --no-daemon --stacktrace $ARGS
+
+      # An unsigned output here means the Gradle signing config didn't pick the keystore up, which
+      # would otherwise only be discovered when the APK refuses to install.
+      - name: Verify the APK is signed
+        id: apk
+        run: |
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then echo "::error::No APK produced."; exit 1; fi
+          echo "APK: $APK ($(stat -c%s "$APK") bytes)"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner not found under $ANDROID_HOME/build-tools — cannot confirm the APK is signed."
+            exit 1
+          fi
+          "$APKSIGNER" verify --print-certs "$APK" \
+            || { echo "::error::APK is not signed — check the four keystore secrets."; exit 1; }
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sel-${{ env.TARGET }}-release-${{ github.run_number }}
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
+          retention-days: 30

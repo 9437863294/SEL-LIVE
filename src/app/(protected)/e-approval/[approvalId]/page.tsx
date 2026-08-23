@@ -40,6 +40,7 @@ import {
 } from '@/components/e-approval/shared';
 import { WorkflowTimeline } from '@/components/e-approval/workflow-timeline';
 import { PageHeader } from '@/components/e-approval/page-header';
+import { EApprovalUndoButtons } from '@/components/e-approval/undo-button';
 import {
   formatEApprovalAmount,
   formatEApprovalDate,
@@ -353,7 +354,7 @@ export default function EApprovalDetailPage() {
               <CardHeader className="px-3 py-2.5 sm:px-4">
                 <CardTitle className="text-sm">Activity</CardTitle>
                 <CardDescription className="text-xs">
-                  Append-only. Nothing here can be edited or removed.
+                  Append-only. An action can be recalled or reversed, which adds an entry — nothing is ever removed.
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-3 pb-3 sm:px-4">
@@ -378,6 +379,14 @@ export default function EApprovalDetailPage() {
                         {entry.version != null && (
                           <span className="shrink-0 text-[10px] text-muted-foreground">v{entry.version}</span>
                         )}
+                        <EApprovalUndoButtons
+                          approvalId={request.id}
+                          entry={entry}
+                          history={history}
+                          serviceActor={serviceActor}
+                          canReverse={permissions.canReverse}
+                          onDone={load}
+                        />
                       </li>
                     ))}
                   </ol>

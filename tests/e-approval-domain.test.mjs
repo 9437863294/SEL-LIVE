@@ -8,6 +8,8 @@ import {
   buildEApprovalSteps,
   canActOnEApprovalStep,
   canTakeEApprovalOwnership,
+  canRecallEApprovalAction,
+  canReverseEApprovalAction,
   canViewEApproval,
   DEFAULT_E_APPROVAL_ESCALATION_LADDER,
   describeEApprovalAssignment,
@@ -1390,4 +1392,293 @@ test('active assignees are reported for the "pending with whom" comparison', () 
   let state = submitted(parallelChain('All'));
   state = act(state, { kind: 'Approve', actor: { userId: 'u-hod' }, now: '2026-08-22T11:00:00.000Z' });
   assert.deepEqual(describeActiveAssignees(state.steps), ['Commercial', 'Finance', 'Legal']);
+});
+
+/* ── recall and reverse ───────────────────────────────────────────────────────────────────────── */
+
+const WINDOW = { allowRecall: true, recallWindowMinutes: 15, allowReverse: true, reverseWindowHours: 24 };
+
+/** The undo snapshot the engine hung on the action's own event. */
+const undoOf = (state, kind) => state.events.find((event) => event.kind === kind)?.undo;
+
+test('every structural action records how to undo itself', () => {
+  let state = submitted();
+  state = act(state, {
+    kind: 'Send For Verification',
+    actor: { userId: 'u-mgr' },
+    targets: [user('u-acc', 'Accounts')],
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  const undo = undoOf(state, 'Send For Verification');
+  assert.ok(undo, 'the dispatch carries a snapshot');
+  assert.equal(undo.actionKind, 'Send For Verification');
+  assert.equal(undo.createdStepIds.length, 1, 'the verification step is marked as created');
+  assert.equal(undo.steps.length, 1, 'the parent step is snapshotted as it was');
+  assert.equal(undo.steps[0].status, 'Active', 'and it was Active before it began waiting');
+  assert.equal(undo.request.status, 'Pending Approval');
+});
+
+test('recalling a misdirected verification restores the file exactly', () => {
+  let state = submitted();
+  const before = JSON.stringify({ request: state.request, steps: state.steps });
+
+  state = act(state, {
+    kind: 'Send For Verification',
+    actor: { userId: 'u-mgr' },
+    targets: [user('u-wrong', 'Wrong Person')],
+    instruction: 'Please check the rates.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(state.steps.length, 5);
+  assert.equal(state.request.status, 'Pending Verification');
+
+  const undo = undoOf(state, 'Send For Verification');
+  state = act(state, {
+    kind: 'Recall',
+    actor: { userId: 'u-mgr', userName: 'Manager' },
+    undo,
+    undidEventId: 'evt-1',
+    reason: 'Sent to the wrong person.',
+    now: '2026-08-22T11:02:00.000Z',
+  });
+
+  assert.equal(state.steps.length, 4, 'the verification step is gone, not merely cancelled');
+  assert.equal(state.request.status, 'Pending Approval');
+  assert.equal(onlyActive(state).name, 'Manager');
+  assert.equal(
+    JSON.stringify({ request: state.request, steps: state.steps }),
+    before,
+    'and the file is byte-for-byte what it was before the dispatch',
+  );
+
+  const event = state.events.find((entry) => entry.kind === 'Recall');
+  assert.match(event.summary, /recalled their "Send for Verification" — Sent to the wrong person\./);
+  assert.equal(event.undidEventId, 'evt-1');
+  assert.equal(event.undo, undefined, 'an undo is not itself undoable');
+
+  const notice = state.notifications.find((intent) => intent.title === 'Request withdrawn');
+  assert.deepEqual(notice.userIds, ['u-wrong'], 'the person it was taken back from is told');
+});
+
+test('recalling a forward puts the step back with its original assignee and clock', () => {
+  let state = submitted();
+  const before = JSON.stringify({ request: state.request, steps: state.steps });
+  state = act(state, {
+    kind: 'Forward',
+    actor: { userId: 'u-mgr' },
+    targets: [user('u-ed', 'ED')],
+    reason: 'Wrong desk.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(stepNamed(state, 'Manager').assignment.userId, 'u-ed');
+
+  state = act(state, {
+    kind: 'Recall',
+    actor: { userId: 'u-mgr' },
+    undo: undoOf(state, 'Forward'),
+    now: '2026-08-22T11:05:00.000Z',
+  });
+  assert.equal(
+    JSON.stringify({ request: state.request, steps: state.steps }),
+    before,
+    'assignment, reassignment trail, startedAt and dueAt all restored',
+  );
+});
+
+test('recall is refused outside the window, to somebody else, and for a decision', () => {
+  let state = submitted();
+  state = act(state, {
+    kind: 'Send For Verification',
+    actor: { userId: 'u-mgr' },
+    targets: [user('u-acc')],
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  const candidate = {
+    eventId: 'e1',
+    at: '2026-08-22T11:00:00.000Z',
+    actorId: 'u-mgr',
+    kind: 'Send For Verification',
+    summary: 'sent',
+    undo: undoOf(state, 'Send For Verification'),
+  };
+  const check = (over) =>
+    canRecallEApprovalAction(candidate, { userId: 'u-mgr' }, { settings: WINDOW, isLatestAction: true, ...over });
+
+  assert.equal(check({ now: '2026-08-22T11:10:00.000Z' }).allowed, true, 'inside 15 minutes');
+  const late = check({ now: '2026-08-22T11:20:00.000Z' });
+  assert.equal(late.allowed, false);
+  assert.match(late.reason, /15-minute recall window has passed/);
+
+  const notMine = canRecallEApprovalAction(
+    candidate,
+    { userId: 'u-someone-else' },
+    { settings: WINDOW, isLatestAction: true, now: '2026-08-22T11:05:00.000Z' },
+  );
+  assert.equal(notMine.allowed, false);
+  assert.match(notMine.reason, /Only the person who sent it/);
+
+  const superseded = check({ now: '2026-08-22T11:05:00.000Z', isLatestAction: false });
+  assert.equal(superseded.allowed, false);
+  assert.match(superseded.reason, /acted since/);
+
+  // An approval is a decision, not a dispatch — it is reversed, never recalled.
+  const approval = { ...candidate, kind: 'Approve', undo: { ...candidate.undo, actionKind: 'Approve' } };
+  const wrongKind = canRecallEApprovalAction(approval, { userId: 'u-mgr' }, {
+    settings: WINDOW,
+    isLatestAction: true,
+    now: '2026-08-22T11:05:00.000Z',
+  });
+  assert.equal(wrongKind.allowed, false);
+  assert.match(wrongKind.reason, /cannot be recalled/);
+});
+
+test('recall can be switched off entirely', () => {
+  const candidate = {
+    eventId: 'e',
+    at: '2026-08-22T11:00:00.000Z',
+    actorId: 'u-mgr',
+    kind: 'Forward',
+    summary: '',
+    undo: { actionKind: 'Forward' },
+  };
+  const off = canRecallEApprovalAction(candidate, { userId: 'u-mgr' }, {
+    settings: { allowRecall: false, recallWindowMinutes: 15 },
+    isLatestAction: true,
+    now: '2026-08-22T11:01:00.000Z',
+  });
+  assert.equal(off.allowed, false);
+  assert.match(off.reason, /switched off/);
+});
+
+test('a privileged user can reverse an approval, putting the chain back a step', () => {
+  let state = submitted();
+  const before = JSON.stringify({ request: state.request, steps: state.steps });
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-mgr' }, now: '2026-08-22T11:00:00.000Z' });
+  assert.equal(onlyActive(state).name, 'Finance');
+
+  state = act(state, {
+    kind: 'Reverse',
+    actor: { userId: 'u-admin', userName: 'Compliance' },
+    undo: undoOf(state, 'Approve'),
+    reason: 'Approved against the wrong budget head.',
+    now: '2026-08-22T12:00:00.000Z',
+  });
+  assert.equal(onlyActive(state).name, 'Manager', 'the approver holds it again');
+  assert.equal(
+    JSON.stringify({ request: state.request, steps: state.steps }),
+    before,
+    'and the approval it granted is gone',
+  );
+  assert.match(state.events.find((entry) => entry.kind === 'Reverse').summary, /reversed the "Approve"/);
+});
+
+test('reversing a rejection reopens a closed request', () => {
+  let state = submitted();
+  state = act(state, {
+    kind: 'Reject',
+    actor: { userId: 'u-mgr' },
+    reason: 'Not budgeted.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(state.request.status, 'Rejected');
+  assert.equal(state.request.rejectionReason, 'Not budgeted.');
+
+  state = act(state, {
+    kind: 'Reverse',
+    actor: { userId: 'u-admin' },
+    undo: undoOf(state, 'Reject'),
+    reason: 'Budget was reallocated.',
+    now: '2026-08-22T13:00:00.000Z',
+  });
+  assert.equal(state.request.status, 'Pending Approval', 'a terminal request can be reopened');
+  assert.equal(state.request.rejectionReason, undefined, 'and the rejection reason does not linger');
+  assert.equal(state.request.completedAt, undefined, 'nor the closing timestamp');
+  assert.equal(onlyActive(state).name, 'Manager');
+  assert.equal(stepNamed(state, 'ED').status, 'Pending', 'the cancelled steps are live again');
+});
+
+test('reversing a hold clears the hold reason too', () => {
+  let state = submitted();
+  state = act(state, {
+    kind: 'Hold',
+    actor: { userId: 'u-mgr' },
+    reason: 'Awaiting the board date.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(state.request.holdReason, 'Awaiting the board date.');
+  state = act(state, {
+    kind: 'Reverse',
+    actor: { userId: 'u-admin' },
+    undo: undoOf(state, 'Hold'),
+    now: '2026-08-22T11:30:00.000Z',
+  });
+  assert.equal(state.request.holdReason, undefined);
+  assert.equal(stepNamed(state, 'Manager').status, 'Active');
+});
+
+test('reversal needs the permission and a live window', () => {
+  const candidate = {
+    eventId: 'e',
+    at: '2026-08-22T11:00:00.000Z',
+    actorId: 'u-mgr',
+    kind: 'Approve',
+    summary: '',
+    undo: { actionKind: 'Approve' },
+  };
+  const check = (over) =>
+    canReverseEApprovalAction(candidate, { userId: 'u-admin' }, {
+      settings: WINDOW,
+      isLatestAction: true,
+      hasPermission: true,
+      now: '2026-08-22T12:00:00.000Z',
+      ...over,
+    });
+
+  assert.equal(check({}).allowed, true);
+  const unauthorised = check({ hasPermission: false });
+  assert.equal(unauthorised.allowed, false);
+  assert.match(unauthorised.reason, /Reverse Action permission/);
+
+  const late = check({ now: '2026-08-24T12:00:00.000Z' });
+  assert.equal(late.allowed, false);
+  assert.match(late.reason, /24-hour reversal window/);
+
+  const notLatest = check({ isLatestAction: false });
+  assert.equal(notLatest.allowed, false);
+  assert.match(notLatest.reason, /most recent action/);
+});
+
+test('an undo of a nested verification only unwinds one level', () => {
+  let state = submitted([{ id: 't1', name: 'Director', assignments: [user('u-dir', 'Director')] }]);
+  state = act(state, {
+    kind: 'Send For Verification',
+    actor: { userId: 'u-dir' },
+    targets: [user('u-fin', 'Finance')],
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  const afterFirst = JSON.stringify({ request: state.request, steps: state.steps });
+
+  state = act(state, {
+    kind: 'Send For Verification',
+    actor: { userId: 'u-fin' },
+    targets: [user('u-acc', 'Accounts')],
+    now: '2026-08-22T11:30:00.000Z',
+  });
+  assert.equal(state.steps.length, 3);
+
+  state = act(state, {
+    kind: 'Recall',
+    actor: { userId: 'u-fin' },
+    undo: undoOf(state, 'Send For Verification'),
+    now: '2026-08-22T11:35:00.000Z',
+  });
+  assert.equal(state.steps.length, 2, 'only the deepest level is removed');
+  assert.equal(onlyActive(state).assignment.userId, 'u-fin', 'Finance holds it again');
+  assert.equal(stepNamed(state, 'Director').status, 'Awaiting Verification', 'the Director is still waiting');
+  assert.equal(JSON.stringify({ request: state.request, steps: state.steps }), afterFirst);
+});
+
+test('undoing needs a recorded snapshot', () => {
+  const state = submitted();
+  assert.throws(() => act(state, { kind: 'Recall', actor: { userId: 'u-mgr' } }), /nothing recorded to undo/i);
 });

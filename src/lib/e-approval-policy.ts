@@ -564,6 +564,24 @@ export interface EApprovalSettings {
   escalationLadder: EApprovalEscalationRule[];
   /** Roles that may see confidential files without being a participant. */
   confidentialRoles: string[];
+
+  /* ── Recall and reverse (undoing a dispatch) ────────────────────────────────────────────────── */
+
+  /** Whether the person who sent something may take it back. */
+  allowRecall: boolean;
+  /**
+   * How long they have, in minutes.
+   *
+   * Minutes rather than hours because this exists for the "sent it to the wrong Sarika" moment,
+   * noticed within seconds. A long window is not more forgiving, it is less honest: a verifier who
+   * has had a file for two hours has read it, and pretending the request never happened misrepresents
+   * the record.
+   */
+  recallWindowMinutes: number;
+  /** Whether a privileged user may reverse an action that has already been completed. */
+  allowReverse: boolean;
+  /** How long after the fact a reversal is permitted, in hours. */
+  reverseWindowHours: number;
 }
 
 export const DEFAULT_E_APPROVAL_SETTINGS: EApprovalSettings = {
@@ -580,6 +598,10 @@ export const DEFAULT_E_APPROVAL_SETTINGS: EApprovalSettings = {
   allowReturnToAnyStep: true,
   escalationLadder: [],
   confidentialRoles: [],
+  allowRecall: true,
+  recallWindowMinutes: 15,
+  allowReverse: true,
+  reverseWindowHours: 24,
 };
 
 /* ------------------------------------------------------------------------------------------------
@@ -1386,6 +1408,8 @@ export const E_APPROVAL_ACTION_KINDS = [
   'Resubmit',
   'Take Ownership',
   'Add Participant',
+  'Recall',
+  'Reverse',
 ] as const;
 
 export type EApprovalActionKind = (typeof E_APPROVAL_ACTION_KINDS)[number];
@@ -1411,6 +1435,8 @@ export const E_APPROVAL_ACTION_LABELS: Record<EApprovalActionKind, string> = {
   Resubmit: 'Resubmit',
   'Take Ownership': 'Take Ownership',
   'Add Participant': 'Add Participant',
+  Recall: 'Recall',
+  Reverse: 'Reverse',
 };
 
 /**
@@ -1589,6 +1615,200 @@ export interface EApprovalEvent {
   reason?: string;
   version?: number;
   summary: string;
+  /**
+   * What this action changed, so it can be put back (spec: recall / reverse).
+   *
+   * Captured by diffing the steps before and after the transition rather than hand-written per
+   * action, so every action is undoable by the same mechanism and a new action cannot forget to
+   * support it. Absent on events that changed nothing structural (a comment, a reminder).
+   */
+  undo?: EApprovalUndoRecord;
+  /** Set on the event *produced by* a recall or reversal, pointing at what it undid. */
+  undidEventId?: string;
+}
+
+/** The pre-action state of everything an action touched. */
+export interface EApprovalUndoRecord {
+  /** Steps as they were *before* the action, for restoration. */
+  steps: EApprovalStepRecord[];
+  /** Steps the action brought into existence; they are removed on undo. */
+  createdStepIds: string[];
+  /**
+   * The whole request as it stood before the action.
+   *
+   * All of it, not just the status: an action can also set `holdReason`, `returnReason`,
+   * `returnResumeStepId`, `rejectionReason` or `completedAt`, and restoring the status alone would
+   * leave a reversed hold still showing why it was held.
+   */
+  request: EApprovalRequestState;
+  /** Which action is being recorded, so eligibility can be judged without re-deriving it. */
+  actionKind: EApprovalActionKind;
+}
+
+/**
+ * Actions that can be taken back by the person who performed them.
+ *
+ * Deliberately only the *dispatching* ones — the ones whose entire effect is "somebody else now has
+ * this". A recall of an Approve is not a recall, it is a reversal of a decision, and that is a
+ * different power with a different permission (see `canReverseEApprovalAction`).
+ */
+export const RECALLABLE_E_APPROVAL_ACTIONS: readonly EApprovalActionKind[] = [
+  'Send For Verification',
+  'Request Clarification',
+  'Forward',
+  'Delegate',
+  'Add Approver',
+  'Escalate',
+];
+
+/** Actions a privileged user can reverse after the fact — decisions, not dispatches. */
+export const REVERSIBLE_E_APPROVAL_ACTIONS: readonly EApprovalActionKind[] = [
+  ...RECALLABLE_E_APPROVAL_ACTIONS,
+  'Approve',
+  'Approve And Complete',
+  'Verify',
+  'Provide Clarification',
+  'Return',
+  'Reject',
+  'Hold',
+  'Take Ownership',
+];
+
+export interface EApprovalUndoCandidate {
+  eventId: string;
+  at: string;
+  actorId: string;
+  actorName?: string;
+  kind: EApprovalEventKind;
+  summary: string;
+  undo?: EApprovalUndoRecord;
+}
+
+export interface EApprovalUndoEligibility {
+  allowed: boolean;
+  /** Why not, phrased for the user. */
+  reason?: string;
+  /** Milliseconds left in the window, when it is the window that governs. */
+  remainingMs?: number;
+}
+
+const undoableKind = (candidate: EApprovalUndoCandidate): EApprovalActionKind | null => {
+  const kind = candidate.undo?.actionKind ?? (candidate.kind as EApprovalActionKind);
+  return kind ?? null;
+};
+
+/**
+ * Where an event sits relative to everything else that has happened.
+ *
+ * Both undo powers require the event to be the *last* structural action on the file, and neither may
+ * touch one that has already been undone. Only actions carrying a snapshot count as structural — a
+ * comment or a reminder in between does not block a recall, because neither moved the file.
+ */
+export function eApprovalUndoState(
+  history: Array<{ eventId: string; at: string; kind: EApprovalEventKind; undo?: EApprovalUndoRecord; undidEventId?: string }>,
+  eventId: string,
+): { isLatestAction: boolean; alreadyUndone: boolean } {
+  const alreadyUndone = history.some((entry) => entry.undidEventId === eventId);
+  const structural = history
+    .filter((entry) => Boolean(entry.undo))
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return { isLatestAction: structural[0]?.eventId === eventId, alreadyUndone };
+}
+
+/**
+ * Whether `actor` may take back their own dispatch.
+ *
+ * Four gates, and all four matter: it has to be *their* action, of a recallable kind, inside the
+ * window, and **the latest thing that happened on the file**. That last one is what keeps recall
+ * honest — once the verifier has replied, or anyone else has acted, taking the request back would
+ * erase somebody else's work rather than your own mistake. At that point it is a reversal.
+ */
+export function canRecallEApprovalAction(
+  candidate: EApprovalUndoCandidate,
+  actor: EApprovalActor | null | undefined,
+  options: {
+    settings?: Pick<EApprovalSettings, 'allowRecall' | 'recallWindowMinutes'>;
+    now?: string | Date;
+    /** True when no workflow event has been recorded after this one. */
+    isLatestAction: boolean;
+  },
+): EApprovalUndoEligibility {
+  const settings = { ...DEFAULT_E_APPROVAL_SETTINGS, ...(options.settings || {}) };
+  if (!settings.allowRecall) return { allowed: false, reason: 'Recall is switched off for this organisation.' };
+  if (!actor?.userId) return { allowed: false, reason: 'You must be signed in.' };
+  if (!candidate.undo) return { allowed: false, reason: 'This action was recorded before recall existed.' };
+
+  const kind = undoableKind(candidate);
+  if (!kind || !RECALLABLE_E_APPROVAL_ACTIONS.includes(kind)) {
+    return { allowed: false, reason: `"${kind}" cannot be recalled — only a dispatch can.` };
+  }
+  if (candidate.actorId !== actor.userId) {
+    return { allowed: false, reason: 'Only the person who sent it can take it back.' };
+  }
+  if (!options.isLatestAction) {
+    return { allowed: false, reason: 'Somebody has acted since — this can only be reversed now, not recalled.' };
+  }
+
+  const at = millis(candidate.at);
+  const nowMs = millis(options.now ?? new Date()) ?? Date.now();
+  if (at == null) return { allowed: false, reason: 'This action has no timestamp.' };
+  const remainingMs = at + settings.recallWindowMinutes * 60_000 - nowMs;
+  if (remainingMs <= 0) {
+    return {
+      allowed: false,
+      reason: `The ${settings.recallWindowMinutes}-minute recall window has passed.`,
+      remainingMs: 0,
+    };
+  }
+  return { allowed: true, remainingMs };
+}
+
+/**
+ * Whether `actor` may reverse a completed action.
+ *
+ * The supervisory counterpart to recall: a longer window, somebody else's action, and it takes an
+ * explicit permission rather than being implied by having done the thing. `hasPermission` is passed
+ * in because the engine never reads the role tree — this is one of the few places in the module where
+ * a role permission genuinely governs, precisely because the actor is *not* the assignee.
+ */
+export function canReverseEApprovalAction(
+  candidate: EApprovalUndoCandidate,
+  actor: EApprovalActor | null | undefined,
+  options: {
+    settings?: Pick<EApprovalSettings, 'allowReverse' | 'reverseWindowHours'>;
+    now?: string | Date;
+    isLatestAction: boolean;
+    hasPermission: boolean;
+  },
+): EApprovalUndoEligibility {
+  const settings = { ...DEFAULT_E_APPROVAL_SETTINGS, ...(options.settings || {}) };
+  if (!settings.allowReverse) return { allowed: false, reason: 'Reversal is switched off for this organisation.' };
+  if (!actor?.userId) return { allowed: false, reason: 'You must be signed in.' };
+  if (!options.hasPermission) {
+    return { allowed: false, reason: 'Reversing another person’s action needs the Reverse Action permission.' };
+  }
+  if (!candidate.undo) return { allowed: false, reason: 'This action was recorded before reversal existed.' };
+
+  const kind = undoableKind(candidate);
+  if (!kind || !REVERSIBLE_E_APPROVAL_ACTIONS.includes(kind)) {
+    return { allowed: false, reason: `"${kind}" cannot be reversed.` };
+  }
+  if (!options.isLatestAction) {
+    return { allowed: false, reason: 'Only the most recent action can be reversed — reverse the later ones first.' };
+  }
+
+  const at = millis(candidate.at);
+  const nowMs = millis(options.now ?? new Date()) ?? Date.now();
+  if (at == null) return { allowed: false, reason: 'This action has no timestamp.' };
+  const remainingMs = at + settings.reverseWindowHours * HOUR_MS - nowMs;
+  if (remainingMs <= 0) {
+    return {
+      allowed: false,
+      reason: `The ${settings.reverseWindowHours}-hour reversal window has passed.`,
+      remainingMs: 0,
+    };
+  }
+  return { allowed: true, remainingMs };
 }
 
 export type EApprovalNotificationKind =
@@ -1661,6 +1881,10 @@ export interface EApprovalActionInput {
   settings?: Partial<EApprovalSettings>;
   /** Injected id factory, so the service can use Firestore ids and tests can use counters. */
   nextId?: (seed: string) => string;
+  /** Recall / Reverse: the record of what is being put back, read off the history entry. */
+  undo?: EApprovalUndoRecord;
+  /** Recall / Reverse: the history entry being undone, for the audit trail. */
+  undidEventId?: string;
 }
 
 const cloneStep = (step: EApprovalStepRecord): EApprovalStepRecord => ({
@@ -2009,6 +2233,31 @@ export function applyEApprovalAction(
 
   /** Who held the file before this action, so the exit can tell whether it moved and to whom. */
   const heldBefore = describeActiveAssignees(stepRecords);
+  /** The step list as it stood on entry, which is what makes every action undoable. */
+  const stepsBefore = new Map(stepRecords.map((step) => [step.id, cloneStep(step)]));
+  const requestBefore: EApprovalRequestState = { ...requestState };
+
+  /**
+   * What changed, expressed as "how to put it back".
+   *
+   * Derived by diffing rather than written by hand in each of the twenty-odd branches: a mechanism
+   * that every action gets for free cannot be forgotten by the next action somebody adds, and there
+   * is no second definition of "the inverse of a forward" to drift out of step.
+   */
+  const captureUndo = (actionKind: EApprovalActionKind): EApprovalUndoRecord | undefined => {
+    const touched: EApprovalStepRecord[] = [];
+    const createdStepIds: string[] = [];
+    for (const step of steps) {
+      const previous = stepsBefore.get(step.id);
+      if (!previous) {
+        createdStepIds.push(step.id);
+        continue;
+      }
+      if (JSON.stringify(previous) !== JSON.stringify(step)) touched.push(previous);
+    }
+    if (!touched.length && !createdStepIds.length && requestBefore.status === request.status) return undefined;
+    return { steps: touched, createdStepIds, request: requestBefore, actionKind };
+  };
 
   /**
    * The single exit from the reducer.
@@ -2022,6 +2271,17 @@ export function applyEApprovalAction(
   const finish = (): EApprovalTransition => {
     // Pointers first: the notice below quotes `pendingLabel`, which is only correct once refreshed.
     refreshPointers(request, steps);
+
+    // Hang the undo snapshot on the event that represents the user's action, so recalling it later
+    // is a matter of reading one history row. Undoing an undo is not offered — that way lies a
+    // history nobody can read — so a Recall/Reverse event carries no snapshot of its own.
+    if (input.kind !== 'Recall' && input.kind !== 'Reverse') {
+      const primary = events.find((event) => event.kind === input.kind) ?? events[0];
+      if (primary) {
+        const undo = captureUndo(input.kind);
+        if (undo) primary.undo = undo;
+      }
+    }
     const heldAfter = describeActiveAssignees(steps);
     const movedOn = heldAfter.length > 0 && heldAfter.join('|') !== heldBefore.join('|');
     // Not when the requester is the one now holding it (they can see that), and not when the request
@@ -2062,6 +2322,82 @@ export function applyEApprovalAction(
     advancePrimaryChain(request, steps, now, events, notifications, actor);
     if (!isTerminalEApprovalStatus(request.status)) {
       request.status = deriveEApprovalStatus(steps) ?? 'Pending Approval';
+    }
+    return finish();
+  }
+
+  /**
+   * Recall and Reverse — put the file back exactly as it was before one action.
+   *
+   * Handled here, *above* the terminal-status guard, because reversing a rejection is one of the
+   * cases this exists for: the request is closed, and reopening it is the whole point.
+   *
+   * Eligibility — whose action, which kind, inside which window, and whether anything has happened
+   * since — is decided by `canRecallEApprovalAction` / `canReverseEApprovalAction` before we get
+   * here. What this branch owns is the restoration itself, and it is deliberately dumb: it replays a
+   * recorded snapshot rather than trying to compute an inverse, so there is no per-action undo logic
+   * to get wrong.
+   */
+  if (input.kind === 'Recall' || input.kind === 'Reverse') {
+    const undo = input.undo;
+    if (!undo) {
+      throw new EApprovalRuleError('That action has nothing recorded to undo.');
+    }
+    const removed = new Set(undo.createdStepIds);
+    const restoredById = new Map(undo.steps.map((step) => [step.id, step]));
+    const restored = steps
+      .filter((step) => !removed.has(step.id))
+      .map((step) => (restoredById.has(step.id) ? cloneStep(restoredById.get(step.id) as EApprovalStepRecord) : step));
+    // A snapshot step that no longer exists at all is put back rather than dropped — otherwise
+    // undoing an action that also removed a step would silently lose it.
+    for (const step of undo.steps) {
+      if (!restored.some((candidate) => candidate.id === step.id)) restored.push(cloneStep(step));
+    }
+    steps.splice(0, steps.length, ...restored);
+
+    // Replaced, not merged. `Object.assign` only copies keys that are *present* in the snapshot, so
+    // a field the action introduced — `holdReason` on a hold, `rejectionReason` on a rejection —
+    // would survive its own undo and keep explaining a state the file is no longer in.
+    for (const key of Object.keys(request)) {
+      if (!(key in undo.request)) delete (request as unknown as Record<string, unknown>)[key];
+    }
+    Object.assign(request, undo.request);
+
+    const undoneLabel = E_APPROVAL_ACTION_LABELS[undo.actionKind] ?? undo.actionKind;
+    pushEvent({
+      kind: input.kind,
+      undidEventId: input.undidEventId,
+      reason: input.reason,
+      comment: input.comment,
+      summary:
+        input.kind === 'Recall'
+          ? `${actorLabel(actor)} recalled their "${undoneLabel}"${input.reason ? ` — ${input.reason}` : ''}`
+          : `${actorLabel(actor)} reversed the "${undoneLabel}"${input.reason ? ` — ${input.reason}` : ''}`,
+    });
+
+    // Everyone who was holding it because of the undone action needs to know it is gone, and whoever
+    // holds it now needs to know it is back.
+    const releasedFrom = Array.from(
+      new Set(
+        undo.createdStepIds
+          .map((stepId) => stepRecords.find((step) => step.id === stepId))
+          .flatMap((step) =>
+            step
+              ? [step.assignment.userId, step.ownedByUserId, step.delegatedToUserId].filter(Boolean)
+              : [],
+          ) as string[],
+      ),
+    );
+    if (releasedFrom.length) {
+      notifications.push({
+        kind: 'Returned',
+        userIds: releasedFrom,
+        title: input.kind === 'Recall' ? 'Request withdrawn' : 'Action reversed',
+        body: `${describeEApprovalSubject(request)} — ${actorLabel(actor)} ${
+          input.kind === 'Recall' ? 'withdrew the request sent to you' : 'reversed the action'
+        }. No action is needed from you.`,
+        severity: 'WARNING',
+      });
     }
     return finish();
   }

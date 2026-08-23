@@ -48,18 +48,25 @@ export const permissionModules = {
     Comments: ["Add", "Edit Own", "Retract Own"],
     Attachments: ["Upload", "Download"],
     "Audit Trail": ["View"],
+    // Recall needs no permission — taking back your *own* dispatch within minutes is governed by the
+    // time window, not by a role. Reversing somebody *else's* completed action is supervisory, and is
+    // the one place in this module where a role permission genuinely decides.
+    Reversals: ["Reverse Any"],
     Reports: ["View", "Export"],
     Delegations: ["View", "Add", "Edit", "Delete"],
-    Administration: {
+    // Renamed from "Administration" in favour of the name the rest of the app uses for the same
+    // thing. `useAuthorization`'s alias map keeps roles granted under the old path working.
+    Settings: {
       View: [],
       "Approval Types": ["View", "Add", "Edit", "Delete"],
       "Workflow Templates": ["View", "Add", "Edit", "Delete"],
       "Approval Matrix": ["View", "Add", "Edit", "Delete"],
       "Department Routing": ["View", "Edit"],
-      "SLA & Escalation": ["View", "Edit"],
-      Numbering: ["View", "Edit"],
-      "Notification Rules": ["View", "Edit"],
-      Settings: ["View", "Edit"],
+      // Change control, approver powers, recall/reverse, reminders and numbering are one settings
+      // record and one screen, so they are one permission. The former "SLA & Escalation",
+      // "Numbering" and "Notification Rules" nodes were never enforced anywhere — a permission that
+      // gates nothing promises control it does not have.
+      Policies: ["View", "Edit"],
     },
   },
   "Site Fund Requisition": [

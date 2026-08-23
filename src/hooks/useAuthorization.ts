@@ -61,6 +61,15 @@ export const useAuthorization = () => {
       'Letter of Credit Management.Payment Processing': ['LC Management.LC Payments', 'LC Module.LC Payments'],
       'Letter of Credit Management.LC Amendments': ['LC Management.LC Amendments', 'LC Module.LC Amendments'],
       'Letter of Credit Management.Reports': ['LC Management.LC Reports', 'LC Module.LC Reports'],
+      // E-Approval's "Administration" node was renamed "Settings" to match the rest of the app, and
+      // its catch-all "Settings" child became "Policies". Roles granted before the rename keep
+      // working through these aliases rather than silently losing access to the config screens.
+      'E-Approval.Settings': ['E-Approval.Administration'],
+      'E-Approval.Settings.Approval Types': ['E-Approval.Administration.Approval Types'],
+      'E-Approval.Settings.Workflow Templates': ['E-Approval.Administration.Workflow Templates'],
+      'E-Approval.Settings.Approval Matrix': ['E-Approval.Administration.Approval Matrix'],
+      'E-Approval.Settings.Department Routing': ['E-Approval.Administration.Department Routing'],
+      'E-Approval.Settings.Policies': ['E-Approval.Administration.Settings'],
     };
 
     const candidateResources = (() => {

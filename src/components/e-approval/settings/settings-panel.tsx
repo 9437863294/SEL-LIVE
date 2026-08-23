@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlarmClock, BellRing, Hash, Loader2, Plus, Save, ShieldCheck, Trash2, Zap } from 'lucide-react';
+import { AlarmClock, BellRing, Hash, Loader2, Plus, Save, ShieldCheck, Trash2, Undo2, Users, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -188,6 +188,20 @@ export function EApprovalSettingsPanel({
             </div>
           </div>
 
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="px-3 py-2.5 sm:px-4">
+          <CardTitle className="flex items-center gap-1.5 text-sm">
+            <Users className="h-4 w-4" /> What approvers may do
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Organisation-wide ceilings. A workflow stage can still switch any of these off for itself —
+            it can never switch one on that is off here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-3 pb-3 sm:px-4">
           <div className="grid gap-1.5 sm:grid-cols-2">
             <label className="flex items-start gap-1.5 text-xs">
               <Checkbox
@@ -250,73 +264,93 @@ export function EApprovalSettingsPanel({
       <Card>
         <CardHeader className="px-3 py-2.5 sm:px-4">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <Hash className="h-4 w-4" /> Numbering
+            <Undo2 className="h-4 w-4" /> Recall &amp; Reverse
           </CardTitle>
           <CardDescription className="text-xs">
-            Reference numbers are allocated on submission, inside a transaction, per financial year.
+            Taking an action back. Neither power deletes anything — the original action stays on the
+            record and the undo is appended after it.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-2 px-3 pb-3 sm:grid-cols-4 sm:px-4">
-          <div>
-            <Label className="text-xs">Prefix</Label>
-            <Input
-              value={draft.numbering.prefix}
-              onChange={(event) =>
-                setDraft({ ...draft, numbering: { ...draft.numbering, prefix: event.target.value.toUpperCase() } })
-              }
-              disabled={!canEdit}
-              className="mt-1 h-8 font-mono text-sm"
-            />
+        <CardContent className="space-y-3 px-3 pb-3 sm:px-4">
+          <div className="rounded-lg border p-2.5">
+            <label className="flex items-start gap-1.5 text-xs">
+              <Checkbox
+                checked={draft.allowRecall}
+                onCheckedChange={(checked) => setDraft({ ...draft, allowRecall: checked === true })}
+                disabled={!canEdit}
+                className="mt-0.5"
+              />
+              <span>
+                Allow recall
+                <span className="block text-[11px] text-muted-foreground">
+                  The person who sent a verification, clarification, forward, delegation or escalation can
+                  take it back — but only while nobody has acted on it yet. No permission is needed: it is
+                  their own dispatch, and the window is the control.
+                </span>
+              </span>
+            </label>
+            <div className="mt-2 flex items-end gap-2 pl-6">
+              <div>
+                <Label className="text-xs">Window (minutes)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  value={draft.recallWindowMinutes}
+                  onChange={(event) =>
+                    setDraft({ ...draft, recallWindowMinutes: Number(event.target.value) || 1 })
+                  }
+                  disabled={!canEdit || !draft.allowRecall}
+                  className="mt-1 h-8 w-24 text-sm"
+                />
+              </div>
+              <p className="pb-1 text-[11px] text-muted-foreground">
+                Keep it short. A verifier who has held a file for two hours has read it, and pretending
+                the request never happened misrepresents the record.
+              </p>
+            </div>
           </div>
-          <div>
-            <Label className="text-xs">Separator</Label>
-            <Input
-              value={draft.numbering.separator}
-              onChange={(event) =>
-                setDraft({ ...draft, numbering: { ...draft.numbering, separator: event.target.value } })
-              }
-              disabled={!canEdit}
-              className="mt-1 h-8 font-mono text-sm"
-            />
-          </div>
-          <div>
-            <Label className="text-xs">Digits</Label>
-            <Input
-              type="number"
-              min={3}
-              max={10}
-              value={draft.numbering.sequenceWidth}
-              onChange={(event) =>
-                setDraft({
-                  ...draft,
-                  numbering: { ...draft.numbering, sequenceWidth: Number(event.target.value) || 5 },
-                })
-              }
-              disabled={!canEdit}
-              className="mt-1 h-8 text-sm"
-            />
-          </div>
-          <label className="flex items-end gap-1.5 pb-1.5 text-xs">
-            <Checkbox
-              checked={draft.numbering.includeDepartmentCode}
-              onCheckedChange={(checked) =>
-                setDraft({
-                  ...draft,
-                  numbering: { ...draft.numbering, includeDepartmentCode: checked === true },
-                })
-              }
-              disabled={!canEdit}
-            />
-            Include department code
-          </label>
-          <div className="sm:col-span-4">
-            <Badge variant="outline" className="font-mono text-[11px]">
-              {eApprovalReference(125, { settings: draft.numbering, departmentCode: 'FIN' })}
-            </Badge>
-            <span className="ml-2 text-[11px] text-muted-foreground">Example for the Finance department</span>
+
+          <div className="rounded-lg border p-2.5">
+            <label className="flex items-start gap-1.5 text-xs">
+              <Checkbox
+                checked={draft.allowReverse}
+                onCheckedChange={(checked) => setDraft({ ...draft, allowReverse: checked === true })}
+                disabled={!canEdit}
+                className="mt-0.5"
+              />
+              <span>
+                Allow reversal
+                <span className="block text-[11px] text-muted-foreground">
+                  A completed action — an approval, a verification, a rejection, a hold — can be undone by
+                  somebody holding <span className="font-medium">Reversals → Reverse Any</span>. Reversing a
+                  rejection reopens the request.
+                </span>
+              </span>
+            </label>
+            <div className="mt-2 flex items-end gap-2 pl-6">
+              <div>
+                <Label className="text-xs">Window (hours)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={draft.reverseWindowHours}
+                  onChange={(event) =>
+                    setDraft({ ...draft, reverseWindowHours: Number(event.target.value) || 1 })
+                  }
+                  disabled={!canEdit || !draft.allowReverse}
+                  className="mt-1 h-8 w-24 text-sm"
+                />
+              </div>
+              <p className="pb-1 text-[11px] text-muted-foreground">
+                Only the most recent action can be reversed; to undo two, undo them in order.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
+
 
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 px-3 py-2.5 sm:px-4">
@@ -425,6 +459,77 @@ export function EApprovalSettingsPanel({
             automatically; the rules above add the time-based reminders on top. Schedule{' '}
             <code className="rounded bg-background px-1">/api/e-approval/escalations</code> to run them unattended.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="px-3 py-2.5 sm:px-4">
+          <CardTitle className="flex items-center gap-1.5 text-sm">
+            <Hash className="h-4 w-4" /> Numbering
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Reference numbers are allocated on submission, inside a transaction, per financial year.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-2 px-3 pb-3 sm:grid-cols-4 sm:px-4">
+          <div>
+            <Label className="text-xs">Prefix</Label>
+            <Input
+              value={draft.numbering.prefix}
+              onChange={(event) =>
+                setDraft({ ...draft, numbering: { ...draft.numbering, prefix: event.target.value.toUpperCase() } })
+              }
+              disabled={!canEdit}
+              className="mt-1 h-8 font-mono text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Separator</Label>
+            <Input
+              value={draft.numbering.separator}
+              onChange={(event) =>
+                setDraft({ ...draft, numbering: { ...draft.numbering, separator: event.target.value } })
+              }
+              disabled={!canEdit}
+              className="mt-1 h-8 font-mono text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Digits</Label>
+            <Input
+              type="number"
+              min={3}
+              max={10}
+              value={draft.numbering.sequenceWidth}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  numbering: { ...draft.numbering, sequenceWidth: Number(event.target.value) || 5 },
+                })
+              }
+              disabled={!canEdit}
+              className="mt-1 h-8 text-sm"
+            />
+          </div>
+          <label className="flex items-end gap-1.5 pb-1.5 text-xs">
+            <Checkbox
+              checked={draft.numbering.includeDepartmentCode}
+              onCheckedChange={(checked) =>
+                setDraft({
+                  ...draft,
+                  numbering: { ...draft.numbering, includeDepartmentCode: checked === true },
+                })
+              }
+              disabled={!canEdit}
+            />
+            Include department code
+          </label>
+          <div className="sm:col-span-4">
+            <Badge variant="outline" className="font-mono text-[11px]">
+              {eApprovalReference(125, { settings: draft.numbering, departmentCode: 'FIN' })}
+            </Badge>
+            <span className="ml-2 text-[11px] text-muted-foreground">Example for the Finance department</span>
+          </div>
         </CardContent>
       </Card>
 

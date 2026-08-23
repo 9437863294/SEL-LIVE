@@ -26,6 +26,9 @@ import { dispatchNotification } from '@/lib/notifications';
 import {
   applyEApprovalAction,
   buildEApprovalSteps,
+  canRecallEApprovalAction,
+  canReverseEApprovalAction,
+  eApprovalUndoState,
   resolveDueEApprovalEscalations,
   DEFAULT_E_APPROVAL_SETTINGS_RECORD,
   E_APPROVAL_ACTIVITY_MODULE,
@@ -67,6 +70,7 @@ import {
   type EApprovalTemplateRecord,
   type EApprovalTemplateStep,
   type EApprovalType,
+  type EApprovalUndoEligibility,
   type EApprovalVersionRecord,
 } from '@/lib/e-approval';
 
@@ -934,6 +938,129 @@ export async function performEApprovalAction(
   });
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Recall and reverse
+ * ---------------------------------------------------------------------------------------------- */
+
+/** One history entry, judged for undoability against the live rules. */
+export interface EApprovalUndoOption {
+  entry: EApprovalHistoryEntry;
+  recall: EApprovalUndoEligibility;
+  reverse: EApprovalUndoEligibility;
+}
+
+/**
+ * Whether the given history entry can be taken back, and by which power.
+ *
+ * Returns both verdicts rather than one, because the screen has to explain the difference: the same
+ * entry is often recallable by its author for another eight minutes *and* reversible by a supervisor
+ * for another twenty hours, and collapsing that into a single boolean is what makes an undo button
+ * feel arbitrary.
+ */
+export async function evaluateEApprovalUndo(
+  approvalId: string,
+  entry: EApprovalHistoryEntry,
+  actor: EApprovalServiceActor,
+  options: { canReverse: boolean; history?: EApprovalHistoryEntry[]; settings?: EApprovalSettingsRecord },
+): Promise<EApprovalUndoOption> {
+  const who = requireActor(actor);
+  const [settings, engineActor] = await Promise.all([
+    options.settings ? Promise.resolve(options.settings) : loadEApprovalSettings(who.organizationId),
+    loadEApprovalActorContext(who),
+  ]);
+  const history: EApprovalHistoryEntry[] =
+    options.history ??
+    (await getDocs(
+      query(collection(db, E_APPROVAL_COLLECTIONS.history), where('approvalId', '==', approvalId)),
+    ).then((snapshot) => mapDocs<EApprovalHistoryEntry>(snapshot.docs)));
+
+  const { isLatestAction, alreadyUndone } = eApprovalUndoState(
+    history.map((row) => ({ eventId: row.id, at: row.at, kind: row.kind, undo: row.undo, undidEventId: row.undidEventId })),
+    entry.id,
+  );
+
+  if (alreadyUndone) {
+    const done = { allowed: false, reason: 'This action has already been undone.' };
+    return { entry, recall: done, reverse: done };
+  }
+
+  const candidate = {
+    eventId: entry.id,
+    at: entry.at,
+    actorId: entry.actorId,
+    actorName: entry.actorName,
+    kind: entry.kind,
+    summary: entry.summary,
+    undo: entry.undo,
+  };
+  return {
+    entry,
+    recall: canRecallEApprovalAction(candidate, engineActor, { settings, isLatestAction }),
+    reverse: canReverseEApprovalAction(candidate, engineActor, {
+      settings,
+      isLatestAction,
+      hasPermission: options.canReverse,
+    }),
+  };
+}
+
+/**
+ * Takes an action back, restoring the file to the state the snapshot on the history entry records.
+ *
+ * Eligibility is re-checked here rather than trusted from the UI: the recall window may well have
+ * closed between the button rendering and the tap, and a client that decides its own permissions is
+ * not a permission.
+ */
+export async function undoEApprovalAction(
+  approvalId: string,
+  historyEntryId: string,
+  input: { kind: 'Recall' | 'Reverse'; reason?: string; canReverse?: boolean },
+  actor: EApprovalServiceActor,
+): Promise<void> {
+  const who = requireActor(actor);
+  const [request, steps, settings, engineActor, history] = await Promise.all([
+    getEApprovalRequest(approvalId),
+    listEApprovalSteps(approvalId),
+    loadEApprovalSettings(who.organizationId),
+    loadEApprovalActorContext(who),
+    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.history), where('approvalId', '==', approvalId))).then(
+      (snapshot) => mapDocs<EApprovalHistoryEntry>(snapshot.docs),
+    ),
+  ]);
+  if (!request) throw new EApprovalServiceError('This approval no longer exists.');
+
+  const entry = history.find((row) => row.id === historyEntryId);
+  if (!entry) throw new EApprovalServiceError('That history entry no longer exists.');
+
+  const verdict = await evaluateEApprovalUndo(approvalId, entry, who, {
+    canReverse: input.canReverse ?? false,
+    history,
+    settings,
+  });
+  const eligibility = input.kind === 'Recall' ? verdict.recall : verdict.reverse;
+  if (!eligibility.allowed) {
+    throw new EApprovalServiceError(eligibility.reason || 'This action can no longer be undone.');
+  }
+
+  await commitEApprovalTransition({
+    request,
+    steps,
+    actor: who,
+    settings,
+    input: {
+      kind: input.kind,
+      actor: engineActor,
+      undo: entry.undo,
+      undidEventId: entry.id,
+      reason: input.reason,
+      now: nowIso(),
+      nextId: firestoreIdFactory(),
+      settings,
+    },
+    activityAction: input.kind,
+  });
+}
+
 /** `subject=x|amount=1` → `{ subject: 'x', amount: '1' }`, for comparing against a stored print. */
 const parseFingerprint = (fingerprint?: string): Record<string, string> =>
   Object.fromEntries(
@@ -1025,6 +1152,15 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
   const batch = writeBatch(db);
   const previousById = new Map(steps.map((step) => [step.id, step]));
   const activeStep = transition.steps.find((step) => step.status === 'Active');
+
+  // A recall removes the steps its action created, so a step can legitimately disappear from the
+  // transition. Deleting it rather than leaving it behind is the difference between "that request was
+  // withdrawn" and a cancelled step sitting in somebody's history for a dispatch that was taken back
+  // within two minutes.
+  const survivingIds = new Set(transition.steps.map((step) => step.id));
+  steps.forEach((step) => {
+    if (!survivingIds.has(step.id)) batch.delete(doc(db, E_APPROVAL_COLLECTIONS.steps, step.id));
+  });
 
   transition.steps.forEach((step) => {
     const previous = previousById.get(step.id);

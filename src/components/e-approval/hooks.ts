@@ -233,15 +233,17 @@ export function useEApprovalPermissions() {
       canComment: can('Add', `${resource}.Comments`),
       canUpload: can('Upload', `${resource}.Attachments`),
       canViewAudit: can('View', `${resource}.Audit Trail`),
+      /** Reversing another person's completed action. Recall is not gated on a permission. */
+      canReverse: can('Reverse Any', `${resource}.Reversals`),
       canViewReports: can('View', `${resource}.Reports`),
       canManageDelegations: can('Add', `${resource}.Delegations`) || can('Edit', `${resource}.Delegations`),
       canViewDelegations: can('View', `${resource}.Delegations`) || can('Add', `${resource}.Delegations`),
-      canAdminister:
-        can('View', `${resource}.Administration`) ||
-        can('Edit', `${resource}.Administration.Settings`) ||
-        can('View', `${resource}.Administration.Approval Types`) ||
-        can('View', `${resource}.Administration.Workflow Templates`) ||
-        can('View', `${resource}.Administration.Approval Matrix`),
+      canManageSettings:
+        can('View', `${resource}.Settings`) ||
+        can('Edit', `${resource}.Settings.Policies`) ||
+        can('View', `${resource}.Settings.Approval Types`) ||
+        can('View', `${resource}.Settings.Workflow Templates`) ||
+        can('View', `${resource}.Settings.Approval Matrix`),
       can,
     }),
     [can, isLoading, resource],

@@ -36,7 +36,7 @@ type NavKey =
   | 'all'
   | 'reports'
   | 'delegations'
-  | 'admin';
+  | 'settings';
 
 const sections: Array<{
   href: string;
@@ -58,15 +58,15 @@ const sections: Array<{
   { href: `${E_APPROVAL_BASE_PATH}/completed`, label: 'Completed', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'registers', gate: 'mine' },
   { href: `${E_APPROVAL_BASE_PATH}/rejected`, label: 'Rejected', icon: XCircle, color: 'text-rose-600', bg: 'bg-rose-100', group: 'registers', gate: 'mine' },
 
-  { href: `${E_APPROVAL_BASE_PATH}/delegations`, label: 'Delegations', icon: UserCheck, color: 'text-fuchsia-600', bg: 'bg-fuchsia-100', group: 'admin', gate: 'delegations' },
-  { href: `${E_APPROVAL_BASE_PATH}/reports`, label: 'Reports', icon: BarChart3, color: 'text-blue-600', bg: 'bg-blue-100', group: 'admin', gate: 'reports' },
-  { href: `${E_APPROVAL_BASE_PATH}/admin`, label: 'Administration', icon: Settings, color: 'text-slate-600', bg: 'bg-slate-200', group: 'admin', gate: 'admin' },
+  { href: `${E_APPROVAL_BASE_PATH}/delegations`, label: 'Delegations', icon: UserCheck, color: 'text-fuchsia-600', bg: 'bg-fuchsia-100', group: 'config', gate: 'delegations' },
+  { href: `${E_APPROVAL_BASE_PATH}/reports`, label: 'Reports', icon: BarChart3, color: 'text-blue-600', bg: 'bg-blue-100', group: 'config', gate: 'reports' },
+  { href: `${E_APPROVAL_BASE_PATH}/settings`, label: 'Settings', icon: Settings, color: 'text-slate-600', bg: 'bg-slate-200', group: 'config', gate: 'settings' },
 ];
 
 const groupLabels: Record<string, string> = {
   work: 'My Work',
   registers: 'Registers',
-  admin: 'Configuration',
+  config: 'Configuration',
 };
 
 export default function EApprovalLayoutShell({ children }: { children: React.ReactNode }) {
@@ -83,7 +83,7 @@ export default function EApprovalLayoutShell({ children }: { children: React.Rea
     all: permissions.canViewAll,
     reports: permissions.canViewReports,
     delegations: permissions.canViewDelegations,
-    admin: permissions.canAdminister,
+    settings: permissions.canManageSettings,
   };
 
   const availableSections = sections.filter((item) => gates[item.gate]);

@@ -69,7 +69,8 @@
       "Bash(echo \"TYPECHECK=$?\")",
       "Bash(nslookup seltech.store)",
       "Bash(echo \"--- exit=$? ---\")",
-      "Bash(nslookup www.seltech.store)"
+      "Bash(nslookup www.seltech.store)",
+      "Bash(grep -n \"Settings.Policies\\\\|Settings\\\\`\\)\" src/components/e-approval/hooks.ts)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

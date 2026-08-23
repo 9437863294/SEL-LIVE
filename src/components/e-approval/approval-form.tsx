@@ -6,6 +6,7 @@ import {
   ArrowDown,
   ChevronDown,
   ChevronUp,
+  FileText,
   IndianRupee,
   Loader2,
   Lock,
@@ -14,6 +15,7 @@ import {
   Send,
   Settings2,
   Sparkles,
+  Upload,
   X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +46,7 @@ import {
   resolveEApprovalRoutingForDraft,
   submitEApproval,
   updateEApprovalDraft,
+  uploadEApprovalAttachment,
   type EApprovalServiceActor,
   type ResolvedEApprovalRouting,
 } from '@/lib/e-approval-service';
@@ -106,6 +109,10 @@ export function ApprovalForm({
     Boolean(existing?.amount || existing?.vendorName || existing?.costCentre || existing?.budgetHead),
   );
   const [busy, setBusy] = useState<'draft' | 'submit' | null>(null);
+  /** Files chosen before the request exists. Uploaded on save, once there is an id to file them under. */
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploaded, setUploaded] = useState(0);
+  const [dragging, setDragging] = useState(false);
 
   const selectedType = directory.types.find((row) => row.id === approvalTypeId);
 
@@ -240,11 +247,35 @@ export function ApprovalForm({
         if (approvalId) await updateEApprovalDraft(approvalId, draft, serviceActor);
         else approvalId = await createEApprovalDraft(draft, serviceActor);
 
+        // Uploaded *before* submitting, never after. `submitEApproval` fingerprints the material
+        // fields — the attachment set included — and that fingerprint is what a later resubmission is
+        // compared against. Uploading after submission would bake in a fingerprint that omits these
+        // files, so the very next resubmit would report a material change nobody made and supersede
+        // approvals for no reason.
+        const staged = pendingFiles.length;
+        if (staged) {
+          setUploaded(0);
+          // Each file leaves the queue as it lands, so a failure half way through leaves only the
+          // files that did *not* upload staged. Clearing the whole queue at the end instead would
+          // make a retry re-upload everything that already succeeded, and attachments are never
+          // replaced — you would be looking at duplicates on the approval.
+          for (const file of [...pendingFiles]) {
+            await uploadEApprovalAttachment(approvalId, file, serviceActor, {
+              description: 'Attached when the request was raised',
+            });
+            setUploaded((count) => count + 1);
+            setPendingFiles((current) => current.filter((queued) => queued !== file));
+          }
+        }
+
         if (thenSubmit) {
           await submitEApproval(approvalId, serviceActor);
           toast({ title: 'Submitted for approval' });
         } else {
-          toast({ title: 'Draft saved', description: 'You can add attachments now.' });
+          toast({
+            title: 'Draft saved',
+            description: staged ? `${staged} document${staged > 1 ? 's' : ''} attached.` : undefined,
+          });
         }
         onSaved?.(approvalId);
         router.push(`${E_APPROVAL_BASE_PATH}/${approvalId}`);
@@ -258,7 +289,7 @@ export function ApprovalForm({
         setBusy(null);
       }
     },
-    [serviceActor, valid, amountMissing, hasRoute, selectedType, existing, draft, onSaved, router, toast],
+    [serviceActor, valid, amountMissing, hasRoute, selectedType, existing, draft, pendingFiles, onSaved, router, toast],
   );
 
   const moveChain = (index: number, delta: number) => {
@@ -307,6 +338,97 @@ export function ApprovalForm({
                   className="min-h-[280px] resize-y text-sm leading-relaxed"
                 />
               </Field>
+            </div>
+          </FormSection>
+
+          <FormSection
+            title="Supporting documents"
+            description="Quotations, comparative statements, drawings, sanction letters — whatever the approver needs to decide."
+            aside={
+              pendingFiles.length > 0 ? (
+                <Badge variant="outline" className="text-[10px]">
+                  {pendingFiles.length} to upload
+                </Badge>
+              ) : undefined
+            }
+          >
+            <div className="space-y-2">
+              <label
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragging(false);
+                  const dropped = Array.from(event.dataTransfer.files ?? []);
+                  if (dropped.length) setPendingFiles((current) => [...current, ...dropped]);
+                }}
+                className={cn(
+                  'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-6 text-center transition-colors',
+                  dragging ? 'border-sky-400 bg-sky-50' : 'border-muted-foreground/25 hover:border-sky-300 hover:bg-muted/30',
+                )}
+              >
+                <Upload className="h-5 w-5 text-muted-foreground" />
+                <span className="text-xs font-medium">Drop files here, or tap to choose</span>
+                <span className="text-[11px] text-muted-foreground">
+                  {existing?.id
+                    ? 'Uploaded when you save.'
+                    : 'Uploaded when you save the draft or submit — the request needs an id first.'}
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => {
+                    const chosen = Array.from(event.target.files ?? []);
+                    if (chosen.length) setPendingFiles((current) => [...current, ...chosen]);
+                    event.target.value = '';
+                  }}
+                />
+              </label>
+
+              {pendingFiles.length > 0 && (
+                <ul className="divide-y rounded-lg border">
+                  {pendingFiles.map((file, index) => (
+                    <li key={`${file.name}-${index}`} className="flex items-center gap-2 px-2.5 py-2">
+                      <FileText className="h-4 w-4 shrink-0 text-sky-600" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{file.name}</span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {file.size < 1024 * 1024
+                            ? `${Math.max(1, Math.round(file.size / 1024))} KB`
+                            : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+                          {busy && index < uploaded ? ' · uploaded' : ''}
+                        </span>
+                      </span>
+                      {busy && index === uploaded ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 shrink-0 p-0 text-destructive"
+                          onClick={() => setPendingFiles(pendingFiles.filter((_, position) => position !== index))}
+                          disabled={busy !== null}
+                          aria-label={`Remove ${file.name}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {existing?.id && (
+                <p className="text-[11px] text-muted-foreground">
+                  Files already on this request are listed further down, and are never replaced — a revision is added
+                  alongside the original.
+                </p>
+              )}
             </div>
           </FormSection>
 
