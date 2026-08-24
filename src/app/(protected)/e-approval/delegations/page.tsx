@@ -24,7 +24,7 @@ import {
   listEApprovalDelegations,
   saveEApprovalDelegation,
 } from '@/lib/e-approval-service';
-import { EApprovalEmptyState } from '@/components/e-approval/shared';
+import { eApprovalDialogClass, EApprovalEmptyState } from '@/components/e-approval/shared';
 import { PageHeader } from '@/components/e-approval/page-header';
 import {
   formatEApprovalDate,
@@ -268,14 +268,14 @@ export default function EApprovalDelegationsPage() {
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        <DialogContent className={eApprovalDialogClass.content}>
+          <DialogHeader className={eApprovalDialogClass.header}>
             <DialogTitle>New delegation</DialogTitle>
             <DialogDescription className="text-xs">
               Delegation resolves one level only: if A delegates to B and B delegates to C, A&apos;s files go to B.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className={eApprovalDialogClass.body}>
             <div>
               <Label className="text-xs">Delegate approvals of</Label>
               <Select value={fromUserId} onValueChange={setFromUserId}>
@@ -345,7 +345,7 @@ export default function EApprovalDelegationsPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={eApprovalDialogClass.footer}>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
               Cancel
             </Button>

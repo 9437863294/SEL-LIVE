@@ -12,6 +12,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RadioTower,
   RefreshCw,
   Ruler,
   Search,
@@ -55,6 +56,10 @@ import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variat
 import { isBoqSectionHeader } from "@/lib/project-management-boq-columns";
 // Single source of truth for where the JMC screens live, so this link cannot drift from the routes.
 import { PM_JMC_BASE_PATH } from "@/lib/jmc-module";
+import {
+  TOWER_PROGRESS_PERMISSION_RESOURCE,
+  towerProgressHref,
+} from "@/lib/project-management-tower-progress";
 import {
   WORK_PACKAGE_COLLECTION,
   WORK_PACKAGE_PRIORITIES,
@@ -211,6 +216,10 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
   const canExport = can("Export", resource) || can("Export", "Project Management.BOQ");
   // JMC is hosted by both modules against the same registers, so either module's view right opens it.
   const canViewJmc = can("View", "Project Management.JMC") || can("View", "Billing Recon.JMC");
+  // Tower Progress has its own resource, but an existing Erection view right also opens it — the
+  // feature would otherwise be invisible to the site engineers who already hold Erection rights
+  // until every role had been edited.
+  const canViewTowerProgress = can("View", TOWER_PROGRESS_PERMISSION_RESOURCE) || canView;
 
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [packages, setPackages] = useState<ProjectWorkPackage[]>([]);
@@ -660,6 +669,17 @@ export default function ScopeExecutionWorkspace({ mappingId, scope }: ScopeExecu
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Tower Progress is the erection lane's tower-wise execution register — the seven
+              construction activities per tower with their photographic evidence, and the reporting
+              engine over them (see src/lib/project-management-tower-progress.ts). Erection only:
+              a civil scope has no tower schedule to run it against. */}
+          {scope === "Erection" && canViewTowerProgress && (
+            <Button variant="outline" asChild>
+              <Link href={towerProgressHref(mappingId)}>
+                <RadioTower className="mr-2 h-4 w-4" />Tower Progress
+              </Link>
+            </Button>
+          )}
           {/* JMC is the civil lane's measurement register — the same screens Billing Recon hosts,
               rendered here against this project (see src/lib/jmc-module.ts). */}
           {canViewJmc && (

@@ -720,6 +720,24 @@ export const permissionModules = {
     Supply: ["View"],
     Civil: ["View", "Add", "Edit", "Delete", "Export"],
     Erection: ["View", "Add", "Edit", "Delete", "Export"],
+    // Tower-wise execution hosted inside Erection: the seven construction activities per tower, their
+    // photographic evidence, and the reporting engine over both (see
+    // src/lib/project-management-tower-progress.ts). "Verify Progress" is deliberately separate from
+    // "Update Progress" — the engineer who records a completion must not be able to sign it off — and
+    // is the one action that does not fall back to an Erection right.
+    "Tower Progress": [
+      "View",
+      "Add Tower",
+      "Edit Tower",
+      "Delete Tower",
+      "Import Towers",
+      "Update Progress",
+      "Verify Progress",
+      "View Reports",
+      "Export",
+      "View Settings",
+      "Edit Settings",
+    ],
     // Surveyed quantities route through a configurable approval workflow before they reach the
     // BOQ item (see src/lib/project-management-survey-workflow.ts), so Survey now carries the
     // same settings/reports actions the other workflow-backed modules do.

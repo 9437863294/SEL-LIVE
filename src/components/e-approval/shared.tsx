@@ -167,3 +167,24 @@ export function EApprovalField({
     </div>
   );
 }
+
+/**
+ * Dialog classes for the module: a full-screen sheet on a phone, a scrollable centred modal above.
+ *
+ * Lives here rather than beside the settings screens because every dialog in the module needs it —
+ * the action panel, delegations and the undo prompt as much as the settings forms.
+ *
+ * The flex utilities on `body` are load-bearing and **not** redundant with `hr-dialog-body`: those
+ * rules sit inside `@media (max-width: 640px)` in `globals.css`, so above that breakpoint the body
+ * claimed no flex space and had no overflow, and a tall form ran past the bottom of the modal with
+ * nothing to scroll. `DialogContent` is already a `flex flex-col min-h-0` shell with a max height
+ * precisely so an inner body can own the scroll; it needs a body that takes the offer at every width.
+ */
+export const eApprovalDialogClass = {
+  content: 'hr-mobile-dialog sm:max-w-xl',
+  /** Wide enough for the workflow stage editor's two-column layout. */
+  contentWide: 'hr-mobile-dialog sm:max-w-5xl',
+  header: 'hr-dialog-header shrink-0',
+  body: 'hr-dialog-body min-h-0 flex-1 space-y-3 overflow-y-auto',
+  footer: 'hr-dialog-footer shrink-0',
+} as const;

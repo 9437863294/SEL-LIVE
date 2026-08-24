@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { formatEApprovalDuration, type EApprovalHistoryEntry } from '@/lib/e-approval';
+import { eApprovalDialogClass } from './shared';
 import {
   evaluateEApprovalUndo,
   undoEApprovalAction,
@@ -136,8 +137,8 @@ export function EApprovalUndoButtons({
       </span>
 
       <Dialog open={dialog !== null} onOpenChange={(open) => !open && setDialog(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
+        <DialogContent className={eApprovalDialogClass.content}>
+          <DialogHeader className={eApprovalDialogClass.header}>
             <DialogTitle>{dialog === 'Recall' ? 'Recall this request' : 'Reverse this action'}</DialogTitle>
             <DialogDescription className="text-xs">
               {dialog === 'Recall'
@@ -146,7 +147,7 @@ export function EApprovalUndoButtons({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2">
+          <div className={eApprovalDialogClass.body}>
             <p className="rounded-md border bg-muted/30 px-2.5 py-2 text-xs">
               <span className="font-medium">Undoing:</span> {entry.summary}
             </p>
@@ -164,7 +165,7 @@ export function EApprovalUndoButtons({
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className={eApprovalDialogClass.footer}>
             <Button variant="outline" onClick={() => setDialog(null)} disabled={busy}>
               Cancel
             </Button>

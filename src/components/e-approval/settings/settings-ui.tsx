@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { eApprovalDialogClass as settingsDialogClass } from '../shared';
 
 /**
  * Shared furniture for the settings sub-pages.
@@ -22,14 +23,12 @@ import { cn } from '@/lib/utils';
  * then reads as: what exists → what you can change → nothing else.
  */
 
-/** Turns a ShadCN dialog into a full-screen sheet on a phone. Behaviour lives in `globals.css`. */
-export const settingsDialogClass = {
-  content: 'hr-mobile-dialog sm:max-w-lg',
-  contentWide: 'hr-mobile-dialog sm:max-w-3xl',
-  header: 'hr-dialog-header',
-  body: 'hr-dialog-body space-y-3',
-  footer: 'hr-dialog-footer',
-} as const;
+/**
+ * Re-exported so the settings screens and every other dialog in the module stay in step.
+ *
+ * Imported as well as exported: `export … from` creates no local binding, and this file uses it.
+ */
+export { settingsDialogClass };
 
 /**
  * The row above every settings list: what is in it, a search, and the one primary action.

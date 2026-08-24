@@ -22,7 +22,9 @@ export default function CreateEApprovalPage() {
   }
 
   return (
-    <div className="space-y-3">
+    // One column, one measure. 1024px keeps the two-column field grids inside a step comfortable
+    // without letting the proposal box stretch to a 1600px line on a wide monitor.
+    <div className="mx-auto w-full max-w-5xl space-y-3">
       <PageHeader
         title="New approval"
         description="A note-sheet, routed for approval. Only the first approver has to be named — the rest of the chain is built by whoever holds the file."

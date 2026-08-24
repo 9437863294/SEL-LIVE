@@ -87,7 +87,7 @@ export default function EditEApprovalPage() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="mx-auto w-full max-w-5xl space-y-3">
       <PageHeader
         title={request.status === 'Returned' ? 'Correct and resubmit' : 'Edit draft'}
         description={
@@ -115,7 +115,6 @@ export default function EditEApprovalPage() {
       <FormSection
         title="Attachments"
         description="Files are added, never replaced. Changing the attachment set counts as a material change."
-        className="mb-20"
       >
         <AttachmentList
           approvalId={request.id}

@@ -25,7 +25,7 @@
     "chat:migrate-to-rtdb": "node scripts/migrate-chat-to-realtime.js",
     "inventory:migrate": "node scripts/migrate-inventory-v2.mjs",
     "test:inventory": "node --experimental-strip-types --test tests/inventory-domain.test.mjs",
-    "test:project-management": "node --experimental-strip-types --test tests/project-management-domain.test.mjs",
+    "test:project-management": "node --experimental-strip-types --test tests/project-management-domain.test.mjs tests/tower-progress-domain.test.mjs",
     "test:recurring-payments": "node --experimental-strip-types --test tests/recurring-payments-schedule.test.mjs",
     "test:tour-travel": "node --experimental-strip-types --test tests/tour-travel-domain.test.mjs",
     "test:hr": "node --experimental-strip-types --test tests/hr-domain.test.mjs",

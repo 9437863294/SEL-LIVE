@@ -53,6 +53,7 @@ import {
   type EApprovalServiceActor,
 } from '@/lib/e-approval-service';
 import { AssigneePicker } from './assignee-picker';
+import { eApprovalDialogClass } from './shared';
 import type { EApprovalDirectory } from './hooks';
 
 const actionIcons: Partial<Record<EApprovalActionKind, typeof CheckCircle2>> = {
@@ -404,14 +405,14 @@ export function ActionPanel({
       </Card>
 
       <Dialog open={Boolean(dialog)} onOpenChange={(open) => !open && setDialog(null)}>
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className={eApprovalDialogClass.content}>
+          <DialogHeader className={eApprovalDialogClass.header}>
             <DialogTitle>{dialog ? E_APPROVAL_ACTION_LABELS[dialog.kind] : ''}</DialogTitle>
             <DialogDescription className="text-xs">{dialog?.description}</DialogDescription>
           </DialogHeader>
 
           {dialog && (
-            <div className="space-y-3">
+            <div className={eApprovalDialogClass.body}>
               {activeStep && dialog.kind !== 'Submit' && dialog.kind !== 'Cancel' && dialog.kind !== 'Resubmit' && (
                 <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-xs">
                   <span className="text-muted-foreground">Step: </span>
@@ -589,7 +590,7 @@ export function ActionPanel({
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className={eApprovalDialogClass.footer}>
             <Button type="button" variant="outline" onClick={() => setDialog(null)} disabled={busy}>
               Cancel
             </Button>

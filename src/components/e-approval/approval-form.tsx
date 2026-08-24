@@ -460,7 +460,10 @@ export function ApprovalForm({
   );
 
   return (
-    <div className="mx-auto min-w-0 max-w-3xl space-y-3 pb-24">
+    // No width cap and no auto-margins here: the *page* owns the measure, so the header, the steps
+    // and the action bar all share one column edge. When the form capped itself the page had three
+    // different widths stacked on top of each other, which is what made it look accidental.
+    <div className="min-w-0 space-y-3">
       {/* ── Step 1 · Subject ────────────────────────────────────────────────────────────── */}
       <StepCard step={stepNo('subject')} title="Subject" description="One line naming what is being approved.">
         <Input
@@ -872,8 +875,11 @@ export function ApprovalForm({
       )}
 
       {/* ── Action bar ──────────────────────────────────────────────────────────────────────── */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-background/95 px-3 py-2.5 shadow-[0_-4px_16px_-8px_rgba(15,23,42,0.2)] backdrop-blur sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-end gap-2">
+      {/* Sticky within the column, not fixed to the viewport. Fixed made it span underneath the
+          module sidebar and align to a different width than the form, so Submit sat nowhere near the
+          thing it submits — and it overlaid whatever a page put after the form. */}
+      <div className="sticky bottom-0 z-20 rounded-xl border bg-background/95 px-3 py-2.5 shadow-[0_-4px_16px_-8px_rgba(15,23,42,0.2)] backdrop-blur sm:px-4">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <p className="mr-auto min-w-0 text-[11px] text-muted-foreground">
             {!valid
               ? 'A subject and a proposal are required.'
