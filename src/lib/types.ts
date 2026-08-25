@@ -1,5 +1,6 @@
 import { Timestamp } from "firebase/firestore";
 import { z } from "zod";
+import type { UserGreytHRLink } from "./greythr-linking";
 
 /** ---------- Shared small types used below ---------- **/
 
@@ -46,6 +47,17 @@ export interface User {
   };
   organizationId?: string;
   organizationName?: string;
+  /**
+   * The greytHR employee this login belongs to.
+   *
+   * `employeeId` is the join itself and stays top level because `indexUsersByEmployeeId` and the
+   * employee picker's queries already read it there. `greytHR` records how the link was made and by
+   * whom — see `src/lib/greythr-linking.ts`. Both optional: contractors and service accounts have no
+   * HR record, and pre-existing users have neither field until they are linked.
+   */
+  employeeId?: string;
+  employeeNo?: string;
+  greytHR?: UserGreytHRLink;
 }
 
 export interface SavedUser {

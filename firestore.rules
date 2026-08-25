@@ -196,6 +196,19 @@ service cloud.firestore {
     }
 
     /**
+     * The user ↔ employee link history.
+     *
+     * Read by anyone who can see User Management, because the question it answers — "why is this
+     * account attached to that employee" — is asked from that screen. Written only by the Admin SDK
+     * behind `/api/greythr/link`: a client that could write here could forge the record of who
+     * attached a login to whose HR data, which is the one thing this collection exists to prove.
+     */
+    match /greythrLinkAudit/{entryId} {
+      allow get, list: if holdsPermission('Settings.User Management', 'View');
+      allow write: if false;
+    }
+
+    /**
      * Roles.
      *
      * Every signed-in user needs to read the roles collection — the resolver looks up additional

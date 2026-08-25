@@ -12,7 +12,13 @@
     "src/lib/greythr.ts",
     "src/lib/greythr-client.ts",
     "src/lib/greythr-sync-service.ts",
-    "src/lib/access-control.ts"
+    "src/lib/access-control.ts",
+    "src/lib/greythr-linking.ts",
+    "src/lib/greythr-link-service.ts",
+    "src/components/access-management/greythr-linking.tsx",
+    "src/app/(protected)/settings/user-management/greythr-linking/**/*.tsx"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules"
+  ]
 }

@@ -80,6 +80,7 @@ import {
   type SyncEmployeeOutcome,
   type SyncedEmployee,
 } from './greythr';
+import { assertNoProtectedFields, pickGreytHRFields } from './greythr-linking';
 import {
   fetchAttendanceInsights,
   fetchLeaveBalances,
@@ -654,11 +655,43 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
           data: write.data,
           merge: true,
         })),
-        ...userWrites.map((write) => ({
-          ref: db.collection(GREYTHR_COLLECTIONS.users).doc(write.id),
-          data: write.data,
-          merge: true,
-        })),
+        ...userWrites.map((write) => {
+          /**
+           * The last gate before an HR sync writes to a login record.
+           *
+           * Checked on the built payload rather than at the point each write is pushed, because a
+           * guard next to the construction site can be bypassed by the next person who adds a
+           * `userWrites.push`. Here it cannot: every user write in this run passes through this line.
+           *
+           * A sync that wrote `permissions` would silently undo every additive grant an
+           * administrator had made, and nothing downstream would report it. Failing the run loudly
+           * is strictly better than that.
+           */
+          assertNoProtectedFields(write.data, 'The greytHR sync');
+
+          /**
+           * Then narrow to the fields greytHR owns.
+           *
+           * Belt and braces: the assertion above catches the fields that would be catastrophic, this
+           * catches everything else that is simply not greytHR's to write. Anything dropped is
+           * reported as a run warning rather than discarded quietly — a silent filter turns "my new
+           * field is not saving" into an afternoon of debugging.
+           */
+          const data = pickGreytHRFields(write.data);
+          const dropped = Object.keys(write.data).filter((key) => !(key in data));
+          if (dropped.length) {
+            warnings.push(
+              `Ignored ${dropped.join(', ')} on user ${write.id}: greytHR may only write HR fields. ` +
+                'Add the field to GREYTHR_OWNED_USER_FIELDS if it genuinely belongs to HR.',
+            );
+          }
+
+          return {
+            ref: db.collection(GREYTHR_COLLECTIONS.users).doc(write.id),
+            data,
+            merge: true,
+          };
+        }),
         ...grantWrites.map((write) => ({
           ref: db.collection(GREYTHR_COLLECTIONS.grants).doc(write.id),
           data: write.data,

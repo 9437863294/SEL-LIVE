@@ -817,7 +817,13 @@ export const permissionModules = {
       "Delete",
       "Sync from GreytHR",
     ],
-    "User Management": ["View", "Add", "Edit", "Delete", "Switch User"],
+    // "Link greytHR" is appended rather than folded into "Edit" because linking an account to an
+    // employee decides whose resignation deactivates whose login — a narrower and more consequential
+    // power than editing a user's name. An organisation can now delegate the first-run linking work
+    // to HR without also handing over the ability to edit user records. Existing roles are
+    // unaffected: nobody holds the new action until it is granted, and every check that previously
+    // accepted "Edit" still does.
+    "User Management": ["View", "Add", "Edit", "Delete", "Switch User", "Link greytHR"],
     "Role Management": ["View", "Add", "Edit", "Delete"],
     // The additive access layer (see src/lib/access-control.ts and docs/access-management.md).
     // Deliberately separate from User Management and Role Management rather than folded into them:

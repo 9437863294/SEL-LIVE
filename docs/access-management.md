@@ -159,6 +159,14 @@ The registry itself — modules, pages, actions — is derived from
 [`permissionModules`](../src/lib/permissions.ts) by `flattenPermissionRegistry`. **A new module
 registers itself by existing in that file.** Nothing else to configure.
 
+Two actions were appended to existing nodes by later work, both additive — nobody holds them until
+granted, and no existing check changed:
+
+| Node | Action | Why it is not folded into `Edit` |
+| --- | --- | --- |
+| `Settings.User Management` | `Link greytHR` | Attaching a login to an HR record decides whose resignation deactivates whose account. An organisation may want HR to do the first-run linking without also being able to edit user records. See [greytHR integration §8b](greythr-integration.md). |
+| `Employee.Documents` | `View` / `Download` | A document folder holds anything from an offer letter to a medical certificate. Knowing one exists is not the same as taking a copy. |
+
 ---
 
 ## 5. Removing access is a different operation

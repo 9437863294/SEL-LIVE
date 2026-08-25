@@ -26,6 +26,7 @@ import {
   History,
   KeyRound,
   Layers,
+  Link2,
   Loader2,
   PauseCircle,
   PlayCircle,
@@ -48,6 +49,8 @@ import {
   type PermissionMap,
 } from '@/lib/access-control';
 import { revokeAccess, setAccessLayerStatus, type AccessActor } from '@/lib/access-control-service';
+import { linkMethodLabel } from '@/lib/greythr-linking';
+import type { User } from '@/lib/types';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
 import { UserEffectiveAccessPanel } from './effective-access';
 import { RemovalPreviewDialog } from './assignment-preview';
@@ -217,6 +220,8 @@ export function UserAccessProfile({
               </HrField>
             </CardContent>
           </Card>
+
+          <GreytHRConnectionCard user={user} />
 
           <UserEffectiveAccessPanel
             user={user}
@@ -456,6 +461,80 @@ export function UserAccessProfile({
 /* ------------------------------------------------------------------------------------------------
  * Small presentational pieces
  * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The greytHR connection for one account.
+ *
+ * Read-only here on purpose. Linking is a reconciliation job — you need to see who else claims an
+ * employee before you can safely claim it — so the actions live on the linking console and this card
+ * links out to it. Duplicating a link button here would mean duplicating the conflict check too, and
+ * a second implementation of that check is exactly how a user ends up double-linked.
+ */
+function GreytHRConnectionCard({ user }: { user: User }) {
+  const link = user.greytHR;
+  const connected = Boolean(user.employeeId);
+
+  return (
+    <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+      <CardHeader className="px-4 py-3">
+        <CardTitle className="flex items-center gap-1.5 text-sm">
+          <Link2 className={cn('h-4 w-4', connected ? 'text-emerald-600' : 'text-slate-400')} />
+          greytHR connection
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px] font-normal',
+              connected
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-slate-100 text-slate-600',
+            )}
+          >
+            {connected ? 'Connected' : 'Not connected'}
+          </Badge>
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {connected
+            ? 'HR data follows this employee record. Roles and permissions are owned here and are never written by greytHR.'
+            : 'No employee record is attached, so a resignation in greytHR will not deactivate this account.'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 px-4 pb-4">
+        {connected && (
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <HrField label="greytHR employee ID">{user.employeeId}</HrField>
+            <HrField label="Employee no.">{user.employeeNo || '—'}</HrField>
+            <HrField label="Linked">
+              {link?.linkedAt ? new Date(link.linkedAt).toLocaleDateString('en-IN') : '—'}
+            </HrField>
+            <HrField label="How">{link ? linkMethodLabel(link.method) : '—'}</HrField>
+          </div>
+        )}
+
+        {/* A previous link, kept after unlinking so "it used to point at E1401" stays answerable. */}
+        {!connected && link?.employeeId && (
+          <p className="text-xs text-amber-700">
+            Previously linked to {link.employeeNo || link.employeeId}
+            {link.unlinkedAt ? ` until ${new Date(link.unlinkedAt).toLocaleDateString('en-IN')}` : ''}
+            {link.unlinkReason ? ` — ${link.unlinkReason}` : ''}.
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          {connected && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/employee/${user.employeeId}`}>View greytHR profile</Link>
+            </Button>
+          )}
+          <Button asChild variant="outline" size="sm">
+            <Link href="/settings/user-management/greythr-linking">
+              {connected ? 'Manage link' : 'Link an employee'}
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function GrantSection({
   title,

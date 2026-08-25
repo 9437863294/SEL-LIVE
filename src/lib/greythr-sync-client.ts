@@ -19,6 +19,7 @@ import type {
   GreytHRSyncSettings,
   LinkableEmployee,
 } from './greythr';
+import type { BulkLinkPlan, LinkAuditEntry, LinkReport } from './greythr-linking';
 
 export interface SyncReport {
   ok: boolean;
@@ -169,6 +170,51 @@ export async function openEmployeeDocument(
   window.open(objectUrl, '_blank', 'noopener');
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Linking users to employees
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface LinkReportResponse extends LinkReport {
+  ok: boolean;
+  mirrorSyncedAt: string | null;
+  plan: BulkLinkPlan;
+  recent: LinkAuditEntry[];
+}
+
+export const fetchLinkReport = (): Promise<LinkReportResponse> =>
+  authorizedFetch<LinkReportResponse>('/api/greythr/link');
+
+export const linkUserToEmployee = (
+  userId: string,
+  employeeId: string,
+): Promise<{ ok: boolean; audit: LinkAuditEntry }> =>
+  authorizedFetch('/api/greythr/link', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'link', userId, employeeId }),
+  });
+
+export const unlinkUserFromEmployee = (
+  userId: string,
+  reason: string,
+): Promise<{ ok: boolean; audit: LinkAuditEntry }> =>
+  authorizedFetch('/api/greythr/link', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'unlink', userId, reason }),
+  });
+
+/** Apply every confident match. Preview with `fetchLinkReport().plan` first. */
+export const bulkLinkUsers = (): Promise<{
+  ok: boolean;
+  batchId: string;
+  linked: number;
+  failed: Array<{ userId: string; userName: string; error: string }>;
+  plan: BulkLinkPlan;
+}> =>
+  authorizedFetch('/api/greythr/link', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'bulk-link' }),
+  });
 
 export const testConnection = (): Promise<{ ok: boolean; message: string; totalEmployees?: number }> =>
   authorizedFetch('/api/greythr/sync', {

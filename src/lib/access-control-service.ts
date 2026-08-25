@@ -1118,6 +1118,19 @@ export async function createUserWithAccess(
       // User Management writes, so the two screens produce identical records.
       employeeId: input.employeeId,
       employeeNo: input.employeeNo,
+      // The provenance the linking console reads. `manual` because an administrator chose this
+      // employee from the picker — it outranks anything the reconciliation would later infer, and
+      // without it the console would report every picker-created account as an ID match.
+      greytHR: input.employeeId
+        ? {
+            linked: true,
+            employeeId: input.employeeId,
+            employeeNo: input.employeeNo ?? '',
+            method: 'manual' as const,
+            linkedAt: new Date().toISOString(),
+            linkedBy: actor.userId,
+          }
+        : undefined,
     }),
   );
 

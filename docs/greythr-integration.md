@@ -124,7 +124,12 @@ wrongly upstream. `sanitizeGreytHRDate` treats any year outside 1900–2200 as a
 | [`src/lib/greythr-sync-client.ts`](../src/lib/greythr-sync-client.ts) | Browser calls into the route. |
 | [`src/app/api/greythr/sync/route.ts`](../src/app/api/greythr/sync/route.ts) | Cron tick, manual run, preview, settings. |
 | [`src/components/employee/greythr-sync-workspace.tsx`](../src/components/employee/greythr-sync-workspace.tsx) | The console at `/employee/sync`. |
+| [`src/lib/greythr-linking.ts`](../src/lib/greythr-linking.ts) | Field ownership and user ↔ employee reconciliation. Pure. |
+| [`src/lib/greythr-link-service.ts`](../src/lib/greythr-link-service.ts) | Admin-SDK link/unlink/bulk, transactional. |
+| [`src/app/api/greythr/link/route.ts`](../src/app/api/greythr/link/route.ts) | The linking API. |
+| [`src/components/access-management/greythr-linking.tsx`](../src/components/access-management/greythr-linking.tsx) | The console at `/settings/user-management/greythr-linking`. |
 | [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 131 tests, including one per fixed bug. |
+| [`tests/greythr-linking.test.mjs`](../tests/greythr-linking.test.mjs) | 36 tests on ownership and matching. |
 
 Same split as `hr-policy.ts` / `hr-requirement-service.ts`: rules unit-testable without an emulator,
 persistence boring.
@@ -139,6 +144,7 @@ persistence boring.
 | `greythrSyncRuns/{runId}` | Yes | One record per run, with the changed/flagged rows |
 | `users/{uid}` | Only `status` and the deactivation markers, only when the policy says so | |
 | `accessGrants/{uid}` | `designations` (union) and a `greytHR` facts block | |
+| `greythrLinkAudit/{id}` | Yes, Admin SDK only | Append-only history of every link and unlink |
 
 ---
 
@@ -261,20 +267,123 @@ permission grant driven by an external system, so it is opt-in.
 
 ### Linking employees to users
 
-Two joins, in order of trust:
+The model is one sentence: **one employee → at most one login, and not every employee needs one.**
 
-1. **An explicit link.** A user created through the greytHR employee picker carries that employee's
-   `employeeId` on their own user document. That is a decision an administrator made, so it beats any
-   inference.
+```text
+users/{uid}          the login identity — owns roles, permissions, scope
+     │  employeeId
+     ▼
+employees/{id}       the HR record, mirrored from greytHR — owns name, department,
+                     designation, location, manager, joining date, employment state
+```
+
+Firebase Auth stays the login. greytHR credentials are never asked of an employee, and a greytHR
+employee is never automatically given an account — a site technician exists in the HR system and may
+never sign in here.
+
+#### Field ownership is enforced, not assumed
+
+[`greythr-linking.ts`](../src/lib/greythr-linking.ts) declares both halves:
+
+- `GREYTHR_OWNED_USER_FIELDS` — the only user fields the sync may write.
+- `ERP_PROTECTED_USER_FIELDS` — `role`, `roles`, `permissions`, `additionalRoles`,
+  `directPermissions`, `projectAccess`, `siteAccess`, `approvalPermissions`, `financePermissions`,
+  `adminPermissions`, `moduleAccess`, `temporaryAccess`, `uid`, `password`.
+
+`assertNoProtectedFields` runs on the *built payload* immediately before the sync commits, not at the
+point each write is assembled — a guard next to the construction site can be bypassed by the next
+`userWrites.push`. Every user write in a run passes through that one line, and the run fails loudly if
+one of them carries an authorization field.
+
+The reason it is a thrown error rather than a code-review convention: a sync that wrote `permissions`
+would silently undo every additive grant an administrator had made, and **nothing downstream would
+report it**. `{ permissions: {} }` merged onto a user looks like a no-op in a diff. There is a test
+asserting exactly that case.
+
+Fields that are neither owned nor protected are dropped *and reported as a run warning*, because a
+silent filter turns "my new field isn't saving" into an afternoon of debugging.
+
+#### Two tiers of matching
+
+The automated path is strict. `matchUserForEmployee` accepts only:
+
+1. **An explicit link** — `employeeId` on the user document, set at creation or by an administrator.
 2. **Email**, case-insensitively and trimmed.
 
-The explicit link exists because email alone is fragile: a person whose work address changes, or who
-has none, silently stops matching — and the failure is invisible until their resignation does not
-take effect.
+That is deliberately narrow, because this join drives deactivation: a wrong match applies one person's
+resignation to another person's login.
 
-A duplicated email, or two accounts claiming one `employeeId`, links to **nobody** rather than
-guessing — a wrong match would apply one person's resignation to another person's login. Both are
-reported as run warnings.
+Everything looser lives in the linking console and produces **suggestions a human confirms**:
+
+| Method | Automatic? | Why |
+| --- | --- | --- |
+| Manual | — | An administrator said so. Outranks every inference thereafter. |
+| greytHR employee ID | Yes | greytHR's own primary key. |
+| Employee number | Yes | Unique in practice; `E1401`, `e-1401` and `E 1401` normalise together. Padding is *not* stripped — `E014` and `E14` are different people where numbers are padded. |
+| Official email | Yes | Reliable when present, absent for much of the field staff. |
+| Mobile number | **No** | Compared on the last ten digits, but shared handsets and family numbers exist. |
+| Name | **No** | Word-order independent, so "Bhoi Debaprasad" matches "Debaprasad Bhoi" — and eventually two people share a name. |
+
+A duplicated employee number, email or phone matches **nobody** rather than guessing, and the
+duplicate is reported on screen so it can be fixed in greytHR. Two accounts claiming one employee are
+both flagged as conflicts.
+
+One more rule that is easy to get wrong: **when two different employees match one user, the row is a
+review even if the strongest match is an employee number.** The disagreement is itself the signal —
+one of the two records is wrong.
+
+#### Why the link is a field, not a `greythrMappings` collection
+
+The obvious alternative is a third collection holding the pairing. It is rejected on purpose: the link
+is 1:1 and already implied by `users.employeeId`, so a separate collection stores the same fact twice
+with no transaction spanning both. When they disagree, the sync reads one and the screens read the
+other — and the way that surfaces is a resignation that does not revoke a login.
+
+What a mappings collection *would* legitimately give you is history. That is kept as the append-only
+`greythrLinkAudit` collection, without making it the source of truth for the current link.
+
+`employeeId` also stays a **top-level** field rather than moving inside the `greytHR` block, because
+`indexUsersByEmployeeId` and the picker's Firestore queries already read it there.
+
+---
+
+## 8b. The linking console
+
+`/settings/user-management/greythr-linking`, reachable from User Management. Every platform login
+reconciled against the employee mirror, **worst rows first** — an administrator opening this screen
+wants the conflicts, not the 800 rows that are already fine.
+
+| Status | Meaning |
+| --- | --- |
+| **Conflict** | Two logins claim one employee, or the recorded employee is not in the mirror. |
+| **Needs review** | Matched more than one employee, or matched only by name or mobile. |
+| **Ready to link** | One confident match. A bulk run can apply these. |
+| **Not in greytHR** | No candidate — normal for contractors and service accounts. |
+| **Linked** | Settled. |
+
+**Bulk link** applies every *confident* match — ID, employee number or email only. First-run linking
+across ~900 accounts is not realistic by hand. It is previewable (the button carries the count, and the
+dialog lists every pair before committing), and each link is individually reversible.
+
+It is deliberately **not one batch**. A single failure — an employee claimed in the moment between the
+report and the write — would roll back all 887 links, and re-running would hit the same row again.
+Each link is its own transaction, so one bad row costs one bad row and comes back named.
+
+Each link *is* transactional, over both the user being linked and any user already claiming that
+employee, because the invariant spans documents. Without it, two administrators linking two accounts
+to one employee simultaneously would both succeed.
+
+**Unlinking never touches access.** It removes an HR data source, not a permission — so fixing a
+mis-link is never destructive. The dialog says so, and the `greytHR` block is kept with
+`linked: false` rather than deleted, because "this pointed at E1401 until Tuesday" is the question
+asked when HR data stops appearing on a profile.
+
+Permissions: reading needs `Settings.User Management → View`; changing a link needs either the new
+narrow **`Link greytHR`** action or the existing `Edit`. The new action was appended rather than folded
+into `Edit` because linking decides whose resignation deactivates whose login — a narrower and more
+consequential power than editing a name, and one an organisation may want to delegate to HR without
+handing over user editing. Nobody holds it until it is granted, and every check that accepted `Edit`
+still does.
 
 ---
 
@@ -334,7 +443,7 @@ it yet** — see §12.
 ## 9. Testing
 
 ```bash
-npm run test:greythr        # 131 domain tests
+npm run test:greythr        # 167 domain tests (131 sync + 36 linking)
 npm run typecheck:greythr
 ```
 

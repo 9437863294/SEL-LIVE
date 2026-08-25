@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, CheckCheck, Copy, Plus, RefreshCw, ShieldAlert, Search, Sparkles, KeyRound, Loader2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CheckCheck, Copy, Link2, Plus, RefreshCw, ShieldAlert, Search, Sparkles, KeyRound, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -288,6 +288,21 @@ export default function ManageUserPage() {
         // sent, so a manually created account has the same document shape it always had.
         ...(newUser.employeeId ? { employeeId: newUser.employeeId } : {}),
         ...(newUser.employeeNo ? { employeeNo: newUser.employeeNo } : {}),
+        // The provenance block the linking console reads, written here so an account created from
+        // the picker looks the same as one linked afterwards — otherwise the console has to guess
+        // how the link came about and shows every one of them as "matched on employee ID".
+        ...(newUser.employeeId
+          ? {
+              greytHR: {
+                linked: true,
+                employeeId: newUser.employeeId,
+                employeeNo: newUser.employeeNo,
+                method: 'manual' as const,
+                linkedAt: new Date().toISOString(),
+                linkedBy: adminUser.id,
+              },
+            }
+          : {}),
       });
 
       // Log this activity
@@ -521,6 +536,17 @@ export default function ManageUserPage() {
           </div>
 
           <div className="flex items-center gap-3">
+          {/*
+            The linking console. Reachable from here because "which of these accounts is actually
+            connected to greytHR" is a question asked while looking at this list — and the count of
+            unlinked accounts is the reason somebody goes looking.
+          */}
+          <Button asChild variant="outline" className="bg-white/70 backdrop-blur">
+            <Link href="/settings/user-management/greythr-linking">
+              <Link2 className="mr-2 h-4 w-4" />
+              greytHR linking
+            </Link>
+          </Button>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button disabled={!canAdd} className="shadow-[0_18px_60px_-45px_rgba(2,6,23,0.55)]">
