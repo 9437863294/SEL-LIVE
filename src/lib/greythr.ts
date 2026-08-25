@@ -1,0 +1,2205 @@
+/**
+ * GreytHR integration rules: what the HR system's data *means* (`docs/greythr-integration.md`).
+ *
+ * Dependency-free on purpose, exactly as `hr-policy.ts` and `access-control.ts` are: this module
+ * runs in the browser (the sync settings screen), inside the Admin-SDK cron, and under
+ * `node --test` with no network and no Firestore. Anything that calls GreytHR belongs in
+ * `greythr-client.ts`; anything that writes Firestore belongs in `greythr-sync-service.ts`.
+ *
+ * ── The mistake this module exists to prevent ───────────────────────────────────────────────────
+ *
+ * **GreytHR's `status` field is employment *type*, not employment *state*.** Its values come from
+ * the tenant's `lov::status` list — `1 Probation, 2 Confirmed, 3 Contract, 4 Trainee` — and they say
+ * nothing about whether the person still works here. Whether somebody has left is carried by
+ * `leftorg`, `leavingDate` and the separation record.
+ *
+ * Conflating the two is how the previous sync came to mark every single employee `Inactive`: it
+ * compared a number against the string `'Active'`, which is never true. So this module keeps them
+ * strictly apart — `employmentType` for the payroll category, `employmentState` for "are they
+ * still here", each derived from its own inputs.
+ *
+ * Four other decisions worth knowing before reading on:
+ *
+ *   1. **Categories are time-windowed, so "current designation" is a query, not a field.** A
+ *      category row carries `effectiveFrom`/`effectiveTo`, and an employee promoted last year has
+ *      two Designation rows. `resolveCategoryAt` picks the window containing the date being asked
+ *      about; taking the first row in the array gives you whichever one the API happened to return
+ *      first, which is how a promoted engineer keeps their old title forever.
+ *
+ *   2. **Dates from GreytHR are not trustworthy.** The API's own documented samples contain
+ *      `"0018-05-31"` and `"0014-02-17"` — two-digit years widened wrongly somewhere upstream. A
+ *      year outside a sane range is treated as absent rather than as the first century, because
+ *      `0014-02-17 <= today` would otherwise mark a working employee as relieved fourteen centuries
+ *      ago.
+ *
+ *   3. **Losing access is a policy decision, never a side effect of a sync.** `resolveAccessDecision`
+ *      returns what *should* happen under the configured policy and why; the service applies it only
+ *      when the policy says to. The default policy changes nobody's access — an integration that
+ *      locks people out on its first run because the upstream data was wrong is a worse failure than
+ *      one that needs a click.
+ *
+ *   4. **The schedule lives in data, not in the deploy.** `vercel.json` crons are static, so the
+ *      frequency an administrator picks cannot be a cron expression. A fixed frequent trigger asks
+ *      `isSyncDue` whether this tick is the one, which also makes the answer testable without
+ *      waiting an hour.
+ */
+
+/* ------------------------------------------------------------------------------------------------
+ * Wire shapes — exactly what the API returns
+ * ---------------------------------------------------------------------------------------------- */
+
+/** `GET /employee/v2/employees` — one row of the roster. */
+export interface GreytHREmployeeRow {
+  employeeId: number;
+  name?: string | null;
+  email?: string | null;
+  employeeNo?: string | null;
+  dateOfJoin?: string | null;
+  leavingDate?: string | null;
+  originalHireDate?: string | null;
+  /** Lower-case `o`. The separation endpoint spells the same fact `leftOrg`. */
+  leftorg?: boolean | null;
+  lastModified?: string | null;
+  /** Employment *type* code — resolve against `lov::status`. Not active/inactive. */
+  status?: number | string | null;
+  dateOfBirth?: string | null;
+  gender?: string | null;
+  probationPeriod?: number | null;
+  mobile?: string | null;
+  personalEmail2?: string | null;
+  personalEmail3?: string | null;
+}
+
+/** `GET /employee/v2/employees/separation` — exit and resignation detail. */
+export interface GreytHRSeparationRow {
+  employeeId: number;
+  /** Upper-case `O` here. Same fact as the roster's `leftorg`. */
+  leftOrg?: boolean | null;
+  leavingDate?: string | null;
+  retirementDate?: string | null;
+  tentativeRelieveDate?: string | null;
+  tentativeLeavingDate?: string | null;
+  exitInterviewDate?: string | null;
+  submittedResignation?: boolean | null;
+  submissionDate?: string | null;
+  fitToBeRehired?: boolean | null;
+  finalSettlementDate?: string | null;
+  leavingReason?: number | string | null;
+}
+
+/** One category assignment. `categoryDesc`/`valueDesc` appear only with `?descRequired=true`. */
+export interface GreytHRCategoryEntry {
+  id?: number;
+  category?: number | string | null;
+  value?: number | string | null;
+  categoryDesc?: string | null;
+  valueDesc?: string | null;
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+}
+
+/** `GET /employee/v2/employees/categories?descRequired=true` — one row per employee. */
+export interface GreytHRCategoryRow {
+  employeeId: number;
+  categoryList?: GreytHRCategoryEntry[] | null;
+}
+
+/** `GET /employee/v2/employees/work` — confirmation and notice-period detail. */
+export interface GreytHRWorkRow {
+  employeeId: number;
+  extension?: string | null;
+  confirmDate?: string | null;
+  lastPromotionDate?: string | null;
+  lastPrevEmployment?: string | null;
+  noticePeriod?: number | null;
+  originalHireDate?: string | null;
+  probationExtendedBy?: string | null;
+  onboardingStatus?: string | null;
+}
+
+/** The `pages` envelope every paginated GreytHR response carries. */
+export interface GreytHRPageInfo {
+  totalPages?: number;
+  totalElements?: number;
+  size?: number;
+  hasNext?: boolean;
+  hasPrevious?: boolean;
+  first?: boolean;
+  last?: boolean;
+}
+
+export interface GreytHRPagedResponse<T> {
+  data?: T[] | null;
+  pages?: GreytHRPageInfo | null;
+}
+
+/**
+ * `POST /hr/v2/lov` response. Each key is `lov::<name>` or `cat::<Name>`, each value a list of
+ * `[id, description]` or `[id, description, extra]` tuples.
+ */
+export type GreytHRLovResponse = Record<string, Array<Array<string | number | null>>>;
+
+/* ------------------------------------------------------------------------------------------------
+ * Category names
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The category names this integration reads.
+ *
+ * `Designation`, `Department`, `Location` and `Grade` are GreytHR built-ins (category ids 6, 2, 1
+ * and 8 in `lov::transitiontype`). `Project Name`, `Project Division`, `Cost Center` and
+ * `EMPLOYEE TYPE` are this tenant's own additions, with tenant-specific ids — which is exactly why
+ * everything here matches on the *description* from `descRequired=true` rather than on the numeric
+ * id. A hardcoded id map would break the moment somebody adds a category in greytHR.
+ */
+export const GREYTHR_CATEGORY = {
+  designation: 'Designation',
+  department: 'Department',
+  location: 'Location',
+  grade: 'Grade',
+  company: 'Company',
+  projectName: 'Project Name',
+  projectDivision: 'Project Division',
+  costCenter: 'Cost Center',
+  costCenterCode: 'COST CENTER CODE',
+  employeeType: 'EMPLOYEE TYPE',
+  shift: 'Shift',
+} as const;
+
+export type GreytHRCategoryKey = keyof typeof GREYTHR_CATEGORY;
+
+/** Every `cat::` key to request from the LOV endpoint. */
+export const GREYTHR_CATEGORY_LOV_KEYS = Object.values(GREYTHR_CATEGORY).map(
+  (name) => `cat::${name}`,
+);
+
+/** Built-in `lov::` keys worth caching — status is the one that matters for employment type. */
+export const GREYTHR_LOV_KEYS = ['lov::status', 'lov::transitiontype'] as const;
+
+/* ------------------------------------------------------------------------------------------------
+ * The full employee record — detail groups
+ * ---------------------------------------------------------------------------------------------- */
+
+/** The five address types greytHR documents. */
+export const GREYTHR_ADDRESS_TYPES = [
+  'presentaddress',
+  'contactaddress',
+  'emergencyaddress',
+  'spouseaddress',
+  'permanentaddress',
+] as const;
+
+export type GreytHRAddressType = (typeof GREYTHR_ADDRESS_TYPES)[number];
+
+/** The ten identity codes greytHR documents. Several are national identifiers. */
+export const GREYTHR_IDENTITY_CODES = [
+  'PAN',
+  'AADHAR',
+  'PASSPORT',
+  'BANKACCNO',
+  'PRAN',
+  'NPR',
+  'LWF',
+  'DL',
+  'RC',
+  'EC',
+] as const;
+
+export type GreytHRIdentityCode = (typeof GREYTHR_IDENTITY_CODES)[number];
+
+/**
+ * A group of employee detail this integration can fetch.
+ *
+ * Grouped rather than per-endpoint because the decision an administrator actually makes is "do we
+ * hold people's bank details in this system", not "do we call `/employees/bank`".
+ */
+export type EmployeeDetailGroup =
+  | 'profile'
+  | 'personal'
+  | 'reporting'
+  | 'qualifications'
+  | 'assets'
+  | 'addresses'
+  | 'statutory'
+  | 'identities'
+  | 'bank'
+  | 'travel';
+
+/**
+ * Where a group's data is stored, and therefore who can read it.
+ *
+ * `operational` lands in `employees/{id}`, which every signed-in user can read — it is what the HR
+ * module, the access screens and half a dozen pickers already read. `sensitive` lands in
+ * `employeeSensitive/{id}`, behind its own permission and its own security rule.
+ *
+ * The split is not fussiness. Aadhaar and PAN numbers, bank account numbers, religion and disability
+ * status are special-category personal data; putting them in a collection readable by every
+ * employee because it was convenient would be a serious failure, and one that is very hard to undo
+ * once the documents exist.
+ */
+export type DetailDestination = 'operational' | 'sensitive';
+
+export interface EmployeeDetailGroupSpec {
+  group: EmployeeDetailGroup;
+  label: string;
+  description: string;
+  destination: DetailDestination;
+  /** Off by default for everything sensitive — holding the data has to be a decision. */
+  defaultEnabled: boolean;
+  /** Shown on the settings screen so the choice is informed. */
+  contains: string;
+}
+
+export const EMPLOYEE_DETAIL_GROUPS: EmployeeDetailGroupSpec[] = [
+  {
+    group: 'profile',
+    label: 'Profile',
+    description: 'Nickname, biography and the social links greytHR holds.',
+    destination: 'operational',
+    defaultEnabled: true,
+    contains: 'nickname, biography, LinkedIn, Twitter, Facebook',
+  },
+  {
+    group: 'personal',
+    label: 'Personal',
+    description: 'Blood group and marital status. Blood group is genuinely useful on site.',
+    destination: 'operational',
+    defaultEnabled: true,
+    contains: 'blood group, marital status, marriage date, spouse name',
+  },
+  {
+    group: 'reporting',
+    label: 'Reporting structure',
+    description: "greytHR's org tree, which is where a reporting manager actually comes from.",
+    destination: 'operational',
+    defaultEnabled: true,
+    contains: 'reporting manager, org tree',
+  },
+  {
+    group: 'qualifications',
+    label: 'Qualifications',
+    description: 'Education history — degree, institute, year, grade.',
+    destination: 'operational',
+    defaultEnabled: true,
+    contains: 'qualifications, institutes, years',
+  },
+  {
+    group: 'assets',
+    label: 'Company assets',
+    description: 'Assets issued to the employee and when they are due back.',
+    destination: 'operational',
+    defaultEnabled: true,
+    contains: 'asset type, id, value, issue and return dates',
+  },
+  {
+    group: 'addresses',
+    label: 'Addresses & emergency contact',
+    description:
+      'Present, permanent, contact, spouse and emergency addresses. Home addresses are personal ' +
+      'data, so these are stored with restricted access — but the emergency contact name and phone ' +
+      'are also mirrored into the operational record, because the reason to hold them at all is that ' +
+      'somebody may need them urgently.',
+    destination: 'sensitive',
+    defaultEnabled: false,
+    contains: 'home address, phone numbers, emergency contact',
+  },
+  {
+    group: 'statutory',
+    label: 'Statutory details',
+    description:
+      'Includes religion and disability status — special-category personal data under most privacy ' +
+      'regimes. Only enable this if the platform genuinely needs it.',
+    destination: 'sensitive',
+    defaultEnabled: false,
+    contains: "father's and mother's name, birthplace, nationality, religion, disability, residential status",
+  },
+  {
+    group: 'identities',
+    label: 'Identity documents',
+    description:
+      'PAN, Aadhaar, passport, driving licence and the rest. National identifiers — masked on display ' +
+      'and restricted at rest.',
+    destination: 'sensitive',
+    defaultEnabled: false,
+    contains: 'PAN, Aadhaar, PRAN, licence and other document numbers',
+  },
+  {
+    group: 'bank',
+    label: 'Bank, PF & ESI',
+    description: 'Bank account numbers and statutory identifiers. Masked on display, restricted at rest.',
+    destination: 'sensitive',
+    defaultEnabled: false,
+    contains: 'account number, bank, branch, UAN, PF number, ESI number',
+  },
+  {
+    group: 'travel',
+    label: 'Passport & visa',
+    description: 'Travel document numbers and expiry dates.',
+    destination: 'sensitive',
+    defaultEnabled: false,
+    contains: 'passport and visa numbers, issue and expiry dates',
+  },
+];
+
+export const detailGroupSpec = (group: EmployeeDetailGroup): EmployeeDetailGroupSpec =>
+  EMPLOYEE_DETAIL_GROUPS.find((spec) => spec.group === group)!;
+
+export const isSensitiveGroup = (group: EmployeeDetailGroup): boolean =>
+  detailGroupSpec(group).destination === 'sensitive';
+
+/** The default enabled/disabled map: everything operational on, everything sensitive off. */
+export const DEFAULT_DETAIL_GROUPS: Record<EmployeeDetailGroup, boolean> = Object.fromEntries(
+  EMPLOYEE_DETAIL_GROUPS.map((spec) => [spec.group, spec.defaultEnabled]),
+) as Record<EmployeeDetailGroup, boolean>;
+
+/* ------------------------------------------------------------------------------------------------
+ * Detail wire shapes
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface GreytHRProfileRow {
+  employeeId: number;
+  nickname?: string | null;
+  twitter?: string | null;
+  linkedIn?: string | null;
+  facebook?: string | null;
+  googlePlus?: string | null;
+  biography?: string | null;
+  wishDOB?: boolean | null;
+}
+
+export interface GreytHRPersonalRow {
+  employeeId: number;
+  bloodGroup?: string | number | null;
+  maritalStatus?: string | number | null;
+  marriageDate?: string | null;
+  spouseBirthday?: string | null;
+  spouseName?: string | null;
+  actualDOB?: string | null;
+}
+
+export interface GreytHROrgTreeRow {
+  employeeId: number;
+  /** greytHR returns this loosely — sometimes a list, sometimes an object. Normalised on read. */
+  orgtree?: unknown;
+}
+
+export interface GreytHRAddressRow {
+  employeeId: number;
+  addressType?: string | null;
+  name?: string | null;
+  address1?: string | null;
+  address2?: string | null;
+  address3?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  pin?: string | null;
+  phone1?: string | null;
+  phone2?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  extnno?: string | null;
+  fax?: string | null;
+  recordId?: number | null;
+}
+
+export interface GreytHRQualificationRow {
+  id?: number;
+  /** Note: this endpoint calls it `employee`, not `employeeId`. */
+  employee?: number;
+  employeeId?: number;
+  qualArea?: string | null;
+  qualDescription?: string | null;
+  qualLevel?: string | null;
+  qualYear?: string | number | null;
+  qualCompletionYear?: string | number | null;
+  duration?: string | number | null;
+  professionalQual?: boolean | null;
+  institute?: string | null;
+  university?: string | null;
+  grade?: string | null;
+  current?: boolean | null;
+  qualSubjects?: string | null;
+}
+
+export interface GreytHRAssetRow {
+  id?: number;
+  employeeId: number;
+  assetType?: string | null;
+  assetDetails?: string | null;
+  assetId?: string | null;
+  assetValue?: number | string | null;
+  assetStatus?: string | null;
+  issuedDate?: string | null;
+  validTill?: string | null;
+  returnedOn?: string | null;
+  remarks?: string | null;
+}
+
+export interface GreytHRStatutoryRow {
+  employeeId: number;
+  birthplace?: string | null;
+  fatherName?: string | null;
+  motherName?: string | null;
+  nationality?: string | number | null;
+  dispensary?: string | null;
+  disabled?: boolean | null;
+  expatriate?: boolean | null;
+  exempted?: boolean | null;
+  disabilityType?: string | number | null;
+  religion?: string | number | null;
+  residentialStatus?: string | number | null;
+  countryOfOrigin?: string | number | null;
+  isDirector?: boolean | null;
+}
+
+export interface GreytHRIdentityRow {
+  id?: number;
+  employeeId: number;
+  idType?: string | null;
+  documentNo?: string | null;
+  nameAsPerDoc?: string | null;
+  ifscCode?: string | null;
+  expiryDate?: string | null;
+  verified?: boolean | null;
+  verifiedDate?: string | null;
+  aadharAppNo?: string | null;
+  /** greytHR's own instruction that this number should not be shown in full. Honoured. */
+  enableMasking?: boolean | null;
+}
+
+export interface GreytHRBankRow {
+  employeeId: number;
+  bankAccountNumber?: string | null;
+  accountType?: string | number | null;
+  bankName?: string | number | null;
+  bankBranch?: string | number | null;
+  branchCode?: string | null;
+  salaryPaymentMode?: string | number | null;
+  ddPayableAt?: string | null;
+  nameAsPerBank?: string | null;
+}
+
+export interface GreytHRPfRow {
+  employeeId: number;
+  pfEligible?: boolean | null;
+  esiEligible?: boolean | null;
+  pfNumber?: string | null;
+  pfScheme?: string | number | null;
+  pfJoinDate?: string | null;
+  familyPfNo?: string | null;
+  uan?: string | null;
+  esiNumber?: string | null;
+  pfExistingMember?: boolean | null;
+}
+
+export interface GreytHRTravelDocRow {
+  passportId?: number;
+  VisaId?: number;
+  /** The employee id, which this endpoint calls `relation`. */
+  relation?: number;
+  country?: string | number | null;
+  passportNo?: string | null;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  surName?: string | null;
+  middleName?: string | null;
+  givenName?: string | null;
+  passportType?: string | number | null;
+  issuePlace?: string | null;
+  issueCity?: string | null;
+  currentlyWith?: string | number | null;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Assembled detail records
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Operational detail — stored on `employees/{id}`, readable by any signed-in user. */
+export interface EmployeeOperationalDetail {
+  nickname?: string;
+  biography?: string;
+  linkedIn?: string;
+  twitter?: string;
+  facebook?: string;
+  bloodGroup?: string;
+  maritalStatus?: string;
+  marriageDate?: string | null;
+  spouseName?: string;
+  /** From the org tree. The field the Add User drawer always wanted and never had a source for. */
+  reportingManagerEmployeeId?: string;
+  reportingManagerName?: string;
+  /**
+   * Mirrored out of the (restricted) address block on purpose: the reason to hold an emergency
+   * contact is that somebody may need it in a hurry, and putting it behind a data-protection
+   * permission defeats the point. Only the name and phone — never the address.
+   */
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  qualifications?: Array<{
+    description: string;
+    level?: string;
+    institute?: string;
+    university?: string;
+    year?: string;
+    grade?: string;
+    current?: boolean;
+  }>;
+  assets?: Array<{
+    assetType: string;
+    assetId?: string;
+    details?: string;
+    status?: string;
+    issuedDate?: string | null;
+    validTill?: string | null;
+    returnedOn?: string | null;
+  }>;
+}
+
+/** Restricted detail — stored on `employeeSensitive/{id}` behind its own permission and rule. */
+export interface EmployeeSensitiveDetail {
+  employeeId: string;
+  employeeNo?: string;
+  name?: string;
+  addresses?: Partial<
+    Record<
+      GreytHRAddressType,
+      {
+        name?: string;
+        line1?: string;
+        line2?: string;
+        line3?: string;
+        city?: string;
+        state?: string;
+        country?: string;
+        pin?: string;
+        phone?: string;
+        mobile?: string;
+        email?: string;
+      }
+    >
+  >;
+  statutory?: {
+    birthplace?: string;
+    fatherName?: string;
+    motherName?: string;
+    nationality?: string;
+    religion?: string;
+    disabled?: boolean;
+    disabilityType?: string;
+    expatriate?: boolean;
+    residentialStatus?: string;
+    countryOfOrigin?: string;
+    isDirector?: boolean;
+  };
+  /** Keyed by identity code. `masked` reflects greytHR's own `enableMasking`. */
+  identities?: Partial<
+    Record<
+      GreytHRIdentityCode,
+      {
+        documentNo?: string;
+        nameAsPerDoc?: string;
+        expiryDate?: string | null;
+        verified?: boolean;
+        verifiedDate?: string | null;
+        masked?: boolean;
+      }
+    >
+  >;
+  bank?: {
+    accountNumber?: string;
+    accountType?: string;
+    bankName?: string;
+    bankBranch?: string;
+    branchCode?: string;
+    nameAsPerBank?: string;
+    salaryPaymentMode?: string;
+  };
+  pf?: {
+    pfEligible?: boolean;
+    esiEligible?: boolean;
+    pfNumber?: string;
+    uan?: string;
+    esiNumber?: string;
+    pfJoinDate?: string | null;
+    pfExistingMember?: boolean;
+  };
+  passport?: {
+    passportNo?: string;
+    country?: string;
+    issueDate?: string | null;
+    expiryDate?: string | null;
+    issuePlace?: string;
+  };
+  visa?: {
+    passportNo?: string;
+    country?: string;
+    issueDate?: string | null;
+    expiryDate?: string | null;
+  };
+  syncedAt: string;
+}
+
+/** Trim a value to a stored string, dropping blanks so Firestore documents stay tidy. */
+const text = (value: unknown): string | undefined => {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = String(value).trim();
+  return trimmed ? trimmed : undefined;
+};
+
+/** `boolean | null | undefined` → `boolean | undefined`, so `false` survives and absence does not. */
+const flag = (value: unknown): boolean | undefined =>
+  value === true || value === false ? value : undefined;
+
+/**
+ * Mask an identifier for display, keeping the last four characters.
+ *
+ * `••••••1234`. Applied in the UI regardless of greytHR's `enableMasking` — that flag says greytHR
+ * itself masks it, and a platform that unmasked what the HR system chose to hide would be actively
+ * unhelpful. Callers that genuinely need the full value read it from the record; this is for screens.
+ */
+export function maskIdentifier(value: string | null | undefined, visible = 4): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  if (raw.length <= visible) return '•'.repeat(raw.length);
+  return '•'.repeat(Math.min(raw.length - visible, 8)) + raw.slice(-visible);
+}
+
+/**
+ * Resolve the reporting manager out of greytHR's org tree.
+ *
+ * The `orgtree` field is loosely typed — the samples show a list, but greytHR is inconsistent about
+ * whether it is an array of levels, a single object, or a nested chain. This walks whatever arrives
+ * looking for the first plausible supervisor reference rather than assuming one shape, and returns
+ * nothing when it cannot find one. A wrong reporting line is worse than a blank.
+ */
+export function resolveReportingManager(
+  orgtree: unknown,
+): { employeeId?: string; name?: string } | null {
+  const visit = (node: unknown, depth = 0): { employeeId?: string; name?: string } | null => {
+    if (!node || depth > 4) return null;
+
+    if (Array.isArray(node)) {
+      for (const entry of node) {
+        const found = visit(entry, depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    if (typeof node !== 'object') return null;
+    const record = node as Record<string, unknown>;
+
+    // The several names greytHR uses for the same idea across its endpoints.
+    const idKeys = ['supervisorId', 'managerId', 'reportsTo', 'reportingTo', 'parentEmployeeId', 'supervisor'];
+    const nameKeys = ['supervisorName', 'managerName', 'reportsToName', 'reportingToName', 'parentName'];
+
+    for (const key of idKeys) {
+      const value = record[key];
+      if (value === null || value === undefined || value === '') continue;
+      // A nested object under `supervisor` is common; recurse into it rather than stringifying it.
+      if (typeof value === 'object') {
+        const nested = visit(value, depth + 1);
+        if (nested) return nested;
+        continue;
+      }
+      const employeeId = String(value).trim();
+      if (!employeeId || employeeId === '0') continue;
+      const name = nameKeys.map((nameKey) => text(record[nameKey])).find(Boolean);
+      return { employeeId, name };
+    }
+
+    for (const value of Object.values(record)) {
+      if (value && typeof value === 'object') {
+        const nested = visit(value, depth + 1);
+        if (nested) return nested;
+      }
+    }
+    return null;
+  };
+
+  return visit(orgtree);
+}
+
+export interface BuildDetailInput {
+  profile?: GreytHRProfileRow | null;
+  personal?: GreytHRPersonalRow | null;
+  orgTree?: GreytHROrgTreeRow | null;
+  qualifications?: GreytHRQualificationRow[];
+  assets?: GreytHRAssetRow[];
+  /** Keyed by address type. */
+  addresses?: Partial<Record<GreytHRAddressType, GreytHRAddressRow>>;
+  /** Names for the numeric codes `personal` and `statutory` return, from the LOV endpoint. */
+  labels?: {
+    bloodGroup?: Record<string, string>;
+    maritalStatus?: Record<string, string>;
+    nationality?: Record<string, string>;
+    religion?: Record<string, string>;
+    bank?: Record<string, string>;
+  };
+}
+
+/** Assemble the operational half of an employee's detail. */
+export function buildOperationalDetail(input: BuildDetailInput): EmployeeOperationalDetail {
+  const label = (map: Record<string, string> | undefined, value: unknown): string | undefined => {
+    const raw = text(value);
+    if (!raw) return undefined;
+    return map?.[raw] ?? raw;
+  };
+
+  const manager = resolveReportingManager(input.orgTree?.orgtree);
+  const emergency = input.addresses?.emergencyaddress;
+
+  const detail: EmployeeOperationalDetail = {
+    nickname: text(input.profile?.nickname),
+    biography: text(input.profile?.biography),
+    linkedIn: text(input.profile?.linkedIn),
+    twitter: text(input.profile?.twitter),
+    facebook: text(input.profile?.facebook),
+    bloodGroup: label(input.labels?.bloodGroup, input.personal?.bloodGroup),
+    maritalStatus: label(input.labels?.maritalStatus, input.personal?.maritalStatus),
+    marriageDate: sanitizeGreytHRDate(input.personal?.marriageDate),
+    spouseName: text(input.personal?.spouseName),
+    reportingManagerEmployeeId: manager?.employeeId,
+    reportingManagerName: manager?.name,
+    emergencyContactName: text(emergency?.name),
+    emergencyContactPhone: text(emergency?.mobile) ?? text(emergency?.phone1),
+    qualifications: (input.qualifications ?? [])
+      .map((row) => ({
+        description: text(row.qualDescription) ?? text(row.qualArea) ?? '',
+        level: text(row.qualLevel),
+        institute: text(row.institute),
+        university: text(row.university),
+        year: text(row.qualCompletionYear) ?? text(row.qualYear),
+        grade: text(row.grade),
+        current: flag(row.current),
+      }))
+      .filter((row) => row.description),
+    assets: (input.assets ?? [])
+      .map((row) => ({
+        assetType: text(row.assetType) ?? '',
+        assetId: text(row.assetId),
+        details: text(row.assetDetails),
+        status: text(row.assetStatus),
+        issuedDate: sanitizeGreytHRDate(row.issuedDate),
+        validTill: sanitizeGreytHRDate(row.validTill),
+        returnedOn: sanitizeGreytHRDate(row.returnedOn),
+      }))
+      .filter((row) => row.assetType || row.assetId),
+  };
+
+  // Drop empty collections so an employee with no assets has no `assets` key rather than `[]`,
+  // which keeps `diffSyncedEmployee`-style comparisons honest.
+  if (!detail.qualifications?.length) delete detail.qualifications;
+  if (!detail.assets?.length) delete detail.assets;
+
+  /**
+   * `null` is stripped as well as `undefined`.
+   *
+   * `sanitizeGreytHRDate` returns `null` for an absent date, so without this an employee with no
+   * marriage date carries `{ marriageDate: null }` — which makes the block non-empty for *every*
+   * employee, so the "has the detail changed?" comparison in the sync service is always true and
+   * every run rewrites all ~1,300 documents. An absent field is simply absent.
+   */
+  return Object.fromEntries(
+    Object.entries(detail).filter(([, value]) => value !== undefined && value !== null),
+  ) as EmployeeOperationalDetail;
+}
+
+export interface BuildSensitiveInput extends BuildDetailInput {
+  employeeId: string;
+  employeeNo?: string;
+  name?: string;
+  statutory?: GreytHRStatutoryRow | null;
+  identities?: Partial<Record<GreytHRIdentityCode, GreytHRIdentityRow>>;
+  bank?: GreytHRBankRow | null;
+  pf?: GreytHRPfRow | null;
+  passport?: GreytHRTravelDocRow | null;
+  visa?: GreytHRTravelDocRow | null;
+  syncedAt?: string;
+}
+
+/** Assemble the restricted half. */
+export function buildSensitiveDetail(input: BuildSensitiveInput): EmployeeSensitiveDetail {
+  const label = (map: Record<string, string> | undefined, value: unknown): string | undefined => {
+    const raw = text(value);
+    if (!raw) return undefined;
+    return map?.[raw] ?? raw;
+  };
+
+  const addresses: EmployeeSensitiveDetail['addresses'] = {};
+  for (const type of GREYTHR_ADDRESS_TYPES) {
+    const row = input.addresses?.[type];
+    if (!row) continue;
+    const entry = {
+      name: text(row.name),
+      line1: text(row.address1),
+      line2: text(row.address2),
+      line3: text(row.address3),
+      city: text(row.city),
+      state: text(row.state),
+      country: text(row.country),
+      pin: text(row.pin),
+      phone: text(row.phone1) ?? text(row.phone2),
+      mobile: text(row.mobile),
+      email: text(row.email),
+    };
+    if (Object.values(entry).some(Boolean)) addresses[type] = entry;
+  }
+
+  const identities: EmployeeSensitiveDetail['identities'] = {};
+  for (const code of GREYTHR_IDENTITY_CODES) {
+    const row = input.identities?.[code];
+    if (!row?.documentNo) continue;
+    identities[code] = {
+      documentNo: text(row.documentNo),
+      nameAsPerDoc: text(row.nameAsPerDoc),
+      expiryDate: sanitizeGreytHRDate(row.expiryDate),
+      verified: flag(row.verified),
+      verifiedDate: sanitizeGreytHRDate(row.verifiedDate),
+      masked: flag(row.enableMasking),
+    };
+  }
+
+  const record: EmployeeSensitiveDetail = {
+    employeeId: input.employeeId,
+    employeeNo: text(input.employeeNo),
+    name: text(input.name),
+    addresses: Object.keys(addresses).length ? addresses : undefined,
+    statutory: input.statutory
+      ? {
+          birthplace: text(input.statutory.birthplace),
+          fatherName: text(input.statutory.fatherName),
+          motherName: text(input.statutory.motherName),
+          nationality: label(input.labels?.nationality, input.statutory.nationality),
+          religion: label(input.labels?.religion, input.statutory.religion),
+          disabled: flag(input.statutory.disabled),
+          disabilityType: text(input.statutory.disabilityType),
+          expatriate: flag(input.statutory.expatriate),
+          residentialStatus: text(input.statutory.residentialStatus),
+          countryOfOrigin: text(input.statutory.countryOfOrigin),
+          isDirector: flag(input.statutory.isDirector),
+        }
+      : undefined,
+    identities: Object.keys(identities).length ? identities : undefined,
+    bank: input.bank
+      ? {
+          accountNumber: text(input.bank.bankAccountNumber),
+          accountType: text(input.bank.accountType),
+          bankName: label(input.labels?.bank, input.bank.bankName),
+          bankBranch: text(input.bank.bankBranch),
+          branchCode: text(input.bank.branchCode),
+          nameAsPerBank: text(input.bank.nameAsPerBank),
+          salaryPaymentMode: text(input.bank.salaryPaymentMode),
+        }
+      : undefined,
+    pf: input.pf
+      ? {
+          pfEligible: flag(input.pf.pfEligible),
+          esiEligible: flag(input.pf.esiEligible),
+          pfNumber: text(input.pf.pfNumber),
+          uan: text(input.pf.uan),
+          esiNumber: text(input.pf.esiNumber),
+          pfJoinDate: sanitizeGreytHRDate(input.pf.pfJoinDate),
+          pfExistingMember: flag(input.pf.pfExistingMember),
+        }
+      : undefined,
+    passport: input.passport?.passportNo
+      ? {
+          passportNo: text(input.passport.passportNo),
+          country: text(input.passport.country),
+          issueDate: sanitizeGreytHRDate(input.passport.issueDate),
+          expiryDate: sanitizeGreytHRDate(input.passport.expiryDate),
+          issuePlace: text(input.passport.issuePlace),
+        }
+      : undefined,
+    visa: input.visa?.passportNo
+      ? {
+          passportNo: text(input.visa.passportNo),
+          country: text(input.visa.country),
+          issueDate: sanitizeGreytHRDate(input.visa.issueDate),
+          expiryDate: sanitizeGreytHRDate(input.visa.expiryDate),
+        }
+      : undefined,
+    syncedAt: input.syncedAt ?? new Date().toISOString(),
+  };
+
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined),
+  ) as EmployeeSensitiveDetail;
+}
+
+/** Whether a sensitive record holds anything at all, so the UI can say "nothing recorded". */
+export const hasSensitiveDetail = (detail: EmployeeSensitiveDetail | null | undefined): boolean =>
+  !!detail &&
+  Boolean(detail.addresses || detail.statutory || detail.identities || detail.bank || detail.pf || detail.passport || detail.visa);
+
+/* ------------------------------------------------------------------------------------------------
+ * Dates
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Years outside this range are upstream corruption, not history. See the header, point 2. */
+const MIN_SANE_YEAR = 1900;
+const MAX_SANE_YEAR = 2200;
+
+/**
+ * A GreytHR date string, or null if it is absent or nonsense.
+ *
+ * Returns the `YYYY-MM-DD` form so callers can compare dates as strings — which is both faster and
+ * safer than `Date` round-tripping through a timezone the HR system never intended.
+ */
+export function sanitizeGreytHRDate(value: string | null | undefined): string | null {
+  if (!value || typeof value !== 'string') return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < MIN_SANE_YEAR || year > MAX_SANE_YEAR) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
+/** Today as `YYYY-MM-DD`, in local time — HR dates are civil dates, not instants. */
+export function todayIso(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** Inclusive window test on `YYYY-MM-DD` strings. An absent bound is open. */
+const withinWindow = (date: string, from: string | null, to: string | null): boolean => {
+  if (from && date < from) return false;
+  if (to && date > to) return false;
+  return true;
+};
+
+/* ------------------------------------------------------------------------------------------------
+ * Employment state
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Whether somebody still works here, and if not, how far through leaving they are.
+ *
+ * Deliberately distinct from `employmentType` (Probation / Confirmed / Contract / Trainee), which is
+ * what GreytHR's `status` field carries.
+ */
+export type EmploymentState =
+  /** Working, no resignation on file. */
+  | 'Active'
+  /** Resignation submitted or an exit date set, but that date has not arrived. Still working. */
+  | 'Notice Period'
+  /** Past their last working day. */
+  | 'Relieved'
+  /** Past a retirement date, with no separate leaving date. */
+  | 'Retired'
+  /** Full and final settlement done. Terminal. */
+  | 'Settled'
+  /** Flagged as having left, with no usable date to say when. */
+  | 'Left'
+  /** No roster row at all — the employee has disappeared from GreytHR. */
+  | 'Unknown';
+
+/** States in which somebody is still working and should keep their platform access. */
+export const WORKING_STATES: readonly EmploymentState[] = ['Active', 'Notice Period'];
+
+/** States in which somebody has gone. */
+export const EXITED_STATES: readonly EmploymentState[] = ['Relieved', 'Retired', 'Settled', 'Left'];
+
+export const isWorkingState = (state: EmploymentState): boolean => WORKING_STATES.includes(state);
+export const hasExited = (state: EmploymentState): boolean => EXITED_STATES.includes(state);
+
+export interface EmploymentStateInput {
+  /** From the roster (`leftorg`) or the separation record (`leftOrg`) — either spelling. */
+  leftOrg?: boolean | null;
+  leavingDate?: string | null;
+  retirementDate?: string | null;
+  tentativeLeavingDate?: string | null;
+  tentativeRelieveDate?: string | null;
+  submittedResignation?: boolean | null;
+  submissionDate?: string | null;
+  finalSettlementDate?: string | null;
+}
+
+export interface EmploymentStateResult {
+  state: EmploymentState;
+  /** The date the exit takes effect, when one is known. */
+  exitDate: string | null;
+  /** When the resignation was submitted, when known. */
+  resignationDate: string | null;
+  /** One sentence an administrator can read on the review screen. */
+  reason: string;
+}
+
+/**
+ * Derive employment state from the separation signals.
+ *
+ * Order matters and is chosen so the *most specific* true statement wins: a settled employee is
+ * also relieved, and saying "Settled" is more useful. A future-dated exit outranks `leftOrg`,
+ * because greytHR flips that flag when the resignation is recorded rather than when the person
+ * actually leaves — and treating a notice-period engineer as gone is precisely the failure that
+ * would lock a working colleague out of the platform.
+ */
+export function deriveEmploymentState(
+  input: EmploymentStateInput | null | undefined,
+  today: string = todayIso(),
+): EmploymentStateResult {
+  if (!input) {
+    return { state: 'Unknown', exitDate: null, resignationDate: null, reason: 'No employee record found in greytHR.' };
+  }
+
+  const leaving = sanitizeGreytHRDate(input.leavingDate);
+  const retirement = sanitizeGreytHRDate(input.retirementDate);
+  const settlement = sanitizeGreytHRDate(input.finalSettlementDate);
+  const tentative =
+    sanitizeGreytHRDate(input.tentativeLeavingDate) ?? sanitizeGreytHRDate(input.tentativeRelieveDate);
+  const submitted = sanitizeGreytHRDate(input.submissionDate);
+
+  const exitDate = leaving ?? retirement ?? tentative;
+  const resignationDate = submitted ?? null;
+
+  if (settlement && settlement <= today) {
+    return {
+      state: 'Settled',
+      exitDate: exitDate ?? settlement,
+      resignationDate,
+      reason: `Full and final settlement completed on ${settlement}.`,
+    };
+  }
+
+  // A dated exit in the future means they are working their notice, whatever `leftOrg` says.
+  if (exitDate && exitDate > today) {
+    return {
+      state: 'Notice Period',
+      exitDate,
+      resignationDate,
+      reason: `Leaving on ${exitDate} — still working until then.`,
+    };
+  }
+
+  if (leaving && leaving <= today) {
+    return { state: 'Relieved', exitDate: leaving, resignationDate, reason: `Last working day was ${leaving}.` };
+  }
+
+  if (retirement && retirement <= today) {
+    return { state: 'Retired', exitDate: retirement, resignationDate, reason: `Retired on ${retirement}.` };
+  }
+
+  if (tentative && tentative <= today) {
+    // A tentative date that has passed without a confirmed leaving date: they have most likely gone,
+    // but HR has not closed the record. Reported as Notice Period rather than Relieved so nobody is
+    // locked out on a date greytHR itself calls tentative.
+    return {
+      state: 'Notice Period',
+      exitDate: tentative,
+      resignationDate,
+      reason: `Tentative last working day ${tentative} has passed but no leaving date is confirmed in greytHR.`,
+    };
+  }
+
+  if (input.submittedResignation || submitted) {
+    return {
+      state: 'Notice Period',
+      exitDate: null,
+      resignationDate,
+      reason: submitted
+        ? `Resignation submitted on ${submitted}; no leaving date set yet.`
+        : 'Resignation submitted; no leaving date set yet.',
+    };
+  }
+
+  if (input.leftOrg) {
+    return {
+      state: 'Left',
+      exitDate: null,
+      resignationDate,
+      reason: 'Marked as having left greytHR, but no leaving date is recorded.',
+    };
+  }
+
+  return { state: 'Active', exitDate: null, resignationDate: null, reason: 'Active employee.' };
+}
+
+/** Merge the roster row and the separation row into one set of signals. */
+export function employmentSignals(
+  employee: GreytHREmployeeRow | null | undefined,
+  separation: GreytHRSeparationRow | null | undefined,
+): EmploymentStateInput | null {
+  if (!employee && !separation) return null;
+  return {
+    // Either spelling counts; the roster and the separation endpoint disagree on capitalisation.
+    leftOrg: separation?.leftOrg ?? employee?.leftorg ?? null,
+    leavingDate: separation?.leavingDate ?? employee?.leavingDate ?? null,
+    retirementDate: separation?.retirementDate ?? null,
+    tentativeLeavingDate: separation?.tentativeLeavingDate ?? null,
+    tentativeRelieveDate: separation?.tentativeRelieveDate ?? null,
+    submittedResignation: separation?.submittedResignation ?? null,
+    submissionDate: separation?.submissionDate ?? null,
+    finalSettlementDate: separation?.finalSettlementDate ?? null,
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Employment type (`lov::status`)
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Fallback labels for `lov::status`.
+ *
+ * The list is tenant-configurable, so the sync fetches the real one and only falls back to these —
+ * which are greytHR's shipped defaults — when the LOV call fails. Showing "Confirmed" from a stale
+ * default is better than showing a bare `2`.
+ */
+export const DEFAULT_EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
+  '1': 'Probation',
+  '2': 'Confirmed',
+  '3': 'Contract',
+  '4': 'Trainee',
+};
+
+/** Turn a `lov::status` payload into a code → label map. */
+export function employmentTypeLabels(lov: GreytHRLovResponse | null | undefined): Record<string, string> {
+  const rows = lov?.['lov::status'];
+  if (!Array.isArray(rows) || !rows.length) return { ...DEFAULT_EMPLOYMENT_TYPE_LABELS };
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    if (!Array.isArray(row) || row.length < 2) continue;
+    const code = row[0];
+    const label = row[1];
+    if (code === null || code === undefined || typeof label !== 'string') continue;
+    out[String(code)] = label;
+  }
+  return Object.keys(out).length ? out : { ...DEFAULT_EMPLOYMENT_TYPE_LABELS };
+}
+
+export const employmentTypeLabel = (
+  code: number | string | null | undefined,
+  labels: Record<string, string>,
+): string => {
+  if (code === null || code === undefined || code === '') return '';
+  return labels[String(code)] ?? String(code);
+};
+
+/* ------------------------------------------------------------------------------------------------
+ * Categories — designation, department, location, project
+ * ---------------------------------------------------------------------------------------------- */
+
+/** A category assignment normalised to names, with a usable window. */
+export interface NormalizedCategory {
+  category: string;
+  value: string;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+}
+
+/**
+ * Normalise one employee's `categoryList`.
+ *
+ * Rows without a resolvable name are dropped rather than kept as numeric ids: a designation showing
+ * as `6` in a report is worse than the field being blank, because blank prompts somebody to check
+ * greytHR whereas `6` looks like data. Callers that want the ids can pass a LOV map.
+ */
+export function normalizeCategories(
+  entries: GreytHRCategoryEntry[] | null | undefined,
+  options?: {
+    /** `cat::Designation` → id → name, from the LOV endpoint. Only needed without `descRequired`. */
+    categoryNamesById?: Record<string, string>;
+    valueNamesByCategory?: Record<string, Record<string, string>>;
+  },
+): NormalizedCategory[] {
+  if (!Array.isArray(entries)) return [];
+  const out: NormalizedCategory[] = [];
+
+  for (const entry of entries) {
+    const categoryName =
+      (typeof entry.categoryDesc === 'string' && entry.categoryDesc.trim()) ||
+      (entry.category !== null && entry.category !== undefined
+        ? options?.categoryNamesById?.[String(entry.category)]
+        : undefined) ||
+      '';
+    if (!categoryName) continue;
+
+    const valueName =
+      (typeof entry.valueDesc === 'string' && entry.valueDesc.trim()) ||
+      (entry.value !== null && entry.value !== undefined
+        ? options?.valueNamesByCategory?.[categoryName]?.[String(entry.value)]
+        : undefined) ||
+      '';
+    if (!valueName) continue;
+
+    out.push({
+      category: categoryName,
+      value: valueName,
+      effectiveFrom: sanitizeGreytHRDate(entry.effectiveFrom),
+      effectiveTo: sanitizeGreytHRDate(entry.effectiveTo),
+    });
+  }
+
+  return out;
+}
+
+/**
+ * The value of one category as at `onDate`.
+ *
+ * The point of this function: an employee promoted in April has two Designation rows, and "their
+ * designation" means the one whose window contains the date being asked about. Among several
+ * matching windows the latest `effectiveFrom` wins, because that is the most recent change; a row
+ * with no `effectiveFrom` at all sorts last, as it carries no evidence of when it started.
+ */
+export function resolveCategoryAt(
+  categories: NormalizedCategory[],
+  categoryName: string,
+  onDate: string = todayIso(),
+): NormalizedCategory | null {
+  const candidates = categories.filter(
+    (entry) =>
+      entry.category.toLowerCase() === categoryName.toLowerCase() &&
+      withinWindow(onDate, entry.effectiveFrom, entry.effectiveTo),
+  );
+  if (!candidates.length) return null;
+
+  return candidates.reduce((best, entry) => {
+    if (!best.effectiveFrom) return entry.effectiveFrom ? entry : best;
+    if (!entry.effectiveFrom) return best;
+    return entry.effectiveFrom > best.effectiveFrom ? entry : best;
+  });
+}
+
+/** Every category resolved as at one date, keyed by category name. */
+export function resolveAllCategoriesAt(
+  categories: NormalizedCategory[],
+  onDate: string = todayIso(),
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const names = [...new Set(categories.map((entry) => entry.category))];
+  for (const name of names) {
+    const resolved = resolveCategoryAt(categories, name, onDate);
+    if (resolved) out[name] = resolved.value;
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * The record this integration maintains
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * One employee as this application stores them.
+ *
+ * A superset of the existing `Employee` shape in `types.ts` — every field that was there before is
+ * still there, spelled the same way, so the Employee Management screens keep working untouched.
+ * Everything new is optional.
+ */
+export interface SyncedEmployee {
+  /** greytHR's numeric employee id, as a string. The Firestore document id. */
+  employeeId: string;
+  /** greytHR's human employee number, e.g. `CON-005`. */
+  employeeNo: string;
+  name: string;
+  email: string;
+  phone: string;
+  /** The existing Active/Inactive field, now derived from employment *state*. */
+  status: 'Active' | 'Inactive';
+  department: string;
+  designation: string;
+  dateOfJoin: string | null;
+  leavingDate: string | null;
+  dateOfBirth: string | null;
+  gender: string;
+
+  /* ── added by this integration ── */
+
+  /** Where the person is in the employment lifecycle. */
+  employmentState: EmploymentState;
+  /** Probation / Confirmed / Contract / Trainee — greytHR's `status` code, resolved. */
+  employmentType: string;
+  employmentTypeCode: string;
+  /** Why `employmentState` is what it is, for the review screen. */
+  employmentStateReason: string;
+  exitDate: string | null;
+  resignationDate: string | null;
+  location: string;
+  grade: string;
+  company: string;
+  projectName: string;
+  projectDivision: string;
+  costCenter: string;
+  employeeType: string;
+  /** Every category as at the sync date, including any this integration does not name explicitly. */
+  categories: Record<string, string>;
+  confirmDate: string | null;
+  noticePeriodDays: number | null;
+  /** greytHR's own `lastModified`, for incremental sync. */
+  greytHRLastModified: string | null;
+  /** ISO timestamp of the run that last wrote this record. */
+  syncedAt: string;
+}
+
+export interface BuildEmployeeInput {
+  employee: GreytHREmployeeRow;
+  separation?: GreytHRSeparationRow | null;
+  categories?: GreytHRCategoryEntry[] | null;
+  work?: GreytHRWorkRow | null;
+  employmentTypeLabels?: Record<string, string>;
+  onDate?: string;
+  syncedAt?: string;
+}
+
+/**
+ * Fold every greytHR source into one record.
+ *
+ * `status` stays `'Active' | 'Inactive'` because the Employee Management screens, the HR module and
+ * the access layer's user filters all read it. What changed is how it is *decided*: from employment
+ * state, not from a numeric code compared against a string.
+ */
+export function buildSyncedEmployee(input: BuildEmployeeInput): SyncedEmployee {
+  const { employee } = input;
+  const onDate = input.onDate ?? todayIso();
+  const labels = input.employmentTypeLabels ?? DEFAULT_EMPLOYMENT_TYPE_LABELS;
+
+  const stateResult = deriveEmploymentState(employmentSignals(employee, input.separation), onDate);
+  const categories = normalizeCategories(input.categories);
+  const resolved = resolveAllCategoriesAt(categories, onDate);
+
+  const pick = (key: GreytHRCategoryKey): string => resolved[GREYTHR_CATEGORY[key]] ?? '';
+
+  return {
+    employeeId: String(employee.employeeId),
+    employeeNo: String(employee.employeeNo ?? '').trim(),
+    name: String(employee.name ?? '').trim(),
+    email: String(employee.email ?? '').trim().toLowerCase(),
+    phone: String(employee.mobile ?? '').trim(),
+    status: isWorkingState(stateResult.state) ? 'Active' : 'Inactive',
+    department: pick('department'),
+    designation: pick('designation'),
+    dateOfJoin: sanitizeGreytHRDate(employee.dateOfJoin),
+    leavingDate: sanitizeGreytHRDate(input.separation?.leavingDate ?? employee.leavingDate),
+    dateOfBirth: sanitizeGreytHRDate(employee.dateOfBirth),
+    gender: String(employee.gender ?? '').trim(),
+
+    employmentState: stateResult.state,
+    employmentType: employmentTypeLabel(employee.status, labels),
+    employmentTypeCode: employee.status === null || employee.status === undefined ? '' : String(employee.status),
+    employmentStateReason: stateResult.reason,
+    exitDate: stateResult.exitDate,
+    resignationDate: stateResult.resignationDate,
+    location: pick('location'),
+    grade: pick('grade'),
+    company: pick('company'),
+    projectName: pick('projectName'),
+    projectDivision: pick('projectDivision'),
+    costCenter: pick('costCenter') || pick('costCenterCode'),
+    employeeType: pick('employeeType'),
+    categories: resolved,
+    confirmDate: sanitizeGreytHRDate(input.work?.confirmDate),
+    noticePeriodDays:
+      typeof input.work?.noticePeriod === 'number' && Number.isFinite(input.work.noticePeriod)
+        ? input.work.noticePeriod
+        : null,
+    greytHRLastModified: employee.lastModified ?? null,
+    syncedAt: input.syncedAt ?? new Date().toISOString(),
+  };
+}
+
+/** Fields whose change is worth writing and reporting. Excludes `syncedAt`, which always changes. */
+const TRACKED_FIELDS: Array<keyof SyncedEmployee> = [
+  'employeeNo',
+  'name',
+  'email',
+  'phone',
+  'status',
+  'department',
+  'designation',
+  'dateOfJoin',
+  'leavingDate',
+  'dateOfBirth',
+  'gender',
+  'employmentState',
+  'employmentType',
+  'employmentTypeCode',
+  'exitDate',
+  'resignationDate',
+  'location',
+  'grade',
+  'company',
+  'projectName',
+  'projectDivision',
+  'costCenter',
+  'employeeType',
+  'confirmDate',
+  'noticePeriodDays',
+];
+
+export interface FieldDelta {
+  field: string;
+  from: unknown;
+  to: unknown;
+}
+
+/**
+ * What changed between the stored record and the freshly built one.
+ *
+ * Drives both the "write only what moved" optimisation and the run report. Returning an empty array
+ * for an unchanged employee is what keeps a nightly sync of 1,300 people from writing 1,300
+ * documents and burning the Firestore quota on no news.
+ */
+export function diffSyncedEmployee(
+  before: Partial<SyncedEmployee> | null | undefined,
+  after: SyncedEmployee,
+): FieldDelta[] {
+  const deltas: FieldDelta[] = [];
+  const blank = (value: unknown) => value === null || value === undefined || value === '';
+
+  for (const field of TRACKED_FIELDS) {
+    const from = before?.[field];
+    const to = after[field];
+    if (blank(from) && blank(to)) continue;
+    if (from === to) continue;
+    deltas.push({ field, from: from ?? null, to: to ?? null });
+  }
+  return deltas;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Platform access policy
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * When a greytHR exit should close somebody's platform login.
+ *
+ * `'Flag for review'` is the default and writes nothing. That is not timidity — the data this
+ * integration inherited marked *every* employee `Inactive`, and a policy that acted on it
+ * automatically would have logged the whole company out. An administrator confirming the first
+ * run's findings is cheap; a company-wide lockout is not.
+ */
+export type ExitAccessPolicy =
+  /** Record and surface it; never change a user account. */
+  | 'Flag for review'
+  /** Deactivate once the last working day has passed. Notice-period employees keep working. */
+  | 'On last working day'
+  /** Deactivate as soon as a resignation is on file, before the last working day. */
+  | 'On resignation';
+
+export const EXIT_ACCESS_POLICIES: ExitAccessPolicy[] = [
+  'Flag for review',
+  'On last working day',
+  'On resignation',
+];
+
+export interface AccessDecisionInput {
+  state: EmploymentState;
+  policy: ExitAccessPolicy;
+  /** The linked platform user's current status, if a user exists. */
+  currentUserStatus?: 'Active' | 'Inactive' | null;
+  /**
+   * Whether this integration is the one that deactivated them. Only its own deactivations are ever
+   * reversed — an account an administrator disabled by hand stays disabled.
+   */
+  deactivatedBySync?: boolean;
+  /**
+   * True when deactivating this user would leave nobody able to administer access. Such a user is
+   * never deactivated automatically, whatever the policy says.
+   */
+  wouldStrandAdministration?: boolean;
+}
+
+export interface AccessDecision {
+  /** What the sync should do to the user account. */
+  action: 'none' | 'deactivate' | 'reactivate';
+  /** Whether an administrator should be shown this row even when `action` is `none`. */
+  flagForReview: boolean;
+  reason: string;
+}
+
+/**
+ * What should happen to a platform login, given an employment state and a policy.
+ *
+ * Pure, so the review screen can show exactly what the cron would do before anybody turns the
+ * policy on.
+ */
+export function resolveAccessDecision(input: AccessDecisionInput): AccessDecision {
+  const { state, policy } = input;
+  const currentlyInactive = input.currentUserStatus === 'Inactive';
+  const working = isWorkingState(state);
+
+  /* ── Rejoining, or an exit that turned out not to be one ── */
+
+  if (working && currentlyInactive) {
+    if (input.deactivatedBySync) {
+      return {
+        action: 'reactivate',
+        flagForReview: true,
+        reason: `Back to ${state} in greytHR — restoring the access this sync removed.`,
+      };
+    }
+    return {
+      action: 'none',
+      flagForReview: true,
+      reason:
+        'Active in greytHR but disabled on the platform. This account was disabled by an administrator, ' +
+        'not by the sync, so it is left alone.',
+    };
+  }
+
+  if (working) {
+    return { action: 'none', flagForReview: false, reason: 'Working — access unchanged.' };
+  }
+
+  /* ── They have gone, or are going ── */
+
+  if (state === 'Unknown') {
+    return {
+      action: 'none',
+      flagForReview: true,
+      reason: 'No longer present in greytHR. Review manually — an absent record is not proof of an exit.',
+    };
+  }
+
+  if (currentlyInactive) {
+    return { action: 'none', flagForReview: false, reason: `${state} in greytHR; platform access already disabled.` };
+  }
+
+  if (policy === 'Flag for review') {
+    return {
+      action: 'none',
+      flagForReview: true,
+      reason: `${state} in greytHR. Policy is review-only, so platform access is unchanged — disable it here when ready.`,
+    };
+  }
+
+  if (input.wouldStrandAdministration) {
+    return {
+      action: 'none',
+      flagForReview: true,
+      reason:
+        `${state} in greytHR, but this is the last user who can administer access. ` +
+        'Grant another administrator first, then disable this account by hand.',
+    };
+  }
+
+  return { action: 'deactivate', flagForReview: true, reason: `${state} in greytHR — platform access removed.` };
+}
+
+/**
+ * Whether a *notice-period* employee should be deactivated under this policy.
+ *
+ * Split out because `resolveAccessDecision` treats Notice Period as working, which is right for
+ * every policy except `'On resignation'`. Keeping the exception here rather than threading it
+ * through the main function stops the common path from having to reason about it.
+ */
+export function shouldDeactivateOnResignation(
+  state: EmploymentState,
+  policy: ExitAccessPolicy,
+): boolean {
+  return policy === 'On resignation' && state === 'Notice Period';
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Schedule
+ * ---------------------------------------------------------------------------------------------- */
+
+export type SyncFrequency = 'Manual' | 'Hourly' | 'Every 6 hours' | 'Every 12 hours' | 'Daily' | 'Weekly';
+
+export const SYNC_FREQUENCIES: SyncFrequency[] = [
+  'Manual',
+  'Hourly',
+  'Every 6 hours',
+  'Every 12 hours',
+  'Daily',
+  'Weekly',
+];
+
+export interface SyncSchedule {
+  enabled: boolean;
+  frequency: SyncFrequency;
+  /** Hour of day, 0–23, for Daily and Weekly. Local to the server. */
+  hourOfDay: number;
+  /** 0 = Sunday. For Weekly. */
+  dayOfWeek: number;
+}
+
+export const DEFAULT_SYNC_SCHEDULE: SyncSchedule = {
+  enabled: false,
+  frequency: 'Daily',
+  hourOfDay: 2,
+  dayOfWeek: 1,
+};
+
+/** Minimum gap between runs, per frequency. `Manual` never becomes due on its own. */
+const FREQUENCY_INTERVAL_MS: Record<Exclude<SyncFrequency, 'Manual'>, number> = {
+  Hourly: 60 * 60 * 1000,
+  'Every 6 hours': 6 * 60 * 60 * 1000,
+  'Every 12 hours': 12 * 60 * 60 * 1000,
+  Daily: 24 * 60 * 60 * 1000,
+  Weekly: 7 * 24 * 60 * 60 * 1000,
+};
+
+/**
+ * Is a scheduled run due right now?
+ *
+ * The whole reason this exists: `vercel.json` crons are static, so an administrator cannot pick a
+ * cron expression from a settings screen. A fixed frequent trigger asks this on every tick, and the
+ * answer is a pure function of the settings and the last run — which also means the schedule can be
+ * tested without waiting for a clock.
+ *
+ * The interval is checked with a one-minute tolerance so a cron that fires at 02:00:03 one day and
+ * 01:59:58 the next does not silently skip a day.
+ */
+export function isSyncDue(
+  schedule: SyncSchedule,
+  lastRunAt: string | Date | null | undefined,
+  now: Date = new Date(),
+): { due: boolean; reason: string } {
+  if (!schedule.enabled) return { due: false, reason: 'Automatic sync is switched off.' };
+  if (schedule.frequency === 'Manual') return { due: false, reason: 'Frequency is set to manual only.' };
+
+  const last = lastRunAt ? new Date(lastRunAt) : null;
+  const lastMs = last && !Number.isNaN(last.getTime()) ? last.getTime() : null;
+
+  if (lastMs === null) return { due: true, reason: 'No successful run recorded yet.' };
+
+  const interval = FREQUENCY_INTERVAL_MS[schedule.frequency];
+  const TOLERANCE_MS = 60_000;
+  const elapsed = now.getTime() - lastMs;
+  if (elapsed + TOLERANCE_MS < interval) {
+    const hours = Math.max(0, Math.round((interval - elapsed) / 3_600_000));
+    return { due: false, reason: `Last run was ${Math.round(elapsed / 3_600_000)}h ago; next due in about ${hours}h.` };
+  }
+
+  // Daily and weekly additionally hold until their configured hour, so a nightly sync does not drift
+  // an hour later every day as each run's timestamp pushes the next window out.
+  if (schedule.frequency === 'Daily' || schedule.frequency === 'Weekly') {
+    if (now.getHours() < schedule.hourOfDay) {
+      return { due: false, reason: `Waiting for ${String(schedule.hourOfDay).padStart(2, '0')}:00.` };
+    }
+    if (schedule.frequency === 'Weekly' && now.getDay() !== schedule.dayOfWeek) {
+      return { due: false, reason: 'Waiting for the configured day of the week.' };
+    }
+  }
+
+  return { due: true, reason: 'Due.' };
+}
+
+/** Human description of a schedule, for the settings screen. */
+export function describeSchedule(schedule: SyncSchedule): string {
+  if (!schedule.enabled) return 'Automatic sync is off — run it manually when needed.';
+  const at = `${String(schedule.hourOfDay).padStart(2, '0')}:00`;
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  switch (schedule.frequency) {
+    case 'Manual':
+      return 'Automatic sync is enabled but the frequency is manual — nothing will run on its own.';
+    case 'Hourly':
+      return 'Runs every hour.';
+    case 'Every 6 hours':
+      return 'Runs every 6 hours.';
+    case 'Every 12 hours':
+      return 'Runs every 12 hours.';
+    case 'Daily':
+      return `Runs once a day, on or after ${at}.`;
+    case 'Weekly':
+      return `Runs once a week, on ${days[schedule.dayOfWeek] ?? 'Monday'} on or after ${at}.`;
+  }
+}
+
+/**
+ * The `modifiedSince` value for an incremental run.
+ *
+ * Overlapped by an hour against the last run, deliberately. greytHR's `lastModified` is server-side
+ * and this app's clock is not the same clock; an exact boundary drops any record modified in the
+ * seconds around the previous run. Re-reading an hour of overlap costs one page and makes the sync
+ * idempotent rather than lossy.
+ */
+export function modifiedSinceFor(
+  lastSuccessfulRunAt: string | Date | null | undefined,
+  options?: { overlapMs?: number; fullResync?: boolean },
+): string | null {
+  if (options?.fullResync) return null;
+  if (!lastSuccessfulRunAt) return null;
+  const last = new Date(lastSuccessfulRunAt);
+  if (Number.isNaN(last.getTime())) return null;
+  const overlap = options?.overlapMs ?? 60 * 60 * 1000;
+  return new Date(last.getTime() - overlap).toISOString().slice(0, 19);
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Settings and run records
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Which greytHR facts may drive platform membership. See `docs/greythr-integration.md`. */
+export interface GreytHRMappingPolicy {
+  /** Write designation/department/project onto the employee record. Always safe; always on. */
+  syncEmployeeFacts: boolean;
+  /**
+   * Keep the linked user's department and designation membership in step with greytHR, so the
+   * Department and Designation rules configured in Access Management apply automatically.
+   */
+  syncAccessMembership: boolean;
+  /** Grant project-scoped access from the greytHR "Project Name" category. Off by default. */
+  syncProjectAccess: boolean;
+}
+
+export const DEFAULT_MAPPING_POLICY: GreytHRMappingPolicy = {
+  syncEmployeeFacts: true,
+  syncAccessMembership: true,
+  syncProjectAccess: false,
+};
+
+export interface GreytHRSyncSettings {
+  schedule: SyncSchedule;
+  exitPolicy: ExitAccessPolicy;
+  mapping: GreytHRMappingPolicy;
+  /**
+   * Which detail groups to fetch. Everything operational defaults on; everything sensitive defaults
+   * off, because holding somebody's Aadhaar number has to be a decision rather than a side effect of
+   * turning on a sync.
+   */
+  detailGroups: Record<EmployeeDetailGroup, boolean>;
+  /** ISO timestamp of the last run that completed without error. Drives `modifiedSince`. */
+  lastSuccessfulRunAt?: string | null;
+  lastRunAt?: string | null;
+  lastRunId?: string | null;
+  updatedAt?: string;
+  updatedBy?: string;
+  updatedByName?: string;
+}
+
+export const DEFAULT_SYNC_SETTINGS: GreytHRSyncSettings = {
+  schedule: DEFAULT_SYNC_SCHEDULE,
+  exitPolicy: 'Flag for review',
+  mapping: DEFAULT_MAPPING_POLICY,
+  detailGroups: DEFAULT_DETAIL_GROUPS,
+  lastSuccessfulRunAt: null,
+  lastRunAt: null,
+  lastRunId: null,
+};
+
+/** Tolerant reader, so a settings document written before a field existed still loads. */
+export function normalizeSyncSettings(
+  raw: Partial<GreytHRSyncSettings> | null | undefined,
+): GreytHRSyncSettings {
+  const schedule: Partial<SyncSchedule> = raw?.schedule ?? {};
+  const frequency = SYNC_FREQUENCIES.includes(schedule.frequency as SyncFrequency)
+    ? (schedule.frequency as SyncFrequency)
+    : DEFAULT_SYNC_SCHEDULE.frequency;
+  const hour = Number(schedule.hourOfDay);
+  const day = Number(schedule.dayOfWeek);
+
+  return {
+    schedule: {
+      enabled: schedule.enabled === true,
+      frequency,
+      hourOfDay: Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : DEFAULT_SYNC_SCHEDULE.hourOfDay,
+      dayOfWeek: Number.isInteger(day) && day >= 0 && day <= 6 ? day : DEFAULT_SYNC_SCHEDULE.dayOfWeek,
+    },
+    exitPolicy: EXIT_ACCESS_POLICIES.includes(raw?.exitPolicy as ExitAccessPolicy)
+      ? (raw!.exitPolicy as ExitAccessPolicy)
+      : 'Flag for review',
+    mapping: {
+      // Facts are always synced — an integration that fetches employee data and declines to record
+      // it has no purpose, and every screen downstream reads these fields.
+      syncEmployeeFacts: true,
+      syncAccessMembership: raw?.mapping?.syncAccessMembership !== false,
+      syncProjectAccess: raw?.mapping?.syncProjectAccess === true,
+    },
+    // Read per group against each one's own default, so a settings document written before a group
+    // existed picks up that group's default rather than silently enabling a sensitive fetch.
+    detailGroups: Object.fromEntries(
+      EMPLOYEE_DETAIL_GROUPS.map((spec) => {
+        const stored = raw?.detailGroups?.[spec.group];
+        return [spec.group, typeof stored === 'boolean' ? stored : spec.defaultEnabled];
+      }),
+    ) as Record<EmployeeDetailGroup, boolean>,
+    lastSuccessfulRunAt: raw?.lastSuccessfulRunAt ?? null,
+    lastRunAt: raw?.lastRunAt ?? null,
+    lastRunId: raw?.lastRunId ?? null,
+    updatedAt: raw?.updatedAt,
+    updatedBy: raw?.updatedBy,
+    updatedByName: raw?.updatedByName,
+  };
+}
+
+/** One employee's outcome in a run, for the review screen. */
+export interface SyncEmployeeOutcome {
+  employeeId: string;
+  employeeNo: string;
+  name: string;
+  email: string;
+  employmentState: EmploymentState;
+  employmentStateReason: string;
+  changes: FieldDelta[];
+  /** The linked platform user, when one was matched. */
+  userId?: string | null;
+  accessAction: AccessDecision['action'];
+  accessReason: string;
+  flagged: boolean;
+}
+
+export interface GreytHRSyncRun {
+  id: string;
+  startedAt: string;
+  finishedAt: string | null;
+  /** `'cron'` or `'manual'`. */
+  trigger: 'cron' | 'manual';
+  triggeredBy?: string | null;
+  triggeredByName?: string | null;
+  /** Whether this run refetched everything rather than using `modifiedSince`. */
+  fullResync: boolean;
+  modifiedSince: string | null;
+  ok: boolean;
+  error?: string | null;
+  employeesFetched: number;
+  employeesCreated: number;
+  employeesUpdated: number;
+  employeesUnchanged: number;
+  usersDeactivated: number;
+  usersReactivated: number;
+  flaggedForReview: number;
+  membershipUpdated: number;
+  /** Restricted-data documents written. 0 when no sensitive group is enabled. */
+  sensitiveRecordsWritten?: number;
+  /** Which detail groups this run actually fetched, for the report. */
+  detailGroupsRun?: string[];
+  tookMs: number;
+  /** Only the rows worth showing — changed or flagged. A full 1,300-row dump is not a report. */
+  outcomes: SyncEmployeeOutcome[];
+  warnings: string[];
+}
+
+/** Roll a run's per-employee outcomes into its counters. */
+export function summarizeRun(
+  outcomes: SyncEmployeeOutcome[],
+  created: Set<string>,
+): Pick<
+  GreytHRSyncRun,
+  'employeesCreated' | 'employeesUpdated' | 'employeesUnchanged' | 'usersDeactivated' | 'usersReactivated' | 'flaggedForReview'
+> {
+  let updated = 0;
+  let unchanged = 0;
+  let deactivated = 0;
+  let reactivated = 0;
+  let flagged = 0;
+
+  for (const outcome of outcomes) {
+    if (created.has(outcome.employeeId)) {
+      // Counted as created, not updated — a new employee's every field is a "change".
+    } else if (outcome.changes.length) updated += 1;
+    else unchanged += 1;
+
+    if (outcome.accessAction === 'deactivate') deactivated += 1;
+    if (outcome.accessAction === 'reactivate') reactivated += 1;
+    if (outcome.flagged) flagged += 1;
+  }
+
+  return {
+    employeesCreated: created.size,
+    employeesUpdated: updated,
+    employeesUnchanged: unchanged,
+    usersDeactivated: deactivated,
+    usersReactivated: reactivated,
+    flaggedForReview: flagged,
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Linking greytHR employees to platform users
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Match an employee to a platform user.
+ *
+ * Two joins, in order of trust:
+ *
+ *   1. **An explicit link.** A user created by picking a greytHR employee carries that employee's id
+ *      on their own record. That is a decision an administrator made, so it beats any inference.
+ *   2. **Email**, case-insensitively and trimmed, because greytHR and Firebase Auth disagree about
+ *      both often enough to matter.
+ *
+ * The explicit link exists because email alone is fragile: a person whose work address changes, or
+ * who has none, silently stops matching — and the failure is invisible until their resignation does
+ * not take effect. Returns null rather than guessing; a wrong match would apply one person's
+ * resignation to another person's login.
+ */
+export function matchUserForEmployee(
+  employee: Pick<SyncedEmployee, 'email' | 'employeeId'>,
+  usersByEmail: Map<string, string>,
+  usersByEmployeeId?: Map<string, string>,
+): string | null {
+  const linked = employee.employeeId ? usersByEmployeeId?.get(String(employee.employeeId)) : undefined;
+  if (linked) return linked;
+
+  const email = (employee.email || '').trim().toLowerCase();
+  if (!email) return null;
+  return usersByEmail.get(email) ?? null;
+}
+
+/**
+ * The explicit employeeId → userId index.
+ *
+ * Duplicates are dropped for the same reason email duplicates are: two accounts claiming one
+ * employee is a data problem, and picking either would silently apply that employee's exit to the
+ * wrong login.
+ */
+export function indexUsersByEmployeeId(
+  users: Array<{ id: string; employeeId?: string | null }>,
+): { index: Map<string, string>; duplicates: string[] } {
+  const index = new Map<string, string>();
+  const duplicates: string[] = [];
+  for (const user of users) {
+    const employeeId = String(user.employeeId ?? '').trim();
+    if (!employeeId) continue;
+    if (index.has(employeeId)) {
+      duplicates.push(employeeId);
+      continue;
+    }
+    index.set(employeeId, user.id);
+  }
+  for (const employeeId of duplicates) index.delete(employeeId);
+  return { index, duplicates: [...new Set(duplicates)] };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Picking a greytHR employee when creating a user
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * An employee offered in the "create a user for this person" picker.
+ *
+ * A projection of `SyncedEmployee` rather than the whole thing: this crosses the wire to a screen
+ * that only needs to show and prefill, and the full record carries category history and audit
+ * stamps that screen has no use for.
+ */
+export interface LinkableEmployee {
+  employeeId: string;
+  employeeNo: string;
+  name: string;
+  email: string;
+  phone: string;
+  department: string;
+  designation: string;
+  location: string;
+  projectName: string;
+  projectDivision: string;
+  grade: string;
+  costCenter: string;
+  employeeType: string;
+  employmentType: string;
+  employmentState: EmploymentState;
+  dateOfJoin: string | null;
+  /** The user this employee is already linked to, if any. */
+  linkedUserId: string | null;
+  /** How the link was established, for the picker to explain itself. */
+  linkedBy: 'employeeId' | 'email' | null;
+}
+
+export function toLinkableEmployee(
+  employee: Partial<SyncedEmployee> & { employeeId: string },
+  link?: { userId: string | null; via: 'employeeId' | 'email' | null },
+): LinkableEmployee {
+  return {
+    employeeId: String(employee.employeeId),
+    employeeNo: employee.employeeNo ?? '',
+    name: employee.name ?? '',
+    email: employee.email ?? '',
+    phone: employee.phone ?? '',
+    department: employee.department ?? '',
+    designation: employee.designation ?? '',
+    location: employee.location ?? '',
+    projectName: employee.projectName ?? '',
+    projectDivision: employee.projectDivision ?? '',
+    grade: employee.grade ?? '',
+    costCenter: employee.costCenter ?? '',
+    employeeType: employee.employeeType ?? '',
+    employmentType: employee.employmentType ?? '',
+    employmentState: (employee.employmentState as EmploymentState) ?? 'Unknown',
+    dateOfJoin: employee.dateOfJoin ?? null,
+    linkedUserId: link?.userId ?? null,
+    linkedBy: link?.via ?? null,
+  };
+}
+
+/**
+ * Should this employee be offered when creating a new user?
+ *
+ * Only people who still work here, and only those without a login already. Offering a relieved
+ * employee invites creating an account for somebody who has left; offering a linked one invites a
+ * duplicate account, which then breaks the email join for both.
+ *
+ * An employee with no email address is still offered — the administrator can type one. Excluding
+ * them would hide site staff whose address is being created at the same time as their login.
+ */
+export function isOfferableForNewUser(employee: LinkableEmployee): boolean {
+  if (employee.linkedUserId) return false;
+  return isWorkingState(employee.employmentState);
+}
+
+/** Why an employee is not offerable, for the picker's "showing N of M" explanation. */
+export function offerExclusionReason(employee: LinkableEmployee): string | null {
+  if (employee.linkedUserId) return 'Already has a platform login';
+  if (!isWorkingState(employee.employmentState)) return `Not currently working (${employee.employmentState})`;
+  return null;
+}
+
+/** Text a picker search box matches against. */
+export const employeeSearchText = (employee: LinkableEmployee): string =>
+  [
+    employee.name,
+    employee.employeeNo,
+    employee.employeeId,
+    employee.email,
+    employee.phone,
+    employee.department,
+    employee.designation,
+    employee.location,
+    employee.projectName,
+    employee.projectDivision,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+/* ------------------------------------------------------------------------------------------------
+ * Category id maps
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Two-way maps between category/value names and greytHR's numeric ids.
+ *
+ * Needed for two things:
+ *
+ *   1. **Reading a single employee.** `GET /employees/{id}/categories` returns a bare array of
+ *      `{category: 6, value: 31}` with no descriptions — unlike the bulk endpoint, which honours
+ *      `descRequired=true`. Resolving one employee therefore needs these maps.
+ *   2. **Writing back.** `POST`/`PUT /employees/{id}/categories` takes numeric ids in the same
+ *      shape, so anything that pushes a designation into greytHR must translate names to ids first.
+ *
+ * The ids are tenant-specific and change when somebody adds a category in greytHR, which is exactly
+ * why they are looked up rather than hardcoded.
+ */
+export interface CategoryIdMaps {
+  /** `"Designation"` → `6`. From `lov::transitiontype`. */
+  categoryIdByName: Record<string, number>;
+  /** `6` → `"Designation"`. */
+  categoryNameById: Record<string, string>;
+  /** `"Designation"` → `{ "31": "Site Engineer" }`. From each `cat::<Name>` list. */
+  valueNamesByCategory: Record<string, Record<string, string>>;
+  /** `"Designation"` → `{ "site engineer": 31 }`, lower-cased for lookup by name. */
+  valueIdsByCategory: Record<string, Record<string, number>>;
+}
+
+/**
+ * A greytHR list id, or null.
+ *
+ * `Number(null)` is `0` and `Number('')` is `0`, both of which pass `Number.isFinite` — so a
+ * malformed `[null, "X"]` row would otherwise register as category id 0 and shadow nothing useful
+ * while polluting the map. greytHR ids are positive integers, so anything else is rejected.
+ */
+const lovId = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+export function buildCategoryIdMaps(lov: GreytHRLovResponse | null | undefined): CategoryIdMaps {
+  const categoryIdByName: Record<string, number> = {};
+  const categoryNameById: Record<string, string> = {};
+  const valueNamesByCategory: Record<string, Record<string, string>> = {};
+  const valueIdsByCategory: Record<string, Record<string, number>> = {};
+
+  for (const row of lov?.['lov::transitiontype'] ?? []) {
+    if (!Array.isArray(row) || row.length < 2) continue;
+    const id = lovId(row[0]);
+    const name = typeof row[1] === 'string' ? row[1].trim() : '';
+    if (id === null || !name) continue;
+    categoryIdByName[name] = id;
+    categoryNameById[String(id)] = name;
+  }
+
+  for (const [key, rows] of Object.entries(lov ?? {})) {
+    if (!key.startsWith('cat::') || !Array.isArray(rows)) continue;
+    const categoryName = key.slice('cat::'.length);
+    const byId: Record<string, string> = {};
+    const byName: Record<string, number> = {};
+    for (const row of rows) {
+      if (!Array.isArray(row) || row.length < 2) continue;
+      const id = lovId(row[0]);
+      const name = typeof row[1] === 'string' ? row[1].trim() : '';
+      if (id === null || !name) continue;
+      byId[String(id)] = name;
+      byName[name.toLowerCase()] = id;
+    }
+    valueNamesByCategory[categoryName] = byId;
+    valueIdsByCategory[categoryName] = byName;
+  }
+
+  return { categoryIdByName, categoryNameById, valueNamesByCategory, valueIdsByCategory };
+}
+
+/** One entry of the `POST`/`PUT /employees/{id}/categories` body. */
+export interface CategoryWriteEntry {
+  category: number;
+  value: number;
+  /** `YYYY-MM-DD`. greytHR's own docs disagree about the key name — see `buildCategoryWriteBody`. */
+  effectiveDate: string;
+}
+
+/**
+ * Translate `{ Designation: 'Site Engineer' }` into the numeric body greytHR's write API expects.
+ *
+ * Note the field name: greytHR's published request bodies use `effectiveDate`, while the parameter
+ * table on the same page documents `EffectiveFrom`. The bodies are the thing that was actually
+ * captured from a working request, so `effectiveDate` is what this sends — but that inconsistency is
+ * why anything using this should be verified against the tenant before being trusted.
+ *
+ * Names that do not resolve to an id are returned as `unresolved` rather than silently dropped:
+ * writing three of four requested categories and reporting success is worse than refusing.
+ */
+export function buildCategoryWriteBody(
+  assignments: Record<string, string>,
+  maps: CategoryIdMaps,
+  effectiveDate: string,
+): { list: CategoryWriteEntry[]; unresolved: Array<{ category: string; value: string; reason: string }> } {
+  const list: CategoryWriteEntry[] = [];
+  const unresolved: Array<{ category: string; value: string; reason: string }> = [];
+
+  for (const [categoryName, valueName] of Object.entries(assignments)) {
+    if (!valueName) continue;
+    const categoryId = maps.categoryIdByName[categoryName];
+    if (!Number.isFinite(categoryId)) {
+      unresolved.push({ category: categoryName, value: valueName, reason: 'Unknown category in greytHR' });
+      continue;
+    }
+    const valueId = maps.valueIdsByCategory[categoryName]?.[valueName.trim().toLowerCase()];
+    if (!Number.isFinite(valueId)) {
+      unresolved.push({
+        category: categoryName,
+        value: valueName,
+        reason: `"${valueName}" is not a configured value for ${categoryName} in greytHR`,
+      });
+      continue;
+    }
+    list.push({ category: categoryId, value: valueId, effectiveDate });
+  }
+
+  return { list, unresolved };
+}
+
+/** Build the email → userId index, skipping blanks and reporting duplicates. */
+export function indexUsersByEmail(
+  users: Array<{ id: string; email?: string | null }>,
+): { index: Map<string, string>; duplicates: string[] } {
+  const index = new Map<string, string>();
+  const duplicates: string[] = [];
+  for (const user of users) {
+    const email = (user.email || '').trim().toLowerCase();
+    if (!email) continue;
+    if (index.has(email)) {
+      // Two accounts on one address: linking either would be a coin flip, so neither is linked.
+      duplicates.push(email);
+      continue;
+    }
+    index.set(email, user.id);
+  }
+  for (const email of duplicates) index.delete(email);
+  return { index, duplicates: [...new Set(duplicates)] };
+}

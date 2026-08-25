@@ -611,7 +611,14 @@ export default function ManageEmployeePage() {
                         <TableCell>{emp.employeeId}</TableCell>
                         <TableCell>{emp.employeeNo}</TableCell>
                         <TableCell className="font-medium whitespace-nowrap">
-                          {emp.name}
+                          {/* Opens the full profile: every field greytHR holds, with the restricted
+                              block behind its own permission. */}
+                          <Link
+                            href={`/employee/${encodeURIComponent(emp.employeeId || emp.id)}`}
+                            className="hover:underline"
+                          >
+                            {emp.name}
+                          </Link>
                         </TableCell>
                         <TableCell>{emp.dateOfJoin}</TableCell>
                         <TableCell>{emp.status}</TableCell>

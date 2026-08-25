@@ -129,6 +129,26 @@ export interface Role {
   id: string;
   name: string;
   permissions: Record<string, string[]>;
+  /**
+   * Everything below is optional and was added by the access-management layer
+   * (`src/lib/access-control.ts`). Every role document written before it exists has none of these
+   * fields, and the resolver treats their absence as "active, system role, no description" — so a
+   * role that predates this keeps granting exactly what it granted.
+   */
+  description?: string;
+  /** `'Inactive'` or `'Disabled'` stops the role granting. Absent means active. */
+  status?: "Active" | "Inactive" | "Disabled";
+  /** `'Custom'` marks a role built in the Role Builder. Absent is treated as `'System'`. */
+  type?: "System" | "Custom";
+  /** Set when the role was created by duplicating another, for the role library's lineage badge. */
+  duplicatedFromRoleId?: string;
+  duplicatedFromRoleName?: string;
+  createdAt?: Timestamp | string;
+  createdBy?: string;
+  createdByName?: string;
+  updatedAt?: Timestamp | string;
+  updatedBy?: string;
+  updatedByName?: string;
 }
 
 export const permissionModules = {
@@ -1306,6 +1326,11 @@ export interface Employee {
   phone: string;
   department: string;
   designation: string;
+  /**
+   * Derived from `employmentState`, not from greytHR's `status` field — see
+   * `src/lib/greythr.ts`. greytHR's `status` is employment *type* (Probation / Confirmed /
+   * Contract / Trainee) and says nothing about whether the person still works here.
+   */
   status: "Active" | "Inactive";
   grossSalary?: number;
   netSalary?: number;
@@ -1315,6 +1340,42 @@ export interface Employee {
   dateOfBirth?: string | null;
   gender?: string;
   employeeNo?: string;
+
+  /**
+   * Everything below is written by the greytHR sync (`docs/greythr-integration.md`) and is optional:
+   * an employee record that predates the integration has none of these fields, and every screen
+   * reading the block above keeps working unchanged.
+   */
+  employmentState?:
+    | "Active"
+    | "Notice Period"
+    | "Relieved"
+    | "Retired"
+    | "Settled"
+    | "Left"
+    | "Unknown";
+  /** Resolved through greytHR's `lov::status`, e.g. "Confirmed". */
+  employmentType?: string;
+  employmentTypeCode?: string;
+  /** One sentence explaining `employmentState`, for the sync review screen. */
+  employmentStateReason?: string;
+  exitDate?: string | null;
+  resignationDate?: string | null;
+  location?: string;
+  grade?: string;
+  company?: string;
+  /** From the tenant's `cat::Project Name` category. */
+  projectName?: string;
+  projectDivision?: string;
+  costCenter?: string;
+  employeeType?: string;
+  /** Every greytHR category resolved as at the sync date, keyed by category name. */
+  categories?: Record<string, string>;
+  confirmDate?: string | null;
+  noticePeriodDays?: number | null;
+  /** greytHR's own `lastModified`, which drives incremental sync. */
+  greytHRLastModified?: string | null;
+  syncedAt?: string;
 }
 
 export interface EmployeePosition {

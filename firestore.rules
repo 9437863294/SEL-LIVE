@@ -1,0 +1,196 @@
+rules_version = '2';
+
+/**
+ * Firestore security rules for the access-management collections.
+ *
+ * ── Read this before deploying ──────────────────────────────────────────────────────────────────
+ *
+ * This repository has never contained a `firestore.rules` file. `firebase.json` declares only the
+ * Realtime Database rules, the Storage rules and the Firestore *indexes* — the Firestore rules for
+ * this project are maintained in the Firebase console. That means **deploying this file as-is would
+ * replace whatever is currently in the console with only what is written here, and every collection
+ * not mentioned below would stop being readable.**
+ *
+ * So it is deliberately not wired into `firebase.json`. Two safe ways to adopt it:
+ *
+ *   1. Copy the `accessGrants`, `accessScopeGrants`, `accessTemplates`, `accessAuditLogs` and
+ *      `accessBatches` blocks — plus the two helper functions — into the existing console ruleset,
+ *      leaving everything else there untouched. This is the recommended route.
+ *
+ *   2. Export the console's current rules, paste them into this file above the access blocks, add
+ *      `"rules": "firestore.rules"` under `"firestore"` in `firebase.json`, and from then on manage
+ *      them here. Verify with `firebase deploy --only firestore:rules --dry-run` first.
+ *
+ * ── Why the rules look like this ────────────────────────────────────────────────────────────────
+ *
+ * `canManageAccess()` is the same test the UI and the API routes make, expressed in rules: either
+ * the new `Settings.Access Management` permission, or the User Management + Role Management pair
+ * that existing administrators hold. The fallback is what makes the feature possible to turn on —
+ * on the day it ships nobody holds the new permission, because it did not exist when the current
+ * role documents were written.
+ *
+ * Grant documents are readable by their own subject as well as by administrators. A signed-in user
+ * has to be able to read their own `accessGrants/{uid}` document, because that is what
+ * `AuthProvider` subscribes to in order to know what they can do. They can never write it.
+ *
+ * Audit rows are append-only and never updatable or deletable by anybody, including administrators.
+ * An audit trail an administrator can edit is not an audit trail.
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function actor() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    /**
+     * The permission map for the signed-in user's base role.
+     *
+     * `users.role` holds a role *name*, not an id, and rules cannot run a query — so this resolves
+     * the role by document id only. Installations whose role document ids are not the role names
+     * will fall through to `false` here; in that case use option 1 above and gate these collections
+     * on whatever test the existing console ruleset already uses for `Settings.User Management`.
+     */
+    function rolePermissions() {
+      return get(/databases/$(database)/documents/roles/$(actor().role)).data.permissions;
+    }
+
+    function holdsPermission(resource, action) {
+      return signedIn()
+        && rolePermissions() != null
+        && rolePermissions()[resource] != null
+        && action in rolePermissions()[resource];
+    }
+
+    function canManageAccess() {
+      return holdsPermission('Settings.Access Management', 'Assign')
+        || holdsPermission('Settings.Access Management', 'Administer')
+        || (holdsPermission('Settings.User Management', 'Edit')
+            && holdsPermission('Settings.Role Management', 'Edit'));
+    }
+
+    function canViewAccess() {
+      return holdsPermission('Settings.Access Management', 'View') || canManageAccess();
+    }
+
+    /**
+     * A user's additive grants.
+     *
+     * Self-read is required: `AuthProvider` subscribes to this document to resolve the user's own
+     * effective permissions. Self-write is not, and must never be allowed — a user who could write
+     * their own grant document could grant themselves anything.
+     */
+    match /accessGrants/{userId} {
+      allow get, list: if signedIn() && (request.auth.uid == userId || canViewAccess());
+      allow create, update: if canManageAccess();
+      // Deleting a grant document would silently drop somebody's additional access with no audit
+      // record. Removal goes through the revoke workflow, which rewrites the document and logs it.
+      allow delete: if false;
+    }
+
+    /** Department, designation and project rules. Read by every signed-in user's resolver. */
+    match /accessScopeGrants/{scopeId} {
+      allow get, list: if signedIn();
+      allow create, update: if canManageAccess();
+      allow delete: if false;
+    }
+
+    /** Reusable access bundles. Only ever read by the administration screens. */
+    match /accessTemplates/{templateId} {
+      allow get, list: if canViewAccess();
+      allow create, update: if canManageAccess();
+      allow delete: if false;
+    }
+
+    /** The permission-change audit trail: append-only, for everybody. */
+    match /accessAuditLogs/{entryId} {
+      allow get, list: if canViewAccess()
+        || holdsPermission('Settings.Access Management', 'View Audit')
+        || holdsPermission('Settings.Audit Logs', 'View');
+      allow create: if canManageAccess();
+      allow update, delete: if false;
+    }
+
+    /** Bulk-operation records. Same append-only treatment as the audit rows. */
+    match /accessBatches/{batchId} {
+      allow get, list: if canViewAccess()
+        || holdsPermission('Settings.Access Management', 'View Audit')
+        || holdsPermission('Settings.Audit Logs', 'View');
+      allow create: if canManageAccess();
+      allow update, delete: if false;
+    }
+
+    /* ── greytHR integration (docs/greythr-integration.md) ── */
+
+    function canViewEmployees() {
+      return holdsPermission('Settings.Employee Management', 'View');
+    }
+
+    /**
+     * The employee mirror.
+     *
+     * Readable by every signed-in user, as it was before this integration — the HR module, the
+     * access screens and several pickers all read it. **Writes are server-only:** the sync runs
+     * through the Admin SDK, which bypasses these rules, so denying client writes here closes the
+     * path by which a signed-in user could edit their own employment state and undo a deactivation.
+     */
+    match /employees/{employeeId} {
+      allow get, list: if signedIn();
+      allow write: if false;
+    }
+
+    /** Effective-dated category history. Same reasoning. */
+    match /employeePositions/{employeeNo} {
+      allow get, list: if signedIn();
+      allow write: if false;
+    }
+
+    /**
+     * Restricted personal data — Aadhaar, PAN, bank accounts, religion, disability, home addresses.
+     *
+     * The whole reason this is a separate collection. `employees` above is readable by every
+     * signed-in user because half the application reads it; this must not be. Gated on its own
+     * permission, which by default no role holds.
+     *
+     * Note what is *not* here: a self-read exemption. It would be reasonable to let somebody read
+     * their own Aadhaar number, but `users` and `employees` are joined by email rather than by id,
+     * so a rule cannot establish "this is me" without a query — and rules cannot query. Employees
+     * who need their own details have them in greytHR's own self-service portal.
+     */
+    match /employeeSensitive/{employeeId} {
+      allow get, list: if holdsPermission('Employee.Personal Data', 'View');
+      allow write: if false;
+    }
+
+    /**
+     * Run records.
+     *
+     * Written only by the Admin SDK. Read by the sync console, which is gated on Employee
+     * Management — the run report names who resigned and when, which is not general-audience data.
+     */
+    match /greythrSyncRuns/{runId} {
+      allow get, list: if canViewEmployees();
+      allow write: if false;
+    }
+
+    /**
+     * Roles.
+     *
+     * Every signed-in user needs to read the roles collection — the resolver looks up additional
+     * roles by id, and `AuthProvider` has always read the user's own role to get their permissions.
+     * Writing a role is what changes what a role means for everybody holding it, so it stays behind
+     * Role Management's own permission.
+     */
+    match /roles/{roleId} {
+      allow get, list: if signedIn();
+      allow create, update: if holdsPermission('Settings.Role Management', 'Add')
+        || holdsPermission('Settings.Role Management', 'Edit');
+      allow delete: if holdsPermission('Settings.Role Management', 'Delete');
+    }
+  }
+}

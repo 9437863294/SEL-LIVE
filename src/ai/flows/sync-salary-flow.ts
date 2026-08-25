@@ -39,8 +39,8 @@ const SyncSalaryOutputSchema = z.object({
 export type SyncSalaryOutput = z.infer<typeof SyncSalaryOutputSchema>;
 
 async function getGreytHRToken(): Promise<string> {
-    const username = process.env.GREYTHR_USERNAME || "SEL";
-    const password = process.env.GREYTHR_PASSWORD || "f1785459-9277-4136-88a9-ee48fd0146fe";
+    const username = process.env.GREYTHR_USERNAME?.trim();
+    const password = process.env.GREYTHR_PASSWORD?.trim();
 
     if (!username || !password) {
         throw new Error("GreytHR credentials not found in environment variables.");

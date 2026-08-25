@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/settings/access-management/**/*.ts",
+    "src/app/(protected)/settings/page.tsx",
+    "src/app/(protected)/settings/access-management/**/*.tsx",
+    "src/components/access-management/**/*.ts",
+    "src/components/access-management/**/*.tsx",
+    "src/components/auth/AuthProvider.tsx",
+    "src/hooks/useAuthorization.ts",
+    "src/hooks/useAccessDirectory.ts",
+    "src/lib/access-control.ts",
+    "src/lib/access-control-service.ts",
+    "src/lib/access-control-server.ts"
+  ],
+  "exclude": ["node_modules"]
+}

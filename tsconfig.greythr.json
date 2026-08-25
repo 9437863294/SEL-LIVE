@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/employee/sync/**/*.tsx",
+    "src/app/api/greythr/**/*.ts",
+    "src/components/employee/**/*.tsx",
+    "src/components/employee/**/*.ts",
+    "src/lib/greythr.ts",
+    "src/lib/greythr-client.ts",
+    "src/lib/greythr-sync-service.ts",
+    "src/lib/access-control.ts"
+  ],
+  "exclude": ["node_modules"]
+}

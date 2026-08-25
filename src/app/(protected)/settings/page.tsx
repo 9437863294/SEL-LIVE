@@ -4,13 +4,14 @@
 import Link from 'next/link';
 import {
   Activity, Home, Briefcase, Construction, Clock, Users, ShieldCheck, Hash,
-  Palette, MailCheck, LogIn, MapPinned, Package, Settings2,
+  Palette, MailCheck, LogIn, MapPinned, Package, Settings2, KeyRound,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { canOpenAccessManagement } from '@/lib/access-control';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface SettingsItemConfig {
@@ -91,6 +92,19 @@ const settingsItemsBase: SettingsItemConfig[] = [
       iconBg: 'bg-red-100 dark:bg-red-900/40',
       iconColor: 'text-red-600 dark:text-red-400',
       border: 'border-red-200/60 dark:border-red-800/30 hover:border-red-400/60',
+    },
+  },
+  {
+    icon: KeyRound,
+    text: 'Access Management',
+    description: 'Add roles, permissions, projects and temporary access on top of what users already have.',
+    href: '/settings/access-management',
+    permission: 'View',
+    colorScheme: {
+      bg: 'from-indigo-500/8 to-violet-600/4',
+      iconBg: 'bg-indigo-100 dark:bg-indigo-900/40',
+      iconColor: 'text-indigo-600 dark:text-indigo-400',
+      border: 'border-indigo-200/60 dark:border-indigo-800/30 hover:border-indigo-400/60',
     },
   },
   {
@@ -261,6 +275,7 @@ export default function SettingsPage() {
     '/employee': 'Settings.Employee Management',
     '/settings/user-management': 'Settings.User Management',
     '/settings/role-management': 'Settings.Role Management',
+    '/settings/access-management': 'Settings.Access Management',
     '/settings/location-tracking': 'Settings.Location Tracking',
     '/settings/serial-no-configuration': 'Settings.Serial No. Config',
     '/settings/working-hours': 'Settings.Working Hrs',
@@ -274,7 +289,16 @@ export default function SettingsPage() {
   const settingsItems = settingsItemsBase.map(item => {
     const module = permissionMap[item.href] ?? 'Settings';
     const action = item.href === '/store-stock-management/settings' ? 'View Module' : item.permission;
-    return { ...item, disabled: !can(action, module) };
+    // Access Management's permission node did not exist when the current roles were written, so
+    // nobody holds it yet. Existing administrators — anyone who can already edit both users and
+    // roles, which is strictly more power than that screen offers — get in too, otherwise the page
+    // that grants the new permission would itself be unreachable. Same rule as
+    // `canOpenAccessManagement`, which the page enforces on its own.
+    const enabled =
+      item.href === '/settings/access-management'
+        ? canOpenAccessManagement(can)
+        : can(action, module);
+    return { ...item, disabled: !enabled };
   });
 
   if (isLoading) {

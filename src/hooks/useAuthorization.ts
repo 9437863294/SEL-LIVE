@@ -2,10 +2,20 @@
 'use client';
 
 import { useAuth } from '@/components/auth/AuthProvider';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import {
+  canAccessModule as canAccessModuleFor,
+  canAccessPage as canAccessPageFor,
+  explainPermission as explainPermissionFor,
+  getEffectivePermissions as getEffectivePermissionsFor,
+  getPermissionSources as getPermissionSourcesFor,
+  type PermissionExplanation,
+  type PermissionRef,
+  type PermissionSource,
+} from '@/lib/access-control';
 
 export const useAuthorization = () => {
-  const { permissions, loading } = useAuth();
+  const { permissions, effectiveAccess, loading } = useAuth();
 
   const can = useCallback((action: string, resource: string, scope?: string): boolean => {
     if (loading) {
@@ -122,5 +132,89 @@ export const useAuthorization = () => {
     return false;
   }, [permissions, loading]);
 
-  return { can, isLoading: loading };
+  /* ------------------------------------------------------------------------------------------
+   * The §19 vocabulary.
+   *
+   * `can` stays exactly as it was — several hundred call sites depend on its behaviour, including
+   * the alias map for renamed permission nodes that `hasPermission` in access-control.ts does not
+   * carry. Everything below is additional, and reads from the same effective permission set that
+   * now includes the additive layer.
+   *
+   * The point of having these at all is the one §20 makes: `if (user.role === "admin")` does not
+   * survive a system where a user can hold five roles. `canPerformAction(...)` does.
+   * ---------------------------------------------------------------------------------------- */
+
+  /** Holds at least one of these. */
+  const hasAnyPermission = useCallback(
+    (refs: PermissionRef[]): boolean => refs.some((ref) => can(ref.action, ref.resource, ref.scope)),
+    [can],
+  );
+
+  /** Holds every one of these. */
+  const hasAllPermissions = useCallback(
+    (refs: PermissionRef[]): boolean => refs.every((ref) => can(ref.action, ref.resource, ref.scope)),
+    [can],
+  );
+
+  /** Can open this module at all — including via a page-level grant with no explicit View Module. */
+  const canAccessModule = useCallback(
+    (moduleName: string): boolean => {
+      if (loading) return false;
+      return can('View Module', moduleName) || canAccessModuleFor(permissions, moduleName);
+    },
+    [can, loading, permissions],
+  );
+
+  /** Holds any action at all on this page. */
+  const canAccessPage = useCallback(
+    (resource: string, scope?: string): boolean => {
+      if (loading) return false;
+      return canAccessPageFor(permissions, resource, scope);
+    },
+    [loading, permissions],
+  );
+
+  /** Reads better than `can` at action call sites, with the arguments the other way round. */
+  const canPerformAction = useCallback(
+    (resource: string, action: string, scope?: string): boolean => can(action, resource, scope),
+    [can],
+  );
+
+  const getEffectivePermissions = useCallback(
+    () => getEffectivePermissionsFor(permissions),
+    [permissions],
+  );
+
+  /** Where a permission came from. Empty when the user does not hold it. */
+  const getPermissionSources = useCallback(
+    (resource: string, action: string): PermissionSource[] =>
+      getPermissionSourcesFor(effectiveAccess, resource, action),
+    [effectiveAccess],
+  );
+
+  /** The sentence behind "Why do I have this?" — see §44. */
+  const explainPermission = useCallback(
+    (resource: string, action: string): PermissionExplanation =>
+      explainPermissionFor(effectiveAccess, resource, action),
+    [effectiveAccess],
+  );
+
+  /** Handy for debug panels and the access screens; not for permission checks. */
+  const roleNames = useMemo(() => effectiveAccess?.effectiveRoleNames ?? [], [effectiveAccess]);
+
+  return {
+    can,
+    isLoading: loading,
+    hasPermission: canPerformAction,
+    hasAnyPermission,
+    hasAllPermissions,
+    canAccessModule,
+    canAccessPage,
+    canPerformAction,
+    getEffectivePermissions,
+    getPermissionSources,
+    explainPermission,
+    effectiveAccess,
+    roleNames,
+  };
 };

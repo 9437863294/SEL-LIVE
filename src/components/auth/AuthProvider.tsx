@@ -5,6 +5,7 @@ import * as React from 'react';
 import {
   createContext,
   useContext,
+  useMemo,
   useState,
   useEffect,
   useCallback,
@@ -23,6 +24,18 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import type { User, Role, SavedUser } from '@/lib/types';
+import {
+  mergePermissionMaps,
+  resolveEffectiveAccess,
+  type EffectiveAccess,
+  type RoleLike,
+  type ScopeGrantConfig,
+  type UserAccessGrant,
+} from '@/lib/access-control';
+import {
+  ACCESS_COLLECTIONS,
+  listenToUserAccessGrant,
+} from '@/lib/access-control-service';
 import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
 import {
@@ -44,7 +57,21 @@ const ROLE_SNAPSHOT_TIMEOUT_MS = 5000;
 interface AuthContextType {
   user: User | null;
   users: User[];
+  /**
+   * The user's effective permissions — base role, plus anything the access-management layer adds
+   * on top (`src/lib/access-control.ts`).
+   *
+   * A union, always. Before that layer existed this was the base role's permission map verbatim,
+   * and for every user who has never been given additional access it still is, byte for byte. Any
+   * code reading this keeps working unchanged; it just sees more when there is more to see.
+   */
   permissions: Record<string, string[]>;
+  /**
+   * The same answer with provenance attached — which role or grant gives each permission.
+   * Consumed by the access-management screens; ordinary permission checks want `permissions` or,
+   * better, `useAuthorization().can`.
+   */
+  effectiveAccess: EffectiveAccess | null;
   loading: boolean;
   isImpersonating: boolean;
   originalUser: User | null;
@@ -63,6 +90,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   users: [],
   permissions: {},
+  effectiveAccess: null,
   loading: true,
   isImpersonating: false,
   originalUser: null,
@@ -84,7 +112,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [originalUser, setOriginalUser] = useState<User | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
-  const [permissions, setPermissions] = useState<Record<string, string[]>>({});
+  /**
+   * What the user's own `users.role` grants, read live from the `roles` collection. Unchanged from
+   * before the access layer existed, and still what gates the first paint — the additive layer
+   * resolves afterwards and can only widen the result.
+   */
+  const [basePermissions, setBasePermissions] = useState<Record<string, string[]>>({});
+  /**
+   * The additive layer's answer, or null while it loads / when there is nothing to add. Null is the
+   * normal state for a user who has never been given additional access.
+   */
+  const [additiveAccess, setAdditiveAccess] = useState<EffectiveAccess | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
 
@@ -148,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setUser(null);
-        setPermissions({});
+        setBasePermissions({});
       } catch (error) {
         console.error('Error signing out:', error);
         toast({
@@ -226,7 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!firebaseUser) {
         setUser(null);
         setUsers([]);
-        setPermissions({});
+        setBasePermissions({});
         setOriginalUser(null);
         setIsImpersonating(false);
         return null;
@@ -287,6 +325,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: snap.id,
           ...snap.data(),
         } as User;
+
+        /**
+         * A deactivated account cannot use the application.
+         *
+         * This check did not exist before, and its absence was the hole under "resigned employees
+         * must lose access": several API routes rejected `status === 'Inactive'`, but the browser
+         * never did — so a deactivated user kept a working session and every screen that trusts the
+         * client-side permission check kept rendering for them.
+         *
+         * Deliberately *after* the impersonation resolution above, so an administrator can still
+         * open a deactivated user's record; and deliberately before `setUser`, so no permission is
+         * ever resolved for an account that should not be here.
+         */
+        if (userData.status === 'Inactive') {
+          await handleSignOut();
+          toast({
+            title: 'Account deactivated',
+            description:
+              'This account is no longer active. If you believe this is a mistake, contact your administrator.',
+            variant: 'destructive',
+          });
+          return null;
+        }
 
         setUser(userData);
 
@@ -386,10 +447,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             roleUnsubscribeRef.current = onSnapshot(rolesQuery, (snap) => {
               if (!snap.empty) {
                 const roleData = snap.docs[0].data() as Role;
-                setPermissions(roleData.permissions || {});
+                setBasePermissions(roleData.permissions || {});
               } else {
                 console.warn(`Role '${userData.role}' not found`);
-                setPermissions({});
+                setBasePermissions({});
               }
               settle();
             }, (err) => {
@@ -399,14 +460,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         } else {
           console.warn('User has no role');
-          setPermissions({});
+          setBasePermissions({});
         }
 
         return userData;
       } catch (err) {
         console.error('Error fetching user data:', err);
         setUser(null);
-        setPermissions({});
+        setBasePermissions({});
         toast({
           title: 'Error',
           description: 'Failed to load user data. Please try logging in again.',
@@ -469,12 +530,131 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user, extendSession, resetTimeouts]);
 
+  /* ---------- additive access layer ---------- */
+
+  /**
+   * Subscribe to this user's `accessGrants` document and resolve everything it adds.
+   *
+   * Three properties this effect must have, in order of importance:
+   *
+   *   1. **It can only widen access.** The merge below is a union with `basePermissions`, and every
+   *      failure path leaves `additiveAccess` null — which resolves to exactly the base role. A
+   *      user cannot lose a permission because this layer is unavailable, misconfigured, or slow.
+   *
+   *   2. **It does not gate the first paint.** The role listener above already resolved before the
+   *      shell rendered; this runs afterwards and updates when it arrives. An extra collection read
+   *      on every sign-in would be a visible regression for every user in the system, so the roles
+   *      collection is fetched only once there is actually something in the grant to resolve.
+   *
+   *   3. **It stays live.** Grants are assigned by administrators while users are signed in, and
+   *      "log out and back in for your new access" is the support ticket this avoids. The same
+   *      reasoning that made the role listener a snapshot rather than a read applies here.
+   */
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) {
+      setAdditiveAccess(null);
+      return;
+    }
+
+    let cancelled = false;
+    let resolveToken = 0;
+
+    const resolveGrant = async (grant: UserAccessGrant) => {
+      const token = ++resolveToken;
+      const hasAdditions =
+        grant.additionalRoles.length > 0 ||
+        grant.directPermissions.length > 0 ||
+        grant.projectAccess.length > 0 ||
+        grant.temporaryAccess.length > 0 ||
+        grant.departmentIds.length > 0 ||
+        grant.designations.length > 0;
+
+      if (!hasAdditions) {
+        if (!cancelled && token === resolveToken) setAdditiveAccess(null);
+        return;
+      }
+
+      try {
+        const [roleSnap, scopeSnap] = await Promise.all([
+          getDocs(collection(db, ACCESS_COLLECTIONS.roles)),
+          // Optional configuration. An installation that has never used department- or
+          // designation-based access has none, and a read failure here must not lose the rest.
+          getDocs(collection(db, ACCESS_COLLECTIONS.scopeGrants)).catch(() => null),
+        ]);
+        if (cancelled || token !== resolveToken) return;
+
+        const roles = roleSnap.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as RoleLike);
+        const scopeGrants =
+          scopeSnap?.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as ScopeGrantConfig) ?? [];
+
+        setAdditiveAccess(
+          resolveEffectiveAccess({
+            user: { id: userId, name: user?.name, email: user?.email, role: user?.role, status: user?.status },
+            roles,
+            grant,
+            scopeGrants,
+          }),
+        );
+      } catch (err) {
+        console.error('[access] Failed to resolve additional access; falling back to base role', err);
+        if (!cancelled && token === resolveToken) setAdditiveAccess(null);
+      }
+    };
+
+    const unsubscribe = listenToUserAccessGrant(
+      userId,
+      (grant) => {
+        void resolveGrant(grant);
+      },
+      (err) => {
+        console.error('[access] Access grant listener error; falling back to base role', err);
+        if (!cancelled) setAdditiveAccess(null);
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [user?.id, user?.name, user?.email, user?.role, user?.status]);
+
+  /**
+   * Base role ∪ everything the additive layer adds.
+   *
+   * `basePermissions` is included in the merge even though `additiveAccess` already resolved the
+   * base role itself. That is deliberate belt-and-braces: the two are read through different code
+   * paths (a live `roles where name ==` query versus a whole-collection read), and if they ever
+   * disagree — a role renamed mid-session, a partial read — the union means the user keeps the
+   * larger set rather than silently losing the difference.
+   */
+  const permissions = useMemo(
+    () => (additiveAccess ? mergePermissionMaps(basePermissions, additiveAccess.permissions) : basePermissions),
+    [basePermissions, additiveAccess],
+  );
+
+  /**
+   * The provenance-carrying view. When there is no additive layer this is synthesised from the base
+   * role, so the access screens can render source badges for every user — including the vast
+   * majority who have only ever had one role.
+   */
+  const effectiveAccess = useMemo<EffectiveAccess | null>(() => {
+    if (additiveAccess) return additiveAccess;
+    if (!user?.id) return null;
+    return resolveEffectiveAccess({
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, status: user.status },
+      roles: [{ id: 'base-role', name: user.role || '', permissions: basePermissions }],
+      grant: null,
+    });
+  }, [additiveAccess, basePermissions, user?.id, user?.name, user?.email, user?.role, user?.status]);
+
   /* ---------- context value ---------- */
 
   const value: AuthContextType = {
     user,
     users,
     permissions,
+    effectiveAccess,
     loading,
     isImpersonating,
     originalUser,

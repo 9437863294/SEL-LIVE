@@ -58,6 +58,8 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { cn } from '@/lib/utils';
+import { EmployeePicker } from '@/components/access-management/employee-picker';
+import type { LinkableEmployeeRow } from '@/lib/greythr-sync-client';
 
 
 const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -87,6 +89,15 @@ const initialNewUserState = {
   mobile: 'N/A',
   role: '',
   status: 'Active' as 'Active' | 'Inactive',
+  /**
+   * The greytHR employee this account belongs to, when created through the picker.
+   *
+   * Stored on the user document so the greytHR sync knows whose login a resignation applies to
+   * without having to infer it from an email address — see `matchUserForEmployee` in
+   * `src/lib/greythr.ts`. Blank for a manually entered account, which falls back to the email join.
+   */
+  employeeId: '',
+  employeeNo: '',
 };
 
 export default function ManageUserPage() {
@@ -103,12 +114,39 @@ export default function ManageUserPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  /** The greytHR employee chosen in the Add User dialog, if any. */
+  const [pickedEmployee, setPickedEmployee] = useState<LinkableEmployeeRow | null>(null);
+  const [addMode, setAddMode] = useState<'greythr' | 'manual'>('greythr');
+
   useEffect(() => {
     if (isAddDialogOpen) {
       setNewUser(prev => ({ ...prev, password: generatePassword() }));
       setCopied(false);
     }
   }, [isAddDialogOpen]);
+
+  /**
+   * Prefill from the chosen greytHR employee.
+   *
+   * Name, email and mobile only — this screen has no department, designation or project fields, so
+   * those stay on the employee record where the sync maintains them. Access Management's Add User
+   * drawer is the one that also seeds membership.
+   */
+  const applyPickedEmployee = (employee: LinkableEmployeeRow | null) => {
+    setPickedEmployee(employee);
+    if (!employee) {
+      setNewUser(prev => ({ ...prev, employeeId: '', employeeNo: '' }));
+      return;
+    }
+    setNewUser(prev => ({
+      ...prev,
+      employeeId: employee.employeeId,
+      employeeNo: employee.employeeNo,
+      name: employee.name || prev.name,
+      email: employee.email || prev.email,
+      mobile: employee.phone || prev.mobile,
+    }));
+  };
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [originalUserRole, setOriginalUserRole] = useState('');
@@ -187,6 +225,8 @@ export default function ManageUserPage() {
   
   const resetAddDialog = () => {
     setNewUser(initialNewUserState);
+    setPickedEmployee(null);
+    setAddMode('greythr');
     setIsAddDialogOpen(false);
   }
 
@@ -244,6 +284,10 @@ export default function ManageUserPage() {
         mobile: newUser.mobile || 'N/A',
         role: newUser.role,
         status: newUser.status || 'Active',
+        // Only written when the account was created from a greytHR employee. Undefined keys are not
+        // sent, so a manually created account has the same document shape it always had.
+        ...(newUser.employeeId ? { employeeId: newUser.employeeId } : {}),
+        ...(newUser.employeeNo ? { employeeNo: newUser.employeeNo } : {}),
       });
 
       // Log this activity
@@ -491,6 +535,53 @@ export default function ManageUserPage() {
                   Fill in the details below. A secure password is auto-generated and a welcome email with login credentials will be sent to the user.
                 </DialogDescription>
               </DialogHeader>
+              {/* Pick the person from greytHR rather than retyping them. Manual entry stays for
+                  contractors and anyone not in the HR system. */}
+              <div className="space-y-3 pt-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-1">
+                  <div className="grid grid-cols-2 gap-1">
+                    {([
+                      { id: 'greythr' as const, label: 'From greytHR employee' },
+                      { id: 'manual' as const, label: 'Enter manually' },
+                    ]).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => {
+                          setAddMode(option.id);
+                          if (option.id === 'manual') applyPickedEmployee(null);
+                        }}
+                        className={cn(
+                          'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                          addMode === option.id
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-slate-600 hover:bg-white',
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {addMode === 'greythr' && (
+                  <div className="space-y-2">
+                    <Label>greytHR employee</Label>
+                    <EmployeePicker
+                      value={pickedEmployee}
+                      onSelect={(employee) => applyPickedEmployee(employee)}
+                    />
+                    {!pickedEmployee && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Only active employees without an existing login are listed. Picking one fills in
+                        their name, email and mobile, and links the account so their resignation reaches
+                        this login automatically.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                 <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>

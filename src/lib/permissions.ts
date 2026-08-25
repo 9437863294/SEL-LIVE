@@ -576,6 +576,11 @@ export const permissionModules = {
     Categories: ["View"],
     "Position Details": ["View"],
     Salary: ["View", "Sync"],
+    // Aadhaar, PAN, bank account numbers, religion, disability status, home addresses. Special-
+    // category personal data under most privacy regimes, so it gets its own permission rather than
+    // riding on "can view employees" — which nearly everybody has. Stored in its own Firestore
+    // collection (`employeeSensitive`) so the rule can enforce this too, not just the UI.
+    "Personal Data": ["View", "View Unmasked", "Export"],
   },
   "Vehicle Management": {
     "View Module": [],
@@ -809,6 +814,25 @@ export const permissionModules = {
     ],
     "User Management": ["View", "Add", "Edit", "Delete", "Switch User"],
     "Role Management": ["View", "Add", "Edit", "Delete"],
+    // The additive access layer (see src/lib/access-control.ts and docs/access-management.md).
+    // Deliberately separate from User Management and Role Management rather than folded into them:
+    // granting somebody else access is a different power from editing a user record, and an
+    // organisation that wants a delegated administrator who can assign but never revoke, or review
+    // the audit trail but never assign, can express that here. Nobody holds these on day one, which
+    // is why the page also accepts the User Management + Role Management combination that its
+    // administrators already have — see `canOpenAccessManagement` in access-control-service.ts.
+    "Access Management": [
+      "View",
+      "Assign",
+      "Revoke",
+      "Manage Templates",
+      "Manage Scopes",
+      "Grant Temporary",
+      "Simulate",
+      "View Audit",
+      "Export",
+      "Administer",
+    ],
     "Working Hrs": ["View", "Edit"],
     "Serial No. Config": ["View", "Edit"],
     Appearance: ["View", "Edit"],

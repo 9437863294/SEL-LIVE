@@ -2,7 +2,22 @@
 'use server';
 
 /**
- * @fileOverview A flow to sync employee data from GreytHR to Firestore.
+ * @fileOverview DEPRECATED — superseded by `/api/greythr/sync`.
+ *
+ * Kept only so `src/ai/actions.ts` keeps compiling; nothing calls it. Do not wire it back up. It
+ * has three defects that the replacement exists to fix, documented here so the next person to find
+ * it does not assume it is a working fallback:
+ *
+ *   1. `empData.status === 'Active'` compares greytHR's *numeric* status code against a string, so
+ *      the ternary below writes `Inactive` for every employee in the system. greytHR's `status` is
+ *      employment type (Probation / Confirmed / Contract / Trainee) and never indicates whether
+ *      somebody still works here.
+ *   2. `if (!existingEmployeeIds.has(...))` means existing employees are only ever inserted, never
+ *      updated — no promotion, resignation or email change has ever propagated.
+ *   3. `state=CURRENT` excludes resigned employees, so nobody could be detected as having left.
+ *
+ * The replacement is `src/lib/greythr-sync-service.ts`, with the rules in `src/lib/greythr.ts` and
+ * the console at `/employee/sync`. See `docs/greythr-integration.md`.
  */
 
 import { ai } from '@/ai/genkit';
@@ -31,8 +46,8 @@ const SyncGreytHROutputSchema = z.object({
 export type SyncGreytHROutput = z.infer<typeof SyncGreytHROutputSchema>;
 
 async function getGreytHRToken(): Promise<string> {
-    const username = process.env.GREYTHR_USERNAME || "SEL";
-    const password = process.env.GREYTHR_PASSWORD || "f1785459-9277-4136-88a9-ee48fd0146fe";
+    const username = process.env.GREYTHR_USERNAME?.trim();
+    const password = process.env.GREYTHR_PASSWORD?.trim();
 
     if (!username || !password) {
         throw new Error("GreytHR credentials not found in environment variables.");
