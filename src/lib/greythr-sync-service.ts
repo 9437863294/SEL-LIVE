@@ -156,8 +156,38 @@ export const GREYTHR_COLLECTIONS = {
 /** Marker written onto a user document so the sync only ever reverses its own deactivations. */
 const SYNC_ACTOR = 'greythr-sync';
 
-const stripUndefined = <T extends Record<string, unknown>>(value: T): T =>
-  Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
+/**
+ * Remove `undefined` at every depth, keeping `null`.
+ *
+ * Firestore rejects `undefined` anywhere in a document — including inside array elements — and the
+ * error names a single field out of a whole batch, so a nested one is expensive to find. This used to
+ * filter only the top level, and a `qualifications[0].level` two levels down failed a 182-employee
+ * run at commit with nothing written.
+ *
+ * `null` is deliberately kept, which is the difference between this and `pruneEmpty`. A synced
+ * employee record uses `null` to mean "greytHR has no value here" — `dateOfJoin: null`,
+ * `exitDate: null` — and `diffSyncedEmployee` compares against those. Stripping them would make a
+ * field that was cleared in greytHR look unchanged, so a departure date removed upstream would never
+ * be removed here. The detail blocks are the opposite case and are pruned before they arrive.
+ */
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)).filter((item) => item !== undefined) as T;
+  }
+
+  // Plain objects only. `FieldValue.delete()` sentinels, Timestamps and Dates travel through here on
+  // the way to a write and must not be taken apart.
+  if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (item === undefined) continue;
+      out[key] = stripUndefined(item);
+    }
+    return out as T;
+  }
+
+  return value;
+}
 
 /* ------------------------------------------------------------------------------------------------
  * Settings
@@ -1060,7 +1090,15 @@ async function loadAdministrators(
   return administrators;
 }
 
-/** Firestore caps a batch at 500 writes; a full sync of 1,300 employees needs several. */
+/**
+ * Firestore caps a batch at 500 writes; a full sync of 1,300 employees needs several.
+ *
+ * Every payload is stripped of `undefined` here rather than at each call site. That is the whole
+ * reason this failed once: nine kinds of write are assembled in `runGreytHRSync` and only two of them
+ * were being stripped, so the safety depended on remembering. One `undefined` anywhere in a chunk
+ * rejects the entire batch, so the guarantee belongs at the point of commit, where nothing can skip
+ * it.
+ */
 async function commitBatched(
   db: Firestore,
   writes: Array<{ ref: ReturnType<Firestore['doc']>; data: Record<string, unknown>; merge?: boolean }>,
@@ -1069,7 +1107,7 @@ async function commitBatched(
   for (let index = 0; index < writes.length; index += CHUNK) {
     const batch = db.batch();
     for (const write of writes.slice(index, index + CHUNK)) {
-      batch.set(write.ref, write.data, { merge: write.merge !== false });
+      batch.set(write.ref, stripUndefined(write.data), { merge: write.merge !== false });
     }
     await batch.commit();
   }

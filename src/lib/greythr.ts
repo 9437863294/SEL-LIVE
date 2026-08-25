@@ -763,6 +763,51 @@ export interface BuildDetailInput {
 }
 
 /** Assemble the operational half of an employee's detail. */
+/**
+ * Recursively drop absent values.
+ *
+ * Firestore rejects `undefined` **at any depth** — including inside array elements — and the error it
+ * gives names one field of one row out of a whole batch. Filtering only the top level, as this module
+ * used to, let `qualifications[0].level` through and failed a 182-employee run at commit time with
+ * nothing written.
+ *
+ * Three things go:
+ *
+ *   - `undefined`, because Firestore will not store it;
+ *   - `null`, because `sanitizeGreytHRDate` returns it for an absent date, and a record full of
+ *     explicit nulls is never equal to the stored one — which makes the sync's "has this changed?"
+ *     comparison always true and rewrites every document on every run;
+ *   - containers that end up empty, so an employee with no assets has no `assets` key rather than an
+ *     `[]` that reads as "we checked and there are none".
+ *
+ * `false` and `0` are kept: "not a director" and "zero days' notice" are answers, not absences.
+ * Empty strings are kept too — the detail builders use `''` as a sentinel their own `.filter()` then
+ * removes, and pruning it here would quietly change which rows survive.
+ */
+export function pruneEmpty<T>(value: T): T | undefined {
+  if (value === undefined || value === null) return undefined;
+
+  if (Array.isArray(value)) {
+    // Absent elements are dropped rather than left as holes; Firestore rejects `undefined` inside an
+    // array, and a sparse array is not a thing it can store either.
+    const items = value.map((item) => pruneEmpty(item)).filter((item) => item !== undefined);
+    return (items.length ? items : undefined) as T | undefined;
+  }
+
+  // Only plain objects are walked. A Date, a Timestamp or a Firestore sentinel must pass through
+  // untouched — recursing into one would take it apart.
+  if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      const pruned = pruneEmpty(item);
+      if (pruned !== undefined) out[key] = pruned;
+    }
+    return (Object.keys(out).length ? out : undefined) as T | undefined;
+  }
+
+  return value;
+}
+
 export function buildOperationalDetail(input: BuildDetailInput): EmployeeOperationalDetail {
   const label = (map: Record<string, string> | undefined, value: unknown): string | undefined => {
     const raw = text(value);
@@ -811,22 +856,9 @@ export function buildOperationalDetail(input: BuildDetailInput): EmployeeOperati
       .filter((row) => row.assetType || row.assetId),
   };
 
-  // Drop empty collections so an employee with no assets has no `assets` key rather than `[]`,
-  // which keeps `diffSyncedEmployee`-style comparisons honest.
-  if (!detail.qualifications?.length) delete detail.qualifications;
-  if (!detail.assets?.length) delete detail.assets;
-
-  /**
-   * `null` is stripped as well as `undefined`.
-   *
-   * `sanitizeGreytHRDate` returns `null` for an absent date, so without this an employee with no
-   * marriage date carries `{ marriageDate: null }` — which makes the block non-empty for *every*
-   * employee, so the "has the detail changed?" comparison in the sync service is always true and
-   * every run rewrites all ~1,300 documents. An absent field is simply absent.
-   */
-  return Object.fromEntries(
-    Object.entries(detail).filter(([, value]) => value !== undefined && value !== null),
-  ) as EmployeeOperationalDetail;
+  // Pruned at every depth, not just the top: the qualification and asset rows above are built with
+  // optional fields, and one `undefined` inside one of them is enough to fail the whole commit.
+  return (pruneEmpty(detail) ?? {}) as EmployeeOperationalDetail;
 }
 
 export interface BuildSensitiveInput extends BuildDetailInput {
@@ -947,9 +979,24 @@ export function buildSensitiveDetail(input: BuildSensitiveInput): EmployeeSensit
     syncedAt: input.syncedAt ?? new Date().toISOString(),
   };
 
-  return Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined),
-  ) as EmployeeSensitiveDetail;
+  /**
+   * Same deep prune, and it matters more here.
+   *
+   * Every block on this record is a nested object built from optional fields — `statutory`, `bank`,
+   * `pf`, `passport`, `visa`, and one entry per address type and identity code. A top-level filter
+   * saw `statutory` as present and never looked inside it, so a single blank `fatherName` would have
+   * failed the commit the moment those groups were switched on.
+   *
+   * Dropping now-empty blocks also fixes a smaller wrong answer: an employee whose statutory row
+   * exists but is entirely blank used to produce `statutory: {}`, which made `hasSensitiveDetail`
+   * report they had restricted data on file when they have none.
+   */
+  const pruned = (pruneEmpty(record) ?? {}) as EmployeeSensitiveDetail;
+  // `employeeId` and `syncedAt` identify the document, so they are restored even if pruning would
+  // have taken them — a sensitive record with no id is not writable.
+  pruned.employeeId = record.employeeId;
+  pruned.syncedAt = record.syncedAt;
+  return pruned;
 }
 
 /** Whether a sensitive record holds anything at all, so the UI can say "nothing recorded". */

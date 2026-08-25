@@ -55,6 +55,7 @@ import {
   modifiedSinceFor,
   normalizeCategories,
   normalizeSyncSettings,
+  pruneEmpty,
   resolveAccessDecision,
   resolveAllCategoriesAt,
   resolveCategoryAt,
@@ -1476,4 +1477,115 @@ test('summarizeRun counts created, updated and unchanged without double-counting
   assert.equal(summary.employeesUnchanged, 1);
   assert.equal(summary.usersDeactivated, 1);
   assert.equal(summary.flaggedForReview, 1);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Deep pruning — the bug that failed a 182-employee run at commit time
+ * ---------------------------------------------------------------------------------------------- */
+
+test('pruneEmpty removes undefined and null at every depth', () => {
+  assert.deepEqual(
+    pruneEmpty({ a: 1, b: undefined, c: null, d: { e: undefined, f: 2 } }),
+    { a: 1, d: { f: 2 } },
+  );
+});
+
+test('pruneEmpty cleans inside array elements', () => {
+  // The exact shape that broke: `qualifications[0].level` was undefined, two levels down, and
+  // Firestore rejected the whole batch for it.
+  assert.deepEqual(
+    pruneEmpty([{ description: 'B.Tech', level: undefined, year: '2019' }]),
+    [{ description: 'B.Tech', year: '2019' }],
+  );
+});
+
+test('pruneEmpty drops absent array elements rather than leaving holes', () => {
+  assert.deepEqual(pruneEmpty([1, undefined, null, 2]), [1, 2]);
+});
+
+test('pruneEmpty keeps false, zero and empty strings', () => {
+  // `disabled: false` and `noticePeriodDays: 0` are answers, not absences. `''` is a sentinel the
+  // detail builders filter on themselves.
+  assert.deepEqual(pruneEmpty({ a: false, b: 0, c: '' }), { a: false, b: 0, c: '' });
+});
+
+test('pruneEmpty removes containers that end up empty', () => {
+  assert.equal(pruneEmpty({ a: { b: undefined } }), undefined);
+  assert.equal(pruneEmpty([]), undefined);
+  assert.equal(pruneEmpty({}), undefined);
+});
+
+test('pruneEmpty leaves non-plain objects alone', () => {
+  // A Date, a Timestamp or a FieldValue sentinel must pass through whole; recursing into one would
+  // take it apart and Firestore would store the wreckage.
+  const date = new Date('2026-08-25T00:00:00.000Z');
+  assert.equal(pruneEmpty({ at: date }).at, date);
+});
+
+test('buildOperationalDetail emits no undefined inside a qualification row', () => {
+  const detail = buildOperationalDetail({
+    qualifications: [
+      // Only a description. Every other field is absent — which is the common case, and was enough
+      // to fail the commit.
+      { employeeId: 11, qualDescription: 'B.Tech' },
+      { employeeId: 11, qualDescription: 'Diploma', qualLevel: 'UG', grade: 'A' },
+    ],
+  });
+
+  assert.equal(detail.qualifications.length, 2);
+  assert.deepEqual(detail.qualifications[0], { description: 'B.Tech' });
+  assert.equal(
+    JSON.stringify(detail).includes('undefined'),
+    false,
+    'nothing serialises as undefined',
+  );
+  for (const row of detail.qualifications) {
+    for (const [key, value] of Object.entries(row)) {
+      assert.notEqual(value, undefined, `${key} must be absent rather than undefined`);
+    }
+  }
+});
+
+test('buildOperationalDetail emits no undefined inside an asset row', () => {
+  const detail = buildOperationalDetail({
+    assets: [{ employeeId: 11, assetType: 'Laptop' }],
+  });
+  assert.deepEqual(detail.assets, [{ assetType: 'Laptop' }]);
+});
+
+test('buildSensitiveDetail emits no undefined inside a nested block', () => {
+  const detail = buildSensitiveDetail({
+    employeeId: '11',
+    statutory: { employeeId: 11, fatherName: 'R Kumar' },
+    addresses: { presentaddress: { employeeId: 11, city: 'Bhubaneswar' } },
+    identities: { PAN: { employeeId: 11, documentNo: 'ABCDE1234F' } },
+    bank: { employeeId: 11, bankAccountNumber: '1234567890' },
+    syncedAt: '2026-08-25T02:00:00.000Z',
+  });
+
+  assert.deepEqual(detail.statutory, { fatherName: 'R Kumar' });
+  assert.deepEqual(detail.addresses.presentaddress, { city: 'Bhubaneswar' });
+  assert.deepEqual(detail.identities.PAN, { documentNo: 'ABCDE1234F' });
+  assert.deepEqual(detail.bank, { accountNumber: '1234567890' });
+  assert.equal(JSON.stringify(detail).includes('undefined'), false);
+});
+
+test('buildSensitiveDetail keeps the fields that identify the document', () => {
+  // Pruning must not take the id or the timestamp: a document that cannot be identified cannot be
+  // written, however empty the rest of it is.
+  const detail = buildSensitiveDetail({ employeeId: '11', syncedAt: '2026-08-25T02:00:00.000Z' });
+  assert.equal(detail.employeeId, '11');
+  assert.equal(detail.syncedAt, '2026-08-25T02:00:00.000Z');
+  assert.equal(hasSensitiveDetail(detail), false, 'but it still counts as holding nothing');
+});
+
+test('an all-blank statutory row does not claim the employee has restricted data', () => {
+  // Previously produced `statutory: {}`, which made `hasSensitiveDetail` true and wrote a restricted
+  // document for somebody with nothing restricted on file.
+  const detail = buildSensitiveDetail({
+    employeeId: '11',
+    statutory: { employeeId: 11, fatherName: '', motherName: '   ' },
+  });
+  assert.equal(detail.statutory, undefined);
+  assert.equal(hasSensitiveDetail(detail), false);
 });

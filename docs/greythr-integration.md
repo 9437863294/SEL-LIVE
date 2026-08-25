@@ -112,6 +112,32 @@ The API's own published samples contain `"0018-05-31"` and `"0014-02-17"` — tw
 wrongly upstream. `sanitizeGreytHRDate` treats any year outside 1900–2200 as absent, because
 `0014-02-17 <= today` would otherwise relieve a working employee fourteen centuries ago.
 
+### Absent fields must be pruned at every depth
+
+Firestore rejects `undefined` **anywhere** in a document, including inside array elements, and the
+error names one field of one row out of a whole batch:
+
+```text
+Cannot use "undefined" as a Firestore value (found in field "qualifications.`0`.level")
+```
+
+Nearly every field greytHR sends is optional, so this is the normal case, not an edge one — a
+qualification row with only a description has six absent fields. Two functions handle it, and the
+difference between them matters:
+
+| | Strips | Used by | Why |
+| --- | --- | --- | --- |
+| `pruneEmpty` | `undefined`, `null`, and containers left empty | the detail builders | An absent field is simply absent. `sanitizeGreytHRDate` returns `null`, so keeping nulls would make the detail block differ from the stored one on every run and rewrite all ~1,300 documents each time. |
+| `stripUndefined` | `undefined` only, deeply | `commitBatched` | A synced employee record uses `null` to mean "greytHR has no value here". Stripping those would make a date *cleared* upstream look unchanged, so a removed exit date would never be removed here. |
+
+Both keep `false` and `0` — "not a director" and "zero days' notice" are answers, not absences — and
+both leave non-plain objects (Dates, Timestamps, `FieldValue` sentinels) untouched, since recursing
+into one would take it apart.
+
+`stripUndefined` runs inside `commitBatched`, not at the call sites. Nine kinds of write are assembled
+in `runGreytHRSync`; when only two of them were stripped, the guarantee depended on remembering, and
+one `undefined` rejects the *entire* batch of 400.
+
 ---
 
 ## 4. Files
@@ -128,7 +154,7 @@ wrongly upstream. `sanitizeGreytHRDate` treats any year outside 1900–2200 as a
 | [`src/lib/greythr-link-service.ts`](../src/lib/greythr-link-service.ts) | Admin-SDK link/unlink/bulk, transactional. |
 | [`src/app/api/greythr/link/route.ts`](../src/app/api/greythr/link/route.ts) | The linking API. |
 | [`src/components/access-management/greythr-linking.tsx`](../src/components/access-management/greythr-linking.tsx) | The console at `/settings/user-management/greythr-linking`. |
-| [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 131 tests, including one per fixed bug. |
+| [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 142 tests, including one per fixed bug. |
 | [`tests/greythr-linking.test.mjs`](../tests/greythr-linking.test.mjs) | 36 tests on ownership and matching. |
 
 Same split as `hr-policy.ts` / `hr-requirement-service.ts`: rules unit-testable without an emulator,
@@ -443,7 +469,7 @@ it yet** — see §12.
 ## 9. Testing
 
 ```bash
-npm run test:greythr        # 167 domain tests (131 sync + 36 linking)
+npm run test:greythr        # 178 domain tests (142 sync + 36 linking)
 npm run typecheck:greythr
 ```
 
