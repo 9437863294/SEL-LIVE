@@ -581,6 +581,11 @@ export const permissionModules = {
     // riding on "can view employees" — which nearly everybody has. Stored in its own Firestore
     // collection (`employeeSensitive`) so the rule can enforce this too, not just the UI.
     "Personal Data": ["View", "View Unmasked", "Export"],
+    // An employee's document folder can hold anything — Aadhaar scans, offer letters, medical
+    // certificates. Separate from Personal Data because seeing a PAN *number* and being able to pull
+    // the scan of it are different decisions, and `Download` is separate from `View` because
+    // knowing a document exists is not the same as taking a copy of it.
+    Documents: ["View", "Download"],
   },
   "Vehicle Management": {
     "View Module": [],

@@ -33,15 +33,19 @@ import {
   GREYTHR_CATEGORY_LOV_KEYS,
   GREYTHR_IDENTITY_CODES,
   GREYTHR_LOV_KEYS,
+  type GreytHRAttendanceInsightRow,
   type GreytHRAddressRow,
   type GreytHRAddressType,
   type GreytHRAssetRow,
   type GreytHRBankRow,
   type GreytHRCategoryEntry,
   type GreytHRCategoryRow,
+  type GreytHRDocumentCategoryRow,
   type GreytHREmployeeRow,
   type GreytHRIdentityCode,
   type GreytHRIdentityRow,
+  type GreytHRLeaveBalanceDetail,
+  type GreytHRLeaveBalanceRow,
   type GreytHRLovResponse,
   type GreytHROrgTreeRow,
   type GreytHRPagedResponse,
@@ -527,6 +531,130 @@ export async function fetchEmployeeIdentities(
 
   return { byCode, failed };
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * Documents
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * One employee's document categories, documents and files.
+ *
+ * `categoryId` omitted deliberately — it is optional upstream, and omitting it returns every
+ * category the employee has. Since greytHR publishes no way to *list* document categories, asking
+ * for all of them is the only way to discover which exist.
+ *
+ * Returns a bare array, not the `{data, pages}` envelope the employee endpoints use.
+ */
+export async function fetchEmployeeDocuments(
+  employeeId: string | number,
+  options: { config?: GreytHRConfig; categoryId?: string | number } = {},
+): Promise<GreytHRDocumentCategoryRow[]> {
+  const id = String(employeeId);
+  const path = options.categoryId
+    ? `/employee/v2/emp-docs/${encodeURIComponent(id)}/${encodeURIComponent(String(options.categoryId))}`
+    : `/employee/v2/emp-docs/${encodeURIComponent(id)}`;
+
+  const json = await greytHRRequest<GreytHRDocumentCategoryRow[] | { data?: GreytHRDocumentCategoryRow[] }>(
+    path,
+    { label: `documents ${id}`, config: options.config },
+  );
+  if (Array.isArray(json)) return json;
+  return Array.isArray(json?.data) ? json.data : [];
+}
+
+/**
+ * One document file, as bytes.
+ *
+ * Deliberately not routed through `greytHRRequest`, which parses JSON. The retry and token handling
+ * are repeated here in a smaller form because a binary body cannot be re-read after a failed parse,
+ * and conflating the two would mean either JSON callers get an ArrayBuffer or this one gets a
+ * `SyntaxError` on a perfectly good PDF.
+ */
+export async function fetchEmployeeDocumentFile(
+  employeeId: string,
+  documentId: string,
+  fileId: string,
+  options: { config?: GreytHRConfig } = {},
+): Promise<{ bytes: ArrayBuffer; upstreamContentType: string | null }> {
+  const config = options.config ?? greytHRConfig();
+  const url =
+    `${API_BASE}/employee/v2/emp-docs/${encodeURIComponent(employeeId)}` +
+    `/${encodeURIComponent(documentId)}/${encodeURIComponent(fileId)}`;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const token = await getGreytHRToken(config);
+    const response = await fetch(url, {
+      headers: { 'ACCESS-TOKEN': token, 'x-greythr-domain': config.domain },
+    });
+
+    if (response.ok) {
+      return {
+        bytes: await response.arrayBuffer(),
+        upstreamContentType: response.headers.get('content-type'),
+      };
+    }
+
+    if (response.status === 401 && attempt < 3) {
+      invalidateGreytHRToken();
+      continue;
+    }
+    if ((response.status === 429 || response.status >= 500) && attempt < 3) {
+      await sleep(2 ** attempt * 400);
+      continue;
+    }
+
+    throw new GreytHRError(
+      `greytHR document download returned ${response.status}.`,
+      response.status,
+      'document download',
+    );
+  }
+
+  throw new GreytHRError('greytHR document download failed after 3 attempts.', undefined, 'document download');
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Leave and attendance
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Every employee's leave balance for one year. */
+export const fetchLeaveBalances = (
+  year: string,
+  options: { size?: number; config?: GreytHRConfig } = {},
+) =>
+  fetchAllPages<GreytHRLeaveBalanceRow>(
+    `/leave/v2/employee/years/${encodeURIComponent(year)}/balance`,
+    { label: `leave balance ${year}`, ...options },
+  );
+
+/**
+ * One employee's detailed balance, fetched purely to learn the leave-type names.
+ *
+ * The bulk endpoint returns `leaveTypeCategory` as a bare id and there is no LOV key for leave
+ * types, so without this a report reads "leave type 3: 5 days". Leave types are organisation-wide,
+ * so one call for any employee yields the dictionary for everybody.
+ */
+export const fetchLeaveTypeDictionary = (
+  employeeId: string | number,
+  year: string,
+  options: { config?: GreytHRConfig } = {},
+) =>
+  greytHRRequest<GreytHRLeaveBalanceDetail>(
+    `/leave/v2/employee/${encodeURIComponent(String(employeeId))}/years/${encodeURIComponent(year)}/balance`,
+    { label: 'leave type dictionary', config: options.config },
+  );
+
+/** Every employee's aggregate attendance over a date range. */
+export const fetchAttendanceInsights = (
+  start: string,
+  end: string,
+  options: { size?: number; config?: GreytHRConfig } = {},
+) =>
+  fetchAllPages<GreytHRAttendanceInsightRow>('/attendance/v2/employee/insights', {
+    label: 'attendance insights',
+    query: { start, end },
+    ...options,
+  });
 
 /* ------------------------------------------------------------------------------------------------
  * Single employee

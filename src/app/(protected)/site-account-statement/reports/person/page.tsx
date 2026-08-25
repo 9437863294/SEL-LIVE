@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASExpense, type SASProject } from '@/lib/site-account-statement';
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { Download, Filter, Loader2, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Filter, Loader2, Users } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const MODULE = 'Site Account Statement';
@@ -35,6 +35,15 @@ export default function PersonExpensePage() {
   const [filterTo,      setFilterTo]      = useState('');
   const [search,        setSearch]        = useState('');
   const [showFilters,   setShowFilters]   = useState(false);
+  const [expandedCats,  setExpandedCats]  = useState<Set<string>>(new Set());
+
+  function toggleCat(key: string) {
+    setExpandedCats(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (!isAuthLoading) void loadAll();
@@ -81,12 +90,12 @@ export default function PersonExpensePage() {
     count: number;
     total: number;
     pct: number;
-    categories: { name: string; count: number; total: number }[];
+    categories: { name: string; count: number; total: number; rows: SASExpense[] }[];
     rows: SASExpense[];
   }
 
   const personGroups = useMemo(() => {
-    const map = new Map<string, { count: number; total: number; catMap: Map<string, { count: number; total: number }>; rows: SASExpense[] }>();
+    const map = new Map<string, { count: number; total: number; catMap: Map<string, { count: number; total: number; rows: SASExpense[] }>; rows: SASExpense[] }>();
     filtered.forEach(e => {
       const person = (e.expensedBy || '').trim() || 'Unknown';
       if (!map.has(person)) map.set(person, { count: 0, total: 0, catMap: new Map(), rows: [] });
@@ -95,15 +104,18 @@ export default function PersonExpensePage() {
       p.total += e.expenseAmount || 0;
       p.rows.push(e);
       const cat = e.expenseCategory || 'Uncategorized';
-      const cur = p.catMap.get(cat) ?? { count: 0, total: 0 };
-      p.catMap.set(cat, { count: cur.count + 1, total: cur.total + (e.expenseAmount || 0) });
+      const cur = p.catMap.get(cat) ?? { count: 0, total: 0, rows: [] };
+      cur.count += 1;
+      cur.total += e.expenseAmount || 0;
+      cur.rows.push(e);
+      p.catMap.set(cat, cur);
     });
     return Array.from(map.entries())
       .map(([name, { count, total, catMap, rows }]): PersonRow => ({
         name, count, total,
         pct: grandTotal > 0 ? (total / grandTotal) * 100 : 0,
         categories: Array.from(catMap.entries())
-          .map(([catName, cv]) => ({ name: catName, count: cv.count, total: cv.total }))
+          .map(([catName, cv]) => ({ name: catName, count: cv.count, total: cv.total, rows: cv.rows.sort((a, b) => b.expenseDate.localeCompare(a.expenseDate)) }))
           .sort((a, b) => b.total - a.total),
         rows,
       }))
@@ -230,25 +242,59 @@ export default function PersonExpensePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {person.categories.map(cat => (
-                      <tr key={cat.name} className="border-b hover:bg-muted/20">
-                        <td className="px-4 py-2">
-                          <Badge variant="outline" className="text-xs">{cat.name}</Badge>
-                        </td>
-                        <td className="px-4 py-2 text-right text-muted-foreground">{cat.count}</td>
-                        <td className="px-4 py-2 text-right font-medium text-rose-700">{formatINR(cat.total)}</td>
-                        <td className="px-4 py-2">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-rose-100 rounded-full h-1.5 overflow-hidden">
-                              <div className="h-full bg-rose-400 rounded-full" style={{ width: `${person.total > 0 ? (cat.total / person.total) * 100 : 0}%` }} />
-                            </div>
-                            <span className="text-xs text-muted-foreground w-8 text-right">
-                              {person.total > 0 ? ((cat.total / person.total) * 100).toFixed(0) : 0}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {person.categories.map(cat => {
+                      const catKey = `${person.name}:${cat.name}`;
+                      const isExpanded = expandedCats.has(catKey);
+                      return (
+                        <Fragment key={cat.name}>
+                          <tr
+                            className="border-b hover:bg-muted/20 cursor-pointer"
+                            onClick={() => toggleCat(catKey)}
+                          >
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-1.5">
+                                {isExpanded
+                                  ? <ChevronDown  className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                                <Badge variant="outline" className="text-xs">{cat.name}</Badge>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2 text-right text-muted-foreground">{cat.count}</td>
+                            <td className="px-4 py-2 text-right font-medium text-rose-700">{formatINR(cat.total)}</td>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-rose-100 rounded-full h-1.5 overflow-hidden">
+                                  <div className="h-full bg-rose-400 rounded-full" style={{ width: `${person.total > 0 ? (cat.total / person.total) * 100 : 0}%` }} />
+                                </div>
+                                <span className="text-xs text-muted-foreground w-8 text-right">
+                                  {person.total > 0 ? ((cat.total / person.total) * 100).toFixed(0) : 0}%
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {isExpanded && cat.rows.map(e => (
+                            <tr key={e.id} className="border-b bg-slate-50/60 hover:bg-muted/20">
+                              <td className="pl-9 pr-4 py-1.5 text-xs text-muted-foreground" colSpan={2}>
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-slate-600">{e.expenseDate} &middot; {e.projectName}</span>
+                                  {(e.vendorPartyName || e.billNo) && (
+                                    <span className="text-[11px] text-muted-foreground">
+                                      {e.vendorPartyName || '—'}{e.billNo ? ` · Bill #${e.billNo}` : ''}
+                                    </span>
+                                  )}
+                                  {e.remarks && <span className="text-[11px] text-muted-foreground italic">{e.remarks}</span>}
+                                </div>
+                              </td>
+                              <td className="px-4 py-1.5 text-right text-xs font-medium text-rose-700">{formatINR(e.expenseAmount)}</td>
+                              <td className="px-4 py-1.5">
+                                <Badge variant="secondary" className="text-[10px]">{e.paymentMode}</Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="bg-muted/30 font-semibold">

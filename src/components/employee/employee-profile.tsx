@@ -30,6 +30,13 @@ import {
   Banknote,
   Building2,
   CalendarClock,
+  CalendarDays,
+  Clock,
+  Download,
+  FileText,
+  FolderOpen,
+  Loader2,
+  RefreshCw,
   Eye,
   EyeOff,
   FileBadge,
@@ -49,6 +56,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { HrAccessDenied, HrEmptyState, HrField, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
@@ -59,14 +67,22 @@ import type { Employee } from '@/lib/types';
 import {
   GREYTHR_ADDRESS_TYPES,
   GREYTHR_IDENTITY_CODES,
+  attendanceLabel,
   hasSensitiveDetail,
   maskIdentifier,
   type EmployeeOperationalDetail,
+  type EmployeeAttendanceSummary,
+  type EmployeeLeaveBalance,
   type EmployeeSensitiveDetail,
   type GreytHRAddressType,
   type GreytHRIdentityCode,
 } from '@/lib/greythr';
 import { formatGrantDate } from '@/lib/access-control';
+import {
+  fetchEmployeeDocumentTree,
+  openEmployeeDocument,
+  type DocumentTreeResponse,
+} from '@/lib/greythr-sync-client';
 
 type FullEmployee = Employee & EmployeeOperationalDetail;
 
@@ -107,6 +123,8 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   const canView = can('View', 'Employee.Manage') || can('View Module', 'Employee');
   const canViewPersonal = can('View', 'Employee.Personal Data');
   const canUnmask = can('View Unmasked', 'Employee.Personal Data');
+  const canViewDocuments = can('View', 'Employee.Documents');
+  const canDownloadDocuments = can('Download', 'Employee.Documents');
 
   const [employee, setEmployee] = useState<FullEmployee | null>(null);
   const [sensitive, setSensitive] = useState<EmployeeSensitiveDetail | null>(null);
@@ -114,8 +132,23 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   const [notFound, setNotFound] = useState(false);
   const [unmasked, setUnmasked] = useState(false);
   const [sensitiveError, setSensitiveError] = useState<string | null>(null);
+  const [leave, setLeave] = useState<EmployeeLeaveBalance | null>(null);
+  const [attendance, setAttendance] = useState<EmployeeAttendanceSummary | null>(null);
 
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  /**
+   * Documents are fetched separately and lazily.
+   *
+   * They are proxied live from greytHR rather than mirrored, so the call is slower than a Firestore
+   * read and is only worth making when somebody opens the tab — loading it with the profile would
+   * make every page view pay for data most viewers never look at.
+   */
+  const [documents, setDocuments] = useState<DocumentTreeResponse | null>(null);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [openingFileId, setOpeningFileId] = useState<string | null>(null);
+  const [tab, setTab] = useState('overview');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,6 +161,15 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
         return;
       }
       setEmployee({ id: snapshot.id, ...snapshot.data() } as FullEmployee);
+
+      // Leave and attendance are periodic snapshots in their own collections. Read in parallel and
+      // individually tolerant: a missing document just means that group is not being synced.
+      const [leaveSnap, attendanceSnap] = await Promise.all([
+        getDoc(doc(db, 'employeeLeaveBalance', employeeId)).catch(() => null),
+        getDoc(doc(db, 'employeeAttendance', employeeId)).catch(() => null),
+      ]);
+      setLeave(leaveSnap?.exists() ? (leaveSnap.data() as EmployeeLeaveBalance) : null);
+      setAttendance(attendanceSnap?.exists() ? (attendanceSnap.data() as EmployeeAttendanceSummary) : null);
 
       // Only attempted when the viewer holds the permission: a read the rule will refuse is noise in
       // the console and a misleading error on screen.
@@ -157,6 +199,42 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
     }
     void load();
   }, [authLoading, canView, load]);
+
+  /** Documents, on demand. Errors land on the page rather than escaping as a rejection. */
+  const loadDocuments = useCallback(async () => {
+    setDocumentsLoading(true);
+    setDocumentsError(null);
+    try {
+      setDocuments(await fetchEmployeeDocumentTree(employeeId));
+    } catch (error) {
+      setDocumentsError(error instanceof Error ? error.message : 'Documents could not be loaded.');
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }, [employeeId]);
+
+  // Fetched when the tab is first opened, and not again unless refreshed — the proxy call is a
+  // round trip to greytHR, so repeating it on every tab switch would be wasteful and slow.
+  useEffect(() => {
+    if (tab !== 'documents' || !canViewDocuments) return;
+    if (documents || documentsLoading || documentsError) return;
+    void loadDocuments();
+  }, [tab, canViewDocuments, documents, documentsLoading, documentsError, loadDocuments]);
+
+  const openDocument = useCallback(
+    async (file: { documentId: string; fileId: string; name: string }) => {
+      setOpeningFileId(file.fileId);
+      setDocumentsError(null);
+      try {
+        await openEmployeeDocument(employeeId, file);
+      } catch (error) {
+        setDocumentsError(error instanceof Error ? error.message : 'The document could not be opened.');
+      } finally {
+        setOpeningFileId(null);
+      }
+    },
+    [employeeId],
+  );
 
   const show = useCallback(
     (value: string | undefined | null, alwaysMask = false): string => {
@@ -251,16 +329,30 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
           </div>
         )}
 
-        <Tabs defaultValue="overview">
-          <TabsList className="grid w-full grid-cols-4 sm:w-auto">
-            <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
-            <TabsTrigger value="work" className="text-xs">Work</TabsTrigger>
-            <TabsTrigger value="history" className="text-xs">Education &amp; assets</TabsTrigger>
-            <TabsTrigger value="personal" className="text-xs">
-              <Lock className="mr-1 h-3 w-3" />
-              Personal
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={tab} onValueChange={setTab}>
+          {/* Six tabs will not fit a phone as a grid, so the strip scrolls horizontally — the same
+              pattern the Access Control Center uses. Labels are nouns describing what is inside
+              rather than where it came from. */}
+          <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
+            <TabsList className="inline-flex w-max">
+              <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+              <TabsTrigger value="work" className="text-xs">Employment</TabsTrigger>
+              <TabsTrigger value="history" className="text-xs">Records</TabsTrigger>
+              <TabsTrigger value="documents" className="text-xs">
+                Documents
+                {documents && documents.totalFiles > 0 && (
+                  <Badge variant="outline" className="ml-1.5 border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
+                    {documents.totalFiles}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="timeoff" className="text-xs">Leave &amp; attendance</TabsTrigger>
+              <TabsTrigger value="personal" className="text-xs">
+                <Lock className="mr-1 h-3 w-3" />
+                Personal
+              </TabsTrigger>
+            </TabsList>
+          </ScrollArea>
 
           {/* ── Overview ── */}
           <TabsContent value="overview" className="mt-3 space-y-3">
@@ -439,6 +531,237 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     Nothing recorded in greytHR, or the Company assets group is not being synced.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ── Documents ── */}
+          <TabsContent value="documents" className="mt-3 space-y-3">
+            {!canViewDocuments ? (
+              <Card className="border-slate-200 bg-white/85 shadow-sm">
+                <CardContent className="space-y-2 py-14 text-center">
+                  <Lock className="mx-auto h-10 w-10 text-slate-300" />
+                  <p className="font-semibold text-slate-800">Restricted</p>
+                  <p className="mx-auto max-w-md text-sm text-muted-foreground">
+                    Employee documents need the
+                    <span className="font-medium"> Employee › Documents · View</span> permission.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2.5">
+                  <p className="flex items-start gap-2 text-xs text-sky-900">
+                    <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      Read live from greytHR, never copied here — so this is always current and there is
+                      no second copy of anybody&apos;s documents in this system.
+                    </span>
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 shrink-0 bg-white/80 text-xs"
+                    onClick={() => void loadDocuments()}
+                    disabled={documentsLoading}
+                  >
+                    {documentsLoading ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                    )}
+                    Refresh
+                  </Button>
+                </div>
+
+                {documentsError && (
+                  <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                    {documentsError}
+                  </div>
+                )}
+
+                {documentsLoading && !documents ? (
+                  <Card className="border-white/60 bg-white/80">
+                    <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading documents from greytHR…
+                    </CardContent>
+                  </Card>
+                ) : !documents?.categories.length ? (
+                  <HrEmptyState
+                    icon={FileText}
+                    title="No documents on file"
+                    description="greytHR holds no documents for this employee."
+                  />
+                ) : (
+                  <>
+                    {documents.categoriesAreUnnamed && (
+                      <p className="px-1 text-[11px] text-muted-foreground">
+                        greytHR provides no way to read back document category names, so categories are
+                        shown by their id.
+                      </p>
+                    )}
+                    {documents.categories.map((category) => (
+                      <Card
+                        key={category.categoryId}
+                        className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm"
+                      >
+                        <CardHeader className="px-4 py-3">
+                          <CardTitle className="flex items-center gap-1.5 text-sm">
+                            <FolderOpen className="h-4 w-4 text-indigo-600" />
+                            {category.label}
+                            <Badge variant="outline" className="text-[10px] text-slate-500">
+                              {category.files.length} file{category.files.length === 1 ? '' : 's'}
+                            </Badge>
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-1.5 px-4 pb-4">
+                          {category.files.map((file) => (
+                            <div
+                              key={file.fileId}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white bg-white/80 px-2.5 py-2"
+                            >
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[9px] font-semibold uppercase text-slate-500">
+                                  {file.extension || '?'}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium text-slate-800">{file.name}</p>
+                                  {file.createdAt && (
+                                    <p className="text-[11px] text-muted-foreground">
+                                      Uploaded {new Date(file.createdAt).toLocaleString()}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 shrink-0 text-xs"
+                                disabled={openingFileId === file.fileId || !canDownloadDocuments}
+                                title={
+                                  canDownloadDocuments
+                                    ? 'Open in a new tab'
+                                    : 'Downloading needs the Employee › Documents · Download permission'
+                                }
+                                onClick={() => void openDocument(file)}
+                              >
+                                {openingFileId === file.fileId ? (
+                                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Download className="mr-1 h-3.5 w-3.5" />
+                                )}
+                                Open
+                              </Button>
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
+          </TabsContent>
+
+          {/* ── Leave & attendance ── */}
+          <TabsContent value="timeoff" className="mt-3 space-y-3">
+            <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+              <CardHeader className="px-4 py-3">
+                <CardTitle className="flex items-center gap-1.5 text-sm">
+                  <CalendarDays className="h-4 w-4 text-indigo-600" />
+                  Leave balance
+                  {leave?.year && (
+                    <Badge variant="outline" className="text-[10px] text-slate-500">{leave.year}</Badge>
+                  )}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {leave
+                    ? `As at ${new Date(leave.syncedAt).toLocaleString()}. greytHR is authoritative — this is a mirror.`
+                    : 'Nothing synced. Enable the Leave balances group in greytHR Sync settings.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                {leave?.lines.length ? (
+                  <>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
+                        {leave.totalBalance} day{leave.totalBalance === 1 ? '' : 's'} total
+                      </Badge>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-white bg-white/80">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          <tr>
+                            <th className="px-2.5 py-2 text-left">Leave type</th>
+                            <th className="px-2.5 py-2 text-right">Opening</th>
+                            <th className="px-2.5 py-2 text-right">Granted</th>
+                            <th className="px-2.5 py-2 text-right">Availed</th>
+                            <th className="px-2.5 py-2 text-right">Lapsed</th>
+                            <th className="px-2.5 py-2 text-right font-semibold">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {leave.lines.map((line) => (
+                            <tr key={line.leaveTypeId}>
+                              <td className="px-2.5 py-1.5 font-medium text-slate-800">
+                                {line.leaveType}
+                                {line.code && (
+                                  <span className="ml-1 text-[10px] text-slate-400">{line.code}</span>
+                                )}
+                              </td>
+                              <td className="px-2.5 py-1.5 text-right text-slate-600">{line.openingBalance}</td>
+                              <td className="px-2.5 py-1.5 text-right text-slate-600">{line.granted}</td>
+                              <td className="px-2.5 py-1.5 text-right text-slate-600">{line.availed}</td>
+                              <td className="px-2.5 py-1.5 text-right text-slate-600">{line.lapsed}</td>
+                              <td
+                                className={cn(
+                                  'px-2.5 py-1.5 text-right font-semibold',
+                                  line.balance < 0 ? 'text-destructive' : 'text-slate-800',
+                                )}
+                              >
+                                {line.balance}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No leave balance recorded for this employee.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+              <CardHeader className="px-4 py-3">
+                <CardTitle className="flex items-center gap-1.5 text-sm">
+                  <Clock className="h-4 w-4 text-indigo-600" />
+                  Attendance summary
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {attendance
+                    ? `${attendance.periodStart} to ${attendance.periodEnd}. The daily muster is not synced — see the docs for why.`
+                    : 'Nothing synced. Enable the Attendance summary group in greytHR Sync settings.'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                {attendance ? (
+                  <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                    {Object.entries(attendance.averages).map(([type, value]) => (
+                      <HrField key={type} label={attendanceLabel(type)}>{value}</HrField>
+                    ))}
+                    {Object.entries(attendance.days).map(([type, value]) => (
+                      <HrField key={type} label={attendanceLabel(type)}>
+                        {value} day{value === 1 ? '' : 's'}
+                      </HrField>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No attendance recorded for this employee in the current period.
                   </p>
                 )}
               </CardContent>

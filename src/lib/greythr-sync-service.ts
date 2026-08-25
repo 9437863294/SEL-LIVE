@@ -31,6 +31,13 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { getFirebaseAdminFirestore } from './firebase-admin';
 import {
   DEFAULT_SYNC_SETTINGS,
+  buildAttendanceSummary,
+  buildCategoryIdMaps,
+  buildLeaveBalance,
+  currentAttendancePeriod,
+  currentLeaveYear,
+  hasAttendanceData,
+  leaveTypeNamesFrom,
   buildOperationalDetail,
   buildSensitiveDetail,
   buildSyncedEmployee,
@@ -42,6 +49,7 @@ import {
   employmentSignals,
   employmentTypeLabels,
   indexUsersByEmail,
+  isEmployeeMasterRecord,
   indexUsersByEmployeeId,
   matchUserForEmployee,
   modifiedSinceFor,
@@ -73,6 +81,9 @@ import {
   type SyncedEmployee,
 } from './greythr';
 import {
+  fetchAttendanceInsights,
+  fetchLeaveBalances,
+  fetchLeaveTypeDictionary,
   fetchEmployeeAddresses,
   fetchEmployeeAssets,
   fetchEmployeeBank,
@@ -120,6 +131,19 @@ export const GREYTHR_COLLECTIONS = {
   /** `settings/greythrSync` — schedule, policy, last-run pointers. */
   settings: 'settings',
   settingsDoc: 'greythrSync',
+  /** The category master lists (Department, Designation, Location, Project Name…) behind
+   * `/employee/category`. Previously maintained only by its own manual button. */
+  categories: 'categories',
+  /**
+   * Leave and attendance, one document per employee.
+   *
+   * Separate collections rather than fields on `employees`, because both are *periodic*: a leave
+   * balance belongs to a year and an attendance summary to a month. Merging them onto the employee
+   * record would silently overwrite last month's figures with this month's and leave no way to tell
+   * which period a number came from — so each document records its own period.
+   */
+  leaveBalance: 'employeeLeaveBalance',
+  attendance: 'employeeAttendance',
   /** One document per run. */
   runs: 'greythrSyncRuns',
   users: 'users',
@@ -270,9 +294,27 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
       db.collection(GREYTHR_COLLECTIONS.users).get(),
     ]);
 
+    /**
+     * Only the real employee records.
+     *
+     * `sync-salary-flow.ts` also writes into this collection — one document per employee per month,
+     * carrying `salaryMonth`. Without this filter a full resync reports every one of them as
+     * "exists here but greytHR did not return it", which at a few months of history is thousands of
+     * false warnings burying the ones that matter.
+     */
+    const salaryRowCount = employeeSnapshot.docs.filter((doc) => !isEmployeeMasterRecord(doc.data())).length;
     const storedEmployees = new Map<string, Partial<SyncedEmployee>>(
-      employeeSnapshot.docs.map((doc) => [doc.id, doc.data() as Partial<SyncedEmployee>]),
+      employeeSnapshot.docs
+        .filter((doc) => isEmployeeMasterRecord(doc.data()))
+        .map((doc) => [doc.id, doc.data() as Partial<SyncedEmployee>]),
     );
+    if (salaryRowCount > 0) {
+      warnings.push(
+        `${salaryRowCount} document(s) in the employees collection are salary rows written by the ` +
+          'salary sync, not employee records. They were ignored here, but they also appear in ' +
+          'Employee Management and inflate headcounts — worth moving to their own collection.',
+      );
+    }
 
     const users = userSnapshot.docs.map((doc) => ({
       id: doc.id,
@@ -500,6 +542,99 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
       }
     }
 
+    /* ── Leave and attendance ── */
+
+    const leaveWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
+    const attendanceWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
+
+    if (settings.detailGroups.leave) {
+      try {
+        const year = currentLeaveYear();
+        const { rows } = await fetchLeaveBalances(year);
+
+        /**
+         * One extra call to learn the leave-type names.
+         *
+         * The bulk endpoint returns `leaveTypeCategory` as a bare id and greytHR publishes no LOV key
+         * for leave types, so the single-employee variant — which does carry descriptions — is asked
+         * about the first employee in the result. Leave types are organisation-wide, so one call
+         * names them for everybody.
+         */
+        let leaveTypeNames: Record<string, { name: string; code: string }> = {};
+        const sampleId = rows.find((row) => row.employeeId !== undefined)?.employeeId;
+        if (sampleId !== undefined) {
+          leaveTypeNames = leaveTypeNamesFrom(
+            await fetchLeaveTypeDictionary(sampleId, year).catch(() => null),
+          );
+          if (!Object.keys(leaveTypeNames).length) {
+            warnings.push('Leave types could not be named; balances will show numeric type ids.');
+          }
+        }
+
+        for (const row of rows) {
+          const balance = buildLeaveBalance(row, { year, leaveTypeNames, syncedAt: startedAt });
+          if (balance.lines.length) {
+            leaveWrites.push({ id: balance.employeeId, data: balance as unknown as Record<string, unknown> });
+          }
+        }
+      } catch (error) {
+        warnings.push(
+          `Leave balances failed and were skipped: ${error instanceof Error ? error.message : 'unknown error'}`,
+        );
+      }
+    }
+
+    if (settings.detailGroups.attendance) {
+      try {
+        const period = currentAttendancePeriod();
+        const { rows } = await fetchAttendanceInsights(period.start, period.end);
+        for (const row of rows) {
+          const summary = buildAttendanceSummary(row, {
+            periodStart: period.start,
+            periodEnd: period.end,
+            syncedAt: startedAt,
+          });
+          // Employees with nothing recorded this month are skipped rather than given an empty
+          // document — a blank attendance card reads as a system fault rather than as "no data yet".
+          if (hasAttendanceData(summary)) {
+            attendanceWrites.push({ id: summary.employeeId, data: summary as unknown as Record<string, unknown> });
+          }
+        }
+      } catch (error) {
+        warnings.push(
+          `Attendance summary failed and was skipped: ${error instanceof Error ? error.message : 'unknown error'}`,
+        );
+      }
+    }
+
+    /* ── Category master lists ── */
+
+    /**
+     * The value lists behind `/employee/category` — Department, Designation, Location, Project Name
+     * and the rest.
+     *
+     * Written from the reference data this run already fetched, so the Category screen stops
+     * depending on somebody remembering to press its own button. Keyed by `type_id` rather than an
+     * auto-id: the previous flow deleted the whole collection and re-added it on every sync, which
+     * meant a reader mid-sync saw an empty list. A deterministic id makes the write an idempotent
+     * upsert instead.
+     *
+     * Stale values are left rather than deleted. A category value removed in greytHR is still
+     * referenced by historical employee records, and deleting it would turn those into blanks.
+     */
+    const categoryWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
+    if (reference) {
+      const maps = buildCategoryIdMaps(reference);
+      for (const [categoryName, valuesById] of Object.entries(maps.valueNamesByCategory)) {
+        for (const [valueId, valueName] of Object.entries(valuesById)) {
+          categoryWrites.push({
+            id: `${categoryName}_${valueId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+            data: { id: Number(valueId), name: valueName, type: categoryName, syncedAt: startedAt },
+          });
+        }
+      }
+    }
+
     /* ── Commit ── */
 
     if (!options.dryRun) {
@@ -526,6 +661,21 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
         })),
         ...grantWrites.map((write) => ({
           ref: db.collection(GREYTHR_COLLECTIONS.grants).doc(write.id),
+          data: write.data,
+          merge: true,
+        })),
+        ...leaveWrites.map((write) => ({
+          ref: db.collection(GREYTHR_COLLECTIONS.leaveBalance).doc(write.id),
+          data: write.data,
+          merge: true,
+        })),
+        ...attendanceWrites.map((write) => ({
+          ref: db.collection(GREYTHR_COLLECTIONS.attendance).doc(write.id),
+          data: write.data,
+          merge: true,
+        })),
+        ...categoryWrites.map((write) => ({
+          ref: db.collection(GREYTHR_COLLECTIONS.categories).doc(write.id),
           data: write.data,
           merge: true,
         })),

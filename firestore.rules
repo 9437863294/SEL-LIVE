@@ -168,6 +168,23 @@ service cloud.firestore {
     }
 
     /**
+     * Leave balances and attendance summaries.
+     *
+     * Gated on Employee Management rather than left open like `employees`: how much leave somebody
+     * has and how often they arrive late is not something every colleague needs to see, even though
+     * it is not special-category data. Server-only writes, as with everything the sync maintains.
+     */
+    match /employeeLeaveBalance/{employeeId} {
+      allow get, list: if canViewEmployees();
+      allow write: if false;
+    }
+
+    match /employeeAttendance/{employeeId} {
+      allow get, list: if canViewEmployees();
+      allow write: if false;
+    }
+
+    /**
      * Run records.
      *
      * Written only by the Admin SDK. Read by the sync console, which is gated on Employee

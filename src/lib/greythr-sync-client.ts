@@ -13,7 +13,12 @@
  */
 
 import { auth } from './firebase';
-import type { GreytHRSyncRun, GreytHRSyncSettings, LinkableEmployee } from './greythr';
+import type {
+  EmployeeDocumentTree,
+  GreytHRSyncRun,
+  GreytHRSyncSettings,
+  LinkableEmployee,
+} from './greythr';
 
 export interface SyncReport {
   ok: boolean;
@@ -110,6 +115,60 @@ export const fetchEmployeeDetail = (
   allCategories: Record<string, string>;
   linkedUserName: string | null;
 }> => authorizedFetch(`/api/greythr/employees?id=${encodeURIComponent(employeeId)}`);
+
+/* ------------------------------------------------------------------------------------------------
+ * Documents
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface DocumentTreeResponse extends EmployeeDocumentTree {
+  ok: boolean;
+  canDownload: boolean;
+  categoriesAreUnnamed: boolean;
+}
+
+/** One employee's document tree, fetched live from greytHR through the proxy. */
+export const fetchEmployeeDocumentTree = (employeeId: string): Promise<DocumentTreeResponse> =>
+  authorizedFetch<DocumentTreeResponse>(
+    `/api/greythr/documents?employeeId=${encodeURIComponent(employeeId)}`,
+  );
+
+/**
+ * Open a document file.
+ *
+ * Fetched as a blob rather than linked to directly, because the route needs an `Authorization`
+ * header and a plain `<a href>` cannot carry one. The object URL is revoked on the next tick — long
+ * enough for the browser to have opened it, short enough not to pin the file in memory.
+ */
+export async function openEmployeeDocument(
+  employeeId: string,
+  file: { documentId: string; fileId: string; name: string },
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Your session has expired. Please sign in again.');
+  const token = await user.getIdToken();
+
+  const query = new URLSearchParams({
+    employeeId,
+    documentId: file.documentId,
+    fileId: file.fileId,
+    name: file.name,
+  });
+
+  const response = await fetch(`/api/greythr/documents?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    // The error body is JSON even though a success body is binary.
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `The document could not be opened (${response.status}).`);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  window.open(objectUrl, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}
 
 export const testConnection = (): Promise<{ ok: boolean; message: string; totalEmployees?: number }> =>
   authorizedFetch('/api/greythr/sync', {

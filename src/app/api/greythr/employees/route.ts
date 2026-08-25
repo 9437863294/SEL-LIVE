@@ -8,6 +8,7 @@ import {
   employmentTypeLabels,
   indexUsersByEmail,
   indexUsersByEmployeeId,
+  isEmployeeMasterRecord,
   isOfferableForNewUser,
   normalizeCategories,
   offerExclusionReason,
@@ -153,11 +154,21 @@ export async function GET(request: Request) {
     const { index: byEmployeeId } = indexUsersByEmployeeId(users);
     const userNames = new Map(users.map((user) => [user.id, user.name]));
 
-    const all: LinkableEmployee[] = employeeSnapshot.docs.map((doc) => {
-      const data = doc.data() as Partial<SyncedEmployee>;
-      const record = { ...data, employeeId: String(data.employeeId ?? doc.id) };
-      return toLinkableEmployee(record, resolveLink(record, byEmployeeId, byEmail));
-    });
+    /**
+     * Real employee records only.
+     *
+     * The salary sync writes one document per employee per month into this same collection, with
+     * `status: 'Active'` and no email. Without this filter the picker offers them as people to
+     * create logins for — which is how an administrator ends up making an account for
+     * "CON-005 · March 2026".
+     */
+    const all: LinkableEmployee[] = employeeSnapshot.docs
+      .filter((doc) => isEmployeeMasterRecord(doc.data()))
+      .map((doc) => {
+        const data = doc.data() as Partial<SyncedEmployee>;
+        const record = { ...data, employeeId: String(data.employeeId ?? doc.id) };
+        return toLinkableEmployee(record, resolveLink(record, byEmployeeId, byEmail));
+      });
 
     const offerable = all.filter(isOfferableForNewUser);
 

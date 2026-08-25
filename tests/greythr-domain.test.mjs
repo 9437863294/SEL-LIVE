@@ -12,8 +12,21 @@ import {
   EXIT_ACCESS_POLICIES,
   GREYTHR_CATEGORY,
   GREYTHR_CATEGORY_LOV_KEYS,
+  attendanceLabel,
+  buildAttendanceSummary,
   buildCategoryIdMaps,
+  buildLeaveBalance,
+  currentAttendancePeriod,
+  currentLeaveYear,
+  hasAttendanceData,
+  leaveTypeNamesFrom,
   buildCategoryWriteBody,
+  buildDocumentTree,
+  documentCategoryLabel,
+  documentContentType,
+  fileExtension,
+  isSafeGreytHRId,
+  safeDownloadName,
   buildOperationalDetail,
   buildSensitiveDetail,
   buildSyncedEmployee,
@@ -21,7 +34,9 @@ import {
   employeeSearchText,
   hasSensitiveDetail,
   indexUsersByEmployeeId,
+  isEmployeeMasterRecord,
   isOfferableForNewUser,
+  isSalaryRow,
   isSensitiveGroup,
   maskIdentifier,
   resolveReportingManager,
@@ -1055,6 +1070,356 @@ test('maskIdentifier keeps the last four characters and never leaks length', () 
   assert.equal(maskIdentifier(''), '');
   assert.equal(maskIdentifier(null), '');
   assert.equal(maskIdentifier('ABCDE1234F', 2), '••••••••4F', 'the *last* two characters survive');
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Employee documents
+ * ---------------------------------------------------------------------------------------------- */
+
+const DOC_ROWS = [
+  {
+    category: 1,
+    document: [
+      {
+        id: 'ff80808156fa37940156fe2dcede03ec',
+        files: [{ id: 'bc229d34-2dca-465c-aa2e-1427dc616566', name: '5001.pdf', createdDate: '2022-12-08T13:22:45.585' }],
+      },
+      {
+        id: 'ff808081571e34610157276317a605d4',
+        files: [
+          { id: 'ca566371-c7ea-4646-b1aa-cdc388477ce2', name: 'samp.pdf', createdDate: '2022-12-08T17:48:35.757' },
+          { id: 'f749af41-1b09-4af7-b006-d8b491667fe7', name: 'scan.PNG', createdDate: '2022-12-09T10:00:00.000' },
+        ],
+      },
+    ],
+  },
+  { category: 3, document: [{ id: 'doc3', files: [{ id: 'f3', name: 'offer letter.docx' }] }] },
+];
+
+test('buildDocumentTree flattens greytHR category → document → file nesting', () => {
+  const tree = buildDocumentTree('83', DOC_ROWS);
+  assert.equal(tree.employeeId, '83');
+  assert.equal(tree.totalFiles, 4);
+  assert.equal(tree.categories.length, 2);
+
+  const first = tree.categories[0];
+  assert.equal(first.categoryId, '1');
+  assert.equal(first.files.length, 3);
+  // Newest first — the most recent upload is nearly always the one wanted.
+  assert.equal(first.files[0].name, 'scan.PNG');
+  // documentId is kept on every file, because the download path needs it.
+  assert.equal(first.files[0].documentId, 'ff808081571e34610157276317a605d4');
+  assert.equal(first.files[0].extension, 'png', 'extension is lower-cased');
+});
+
+test('document categories are labelled by id, or by a supplied name', () => {
+  // greytHR publishes no endpoint to read category names and no LOV key for them.
+  assert.equal(buildDocumentTree('1', DOC_ROWS).categories[0].label, 'Category 1');
+
+  // Looked up by id, not by position: ordering is by *label*, so naming a category moves it.
+  const named = buildDocumentTree('1', DOC_ROWS, { labels: { 1: 'Identity proofs' } });
+  assert.equal(named.categories.find((entry) => entry.categoryId === '1').label, 'Identity proofs');
+  assert.deepEqual(named.categories.map((entry) => entry.label), ['Category 3', 'Identity proofs']);
+  assert.equal(documentCategoryLabel('7'), 'Category 7');
+  assert.equal(documentCategoryLabel('7', { 7: '  ' }), 'Category 7', 'a blank label is ignored');
+});
+
+test('categories are ordered numerically, not lexically', () => {
+  const tree = buildDocumentTree('1', [
+    { category: 10, document: [{ id: 'a', files: [{ id: 'f1', name: 'a.pdf' }] }] },
+    { category: 2, document: [{ id: 'b', files: [{ id: 'f2', name: 'b.pdf' }] }] },
+  ]);
+  // "Category 2" before "Category 10" — a plain string sort would invert them.
+  assert.deepEqual(tree.categories.map((entry) => entry.categoryId), ['2', '10']);
+});
+
+test('empty categories, documents and files are dropped', () => {
+  const tree = buildDocumentTree('1', [
+    { category: 1, document: [] },
+    { category: 2, document: [{ id: 'd', files: [] }] },
+    { category: null, document: [{ id: 'd', files: [{ id: 'f', name: 'x.pdf' }] }] },
+    { category: 4, document: [{ id: '', files: [{ id: 'f', name: 'x.pdf' }] }] },
+    { category: 5, document: [{ id: 'd5', files: [{ id: '', name: 'x.pdf' }] }] },
+  ]);
+  assert.deepEqual(tree.categories, [], 'a category with no usable files is not shown at all');
+  assert.equal(tree.totalFiles, 0);
+});
+
+test('buildDocumentTree tolerates a missing response', () => {
+  assert.equal(buildDocumentTree('1', null).totalFiles, 0);
+  assert.equal(buildDocumentTree('1', undefined).categories.length, 0);
+});
+
+test('a file with no name falls back to its id', () => {
+  const tree = buildDocumentTree('1', [{ category: 1, document: [{ id: 'd', files: [{ id: 'abc123' }] }] }]);
+  assert.equal(tree.categories[0].files[0].name, 'abc123');
+  assert.equal(tree.categories[0].files[0].extension, '');
+});
+
+test('fileExtension handles the awkward cases', () => {
+  assert.equal(fileExtension('report.PDF'), 'pdf');
+  assert.equal(fileExtension('archive.tar.gz'), 'gz');
+  assert.equal(fileExtension('noextension'), '');
+  assert.equal(fileExtension('.hidden'), '', 'a leading dot is not an extension');
+  assert.equal(fileExtension('trailing.'), '');
+  assert.equal(fileExtension(null), '');
+});
+
+/* ── Path safety on the download proxy ── */
+
+test('isSafeGreytHRId accepts real ids and rejects anything that could reshape a URL', () => {
+  for (const good of ['83', 'bc229d34-2dca-465c-aa2e-1427dc616566', 'ff80808156fa37940156fe2dcede03ec', 'a_b-1']) {
+    assert.equal(isSafeGreytHRId(good), true, `${good} should be accepted`);
+  }
+  // These three ids are interpolated into the upstream path, so a slash or a dot-dot must not pass.
+  for (const bad of ['../../secret', 'a/b', 'a.b', 'a b', 'a?x=1', 'a#b', '', null, undefined, 'a'.repeat(129)]) {
+    assert.equal(isSafeGreytHRId(bad), false, `${JSON.stringify(bad)} must be rejected`);
+  }
+});
+
+test('safeDownloadName strips what would break or hijack a Content-Disposition header', () => {
+  assert.equal(safeDownloadName('report.pdf'), 'report.pdf');
+  assert.equal(safeDownloadName('my "quoted" file.pdf'), 'my quoted file.pdf');
+  assert.equal(safeDownloadName('bad\r\nInjected-Header: x'), 'bad Injected-Header_ x');
+  assert.equal(safeDownloadName('a;b.pdf'), 'a b.pdf');
+  assert.equal(safeDownloadName(''), 'document', 'a download is never nameless');
+  assert.equal(safeDownloadName(null, 'fallback.bin'), 'fallback.bin');
+});
+
+test('documentContentType serves known types inline and everything else as a download', () => {
+  assert.deepEqual(documentContentType('a.pdf'), { contentType: 'application/pdf', inline: true });
+  assert.deepEqual(documentContentType('a.PNG'), { contentType: 'image/png', inline: true });
+  assert.deepEqual(documentContentType('a.jpeg'), { contentType: 'image/jpeg', inline: true });
+  // An unknown extension is never guessed at — that is how a browser gets talked into rendering
+  // something it should have downloaded.
+  assert.deepEqual(documentContentType('a.exe'), { contentType: 'application/octet-stream', inline: false });
+  assert.deepEqual(documentContentType('a.html'), { contentType: 'application/octet-stream', inline: false });
+  assert.deepEqual(documentContentType('noext'), { contentType: 'application/octet-stream', inline: false });
+  assert.equal(documentContentType('a.txt').inline, false, 'text is downloaded, not rendered');
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Leave balances
+ * ---------------------------------------------------------------------------------------------- */
+
+test('leave type names are learned from the single-employee endpoint', () => {
+  // There is no lov::leavetype key, and the bulk endpoint returns ids only — so the dictionary comes
+  // from the detailed variant, which carries description and code.
+  const names = leaveTypeNamesFrom({
+    list: [
+      { leaveTypeCategory: { id: 2, description: 'Loss Of Pay', code: 'LOP' } },
+      { leaveTypeCategory: { id: 3, description: 'Sick Leave', code: 'SL' } },
+      { leaveTypeCategory: null },
+      { leaveTypeCategory: { id: 9, description: '  ' } },
+    ],
+  });
+  assert.deepEqual(names, {
+    2: { name: 'Loss Of Pay', code: 'LOP' },
+    3: { name: 'Sick Leave', code: 'SL' },
+  });
+});
+
+test('leaveTypeNamesFrom tolerates a missing or malformed response', () => {
+  assert.deepEqual(leaveTypeNamesFrom(null), {});
+  assert.deepEqual(leaveTypeNamesFrom({}), {});
+  assert.deepEqual(leaveTypeNamesFrom({ list: null }), {});
+});
+
+test('buildLeaveBalance names the types and reports movements as magnitudes', () => {
+  const balance = buildLeaveBalance(
+    {
+      employeeId: 11,
+      summaries: [
+        { leaveTypeCategory: 3, balance: 5.5, ob: 8, grant: 2, availed: -4.5, applied: -1, lapsed: -0, encashed: 0 },
+        { leaveTypeCategory: 2, balance: 0, ob: 0, grant: 0, availed: 0 },
+      ],
+    },
+    {
+      year: '2026',
+      leaveTypeNames: { 3: { name: 'Sick Leave', code: 'SL' }, 2: { name: 'Loss Of Pay', code: 'LOP' } },
+      syncedAt: '2026-08-25T02:00:00.000Z',
+    },
+  );
+
+  assert.equal(balance.employeeId, '11');
+  assert.equal(balance.year, '2026');
+  // Sorted by name, so Loss Of Pay precedes Sick Leave.
+  assert.deepEqual(balance.lines.map((line) => line.leaveType), ['Loss Of Pay', 'Sick Leave']);
+  const sick = balance.lines.find((line) => line.code === 'SL');
+  assert.equal(sick.balance, 5.5);
+  assert.equal(sick.availed, 4.5, 'greytHR sends availed negative; it is reported as a magnitude');
+  assert.equal(sick.applied, 1);
+  assert.equal(balance.totalBalance, 5.5);
+});
+
+test('a negative leave balance stays negative', () => {
+  // Overdrawn leave is a real state and must not be flattened to a magnitude like availed is.
+  const balance = buildLeaveBalance(
+    { employeeId: 1, summaries: [{ leaveTypeCategory: 1, balance: -2 }] },
+    { year: '2026' },
+  );
+  assert.equal(balance.lines[0].balance, -2);
+  assert.equal(balance.totalBalance, -2);
+});
+
+test('an unnamed leave type shows its id rather than a blank', () => {
+  const balance = buildLeaveBalance(
+    { employeeId: 1, summaries: [{ leaveTypeCategory: 7, balance: 3 }] },
+    { year: '2026' },
+  );
+  assert.equal(balance.lines[0].leaveType, 'Leave type 7');
+  assert.equal(balance.lines[0].code, '');
+});
+
+test('buildLeaveBalance tolerates missing summaries and non-numeric values', () => {
+  assert.deepEqual(buildLeaveBalance({ employeeId: 1 }, { year: '2026' }).lines, []);
+  assert.deepEqual(buildLeaveBalance({ employeeId: 1, summaries: null }, { year: '2026' }).lines, []);
+  const messy = buildLeaveBalance(
+    { employeeId: 1, summaries: [{ leaveTypeCategory: 1, balance: 'x', ob: null }] },
+    { year: '2026' },
+  );
+  assert.equal(messy.lines[0].balance, 0, 'unparseable numbers become 0, not NaN');
+});
+
+test('a summary with no leave type is skipped', () => {
+  const balance = buildLeaveBalance(
+    { employeeId: 1, summaries: [{ balance: 5 }, { leaveTypeCategory: 1, balance: 3 }] },
+    { year: '2026' },
+  );
+  assert.equal(balance.lines.length, 1);
+});
+
+test('currentLeaveYear is the calendar year greytHR keys balances by', () => {
+  assert.equal(currentLeaveYear(new Date(2026, 7, 25)), '2026');
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Attendance summary
+ * ---------------------------------------------------------------------------------------------- */
+
+test('buildAttendanceSummary flattens averages and day counts', () => {
+  const summary = buildAttendanceSummary(
+    {
+      // Note: this endpoint calls the field `employee`, not `employeeId`.
+      employee: 11,
+      insights: {
+        averages: [
+          { type: 'workHours', average: '9:00' },
+          { type: 'inTime', average: '9:31' },
+          { type: 'workHoursDiff', average: null },
+        ],
+        days: [
+          { type: 'lateIn', days: 2 },
+          { type: 'penalty', days: 0 },
+        ],
+      },
+    },
+    { periodStart: '2026-08-01', periodEnd: '2026-08-25', syncedAt: '2026-08-25T02:00:00.000Z' },
+  );
+
+  assert.equal(summary.employeeId, '11');
+  assert.deepEqual(summary.averages, { workHours: '9:00', inTime: '9:31' });
+  assert.equal('workHoursDiff' in summary.averages, false, 'a null average is dropped');
+  // Zero days is kept — "late arrivals: 0" is a useful positive statement.
+  assert.deepEqual(summary.days, { lateIn: 2, penalty: 0 });
+  assert.equal(summary.periodStart, '2026-08-01');
+});
+
+test('a "00:00" average is treated as no data', () => {
+  // greytHR emits 00:00 for absent data; an average in-time of midnight is worse than nothing.
+  const summary = buildAttendanceSummary(
+    { employee: 1, insights: { averages: [{ type: 'inTime', average: '00:00' }, { type: 'outTime', average: '0:00' }] } },
+    { periodStart: '2026-08-01', periodEnd: '2026-08-25' },
+  );
+  assert.deepEqual(summary.averages, {});
+});
+
+test('hasAttendanceData distinguishes "no data" from "all zeroes"', () => {
+  const empty = buildAttendanceSummary(
+    { employee: 1, insights: { averages: [], days: [{ type: 'lateIn', days: 0 }] } },
+    { periodStart: '2026-08-01', periodEnd: '2026-08-25' },
+  );
+  assert.equal(hasAttendanceData(empty), false, 'all zeroes and no averages is not worth storing');
+
+  const real = buildAttendanceSummary(
+    { employee: 1, insights: { averages: [{ type: 'workHours', average: '9:00' }], days: [] } },
+    { periodStart: '2026-08-01', periodEnd: '2026-08-25' },
+  );
+  assert.equal(hasAttendanceData(real), true);
+
+  const late = buildAttendanceSummary(
+    { employee: 1, insights: { averages: [], days: [{ type: 'lateIn', days: 3 }] } },
+    { periodStart: '2026-08-01', periodEnd: '2026-08-25' },
+  );
+  assert.equal(hasAttendanceData(late), true, 'a non-zero day count is data');
+});
+
+test('buildAttendanceSummary tolerates a missing insights block', () => {
+  const summary = buildAttendanceSummary({ employee: 1 }, { periodStart: 'a', periodEnd: 'b' });
+  assert.deepEqual(summary.averages, {});
+  assert.deepEqual(summary.days, {});
+  assert.equal(hasAttendanceData(summary), false);
+});
+
+test('attendanceLabel humanises known codes and passes through unknown ones', () => {
+  assert.equal(attendanceLabel('lateIn'), 'Late arrivals');
+  assert.equal(attendanceLabel('workHours'), 'Average work hours');
+  assert.equal(attendanceLabel('somethingNew'), 'somethingNew');
+});
+
+test('currentAttendancePeriod is the current month to date', () => {
+  const period = currentAttendancePeriod(new Date(2026, 7, 25, 12));
+  assert.deepEqual(period, { start: '2026-08-01', end: '2026-08-25' });
+});
+
+test('leave and attendance are operational groups, enabled by default', () => {
+  assert.equal(isSensitiveGroup('leave'), false);
+  assert.equal(isSensitiveGroup('attendance'), false);
+  assert.equal(DEFAULT_DETAIL_GROUPS.leave, true);
+  assert.equal(DEFAULT_DETAIL_GROUPS.attendance, true);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Salary rows polluting the employees collection
+ * ---------------------------------------------------------------------------------------------- */
+
+test('a salary row is not an employee record', () => {
+  // sync-salary-flow.ts writes one of these per employee per month into `employees`: random doc id,
+  // employeeId set to the employee *number*, blank designation, and salaryMonth set.
+  const salaryRow = {
+    employeeId: 'CON-005',
+    name: 'Amit Kumar',
+    grossSalary: 50000,
+    netSalary: 44000,
+    salaryDetails: [],
+    salaryMonth: '2026-08-01',
+    department: '',
+    designation: '',
+    status: 'Active',
+  };
+  assert.equal(isEmployeeMasterRecord(salaryRow), false);
+  assert.equal(isSalaryRow(salaryRow), true);
+});
+
+test('a real employee record is recognised even with blank optional fields', () => {
+  // A genuine employee can legitimately have no designation, so a blank one must not be mistaken
+  // for a salary row — which is why salaryMonth is checked positively.
+  const employee = { employeeId: '83', name: 'Nandish', department: '', designation: '', status: 'Active' };
+  assert.equal(isEmployeeMasterRecord(employee), true);
+  assert.equal(isSalaryRow(employee), false);
+});
+
+test('an empty or absent salaryMonth still counts as an employee', () => {
+  assert.equal(isEmployeeMasterRecord({ employeeId: '1', salaryMonth: '' }), true);
+  assert.equal(isEmployeeMasterRecord({ employeeId: '1', salaryMonth: null }), true);
+  assert.equal(isEmployeeMasterRecord({ employeeId: '1', salaryMonth: undefined }), true);
+  assert.equal(isEmployeeMasterRecord({ employeeId: '1', salaryMonth: '2026-08-01' }), false);
+});
+
+test('a missing document is neither', () => {
+  assert.equal(isEmployeeMasterRecord(null), false);
+  assert.equal(isEmployeeMasterRecord(undefined), false);
+  assert.equal(isSalaryRow(null), false);
 });
 
 /* ------------------------------------------------------------------------------------------------

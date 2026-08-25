@@ -133,13 +133,24 @@ export default function EmployeeSettingsPage() {
   useEffect(() => {
     const fetchLastSynced = async () => {
         try {
-          const docRef = doc(db, 'settings', 'employeeSync');
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-              const data = docSnap.data();
-              if (data.lastSynced) {
-                  setLastSynced(formatDistanceToNow(new Date(data.lastSynced), { addSuffix: true }));
-              }
+          /**
+           * `settings/greythrSync` is where the current sync records its runs;
+           * `settings/employeeSync` is the old flow's document, which nothing writes any more.
+           * Both are read so the timestamp keeps working on an installation that has not yet run
+           * the new sync — otherwise this card would go blank on deploy and look broken.
+           */
+          const [current, legacy] = await Promise.all([
+            getDoc(doc(db, 'settings', 'greythrSync')),
+            getDoc(doc(db, 'settings', 'employeeSync')),
+          ]);
+          const stamp =
+            (current.exists() ? (current.data().lastSuccessfulRunAt ?? current.data().lastRunAt) : null)
+            ?? (legacy.exists() ? legacy.data().lastSynced : null);
+          if (stamp) {
+            const parsed = new Date(stamp);
+            if (!Number.isNaN(parsed.getTime())) {
+              setLastSynced(formatDistanceToNow(parsed, { addSuffix: true }));
+            }
           }
         } catch (error) {
           console.error("Failed to fetch last sync time:", error);

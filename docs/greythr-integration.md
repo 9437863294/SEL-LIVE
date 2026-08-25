@@ -124,7 +124,7 @@ wrongly upstream. `sanitizeGreytHRDate` treats any year outside 1900–2200 as a
 | [`src/lib/greythr-sync-client.ts`](../src/lib/greythr-sync-client.ts) | Browser calls into the route. |
 | [`src/app/api/greythr/sync/route.ts`](../src/app/api/greythr/sync/route.ts) | Cron tick, manual run, preview, settings. |
 | [`src/components/employee/greythr-sync-workspace.tsx`](../src/components/employee/greythr-sync-workspace.tsx) | The console at `/employee/sync`. |
-| [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 85 tests, including one per fixed bug. |
+| [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 131 tests, including one per fixed bug. |
 
 Same split as `hr-policy.ts` / `hr-requirement-service.ts`: rules unit-testable without an emulator,
 persistence boring.
@@ -334,7 +334,7 @@ it yet** — see §12.
 ## 9. Testing
 
 ```bash
-npm run test:greythr        # 85 domain tests
+npm run test:greythr        # 131 domain tests
 npm run typecheck:greythr
 ```
 
@@ -357,6 +357,151 @@ Three typecheck errors exist on `main` unrelated to this work (`bank-guarantee/d
 4. **Sync now** once the preview looks right.
 5. Leave the exit policy on *Flag for review* for a cycle or two, then tighten it.
 6. Enable automatic refresh and pick a frequency.
+
+## 11a. The `/employee` module — what is synced
+
+| Page | Reads | Kept current by | Status |
+| --- | --- | --- | --- |
+| `/employee` | `settings/greythrSync` | the unified sync | ✅ |
+| `/employee/manage` | `employees`, `departments`, `employeePositions` | the unified sync | ✅ but see below |
+| `/employee/[employeeId]` | `employees`, `employeeSensitive` | the unified sync | ✅ |
+| `/employee/category` | `categories` | the unified sync | ✅ |
+| `/employee/position-details` | `employeePositions` | the unified sync | ✅ |
+| `/employee/sync` | settings + run history | — | ✅ |
+| `/employee/salary` | `employees` where `salaryMonth` | **`sync-salary-flow.ts`, separate and manual** | ⚠️ |
+
+`categories` and `employeePositions` were previously maintained only by their own screens' manual
+buttons. Both are now written by every run, so those buttons are redundant rather than required.
+Category values are upserted by a deterministic `type_id` document id, not deleted-and-recreated as
+the old flow did — that flow emptied the collection first, so anybody reading mid-sync saw nothing.
+Stale values are left in place: a value removed in greytHR is still referenced by historical employee
+records, and deleting it would turn those into blanks.
+
+### ⚠️ Salary rows live inside the `employees` collection
+
+`sync-salary-flow.ts` writes **one extra document per employee per month** into `employees`:
+
+```text
+addDoc(employees, { employeeId: <employee *number*>, salaryMonth: '2026-08-01',
+                    grossSalary, netSalary, salaryDetails,
+                    department: '', designation: '', email: '', status: 'Active' })
+```
+
+Random document id, `employeeId` holding the employee *number* rather than greytHR's numeric id.
+At a few months × ~1,300 people that is thousands of documents that look like employees and are not.
+Consequences:
+
+- **Employee Management lists them**, with blank department and designation. Pre-existing.
+- Headcounts are wrong by roughly the number of months synced.
+- A full resync would report every one as "exists here but greytHR did not return it".
+- The employee picker would offer them as people to create logins for.
+
+The last two were bugs in this integration and are fixed: `isEmployeeMasterRecord` is the
+discriminator (`salaryMonth` present ⇒ salary row), applied in the sync service and in
+`/api/greythr/employees`. A run now reports the count as a warning rather than silently working
+around it.
+
+**Not fixed: the data model.** Salary belongs in its own collection keyed by
+`{employeeId}_{month}`, and moving it is a data migration — which needs a decision about the existing
+rows, not a unilateral rewrite. Until then Employee Management still shows them.
+
+Salary is also the one part of the module still on a separate manual flow. Folding it in is
+straightforward mechanically, but salary is arguably the most sensitive data in the system, so it
+belongs in `employeeSensitive` behind `Employee.Personal Data` rather than merged into the broadly
+readable mirror — another decision rather than a mechanical change.
+
+---
+
+## 11b. greytHR module coverage
+
+greytHR publishes 155 endpoints across five modules. What this integration covers:
+
+| greytHR module | Endpoints | Covered |
+| --- | --- | --- |
+| **Employee** | ~70 | ✅ Roster, work, separation, categories, profile, personal, org tree, qualifications, assets, addresses, statutory, identities, bank/PF, passport/visa |
+| **List of Values** | 5 | ✅ Employment types, all category value lists |
+| **Leave** | 5 | ⚠️ Balances ✅ · transactions ❌ |
+| **Attendance** | 6 | ⚠️ Summary ✅ · muster and swipes ❌ |
+| **Payroll** | ~25 | ❌ Salary statement only, via the separate legacy flow |
+| **Documents** | 4 | ✅ Proxied on demand — deliberately not synced |
+| Employee family | 6 | ❌ bulk fetch needs an undocumented relation-type id |
+
+### What was added and why those two
+
+**Leave balances** (`/leave/v2/employee/years/{year}/balance`) and **attendance summaries**
+(`/attendance/v2/employee/insights`) are per-employee *aggregates*: one bounded document each, one
+bulk call each per run, and they answer the questions people actually ask — "how much leave is left"
+and "how has this person been this month". They appear on the employee profile's **Leave &
+attendance** tab.
+
+Stored in their own collections (`employeeLeaveBalance`, `employeeAttendance`), one document per
+employee, each recording its own period. Not merged onto `employees`, because both are periodic: a
+balance belongs to a year and a summary to a month, and merging would silently overwrite last
+month's figures with this month's and leave no way to tell which period a number came from.
+
+Leave types have **no LOV key**, and the bulk endpoint returns `leaveTypeCategory` as a bare id. The
+names come from one extra call to the *single-employee* variant, which returns the category as an
+object with `description` and `code` — leave types are organisation-wide, so one call names them for
+everybody. If that call fails, balances show `Leave type 7` rather than a blank, and the run warns.
+
+### Documents are proxied, not synced
+
+The one module where mirroring is the wrong answer, for three reasons that all point the same way:
+
+1. **No bulk endpoint.** Listing is `GET /emp-docs/{employeeId}` — per employee. A nightly run would
+   make ~1,300 calls before downloading anything.
+2. **They are files.** Mirroring means copying them into Firebase Storage: a second copy of
+   everybody's Aadhaar scan and offer letter, plus a retention policy, plus a deletion story when
+   greytHR's copy changes.
+3. **Proxying is simply better here.** The list is always current, greytHR stays the only store, and
+   access is checked on *every request* rather than once at sync time.
+
+`GET /api/greythr/documents?employeeId=83` returns the category → file tree;
+adding `&documentId=…&fileId=…` streams the file itself. Shown on the profile's **Documents** tab,
+loaded lazily when the tab is first opened.
+
+Its own permission, `Employee.Documents`, split into `View` and `Download` — an employee's folder can
+hold anything from an offer letter to a medical certificate, which is neither the same decision as
+seeing their designation nor the same as seeing their PAN *number*; and knowing a document exists is
+not the same as taking a copy.
+
+Three safety details in the proxy, since it interpolates caller-supplied ids into an upstream URL and
+returns bytes to a browser:
+
+- `isSafeGreytHRId` **rejects** rather than escapes anything outside `[A-Za-z0-9_-]`. A value with a
+  slash or a `..` could reshape the greytHR URL and there is no legitimate reason for one.
+- `safeDownloadName` strips quotes, semicolons and newlines from the filename — greytHR filenames
+  come from whoever uploaded them, and a newline in a `Content-Disposition` header is header
+  injection.
+- `documentContentType` serves only PDFs and images inline. Anything unrecognised —
+  including `.html` — is `application/octet-stream` with `attachment`, because guessing a type is
+  how a browser gets talked into rendering something it should have downloaded.
+
+`Cache-Control: private, no-store`: the URL is not a capability, the permission check is.
+
+**Known gap:** greytHR has a `POST /emp-docs/category` to *create* document categories with a name
+and code, but publishes nothing to read them back and no LOV key — so a category can only be shown
+as `Category 3`. `buildDocumentTree` accepts an optional label map, so naming them is a small change
+if you want it.
+
+### What was deliberately left out
+
+- **Attendance muster and swipes** — the daily grid. At ~1,300 employees that is tens of thousands
+  of records a month. It belongs in its own module with a retention policy, not appended to the
+  employee mirror on a nightly cron.
+- **Leave transactions** — the ledger behind the balances. Same reasoning; the balance is the
+  answer, the ledger is the audit trail, and they have different lifetimes.
+- **Payroll** — ~25 endpoints covering salary revisions, LOP, loans, payslip PDFs and Form 16. Also
+  the most sensitive data in the system, and blocked behind the storage decision in §11a (salary rows
+  currently live inside `employees`).
+- **Family details** — the bulk endpoint needs a relation-type id that greytHR does not document and
+  for which no LOV key exists. The single-employee `/families` endpoint needs no parameter, so it is
+  buildable per-employee if wanted.
+
+None of these are hard *mechanically*. Each needs a decision about storage, retention or access that
+belongs to you rather than to this integration.
+
+---
 
 ## 12. Write-back is built but not wired
 

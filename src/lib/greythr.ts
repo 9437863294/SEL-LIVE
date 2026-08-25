@@ -223,7 +223,9 @@ export type EmployeeDetailGroup =
   | 'statutory'
   | 'identities'
   | 'bank'
-  | 'travel';
+  | 'travel'
+  | 'leave'
+  | 'attendance';
 
 /**
  * Where a group's data is stored, and therefore who can read it.
@@ -338,6 +340,27 @@ export const EMPLOYEE_DETAIL_GROUPS: EmployeeDetailGroupSpec[] = [
     destination: 'sensitive',
     defaultEnabled: false,
     contains: 'passport and visa numbers, issue and expiry dates',
+  },
+  {
+    group: 'leave',
+    label: 'Leave balances',
+    description:
+      "Each employee's leave position for the current year, by leave type — the question people ask " +
+      'most often about themselves.',
+    destination: 'operational',
+    defaultEnabled: true,
+    contains: 'balance, opening balance, granted, availed, lapsed and encashed per leave type',
+  },
+  {
+    group: 'attendance',
+    label: 'Attendance summary',
+    description:
+      'Aggregate attendance for the current month — average hours and in/out times, late arrivals, ' +
+      'absences. The daily muster is deliberately not synced: at ~1,300 people it is tens of ' +
+      'thousands of records a month and belongs in its own module with a retention policy.',
+    destination: 'operational',
+    defaultEnabled: true,
+    contains: 'average work hours, in/out times, late arrivals, early departures, absent days',
   },
 ];
 
@@ -1773,6 +1796,466 @@ export const DEFAULT_SYNC_SETTINGS: GreytHRSyncSettings = {
   lastRunAt: null,
   lastRunId: null,
 };
+
+/* ------------------------------------------------------------------------------------------------
+ * Employee documents
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * `GET /employee/v2/emp-docs/{employeeId}[/{categoryId}]` — one entry per document category.
+ *
+ * `categoryId` is optional, so omitting it returns every category the employee has. That matters:
+ * greytHR publishes no endpoint to *list* document categories and no LOV key for them, so the only
+ * way to discover which categories an employee actually has is to ask for all of them.
+ */
+export interface GreytHRDocumentCategoryRow {
+  category?: number | string | null;
+  document?: Array<{
+    id?: string | null;
+    files?: Array<{
+      id?: string | null;
+      name?: string | null;
+      createdDate?: string | null;
+    }> | null;
+  }> | null;
+}
+
+export interface EmployeeDocumentFile {
+  fileId: string;
+  documentId: string;
+  name: string;
+  /** Lower-case, no dot. `''` when the name has no extension. */
+  extension: string;
+  createdAt: string | null;
+}
+
+export interface EmployeeDocumentCategory {
+  categoryId: string;
+  /** `Category 3` unless a label is supplied — see `documentCategoryLabel`. */
+  label: string;
+  files: EmployeeDocumentFile[];
+}
+
+export interface EmployeeDocumentTree {
+  employeeId: string;
+  categories: EmployeeDocumentCategory[];
+  totalFiles: number;
+  fetchedAt: string;
+}
+
+/**
+ * A display label for a numeric document category.
+ *
+ * greytHR has a `POST /emp-docs/category` to *create* categories with a name and code, but publishes
+ * nothing to read them back and no LOV key — so the id is all there is. `Category 3` at least tells
+ * somebody what to look up in greytHR; a blank heading does not. An optional caller-supplied map
+ * lets an administrator name them without this module pretending to know.
+ */
+export const documentCategoryLabel = (
+  categoryId: string,
+  labels?: Record<string, string>,
+): string => labels?.[categoryId]?.trim() || `Category ${categoryId}`;
+
+/** The file extension, for choosing an icon. */
+export function fileExtension(name: string | null | undefined): string {
+  const clean = String(name ?? '').trim();
+  const at = clean.lastIndexOf('.');
+  if (at <= 0 || at === clean.length - 1) return '';
+  return clean.slice(at + 1).toLowerCase();
+}
+
+/**
+ * Flatten greytHR's category → document → files nesting into something a screen can render.
+ *
+ * The middle level exists because greytHR groups files into "documents" (one upload can carry
+ * several files), but nobody browsing thinks in those terms — they want "the files in this
+ * category". `documentId` is kept on every file because the download path needs it.
+ *
+ * Files are ordered newest first, since the most recent upload is nearly always the one wanted.
+ */
+export function buildDocumentTree(
+  employeeId: string,
+  rows: GreytHRDocumentCategoryRow[] | null | undefined,
+  options?: { labels?: Record<string, string>; fetchedAt?: string },
+): EmployeeDocumentTree {
+  const categories: EmployeeDocumentCategory[] = [];
+  let totalFiles = 0;
+
+  for (const row of rows ?? []) {
+    const categoryId =
+      row?.category === undefined || row?.category === null ? '' : String(row.category).trim();
+    if (!categoryId) continue;
+
+    const files: EmployeeDocumentFile[] = [];
+    for (const document of row.document ?? []) {
+      const documentId = String(document?.id ?? '').trim();
+      if (!documentId) continue;
+      for (const file of document.files ?? []) {
+        const fileId = String(file?.id ?? '').trim();
+        if (!fileId) continue;
+        const name = String(file?.name ?? '').trim() || fileId;
+        files.push({
+          fileId,
+          documentId,
+          name,
+          extension: fileExtension(name),
+          createdAt: file?.createdDate ?? null,
+        });
+      }
+    }
+
+    if (!files.length) continue;
+
+    files.sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+    totalFiles += files.length;
+    categories.push({
+      categoryId,
+      label: documentCategoryLabel(categoryId, options?.labels),
+      files,
+    });
+  }
+
+  categories.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+
+  return {
+    employeeId,
+    categories,
+    totalFiles,
+    fetchedAt: options?.fetchedAt ?? new Date().toISOString(),
+  };
+}
+
+/**
+ * Is this an opaque greytHR id, safe to interpolate into a request path?
+ *
+ * The download path is built from three caller-supplied ids. They are hex strings and UUIDs in
+ * practice, so anything outside `[A-Za-z0-9_-]` is rejected rather than escaped — a value containing
+ * a slash or a dot-dot would let a caller reshape the upstream URL, and there is no legitimate reason
+ * for one.
+ */
+export const isSafeGreytHRId = (value: string | null | undefined): boolean =>
+  typeof value === 'string' && value.length > 0 && value.length <= 128 && /^[A-Za-z0-9_-]+$/.test(value);
+
+/**
+ * A safe `Content-Disposition` filename.
+ *
+ * greytHR filenames come from whoever uploaded them, so they can contain quotes, newlines and
+ * semicolons — all of which break or hijack the header. Reduced to a conservative set, with a
+ * fallback so the download is never nameless.
+ */
+export function safeDownloadName(name: string | null | undefined, fallback = 'document'): string {
+  const clean = String(name ?? '')
+    .replace(/[\r\n"\\;]/g, ' ')
+    .replace(/[^\w .()-]/g, '_')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return clean || fallback;
+}
+
+/** Content types worth serving inline rather than forcing a download. */
+const INLINE_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+};
+
+/**
+ * The content type to serve a document file as.
+ *
+ * greytHR returns everything as a stream without a useful type, so it is inferred from the name.
+ * Anything not recognised is served as `application/octet-stream` — guessing a type for an unknown
+ * extension is how a browser gets talked into rendering something it should have downloaded.
+ */
+export function documentContentType(name: string | null | undefined): {
+  contentType: string;
+  inline: boolean;
+} {
+  const extension = fileExtension(name);
+  const inlineType = INLINE_TYPES[extension];
+  if (inlineType) return { contentType: inlineType, inline: true };
+  if (extension === 'txt') return { contentType: 'text/plain; charset=utf-8', inline: false };
+  return { contentType: 'application/octet-stream', inline: false };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Leave balances
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * `GET /leave/v2/employee/years/{year}/balance` — one row per employee.
+ *
+ * `leaveTypeCategory` is a bare numeric id here. The *single-employee* variant of the same endpoint
+ * returns it as an object carrying `description` and `code` — which is how the id→name dictionary is
+ * obtained without a LOV key for leave types (there isn't one). See `leaveTypeNamesFrom`.
+ */
+export interface GreytHRLeaveBalanceRow {
+  employeeId: number;
+  summaries?: Array<{
+    leaveTypeCategory?: number | null;
+    balance?: number | null;
+    ob?: number | null;
+    grant?: number | null;
+    availed?: number | null;
+    applied?: number | null;
+    lapsed?: number | null;
+    deducted?: number | null;
+    encashed?: number | null;
+  }> | null;
+}
+
+/** The single-employee shape, used only to learn the leave-type names. */
+export interface GreytHRLeaveBalanceDetail {
+  list?: Array<{
+    leaveTypeCategory?: { id?: number; description?: string; code?: string } | null;
+  }> | null;
+}
+
+/**
+ * Build the leave-type id → name dictionary from one employee's detailed balance.
+ *
+ * There is no `lov::leavetype` key, and the bulk endpoint returns ids only — so a report would read
+ * "leave type 3: 5 days". One extra call for a single employee yields the whole org's dictionary,
+ * because leave types are organisation-wide.
+ */
+export function leaveTypeNamesFrom(
+  detail: GreytHRLeaveBalanceDetail | null | undefined,
+): Record<string, { name: string; code: string }> {
+  const out: Record<string, { name: string; code: string }> = {};
+  for (const row of detail?.list ?? []) {
+    const category = row?.leaveTypeCategory;
+    if (!category || category.id === undefined || category.id === null) continue;
+    const name = String(category.description ?? '').trim();
+    if (!name) continue;
+    out[String(category.id)] = { name, code: String(category.code ?? '').trim() };
+  }
+  return out;
+}
+
+/** One leave type's position for one employee, as stored and displayed. */
+export interface LeaveBalanceLine {
+  leaveTypeId: string;
+  leaveType: string;
+  code: string;
+  /** What is left. The number anybody actually asks for. */
+  balance: number;
+  openingBalance: number;
+  granted: number;
+  availed: number;
+  applied: number;
+  lapsed: number;
+  encashed: number;
+}
+
+export interface EmployeeLeaveBalance {
+  employeeId: string;
+  year: string;
+  lines: LeaveBalanceLine[];
+  /** Sum of `balance` across types — a headline figure, not a substitute for the breakdown. */
+  totalBalance: number;
+  syncedAt: string;
+}
+
+const num = (value: unknown): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/**
+ * Normalise one employee's leave balance.
+ *
+ * `availed` and `deducted` arrive negative from greytHR (they are ledger movements), so they are
+ * reported as absolute magnitudes — "availed: 4 days" reads correctly and "availed: −4" does not.
+ * `balance` is left signed, because a negative balance is a real and meaningful state.
+ */
+export function buildLeaveBalance(
+  row: GreytHRLeaveBalanceRow,
+  options: {
+    year: string;
+    leaveTypeNames?: Record<string, { name: string; code: string }>;
+    syncedAt?: string;
+  },
+): EmployeeLeaveBalance {
+  const lines: LeaveBalanceLine[] = [];
+
+  for (const summary of row.summaries ?? []) {
+    const id = summary?.leaveTypeCategory;
+    if (id === undefined || id === null) continue;
+    const key = String(id);
+    const known = options.leaveTypeNames?.[key];
+    lines.push({
+      leaveTypeId: key,
+      // Falls back to the id rather than blank: "Leave type 7" at least tells the reader what to
+      // look up, whereas an empty cell looks like missing data.
+      leaveType: known?.name ?? `Leave type ${key}`,
+      code: known?.code ?? '',
+      balance: num(summary.balance),
+      openingBalance: num(summary.ob),
+      granted: num(summary.grant),
+      availed: Math.abs(num(summary.availed)),
+      applied: Math.abs(num(summary.applied)),
+      lapsed: Math.abs(num(summary.lapsed)),
+      encashed: Math.abs(num(summary.encashed)),
+    });
+  }
+
+  lines.sort((a, b) => a.leaveType.localeCompare(b.leaveType));
+
+  return {
+    employeeId: String(row.employeeId),
+    year: options.year,
+    lines,
+    totalBalance: lines.reduce((sum, line) => sum + line.balance, 0),
+    syncedAt: options.syncedAt ?? new Date().toISOString(),
+  };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Attendance summary
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * `GET /attendance/v2/employee/insights?start&end` — one row per employee.
+ *
+ * Note the field is `employee`, not `employeeId`. greytHR is inconsistent about this across modules.
+ */
+export interface GreytHRAttendanceInsightRow {
+  employee: number;
+  insights?: {
+    averages?: Array<{ type?: string | null; average?: string | number | null }> | null;
+    days?: Array<{ type?: string | null; days?: number | null }> | null;
+  } | null;
+}
+
+export interface EmployeeAttendanceSummary {
+  employeeId: string;
+  periodStart: string;
+  periodEnd: string;
+  /** `workHours` → `"9:00"`, `inTime` → `"9:31"`. Kept as greytHR's own `H:mm` strings. */
+  averages: Record<string, string>;
+  /** `lateIn` → 2, `penalty` → 0. */
+  days: Record<string, number>;
+  syncedAt: string;
+}
+
+/**
+ * Normalise one employee's attendance insights.
+ *
+ * The averages are kept as greytHR's `H:mm` strings rather than parsed to minutes. They are only
+ * displayed, and "9:00" is what an HR user recognises — converting to 540 and back would introduce
+ * rounding for no gain. `"00:00"` is dropped, because greytHR emits it for "no data" and a screen
+ * showing an average in-time of midnight is worse than showing nothing.
+ */
+export function buildAttendanceSummary(
+  row: GreytHRAttendanceInsightRow,
+  options: { periodStart: string; periodEnd: string; syncedAt?: string },
+): EmployeeAttendanceSummary {
+  const averages: Record<string, string> = {};
+  for (const entry of row.insights?.averages ?? []) {
+    const type = String(entry?.type ?? '').trim();
+    const average = entry?.average;
+    if (!type || average === null || average === undefined) continue;
+    const value = String(average).trim();
+    if (!value || value === '00:00' || value === '0:00') continue;
+    averages[type] = value;
+  }
+
+  const days: Record<string, number> = {};
+  for (const entry of row.insights?.days ?? []) {
+    const type = String(entry?.type ?? '').trim();
+    if (!type) continue;
+    // Zero is kept here — "late in: 0 days" is a useful, positive statement about somebody.
+    days[type] = num(entry?.days);
+  }
+
+  return {
+    employeeId: String(row.employee),
+    periodStart: options.periodStart,
+    periodEnd: options.periodEnd,
+    averages,
+    days,
+    syncedAt: options.syncedAt ?? new Date().toISOString(),
+  };
+}
+
+/** Whether a summary holds anything worth storing. */
+export const hasAttendanceData = (summary: EmployeeAttendanceSummary): boolean =>
+  Object.keys(summary.averages).length > 0 || Object.values(summary.days).some((value) => value !== 0);
+
+/** Human labels for greytHR's insight type codes. */
+export const ATTENDANCE_LABELS: Record<string, string> = {
+  workHours: 'Average work hours',
+  actualWorkHours: 'Average actual hours',
+  inTime: 'Average in-time',
+  outTime: 'Average out-time',
+  workHoursDiff: 'Work-hours variance',
+  actualWorkHoursDiff: 'Actual-hours variance',
+  penalty: 'Penalty days',
+  lateIn: 'Late arrivals',
+  earlyOut: 'Early departures',
+  excess: 'Excess-hours days',
+  absent: 'Absent days',
+  present: 'Present days',
+  leave: 'Leave days',
+  holiday: 'Holidays',
+  weeklyOff: 'Weekly offs',
+  onDuty: 'On-duty days',
+};
+
+export const attendanceLabel = (type: string): string => ATTENDANCE_LABELS[type] ?? type;
+
+/**
+ * The month to fetch attendance for.
+ *
+ * The current month to date, because that is the question a supervisor asks ("how has this person
+ * been this month"). A fixed lookback would drift out of step with payroll periods, and fetching
+ * more than a month of muster-backed insights for 1,300 people on every run is not worth it.
+ */
+export function currentAttendancePeriod(now: Date = new Date()): { start: string; end: string } {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return { start: `${year}-${month}-01`, end: todayIso(now) };
+}
+
+/** The leave year to fetch. greytHR keys balances by calendar year. */
+export const currentLeaveYear = (now: Date = new Date()): string => String(now.getFullYear());
+
+/* ------------------------------------------------------------------------------------------------
+ * Telling employee records apart from salary rows
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Is this `employees` document an actual employee, or a salary row?
+ *
+ * The `employees` collection holds two different kinds of document, which is not a design anybody
+ * chose. `sync-salary-flow.ts` writes **one extra document per employee per month** into it —
+ * `addDoc`, so a random id, `employeeId` set to the employee *number* rather than greytHR's numeric
+ * id, `salaryMonth` set, and department/designation/email deliberately blank. At a few months ×
+ * ~1,300 people that is thousands of documents that look like employees and are not.
+ *
+ * Everything that reads the collection as a roster has to filter them out, or:
+ *
+ *   - a full resync reports every salary row as "exists here but greytHR did not return it";
+ *   - the "create a user for this person" picker offers them, because they are `status: 'Active'`;
+ *   - headcounts are wrong by a multiple of the number of months synced.
+ *
+ * `salaryMonth` is the discriminator: a real employee record never has it, and every salary row
+ * does. Checked positively rather than inferred from a blank designation, because a genuine employee
+ * can legitimately have no designation on file.
+ */
+export function isEmployeeMasterRecord(
+  data: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!data) return false;
+  const salaryMonth = data.salaryMonth;
+  return salaryMonth === undefined || salaryMonth === null || salaryMonth === '';
+}
+
+/** The inverse, for code that wants the salary rows — reporting, or a future migration. */
+export const isSalaryRow = (data: Record<string, unknown> | null | undefined): boolean =>
+  !!data && !isEmployeeMasterRecord(data);
 
 /** Tolerant reader, so a settings document written before a field existed still loads. */
 export function normalizeSyncSettings(
