@@ -130,6 +130,30 @@ wrong in that direction skips records silently, and no later incremental run rec
 resync would. Re-reading half a day of modifications costs a handful of records and the sync is
 idempotent. Losing a resignation is not recoverable in the same way.
 
+### greytHR uses placeholder exit dates, not nulls
+
+`leavingDate` is populated on the roster row for employees who **have not left**, with a placeholder in
+the distant past rather than a null. Read literally it says "last working day", so it relieves the
+entire workforce. Observed on this tenant: of 182 employees, **154 Relieved, 13 Settled, 14 Left, 1
+Notice Period — and nobody Active.**
+
+The symptom is nastier than an empty list, because the picker only offers Active and Notice Period:
+it showed one selectable employee out of 182 and reported the rest as "not currently working
+(relieved)", which reads as a fact about the workforce rather than a bug.
+
+`plausibleExitDate` rejects two kinds of value, and it is applied to **every** exit signal —
+`leavingDate`, `retirementDate`, `finalSettlementDate` and both tentative dates — because filtering
+only the first would move the same failure to another field name:
+
+1. **On or before the joining date.** Nobody leaves before they arrive, so it is a placeholder
+   whatever value it holds. This rule needs no guess about which sentinel a tenant uses.
+2. **Before 2000.** A backstop for employees whose own joining date is missing. greytHR did not exist
+   before 2009, so an exit date in the 1900s records nothing.
+
+`buildSyncedEmployee` also stores the *derived* `exitDate` rather than the raw field — otherwise a
+record would read "Active" and "last working day 1900-01-01" simultaneously, and every screen reading
+`leavingDate` directly would draw the wrong conclusion.
+
 ### greytHR sends corrupt dates
 
 The API's own published samples contain `"0018-05-31"` and `"0014-02-17"` — two-digit years widened
@@ -178,7 +202,7 @@ one `undefined` rejects the *entire* batch of 400.
 | [`src/lib/greythr-link-service.ts`](../src/lib/greythr-link-service.ts) | Admin-SDK link/unlink/bulk, transactional. |
 | [`src/app/api/greythr/link/route.ts`](../src/app/api/greythr/link/route.ts) | The linking API. |
 | [`src/components/access-management/greythr-linking.tsx`](../src/components/access-management/greythr-linking.tsx) | The console at `/settings/user-management/greythr-linking`. |
-| [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 149 tests, including one per fixed bug. |
+| [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 157 tests, including one per fixed bug. |
 | [`tests/greythr-linking.test.mjs`](../tests/greythr-linking.test.mjs) | 36 tests on ownership and matching. |
 
 Same split as `hr-policy.ts` / `hr-requirement-service.ts`: rules unit-testable without an emulator,
@@ -517,7 +541,7 @@ it yet** — see §12.
 ## 9. Testing
 
 ```bash
-npm run test:greythr        # 185 domain tests (149 sync + 36 linking)
+npm run test:greythr        # 193 domain tests (157 sync + 36 linking)
 npm run typecheck:greythr
 ```
 

@@ -1667,3 +1667,84 @@ test('every installation predating the baseline field rebuilds one', () => {
   assert.equal(settings.baselineCompletedAt, null);
   assert.equal(shouldForceFullResync(settings).force, true, 'self-healing on the next run');
 });
+
+/* ------------------------------------------------------------------------------------------------
+ * Placeholder exit dates — why every employee read as "Relieved"
+ * ---------------------------------------------------------------------------------------------- */
+
+test('an exit date at or before the joining date is a placeholder, not a departure', () => {
+  // Observed: 154 of 182 employees classified Relieved, 13 Settled, 14 Left, 1 Notice Period —
+  // nobody Active. greytHR fills `leavingDate` on the roster row for people who have not left, and
+  // the placeholder is in the distant past, so it read as "last working day" for the whole workforce.
+  const state = deriveEmploymentState(
+    { dateOfJoin: '2025-04-01', leavingDate: '1900-01-01' },
+    TODAY,
+  );
+  assert.equal(state.state, 'Active');
+  assert.equal(state.exitDate, null);
+});
+
+test('a placeholder is rejected even with no joining date to compare against', () => {
+  // greytHR itself did not exist before 2009, so an exit date in the 1900s records nothing.
+  assert.equal(deriveEmploymentState({ leavingDate: '1900-01-01' }, TODAY).state, 'Active');
+  assert.equal(deriveEmploymentState({ leavingDate: '1970-01-01' }, TODAY).state, 'Active');
+});
+
+test('every exit signal is filtered, not just leavingDate', () => {
+  // Filtering one field would have moved the same failure to another name: a placeholder settlement
+  // date reads as Settled, a placeholder retirement date as Retired.
+  const joined = '2025-04-01';
+  for (const field of ['leavingDate', 'retirementDate', 'finalSettlementDate', 'tentativeLeavingDate', 'tentativeRelieveDate']) {
+    const state = deriveEmploymentState({ dateOfJoin: joined, [field]: '1900-01-01' }, TODAY);
+    assert.equal(state.state, 'Active', `a placeholder ${field} must not end somebody's employment`);
+  }
+});
+
+test('a genuine departure is still a departure', () => {
+  const state = deriveEmploymentState(
+    { dateOfJoin: '2019-06-01', leavingDate: '2026-07-31' },
+    TODAY,
+  );
+  assert.equal(state.state, 'Relieved');
+  assert.equal(state.exitDate, '2026-07-31');
+});
+
+test('a genuine future departure is still notice period', () => {
+  const state = deriveEmploymentState(
+    { dateOfJoin: '2019-06-01', leavingDate: '2026-12-31' },
+    TODAY,
+  );
+  assert.equal(state.state, 'Notice Period');
+});
+
+test('somebody who joined and left in the same period is not written off by the join-date rule', () => {
+  // The rule is "on or before the joining date", so a real same-year exit survives it.
+  const state = deriveEmploymentState(
+    { dateOfJoin: '2026-01-05', leavingDate: '2026-03-31' },
+    TODAY,
+  );
+  assert.equal(state.state, 'Relieved');
+});
+
+test('employmentSignals carries the joining date through, including the fallback spelling', () => {
+  assert.equal(employmentSignals({ employeeId: 1, dateOfJoin: '2025-04-01' }, null).dateOfJoin, '2025-04-01');
+  assert.equal(
+    employmentSignals({ employeeId: 1, originalHireDate: '2020-01-01' }, null).dateOfJoin,
+    '2020-01-01',
+    'falls back to originalHireDate when dateOfJoin is absent',
+  );
+});
+
+test('buildSyncedEmployee stores the derived exit date, never the raw placeholder', () => {
+  const record = buildSyncedEmployee({
+    employee: { employeeId: 77, employeeNo: 'E1401', name: 'A Person', dateOfJoin: '2025-04-01', leavingDate: '1900-01-01' },
+    onDate: TODAY,
+  });
+  assert.equal(record.employmentState, 'Active');
+  assert.equal(record.status, 'Active');
+  assert.equal(
+    record.leavingDate,
+    null,
+    'a record saying Active with a last working day in 1900 would mislead every screen reading it',
+  );
+});

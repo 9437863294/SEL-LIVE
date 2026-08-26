@@ -218,7 +218,9 @@ export function AssignmentPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
-      <DialogContent className={hrDialog.contentWide}>
+      {/* Long by nature — it lists every permission being granted, per user. Capped to the viewport
+          with the body scrolling, so the Confirm button cannot end up below the fold. */}
+      <DialogContent className={hrDialog.contentTall}>
         <DialogHeader className={hrDialog.header}>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -227,7 +229,7 @@ export function AssignmentPreviewDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className={hrDialog.body}>
+        <div className={hrDialog.bodyScroll}>
           {/* Headline numbers (§15, §26) */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <StatLine label="Selected users" value={preview.userCount} />

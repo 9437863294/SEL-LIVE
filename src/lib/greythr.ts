@@ -1090,6 +1090,33 @@ export interface EmploymentStateInput {
   submittedResignation?: boolean | null;
   submissionDate?: string | null;
   finalSettlementDate?: string | null;
+  /**
+   * The joining date, used only to sanity-check the exit dates.
+   *
+   * Nobody leaves before they arrive. greytHR populates `leavingDate` on the roster row for employees
+   * who have not left — with a placeholder rather than a null — and every such placeholder is in the
+   * distant past, so it reads as "last working day" and relieves the entire workforce. A date at or
+   * before the joining date is not an exit; it is a field that was never filled in.
+   */
+  dateOfJoin?: string | null;
+}
+
+/**
+ * Discard an exit date that cannot be one.
+ *
+ * Two rules, both about placeholders rather than genuine data:
+ *
+ *   - **On or before the joining date.** Logically impossible, so it is a placeholder whatever value
+ *     it holds. This is the rule that matters: it needs no guess about which sentinel a tenant uses.
+ *   - **Before 2000.** A backstop for employees whose own joining date is missing, where the first
+ *     rule has nothing to compare against. greytHR did not exist before 2009, so an exit date in the
+ *     1900s is not a record of anything.
+ */
+function plausibleExitDate(date: string | null, dateOfJoin: string | null): string | null {
+  if (!date) return null;
+  if (dateOfJoin && date <= dateOfJoin) return null;
+  if (date < '2000-01-01') return null;
+  return date;
 }
 
 export interface EmploymentStateResult {
@@ -1119,12 +1146,18 @@ export function deriveEmploymentState(
     return { state: 'Unknown', exitDate: null, resignationDate: null, reason: 'No employee record found in greytHR.' };
   }
 
-  const leaving = sanitizeGreytHRDate(input.leavingDate);
-  const retirement = sanitizeGreytHRDate(input.retirementDate);
-  const settlement = sanitizeGreytHRDate(input.finalSettlementDate);
-  const tentative =
-    sanitizeGreytHRDate(input.tentativeLeavingDate) ?? sanitizeGreytHRDate(input.tentativeRelieveDate);
-  const submitted = sanitizeGreytHRDate(input.submissionDate);
+  const joined = sanitizeGreytHRDate(input.dateOfJoin);
+
+  // Every exit signal is filtered, not just `leavingDate`: greytHR fills the whole group with
+  // placeholders, so trusting any one of them reintroduces the same failure under another name.
+  const leaving = plausibleExitDate(sanitizeGreytHRDate(input.leavingDate), joined);
+  const retirement = plausibleExitDate(sanitizeGreytHRDate(input.retirementDate), joined);
+  const settlement = plausibleExitDate(sanitizeGreytHRDate(input.finalSettlementDate), joined);
+  const tentative = plausibleExitDate(
+    sanitizeGreytHRDate(input.tentativeLeavingDate) ?? sanitizeGreytHRDate(input.tentativeRelieveDate),
+    joined,
+  );
+  const submitted = plausibleExitDate(sanitizeGreytHRDate(input.submissionDate), joined);
 
   const exitDate = leaving ?? retirement ?? tentative;
   const resignationDate = submitted ?? null;
@@ -1198,6 +1231,7 @@ export function employmentSignals(
 ): EmploymentStateInput | null {
   if (!employee && !separation) return null;
   return {
+    dateOfJoin: employee?.dateOfJoin ?? employee?.originalHireDate ?? null,
     // Either spelling counts; the roster and the separation endpoint disagree on capitalisation.
     leftOrg: separation?.leftOrg ?? employee?.leftorg ?? null,
     leavingDate: separation?.leavingDate ?? employee?.leavingDate ?? null,
@@ -1444,7 +1478,14 @@ export function buildSyncedEmployee(input: BuildEmployeeInput): SyncedEmployee {
     department: pick('department'),
     designation: pick('designation'),
     dateOfJoin: sanitizeGreytHRDate(employee.dateOfJoin),
-    leavingDate: sanitizeGreytHRDate(input.separation?.leavingDate ?? employee.leavingDate),
+    /**
+     * The derivation's own conclusion, not the raw field.
+     *
+     * Taking the raw value would store the placeholder greytHR puts here for employees who have not
+     * left — so the record would say "Active" and show a last working day in 1900 at the same time,
+     * and every screen reading `leavingDate` directly would draw the wrong conclusion.
+     */
+    leavingDate: stateResult.exitDate,
     dateOfBirth: sanitizeGreytHRDate(employee.dateOfBirth),
     gender: String(employee.gender ?? '').trim(),
 

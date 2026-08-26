@@ -15,6 +15,7 @@
 
 import * as React from 'react';
 import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   CalendarClock,
   Copy,
@@ -52,7 +53,6 @@ import { grantAccess, type AccessActor } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
 import { AssignmentPreviewDialog } from './assignment-preview';
 import { PermissionTree } from './permission-tree';
-import { AddUserDrawer } from './add-user-drawer';
 import {
   EMPTY_USER_FILTER,
   RolePicker,
@@ -105,7 +105,6 @@ export function AssignAccess({
   const [temporaryReason, setTemporaryReason] = useState('');
 
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [addUserOpen, setAddUserOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
 
   const userContext: UserDirectoryContext = useMemo(
@@ -291,9 +290,17 @@ export function AssignAccess({
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => setAddUserOpen(true)}>
-              <UserPlus className="mr-1.5 h-4 w-4" />
-              Add user
+            {/*
+              Leaves the page rather than opening a dialog, and comes back with the new user selected
+              through `?assignTo=`. Any selection already made here is lost on the way — which is why
+              the entry point sits beside "Add user" in the *user* picker rather than mid-assignment,
+              and why the new user arrives preselected so the trip is not wasted.
+            */}
+            <Button asChild variant="outline" size="sm">
+              <Link href="/settings/access-management/users/new?returnTo=%2Fsettings%2Faccess-management">
+                <UserPlus className="mr-1.5 h-4 w-4" />
+                Add user
+              </Link>
             </Button>
             <Button
               variant="outline"
@@ -570,22 +577,6 @@ export function AssignAccess({
         templates={directory.templates}
         projects={projects}
         onConfirm={handleConfirm}
-      />
-
-      <AddUserDrawer
-        open={addUserOpen}
-        onOpenChange={setAddUserOpen}
-        roles={directory.roles}
-        departments={departments}
-        designations={designations}
-        projects={projects}
-        users={directory.users}
-        actor={actor}
-        onCreated={(user) => {
-          // §14: return with the new user already selected, so the next click is the assignment.
-          setSelectedUserIds((current) => [...new Set([...current, user.id])]);
-          void state.refresh();
-        }}
       />
 
       <CopyAccessDialog

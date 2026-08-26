@@ -45,7 +45,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { HrEmptyState } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { employeeSearchText } from '@/lib/greythr';
+import { employeeSearchText, isWorkingState } from '@/lib/greythr';
 import {
   fetchEmployeeDetail,
   fetchLinkableEmployees,
@@ -75,6 +75,16 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
   const [error, setError] = useState<string | null>(null);
   const [term, setTerm] = useState('');
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  /**
+   * Show employees greytHR says have left.
+   *
+   * Off by default — offering a relieved employee normally invites creating an account for somebody
+   * who has gone. But employment state is *derived* from greytHR's separation fields, and those are
+   * not always right: a placeholder leaving date reads as a departure and hides a working employee
+   * with no explanation an administrator can act on. An override they can see is better than a rule
+   * they cannot get past.
+   */
+  const [includeExited, setIncludeExited] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,11 +103,15 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
   }, [load]);
 
   const filtered = useMemo(() => {
-    const rows = list?.employees ?? [];
+    // Working employees first, then the ones greytHR says have left when the override is on, so the
+    // list an administrator normally wants is never pushed down the page by people who have gone.
+    const rows = includeExited
+      ? [...(list?.employees ?? []), ...(list?.otherEmployees ?? [])]
+      : (list?.employees ?? []);
     const query = term.trim().toLowerCase();
     if (!query) return rows;
     return rows.filter((employee) => employeeSearchText(employee).includes(query));
-  }, [list, term]);
+  }, [list, term, includeExited]);
 
   const windowed = filtered.slice(0, WINDOW);
 
@@ -228,6 +242,36 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
         </Button>
       </div>
 
+      {/*
+        The override.
+
+        Shown whenever there are unlinked employees the rules would not offer — which, when the
+        employment-state derivation is wrong, is most of them. Without this the picker is a dead end:
+        it reports "154 excluded (relieved)" and gives no way to look at them or disagree.
+      */}
+      {list && list.otherEmployees.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
+          <p className="text-[11px] text-slate-600">
+            {list.otherEmployees.length} employee{list.otherEmployees.length === 1 ? '' : 's'} without a
+            login {list.otherEmployees.length === 1 ? 'is' : 'are'} hidden because greytHR says they have
+            left.{' '}
+            {includeExited
+              ? 'They are marked below — check the employment state before picking one.'
+              : 'If somebody who still works here is missing, look here first.'}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 bg-white/80 text-xs"
+            onClick={() => setIncludeExited((previous) => !previous)}
+            disabled={disabled}
+          >
+            {includeExited ? 'Hide them' : 'Show them anyway'}
+          </Button>
+        </div>
+      )}
+
       {list && (
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
@@ -292,7 +336,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
         </div>
       )}
 
-      <ScrollArea className="h-64 rounded-xl border border-white/70 bg-white/60">
+      <ScrollArea className="h-64 rounded-xl border border-white/70 bg-white/60 sm:h-80">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading employees…
@@ -304,8 +348,12 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
               title={term ? `No employee matches “${term}”` : 'No selectable employees'}
               description={
                 term
-                  ? 'Try a different search, or create the user manually.'
-                  : 'Every active employee already has a login, or the employee list has not been synced yet.'
+                  ? includeExited
+                    ? 'Try a different search, or create the user manually.'
+                    : 'Try a different search, or “Show them anyway” above if greytHR has them marked as left.'
+                  : list?.otherEmployees.length
+                    ? 'Every employee greytHR reports as working already has a login. Use “Show them anyway” above if somebody who still works here is marked as left.'
+                    : 'Every active employee already has a login, or the employee list has not been synced yet.'
               }
             />
           </div>
@@ -338,6 +386,13 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
                     {employee.employmentState === 'Notice Period' && (
                       <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
                         Notice period
+                      </Badge>
+                    )}
+                    {/* The override made this row visible, so it has to carry the reason it was
+                        hidden — in red, next to the name, not in a legend elsewhere. */}
+                    {!isWorkingState(employee.employmentState) && (
+                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">
+                        greytHR says: {employee.employmentState}
                       </Badge>
                     )}
                     {!employee.email && (

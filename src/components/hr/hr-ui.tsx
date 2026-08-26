@@ -531,12 +531,26 @@ export function HrDataList<T extends { id: string }>({
 export const hrDialog = {
   content: 'hr-mobile-dialog sm:max-w-lg',
   contentWide: 'hr-mobile-dialog sm:max-w-3xl',
+  /**
+   * A long form: wide, capped to the viewport, and scrolled in the body rather than the page.
+   *
+   * `hr-mobile-dialog` already does this on a phone, but only inside its media query — so on a
+   * desktop a tall dialog simply overflowed the viewport with the footer buttons off-screen and no
+   * scrollbar to reach them. `flex` plus a capped height makes the body the scrolling element at every
+   * width, which is what `.hr-dialog-body` already assumes.
+   *
+   * Pair with `bodyScroll`; `body` alone will not scroll, because a `space-y` div with no height
+   * constraint just grows.
+   */
+  contentTall: 'hr-mobile-dialog sm:max-w-5xl sm:max-h-[90dvh] sm:flex sm:flex-col',
   header: 'hr-dialog-header',
   /** Stacked fields. */
   body: 'hr-dialog-body space-y-3',
+  /** Stacked fields in a `contentTall` dialog: the part that scrolls. */
+  bodyScroll: 'hr-dialog-body space-y-3 sm:min-h-0 sm:flex-1 sm:overflow-y-auto sm:pr-1',
   /** Paired fields — one column on a phone, two from `sm` up. */
   bodyGrid: 'hr-dialog-body grid grid-cols-1 gap-3 sm:grid-cols-2',
-  footer: 'hr-dialog-footer',
+  footer: 'hr-dialog-footer sm:shrink-0',
 } as const;
 
 /** A simple horizontal bar chart, for the dashboard's by-department / by-project breakdowns. */

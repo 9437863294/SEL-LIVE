@@ -174,16 +174,32 @@ export async function GET(request: Request) {
 
     const offerable = all.filter(isOfferableForNewUser);
 
+    const withUserName = (employee: LinkableEmployee) => ({
+      ...employee,
+      linkedUserName: employee.linkedUserId ? (userNames.get(employee.linkedUserId) ?? null) : null,
+    });
+
+    const byName = (a: LinkableEmployee, b: LinkableEmployee) =>
+      (a.name || '').localeCompare(b.name || '');
+
     return NextResponse.json({
       ok: true,
-      /** Only the employees who can actually be turned into a user. */
-      employees: offerable
-        .slice()
-        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-        .map((employee) => ({
-          ...employee,
-          linkedUserName: employee.linkedUserId ? (userNames.get(employee.linkedUserId) ?? null) : null,
-        })),
+      /** The employees who can be turned into a user without an override. */
+      employees: offerable.slice().sort(byName).map(withUserName),
+      /**
+       * Employees with no login whom the rules would not offer, because greytHR says they have left.
+       *
+       * Sent rather than merely counted so the picker can let an administrator override the
+       * classification. Employment state is derived from greytHR's own separation fields, and those
+       * are not always right — a placeholder leaving date reads as a departure. When the derivation is
+       * wrong, an administrator who cannot see the person has no route forward and no way to tell why;
+       * one who can see them marked "Relieved" can judge for themselves. Already-linked employees are
+       * *not* included: for them the answer is to edit the existing account, not make a second.
+       */
+      otherEmployees: all
+        .filter((employee) => !employee.linkedUserId && !isOfferableForNewUser(employee))
+        .sort(byName)
+        .map(withUserName),
       totalEmployees: all.length,
       /**
        * Counted rather than listed, so the picker can explain "showing 412 of 1,306" without

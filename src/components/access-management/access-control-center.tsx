@@ -83,7 +83,6 @@ import { AuditHistory } from './audit-history';
 import { TemplatesAndScopes } from './templates-and-scopes';
 import { AccessReports } from './access-reports';
 import { PermissionTree } from './permission-tree';
-import { AddUserDrawer } from './add-user-drawer';
 import {
   EMPTY_USER_FILTER,
   UserFilterBar,
@@ -637,7 +636,6 @@ function UsersTab({
   const { directory, accessByUser, departments, projects, designations, employees } = state;
   const [filter, setFilter] = useState<UserFilterState>({ ...EMPTY_USER_FILTER, status: 'all' });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [addUserOpen, setAddUserOpen] = useState(false);
 
   const context: UserDirectoryContext = useMemo(
     () => ({
@@ -778,9 +776,13 @@ function UsersTab({
             </div>
             <div className="flex flex-wrap gap-2">
               {canAssign && (
-                <Button variant="outline" size="sm" onClick={() => setAddUserOpen(true)}>
-                  <UserPlus className="mr-1.5 h-4 w-4" />
-                  Add user
+                // A link, not a dialog trigger: the form is its own page now, and it comes back here
+                // with the new user preselected via `assignTo`.
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/settings/access-management/users/new?returnTo=%2Fsettings%2Faccess-management">
+                    <UserPlus className="mr-1.5 h-4 w-4" />
+                    Add user
+                  </Link>
                 </Button>
               )}
               {canAssign && (
@@ -816,21 +818,6 @@ function UsersTab({
         </ScrollArea>
       )}
 
-      <AddUserDrawer
-        open={addUserOpen}
-        onOpenChange={setAddUserOpen}
-        roles={directory.roles}
-        departments={departments}
-        designations={designations}
-        projects={projects}
-        users={directory.users}
-        actor={actor}
-        onCreated={(user) => {
-          void state.refresh();
-          toast({ title: 'User created', description: `${user.name} is ready to be given access.` });
-          onAssign({ userIds: [user.id] });
-        }}
-      />
     </div>
   );
 }

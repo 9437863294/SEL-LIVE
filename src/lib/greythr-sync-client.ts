@@ -91,6 +91,13 @@ export interface LinkableEmployeeRow extends LinkableEmployee {
 export interface LinkableEmployeeList {
   ok: boolean;
   employees: LinkableEmployeeRow[];
+  /**
+   * Unlinked employees greytHR says have left.
+   *
+   * Offered behind an explicit toggle so a wrong employment state cannot leave an administrator with
+   * no way to create a legitimate account.
+   */
+  otherEmployees: LinkableEmployeeRow[];
   totalEmployees: number;
   /** Reason → count, for "showing 412 of 1,306". */
   excluded: Record<string, number>;

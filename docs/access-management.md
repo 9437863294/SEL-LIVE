@@ -159,6 +159,29 @@ The registry itself — modules, pages, actions — is derived from
 [`permissionModules`](../src/lib/permissions.ts) by `flattenPermissionRegistry`. **A new module
 registers itself by existing in that file.** Nothing else to configure.
 
+### Add user is a page, not a dialog
+
+`/settings/access-management/users/new`, entered from the Users tab and from Assign Access.
+
+It was a modal. It is the longest form in the application — an employee picker over ~1,300 people,
+eleven fields, then the entire role library — and a modal is the wrong container for that at any
+width. Three concrete reasons, none of them taste:
+
+1. **Two nested scrolling regions.** The employee list and the role picker each scroll *inside* a body
+   that also scrolls, so a wheel gesture near either did something unpredictable.
+2. **No address.** "Open the add-user form" was not a link, so it could not be shared, bookmarked, or
+   returned to after a mis-click dismissed it and took the typed fields with it.
+3. **Nowhere to grow.** A modal is capped at the viewport by definition; this form only gets longer.
+
+The §14 handover is preserved exactly, which was the constraint: callers pass `?returnTo=`, and on
+success the page navigates there with `assignTo=<uid>` appended — the parameter the access screens
+already read to preselect somebody, so nothing new had to be invented. `returnTo` is validated as a
+same-site path (`//evil.example` is rejected, not just `https://…`), because a `returnTo` an attacker
+can set is an open redirect.
+
+The form is exported separately from the page shell, so the layout is the only thing that changed —
+`createUserWithAccess` is called with the same arguments as before.
+
 Two actions were appended to existing nodes by later work, both additive — nobody holds them until
 granted, and no existing check changed:
 

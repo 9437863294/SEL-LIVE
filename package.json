@@ -38,7 +38,9 @@
     "test:access-control": "node --experimental-strip-types --test tests/access-control-domain.test.mjs",
     "typecheck:access-control": "tsc -p tsconfig.access-control.json",
     "test:greythr": "node --experimental-strip-types --test tests/greythr-domain.test.mjs tests/greythr-linking.test.mjs",
-    "typecheck:greythr": "tsc -p tsconfig.greythr.json"
+    "typecheck:greythr": "tsc -p tsconfig.greythr.json",
+    "firebase:admin-env": "node scripts/set-firebase-admin-env.mjs",
+    "firebase:admin-check": "node scripts/check-firebase-admin.mjs"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

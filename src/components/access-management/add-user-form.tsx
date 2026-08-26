@@ -1,28 +1,41 @@
 'use client';
 
 /**
- * Create a user without leaving the access screen (§14).
+ * Create a user, then hand them back to whatever sent you here (§14).
  *
- * The point of having this here at all is the handover it avoids: an administrator setting up a new
- * site engineer otherwise creates the account in User Management, navigates back, searches for the
- * name they just typed, and only then assigns access. This creates the account and hands the new
- * user back already selected, so the next click is the assignment.
+ * The handover is the point: an administrator setting up a new site engineer otherwise creates the
+ * account in User Management, navigates back, searches for the name they just typed, and only then
+ * assigns access. This creates the account and returns with that user already selected, so the next
+ * click is the assignment.
  *
- * It does not replace User Management's own dialog and does not change it. Both write the same five
- * fields to `users/{uid}` through the same Identity Toolkit call, so a user created here is
- * indistinguishable from one created there — which is what makes keeping both safe.
+ * It does not replace User Management's own dialog and does not change it. Both write the same fields
+ * to `users/{uid}` through the same Identity Toolkit call, so a user created here is indistinguishable
+ * from one created there — which is what makes keeping both safe.
+ *
+ * ── Why this is a page and not a dialog ─────────────────────────────────────────────────────────
+ *
+ * It was a dialog. It is the longest form in the application — an employee picker over ~1,300 people,
+ * eleven fields, and then the entire role library — and a dialog is the wrong container for that at
+ * any width. Three concrete problems, not matters of taste:
+ *
+ *   1. **Two nested scrolling regions.** The employee list and the role picker each scroll inside a
+ *      body that also scrolls, so a wheel gesture near either one does something unpredictable.
+ *   2. **No address.** "Open the add-user form for this employee" was not a link, so it could not be
+ *      shared, bookmarked, or returned to after a mis-click dismissed it and lost the typed fields.
+ *   3. **Nowhere to grow.** A modal is capped at the viewport by definition, and this form is only
+ *      going to get longer.
+ *
+ * The form itself is exported separately from the page so the layout is the only thing that changed.
  */
 
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCheck, Copy, Loader2, RefreshCw, UserPlus } from 'lucide-react';
+import { CheckCheck, Copy, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { hrDialog } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
 import { app } from '@/lib/firebase';
 import type { Department, Project, Role, User } from '@/lib/types';
@@ -53,9 +66,7 @@ function generatePassword(): string {
   return chars.join('');
 }
 
-export interface AddUserDrawerProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+export interface AddUserFormProps {
   roles: Role[];
   departments: Department[];
   designations: string[];
@@ -64,11 +75,11 @@ export interface AddUserDrawerProps {
   actor: AccessActor;
   /** Called with the new user so the caller can select it and continue assigning (§14). */
   onCreated: (user: User) => void;
+  /** Abandon and go back. */
+  onCancel: () => void;
 }
 
-export function AddUserDrawer({
-  open,
-  onOpenChange,
+export function AddUserForm({
   roles,
   departments,
   designations,
@@ -76,7 +87,8 @@ export function AddUserDrawer({
   users,
   actor,
   onCreated,
-}: AddUserDrawerProps) {
+  onCancel,
+}: AddUserFormProps) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -108,11 +120,12 @@ export function AddUserDrawer({
   const [employeeCategories, setEmployeeCategories] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<'greythr' | 'manual'>('greythr');
 
+  // One password per visit to the page. Regenerating on every render would change it under an
+  // administrator who had already copied it.
   useEffect(() => {
-    if (!open) return;
     setForm((current) => ({ ...current, password: generatePassword() }));
     setCopied(false);
-  }, [open]);
+  }, []);
 
   /**
    * Prefill from the chosen employee.
@@ -163,27 +176,13 @@ export function AddUserDrawer({
     [roles],
   );
 
-  const reset = () => {
-    setForm({
-      employeeId: '',
-      employeeNo: '',
-      name: '',
-      email: '',
-      mobile: 'N/A',
-      password: '',
-      baseRole: '',
-      departmentId: '',
-      designation: '',
-      reportingManagerId: '',
-      location: '',
-      projectId: '',
-      status: 'Active',
-    });
-    setAdditionalRoleIds([]);
-    setEmployee(null);
-    setEmployeeCategories({});
-    setMode('greythr');
-  };
+  /*
+   * There is no `reset()` any more.
+   *
+   * The dialog needed one because it was reused across openings; a page is torn down when you leave
+   * it, so navigation is the reset. Keeping the old function would have been dead code that looked
+   * like the safety net for a case that no longer exists.
+   */
 
   const handleCreate = async () => {
     if (!form.name.trim() || !form.email.trim() || !form.baseRole) {
@@ -220,10 +219,8 @@ export function AddUserDrawer({
 
       toast({
         title: 'User created',
-        description: `${user.name} is ready. They are selected below so you can assign access now.`,
+        description: `${user.name} is ready. Returning so you can assign access now.`,
       });
-      reset();
-      onOpenChange(false);
       onCreated(user);
     } catch (error) {
       toast({
@@ -237,24 +234,15 @@ export function AddUserDrawer({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : (reset(), onOpenChange(false)))}>
-      <DialogContent className={hrDialog.contentWide}>
-        <DialogHeader className={hrDialog.header}>
-          <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="h-5 w-5 text-indigo-600" />
-            Add user
-          </DialogTitle>
-          <DialogDescription>
-            Creates the login and the profile, then returns here with the new user selected. A welcome
-            email with the credentials is sent automatically.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className={hrDialog.body}>
-          {/* Where the person comes from. greytHR first, because that is the correct path — manual
-              entry exists for contractors and anyone not in the HR system. */}
+    <div className="space-y-4">
+      {/* Sections rather than one undifferentiated column: on a page there is room to say what each
+          group of fields is for, which a modal never had. */}
+      <FormSection
+        title="Who is this account for?"
+        description="greytHR first — it fills in the details and establishes the link that carries a resignation through to this login. Manual entry is for contractors and anyone not in the HR system."
+      >
           <div className="rounded-xl border border-white/70 bg-white/70 p-1">
-            <div className="grid grid-cols-2 gap-1">
+            <div className="grid max-w-md grid-cols-2 gap-1">
               {(
                 [
                   { id: 'greythr', label: 'From greytHR employee' },
@@ -301,8 +289,10 @@ export function AddUserDrawer({
               without an existing login are listed.
             </p>
           )}
+      </FormSection>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <FormSection title="Identity" description="What they sign in with.">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="new-user-name">Name *</Label>
               <Input
@@ -387,8 +377,13 @@ export function AddUserDrawer({
               </Button>
             </div>
           </div>
+      </FormSection>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <FormSection
+        title="Role and placement"
+        description="The base role is their primary one, written exactly as User Management writes it. Department, designation and project also decide what any scoped rules confer on them."
+      >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1.5">
               <Label>Base role *</Label>
               <Select value={form.baseRole} onValueChange={(value) => set('baseRole', value)}>
@@ -473,35 +468,69 @@ export function AddUserDrawer({
               />
             </div>
           </div>
+      </FormSection>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label>Additional roles</Label>
-              {additionalRoleIds.length > 0 && (
-                <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-                  {additionalRoleIds.length} selected
-                </Badge>
-              )}
-            </div>
-            <RolePicker
-              roles={activeRoles}
-              selectedIds={additionalRoleIds}
-              onSelectionChange={setAdditionalRoleIds}
-              heightClassName="h-40"
-            />
-          </div>
+      <FormSection
+        title="Additional roles"
+        description="Optional, and added on top of the base role — never instead of it. These can also be assigned later; nothing here has to be decided now."
+        badge={
+          additionalRoleIds.length > 0 ? (
+            <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
+              {additionalRoleIds.length} selected
+            </Badge>
+          ) : null
+        }
+      >
+        {/* Taller than it was in the dialog: this is the control administrators spend the most time
+            in and a page has the room the modal did not. */}
+        <RolePicker
+          roles={activeRoles}
+          selectedIds={additionalRoleIds}
+          onSelectionChange={setAdditionalRoleIds}
+          heightClassName="h-64"
+        />
+      </FormSection>
+
+      {/*
+        Sticky, because the form is long enough to scroll and a save button that scrolls off the
+        bottom is a save button an administrator has to hunt for. `bottom-0` with a blurred backdrop
+        rather than a fixed bar, so it sits inside the page's own scroll container.
+      */}
+      <div className="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:justify-end">
+        <Button variant="outline" onClick={onCancel} disabled={saving} className="sm:w-32">
+          Cancel
+        </Button>
+        <Button onClick={handleCreate} disabled={saving} className="sm:w-40">
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Create user
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** A titled group of fields. Exists so the page reads as sections rather than one long column. */
+function FormSection({
+  title,
+  description,
+  badge,
+  children,
+}: {
+  title: string;
+  description?: string;
+  badge?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-white/60 bg-white/80 p-4 shadow-sm backdrop-blur-sm">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
+          {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
         </div>
-
-        <DialogFooter className={hrDialog.footer}>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={saving}>
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create user
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        {badge}
+      </div>
+      <div className="space-y-3">{children}</div>
+    </section>
   );
 }

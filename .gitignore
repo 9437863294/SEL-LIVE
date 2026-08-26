@@ -44,3 +44,10 @@ next-env.d.ts
 .firebase/
 firebase-debug.log
 firestore-debug.log
+
+# Service-account keys. These grant full admin access to the project and cannot be scoped down, so
+# they are ignored by shape rather than by exact name — the console names the download after the
+# project and a random suffix, which is easy to commit by accident when it lands in the repo root.
+*firebase-adminsdk*.json
+service-account*.json
+serviceAccount*.json
