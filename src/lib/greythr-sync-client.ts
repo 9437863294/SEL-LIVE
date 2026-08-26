@@ -28,6 +28,19 @@ export interface SyncReport {
   settings: GreytHRSyncSettings;
   runs: GreytHRSyncRun[];
   nextRun: { due: boolean; reason: string };
+  /**
+   * What the mirror holds right now, as opposed to what the last run did.
+   *
+   * Separate because they answer different questions and only one of them was being asked. A healthy
+   * incremental run over three changed records says nothing about whether the other 1,300 employees
+   * are present.
+   */
+  mirror: {
+    employees: number;
+    working: number;
+    salaryRows: number;
+    byState: Record<string, number>;
+  };
 }
 
 async function authorizedFetch<T>(input: string, init?: RequestInit): Promise<T> {

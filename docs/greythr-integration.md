@@ -276,9 +276,28 @@ So `baselineCompletedAt` is tracked separately and set **only after a successful
 self-healing: any installation predating the field — and any that got into this state — rebuilds a
 baseline on its next run, then goes incremental.
 
-It is surfaced in two places, because "fresh" and "complete" are different claims and the console
-previously only made the first: the sync console shows **Full baseline: Never** beside the last-run
-fields with a banner explaining it, and the employee picker says outright that the list is incomplete.
+It is surfaced in three places, because "fresh" and "complete" are different claims and the console
+previously only made the first:
+
+- **Full baseline: Never**, beside the last-run fields, with a banner explaining it.
+- The employee picker says outright that the list is incomplete.
+- An **Employee mirror** card reporting what is actually stored, broken down by employment state —
+  `182 records · 0 still working`.
+
+That third one is the diagnostic that was missing, and it is worth understanding why. Every other
+number on the console describes the most recent *run*, and a run cannot tell you whether the mirror is
+complete: an incremental pass over three changed records reports "3 fetched, 1 updated" and looks
+healthy whether the collection behind it holds 1,300 employees or 182.
+
+And the failure is not merely invisible, it is *misleading*. What an incremental run returns is
+whatever changed, which in an HR system means leavers and people on notice. So a mirror built only by
+incremental runs is not visibly sparse — it is full of people who have left, with the active majority
+absent, which reads as a fact about the workforce rather than a gap in the data. **"0 still working" is
+the line that gives it away**, because it is never true of a real company.
+
+`countMirrorEmployees` reads the documents rather than using `count()`, because the states have to be
+grouped and an aggregation query cannot group. On a screen an administrator opens deliberately, over a
+few thousand small documents, that is the right trade.
 
 ### Incremental sync
 

@@ -30,6 +30,7 @@ import {
   RefreshCw,
   ShieldAlert,
   UserCheck,
+  Users,
   UserX,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -341,6 +342,91 @@ export function GreytHRSyncWorkspace() {
                   These are the changes a real run would make right now. Use <strong>Sync now</strong> to apply them.
                 </p>
               </div>
+            )}
+
+            {/*
+              What is in the mirror, stated before anything about the last run.
+
+              Everything below describes a *run*, and a run cannot tell you whether the mirror is
+              complete: an incremental pass over three changed records reports "3 fetched, 1 updated"
+              and looks healthy whether the collection holds 1,300 employees or 182. Worse, what an
+              incremental pass returns is whatever changed — leavers and people on notice — so an
+              incomplete mirror is not visibly sparse, it is visibly *wrong*. "182 records, 0 working"
+              says that in one line.
+            */}
+            {report?.mirror && (
+              <Card
+                className={cn(
+                  'shadow-sm',
+                  report.mirror.working === 0 && report.mirror.employees > 0
+                    ? 'border-rose-200 bg-rose-50/70'
+                    : 'border-white/60 bg-white/85 backdrop-blur-sm',
+                )}
+              >
+                <CardHeader className="px-4 py-3">
+                  <CardTitle className="flex flex-wrap items-center gap-1.5 text-sm">
+                    <Users className="h-4 w-4 text-indigo-600" />
+                    Employee mirror
+                    <Badge variant="outline" className="text-[10px] text-slate-600">
+                      {report.mirror.employees} record{report.mirror.employees === 1 ? '' : 's'}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-[10px]',
+                        report.mirror.working > 0
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-rose-200 bg-rose-50 text-rose-700',
+                      )}
+                    >
+                      {report.mirror.working} still working
+                    </Badge>
+                    {report.mirror.salaryRows > 0 && (
+                      <Badge variant="outline" className="text-[10px] text-slate-500">
+                        + {report.mirror.salaryRows} salary rows
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    What is stored here now — not what the last run touched.{' '}
+                    {connection?.totalEmployees !== undefined
+                      ? `greytHR reports ${connection.totalEmployees} employees in total.`
+                      : 'Use Test connection to see how many greytHR holds in total.'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2 px-4 pb-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(report.mirror.byState)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([state, count]) => (
+                        <Badge
+                          key={state}
+                          variant="outline"
+                          className={cn('font-normal', STATE_TONE[state as EmploymentState] ?? STATE_TONE.Unknown)}
+                        >
+                          {state}: {count}
+                        </Badge>
+                      ))}
+                  </div>
+
+                  {report.mirror.employees > 0 && report.mirror.working === 0 && (
+                    <p className="text-xs text-rose-800">
+                      <strong>No employee in the mirror is recorded as still working.</strong> That is
+                      almost never true of a real workforce, so it means the records here are not the
+                      whole roster — an incremental run only returns what changed, and what changes is
+                      people leaving. Run <strong>Full resync</strong> to fetch everybody.
+                    </p>
+                  )}
+
+                  {connection?.totalEmployees !== undefined &&
+                    connection.totalEmployees > report.mirror.employees && (
+                      <p className="text-xs text-amber-800">
+                        greytHR holds {connection.totalEmployees - report.mirror.employees} employee(s)
+                        that are not stored here.
+                      </p>
+                    )}
+                </CardContent>
+              </Card>
             )}
 
             <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">

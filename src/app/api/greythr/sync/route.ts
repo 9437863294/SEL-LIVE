@@ -7,6 +7,7 @@ import {
 import { isSyncDue, normalizeSyncSettings, type GreytHRSyncSettings } from '@/lib/greythr';
 import { isGreytHRConfigured, testGreytHRConnection } from '@/lib/greythr-client';
 import {
+  countMirrorEmployees,
   listSyncRuns,
   readSyncSettings,
   runGreytHRSync,
@@ -55,7 +56,22 @@ export async function GET(request: Request) {
     try {
       const context = await authenticateAccess(request);
       requireAccess(context, 'Settings.Employee Management', 'View');
-      const [settings, runs] = await Promise.all([readSyncSettings(), listSyncRuns(20)]);
+      const [settings, runs, mirror] = await Promise.all([
+        readSyncSettings(),
+        listSyncRuns(20),
+        /**
+         * How many employee records the mirror actually holds.
+         *
+         * The one number that settles "is the mirror incomplete?", and it was missing. Everything the
+         * console showed — last run, last successful run, employees fetched — describes the most
+         * recent *run*, and an incremental run that correctly fetched 3 changed records looks healthy
+         * whether the mirror behind it has 182 records or 1,300.
+         *
+         * Counted with an aggregation query rather than by reading the documents: this is on the
+         * report path, which loads whenever the console opens.
+         */
+        countMirrorEmployees(),
+      ]);
       const due = isSyncDue(settings.schedule, settings.lastSuccessfulRunAt);
       return NextResponse.json({
         ok: true,
@@ -63,6 +79,7 @@ export async function GET(request: Request) {
         settings,
         runs,
         nextRun: due,
+        mirror,
       });
     } catch (error) {
       const { message, status } = accessErrorResponse(error);

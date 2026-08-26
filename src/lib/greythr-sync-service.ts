@@ -50,6 +50,7 @@ import {
   employmentTypeLabels,
   indexUsersByEmail,
   isEmployeeMasterRecord,
+  isWorkingState,
   indexUsersByEmployeeId,
   matchUserForEmployee,
   modifiedSinceFor,
@@ -60,6 +61,7 @@ import {
   summarizeRun,
   todayIso,
   type EmployeeDetailGroup,
+  type EmploymentState,
   type EmployeeOperationalDetail,
   type EmployeeSensitiveDetail,
   type GreytHRAddressRow,
@@ -1133,6 +1135,55 @@ async function commitBatched(
 /* ------------------------------------------------------------------------------------------------
  * Reads for the settings screen
  * ---------------------------------------------------------------------------------------------- */
+
+export interface MirrorCounts {
+  /** Real employee records — salary rows excluded. */
+  employees: number;
+  /** How many of those greytHR reports as still working. */
+  working: number;
+  /** Monthly salary documents the legacy salary sync writes into the same collection. */
+  salaryRows: number;
+  byState: Record<string, number>;
+}
+
+/**
+ * What the employee mirror actually contains, by employment state.
+ *
+ * This exists because every other number on the sync console describes the most recent **run**, and a
+ * run tells you nothing about the mirror behind it. An incremental run that correctly fetched three
+ * changed employees reports "3 fetched, 1 updated" and looks perfectly healthy whether the collection
+ * holds 1,300 records or 182.
+ *
+ * And the failure it exposes is specifically hard to see: what an incremental run returns is whatever
+ * changed, which in an HR system is leavers and people on notice. So a mirror built only by
+ * incremental runs is not visibly sparse — it is visibly *wrong*, full of people who have left, with
+ * the active majority missing. "182 records, 0 working" says that in one line; nothing else did.
+ *
+ * Reads the documents rather than using an aggregation query because the states have to be counted,
+ * and `count()` cannot group. At a few hundred to a few thousand small documents on a screen an
+ * administrator opens deliberately, that is the right trade.
+ */
+export async function countMirrorEmployees(
+  db: Firestore = getFirebaseAdminFirestore(),
+): Promise<MirrorCounts> {
+  const snapshot = await db.collection(GREYTHR_COLLECTIONS.employees).get();
+
+  const counts: MirrorCounts = { employees: 0, working: 0, salaryRows: 0, byState: {} };
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    if (!isEmployeeMasterRecord(data)) {
+      counts.salaryRows += 1;
+      continue;
+    }
+    counts.employees += 1;
+    // Records written before this integration have no `employmentState` at all; they are counted as
+    // Unknown rather than silently folded into Active.
+    const state = String(data.employmentState ?? 'Unknown');
+    counts.byState[state] = (counts.byState[state] ?? 0) + 1;
+    if (isWorkingState(state as EmploymentState)) counts.working += 1;
+  }
+  return counts;
+}
 
 export async function listSyncRuns(
   max = 20,
