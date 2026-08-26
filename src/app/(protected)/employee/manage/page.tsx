@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import type { Employee, Department, EmployeePosition } from '@/lib/types';
+import { isEmployeeMasterRecord } from '@/lib/greythr';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -87,6 +88,14 @@ export default function ManageEmployeePage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const [employees, setEmployees] = useState<EnrichedEmployee[]>([]);
+  /**
+   * How many documents in `employees` are monthly salary rows rather than people.
+   *
+   * Reported rather than silently dropped: the count is usually in the hundreds, it inflates every
+   * headcount that reads this collection directly, and the fix is a migration nobody will do unless
+   * they can see the number.
+   */
+  const [salaryRowCount, setSalaryRowCount] = useState(0);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -125,7 +134,21 @@ export default function ManageEmployeePage() {
         getDocs(collection(db, 'employeePositions')),
       ]);
 
-      const employeesData: Employee[] = employeesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
+      /**
+       * Real employee records only.
+       *
+       * `sync-salary-flow.ts` writes one document *per employee per month* into this same collection,
+       * carrying `salaryMonth`, `status: 'Active'`, and an empty department, designation and email. So
+       * this screen was listing every payslip ever synced as though it were a member of staff — which
+       * is why it appeared to show hundreds of active employees while the greytHR picker, which does
+       * filter them, reported 182 records with none of them working. Two screens, one collection,
+       * opposite conclusions.
+       *
+       * The same predicate the picker and the sync use, so all three now agree on what an employee is.
+       */
+      const allDocs = employeesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
+      const employeesData: Employee[] = allDocs.filter(emp => isEmployeeMasterRecord(emp as unknown as Record<string, unknown>));
+      setSalaryRowCount(allDocs.length - employeesData.length);
       const positionsData = positionsSnap.docs.map(doc => doc.data() as EmployeePosition);
 
       const positionsMap = new Map<string, Record<string, string>>();
@@ -408,7 +431,25 @@ export default function ManageEmployeePage() {
               <ArrowLeft className="h-6 w-6" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-bold">Manage Employee</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Manage Employee</h1>
+            <p className="mt-0.5 text-sm text-slate-600">
+              {employees.length} employee record{employees.length === 1 ? '' : 's'}
+              {/*
+                Stated because this screen used to list these rows as staff, which inflated the count
+                well beyond the real headcount. Anyone comparing this page against the greytHR picker
+                deserves to know why the two numbers ever differed.
+              */}
+              {salaryRowCount > 0 && (
+                <>
+                  {' · '}
+                  <span className="text-amber-700">
+                    {salaryRowCount} monthly salary row{salaryRowCount === 1 ? '' : 's'} hidden
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>

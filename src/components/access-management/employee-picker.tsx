@@ -78,13 +78,17 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
   /**
    * Show employees greytHR says have left.
    *
-   * Off by default — offering a relieved employee normally invites creating an account for somebody
-   * who has gone. But employment state is *derived* from greytHR's separation fields, and those are
-   * not always right: a placeholder leaving date reads as a departure and hides a working employee
-   * with no explanation an administrator can act on. An override they can see is better than a rule
-   * they cannot get past.
+   * **On** by default, which is a reversal. The original reasoning was sound — offering a relieved
+   * employee invites creating an account for somebody who has gone — but it assumed the employment
+   * state was trustworthy, and on real data it is not: 181 of 182 records were classified as departed,
+   * so the rule hid essentially the entire directory and the screen became unusable.
+   *
+   * A filter that is right 99% of the time should hide things. A filter that is wrong 99% of the time
+   * should annotate them. Every non-working row carries its state and the date behind it in red, so
+   * nothing is concealed and nothing is misrepresented — and the toggle still narrows to the
+   * confidently-working set for whoever wants that.
    */
-  const [includeExited, setIncludeExited] = useState(false);
+  const [includeExited, setIncludeExited] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -252,12 +256,19 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
       {list && list.otherEmployees.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
           <p className="text-[11px] text-slate-600">
-            {list.otherEmployees.length} employee{list.otherEmployees.length === 1 ? '' : 's'} without a
-            login {list.otherEmployees.length === 1 ? 'is' : 'are'} hidden because greytHR says they have
-            left.{' '}
-            {includeExited
-              ? 'They are marked below — check the employment state before picking one.'
-              : 'If somebody who still works here is missing, look here first.'}
+            {includeExited ? (
+              <>
+                Showing everyone without a login, including {list.otherEmployees.length} that greytHR
+                reports as departed — <strong>marked in red below</strong>. Check the state before
+                picking one.
+              </>
+            ) : (
+              <>
+                {list.otherEmployees.length} employee
+                {list.otherEmployees.length === 1 ? '' : 's'} hidden because greytHR says they have left.
+                If somebody who still works here is missing, show them.
+              </>
+            )}
           </p>
           <Button
             type="button"
@@ -267,7 +278,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
             onClick={() => setIncludeExited((previous) => !previous)}
             disabled={disabled}
           >
-            {includeExited ? 'Hide them' : 'Show them anyway'}
+            {includeExited ? 'Only currently working' : 'Show everyone'}
           </Button>
         </div>
       )}
@@ -278,11 +289,15 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
             {filtered.length} selectable
           </Badge>
           <span>of {list.totalEmployees} employees</span>
-          {Object.entries(list.excluded).map(([reason, count]) => (
-            <span key={reason}>
-              · {count} excluded ({reason.toLowerCase()})
-            </span>
-          ))}
+          {Object.entries(list.excluded)
+            // With the departed shown, calling them "excluded" contradicts the list directly below.
+            // Only the genuinely unavailable — already linked to a login — stay in this summary.
+            .filter(([reason]) => !includeExited || !reason.startsWith('Not currently working'))
+            .map(([reason, count]) => (
+              <span key={reason}>
+                · {count} excluded ({reason.toLowerCase()})
+              </span>
+            ))}
         </div>
       )}
 
@@ -350,10 +365,10 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
                 term
                   ? includeExited
                     ? 'Try a different search, or create the user manually.'
-                    : 'Try a different search, or “Show them anyway” above if greytHR has them marked as left.'
+                    : 'Try a different search, or “Show everyone” above if greytHR has them marked as left.'
                   : list?.otherEmployees.length
-                    ? 'Every employee greytHR reports as working already has a login. Use “Show them anyway” above if somebody who still works here is marked as left.'
-                    : 'Every active employee already has a login, or the employee list has not been synced yet.'
+                    ? 'Every employee greytHR reports as working already has a login. Use “Show everyone” above to include those marked as departed.'
+                    : 'Every employee already has a login, or the employee list has not been synced yet.'
               }
             />
           </div>
