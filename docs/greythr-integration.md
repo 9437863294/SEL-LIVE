@@ -74,7 +74,7 @@ x-greythr-domain: <tenant>.greythr.com
 
 | Data | Endpoint | Notes |
 | --- | --- | --- |
-| Roster | `GET /employee/v2/employees` | `state=ALL`, `modifiedSince=YYYY-MM-DDTHH:mm:ss` |
+| Roster | `GET /employee/v2/employees` | `state=ALL`, `modifiedSince=YYYY-MM-DDTHH:mm:ssZ` |
 | **Designation, Department, Location, Project** | `GET /employee/v2/employees/categories?descRequired=true` | `descRequired` is what makes this usable |
 | **Resignation / exit** | `GET /employee/v2/employees/separation` | |
 | Confirm date, notice period | `GET /employee/v2/employees/work` | |
@@ -105,6 +105,30 @@ Project Name  Project Division  Cost Center  COST CENTER CODE  Shift  EMPLOYEE T
 `Project Name` and `Project Division` map onto the `projects` collection's own
 `projectName` / `projectDivision` fields. Everything matches on the category **description**, never
 on the numeric id, so adding or renaming a category in greytHR needs no code change.
+
+### The published date format is wrong
+
+`modifiedSince` accepts exactly two forms, per the server's own rejection message:
+
+```text
+{"code":"INVALID-DATE-FORMAT",
+ "message":"Date should be in YYYY-MM-DD format or yyyy-MM-dd'T'HH:mm:ss'Z'"}
+```
+
+The `'Z'` is Java `SimpleDateFormat` syntax for a **literal**, so the trailing `Z` is *required* — and
+there is no room for the milliseconds `toISOString()` produces. **The published Postman sample shows
+the value without the `Z`, and the server rejects it.** Trust the error message, not the sample.
+
+`isGreytHRTimestamp` is checked in `fetchEmployees` and `fetchAttendanceInsights` before the request
+goes out, because greytHR's 400 names neither the parameter nor the offending value — it presents as
+"greytHR employees returned 400", indistinguishable from a credential or scope problem. Dropping a
+bad value instead would be worse: every incremental run would silently become a full resync.
+
+**The overlap is 12 hours, not 1.** The value carries `Z`, but whether greytHR *honours* it or reads
+the instant in tenant-local time is undocumented — a 5½-hour disagreement for an IST tenant. Guessing
+wrong in that direction skips records silently, and no later incremental run recovers them; only a full
+resync would. Re-reading half a day of modifications costs a handful of records and the sync is
+idempotent. Losing a resignation is not recoverable in the same way.
 
 ### greytHR sends corrupt dates
 
@@ -154,7 +178,7 @@ one `undefined` rejects the *entire* batch of 400.
 | [`src/lib/greythr-link-service.ts`](../src/lib/greythr-link-service.ts) | Admin-SDK link/unlink/bulk, transactional. |
 | [`src/app/api/greythr/link/route.ts`](../src/app/api/greythr/link/route.ts) | The linking API. |
 | [`src/components/access-management/greythr-linking.tsx`](../src/components/access-management/greythr-linking.tsx) | The console at `/settings/user-management/greythr-linking`. |
-| [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 142 tests, including one per fixed bug. |
+| [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 149 tests, including one per fixed bug. |
 | [`tests/greythr-linking.test.mjs`](../tests/greythr-linking.test.mjs) | 36 tests on ownership and matching. |
 
 Same split as `hr-policy.ts` / `hr-requirement-service.ts`: rules unit-testable without an emulator,
@@ -207,6 +231,30 @@ otherwise skip a whole day.
 
 **On Firebase App Hosting** there is no built-in cron — point a Cloud Scheduler job at the same URL
 hourly and the behaviour is identical.
+
+### A watermark is worthless without a baseline
+
+An incremental run can *maintain* a complete mirror. It cannot *build* one — it only returns what
+greytHR says changed.
+
+The original design advanced `lastSuccessfulRunAt` after any successful run, so one success made every
+later run incremental, permanently. If the mirror was incomplete at that moment, nothing could ever
+fill the gap. And it compounds: `commitBatched` writes in chunks of 400, so a run that failed partway
+left the earlier chunks in place and reported failure — a partial mirror with no record of being one.
+
+The symptom is specific and misleading: **the employees an incremental run returns are the ones whose
+records get edited — leavers and people on notice.** So a partial mirror doesn't look sparse, it looks
+*wrong*. The employee picker fills with people who cannot be selected (it only offers Active and
+Notice Period) and the active majority is simply absent, indistinguishable from "not in greytHR".
+
+So `baselineCompletedAt` is tracked separately and set **only after a successful full run**.
+`shouldForceFullResync` forces a full fetch while it is absent, which makes the whole thing
+self-healing: any installation predating the field — and any that got into this state — rebuilds a
+baseline on its next run, then goes incremental.
+
+It is surfaced in two places, because "fresh" and "complete" are different claims and the console
+previously only made the first: the sync console shows **Full baseline: Never** beside the last-run
+fields with a banner explaining it, and the employee picker says outright that the list is incomplete.
 
 ### Incremental sync
 
@@ -469,7 +517,7 @@ it yet** — see §12.
 ## 9. Testing
 
 ```bash
-npm run test:greythr        # 178 domain tests (142 sync + 36 linking)
+npm run test:greythr        # 185 domain tests (149 sync + 36 linking)
 npm run typecheck:greythr
 ```
 

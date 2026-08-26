@@ -33,6 +33,7 @@ import {
   GREYTHR_CATEGORY_LOV_KEYS,
   GREYTHR_IDENTITY_CODES,
   GREYTHR_LOV_KEYS,
+  isGreytHRTimestamp,
   type GreytHRAttendanceInsightRow,
   type GreytHRAddressRow,
   type GreytHRAddressType,
@@ -332,7 +333,12 @@ export interface FetchEmployeesOptions {
    * employees — so nobody could ever be detected as having left.
    */
   state?: EmployeeState;
-  /** `YYYY-MM-DDTHH:mm:ss`. Incremental sync. */
+  /**
+   * `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm:ssZ`. Incremental sync.
+   *
+   * Build it with `modifiedSinceFor`. The trailing `Z` is required and milliseconds are rejected —
+   * greytHR answers anything else with a 400 and no indication of which parameter it disliked.
+   */
   modifiedSince?: string | null;
   size?: number;
   config?: GreytHRConfig;
@@ -341,6 +347,21 @@ export interface FetchEmployeesOptions {
 export async function fetchEmployees(
   options: FetchEmployeesOptions = {},
 ): Promise<{ rows: GreytHREmployeeRow[]; pages: number }> {
+  /**
+   * Checked here rather than trusted, because the failure is expensive to read.
+   *
+   * greytHR's 400 names neither the parameter nor the value, so a malformed timestamp presents as
+   * "greytHR employees returned 400" and could as easily be a credential or a scope problem. And the
+   * *silent* alternative — dropping a bad value and carrying on — would quietly turn every
+   * incremental run into a full resync, which is slow rather than visibly broken.
+   */
+  if (options.modifiedSince && !isGreytHRTimestamp(options.modifiedSince)) {
+    throw new Error(
+      `modifiedSince "${options.modifiedSince}" is not a format greytHR accepts. ` +
+        'Use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ — note the required trailing Z and no milliseconds.',
+    );
+  }
+
   return fetchAllPages<GreytHREmployeeRow>('/employee/v2/employees', {
     label: 'employees',
     size: options.size,
@@ -644,17 +665,33 @@ export const fetchLeaveTypeDictionary = (
     { label: 'leave type dictionary', config: options.config },
   );
 
-/** Every employee's aggregate attendance over a date range. */
+/**
+ * Every employee's aggregate attendance over a date range.
+ *
+ * `start` and `end` are the same date grammar as `modifiedSince`, so they get the same check. These
+ * two come from `currentAttendancePeriod`, which produces plain `YYYY-MM-DD` and is therefore already
+ * valid — the guard is here so that stays true if a caller ever passes a computed instant instead.
+ */
 export const fetchAttendanceInsights = (
   start: string,
   end: string,
   options: { size?: number; config?: GreytHRConfig } = {},
-) =>
-  fetchAllPages<GreytHRAttendanceInsightRow>('/attendance/v2/employee/insights', {
+) => {
+  for (const [name, value] of [['start', start], ['end', end]] as const) {
+    if (!isGreytHRTimestamp(value)) {
+      throw new Error(
+        `Attendance ${name} date "${value}" is not a format greytHR accepts. ` +
+          'Use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ.',
+      );
+    }
+  }
+
+  return fetchAllPages<GreytHRAttendanceInsightRow>('/attendance/v2/employee/insights', {
     label: 'attendance insights',
     query: { start, end },
     ...options,
   });
+};
 
 /* ------------------------------------------------------------------------------------------------
  * Single employee

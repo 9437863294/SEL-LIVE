@@ -52,6 +52,7 @@ import {
   isSyncDue,
   isWorkingState,
   matchUserForEmployee,
+  isGreytHRTimestamp,
   modifiedSinceFor,
   normalizeCategories,
   normalizeSyncSettings,
@@ -61,6 +62,7 @@ import {
   resolveCategoryAt,
   sanitizeGreytHRDate,
   shouldDeactivateOnResignation,
+  shouldForceFullResync,
   summarizeRun,
   todayIso,
 } from '../src/lib/greythr.ts';
@@ -623,9 +625,39 @@ test('describeSchedule reads as a sentence for every frequency', () => {
  * Incremental sync
  * ---------------------------------------------------------------------------------------------- */
 
-test('modifiedSince overlaps the previous run by an hour', () => {
-  const value = modifiedSinceFor('2026-08-25T10:00:00.000Z');
-  assert.equal(value, '2026-08-25T09:00:00', 'an hour of overlap, seconds precision, no timezone suffix');
+test('modifiedSince is in the only format greytHR accepts', () => {
+  // The server rejects anything else with a 400 that names neither the parameter nor the value:
+  //   "Date should be in YYYY-MM-DD format or yyyy-MM-dd'T'HH:mm:ss'Z'"
+  // The `'Z'` in that pattern is a SimpleDateFormat literal, so it is required — and there is no
+  // room for the milliseconds `toISOString()` emits. An earlier version of this test asserted "no
+  // timezone suffix", copied from the published Postman sample, which the server does not honour.
+  const value = modifiedSinceFor('2026-08-25T22:00:00.000Z');
+  assert.equal(value, '2026-08-25T10:00:00Z');
+  assert.ok(isGreytHRTimestamp(value));
+  assert.equal(value.includes('.'), false, 'milliseconds are rejected');
+  assert.ok(value.endsWith('Z'), 'the trailing Z is required, not decorative');
+});
+
+test('isGreytHRTimestamp accepts exactly the two documented formats', () => {
+  assert.equal(isGreytHRTimestamp('2026-08-25'), true);
+  assert.equal(isGreytHRTimestamp('2026-08-25T10:00:00Z'), true);
+
+  assert.equal(isGreytHRTimestamp('2026-08-25T10:00:00'), false, 'the Z is not optional');
+  assert.equal(isGreytHRTimestamp('2026-08-25T10:00:00.000Z'), false, 'no milliseconds');
+  assert.equal(isGreytHRTimestamp('2026-08-25T10:00:00+05:30'), false, 'no numeric offset');
+  assert.equal(isGreytHRTimestamp('25-08-2026'), false);
+  assert.equal(isGreytHRTimestamp(''), false);
+  assert.equal(isGreytHRTimestamp(null), false);
+});
+
+test('the overlap is wide enough to survive a timezone misreading', () => {
+  // The value says `Z`, but whether greytHR honours it or reads the instant as tenant-local is not
+  // documented. For an IST tenant that is 5½ hours; guessing wrong in that direction skips records
+  // silently, and no later incremental run recovers them. Twelve hours covers it with margin.
+  const last = new Date('2026-08-25T22:00:00.000Z');
+  const since = new Date(modifiedSinceFor(last.toISOString()));
+  const hours = (last.getTime() - since.getTime()) / 3_600_000;
+  assert.ok(hours >= 6, `overlap of ${hours}h must exceed the largest plausible offset (5.5h for IST)`);
 });
 
 test('a first run and an explicit full resync fetch everything', () => {
@@ -1588,4 +1620,50 @@ test('an all-blank statutory row does not claim the employee has restricted data
   });
   assert.equal(detail.statutory, undefined);
   assert.equal(hasSensitiveDetail(detail), false);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * The baseline — why active employees were missing from the mirror
+ * ---------------------------------------------------------------------------------------------- */
+
+test('a first run is forced full', () => {
+  const { force, reason } = shouldForceFullResync({ baselineCompletedAt: null, lastSuccessfulRunAt: null });
+  assert.equal(force, true);
+  assert.match(reason, /First run/);
+});
+
+test('a successful run without a baseline does not license incremental runs', () => {
+  // The bug this fixes: any successful run used to advance `lastSuccessfulRunAt`, so every later run
+  // went incremental. An incremental run returns only what greytHR says changed — and what changes is
+  // leavers and people on notice — so a mirror that was partial at that moment stayed partial, and
+  // the picker filled with exactly the employees nobody can select.
+  const { force, reason } = shouldForceFullResync({
+    baselineCompletedAt: null,
+    lastSuccessfulRunAt: '2026-08-25T02:00:00.000Z',
+  });
+  assert.equal(force, true, 'a watermark without a baseline is not trustworthy');
+  assert.match(reason, /cannot fill gaps/);
+});
+
+test('once a baseline exists, runs go incremental', () => {
+  const { force, reason } = shouldForceFullResync({
+    baselineCompletedAt: '2026-08-25T02:00:00.000Z',
+    lastSuccessfulRunAt: '2026-08-26T02:00:00.000Z',
+  });
+  assert.equal(force, false);
+  assert.equal(reason, null);
+});
+
+test('forcing full drops modifiedSince entirely', () => {
+  const settings = { baselineCompletedAt: null, lastSuccessfulRunAt: '2026-08-25T02:00:00.000Z' };
+  const { force } = shouldForceFullResync(settings);
+  assert.equal(modifiedSinceFor(settings.lastSuccessfulRunAt, { fullResync: force }), null);
+});
+
+test('every installation predating the baseline field rebuilds one', () => {
+  // `normalizeSyncSettings` must not invent a baseline for a settings document written before the
+  // field existed — doing so would leave exactly the broken state this is meant to escape.
+  const settings = normalizeSyncSettings({ lastSuccessfulRunAt: '2026-08-25T02:00:00.000Z' });
+  assert.equal(settings.baselineCompletedAt, null);
+  assert.equal(shouldForceFullResync(settings).force, true, 'self-healing on the next run');
 });

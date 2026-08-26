@@ -19,6 +19,7 @@ import {
   type SyncedEmployee,
 } from '@/lib/greythr';
 import { fetchSingleEmployee, isGreytHRConfigured } from '@/lib/greythr-client';
+import { readSyncSettings } from '@/lib/greythr-sync-service';
 
 /**
  * The employee directory behind the "create a user for this person" picker.
@@ -145,9 +146,10 @@ export async function GET(request: Request) {
 
     /* ── The list, from the mirror ── */
 
-    const [employeeSnapshot, users] = await Promise.all([
+    const [employeeSnapshot, users, settings] = await Promise.all([
       db.collection('employees').get(),
       loadUsers(db),
+      readSyncSettings(db),
     ]);
 
     const { index: byEmail } = indexUsersByEmail(users);
@@ -202,6 +204,14 @@ export async function GET(request: Request) {
           .filter((value): value is string => typeof value === 'string')
           .sort()
           .pop() ?? null,
+      /**
+       * Whether a full run has ever completed.
+       *
+       * `mirrorSyncedAt` answers "how fresh is this?", which is a different and less important
+       * question than "is this everybody?". A mirror maintained only by incremental runs is recent
+       * *and* incomplete, and reporting only freshness makes it look fine.
+       */
+      baselineCompletedAt: settings.baselineCompletedAt ?? null,
       source: 'mirror',
     });
   } catch (error) {

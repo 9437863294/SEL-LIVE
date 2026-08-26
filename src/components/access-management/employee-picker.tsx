@@ -242,6 +242,28 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
         </div>
       )}
 
+      {/*
+        A mirror built only by incremental runs is *worse* than an empty one, because it looks
+        populated. The employees an incremental run returns are the ones whose records changed —
+        leavers and people on notice — so the list fills with exactly the people you cannot pick and
+        the active majority is simply absent. Nothing above distinguishes that from "this employee
+        genuinely isn't in greytHR", so it has to be said outright.
+      */}
+      {list && list.baselineCompletedAt === null && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <p>
+            <strong>This list is incomplete.</strong> greytHR has never completed a full sync here, so
+            only employees whose records changed recently are present — which skews to leavers and
+            people on notice. Run{' '}
+            <Link href="/employee/sync" className="underline">
+              Full resync
+            </Link>{' '}
+            to fetch everybody.
+          </p>
+        </div>
+      )}
+
       {/* Only claim the list has never been synced when we actually received one. If the request
           failed, `error` below says so — asserting "never synced" as well would be a second,
           wrong explanation for the same problem. */}

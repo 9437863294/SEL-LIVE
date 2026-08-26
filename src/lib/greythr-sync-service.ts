@@ -55,6 +55,7 @@ import {
   modifiedSinceFor,
   normalizeSyncSettings,
   resolveAccessDecision,
+  shouldForceFullResync,
   shouldDeactivateOnResignation,
   summarizeRun,
   todayIso,
@@ -259,8 +260,20 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
   const today = todayIso();
 
   const settings = await readSyncSettings(db);
+
+  /**
+   * A watermark is only trustworthy once a full run has established a baseline.
+   *
+   * Without this the sync had no way back from a partial mirror: any successful run advanced
+   * `lastSuccessfulRunAt`, every later run was therefore incremental, and an incremental run returns
+   * only what greytHR says changed. What changes is leavers and people on notice — so the mirror
+   * silently converged on exactly the wrong population and the active majority never arrived.
+   */
+  const baseline = shouldForceFullResync(settings);
+  if (baseline.reason) warnings.push(baseline.reason);
+
   const modifiedSince = modifiedSinceFor(settings.lastSuccessfulRunAt, {
-    fullResync: options.fullResync,
+    fullResync: options.fullResync || baseline.force,
   });
 
   const run: GreytHRSyncRun = {
@@ -779,6 +792,10 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
               // Only a successful run advances the incremental watermark. Advancing it on failure
               // would silently skip everything the failed run should have seen.
               ...(run.ok ? { lastSuccessfulRunAt: run.startedAt } : {}),
+              // And only a successful *full* run records a baseline. This is what lets later runs go
+              // incremental at all, so it must mean "every employee greytHR has was written", which
+              // is only true of a run that asked for every employee.
+              ...(run.ok && run.fullResync ? { baselineCompletedAt: run.startedAt } : {}),
             }),
             { merge: true },
           ),

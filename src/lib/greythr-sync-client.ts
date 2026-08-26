@@ -96,6 +96,13 @@ export interface LinkableEmployeeList {
   excluded: Record<string, number>;
   /** When the local mirror was last refreshed from greytHR. */
   mirrorSyncedAt: string | null;
+  /**
+   * When a full run last completed, or `null` if none ever has.
+   *
+   * Distinct from `mirrorSyncedAt`: a mirror kept up to date by incremental runs alone is fresh and
+   * still missing most of the workforce, because incremental runs only return records that changed.
+   */
+  baselineCompletedAt: string | null;
 }
 
 /** Active employees who do not already have a platform login. */

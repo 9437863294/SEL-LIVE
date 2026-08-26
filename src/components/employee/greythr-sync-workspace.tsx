@@ -388,18 +388,45 @@ export function GreytHRSyncWorkspace() {
                   {settings ? describeSchedule(settings.schedule) : '—'}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-3 px-4 pb-4 sm:grid-cols-3">
+              <CardContent className="grid gap-3 px-4 pb-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Field label="Last run">
                   {report?.settings.lastRunAt ? formatWhen(report.settings.lastRunAt) : 'Never'}
                 </Field>
                 <Field label="Last successful run">
                   {report?.settings.lastSuccessfulRunAt ? formatWhen(report.settings.lastSuccessfulRunAt) : 'Never'}
                 </Field>
+                {/*
+                  Shown next to the other two because the difference between them is the thing that
+                  matters: "last successful run: an hour ago" alongside "full baseline: never" is a
+                  mirror that is fresh and incomplete, which no single field can express.
+                */}
+                <Field label="Full baseline">
+                  {report?.settings.baselineCompletedAt
+                    ? formatWhen(report.settings.baselineCompletedAt)
+                    : 'Never'}
+                </Field>
                 <Field label="Next scheduled run">
                   {report?.nextRun.due ? 'Due on the next hourly tick' : (report?.nextRun.reason ?? '—')}
                 </Field>
               </CardContent>
             </Card>
+
+            {report && !report.settings.baselineCompletedAt && (
+              <Card className="border-amber-200 bg-amber-50/60 shadow-sm">
+                <CardContent className="flex items-start gap-2 p-4 text-sm text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-medium">No full baseline has been recorded.</p>
+                    <p className="mt-0.5 text-xs">
+                      Incremental runs only return employees whose records changed, so they cannot fill
+                      a gap — and the records that change are leavers and people on notice, which is why
+                      an incomplete mirror skews that way. The next run will fetch everybody
+                      automatically; you can also press <strong>Full resync</strong> now.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {shownRun?.warnings?.length ? (
               <Card className="border-amber-200 bg-amber-50/60 shadow-sm">

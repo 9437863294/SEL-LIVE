@@ -1773,13 +1773,66 @@ export function describeSchedule(schedule: SyncSchedule): string {
 }
 
 /**
+ * The two timestamp formats greytHR accepts for `modifiedSince`.
+ *
+ * Straight from the server's own rejection message:
+ *
+ *     {"code":"INVALID-DATE-FORMAT",
+ *      "message":"Date should be in YYYY-MM-DD format or yyyy-MM-dd'T'HH:mm:ss'Z'"}
+ *
+ * The quotes around `'Z'` in that pattern are Java `SimpleDateFormat` syntax for a **literal**, so
+ * the trailing `Z` is required rather than optional — and there is no room for the milliseconds
+ * `toISOString()` produces. The published Postman sample shows the value without the `Z`, which is
+ * where this got it wrong: the sample does not match what the server accepts.
+ */
+export const GREYTHR_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?$/;
+
+export const isGreytHRTimestamp = (value: string | null | undefined): boolean =>
+  typeof value === 'string' && GREYTHR_TIMESTAMP.test(value);
+
+/**
  * The `modifiedSince` value for an incremental run.
  *
- * Overlapped by an hour against the last run, deliberately. greytHR's `lastModified` is server-side
- * and this app's clock is not the same clock; an exact boundary drops any record modified in the
- * seconds around the previous run. Re-reading an hour of overlap costs one page and makes the sync
- * idempotent rather than lossy.
+ * Overlapped against the last run, deliberately, and the overlap is generous for two reasons:
+ *
+ *   1. greytHR's `lastModified` is set by its clock, not this app's. An exact boundary drops any
+ *      record modified in the seconds around the previous run.
+ *   2. The value carries `Z`, but whether greytHR *honours* it or reads the instant in tenant-local
+ *      time is not documented. For an IST tenant that is a 5½-hour disagreement, and getting it
+ *      wrong in that direction means silently skipping records — which nothing would report, and
+ *      which no later incremental run would recover. Only a full resync would.
+ *
+ * Twelve hours covers that ambiguity with margin. The cost is re-reading half a day of
+ * modifications, which for a 1,300-person company is a handful of records; the sync is idempotent, so
+ * re-reading is free of consequence. Losing a resignation is not.
  */
+/**
+ * Whether this run must fetch everything, whatever the watermark says.
+ *
+ * An incremental run maintains a complete mirror; it cannot build one. So a watermark is only
+ * meaningful once a *full* run has succeeded, and until then every run is full — otherwise a mirror
+ * that was incomplete when the first run happened to succeed stays incomplete forever, and the only
+ * employees that trickle in are the ones whose records change: leavers and people on notice.
+ *
+ * Self-healing by design. Any installation without `baselineCompletedAt` — which is every
+ * installation predating the field — rebuilds one on its next run and then goes incremental.
+ */
+export function shouldForceFullResync(settings: {
+  baselineCompletedAt?: string | null;
+  lastSuccessfulRunAt?: string | null;
+}): { force: boolean; reason: string | null } {
+  if (!settings.baselineCompletedAt) {
+    return {
+      force: true,
+      reason: settings.lastSuccessfulRunAt
+        ? 'No complete baseline has been recorded, so this run fetches every employee. Incremental ' +
+          'runs only return what changed, which cannot fill gaps left by an earlier partial run.'
+        : 'First run — fetching every employee to establish the baseline.',
+    };
+  }
+  return { force: false, reason: null };
+}
+
 export function modifiedSinceFor(
   lastSuccessfulRunAt: string | Date | null | undefined,
   options?: { overlapMs?: number; fullResync?: boolean },
@@ -1788,8 +1841,9 @@ export function modifiedSinceFor(
   if (!lastSuccessfulRunAt) return null;
   const last = new Date(lastSuccessfulRunAt);
   if (Number.isNaN(last.getTime())) return null;
-  const overlap = options?.overlapMs ?? 60 * 60 * 1000;
-  return new Date(last.getTime() - overlap).toISOString().slice(0, 19);
+  const overlap = options?.overlapMs ?? 12 * 60 * 60 * 1000;
+  // `slice(0, 19)` drops the milliseconds; the `Z` is then required, not decorative.
+  return `${new Date(last.getTime() - overlap).toISOString().slice(0, 19)}Z`;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1827,6 +1881,20 @@ export interface GreytHRSyncSettings {
   detailGroups: Record<EmployeeDetailGroup, boolean>;
   /** ISO timestamp of the last run that completed without error. Drives `modifiedSince`. */
   lastSuccessfulRunAt?: string | null;
+  /**
+   * When a **full** run last completed successfully.
+   *
+   * Separate from `lastSuccessfulRunAt`, and the distinction is the point. An incremental run only
+   * ever fetches what greytHR says changed, so it can only *maintain* a complete mirror — it cannot
+   * build one. Without this field, one successful run of any kind turned every later run incremental
+   * forever, and a mirror that was incomplete at that moment stayed incomplete indefinitely.
+   *
+   * That is not hypothetical: `commitBatched` writes in chunks of 400, so a run that failed partway
+   * left the earlier chunks in place. And the employees an incremental run *does* return are the ones
+   * whose records get edited — leavers and people on notice. So the gap fills with exactly the people
+   * you do not want, and the active majority never arrives.
+   */
+  baselineCompletedAt?: string | null;
   lastRunAt?: string | null;
   lastRunId?: string | null;
   updatedAt?: string;
@@ -1840,6 +1908,7 @@ export const DEFAULT_SYNC_SETTINGS: GreytHRSyncSettings = {
   mapping: DEFAULT_MAPPING_POLICY,
   detailGroups: DEFAULT_DETAIL_GROUPS,
   lastSuccessfulRunAt: null,
+  baselineCompletedAt: null,
   lastRunAt: null,
   lastRunId: null,
 };
@@ -2341,6 +2410,9 @@ export function normalizeSyncSettings(
       }),
     ) as Record<EmployeeDetailGroup, boolean>,
     lastSuccessfulRunAt: raw?.lastSuccessfulRunAt ?? null,
+    // Absent on every installation that predates this field, which is correct: none of them has a
+    // baseline this code can vouch for, so the next run rebuilds one.
+    baselineCompletedAt: raw?.baselineCompletedAt ?? null,
     lastRunAt: raw?.lastRunAt ?? null,
     lastRunId: raw?.lastRunId ?? null,
     updatedAt: raw?.updatedAt,
