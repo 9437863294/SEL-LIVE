@@ -497,13 +497,14 @@ export function GreytHRSyncWorkspace() {
               </CardContent>
             </Card>
 
-            {report && !report.settings.baselineCompletedAt && (
+            {report?.mirrorRefresh.force && (
               <Card className="border-amber-200 bg-amber-50/60 shadow-sm">
                 <CardContent className="flex items-start gap-2 p-4 text-sm text-amber-900">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
-                    <p className="font-medium">No full baseline has been recorded.</p>
+                    <p className="font-medium">The employee mirror needs a full rebuild.</p>
                     <p className="mt-0.5 text-xs">
+                      {report.mirrorRefresh.reason}{' '}
                       Incremental runs only return employees whose records changed, so they cannot fill
                       a gap — and the records that change are leavers and people on notice, which is why
                       an incomplete mirror skews that way. The next run will fetch everybody

@@ -46,8 +46,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { app, db } from '@/lib/firebase';
-import { collection, getDocs, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import type { User, Role } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -60,6 +60,7 @@ import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { cn } from '@/lib/utils';
 import { EmployeePicker } from '@/components/access-management/employee-picker';
 import type { LinkableEmployeeRow } from '@/lib/greythr-sync-client';
+import { createPlatformUser } from '@/lib/user-management-client';
 
 
 const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -112,6 +113,7 @@ export default function ManageUserPage() {
   
   const [newUser, setNewUser] = useState(initialNewUserState);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [copied, setCopied] = useState(false);
 
   /** The greytHR employee chosen in the Add User dialog, if any. */
@@ -244,104 +246,36 @@ export default function ManageUserPage() {
         return;
     }
 
-    const FRIENDLY_FB: Record<string, string> = {
-      EMAIL_EXISTS: 'An account with this email already exists.',
-      INVALID_EMAIL: 'Invalid email address.',
-      OPERATION_NOT_ALLOWED: 'Email/password accounts are not enabled.',
-    };
-
+    setIsCreatingUser(true);
     try {
-      // Call Firebase Auth REST API directly from the browser so the Referer header
-      // matches the allowed origins and the admin's session is never touched.
-      const fbRes = await fetch(
-        `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${app.options.apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: newUser.email.trim().toLowerCase(),
-            password: newUser.password,
-            displayName: newUser.name.trim(),
-            returnSecureToken: false,
-          }),
-        }
-      );
-      const fbData = await fbRes.json();
-      if (!fbRes.ok) {
-        const code: string = fbData?.error?.message ?? '';
-        const msg =
-          FRIENDLY_FB[code] ??
-          (code.startsWith('WEAK_PASSWORD') ? 'Password must be at least 6 characters.' : (code || 'Failed to create user.'));
-        toast({ title: 'Error creating user', description: msg, variant: 'destructive' });
-        return;
-      }
-      const uid: string = fbData.localId;
-
-      // Write Firestore profile client-side — admin is still signed in here
-      await setDoc(doc(db, 'users', uid), {
+      const { welcomeEmailSent } = await createPlatformUser({
         name: newUser.name.trim(),
         email: newUser.email.trim().toLowerCase(),
+        password: newUser.password,
         mobile: newUser.mobile || 'N/A',
-        role: newUser.role,
+        baseRole: newUser.role,
         status: newUser.status || 'Active',
-        // Only written when the account was created from a greytHR employee. Undefined keys are not
-        // sent, so a manually created account has the same document shape it always had.
-        ...(newUser.employeeId ? { employeeId: newUser.employeeId } : {}),
-        ...(newUser.employeeNo ? { employeeNo: newUser.employeeNo } : {}),
-        // The provenance block the linking console reads, written here so an account created from
-        // the picker looks the same as one linked afterwards — otherwise the console has to guess
-        // how the link came about and shows every one of them as "matched on employee ID".
-        ...(newUser.employeeId
-          ? {
-              greytHR: {
-                linked: true,
-                employeeId: newUser.employeeId,
-                employeeNo: newUser.employeeNo,
-                method: 'manual' as const,
-                linkedAt: new Date().toISOString(),
-                linkedBy: adminUser.id,
-              },
-            }
-          : {}),
+        employeeId: newUser.employeeId || undefined,
+        employeeNo: newUser.employeeNo || undefined,
       });
-
-      // Log this activity
-      await logUserActivity({
-          userId: adminUser.id,
-          module: 'User Management',
-          action: 'Create User',
-          details: {
-              createdUserName: newUser.name,
-              createdUserEmail: newUser.email,
-              assignedRole: newUser.role,
-          }
-      });
-
-      // Send welcome email — non-blocking, don't fail user creation if this errors
-      fetch('/api/send-welcome-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newUser.name,
-          email: newUser.email,
-          password: newUser.password,
-          role: newUser.role,
-        }),
-      }).catch(() => {});
 
       toast({
         title: 'User Created',
-        description: `"${newUser.name}" has been created. A welcome email with login credentials was sent to ${newUser.email}.`,
+        description: welcomeEmailSent
+          ? `"${newUser.name}" has been created and the welcome email was sent to ${newUser.email}.`
+          : `"${newUser.name}" has been created, but the welcome email could not be sent. Share or reset the password manually.`,
       });
       resetAddDialog();
       fetchUsersAndRoles(); 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error adding user: ", error);
       toast({
         title: 'Error creating user',
-        description: error.message || 'An unexpected error occurred.',
+        description: error instanceof Error ? error.message : 'An unexpected error occurred.',
         variant: 'destructive',
       });
+    } finally {
+      setIsCreatingUser(false);
     }
   };
   
@@ -665,9 +599,11 @@ export default function ManageUserPage() {
                     <Select value={newUser.role} onValueChange={(value) => handleSelectChange('role', value)}>
                         <SelectTrigger id="role"><SelectValue placeholder="Select a role" /></SelectTrigger>
                         <SelectContent>
-                          {roles.map(role => (
+                          {roles
+                            .filter((role) => role.status !== 'Inactive' && role.status !== 'Disabled')
+                            .map(role => (
                             <SelectItem key={role.id} value={role.name}>{role.name}</SelectItem>
-                          ))}
+                            ))}
                         </SelectContent>
                     </Select>
                 </div>
@@ -686,7 +622,10 @@ export default function ManageUserPage() {
                 <DialogClose asChild>
                   <Button variant="outline" onClick={resetAddDialog}>Cancel</Button>
                 </DialogClose>
-                <Button onClick={handleAddUser}>Add User</Button>
+                <Button onClick={handleAddUser} disabled={isCreatingUser}>
+                  {isCreatingUser && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Add User
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

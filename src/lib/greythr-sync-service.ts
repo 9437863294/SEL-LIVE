@@ -31,6 +31,7 @@ import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { getFirebaseAdminFirestore } from './firebase-admin';
 import {
   DEFAULT_SYNC_SETTINGS,
+  GREYTHR_MIRROR_VERSION,
   buildAttendanceSummary,
   buildCategoryIdMaps,
   buildLeaveBalance,
@@ -798,6 +799,9 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
               // incremental at all, so it must mean "every employee greytHR has was written", which
               // is only true of a run that asked for every employee.
               ...(run.ok && run.fullResync ? { baselineCompletedAt: run.startedAt } : {}),
+              // A mirror version is evidence about the complete roster, so it advances only under
+              // the same successful-full-run condition as the baseline timestamp.
+              ...(run.ok && run.fullResync ? { mirrorVersion: GREYTHR_MIRROR_VERSION } : {}),
             }),
             { merge: true },
           ),

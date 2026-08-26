@@ -9,6 +9,7 @@ import {
   EMPLOYEE_DETAIL_GROUPS,
   GREYTHR_ADDRESS_TYPES,
   GREYTHR_IDENTITY_CODES,
+  GREYTHR_MIRROR_VERSION,
   EXIT_ACCESS_POLICIES,
   GREYTHR_CATEGORY,
   GREYTHR_CATEGORY_LOV_KEYS,
@@ -1649,9 +1650,25 @@ test('once a baseline exists, runs go incremental', () => {
   const { force, reason } = shouldForceFullResync({
     baselineCompletedAt: '2026-08-25T02:00:00.000Z',
     lastSuccessfulRunAt: '2026-08-26T02:00:00.000Z',
+    mirrorVersion: GREYTHR_MIRROR_VERSION,
   });
   assert.equal(force, false);
   assert.equal(reason, null);
+});
+
+test('a baseline built with the old status rules is rebuilt once', () => {
+  const legacy = shouldForceFullResync({
+    baselineCompletedAt: '2026-08-25T02:00:00.000Z',
+    lastSuccessfulRunAt: '2026-08-26T02:00:00.000Z',
+  });
+  assert.equal(legacy.force, true);
+  assert.match(legacy.reason, /mirror version 0 is out of date/i);
+
+  const stale = shouldForceFullResync({
+    baselineCompletedAt: '2026-08-25T02:00:00.000Z',
+    mirrorVersion: GREYTHR_MIRROR_VERSION - 1,
+  });
+  assert.equal(stale.force, true);
 });
 
 test('forcing full drops modifiedSince entirely', () => {
@@ -1666,6 +1683,15 @@ test('every installation predating the baseline field rebuilds one', () => {
   const settings = normalizeSyncSettings({ lastSuccessfulRunAt: '2026-08-25T02:00:00.000Z' });
   assert.equal(settings.baselineCompletedAt, null);
   assert.equal(shouldForceFullResync(settings).force, true, 'self-healing on the next run');
+});
+
+test('normalizeSyncSettings never invents a current mirror version', () => {
+  assert.equal(normalizeSyncSettings({ baselineCompletedAt: '2026-08-25T02:00:00.000Z' }).mirrorVersion, 0);
+  assert.equal(
+    normalizeSyncSettings({ mirrorVersion: GREYTHR_MIRROR_VERSION }).mirrorVersion,
+    GREYTHR_MIRROR_VERSION,
+  );
+  assert.equal(normalizeSyncSettings({ mirrorVersion: -1 }).mirrorVersion, 0);
 });
 
 /* ------------------------------------------------------------------------------------------------

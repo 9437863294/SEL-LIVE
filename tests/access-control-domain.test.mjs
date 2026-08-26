@@ -7,9 +7,11 @@ import {
   assertAdditive,
   buildAccessDashboard,
   canAssignAccess,
+  canCreateUser,
   canManageRoles,
   canOpenAccessManagement,
   canRevokeAccess,
+  canUseEmployeePicker,
   checkerFor,
   buildCopyAccessRequest,
   buildPermissionMatrix,
@@ -1057,6 +1059,19 @@ test('holding only one half of the legacy pair is not enough', () => {
   const halfAdmin = checkerFor({ 'Settings.User Management': ['View', 'Edit'] });
   assert.equal(canOpenAccessManagement(halfAdmin), false);
   assert.equal(canAssignAccess(halfAdmin), false);
+});
+
+test('Add User permission opens the employee picker without granting the HR module', () => {
+  const userAdmin = checkerFor({ 'Settings.User Management': ['View', 'Add'] });
+  assert.equal(canCreateUser(userAdmin), true);
+  assert.equal(canUseEmployeePicker(userAdmin), true);
+  assert.equal(userAdmin('View', 'Settings.Employee Management'), false);
+});
+
+test('Employee Management viewers can use the employee picker but cannot create users', () => {
+  const hrViewer = checkerFor({ 'Settings.Employee Management': ['View'] });
+  assert.equal(canUseEmployeePicker(hrViewer), true);
+  assert.equal(canCreateUser(hrViewer), false);
 });
 
 test('an ordinary user cannot open access management', () => {

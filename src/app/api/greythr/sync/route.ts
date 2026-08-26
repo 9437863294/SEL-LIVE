@@ -4,7 +4,12 @@ import {
   accessErrorResponse,
   requireAccess,
 } from '@/lib/access-control-server';
-import { isSyncDue, normalizeSyncSettings, type GreytHRSyncSettings } from '@/lib/greythr';
+import {
+  isSyncDue,
+  normalizeSyncSettings,
+  shouldForceFullResync,
+  type GreytHRSyncSettings,
+} from '@/lib/greythr';
 import { isGreytHRConfigured, testGreytHRConnection } from '@/lib/greythr-client';
 import {
   countMirrorEmployees,
@@ -73,12 +78,14 @@ export async function GET(request: Request) {
         countMirrorEmployees(),
       ]);
       const due = isSyncDue(settings.schedule, settings.lastSuccessfulRunAt);
+      const mirrorRefresh = shouldForceFullResync(settings);
       return NextResponse.json({
         ok: true,
         configured: isGreytHRConfigured(),
         settings,
         runs,
         nextRun: due,
+        mirrorRefresh,
         mirror,
       });
     } catch (error) {

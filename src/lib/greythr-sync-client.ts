@@ -28,6 +28,8 @@ export interface SyncReport {
   settings: GreytHRSyncSettings;
   runs: GreytHRSyncRun[];
   nextRun: { due: boolean; reason: string };
+  /** Whether the stored roster needs one full rebuild before incremental sync is trustworthy. */
+  mirrorRefresh: { force: boolean; reason: string | null };
   /**
    * What the mirror holds right now, as opposed to what the last run did.
    *
@@ -123,6 +125,11 @@ export interface LinkableEmployeeList {
    * still missing most of the workforce, because incremental runs only return records that changed.
    */
   baselineCompletedAt: string | null;
+  /** Derivation version used for the current full mirror. */
+  mirrorVersion: number;
+  /** True when unchanged employees still need a full pass (for example after a status-rule fix). */
+  mirrorRefreshRequired: boolean;
+  mirrorRefreshReason: string | null;
 }
 
 /** Active employees who do not already have a platform login. */

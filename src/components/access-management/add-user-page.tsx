@@ -28,6 +28,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
 import { actorFromUser, canAssignAccess } from '@/lib/access-control-service';
+import { canCreateUser } from '@/lib/access-control';
 import { AddUserForm } from './add-user-form';
 
 const DEFAULT_RETURN = '/settings/access-management';
@@ -55,12 +56,12 @@ export function AddUserPage() {
   /**
    * Creating a user is the same authority the drawer required, checked the same way.
    *
-   * `canAssignAccess` rather than a bare permission check, because this screen also assigns roles on
-   * the way in — and the access-management gate accepts the User Management + Role Management pair
-   * that existing administrators already hold.
+   * This screen performs two distinct privileged operations: creating the login and assigning its
+   * additive access. Requiring both prevents a role-only administrator from minting accounts, and
+   * prevents a user-only administrator from assigning scoped access on the way in.
    */
   const allowed = useMemo(
-    () => canAssignAccess(can) || can('Add', 'Settings.User Management'),
+    () => canCreateUser(can) && canAssignAccess(can),
     [can],
   );
 

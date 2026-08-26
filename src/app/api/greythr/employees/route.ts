@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getFirebaseAdminFirestore } from '@/lib/firebase-admin';
-import { accessErrorResponse, authenticateAccess, requireAccess } from '@/lib/access-control-server';
+import {
+  AccessDeniedError,
+  accessErrorResponse,
+  authenticateAccess,
+} from '@/lib/access-control-server';
+import { canUseEmployeePicker, checkerFor } from '@/lib/access-control';
 import {
   buildCategoryIdMaps,
   buildSyncedEmployee,
@@ -13,6 +18,7 @@ import {
   normalizeCategories,
   offerExclusionReason,
   resolveAllCategoriesAt,
+  shouldForceFullResync,
   toLinkableEmployee,
   todayIso,
   type LinkableEmployee,
@@ -81,8 +87,14 @@ function resolveLink(
 export async function GET(request: Request) {
   try {
     const context = await authenticateAccess(request);
-    // Reading the employee directory is the same permission the Employee Management screens need.
-    requireAccess(context, 'Settings.Employee Management', 'View');
+    // This directory is used in two legitimate places: Employee Management and Add User. Requiring
+    // only the former made the picker look empty for administrators who could add users but had no
+    // HR-module permission.
+    if (!canUseEmployeePicker(checkerFor(context.access))) {
+      throw new AccessDeniedError(
+        'Viewing Employee Management or adding users is required to open the employee picker.',
+      );
+    }
 
     const db = getFirebaseAdminFirestore();
     const url = new URL(request.url);
@@ -155,6 +167,7 @@ export async function GET(request: Request) {
     const { index: byEmail } = indexUsersByEmail(users);
     const { index: byEmployeeId } = indexUsersByEmployeeId(users);
     const userNames = new Map(users.map((user) => [user.id, user.name]));
+    const mirrorRefresh = shouldForceFullResync(settings);
 
     /**
      * Real employee records only.
@@ -228,6 +241,9 @@ export async function GET(request: Request) {
        * *and* incomplete, and reporting only freshness makes it look fine.
        */
       baselineCompletedAt: settings.baselineCompletedAt ?? null,
+      mirrorVersion: settings.mirrorVersion ?? 0,
+      mirrorRefreshRequired: mirrorRefresh.force,
+      mirrorRefreshReason: mirrorRefresh.reason,
       source: 'mirror',
     });
   } catch (error) {

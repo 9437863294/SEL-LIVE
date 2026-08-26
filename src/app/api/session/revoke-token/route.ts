@@ -1,50 +1,39 @@
-/**
- * POST /api/session/revoke-token
- *
- * Revokes all Firebase Auth refresh tokens for a given user.
- * Called by an administrator after marking a session as inactive in Firestore,
- * ensuring the user cannot silently refresh their auth token even if their
- * browser tab was closed when the termination happened.
- *
- * Required env vars:
- *   FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY
- */
+/** Revoke Firebase refresh tokens for the caller or for a session-management administrator. */
 
 import { NextResponse } from 'next/server';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
+import {
+  AccessDeniedError,
+  accessErrorResponse,
+  authenticateAccess,
+} from '@/lib/access-control-server';
+import { checkerFor } from '@/lib/access-control';
+import { getFirebaseAdminAuth } from '@/lib/firebase-admin';
 
-function getAdminAuth() {
-  if (!getApps().length) {
-    initializeApp({
-      credential: cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      }),
-    });
-  }
-  return getAuth();
-}
+export const runtime = 'nodejs';
 
 export async function POST(request: Request) {
   try {
+    const context = await authenticateAccess(request);
     const body = await request.json().catch(() => ({}));
-    const { userId } = body as { userId?: string };
+    const userId = typeof body?.userId === 'string' ? body.userId.trim() : '';
 
-    if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+    if (!userId) {
       return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
 
-    const auth = getAdminAuth();
-    await auth.revokeRefreshTokens(userId.trim());
+    const isSelf = userId === context.userId;
+    const can = checkerFor(context.access);
+    const canManageSessions =
+      can('View', 'Settings.Session Management') ||
+      can('Delete', 'Settings.Session Management');
+    if (!isSelf && !canManageSessions) {
+      throw new AccessDeniedError('Session Management permission is required to revoke another user.');
+    }
 
+    await getFirebaseAdminAuth().revokeRefreshTokens(userId);
     return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error('[revoke-token] Failed:', err);
-    return NextResponse.json(
-      { error: 'Failed to revoke authentication tokens' },
-      { status: 500 }
-    );
+  } catch (error) {
+    const { message, status } = accessErrorResponse(error);
+    return NextResponse.json({ error: message }, { status });
   }
 }

@@ -37,7 +37,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { app } from '@/lib/firebase';
 import type { Department, Project, Role, User } from '@/lib/types';
 import { createUserWithAccess, type AccessActor } from '@/lib/access-control-service';
 import type { LinkableEmployeeRow } from '@/lib/greythr-sync-client';
@@ -214,7 +213,6 @@ export function AddUserForm({
           employeeNo: form.employeeNo || undefined,
         },
         actor,
-        { apiKey: String(app.options.apiKey), roles },
       );
 
       toast({

@@ -78,23 +78,31 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
   /**
    * Show employees greytHR says have left.
    *
-   * **On** by default, which is a reversal. The original reasoning was sound — offering a relieved
-   * employee invites creating an account for somebody who has gone — but it assumed the employment
-   * state was trustworthy, and on real data it is not: 181 of 182 records were classified as departed,
-   * so the rule hid essentially the entire directory and the screen became unusable.
+   * **Off** by default for a healthy mirror. If a stale mirror has zero working rows, the component
+   * turns this on once as a recovery view: every non-working row stays visibly annotated while the
+   * versioned full rebuild repairs the directory.
    *
    * A filter that is right 99% of the time should hide things. A filter that is wrong 99% of the time
    * should annotate them. Every non-working row carries its state and the date behind it in red, so
    * nothing is concealed and nothing is misrepresented — and the toggle still narrows to the
    * confidently-working set for whoever wants that.
    */
-  const [includeExited, setIncludeExited] = useState(true);
+  const [includeExited, setIncludeExited] = useState(false);
+  const initialFilterApplied = React.useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      setList(await fetchLinkableEmployees());
+      const next = await fetchLinkableEmployees();
+      setList(next);
+      // A stale pre-fix mirror can contain no working rows at all. Keep the safe active-only default
+      // for healthy data, but do not strand an administrator behind an empty list while the forced
+      // full rebuild is still pending.
+      if (!initialFilterApplied.current) {
+        setIncludeExited(next.employees.length === 0 && next.otherEmployees.length > 0);
+        initialFilterApplied.current = true;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the employee list.');
     } finally {
@@ -308,13 +316,11 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
         the active majority is simply absent. Nothing above distinguishes that from "this employee
         genuinely isn't in greytHR", so it has to be said outright.
       */}
-      {list && list.baselineCompletedAt === null && (
+      {list?.mirrorRefreshRequired && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <p>
-            <strong>This list is incomplete.</strong> greytHR has never completed a full sync here, so
-            only employees whose records changed recently are present — which skews to leavers and
-            people on notice. Run{' '}
+            <strong>This list needs a full rebuild.</strong> {list.mirrorRefreshReason} Run{' '}
             <Link href="/employee/sync" className="underline">
               Full resync
             </Link>{' '}

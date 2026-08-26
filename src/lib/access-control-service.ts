@@ -70,6 +70,7 @@ import {
   type UserAccessGrant,
 } from './access-control';
 import type { Role, User } from './types';
+import { createPlatformUser } from './user-management-client';
 
 export { canAssignAccess, canManageRoles, canOpenAccessManagement, canRevokeAccess };
 
@@ -1065,143 +1066,20 @@ export interface CreateUserInput {
 /**
  * Create a user without leaving the access screen (§14).
  *
- * Deliberately the same two calls User Management already makes — the Identity Toolkit REST signUp
- * (so the admin's own session is never swapped) followed by a `users/{uid}` document with exactly
- * the fields that page writes. Reusing the shape rather than the code keeps the two screens
- * producing identical user records; a user created here is indistinguishable from one created
- * there, which is what makes it safe to keep both.
+ * Delegates to the same protected API User Management uses. The server verifies Add User and access
+ * assignment permissions, creates Firebase Auth without swapping the administrator's session, and
+ * commits the profile plus grant as one recoverable workflow.
  *
  * The extra fields this screen collects go into the *grant* document, never onto the user record,
  * so nothing downstream that reads `users` sees a shape it does not expect.
  */
 export async function createUserWithAccess(
   input: CreateUserInput,
-  actor: AccessActor,
-  options: { apiKey: string; roles: Role[] },
-): Promise<{ userId: string; user: User }> {
-  const email = input.email.trim().toLowerCase();
-  const name = input.name.trim();
-  if (!name || !email || !input.password || !input.baseRole) {
-    throw new Error('Name, email, password and base role are required.');
-  }
-
-  const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${options.apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: input.password, displayName: name, returnSecureToken: false }),
-    },
-  );
-  const data = await response.json();
-  if (!response.ok) {
-    const code: string = data?.error?.message ?? '';
-    const friendly: Record<string, string> = {
-      EMAIL_EXISTS: 'An account with this email already exists.',
-      INVALID_EMAIL: 'Invalid email address.',
-      OPERATION_NOT_ALLOWED: 'Email/password accounts are not enabled.',
-    };
-    throw new Error(
-      friendly[code] ??
-        (code.startsWith('WEAK_PASSWORD') ? 'Password must be at least 6 characters.' : code || 'Failed to create user.'),
-    );
-  }
-
-  const userId: string = data.localId;
-  const user: User = {
-    id: userId,
-    name,
-    email,
-    mobile: input.mobile || 'N/A',
-    role: input.baseRole,
-    status: input.status ?? 'Active',
-  };
-
-  await setDoc(
-    doc(db, ACCESS_COLLECTIONS.users, userId),
-    stripUndefined({
-      name: user.name,
-      email: user.email,
-      mobile: user.mobile,
-      role: user.role,
-      status: user.status,
-      // Only present when created from a greytHR employee; every other field is exactly what
-      // User Management writes, so the two screens produce identical records.
-      employeeId: input.employeeId,
-      employeeNo: input.employeeNo,
-      // The provenance the linking console reads. `manual` because an administrator chose this
-      // employee from the picker — it outranks anything the reconciliation would later infer, and
-      // without it the console would report every picker-created account as an ID match.
-      greytHR: input.employeeId
-        ? {
-            linked: true,
-            employeeId: input.employeeId,
-            employeeNo: input.employeeNo ?? '',
-            method: 'manual' as const,
-            linkedAt: new Date().toISOString(),
-            linkedBy: actor.userId,
-          }
-        : undefined,
-    }),
-  );
-
-  // Additional context lives on the grant, so `users` keeps the shape every other screen reads.
-  const grant = emptyUserAccessGrant(userId);
-  grant.departmentIds = input.departmentIds ?? [];
-  grant.designations = input.designations ?? [];
-  grant.createdBy = actor.userId;
-  grant.createdByName = actor.userName;
-  grant.createdAt = new Date().toISOString();
-
-  const withRoles = applyAssignmentToGrant(
-    grant,
-    { roleIds: input.additionalRoleIds ?? [], projectIds: input.projectIds ?? [] },
-    { roles: options.roles as RoleLike[], actor: { userId: actor.userId, userName: actor.userName } },
-  );
-
-  await setDoc(
-    doc(db, ACCESS_COLLECTIONS.grants, userId),
-    stripUndefined({
-      ...withRoles,
-      reportingManagerId: input.reportingManagerId ?? null,
-      location: input.location ?? null,
-    }),
-  );
-
-  await writeAuditEntries([
-    {
-      targetUserId: userId,
-      targetUserName: name,
-      action: 'Create User',
-      roleNames: [input.baseRole, ...withRoles.additionalRoles.map((entry) => entry.roleName)],
-      permissionsAdded: [],
-      permissionsRemoved: [],
-      permissionsSkipped: [],
-      sourceKind: 'Base Role',
-      changedBy: actor.userId,
-      changedByName: actor.userName,
-      changedAt: new Date().toISOString(),
-      organizationId: actor.organizationId ?? null,
-    },
-  ]);
-
-  void logUserActivity({
-    userId: actor.userId,
-    userName: actor.userName,
-    module: 'User Management',
-    action: 'Create User',
-    recordId: userId,
-    recordRef: name,
-    details: { createdUserName: name, createdUserEmail: email, assignedRole: input.baseRole, via: 'Access Management' },
+  _actor: AccessActor,
+): Promise<{ userId: string; user: User; welcomeEmailSent: boolean }> {
+  const result = await createPlatformUser({
+    ...input,
+    createAccessGrant: true,
   });
-
-  // Same non-blocking welcome mail User Management sends, so a user created here still gets
-  // their credentials.
-  void fetch('/api/send-welcome-email', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, password: input.password, role: input.baseRole }),
-  }).catch(() => {});
-
-  return { userId, user };
+  return { userId: result.user.id, ...result };
 }

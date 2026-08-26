@@ -1,7 +1,17 @@
 import { sendEmail } from '@/lib/mail';
+import {
+  AccessDeniedError,
+  accessErrorResponse,
+  authenticateAccess,
+} from '@/lib/access-control-server';
+import { canCreateUser, checkerFor } from '@/lib/access-control';
 
 export async function POST(req: Request) {
   try {
+    const context = await authenticateAccess(req);
+    if (!canCreateUser(checkerFor(context.access))) {
+      throw new AccessDeniedError('Add permission on Settings.User Management is required.');
+    }
     const { name, email, password, role } = await req.json();
 
     if (!name || !email || !password) {
@@ -21,9 +31,10 @@ export async function POST(req: Request) {
     }
 
     return Response.json({ ok: true, messageId: result.messageId });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('send-welcome-email error:', err);
-    return Response.json({ ok: false, error: err.message }, { status: 500 });
+    const { message, status } = accessErrorResponse(err);
+    return Response.json({ ok: false, error: message }, { status });
   }
 }
 

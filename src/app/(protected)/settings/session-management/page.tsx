@@ -33,7 +33,7 @@ import {
   Wifi,
   X,
 } from 'lucide-react';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
@@ -462,13 +462,20 @@ export default function SessionManagementPage() {
       // tab was closed or offline when the Firestore change happened.
       // We fire-and-forget with a catch so a revocation failure doesn't block
       // the admin's workflow — Firestore termination is the primary mechanism.
-      fetch('/api/session/revoke-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: confirmSession.userId }),
-      }).catch((err) => {
-        console.warn('[session-management] Token revocation request failed (non-blocking):', err);
-      });
+      const firebaseUser = auth.currentUser;
+      if (firebaseUser) {
+        const idToken = await firebaseUser.getIdToken();
+        fetch('/api/session/revoke-token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify({ userId: confirmSession.userId }),
+        }).catch((err) => {
+          console.warn('[session-management] Token revocation request failed (non-blocking):', err);
+        });
+      }
 
       toast({
         title: 'Session signed out',

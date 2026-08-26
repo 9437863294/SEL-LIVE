@@ -1848,6 +1848,16 @@ export const isGreytHRTimestamp = (value: string | null | undefined): boolean =>
  * re-reading is free of consequence. Losing a resignation is not.
  */
 /**
+ * Version of the derived employee mirror, not the greytHR API.
+ *
+ * Increment this whenever an unchanged upstream employee would produce a materially different
+ * stored record. An incremental sync will never fetch that employee, so a version change is the
+ * signal that one full rebuild is required. Version 2 introduces the corrected employment-state
+ * derivation (numeric `status` is an employment type and placeholder exit dates are ignored).
+ */
+export const GREYTHR_MIRROR_VERSION = 2;
+
+/**
  * Whether this run must fetch everything, whatever the watermark says.
  *
  * An incremental run maintains a complete mirror; it cannot build one. So a watermark is only
@@ -1855,12 +1865,13 @@ export const isGreytHRTimestamp = (value: string | null | undefined): boolean =>
  * that was incomplete when the first run happened to succeed stays incomplete forever, and the only
  * employees that trickle in are the ones whose records change: leavers and people on notice.
  *
- * Self-healing by design. Any installation without `baselineCompletedAt` — which is every
- * installation predating the field — rebuilds one on its next run and then goes incremental.
+ * Self-healing by design. Any installation without `baselineCompletedAt`, or with an older mirror
+ * version, rebuilds on its next run and then goes incremental.
  */
 export function shouldForceFullResync(settings: {
   baselineCompletedAt?: string | null;
   lastSuccessfulRunAt?: string | null;
+  mirrorVersion?: number | null;
 }): { force: boolean; reason: string | null } {
   if (!settings.baselineCompletedAt) {
     return {
@@ -1871,6 +1882,15 @@ export function shouldForceFullResync(settings: {
         : 'First run — fetching every employee to establish the baseline.',
     };
   }
+  if (settings.mirrorVersion !== GREYTHR_MIRROR_VERSION) {
+    return {
+      force: true,
+      reason:
+        `Employee mirror version ${settings.mirrorVersion ?? 0} is out of date; version ` +
+        `${GREYTHR_MIRROR_VERSION} rebuilds every employee with the corrected active/employment-state rules.`,
+    };
+  }
+
   return { force: false, reason: null };
 }
 
@@ -1936,6 +1956,8 @@ export interface GreytHRSyncSettings {
    * you do not want, and the active majority never arrives.
    */
   baselineCompletedAt?: string | null;
+  /** Version of the derivation used to build the current full baseline. */
+  mirrorVersion?: number;
   lastRunAt?: string | null;
   lastRunId?: string | null;
   updatedAt?: string;
@@ -1950,6 +1972,7 @@ export const DEFAULT_SYNC_SETTINGS: GreytHRSyncSettings = {
   detailGroups: DEFAULT_DETAIL_GROUPS,
   lastSuccessfulRunAt: null,
   baselineCompletedAt: null,
+  mirrorVersion: 0,
   lastRunAt: null,
   lastRunId: null,
 };
@@ -2454,6 +2477,10 @@ export function normalizeSyncSettings(
     // Absent on every installation that predates this field, which is correct: none of them has a
     // baseline this code can vouch for, so the next run rebuilds one.
     baselineCompletedAt: raw?.baselineCompletedAt ?? null,
+    mirrorVersion:
+      Number.isInteger(raw?.mirrorVersion) && Number(raw?.mirrorVersion) >= 0
+        ? Number(raw?.mirrorVersion)
+        : 0,
     lastRunAt: raw?.lastRunAt ?? null,
     lastRunId: raw?.lastRunId ?? null,
     updatedAt: raw?.updatedAt,

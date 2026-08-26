@@ -1514,6 +1514,21 @@ export function canAssignAccess(can: PermissionChecker): boolean {
   return can('Edit', 'Settings.User Management') && can('Edit', 'Settings.Role Management');
 }
 
+/** Creating a Firebase login is a distinct capability from editing an existing profile. */
+export function canCreateUser(can: PermissionChecker): boolean {
+  return can('Add', 'Settings.User Management');
+}
+
+/**
+ * The employee picker is shared by Employee Management and Add User.
+ *
+ * Requiring Employee Management unconditionally made the picker fail for a legitimate user
+ * administrator who could create accounts but was not allowed into the HR module.
+ */
+export function canUseEmployeePicker(can: PermissionChecker): boolean {
+  return can('View', 'Settings.Employee Management') || canCreateUser(can);
+}
+
 export function canRevokeAccess(can: PermissionChecker): boolean {
   if (can('Revoke', 'Settings.Access Management')) return true;
   return can('Edit', 'Settings.User Management') && can('Edit', 'Settings.Role Management');
