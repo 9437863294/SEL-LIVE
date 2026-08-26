@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { ChevronDown, ChevronRight, Download, Filter, Loader2, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Filter, Loader2, Paperclip, Users } from 'lucide-react';
 import ExcelJS from 'exceljs';
 
 const MODULE = 'Site Account Statement';
@@ -273,25 +273,71 @@ export default function PersonExpensePage() {
                             </td>
                           </tr>
 
-                          {isExpanded && cat.rows.map(e => (
-                            <tr key={e.id} className="border-b bg-slate-50/60 hover:bg-muted/20">
-                              <td className="pl-9 pr-4 py-1.5 text-xs text-muted-foreground" colSpan={2}>
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="text-slate-600">{e.expenseDate} &middot; {e.projectName}</span>
-                                  {(e.vendorPartyName || e.billNo) && (
-                                    <span className="text-[11px] text-muted-foreground">
-                                      {e.vendorPartyName || '—'}{e.billNo ? ` · Bill #${e.billNo}` : ''}
-                                    </span>
-                                  )}
-                                  {e.remarks && <span className="text-[11px] text-muted-foreground italic">{e.remarks}</span>}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/50">
+                              <td colSpan={4} className="px-4 py-2.5">
+                                <div className="overflow-x-auto rounded-lg border bg-white">
+                                  <table className="w-full text-xs min-w-[760px]">
+                                    <thead>
+                                      <tr className="border-b bg-slate-50">
+                                        <th className="px-3 py-1.5 text-left font-medium whitespace-nowrap">Date</th>
+                                        <th className="px-3 py-1.5 text-left font-medium">Project</th>
+                                        <th className="px-3 py-1.5 text-left font-medium">Sub-Category</th>
+                                        <th className="px-3 py-1.5 text-left font-medium">Narration</th>
+                                        <th className="px-3 py-1.5 text-left font-medium">Vendor / Party</th>
+                                        <th className="px-3 py-1.5 text-left font-medium">Bill No.</th>
+                                        <th className="px-3 py-1.5 text-left font-medium">Mode</th>
+                                        <th className="px-3 py-1.5 text-left font-medium">Remarks</th>
+                                        <th className="px-3 py-1.5 text-right font-medium">Amount</th>
+                                        <th className="px-3 py-1.5 text-center font-medium">Docs</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {cat.rows.map(e => (
+                                        <tr key={e.id} className="border-b last:border-0 hover:bg-muted/20">
+                                          <td className="px-3 py-1.5 whitespace-nowrap text-slate-600">{e.expenseDate}</td>
+                                          <td className="px-3 py-1.5 max-w-[140px] truncate" title={e.projectName}>{e.projectName}</td>
+                                          <td className="px-3 py-1.5 text-muted-foreground">{e.expenseSubCategory || '—'}</td>
+                                          <td className="px-3 py-1.5 max-w-[160px] truncate text-muted-foreground" title={e.narration || ''}>{e.narration || '—'}</td>
+                                          <td className="px-3 py-1.5 max-w-[130px] truncate" title={e.vendorPartyName || ''}>{e.vendorPartyName || '—'}</td>
+                                          <td className="px-3 py-1.5 text-muted-foreground">{e.billNo || '—'}</td>
+                                          <td className="px-3 py-1.5"><Badge variant="secondary" className="text-[10px]">{e.paymentMode}</Badge></td>
+                                          <td className="px-3 py-1.5 max-w-[180px] truncate text-muted-foreground" title={e.remarks || ''}>{e.remarks || '—'}</td>
+                                          <td className="px-3 py-1.5 text-right font-medium text-rose-700 whitespace-nowrap">{formatINR(e.expenseAmount)}</td>
+                                          <td className="px-3 py-1.5 text-center">
+                                            {e.attachments && e.attachments.length > 0 ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                {e.attachments.map((att, i) => (
+                                                  <a
+                                                    key={i}
+                                                    href={att.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    title={att.name}
+                                                    className="text-blue-600 hover:text-blue-800"
+                                                    onClick={ev => ev.stopPropagation()}
+                                                  >
+                                                    <Paperclip className="h-3 w-3" />
+                                                  </a>
+                                                ))}
+                                              </div>
+                                            ) : <span className="text-muted-foreground">—</span>}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr className="bg-muted/20 font-semibold">
+                                        <td colSpan={8} className="px-3 py-1.5 text-right">Subtotal</td>
+                                        <td className="px-3 py-1.5 text-right text-rose-700 whitespace-nowrap">{formatINR(cat.total)}</td>
+                                        <td />
+                                      </tr>
+                                    </tfoot>
+                                  </table>
                                 </div>
                               </td>
-                              <td className="px-4 py-1.5 text-right text-xs font-medium text-rose-700">{formatINR(e.expenseAmount)}</td>
-                              <td className="px-4 py-1.5">
-                                <Badge variant="secondary" className="text-[10px]">{e.paymentMode}</Badge>
-                              </td>
                             </tr>
-                          ))}
+                          )}
                         </Fragment>
                       );
                     })}
