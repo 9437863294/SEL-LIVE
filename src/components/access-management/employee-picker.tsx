@@ -393,6 +393,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
                     {!isWorkingState(employee.employmentState) && (
                       <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">
                         greytHR says: {employee.employmentState}
+                        {employee.exitDate ? ` · ${employee.exitDate}` : ''}
                       </Badge>
                     )}
                     {!employee.email && (
@@ -406,6 +407,14 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
                       .filter(Boolean)
                       .join(' · ') || 'No further details in greytHR'}
                   </span>
+                  {/* The sync's own sentence. It names the date and the field that produced the
+                      classification, which is the difference between "this person left" and "this
+                      record has a placeholder in it". */}
+                  {!isWorkingState(employee.employmentState) && employee.employmentStateReason && (
+                    <span className="mt-0.5 block truncate text-[11px] text-rose-600">
+                      {employee.employmentStateReason}
+                    </span>
+                  )}
                 </span>
                 {resolvingId === employee.employeeId && (
                   <Loader2 className="mt-1 h-4 w-4 shrink-0 animate-spin text-indigo-600" />

@@ -2629,6 +2629,15 @@ export interface LinkableEmployee {
   employmentType: string;
   employmentState: EmploymentState;
   dateOfJoin: string | null;
+  /**
+   * Why the mirror thinks they are in that state, and the date behind it.
+   *
+   * Carried to the picker specifically so an exclusion can be argued with. "154 excluded (relieved)"
+   * reads as a fact about the workforce; "Last working day was 1900-01-01" reads as the data problem
+   * it actually is. Without this the only way to tell the two apart was to open Firestore.
+   */
+  employmentStateReason: string;
+  exitDate: string | null;
   /** The user this employee is already linked to, if any. */
   linkedUserId: string | null;
   /** How the link was established, for the picker to explain itself. */
@@ -2656,6 +2665,10 @@ export function toLinkableEmployee(
     employmentType: employee.employmentType ?? '',
     employmentState: (employee.employmentState as EmploymentState) ?? 'Unknown',
     dateOfJoin: employee.dateOfJoin ?? null,
+    employmentStateReason: employee.employmentStateReason ?? '',
+    // Falls back to `leavingDate`: records written before `exitDate` existed only have the former,
+    // and it is the value the old derivation actually keyed on.
+    exitDate: employee.exitDate ?? employee.leavingDate ?? null,
     linkedUserId: link?.userId ?? null,
     linkedBy: link?.via ?? null,
   };

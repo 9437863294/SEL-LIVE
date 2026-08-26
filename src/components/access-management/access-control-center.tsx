@@ -33,6 +33,7 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
+  ShieldMinus,
   ShieldPlus,
   Sparkles,
   UserCog,
@@ -74,8 +75,11 @@ import {
   canManageRoles,
   canOpenAccessManagement,
   canRevokeAccess,
+  revokeAccess,
 } from '@/lib/access-control-service';
 import { AssignAccess } from './assign-access';
+import { RemovalPreviewDialog } from './assignment-preview';
+import { RemoveAccessDialog, type RemoveAccessSelection } from './remove-access';
 import { RoleLibrary } from './role-library';
 import { EffectiveAccessViewer } from './effective-access';
 import { PermissionMatrixView } from './permission-matrix';
@@ -252,7 +256,13 @@ export function AccessControlCenter() {
           </TabsContent>
 
           <TabsContent value="users" className="mt-3">
-            <UsersTab state={state} actor={actor} canAssign={canAssign} onAssign={openAssignWith} />
+            <UsersTab
+              state={state}
+              actor={actor}
+              canAssign={canAssign}
+              canRevoke={canRevoke}
+              onAssign={openAssignWith}
+            />
           </TabsContent>
 
           <TabsContent value="roles" className="mt-3">
@@ -625,17 +635,21 @@ function UsersTab({
   state,
   actor,
   canAssign,
+  canRevoke,
   onAssign,
 }: {
   state: ReturnType<typeof useAccessDirectory>;
   actor: NonNullable<ReturnType<typeof actorFromUser>>;
   canAssign: boolean;
+  canRevoke: boolean;
   onAssign: (seed: { userIds?: string[]; roleIds?: string[]; templateIds?: string[] }) => void;
 }) {
   const { toast } = useToast();
   const { directory, accessByUser, departments, projects, designations, employees } = state;
   const [filter, setFilter] = useState<UserFilterState>({ ...EMPTY_USER_FILTER, status: 'all' });
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removalSelection, setRemovalSelection] = useState<RemoveAccessSelection | null>(null);
 
   const context: UserDirectoryContext = useMemo(
     () => ({
@@ -652,6 +666,17 @@ function UsersTab({
   );
 
   const filtered = useMemo(() => filterUsers(context, filter), [context, filter]);
+
+  /**
+   * Who a removal applies to: the ticked users, or everyone matching the filter if none are ticked.
+   *
+   * Same rule the assign button uses, so the two read consistently. Deliberately *not* "all users" —
+   * a destructive default of the entire directory is the wrong shape of mistake to make easy.
+   */
+  const targets = useMemo(
+    () => (selectedIds.length ? filtered.filter((user) => selectedIds.includes(user.id)) : filtered),
+    [filtered, selectedIds],
+  );
 
   const rows = useMemo(
     () =>
@@ -785,6 +810,26 @@ function UsersTab({
                   </Link>
                 </Button>
               )}
+              {/*
+                Revocation sits beside assignment deliberately.
+
+                Granting was bulk and prominent; removing was single-user and reachable only from a
+                profile page — so a permission given to forty people could only be taken back forty
+                times. An operation whose inverse is forty times harder to find is an operation
+                administrators avoid, which is worse for access hygiene than the button being here.
+              */}
+              {canRevoke && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-destructive/30 text-destructive hover:bg-destructive/5"
+                  disabled={!targets.length}
+                  onClick={() => setRemoveOpen(true)}
+                >
+                  <ShieldMinus className="mr-1.5 h-4 w-4" />
+                  Remove access from {targets.length}
+                </Button>
+              )}
               {canAssign && (
                 <Button
                   size="sm"
@@ -818,6 +863,49 @@ function UsersTab({
         </ScrollArea>
       )}
 
+      {/* Step 1: what to remove. */}
+      <RemoveAccessDialog
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        users={targets}
+        grants={directory.grants}
+        projectName={(id) => projects.find((project) => project.id === id)?.projectName ?? id}
+        onContinue={setRemovalSelection}
+      />
+
+      {/* Step 2: what it costs, and the confirmation. The same dialog the profile uses. */}
+      <RemovalPreviewDialog
+        open={!!removalSelection}
+        onOpenChange={(open) => !open && setRemovalSelection(null)}
+        users={targets}
+        roleIdsToRemove={removalSelection?.roleIds ?? []}
+        projectIdsToRemove={removalSelection?.projectIds ?? []}
+        directPermissionsToRemove={removalSelection?.directPermissions}
+        roles={directory.roles}
+        grants={directory.grants}
+        scopeGrants={directory.scopeGrants}
+        onConfirm={async (reason) => {
+          if (!removalSelection) return;
+          await revokeAccess({
+            users: targets,
+            request: {
+              roleIds: removalSelection.roleIds,
+              projectIds: removalSelection.projectIds,
+              directPermissions: removalSelection.directPermissions,
+            },
+            directory,
+            actor,
+            reason,
+            label: `Remove additional access from ${targets.length} user(s)`,
+          });
+          setRemovalSelection(null);
+          await state.refresh();
+          toast({
+            title: 'Access removed',
+            description: `${targets.length} user(s) updated. Base roles untouched, and anything another source still grants is retained.`,
+          });
+        }}
+      />
     </div>
   );
 }

@@ -92,10 +92,21 @@ export const ACCESS_COLLECTIONS = {
   roles: 'roles',
 } as const;
 
-/** Firestore rejects `undefined`; grants are assembled in memory and may carry optional fields. */
+/**
+ * Firestore rejects `undefined`; grants are assembled in memory and may carry optional fields.
+ *
+ * Only **plain** objects are walked. That exclusion is load-bearing rather than defensive: this used
+ * to recurse into anything object-shaped, and `serverTimestamp()` is a class instance whose single
+ * enumerable property is `_methodName`. Rebuilding it as a plain object produced
+ * `{ _methodName: 'serverTimestamp' }` — which Firestore accepts without complaint and stores as a
+ * nested map, so every grant document carried a `syncedAt` that was a small object instead of a time.
+ * A sentinel has to arrive at `batch.set` as the instance Firestore handed out.
+ *
+ * `Date` was already excluded by name, which is the same problem noticed once and fixed narrowly.
+ */
 const stripUndefined = <T>(value: T): T => {
   if (Array.isArray(value)) return value.map(stripUndefined) as unknown as T;
-  if (value && typeof value === 'object' && !(value instanceof Date)) {
+  if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
       if (item === undefined) continue;

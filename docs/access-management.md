@@ -159,6 +159,49 @@ The registry itself — modules, pages, actions — is derived from
 [`permissionModules`](../src/lib/permissions.ts) by `flattenPermissionRegistry`. **A new module
 registers itself by existing in that file.** Nothing else to configure.
 
+### Revocation is bulk, like assignment
+
+Reported as "once I gave a direct permission I can't revoke it". The removal *logic* was correct —
+`removeAccessFromGrant` handles `directPermissions` and there are now five tests proving grant-then-
+revoke round trips, including partial action removal and idempotency. The problem was reach:
+
+`RemovalPreviewDialog` was written for bulk from the start — it maps over an array of users and its own
+copy says "N users will lose nothing" — but it was only ever wired to the **single-user profile**, one
+grant row at a time. So a permission handed to forty people could only be taken back forty times, from
+forty pages, by an administrator who knew that route existed. Assignment, meanwhile, was bulk and on
+the front screen.
+
+An operation whose inverse is forty times harder to find is an operation people avoid, which is worse
+for access hygiene than the button being prominent. So the Users tab now has **Remove access from N**
+beside Assign, running the same two-step flow: pick the sources, then see the impact.
+
+`RemoveAccessDialog` computes the options as the **union of what the selected users actually hold**,
+with a "held by 12 of 40" count against each. Two details worth keeping:
+
+- **Direct permissions are listed per action, not per resource.** Granting happens a resource at a
+  time; revoking often does not — removing `Edit` while leaving `View` is the common case and a
+  resource-level list cannot express it.
+- **Targets default to the filtered set, not the whole directory.** Same rule the assign button uses.
+  A destructive default of every user is the wrong mistake to make easy.
+
+Base roles are deliberately absent from the list, because this layer never touches them — nothing here
+can reduce somebody below their primary role.
+
+#### The thing that makes a correct removal look broken
+
+If a direct permission is *also* granted by the base role, removing it changes nothing the user can do.
+The grant entry goes; the permission stays. `permissionsRetainedByOtherSources` exists for exactly
+this, and the preview reports it as "retained elsewhere" rather than showing a silent no-op — otherwise
+the honest conclusion is "revocation is broken".
+
+#### A separate bug found in the same write path
+
+`stripUndefined` recursed into anything object-shaped. `serverTimestamp()` is a class instance whose
+one enumerable property is `_methodName`, so it was being rebuilt as a plain object and Firestore
+stored `syncedAt: { _methodName: 'serverTimestamp' }` — a nested map instead of a time, accepted
+without complaint. It now walks only plain objects. (`Date` had already been excluded by name: the same
+problem noticed once and fixed too narrowly.)
+
 ### Add user is a page, not a dialog
 
 `/settings/access-management/users/new`, entered from the Users tab and from Assign Access.

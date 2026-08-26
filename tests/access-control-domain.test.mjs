@@ -41,6 +41,7 @@ import {
   previewAssignment,
   registryActions,
   registryPermissionCount,
+  emptyUserAccessGrant,
   removeAccessFromGrant,
   resolveEffectiveAccess,
   scopePermissionMap,
@@ -1085,4 +1086,121 @@ test('a user granted access administration through an additional role passes the
   assert.ok(canRevokeAccess(can));
   // And their original access is intact.
   assert.ok(hasPermission(access, 'HR & Recruitment.Candidates', 'Add'));
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Revoking direct permissions — the reported "I can't take it back" case
+ * ---------------------------------------------------------------------------------------------- */
+
+test('a direct permission can be granted and then fully removed', () => {
+  const actor = { userId: 'admin', userName: 'Admin' };
+  const user = { id: 'u1', name: 'A', role: 'Site Engineer', status: 'Active' };
+  const roles = [{ id: 'r-se', name: 'Site Engineer', permissions: { 'HR.View': ['View'] } }];
+
+  const granted = applyAssignmentToGrant(
+    emptyUserAccessGrant('u1'),
+    { directPermissions: { 'Inventory.Stock': ['View', 'Edit'] } },
+    { roles, actor },
+  );
+  assert.equal(granted.directPermissions.length, 1);
+
+  const entry = granted.directPermissions[0];
+  const out = removeAccessFromGrant(
+    user,
+    granted,
+    { directPermissions: { [entry.resource]: entry.actions } },
+    { roles, actor },
+  );
+
+  assert.deepEqual(out.grant.directPermissions, [], 'the entry is gone, not emptied');
+  assert.deepEqual(out.permissionsLost.sort(), ['Inventory.Stock::Edit', 'Inventory.Stock::View']);
+  const after = resolveEffectiveAccess({ user, roles, grant: out.grant });
+  assert.deepEqual(after.permissions, { 'HR.View': ['View'] }, 'the base role survives, the direct grant does not');
+});
+
+test('one action can be removed from a direct permission while the rest stay', () => {
+  const actor = { userId: 'admin', userName: 'Admin' };
+  const user = { id: 'u1', role: 'Viewer', status: 'Active' };
+  const roles = [{ id: 'r', name: 'Viewer', permissions: {} }];
+
+  const granted = applyAssignmentToGrant(
+    emptyUserAccessGrant('u1'),
+    { directPermissions: { 'Inventory.Stock': ['View', 'Edit', 'Delete'] } },
+    { roles, actor },
+  );
+
+  const out = removeAccessFromGrant(
+    user,
+    granted,
+    { directPermissions: { 'Inventory.Stock': ['Edit'] } },
+    { roles, actor },
+  );
+
+  assert.deepEqual(out.grant.directPermissions[0].actions, ['View', 'Delete']);
+  assert.deepEqual(out.permissionsLost, ['Inventory.Stock::Edit']);
+});
+
+test('removing a direct permission the base role also grants reports it as retained, not lost', () => {
+  // The case that makes revocation look broken: the grant entry *is* removed, but the user keeps the
+  // permission because their base role confers it. The distinction has to be reported, or an
+  // administrator concludes the removal did nothing.
+  const actor = { userId: 'admin', userName: 'Admin' };
+  const user = { id: 'u1', role: 'Manager', status: 'Active' };
+  const roles = [{ id: 'r', name: 'Manager', permissions: { 'Inventory.Stock': ['View'] } }];
+
+  const granted = applyAssignmentToGrant(
+    emptyUserAccessGrant('u1'),
+    { directPermissions: { 'Inventory.Stock': ['View'] } },
+    { roles, actor },
+  );
+
+  const out = removeAccessFromGrant(
+    user,
+    granted,
+    { directPermissions: { 'Inventory.Stock': ['View'] } },
+    { roles, actor },
+  );
+
+  assert.deepEqual(out.grant.directPermissions, [], 'the grant is still removed');
+  assert.deepEqual(out.permissionsLost, [], 'but nothing is lost');
+  assert.deepEqual(out.permissionsRetainedByOtherSources, ['Inventory.Stock::View']);
+});
+
+test('removal is idempotent — revoking twice is not an error', () => {
+  const actor = { userId: 'admin', userName: 'Admin' };
+  const user = { id: 'u1', role: 'Viewer', status: 'Active' };
+  const roles = [{ id: 'r', name: 'Viewer', permissions: {} }];
+
+  const granted = applyAssignmentToGrant(
+    emptyUserAccessGrant('u1'),
+    { directPermissions: { 'Inventory.Stock': ['View'] } },
+    { roles, actor },
+  );
+  const once = removeAccessFromGrant(user, granted, { directPermissions: { 'Inventory.Stock': ['View'] } }, { roles, actor });
+  const twice = removeAccessFromGrant(user, once.grant, { directPermissions: { 'Inventory.Stock': ['View'] } }, { roles, actor });
+
+  assert.deepEqual(twice.grant.directPermissions, []);
+  assert.deepEqual(twice.permissionsLost, []);
+});
+
+test('duplicate entries for one resource are all cleaned up', () => {
+  // Two grants of the same resource at different times leave two entries; removing the resource must
+  // not leave one behind, or the permission reappears and looks unrevokable.
+  const actor = { userId: 'admin', userName: 'Admin' };
+  const user = { id: 'u1', role: 'Viewer', status: 'Active' };
+  const roles = [{ id: 'r', name: 'Viewer', permissions: {} }];
+
+  const grant = emptyUserAccessGrant('u1');
+  grant.directPermissions = [
+    { resource: 'Inventory.Stock', actions: ['View'], assignedBy: 'a', assignedAt: '2026-01-01T00:00:00.000Z' },
+    { resource: 'Inventory.Stock', actions: ['View', 'Edit'], assignedBy: 'b', assignedAt: '2026-02-01T00:00:00.000Z' },
+  ];
+
+  const out = removeAccessFromGrant(
+    user,
+    grant,
+    { directPermissions: { 'Inventory.Stock': ['View', 'Edit'] } },
+    { roles, actor },
+  );
+  assert.deepEqual(out.grant.directPermissions, []);
 });
