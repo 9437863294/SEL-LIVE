@@ -11,6 +11,9 @@ namespace NodeJS {
         FIREBASE_PROJECT_ID: string;
         FIREBASE_CLIENT_EMAIL: string;
         FIREBASE_PRIVATE_KEY: string;
+        FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS?: string;
+        GOOGLE_APPLICATION_CREDENTIALS?: string;
+        GOOGLE_CLOUD_PROJECT?: string;
         APP_BASE_URL?: string;
     }
 }

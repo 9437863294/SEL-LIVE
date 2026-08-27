@@ -1120,11 +1120,78 @@ export interface EmploymentStateInput {
  *     rule has nothing to compare against. greytHR did not exist before 2009, so an exit date in the
  *     1900s is not a record of anything.
  */
+export function isPlaceholderExitDate(
+  date: string | null | undefined,
+  dateOfJoin?: string | null,
+): boolean {
+  if (!date) return false;
+  if (dateOfJoin && date <= dateOfJoin) return true;
+  return date < '2000-01-01';
+}
+
 function plausibleExitDate(date: string | null, dateOfJoin: string | null): string | null {
   if (!date) return null;
-  if (dateOfJoin && date <= dateOfJoin) return null;
-  if (date < '2000-01-01') return null;
-  return date;
+  return isPlaceholderExitDate(date, dateOfJoin) ? null : date;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Correcting a stored employment state
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface RevisedEmploymentState {
+  state: EmploymentState;
+  reason: string;
+  exitDate: string | null;
+  /** True when the stored state was overruled, so a screen can say so rather than quietly differ. */
+  corrected: boolean;
+}
+
+/**
+ * Re-judge an employment state that is already stored in the mirror.
+ *
+ * `employmentState` is written at sync time, so fixing the *derivation* only helps records a later run
+ * rewrites. Every screen meanwhile keeps reading the old conclusion — which is how "Last working day
+ * was 1900-01-01" survived on 154 employees who plainly still work here.
+ *
+ * This applies the placeholder rule to what is already on disk: an exit date that cannot be an exit
+ * date means there was no exit, so the person is current. It reads only fields the mirror already
+ * stores, and it is deliberately narrow — it corrects *toward* Active and never away from it:
+ *
+ *   - An exit state whose date is a placeholder becomes **Active**.
+ *   - `Left` has no date to judge (greytHR's `leftOrg` flag with nothing else), so it is left alone.
+ *     Guessing there would mean overruling an explicit upstream statement on no evidence.
+ *   - A working state is returned untouched.
+ *
+ * This is not a substitute for a re-sync, and it is not a second derivation: it cannot see `leftOrg`
+ * or the settlement flags, so it only ever undoes the one mistake it can positively identify. A full
+ * run still rewrites these records properly.
+ */
+export function reviseStoredEmploymentState(stored: {
+  employmentState?: EmploymentState | string | null;
+  employmentStateReason?: string | null;
+  exitDate?: string | null;
+  leavingDate?: string | null;
+  dateOfJoin?: string | null;
+}): RevisedEmploymentState {
+  const state = (stored.employmentState ?? 'Unknown') as EmploymentState;
+  const reason = stored.employmentStateReason ?? '';
+  const exitDate = stored.exitDate ?? stored.leavingDate ?? null;
+
+  if (!hasExited(state)) return { state, reason, exitDate, corrected: false };
+  if (!isPlaceholderExitDate(exitDate, stored.dateOfJoin)) {
+    return { state, reason, exitDate, corrected: false };
+  }
+
+  return {
+    state: 'Active',
+    // Names the discarded value, because "we decided you are active" is less useful than "greytHR
+    // gave a leaving date of 1900-01-01, which cannot be one".
+    reason:
+      `greytHR recorded a leaving date of ${exitDate}, which cannot be one` +
+      `${stored.dateOfJoin ? ` — they joined on ${stored.dateOfJoin}` : ''}. Treated as still employed.`,
+    exitDate: null,
+    corrected: true,
+  };
 }
 
 export interface EmploymentStateResult {
@@ -2721,6 +2788,14 @@ export interface LinkableEmployee {
    */
   employmentStateReason: string;
   exitDate: string | null;
+  /**
+   * Whether the stored exit state was overruled as a placeholder.
+   *
+   * Surfaced rather than applied silently: an employee shown as Active because this app disbelieved
+   * greytHR's leaving date is a different claim from one greytHR itself calls Active, and an
+   * administrator deciding whether to give somebody a login should be able to tell them apart.
+   */
+  employmentStateCorrected: boolean;
   /** The user this employee is already linked to, if any. */
   linkedUserId: string | null;
   /** How the link was established, for the picker to explain itself. */
@@ -2731,6 +2806,15 @@ export function toLinkableEmployee(
   employee: Partial<SyncedEmployee> & { employeeId: string },
   link?: { userId: string | null; via: 'employeeId' | 'email' | null },
 ): LinkableEmployee {
+  /**
+   * The stored state, re-judged on the way out.
+   *
+   * Applied here rather than in each caller because every screen that reads the mirror goes through
+   * this projection, and a correction some callers apply is a correction two screens will disagree
+   * about. A record whose leaving date is 1900-01-01 is reported as Active by all of them or none.
+   */
+  const revised = reviseStoredEmploymentState(employee);
+
   return {
     employeeId: String(employee.employeeId),
     employeeNo: employee.employeeNo ?? '',
@@ -2746,12 +2830,12 @@ export function toLinkableEmployee(
     costCenter: employee.costCenter ?? '',
     employeeType: employee.employeeType ?? '',
     employmentType: employee.employmentType ?? '',
-    employmentState: (employee.employmentState as EmploymentState) ?? 'Unknown',
+    employmentState: revised.state,
     dateOfJoin: employee.dateOfJoin ?? null,
-    employmentStateReason: employee.employmentStateReason ?? '',
-    // Falls back to `leavingDate`: records written before `exitDate` existed only have the former,
-    // and it is the value the old derivation actually keyed on.
-    exitDate: employee.exitDate ?? employee.leavingDate ?? null,
+    employmentStateReason: revised.reason,
+    exitDate: revised.exitDate,
+    /** True when the mirror said they had left and the date said otherwise. */
+    employmentStateCorrected: revised.corrected,
     linkedUserId: link?.userId ?? null,
     linkedBy: link?.via ?? null,
   };

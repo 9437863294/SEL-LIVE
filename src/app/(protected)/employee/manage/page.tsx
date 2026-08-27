@@ -19,6 +19,7 @@ import {
   hasExited,
   isEmployeeMasterRecord,
   isWorkingState,
+  reviseStoredEmploymentState,
   type EmploymentState,
 } from '@/lib/greythr';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -60,8 +61,23 @@ type EnrichedEmployee = Employee & {
   positions?: Record<string, string>;
 };
 
-const employmentStateOf = (employee: Pick<Employee, 'employmentState' | 'status'>): EmploymentState =>
-  employee.employmentState ?? (employee.status === 'Active' ? 'Active' : 'Left');
+/**
+ * The employment state to display, with placeholder leaving dates overruled.
+ *
+ * `reviseStoredEmploymentState` turns "Relieved, last working day 1900-01-01" back into Active — a
+ * date before the employee joined, or before greytHR existed, is not a departure. The same function
+ * runs behind the greytHR picker, so this screen and that one cannot disagree about who still works
+ * here.
+ *
+ * Records predating the integration have no `employmentState` at all and fall back to the legacy
+ * `status` field.
+ */
+const employmentStateOf = (
+  employee: Pick<Employee, 'employmentState' | 'status' | 'exitDate' | 'leavingDate' | 'dateOfJoin'>,
+): EmploymentState => {
+  if (!employee.employmentState) return employee.status === 'Active' ? 'Active' : 'Left';
+  return reviseStoredEmploymentState(employee).state;
+};
 
 const EMPLOYMENT_STATE_TONE: Record<EmploymentState, string> = {
   Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',

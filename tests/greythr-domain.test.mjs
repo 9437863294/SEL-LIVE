@@ -37,6 +37,7 @@ import {
   indexUsersByEmployeeId,
   isEmployeeMasterRecord,
   isOfferableForNewUser,
+  isPlaceholderExitDate,
   isSalaryRow,
   isSensitiveGroup,
   maskIdentifier,
@@ -59,6 +60,7 @@ import {
   normalizeSyncSettings,
   pruneEmpty,
   resolveAccessDecision,
+  reviseStoredEmploymentState,
   resolveAllCategoriesAt,
   resolveCategoryAt,
   sanitizeGreytHRDate,
@@ -1822,4 +1824,115 @@ test('buildSyncedEmployee stores the derived exit date, never the raw placeholde
     null,
     'a record saying Active with a last working day in 1900 would mislead every screen reading it',
   );
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Correcting states already stored in the mirror
+ * ---------------------------------------------------------------------------------------------- */
+
+test('a stored Relieved with a 1900 leaving date is corrected to Active', () => {
+  // The reported case, verbatim: "Last working day was 1900-01-01." on employees who plainly still
+  // work here. Fixing `deriveEmploymentState` only helps records a later sync rewrites; this corrects
+  // what is already on disk, so every screen agrees without waiting for a run.
+  const revised = reviseStoredEmploymentState({
+    employmentState: 'Relieved',
+    employmentStateReason: 'Last working day was 1900-01-01.',
+    exitDate: '1900-01-01',
+    dateOfJoin: '2025-04-01',
+  });
+
+  assert.equal(revised.state, 'Active');
+  assert.equal(revised.exitDate, null);
+  assert.equal(revised.corrected, true);
+  assert.match(revised.reason, /1900-01-01/, 'the discarded value is named, not hidden');
+  assert.match(revised.reason, /2025-04-01/, 'and so is the joining date that disproves it');
+});
+
+test('a placeholder is caught with no joining date to compare against', () => {
+  const revised = reviseStoredEmploymentState({ employmentState: 'Settled', exitDate: '1900-01-01' });
+  assert.equal(revised.state, 'Active');
+  assert.equal(revised.corrected, true);
+});
+
+test('an exit date before the joining date is a placeholder whatever the year', () => {
+  // No reliance on the 2000 cutoff: leaving before you arrive is impossible at any date.
+  const revised = reviseStoredEmploymentState({
+    employmentState: 'Relieved',
+    exitDate: '2019-01-01',
+    dateOfJoin: '2025-04-01',
+  });
+  assert.equal(revised.state, 'Active');
+  assert.equal(revised.corrected, true);
+});
+
+test('a genuine departure is left alone', () => {
+  const revised = reviseStoredEmploymentState({
+    employmentState: 'Relieved',
+    employmentStateReason: 'Last working day was 2026-07-31.',
+    exitDate: '2026-07-31',
+    dateOfJoin: '2019-06-01',
+  });
+  assert.equal(revised.state, 'Relieved');
+  assert.equal(revised.exitDate, '2026-07-31');
+  assert.equal(revised.corrected, false);
+  assert.equal(revised.reason, 'Last working day was 2026-07-31.', 'the original sentence survives');
+});
+
+test('Left is never overruled, because there is no date to disprove', () => {
+  // greytHR's `leftOrg` flag with no dates. Correcting it would mean overruling an explicit upstream
+  // statement on no evidence, which is the opposite mistake and just as bad.
+  const revised = reviseStoredEmploymentState({
+    employmentState: 'Left',
+    employmentStateReason: 'Marked as having left greytHR, but no leaving date is recorded.',
+    exitDate: null,
+  });
+  assert.equal(revised.state, 'Left');
+  assert.equal(revised.corrected, false);
+});
+
+test('working states pass through untouched', () => {
+  for (const state of ['Active', 'Notice Period']) {
+    const revised = reviseStoredEmploymentState({ employmentState: state, exitDate: '1900-01-01' });
+    assert.equal(revised.state, state, `${state} must not be rewritten`);
+    assert.equal(revised.corrected, false);
+  }
+});
+
+test('the correction only ever moves toward Active', () => {
+  // A safety property worth asserting directly: this function must never take away employment.
+  for (const state of ['Active', 'Notice Period', 'Relieved', 'Retired', 'Settled', 'Left', 'Unknown']) {
+    for (const exitDate of ['1900-01-01', '2026-07-31', null]) {
+      const revised = reviseStoredEmploymentState({ employmentState: state, exitDate, dateOfJoin: '2020-01-01' });
+      if (revised.state !== state) {
+        assert.equal(revised.state, 'Active', `${state} may only be corrected to Active, not ${revised.state}`);
+      }
+    }
+  }
+});
+
+test('toLinkableEmployee applies the correction, so every screen sees the same state', () => {
+  const employee = toLinkableEmployee({
+    employeeId: '77',
+    employeeNo: 'E1547',
+    name: 'A Person',
+    employmentState: 'Relieved',
+    employmentStateReason: 'Last working day was 1900-01-01.',
+    leavingDate: '1900-01-01',
+    dateOfJoin: '2025-04-01',
+  });
+
+  assert.equal(employee.employmentState, 'Active');
+  assert.equal(employee.employmentStateCorrected, true, 'and says it disbelieved greytHR');
+  assert.equal(isOfferableForNewUser(employee), true, 'so they can be given a login');
+});
+
+test('isPlaceholderExitDate is precise about its two rules', () => {
+  assert.equal(isPlaceholderExitDate('1900-01-01'), true);
+  assert.equal(isPlaceholderExitDate('1999-12-31'), true);
+  assert.equal(isPlaceholderExitDate('2000-01-01'), false);
+  assert.equal(isPlaceholderExitDate('2026-07-31'), false);
+  assert.equal(isPlaceholderExitDate('2026-07-31', '2026-08-01'), true, 'before joining');
+  assert.equal(isPlaceholderExitDate('2026-08-01', '2026-08-01'), true, 'same day as joining');
+  assert.equal(isPlaceholderExitDate(null), false, 'absent is not a placeholder');
+  assert.equal(isPlaceholderExitDate(undefined), false);
 });

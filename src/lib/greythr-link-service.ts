@@ -23,6 +23,7 @@ import { getFirebaseAdminFirestore } from './firebase-admin';
 import { AccessDeniedError } from './access-control-server';
 import {
   isEmployeeMasterRecord,
+  reviseStoredEmploymentState,
   type EmploymentState,
   type SyncedEmployee,
 } from './greythr';
@@ -107,7 +108,9 @@ async function loadBothSides(db: Firestore): Promise<{ users: LinkUserRow[]; emp
         phone: (data.phone ?? data.mobile ?? null) as string | null,
         department: String(data.department ?? ''),
         designation: String(data.designation ?? ''),
-        employmentState: (data.employmentState ?? 'Active') as EmploymentState,
+        // Same placeholder correction the picker and Employee Management apply, so the linking
+        // console cannot label somebody Relieved while the other two call them Active.
+        employmentState: reviseStoredEmploymentState(data).state,
       };
     });
 

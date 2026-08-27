@@ -240,6 +240,9 @@ CRON_SECRET        optional   if set, the cron tick requires Bearer <secret>
 `greytHRConfig()` **throws** when the first two are missing. It does not fall back to a literal —
 that fallback is exactly what put a live key in the repository.
 
+greytHR preview and sync also use Firebase Admin on the server. For local development in an
+organization that blocks service-account keys, follow the [keyless Firebase Admin setup](firebase-admin-local.md).
+
 ---
 
 ## 6. Scheduling — why the frequency lives in Firestore

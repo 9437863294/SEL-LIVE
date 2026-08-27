@@ -239,12 +239,12 @@ export function accessErrorResponse(error: unknown): { message: string; status: 
 
   // The Admin SDK could not initialise. Normal in local development, a deployment fault in
   // production — either way the fix is a configuration change, so say so.
-  if (/FIREBASE_PRIVATE_KEY|service-account|applicationDefault|Could not load the default credentials/i.test(message)) {
+  if (/FIREBASE_PRIVATE_KEY|service-account|applicationDefault|Application Default Credentials|Could not load the default credentials/i.test(message)) {
     return {
       message:
-        'The server cannot reach Firebase: no service-account credentials are configured. ' +
-        'Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY (or ' +
-        'GOOGLE_APPLICATION_CREDENTIALS for local development). This feature needs the Admin SDK.',
+        'The server cannot reach Firebase Admin. Configure the service-account variables, or use ' +
+        'keyless local credentials by running `gcloud auth application-default login` and setting ' +
+        'FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS=true. This feature needs the Admin SDK.',
       status: 503,
     };
   }

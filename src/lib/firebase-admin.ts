@@ -19,8 +19,14 @@ function getAdminApp() {
       && privateKey.includes('-----END PRIVATE KEY-----')
   );
 
+  // Local developers can opt in to the credential written by `gcloud auth
+  // application-default login` (including service-account impersonation). Keep this explicit so a
+  // missing credential never triggers a slow metadata-server lookup on every development request.
+  const useApplicationDefaultCredentials =
+    process.env.FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS === 'true';
   const canUseLocalApplicationDefault = Boolean(
-    process.env.GOOGLE_APPLICATION_CREDENTIALS
+    useApplicationDefaultCredentials
+      || process.env.GOOGLE_APPLICATION_CREDENTIALS
       || process.env.FIRESTORE_EMULATOR_HOST
   );
 
@@ -30,7 +36,9 @@ function getAdminApp() {
     && !canUseLocalApplicationDefault
   ) {
     throw new Error(
-      'FIREBASE_PRIVATE_KEY is not configured. Add a Firebase service-account key or use the development inventory client fallback.',
+      'Firebase Admin credentials are not configured. Set the service-account variables, or run ' +
+        '`gcloud auth application-default login` and set ' +
+        'FIREBASE_USE_APPLICATION_DEFAULT_CREDENTIALS=true for keyless local development.',
     );
   }
 
