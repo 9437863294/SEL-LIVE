@@ -73,7 +73,13 @@ function EmployeeSettingsCard({ item }: { item: HubCard }) {
             )}
           </CardTitle>
           <CardDescription className="mt-1 text-sm">{item.description}</CardDescription>
-          {item.lastSynced && <p className="mt-2 text-xs text-muted-foreground">{item.lastSynced}</p>}
+          {/*
+            `lastSynced` is either text or a loading `<Skeleton>` — a `<div>` — while it waits on the
+            timestamp. A `<p>` cannot legally contain a `<div>`, which is exactly the combination that
+            was here: valid while loading showed a string, broken the moment it showed the skeleton
+            instead. `<div>` accepts either.
+          */}
+          {item.lastSynced && <div className="mt-2 text-xs text-muted-foreground">{item.lastSynced}</div>}
         </div>
       </CardHeader>
     </Card>
