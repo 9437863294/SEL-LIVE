@@ -354,14 +354,16 @@ export default function CurrentEmployeesLivePage() {
           {/*
             `w-auto` overrides the shared list's default `w-full`: with only a handful of columns,
             stretching the table edge-to-edge on a wide screen pads every cell with dead space and
-            makes each row read as scattered values rather than one record. Sized to its content, the
-            columns sit close to their data instead of being spread across the page.
+            makes each row read as scattered values rather than one record. `fitContent` then shrinks
+            the bordered card itself to match, so there is no leftover empty box beside the table —
+            every bit of visible surface is the table.
           */}
           <HrDataList
             rows={filtered}
             columns={columns}
             rowClassName={(row) => STATE_ACCENT[row.employmentState]}
             tableClassName="w-auto"
+            fitContent
             empty={
               <HrEmptyState
                 title={search ? 'No employees match that search' : 'greytHR reports nobody current'}

@@ -415,6 +415,7 @@ export function HrDataList<T extends { id: string }>({
   empty,
   cardHref,
   tableClassName,
+  fitContent,
 }: {
   rows: T[];
   columns: Array<HrListColumn<T>>;
@@ -430,6 +431,15 @@ export function HrDataList<T extends { id: string }>({
    * content, optionally with `'table-fixed'` and per-column width classes for exact control.
    */
   tableClassName?: string;
+  /**
+   * Shrinks the bordered card itself to the table's actual width instead of the full row width.
+   *
+   * `tableClassName="w-auto"` alone only narrows the `<table>` element — the card *around* it still
+   * stretches edge to edge, so a short table on a wide screen ends up sitting in the left corner of a
+   * mostly-empty box, which reads as data spilling across the page rather than as one contained
+   * table. This collapses the card to match.
+   */
+  fitContent?: boolean;
 }) {
   if (rows.length === 0) return <>{empty}</>;
 
@@ -504,7 +514,12 @@ export function HrDataList<T extends { id: string }>({
       </div>
 
       {/* Desktop: the full table. */}
-      <div className="hidden overflow-x-auto rounded-lg border border-white/60 bg-white/80 backdrop-blur-sm sm:block">
+      <div
+        className={cn(
+          'hidden overflow-x-auto rounded-lg border border-white/60 bg-white/80 backdrop-blur-sm',
+          fitContent ? 'sm:inline-block max-w-full' : 'sm:block',
+        )}
+      >
         <Table className={tableClassName}>
           {/*
             The header row used to render with the same near-white background as the body and a
