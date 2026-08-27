@@ -217,13 +217,20 @@ export async function GET(request: Request) {
       });
     const mirroredEmployeeIds = new Set(all.map((employee) => employee.employeeId));
 
-    // When live membership is available, show exactly greytHR CURRENT employees (plus a mirrored
-    // notice-period employee, who still works until their leaving date). On an upstream outage,
-    // fall back to the corrected state stored by the last successful sync.
-    const working = all.filter((employee) =>
-      currentEmployeeIds
-        ? currentEmployeeIds.has(employee.employeeId) || employee.employmentState === 'Notice Period'
-        : isWorkingState(employee.employmentState),
+    /**
+     * Working = on greytHR's live CURRENT roster, OR the (placeholder-corrected) mirror state says so.
+     *
+     * Was an either/or on the *source* — live roster when available, mirror state only as a fallback
+     * for when greytHR is unreachable. That discarded the placeholder-date correction the moment the
+     * live call succeeded: an employee with a corrected `employmentState: 'Active'` who, for any
+     * reason, is not in `currentEmployeeIds` — a pagination gap, a scope difference between this API
+     * user and the one used elsewhere, a sync timing difference — was filtered straight back out. The
+     * live roster is still authoritative when it says somebody *is* current; it just no longer gets
+     * the last word when it stays silent about somebody the corrected state says is fine.
+     */
+    const working = all.filter(
+      (employee) =>
+        currentEmployeeIds?.has(employee.employeeId) === true || isWorkingState(employee.employmentState),
     );
     const offerable = working.filter((employee) => !employee.linkedUserId);
 
