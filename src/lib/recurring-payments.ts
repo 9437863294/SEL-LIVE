@@ -575,6 +575,26 @@ export function resolveAssignees(step: RecurringWorkflowStep, payment: AssigneeR
 }
 
 /**
+ * Assignees for the workflow's **entry** step, falling back to the payment's own owner when the
+ * step's configuration resolves nobody.
+ *
+ * Without the fallback, a first step configured as "User-based" with no users chosen — the state a
+ * workflow is in until an admin fills it in — silently resolved to nobody, so generation left the
+ * obligation at "Scheduled" with an empty assignee list. That is invisible work: it appears in no
+ * queue, nobody is accountable, and the only signal is an audit line. Assigning it to the master's
+ * designated owner is strictly better; they are the person answerable for the payment anyway.
+ *
+ * Deliberately separate from `resolveAssignees` and used only for workflow entry. Applying the same
+ * fallback to a mid-workflow step would be wrong — routing an unconfigured *approval* step to the
+ * payment owner would let them approve their own bill.
+ */
+export function resolveEntryAssignees(step: RecurringWorkflowStep, payment: AssigneeResolutionPayment): string[] {
+  const configured = resolveAssignees(step, payment);
+  if (configured.length) return configured;
+  return [payment.assignedTo || payment.backupAssignedTo].filter(Boolean) as string[];
+}
+
+/**
  * Maps a workflow step to the payment obligation status it represents while sitting at that
  * step. Shared by workflow activation (server cron and client "Generate now" flows) and the
  * client workflow-stage view, so a payment's status always agrees with which step it's actually
@@ -628,7 +648,7 @@ export function resolveWorkflowActivation(
 ): WorkflowActivation | null {
   if (!step) return null;
   if (!isWorkflowActivationDue(payment, options)) return null;
-  const assignees = resolveAssignees(step, payment);
+  const assignees = resolveEntryAssignees(step, payment);
   if (!assignees.length) return null;
   return {
     assignees,

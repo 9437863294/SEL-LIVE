@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
-import { buildPaymentObligationFields, DEFAULT_RECURRING_WORKFLOW, isWorkflowActivationDue, matchApprovalRule, pendingRecurringCycles, resolveAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
+import { buildPaymentObligationFields, DEFAULT_RECURRING_WORKFLOW, isWorkflowActivationDue, matchApprovalRule, pendingRecurringCycles, resolveEntryAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { addBusinessHours, makeIsWorkingDay, normalizeWorkingHoursDoc } from '@/lib/working-hours';
 import { dispatchNotificationOnce } from '@/lib/notifications-server';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
@@ -111,7 +111,9 @@ export async function GET(request: Request) {
       // Shared with the client-side generate actions rather than re-derived here, so an obligation
       // enters its first step on the same day whichever path created it.
       if (!isWorkflowActivationDue(payment, { activationDays, today })) continue;
-      const assignees = resolveAssignees(firstStep, payment);
+      // Entry-step resolution, so an unconfigured first step falls back to the payment owner
+      // rather than parking the obligation in nobody's queue.
+      const assignees = resolveEntryAssignees(firstStep, payment);
       if (!assignees.length) {
         // Don't fail silently: without this, a payment with no resolvable owner (missing
         // assignedTo/backupAssignedTo, or a "User-based" step with no user configured) sits in

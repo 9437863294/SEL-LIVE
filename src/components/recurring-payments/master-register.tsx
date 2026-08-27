@@ -45,6 +45,7 @@ import {
   loadWorkingCalendar,
   maskAccount,
   matchApprovalRule,
+  isWorkflowActivationDue,
   resolveWorkflowActivation,
   type ApprovalRule,
   type RecurringPaymentMaster,
@@ -277,6 +278,11 @@ export default function RecurringMasterRegister() {
       let duplicateCount = 0;
       let notYetDueCount = 0;
       let outsideDatesCount = 0;
+      // Counted separately, because "the bill isn't expected yet" and "nobody could be assigned"
+      // need completely different responses from whoever pressed the button — the previous single
+      // "still at Scheduled" tally left them guessing which had happened.
+      let awaitingBillDateCount = 0;
+      let noAssigneeCount = 0;
       let batch = writeBatch(db);
       let batchWrites = 0;
       const commits: Promise<void>[] = [];
@@ -341,6 +347,29 @@ export default function RecurringMasterRegister() {
           { activationDays, today },
         );
         if (activation) workflowTriggered++;
+        else if (
+          isWorkflowActivationDue(obligationFields, { activationDays, today })
+        ) {
+          // Due to activate but nobody resolved — a workflow configuration problem, not a timing
+          // one. Recorded on the obligation itself so it is diagnosable later, not just in a toast
+          // that disappears.
+          noAssigneeCount++;
+          batch.set(
+            doc(collection(db, RP_COLLECTIONS.payments, docId, RP_COLLECTIONS.auditLogs)),
+            {
+              organizationId,
+              paymentId: docId,
+              action: "Workflow activation skipped",
+              summary: `No assignee could be resolved for step "${workflow[0]?.name || "the first step"}" — check this master's payment owner, or that step's configured users in Settings › Workflow.`,
+              userId: user.id,
+              userName: user.name,
+              createdAt: serverTimestamp(),
+            },
+          );
+          batchWrites++;
+        } else {
+          awaitingBillDateCount++;
+        }
         batch.set(doc(db, RP_COLLECTIONS.payments, docId), {
           ...obligationFields,
           ...(activation
@@ -384,12 +413,12 @@ export default function RecurringMasterRegister() {
         notYetDueCount && `${notYetDueCount} not yet due`,
         outsideDatesCount && `${outsideDatesCount} outside active dates`,
       ].filter(Boolean);
-      const notYetActiveCount = generated - workflowTriggered;
       const detailParts = [
-        workflowTriggered &&
-          `${workflowTriggered} entered their workflow`,
-        notYetActiveCount &&
-          `${notYetActiveCount} still at "Scheduled" (not yet due for the workflow, or no assignee is configured for the first step)`,
+        workflowTriggered && `${workflowTriggered} entered their workflow`,
+        awaitingBillDateCount &&
+          `${awaitingBillDateCount} at "Scheduled" until their bill date`,
+        noAssigneeCount &&
+          `${noAssigneeCount} could not be assigned — check the payment owner, or the first step's users in Settings › Workflow`,
         skippedParts.length && `skipped: ${skippedParts.join(", ")}`,
       ].filter(Boolean);
       toast({
