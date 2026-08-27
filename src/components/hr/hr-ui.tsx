@@ -414,6 +414,7 @@ export function HrDataList<T extends { id: string }>({
   rowClassName,
   empty,
   cardHref,
+  tableClassName,
 }: {
   rows: T[];
   columns: Array<HrListColumn<T>>;
@@ -421,6 +422,14 @@ export function HrDataList<T extends { id: string }>({
   empty?: React.ReactNode;
   /** When given, the whole mobile card becomes a link to this route. */
   cardHref?: (row: T) => string;
+  /**
+   * Extra classes for the `<table>` itself. Defaults (`w-full`, auto layout) stretch every column to
+   * fill the container, which is right for a register meant to use the whole width but wrong for a
+   * handful of short columns on a wide screen — those end up padded with dead space between values
+   * instead of sitting close to their labels. Pass `'w-auto'` to let the table size itself to its
+   * content, optionally with `'table-fixed'` and per-column width classes for exact control.
+   */
+  tableClassName?: string;
 }) {
   if (rows.length === 0) return <>{empty}</>;
 
@@ -496,11 +505,24 @@ export function HrDataList<T extends { id: string }>({
 
       {/* Desktop: the full table. */}
       <div className="hidden overflow-x-auto rounded-lg border border-white/60 bg-white/80 backdrop-blur-sm sm:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
+        <Table className={tableClassName}>
+          {/*
+            The header row used to render with the same near-white background as the body and a
+            `text-muted-foreground` weight barely darker than the page behind it — on a
+            backdrop-blur card it all but disappeared. A tinted band, bolder small-caps labels and a
+            firmer bottom border give it the contrast a header needs to read as one at a glance.
+          */}
+          <TableHeader className="bg-slate-100/80">
+            <TableRow className="hover:bg-transparent">
               {columns.map(column => (
-                <TableHead key={column.header} className={cn(column.align === 'right' && 'text-right', column.className)}>
+                <TableHead
+                  key={column.header}
+                  className={cn(
+                    'h-10 text-[11px] font-semibold uppercase tracking-wide text-slate-600',
+                    column.align === 'right' && 'text-right',
+                    column.className,
+                  )}
+                >
                   {column.header}
                 </TableHead>
               ))}

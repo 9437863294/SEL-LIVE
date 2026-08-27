@@ -13,10 +13,24 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, RefreshCw, Search, UserCheck, Users } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
+import {
+  ArrowLeft,
+  Building2,
+  Mail,
+  MapPin,
+  Phone,
+  RefreshCw,
+  Search,
+  UserCheck,
+  Users,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Card, CardContent } from '@/components/ui/card';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
@@ -24,11 +38,11 @@ import {
   HrEmptyState,
   HrKpiCard,
   HrLoader,
-  HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { fetchCurrentEmployeesLive } from '@/lib/greythr-sync-client';
 import type { EmploymentState, SyncedEmployee } from '@/lib/greythr';
 
@@ -43,6 +57,48 @@ const STATE_TONE: Record<EmploymentState, string> = {
   Left: 'border-rose-200 bg-rose-50 text-rose-700',
   Unknown: 'border-slate-300 bg-white text-slate-500',
 };
+
+/** The stripe down the left edge of each row, so scanning a long list for anyone on notice is a glance, not a read. */
+const STATE_ACCENT: Record<EmploymentState, string> = {
+  Active: 'border-l-4 border-l-emerald-300',
+  'Notice Period': 'border-l-4 border-l-amber-400',
+  Relieved: 'border-l-4 border-l-rose-300',
+  Retired: 'border-l-4 border-l-slate-300',
+  Settled: 'border-l-4 border-l-slate-300',
+  Left: 'border-l-4 border-l-rose-300',
+  Unknown: 'border-l-4 border-l-slate-200',
+};
+
+/** A stable colour per person, so the same name always gets the same avatar — not random per render. */
+const AVATAR_PALETTE = [
+  'bg-indigo-100 text-indigo-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-amber-100 text-amber-700',
+  'bg-rose-100 text-rose-700',
+  'bg-sky-100 text-sky-700',
+  'bg-violet-100 text-violet-700',
+  'bg-teal-100 text-teal-700',
+  'bg-orange-100 text-orange-700',
+];
+
+function avatarTone(seed: string): string {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+
+function formatJoinDate(value: string | null): string {
+  if (!value) return '—';
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
 
 export default function CurrentEmployeesLivePage() {
   const { toast } = useToast();
@@ -94,54 +150,154 @@ export default function CurrentEmployeesLivePage() {
     );
   }, [employees, search]);
 
-  const noticeCount = useMemo(
-    () => employees.filter((employee) => employee.employmentState === 'Notice Period').length,
-    [employees],
-  );
+  const stats = useMemo(() => {
+    const notice = employees.filter((employee) => employee.employmentState === 'Notice Period').length;
+    const departments = new Set(employees.map((employee) => employee.department).filter(Boolean)).size;
+    const locations = new Set(employees.map((employee) => employee.location).filter(Boolean)).size;
+    return { notice, departments, locations };
+  }, [employees]);
 
   const columns: HrListColumn<Row>[] = [
-    { header: 'Name', mobile: 'title', cell: (row) => row.name || '—' },
-    { header: 'Employee No', mobile: 'title', cell: (row) => row.employeeNo || row.employeeId },
+    {
+      header: 'Employee',
+      mobile: 'title',
+      className: 'min-w-[220px]',
+      cell: (row) => (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-9 w-9 shrink-0">
+            <AvatarFallback className={cn('text-xs font-semibold', avatarTone(row.id))}>
+              {initials(row.name || row.employeeNo || '?')}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold leading-tight text-slate-800">{row.name || '—'}</p>
+            <p className="truncate text-xs text-muted-foreground">{row.employeeNo || row.employeeId}</p>
+          </div>
+        </div>
+      ),
+    },
     {
       header: 'State',
       mobile: 'aside',
       cell: (row) => (
-        <Badge variant="outline" className={STATE_TONE[row.employmentState]} title={row.employmentStateReason}>
+        <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
           {row.employmentState}
         </Badge>
       ),
     },
-    { header: 'Department', cell: (row) => row.department || '—' },
-    { header: 'Designation', cell: (row) => row.designation || '—' },
-    { header: 'Location', cell: (row) => row.location || '—', className: 'hidden md:table-cell' },
-    { header: 'Project', cell: (row) => row.projectName || '—', className: 'hidden lg:table-cell' },
-    { header: 'Employment Type', cell: (row) => row.employmentType || '—', className: 'hidden lg:table-cell' },
-    { header: 'Date of Join', cell: (row) => row.dateOfJoin || '—', className: 'hidden md:table-cell' },
-    { header: 'Email', cell: (row) => row.email || '—', className: 'hidden xl:table-cell' },
+    {
+      header: 'Department / Designation',
+      className: 'min-w-[200px]',
+      cell: (row) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm text-slate-800">{row.designation || '—'}</p>
+          <p className="truncate text-xs text-muted-foreground">{row.department || '—'}</p>
+        </div>
+      ),
+    },
+    {
+      header: 'Location',
+      className: 'hidden md:table-cell',
+      cell: (row) => (
+        <span className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+          <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate">{row.location || '—'}</span>
+        </span>
+      ),
+    },
+    {
+      header: 'Project',
+      className: 'hidden lg:table-cell',
+      cell: (row) => (
+        <div className="min-w-0">
+          <p className="truncate text-sm text-slate-700">{row.projectName || '—'}</p>
+          {row.projectDivision && <p className="truncate text-xs text-muted-foreground">{row.projectDivision}</p>}
+        </div>
+      ),
+    },
+    {
+      header: 'Type',
+      className: 'hidden lg:table-cell',
+      cell: (row) => (row.employmentType ? <Badge variant="secondary" className="font-normal">{row.employmentType}</Badge> : '—'),
+    },
+    {
+      header: 'Joined',
+      className: 'hidden md:table-cell whitespace-nowrap',
+      cell: (row) => formatJoinDate(row.dateOfJoin),
+    },
+    {
+      header: 'Contact',
+      className: 'hidden xl:table-cell',
+      cell: (row) => (
+        <div className="min-w-0 space-y-0.5 text-xs text-muted-foreground">
+          {row.email && (
+            <div className="flex items-center gap-1.5">
+              <Mail className="h-3 w-3 shrink-0" />
+              <span className="truncate">{row.email}</span>
+            </div>
+          )}
+          {row.phone && (
+            <div className="flex items-center gap-1.5">
+              <Phone className="h-3 w-3 shrink-0" />
+              <span className="truncate">{row.phone}</span>
+            </div>
+          )}
+          {!row.email && !row.phone && '—'}
+        </div>
+      ),
+    },
   ];
 
   return (
     <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
       <AuroraBackdrop />
 
-      <div className="mb-1 flex items-center gap-2">
-        <Link href="/employee">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
-
-      <HrPageHeader
-        title="Current employees (live from greytHR)"
-        description="Fetched directly from greytHR's CURRENT roster on every load — not the stored employee mirror. Use this when the mirror looks wrong."
-        actions={
-          <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={loading || refreshing}>
-            <RefreshCw className={`mr-1.5 h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+      {/* ── Header ── */}
+      <Card className="mb-4 overflow-hidden border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <div className="flex items-start gap-3">
+            <Link href="/employee">
+              <Button variant="ghost" size="icon" className="mt-0.5 shrink-0 rounded-full bg-white/70 shadow-sm">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            </Link>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 ring-4 ring-emerald-100">
+              <Users className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">Current employees</h1>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  </span>
+                  Live from greytHR
+                </span>
+              </div>
+              <p className="mt-0.5 max-w-xl text-sm text-muted-foreground">
+                Fetched directly from greytHR&apos;s CURRENT roster on every load — not the stored employee mirror.
+                Use this when Manage Employee looks wrong.
+              </p>
+              {fetchedAt && !loading && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Last fetched {formatDistanceToNow(new Date(fetchedAt), { addSuffix: true })}
+                </p>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load(true)}
+            disabled={loading || refreshing}
+            className="w-full shrink-0 bg-white sm:w-auto"
+          >
+            <RefreshCw className={cn('mr-1.5 h-4 w-4', refreshing && 'animate-spin')} />
             Refresh
           </Button>
-        }
-      />
+        </CardContent>
+      </Card>
 
       {authLoading || loading ? (
         <HrLoader label="Fetching the current roster from greytHR…" />
@@ -159,43 +315,61 @@ export default function CurrentEmployeesLivePage() {
         />
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {/* ── KPIs ── */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <HrKpiCard label="Current employees" value={employees.length} icon={Users} tone="emerald" />
-            <HrKpiCard label="On notice period" value={noticeCount} icon={UserCheck} tone="amber" />
-            <HrKpiCard
-              label="Fetched"
-              value={fetchedAt ? new Date(fetchedAt).toLocaleTimeString() : '—'}
-              hint={fetchedAt ? new Date(fetchedAt).toLocaleDateString() : undefined}
-              tone="slate"
-            />
+            <HrKpiCard label="On notice period" value={stats.notice} icon={UserCheck} tone="amber" />
+            <HrKpiCard label="Departments" value={stats.departments} icon={Building2} tone="blue" />
+            <HrKpiCard label="Locations" value={stats.locations} icon={MapPin} tone="violet" />
           </div>
 
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search name, employee no, department, designation, project…"
-              className="pl-8"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+          {/* ── Search / toolbar ── */}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative flex-1 sm:max-w-md">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search name, employee no, department, designation, project…"
+                className="pl-8 pr-8"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-2 top-2 text-muted-foreground hover:text-slate-600"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground sm:text-right">
+              Showing <span className="font-medium text-slate-700">{filtered.length}</span>
+              {search ? <> of {employees.length}</> : null} current employee{filtered.length === 1 ? '' : 's'}
+            </p>
           </div>
 
+          {/* ── Table ── */}
+          {/*
+            `w-auto` overrides the shared list's default `w-full`: with only a handful of columns,
+            stretching the table edge-to-edge on a wide screen pads every cell with dead space and
+            makes each row read as scattered values rather than one record. Sized to its content, the
+            columns sit close to their data instead of being spread across the page.
+          */}
           <HrDataList
             rows={filtered}
             columns={columns}
+            rowClassName={(row) => STATE_ACCENT[row.employmentState]}
+            tableClassName="w-auto"
             empty={
               <HrEmptyState
                 title={search ? 'No employees match that search' : 'greytHR reports nobody current'}
                 description={search ? 'Try a different name, department or project.' : undefined}
+                icon={Users}
               />
             }
           />
-
-          {search && (
-            <p className="text-xs text-muted-foreground">
-              Showing {filtered.length} of {employees.length} current employees.
-            </p>
-          )}
         </div>
       )}
     </div>
