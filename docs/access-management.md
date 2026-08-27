@@ -202,6 +202,20 @@ stored `syncedAt: { _methodName: 'serverTimestamp' }` — a nested map instead o
 without complaint. It now walks only plain objects. (`Date` had already been excluded by name: the same
 problem noticed once and fixed too narrowly.)
 
+### A single user's profile could only revoke a whole page at once
+
+Reported as "can't revoke Add/Edit/Delete individually for one user". The Users-tab bulk flow above
+(`RemoveAccessDialog`) was already action-granular; the single-user profile's **Grants** tab was not —
+each direct-permission resource had one "Remove" button that took every action on it at once, because
+the row was built per-resource (`title: resource, subtitle: actions.join(', ')`) rather than per-action.
+
+A resource commonly holds several actions granted together — `View, Add, Edit, Delete` — and taking
+one back while somebody keeps the rest is the ordinary case, not an edge one. So each direct permission
+now renders as one row per action (`resource.split('.').join(' › ')` / action), each with its own
+"Revoke {action}" button that sends `{ [resource]: [action] }` to the same `removeAccessFromGrant` the
+bulk flow uses — already proven to leave the other actions on the entry untouched. A "Remove every
+direct permission" link stays for the whole-page case, so nothing that worked before is gone.
+
 ### Add user is a page, not a dialog
 
 `/settings/access-management/users/new`, entered from the Users tab and from Assign Access.

@@ -290,37 +290,73 @@ export function UserAccessProfile({
             ))}
           </GrantSection>
 
-          {/* Direct permissions */}
+          {/*
+            Direct permissions.
+
+            One row per *action*, not per resource. A resource like "HR.Requirements" commonly holds
+            several — View, Add, Edit, Delete — granted together and needing to be taken back one at a
+            time: revoking Delete while a person keeps View and Edit is the ordinary case, not an edge
+            one. A single "Remove" button per resource could only take all of them at once, which is
+            the gap reported: there was no way to page-wise revoke just Add, or just Edit, or just
+            Delete, for one person.
+          */}
           <GrantSection
             title="Direct permissions"
             icon={KeyRound}
-            description="Granted straight to this person, outside any role."
+            description="Granted straight to this person, outside any role. Revoke one action at a time, or the whole page at once."
             empty="No direct permissions."
           >
-            {(grant?.directPermissions ?? []).map((entry, index) => (
-              <GrantRow
-                key={`${entry.resource}-${index}`}
-                title={entry.resource.split('.').join(' › ')}
-                subtitle={entry.actions.join(', ')}
-                meta={[
-                  entry.assignedByName ? `assigned by ${entry.assignedByName}` : null,
-                  entry.assignedAt ? formatGrantDate(entry.assignedAt) : null,
-                  entry.expiresAt ? `expires ${formatGrantDate(entry.expiresAt)}` : null,
-                  entry.reason ? `“${entry.reason}”` : null,
-                ]}
-                onRemove={
-                  canRevoke
-                    ? () =>
-                        setRemoval({
-                          roleIds: [],
-                          projectIds: [],
-                          temporaryIds: [],
-                          directPermissions: { [entry.resource]: entry.actions },
-                        })
-                    : undefined
-                }
-              />
-            ))}
+            {(grant?.directPermissions ?? []).flatMap((entry) =>
+              entry.actions.map((action) => (
+                <GrantRow
+                  key={`${entry.resource}::${action}`}
+                  title={entry.resource.split('.').join(' › ')}
+                  subtitle={action}
+                  meta={[
+                    entry.assignedByName ? `assigned by ${entry.assignedByName}` : null,
+                    entry.assignedAt ? formatGrantDate(entry.assignedAt) : null,
+                    entry.expiresAt ? `expires ${formatGrantDate(entry.expiresAt)}` : null,
+                    entry.reason ? `“${entry.reason}”` : null,
+                  ]}
+                  onRemove={
+                    canRevoke
+                      ? () =>
+                          setRemoval({
+                            roleIds: [],
+                            projectIds: [],
+                            temporaryIds: [],
+                            // Only this one action. The other actions on the same resource are
+                            // untouched — `removeAccessFromGrant` keeps whatever is left of the entry.
+                            directPermissions: { [entry.resource]: [action] },
+                          })
+                      : undefined
+                  }
+                  removeLabel={action}
+                />
+              )),
+            )}
+            {canRevoke && (grant?.directPermissions?.length ?? 0) > 1 && (
+              <div className="pt-1 text-right">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-destructive"
+                  onClick={() =>
+                    setRemoval({
+                      roleIds: [],
+                      projectIds: [],
+                      temporaryIds: [],
+                      directPermissions: Object.fromEntries(
+                        (grant?.directPermissions ?? []).map((entry) => [entry.resource, entry.actions]),
+                      ),
+                    })
+                  }
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  Remove every direct permission
+                </Button>
+              </div>
+            )}
           </GrantSection>
 
           {/* Projects */}
@@ -576,6 +612,8 @@ function GrantRow({
   badgeTone = 'slate',
   meta,
   onRemove,
+  /** Names what a click actually revokes — "Revoke Delete" rather than a bare "Remove". */
+  removeLabel,
 }: {
   title: string;
   subtitle?: string;
@@ -583,6 +621,7 @@ function GrantRow({
   badgeTone?: 'slate' | 'amber' | 'sky';
   meta: Array<string | null>;
   onRemove?: () => void;
+  removeLabel?: string;
 }) {
   const visibleMeta = meta.filter(Boolean) as string[];
   return (
@@ -614,7 +653,7 @@ function GrantRow({
       {onRemove && (
         <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs text-destructive" onClick={onRemove}>
           <Trash2 className="mr-1 h-3.5 w-3.5" />
-          Remove
+          {removeLabel ? `Revoke ${removeLabel}` : 'Remove'}
         </Button>
       )}
     </div>
