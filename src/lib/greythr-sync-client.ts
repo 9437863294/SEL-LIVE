@@ -279,7 +279,25 @@ export interface LiveCurrentEmployeesResponse {
   employees: SyncedEmployee[];
   totalCurrent: number;
   fetchedAt: string;
-  source: 'greythr-live';
+  /** `'snapshot'` when greytHR was unreachable and the stored roster was served instead. */
+  source: 'greythr-live' | 'snapshot';
+  stale?: boolean;
+  staleReason?: string;
+  /**
+   * What happened to the stored snapshot on this fetch.
+   *
+   * `replaced: false` with a `refusedReason` means the fetch was served but not persisted — a guard
+   * in the store declined to prune against data it could not vouch for. Surfaced rather than logged,
+   * because a snapshot that has quietly stopped updating is the failure worth noticing.
+   */
+  snapshot?: {
+    replaced: boolean;
+    written: number;
+    deleted: number;
+    refusedReason: string | null;
+    fetchedAt: string | null;
+    count: number;
+  };
 }
 
 /**

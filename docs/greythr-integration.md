@@ -533,6 +533,21 @@ What a mappings collection *would* legitimately give you is history. That is kep
 reconciled against the employee mirror, **worst rows first** — an administrator opening this screen
 wants the conflicts, not the 800 rows that are already fine.
 
+**Candidates are not limited to the mirror either.** This screen had the same gap as the Add User
+picker, for the same underlying reason: `loadBothSides` read only `db.collection('employees')`, so an
+employee greytHR reports as current but no sync has ever written to Firestore was not just
+misclassified — they were not a candidate *at all*. The symptom was distinctive: searching for anyone
+to link and seeing a run of Relieved and Settled people in a row, because the genuinely active majority
+was simply never in the pool to begin with, and what the mirror *does* hold skews toward whoever an
+incremental run's `modifiedSince` last touched — leavers and people on notice, disproportionately.
+`loadBothSides` now tops up the mirror with anyone on the live CURRENT roster it does not already have,
+the same fix and the same shared [`fetchCurrentEmployeeRoster`](../src/lib/greythr-live-roster.ts) as
+the picker. `linkUser` picked up the matching half of the same fix: it required the employee to already
+be in the mirror before a link could be written, which would have rejected exactly the live-only
+candidates this now offers. The employee lookup is resolved — mirror first, live roster second — before
+the transaction opens rather than inside it, because a live HTTP call has no place inside a Firestore
+transaction that Firestore may retry on contention.
+
 | Status | Meaning |
 | --- | --- |
 | **Conflict** | Two logins claim one employee, or the recorded employee is not in the mirror. |
@@ -613,6 +628,16 @@ with anyone on the live roster the mirror does not have, built from the same `Sy
 `/employee/current` shows. A banner still names how many came from that live top-up, because the local
 mirror — and anything else that reads it directly, like Employee Management — will not know about them
 until a sync runs; but it is now informational, not a blocker.
+
+**The account-creation route had to learn the same lesson.** `/api/create-user` validates the picked
+employee id **on the server**, deliberately — a client-asserted `employeeId` is not evidence of
+anything (§30), so account creation must confirm it independently rather than trusting whatever the
+browser sends. That check predated the live top-up above and only looked in the mirror, so it rejected
+every employee the top-up had just, correctly, offered: `"The selected employee is not present in the
+synced employee mirror."` — right after the picker showed exactly that person as selectable. It now
+falls back to `fetchSingleEmployee` and `isWorkingState` when the mirror does not have the record,
+which is the same authority the picker itself used to decide they were offerable, so the two paths
+cannot disagree about who is real again.
 
 The one employee actually chosen is still refetched live so a new joiner's details are current. The
 picker also states when the mirror was last synced, and warns when it never has been — because a

@@ -27,6 +27,8 @@ import {
   type EmploymentState,
   type SyncedEmployee,
 } from './greythr';
+import { isGreytHRConfigured } from './greythr-client';
+import { fetchCurrentEmployeeRoster } from './greythr-live-roster';
 import {
   assertNoProtectedFields,
   buildLinkAudit,
@@ -94,25 +96,49 @@ async function loadBothSides(db: Firestore): Promise<{ users: LinkUserRow[]; emp
     };
   });
 
+  const toRow = (data: Partial<SyncedEmployee> & { mobile?: string }, fallbackId: string): EmployeeRow => ({
+    employeeId: String(data.employeeId ?? fallbackId),
+    employeeNo: String(data.employeeNo ?? ''),
+    name: String(data.name ?? ''),
+    email: data.email ? String(data.email) : null,
+    phone: (data.phone ?? data.mobile ?? null) as string | null,
+    department: String(data.department ?? ''),
+    designation: String(data.designation ?? ''),
+    // Same placeholder correction the picker and Employee Management apply, so the linking console
+    // cannot label somebody Relieved while the other two call them Active.
+    employmentState: reviseStoredEmploymentState(data).state,
+  });
+
   const employees: EmployeeRow[] = employeeSnapshot.docs
     // Excludes the monthly salary documents the legacy salary sync writes into this same collection;
     // without it, "CON-005 · March 2026" appears as a person to link somebody to.
     .filter((doc) => isEmployeeMasterRecord(doc.data()))
-    .map((doc) => {
-      const data = doc.data() as Partial<SyncedEmployee> & { mobile?: string };
-      return {
-        employeeId: String(data.employeeId ?? doc.id),
-        employeeNo: String(data.employeeNo ?? ''),
-        name: String(data.name ?? ''),
-        email: data.email ? String(data.email) : null,
-        phone: (data.phone ?? data.mobile ?? null) as string | null,
-        department: String(data.department ?? ''),
-        designation: String(data.designation ?? ''),
-        // Same placeholder correction the picker and Employee Management apply, so the linking
-        // console cannot label somebody Relieved while the other two call them Active.
-        employmentState: reviseStoredEmploymentState(data).state,
-      };
-    });
+    .map((doc) => toRow(doc.data() as Partial<SyncedEmployee>, doc.id));
+
+  /**
+   * Topped up with anyone greytHR reports as CURRENT who is not in the mirror at all — the same fix
+   * applied to the Add User picker, for the same reason.
+   *
+   * The mirror can only ever hold what a sync has written, and what an *incremental* sync writes is
+   * whatever changed — leavers and people on notice, disproportionately. Left mirror-only, this
+   * screen's "employees without a login" pool skews toward exactly that: not because their state was
+   * miscalculated (the correction above already fixes a wrong placeholder date), but because the
+   * genuinely active majority was never written to Firestore at all and so was never a candidate here
+   * to begin with. Searching for somebody by name and seeing four relieved people in a row is that
+   * skew, not a coincidence.
+   */
+  if (isGreytHRConfigured()) {
+    try {
+      const mirroredIds = new Set(employees.map((employee) => employee.employeeId));
+      const { employees: liveRoster } = await fetchCurrentEmployeeRoster();
+      for (const employee of liveRoster) {
+        const id = String(employee.employeeId);
+        if (!mirroredIds.has(id)) employees.push(toRow(employee, id));
+      }
+    } catch (error) {
+      console.warn('[greythr-link] Could not fetch the live CURRENT roster; using the mirror alone.', error);
+    }
+  }
 
   return { users, employees };
 }
@@ -171,43 +197,71 @@ export async function linkUser(
 ): Promise<{ audit: LinkAuditEntry }> {
   const at = new Date().toISOString();
   const method: LinkMethod = input.method ?? 'manual';
+  const employeeId = String(input.employeeId);
+
+  /**
+   * Resolve the employee before opening the transaction — a live greytHR call has no place inside
+   * one, and Firestore retries a transaction on contention, which would repeat the HTTP request too.
+   *
+   * Mirror first, live roster second: the same fallback the Add User picker and account creation
+   * use, and for the same reason. `loadBothSides` already offers unlinked *live-only* employees as
+   * link candidates — someone greytHR reports as current whom no sync has written to Firestore yet —
+   * so requiring the mirror here would reject exactly the candidates that fix was meant to unblock.
+   */
+  const employeeRef = db.collection(LINK_COLLECTIONS.employees).doc(employeeId);
+  const employeeSnapshot = await employeeRef.get();
+  let employeeNo = '';
+  let employeeName = '';
+  let confirmed = employeeSnapshot.exists;
+
+  if (confirmed) {
+    const data = employeeSnapshot.data() as Partial<SyncedEmployee>;
+    employeeNo = String(data.employeeNo ?? '');
+    employeeName = String(data.name ?? '');
+  } else if (isGreytHRConfigured()) {
+    try {
+      const { employees: liveRoster } = await fetchCurrentEmployeeRoster();
+      const live = liveRoster.find((employee) => String(employee.employeeId) === employeeId);
+      if (live) {
+        employeeNo = live.employeeNo;
+        employeeName = live.name;
+        confirmed = true;
+      }
+    } catch {
+      // Treated the same as "not found" below — greytHR being unreachable is not evidence the
+      // employee exists, so this must not fail open.
+    }
+  }
+
+  if (!confirmed) {
+    throw new AccessDeniedError(
+      `Employee ${employeeId} could not be confirmed, in the mirror or live from greytHR. Reopen the linking console and try again.`,
+      404,
+    );
+  }
 
   const audit = await db.runTransaction(async (transaction) => {
     const userRef = db.collection(LINK_COLLECTIONS.users).doc(input.userId);
-    const employeeRef = db.collection(LINK_COLLECTIONS.employees).doc(String(input.employeeId));
-
-    const [userDoc, employeeDoc] = await Promise.all([
-      transaction.get(userRef),
-      transaction.get(employeeRef),
-    ]);
-
+    const userDoc = await transaction.get(userRef);
     if (!userDoc.exists) throw new AccessDeniedError('That user no longer exists.', 404);
-    if (!employeeDoc.exists) {
-      throw new AccessDeniedError(
-        `Employee ${input.employeeId} is not in the employee mirror. Run a greytHR sync first.`,
-        404,
-      );
-    }
-
-    const employee = employeeDoc.data() as Partial<SyncedEmployee>;
 
     // Whoever else already claims this employee. Queried inside the transaction so the read is part
     // of it — a check outside would be a race, which is the bug this transaction exists to prevent.
     const claimants = await transaction.get(
-      db.collection(LINK_COLLECTIONS.users).where('employeeId', '==', String(input.employeeId)),
+      db.collection(LINK_COLLECTIONS.users).where('employeeId', '==', employeeId),
     );
     const other = claimants.docs.find((doc) => doc.id !== input.userId);
     if (other) {
       throw new AccessDeniedError(
         `${other.data().name || 'Another account'} is already linked to employee ` +
-          `${employee.employeeNo || input.employeeId}. Unlink it first — one employee may have only one login.`,
+          `${employeeNo || employeeId}. Unlink it first — one employee may have only one login.`,
         409,
       );
     }
 
     const write = buildLinkWrite({
-      employeeId: String(input.employeeId),
-      employeeNo: String(employee.employeeNo ?? ''),
+      employeeId,
+      employeeNo,
       method,
       actor: actor.userId,
       at,
@@ -222,13 +276,13 @@ export async function linkUser(
       action: 'link',
       userId: input.userId,
       userName: String(userDoc.data()?.name ?? ''),
-      employeeId: String(input.employeeId),
-      employeeNo: String(employee.employeeNo ?? ''),
+      employeeId,
+      employeeNo,
       method,
       actorId: actor.userId,
       actorName: actor.userName,
       at,
-      reason: `Linked to ${employee.name ?? 'employee'} (${employee.employeeNo ?? input.employeeId}).`,
+      reason: `Linked to ${employeeName || 'employee'} (${employeeNo || employeeId}).`,
     });
     transaction.set(db.collection(LINK_COLLECTIONS.audit).doc(entry.id), entry);
     return entry;

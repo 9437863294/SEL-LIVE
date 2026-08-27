@@ -6,9 +6,22 @@
  * `Manage Employee` reads the `employees` collection, which is only as correct as the last sync that
  * wrote it. When that sync is stale, incomplete, or was run before a derivation fix, this page is the
  * escape hatch: it asks greytHR's `state=CURRENT` roster directly, on every load, and shows exactly
- * what it says right now. Nothing here is cached in Firestore and nothing here can go stale in the
- * way the mirror can — the cost is that every visit is a live API round trip, which is the right
- * trade for a page whose entire purpose is "what does greytHR say, this second".
+ * what it says right now — the cost being a live API round trip per visit, which is the right trade
+ * for a page whose entire purpose is "what does greytHR say, this second".
+ *
+ * ── The fetch also stores what it found ────────────────────────────────────────────────────────
+ *
+ * Each successful complete fetch replaces the previous snapshot in `greythrCurrentRoster`: current
+ * employees written, anyone greytHR no longer lists cleared out. So that collection always holds
+ * exactly one dated answer to "who works here" rather than accumulating leavers.
+ *
+ * That snapshot is **not** the `employees` mirror and never touches it. Pruning the mirror to
+ * CURRENT-only cannot hold — the hourly sync fetches `state=ALL` and writes the leavers straight back
+ * — and the mirror has to keep departed records anyway, because the exit policy can only close a
+ * leaver's login while it can still see a record saying they left. See `greythr-roster-store.ts`.
+ *
+ * The payoff: when greytHR is unreachable this page serves the stored snapshot, clearly labelled as
+ * stored rather than live, instead of failing.
  *
  * Table styled to match `site-account-statement/expenses`: a plain, dense `<table>` in its own
  * scrolling card (sticky slate header, hover rows, truncated cells with a `min-w` floor so it scrolls
@@ -38,11 +51,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import { HrAccessDenied, HrKpiCard, HrLoader } from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrAlertNotice, HrKpiCard, HrLoader } from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { fetchCurrentEmployeesLive } from '@/lib/greythr-sync-client';
+import { fetchCurrentEmployeesLive, type LiveCurrentEmployeesResponse } from '@/lib/greythr-sync-client';
 import type { EmploymentState, SyncedEmployee } from '@/lib/greythr';
 
 type Row = SyncedEmployee & { id: string };
@@ -84,10 +97,14 @@ function initials(name: string): string {
 /**
  * How often the page re-fetches greytHR's CURRENT roster on its own.
  *
- * Every fetch replaces `employees` wholesale rather than merging into it — that is what makes
- * "remove anyone who has left" automatic rather than a separate rule to get wrong: a person absent
- * from the freshest CURRENT response simply isn't in the new array, whatever they looked like five
- * minutes ago. Five minutes balances that against hammering greytHR's API from every open tab.
+ * Every fetch replaces the list wholesale rather than merging into it, and the stored snapshot is
+ * replaced the same way. That is what makes "remove anyone who has left" automatic rather than a
+ * separate rule to get wrong: a person absent from the freshest CURRENT response simply isn't in the
+ * new array, and isn't in the new snapshot either — whatever either looked like five minutes ago.
+ *
+ * Five minutes balances that against hammering greytHR from every open tab. Note each tick now also
+ * writes, so this interval is a Firestore cost as well as an API one; the write is idempotent, so a
+ * tick that finds nothing changed replaces the snapshot with an identical one.
  */
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
@@ -120,6 +137,13 @@ export default function CurrentEmployeesLivePage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [viewEmployee, setViewEmployee] = useState<Row | null>(null);
+  /** What the last fetch did to the stored snapshot, and whether the data is live at all. */
+  const [store, setStore] = useState<{
+    source: 'greythr-live' | 'snapshot';
+    stale: boolean;
+    staleReason?: string;
+    snapshot?: LiveCurrentEmployeesResponse['snapshot'];
+  } | null>(null);
 
   // Guards the auto-refresh timer against overlapping requests — a slow greytHR response should not
   // let a second interval tick pile another fetch on top of the one still in flight.
@@ -138,6 +162,12 @@ export default function CurrentEmployeesLivePage() {
         // how a departed employee disappears from the page: they are simply not in this array.
         setEmployees(result.employees.map((employee) => ({ ...employee, id: employee.employeeId })));
         setFetchedAt(result.fetchedAt);
+        setStore({
+          source: result.source,
+          stale: result.stale === true,
+          staleReason: result.staleReason,
+          snapshot: result.snapshot,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Could not load employees from greytHR.';
         setError(message);
@@ -249,6 +279,37 @@ export default function CurrentEmployeesLivePage() {
         </Card>
       ) : (
         <div className="space-y-4">
+          {/* ── Storage / freshness state ── */}
+
+          {/*
+            Three distinct situations, and conflating them is how a screen misleads. Serving a stored
+            snapshot is not the same as serving live data; and a live fetch that could not be
+            persisted is different again — the answer on screen is right, but the stored copy behind
+            it is now older than it looks.
+          */}
+          {store?.stale && (
+            <HrAlertNotice tone="amber" title="greytHR unreachable — showing the stored snapshot">
+              {store.staleReason ??
+                'Showing the roster stored on the last successful fetch. Anyone who has joined or left since then may be missing or wrongly listed.'}
+            </HrAlertNotice>
+          )}
+
+          {store && !store.stale && store.snapshot && !store.snapshot.replaced && (
+            <HrAlertNotice tone="amber" title="Fetched, but not stored">
+              {store.snapshot.refusedReason ??
+                'The stored snapshot could not be replaced on this fetch.'}{' '}
+              The list below is live and correct; the stored copy is unchanged.
+            </HrAlertNotice>
+          )}
+
+          {store?.snapshot?.replaced && store.snapshot.deleted > 0 && (
+            <HrAlertNotice tone="blue" title={`Snapshot updated — ${store.snapshot.deleted} removed`}>
+              {store.snapshot.written} current employee(s) stored, and {store.snapshot.deleted} cleared
+              because greytHR no longer lists them as current. Their full records remain in Employee
+              Management; only this snapshot was pruned.
+            </HrAlertNotice>
+          )}
+
           {/* ── KPIs ── */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <HrKpiCard label="Current employees" value={employees.length} icon={Users} tone="emerald" />

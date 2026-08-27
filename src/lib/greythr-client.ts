@@ -295,10 +295,11 @@ async function greytHRRequest<T>(path: string, options: RequestOptions = {}): Pr
 async function fetchAllPages<T>(
   path: string,
   options: RequestOptions & { size?: number } = {},
-): Promise<{ rows: T[]; pages: number }> {
+): Promise<{ rows: T[]; pages: number; complete: boolean; totalElements: number | null }> {
   const size = options.size ?? 500;
   const rows: T[] = [];
   let page = 0;
+  let totalElements: number | null = null;
 
   while (page < MAX_PAGES) {
     const json = await greytHRRequest<GreytHRPagedResponse<T>>(path, {
@@ -306,19 +307,31 @@ async function fetchAllPages<T>(
       query: { ...options.query, page, size },
     });
 
+    // Reported by the envelope on every page. Kept from the first response so a caller can check
+    // what it received against what greytHR said existed.
+    if (totalElements === null && typeof json?.pages?.totalElements === 'number') {
+      totalElements = json.pages.totalElements;
+    }
+
     const batch = Array.isArray(json?.data) ? json.data : [];
     rows.push(...batch);
 
     const hasNext = json?.pages?.hasNext === true;
-    if (!hasNext || batch.length === 0) return { rows, pages: page + 1 };
+    if (!hasNext || batch.length === 0) return { rows, pages: page + 1, complete: true, totalElements };
 
     page += 1;
     await sleep(INTER_REQUEST_DELAY_MS);
   }
 
-  // Reaching the cap is a bug or a very large tenant; returning what we have beats throwing away a
-  // run's worth of work, and the caller records it as a warning.
-  return { rows, pages: page };
+  /**
+   * Reaching the cap is a bug or a very large tenant; returning what we have beats throwing away a
+   * run's worth of work, and the caller records it as a warning.
+   *
+   * `complete: false` is what makes that survivable for a caller that *deletes* on the strength of
+   * this result. A truncated roster is indistinguishable from a shrunken one by content alone, so
+   * anything destructive has to be able to ask whether the walk actually finished.
+   */
+  return { rows, pages: page, complete: false, totalElements };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -346,7 +359,7 @@ export interface FetchEmployeesOptions {
 
 export async function fetchEmployees(
   options: FetchEmployeesOptions = {},
-): Promise<{ rows: GreytHREmployeeRow[]; pages: number }> {
+): Promise<{ rows: GreytHREmployeeRow[]; pages: number; complete: boolean; totalElements: number | null }> {
   /**
    * Checked here rather than trusted, because the failure is expensive to read.
    *

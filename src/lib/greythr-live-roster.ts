@@ -49,6 +49,16 @@ import {
 export interface CurrentRosterResult {
   employees: SyncedEmployee[];
   fetchedAt: string;
+  /**
+   * Whether the roster walk actually reached the last page.
+   *
+   * Carried because one caller *deletes* on the strength of this result. A roster truncated by the
+   * page cap looks exactly like a roster that genuinely shrank, so "did the fetch finish?" cannot be
+   * inferred from the rows — it has to be reported.
+   */
+  complete: boolean;
+  /** What greytHR's own envelope said the roster size was, when it said. */
+  totalElements: number | null;
 }
 
 /**
@@ -85,5 +95,10 @@ export async function fetchCurrentEmployeeRoster(): Promise<CurrentRosterResult>
   });
 
   employees.sort((a, b) => a.name.localeCompare(b.name));
-  return { employees, fetchedAt: new Date().toISOString() };
+  return {
+    employees,
+    fetchedAt: new Date().toISOString(),
+    complete: currentRoster.complete,
+    totalElements: currentRoster.totalElements,
+  };
 }

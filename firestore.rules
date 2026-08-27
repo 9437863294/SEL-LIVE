@@ -151,6 +151,24 @@ service cloud.firestore {
     }
 
     /**
+     * The replaceable snapshot of greytHR's CURRENT roster — one document per currently-employed
+     * person, cleared and rewritten on each successful complete fetch.
+     *
+     * Stated explicitly rather than left to Firestore's default deny, because this is the one
+     * collection in the integration that gets **deleted from**. `allow write: if false` means those
+     * deletions can only ever come from the Admin SDK path that carries the guards in
+     * `shouldReplaceRosterSnapshot` — a client cannot empty the roster by writing directly, and
+     * cannot forge a snapshot that a screen would then present as greytHR's answer.
+     *
+     * Readable by any signed-in user on the same footing as `employees`: it holds no field that
+     * collection does not already expose.
+     */
+    match /greythrCurrentRoster/{employeeId} {
+      allow get, list: if signedIn();
+      allow write: if false;
+    }
+
+    /**
      * Restricted personal data — Aadhaar, PAN, bank accounts, religion, disability, home addresses.
      *
      * The whole reason this is a separate collection. `employees` above is readable by every

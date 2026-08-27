@@ -54,6 +54,7 @@ import {
   isSyncDue,
   isWorkingState,
   overlayLiveRosterState,
+  shouldReplaceRosterSnapshot,
   matchUserForEmployee,
   isGreytHRTimestamp,
   modifiedSinceFor,
@@ -2027,4 +2028,83 @@ test('overlayLiveRosterState corrects a placeholder exit date even with no live 
   assert.equal(overlaid.employmentState, 'Active', 'nobody leaves before they arrive');
   assert.equal(overlaid.status, 'Active');
   assert.equal(overlaid.employmentStateCorrected, true);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * shouldReplaceRosterSnapshot — the only decision in the integration that authorises deletions
+ * ---------------------------------------------------------------------------------------------- */
+
+test('shouldReplaceRosterSnapshot allows a clean complete fetch', () => {
+  const decision = shouldReplaceRosterSnapshot({
+    fetched: 128,
+    complete: true,
+    totalElements: 128,
+    previousCount: 128,
+  });
+  assert.equal(decision.replace, true);
+  assert.equal(decision.reason, null);
+});
+
+test('shouldReplaceRosterSnapshot allows the very first fetch, with no baseline to compare', () => {
+  const decision = shouldReplaceRosterSnapshot({ fetched: 128, complete: true, totalElements: 128, previousCount: 0 });
+  assert.equal(decision.replace, true, 'nothing stored yet means nothing to lose');
+});
+
+test('shouldReplaceRosterSnapshot refuses an incomplete page walk', () => {
+  // The case the `complete` flag exists for: 40 of 128 rows is indistinguishable from a real roster
+  // of 40 by content alone, so pruning against it would delete 88 employed people.
+  const decision = shouldReplaceRosterSnapshot({ fetched: 40, complete: false, totalElements: 128, previousCount: 128 });
+  assert.equal(decision.replace, false);
+  assert.match(decision.reason, /whole roster/i);
+});
+
+test('shouldReplaceRosterSnapshot refuses an empty roster', () => {
+  const decision = shouldReplaceRosterSnapshot({ fetched: 0, complete: true, totalElements: 0, previousCount: 128 });
+  assert.equal(decision.replace, false, 'no company has zero current employees');
+  assert.match(decision.reason, /no current employees/i);
+});
+
+test('shouldReplaceRosterSnapshot refuses a roster that disagrees with greytHR own count', () => {
+  const decision = shouldReplaceRosterSnapshot({ fetched: 120, complete: true, totalElements: 128, previousCount: 128 });
+  assert.equal(decision.replace, false, 'eight rows went missing during the walk');
+  assert.match(decision.reason, /128/);
+  assert.match(decision.reason, /120/);
+});
+
+test('shouldReplaceRosterSnapshot refuses a collapsed roster even when the fetch looks clean', () => {
+  // Complete, non-empty, and agreeing with greytHR's own count — every other guard passes. This is
+  // the narrowed-API-scope case: valid data that would still delete most of the company.
+  const decision = shouldReplaceRosterSnapshot({ fetched: 12, complete: true, totalElements: 12, previousCount: 128 });
+  assert.equal(decision.replace, false);
+  assert.match(decision.reason, /narrowed API scope/i);
+});
+
+test('shouldReplaceRosterSnapshot permits attrition up to the shrink limit', () => {
+  // Exactly at the boundary is allowed; a hair under it is not. Pinned so the threshold cannot drift
+  // silently — it decides how many people a bad fetch may delete.
+  const atLimit = shouldReplaceRosterSnapshot({ fetched: 64, complete: true, totalElements: 64, previousCount: 128 });
+  assert.equal(atLimit.replace, true, '50% is the documented boundary and is allowed');
+
+  const belowLimit = shouldReplaceRosterSnapshot({ fetched: 63, complete: true, totalElements: 63, previousCount: 128 });
+  assert.equal(belowLimit.replace, false, 'below the boundary is refused');
+});
+
+test('shouldReplaceRosterSnapshot allows growth without limit', () => {
+  const decision = shouldReplaceRosterSnapshot({ fetched: 400, complete: true, totalElements: 400, previousCount: 128 });
+  assert.equal(decision.replace, true, 'hiring is never suspicious');
+});
+
+test('shouldReplaceRosterSnapshot tolerates an absent totalElements', () => {
+  // greytHR does not always populate the envelope count; its absence must not block a replace, only
+  // remove one of the four cross-checks.
+  const decision = shouldReplaceRosterSnapshot({ fetched: 128, complete: true, totalElements: null, previousCount: 128 });
+  assert.equal(decision.replace, true);
+});
+
+test('shouldReplaceRosterSnapshot checks completeness before anything else', () => {
+  // An incomplete walk that happens to be empty should still be reported as incomplete: that names
+  // the actual fault rather than a symptom of it.
+  const decision = shouldReplaceRosterSnapshot({ fetched: 0, complete: false, totalElements: null, previousCount: 128 });
+  assert.equal(decision.replace, false);
+  assert.match(decision.reason, /whole roster/i);
 });

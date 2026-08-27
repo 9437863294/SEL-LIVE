@@ -1259,6 +1259,102 @@ export function overlayLiveRosterState<T extends Partial<SyncedEmployee>>(
   };
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Replacing the stored CURRENT-roster snapshot
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * How far a roster may shrink in one fetch before a replace is refused.
+ *
+ * 0.5 means "a snapshot may not lose more than half its people at once". Permissive enough for a
+ * genuine restructuring at a company of this size, tight enough to catch the failure this exists for:
+ * an API user whose location or category scope narrowed returns a roster that is valid, complete, and
+ * much smaller, with nothing in the data to distinguish it from real attrition.
+ */
+export const MAX_ROSTER_SHRINK_RATIO = 0.5;
+
+export interface RosterReplaceDecision {
+  replace: boolean;
+  /** Why the replace was refused. `null` when it may proceed. */
+  reason: string | null;
+}
+
+/**
+ * Whether a freshly fetched CURRENT roster is trustworthy enough to *delete* against.
+ *
+ * Pure and here rather than in the store, for the same reason every other rule in this module is:
+ * the store imports the Admin SDK, so a rule living there cannot be tested without one. This is the
+ * only decision in the integration that authorises deletions, which makes it the one most worth
+ * being able to test exhaustively.
+ *
+ * Four guards, each answering a way the data can be wrong while looking right:
+ *
+ *   1. **Incomplete walk.** A roster truncated by the page cap is indistinguishable by content from
+ *      one that genuinely shrank, so completeness has to be reported rather than inferred.
+ *   2. **Empty.** Zero current employees is not a real state for a company; a permission or paging
+ *      fault very much is.
+ *   3. **Disagrees with greytHR's own count.** The envelope reports `totalElements`; receiving fewer
+ *      rows than that means the walk lost some.
+ *   4. **Collapsed.** A sudden loss of most of the roster is far more likely a narrowed API scope
+ *      than mass resignation.
+ *
+ * Refusing to write is always recoverable — one stale snapshot. Deleting wrongly is not.
+ */
+export function shouldReplaceRosterSnapshot(input: {
+  /** How many employees the fetch returned. */
+  fetched: number;
+  /** Whether the paged walk reached the last page. */
+  complete: boolean;
+  /** greytHR's own reported roster size, when the envelope carried one. */
+  totalElements?: number | null;
+  /** How many the stored snapshot currently holds. 0 or absent on a first run. */
+  previousCount?: number | null;
+}): RosterReplaceDecision {
+  const { fetched, complete } = input;
+  const totalElements = input.totalElements ?? null;
+  const previousCount = input.previousCount ?? 0;
+
+  if (!complete) {
+    return {
+      replace: false,
+      reason:
+        'greytHR did not return the whole roster (the page walk stopped early), so the stored ' +
+        'snapshot was left alone rather than pruned against a partial list.',
+    };
+  }
+
+  if (fetched <= 0) {
+    return {
+      replace: false,
+      reason:
+        'greytHR returned no current employees. That is not a real state for a company, so it was ' +
+        'treated as a fetch fault and the stored snapshot was kept.',
+    };
+  }
+
+  if (typeof totalElements === 'number' && fetched !== totalElements) {
+    return {
+      replace: false,
+      reason:
+        `greytHR reported ${totalElements} current employees but ${fetched} were received, so the ` +
+        'fetch is incomplete and the stored snapshot was kept.',
+    };
+  }
+
+  // Only meaningful once there is a baseline to compare against; a first run has nothing to lose.
+  if (previousCount > 0 && fetched < previousCount * MAX_ROSTER_SHRINK_RATIO) {
+    return {
+      replace: false,
+      reason:
+        `The roster would have dropped from ${previousCount} to ${fetched} in one fetch. That is more ` +
+        'likely a narrowed API scope than genuine attrition, so the stored snapshot was kept. Re-run ' +
+        'once greytHR access is confirmed, or clear the snapshot by hand to accept it.',
+    };
+  }
+
+  return { replace: true, reason: null };
+}
+
 export interface EmploymentStateResult {
   state: EmploymentState;
   /** The date the exit takes effect, when one is known. */

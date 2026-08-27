@@ -14,7 +14,15 @@ import {
 } from '@/lib/access-control';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import { logServerActivity, requestProvenance } from '@/lib/activity-logger-server';
-import { isEmployeeMasterRecord, isSafeGreytHRId } from '@/lib/greythr';
+import {
+  deriveEmploymentState,
+  employmentSignals,
+  isEmployeeMasterRecord,
+  isSafeGreytHRId,
+  isWorkingState,
+  todayIso,
+} from '@/lib/greythr';
+import { fetchSingleEmployee, isGreytHRConfigured } from '@/lib/greythr-client';
 
 export const runtime = 'nodejs';
 
@@ -156,16 +164,58 @@ export async function POST(request: Request) {
       if (!isSafeGreytHRId(employeeId)) {
         return NextResponse.json({ error: 'The selected employee id is invalid.' }, { status: 400 });
       }
+
       const employeeSnapshot = await db.collection('employees').doc(employeeId).get();
-      if (!employeeSnapshot.exists || !isEmployeeMasterRecord(employeeSnapshot.data())) {
+      let employeeSource: { employeeNo?: unknown; email?: unknown } | null =
+        employeeSnapshot.exists && isEmployeeMasterRecord(employeeSnapshot.data())
+          ? (employeeSnapshot.data() ?? {})
+          : null;
+
+      /**
+       * Not every current employee is in the mirror yet.
+       *
+       * The Add User picker (`/api/greythr/employees`) offers anyone on greytHR's live CURRENT
+       * roster, topped up on top of whatever the mirror happens to hold — an employee who joined
+       * after the last successful sync, or was caught by one that partially failed, is offerable
+       * there without being written to Firestore first. Checking only the mirror here rejected
+       * exactly the people that fix was meant to unblock: the picker would offer them, and this
+       * route would then refuse to create their account.
+       *
+       * Re-verified live rather than trusting whatever the browser sends, because this is the one
+       * check that exists precisely so a client-asserted employee id cannot be trusted on its own
+       * (§30) — the fix for one gap must not reopen the other.
+       */
+      if (!employeeSource && isGreytHRConfigured()) {
+        try {
+          const live = await fetchSingleEmployee(employeeId);
+          if (live.employee) {
+            const state = deriveEmploymentState(
+              employmentSignals(live.employee, live.separation),
+              todayIso(),
+            );
+            if (isWorkingState(state.state)) {
+              employeeSource = { employeeNo: live.employee.employeeNo, email: live.employee.email };
+            }
+          }
+        } catch {
+          // Treated the same as "not found" below — greytHR being unreachable is not evidence the
+          // employee exists, so this must not fail open.
+        }
+      }
+
+      if (!employeeSource) {
         return NextResponse.json(
-          { error: 'The selected employee is not present in the synced employee mirror.' },
+          {
+            error:
+              'This employee could not be confirmed as a current greytHR employee, in the mirror or live. ' +
+              'They may have left, or the id may be stale — reopen the picker and try again.',
+          },
           { status: 409 },
         );
       }
-      const employee = employeeSnapshot.data() || {};
-      canonicalEmployeeNo = text(employee.employeeNo) || canonicalEmployeeNo;
-      employeeEmail = text(employee.email).toLowerCase();
+
+      canonicalEmployeeNo = text(employeeSource.employeeNo) || canonicalEmployeeNo;
+      employeeEmail = text(employeeSource.email).toLowerCase();
 
       const byEmployeeId = await db
         .collection('users')
