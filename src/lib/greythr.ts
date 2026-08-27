@@ -1081,6 +1081,14 @@ export const isWorkingState = (state: EmploymentState): boolean => WORKING_STATE
 export const hasExited = (state: EmploymentState): boolean => EXITED_STATES.includes(state);
 
 export interface EmploymentStateInput {
+  /**
+   * Whether greytHR's employee roster currently includes this person.
+   *
+   * This is the authoritative answer to "do they still work here?". The separation endpoint can
+   * retain historical exit rows after an employee is rejoined/reactivated, so those rows must not
+   * override an explicit CURRENT-roster membership.
+   */
+  rosterCurrent?: boolean | null;
   /** From the roster (`leftorg`) or the separation record (`leftOrg`) — either spelling. */
   leftOrg?: boolean | null;
   leavingDate?: string | null;
@@ -1162,6 +1170,29 @@ export function deriveEmploymentState(
   const exitDate = leaving ?? retirement ?? tentative;
   const resignationDate = submitted ?? null;
 
+  // The roster is greytHR's supported active/resigned boundary. A separation row is useful for
+  // explaining *how* somebody left, but it can be historical and must not turn a CURRENT employee
+  // into a leaver. Keep genuine future/submitted resignations as Notice Period; otherwise the
+  // explicit current membership wins.
+  if (input.rosterCurrent === true) {
+    if ((exitDate && exitDate > today) || input.submittedResignation || submitted) {
+      return {
+        state: 'Notice Period',
+        exitDate: exitDate && exitDate > today ? exitDate : null,
+        resignationDate,
+        reason: exitDate && exitDate > today
+          ? `Leaving on ${exitDate} — still included in greytHR's current employee roster.`
+          : 'Resignation submitted, but still included in greytHR\'s current employee roster.',
+      };
+    }
+    return {
+      state: 'Active',
+      exitDate: null,
+      resignationDate: null,
+      reason: 'Included in greytHR\'s current employee roster.',
+    };
+  }
+
   if (settlement && settlement <= today) {
     return {
       state: 'Settled',
@@ -1228,9 +1259,13 @@ export function deriveEmploymentState(
 export function employmentSignals(
   employee: GreytHREmployeeRow | null | undefined,
   separation: GreytHRSeparationRow | null | undefined,
+  currentInRoster?: boolean | null,
 ): EmploymentStateInput | null {
   if (!employee && !separation) return null;
   return {
+    rosterCurrent:
+      currentInRoster ??
+      (employee?.leftorg === false ? true : employee?.leftorg === true ? false : null),
     dateOfJoin: employee?.dateOfJoin ?? employee?.originalHireDate ?? null,
     // Either spelling counts; the roster and the separation endpoint disagree on capitalisation.
     leftOrg: separation?.leftOrg ?? employee?.leftorg ?? null,
@@ -1416,6 +1451,8 @@ export interface SyncedEmployee {
 
   /** Where the person is in the employment lifecycle. */
   employmentState: EmploymentState;
+  /** Whether greytHR's CURRENT roster contained the employee during the last sync. */
+  greytHRCurrent: boolean | null;
   /** Probation / Confirmed / Contract / Trainee — greytHR's `status` code, resolved. */
   employmentType: string;
   employmentTypeCode: string;
@@ -1442,6 +1479,8 @@ export interface SyncedEmployee {
 
 export interface BuildEmployeeInput {
   employee: GreytHREmployeeRow;
+  /** Membership in `GET /employees?state=CURRENT`, when the caller fetched that roster. */
+  currentInRoster?: boolean | null;
   separation?: GreytHRSeparationRow | null;
   categories?: GreytHRCategoryEntry[] | null;
   work?: GreytHRWorkRow | null;
@@ -1462,7 +1501,13 @@ export function buildSyncedEmployee(input: BuildEmployeeInput): SyncedEmployee {
   const onDate = input.onDate ?? todayIso();
   const labels = input.employmentTypeLabels ?? DEFAULT_EMPLOYMENT_TYPE_LABELS;
 
-  const stateResult = deriveEmploymentState(employmentSignals(employee, input.separation), onDate);
+  const rosterCurrent =
+    input.currentInRoster ??
+    (employee.leftorg === false ? true : employee.leftorg === true ? false : null);
+  const stateResult = deriveEmploymentState(
+    employmentSignals(employee, input.separation, rosterCurrent),
+    onDate,
+  );
   const categories = normalizeCategories(input.categories);
   const resolved = resolveAllCategoriesAt(categories, onDate);
 
@@ -1490,6 +1535,7 @@ export function buildSyncedEmployee(input: BuildEmployeeInput): SyncedEmployee {
     gender: String(employee.gender ?? '').trim(),
 
     employmentState: stateResult.state,
+    greytHRCurrent: rosterCurrent,
     employmentType: employmentTypeLabel(employee.status, labels),
     employmentTypeCode: employee.status === null || employee.status === undefined ? '' : String(employee.status),
     employmentStateReason: stateResult.reason,
@@ -1527,6 +1573,7 @@ const TRACKED_FIELDS: Array<keyof SyncedEmployee> = [
   'dateOfBirth',
   'gender',
   'employmentState',
+  'greytHRCurrent',
   'employmentType',
   'employmentTypeCode',
   'exitDate',
@@ -1852,10 +1899,10 @@ export const isGreytHRTimestamp = (value: string | null | undefined): boolean =>
  *
  * Increment this whenever an unchanged upstream employee would produce a materially different
  * stored record. An incremental sync will never fetch that employee, so a version change is the
- * signal that one full rebuild is required. Version 2 introduces the corrected employment-state
- * derivation (numeric `status` is an employment type and placeholder exit dates are ignored).
+ * signal that one full rebuild is required. Version 2 corrected numeric status and placeholder exit
+ * dates; version 3 makes greytHR's CURRENT roster authoritative over historical separation rows.
  */
-export const GREYTHR_MIRROR_VERSION = 2;
+export const GREYTHR_MIRROR_VERSION = 3;
 
 /**
  * Whether this run must fetch everything, whatever the watermark says.
@@ -1887,7 +1934,7 @@ export function shouldForceFullResync(settings: {
       force: true,
       reason:
         `Employee mirror version ${settings.mirrorVersion ?? 0} is out of date; version ` +
-        `${GREYTHR_MIRROR_VERSION} rebuilds every employee with the corrected active/employment-state rules.`,
+        `${GREYTHR_MIRROR_VERSION} rebuilds every employee using greytHR's CURRENT roster as the active-state authority.`,
     };
   }
 

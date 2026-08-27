@@ -11,18 +11,15 @@
  *
  * ── Two things this deliberately does ───────────────────────────────────────────────────────────
  *
- *   1. **Lists from the synced mirror, details from greytHR.** The list answers instantly and works
- *      when greytHR is unreachable; the one employee actually chosen is then refetched live, so the
- *      prefilled designation and project are current rather than as at the last nightly run. A new
- *      joiner's record was probably created in greytHR this morning, which is precisely the case a
- *      cached list gets wrong.
+ *   1. **Uses greytHR CURRENT membership with mirrored details.** The list checks greytHR's current
+ *      roster so historical separation rows cannot hide active employees, then uses the mirror for
+ *      their department/project details. The chosen employee is refetched live once more.
  *
- *   2. **Says how stale the list is.** The mirror is only as current as the last sync, and this
+ *   2. **Says how stale the details are.** The mirror is only as current as the last sync, and this
  *      integration inherited a mirror where every employee was marked inactive. A picker that
  *      presented that as fact would send administrators looking for people who are not in the list.
  */
 
-import * as React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -45,7 +42,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { HrEmptyState } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { employeeSearchText, isWorkingState } from '@/lib/greythr';
+import { employeeSearchText } from '@/lib/greythr';
 import {
   fetchEmployeeDetail,
   fetchLinkableEmployees,
@@ -75,20 +72,6 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
   const [error, setError] = useState<string | null>(null);
   const [term, setTerm] = useState('');
   const [resolvingId, setResolvingId] = useState<string | null>(null);
-  /**
-   * Show employees greytHR says have left.
-   *
-   * **Off** by default for a healthy mirror. If a stale mirror has zero working rows, the component
-   * turns this on once as a recovery view: every non-working row stays visibly annotated while the
-   * versioned full rebuild repairs the directory.
-   *
-   * A filter that is right 99% of the time should hide things. A filter that is wrong 99% of the time
-   * should annotate them. Every non-working row carries its state and the date behind it in red, so
-   * nothing is concealed and nothing is misrepresented — and the toggle still narrows to the
-   * confidently-working set for whoever wants that.
-   */
-  const [includeExited, setIncludeExited] = useState(false);
-  const initialFilterApplied = React.useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,13 +79,6 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
     try {
       const next = await fetchLinkableEmployees();
       setList(next);
-      // A stale pre-fix mirror can contain no working rows at all. Keep the safe active-only default
-      // for healthy data, but do not strand an administrator behind an empty list while the forced
-      // full rebuild is still pending.
-      if (!initialFilterApplied.current) {
-        setIncludeExited(next.employees.length === 0 && next.otherEmployees.length > 0);
-        initialFilterApplied.current = true;
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the employee list.');
     } finally {
@@ -115,15 +91,11 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
   }, [load]);
 
   const filtered = useMemo(() => {
-    // Working employees first, then the ones greytHR says have left when the override is on, so the
-    // list an administrator normally wants is never pushed down the page by people who have gone.
-    const rows = includeExited
-      ? [...(list?.employees ?? []), ...(list?.otherEmployees ?? [])]
-      : (list?.employees ?? []);
+    const rows = list?.employees ?? [];
     const query = term.trim().toLowerCase();
     if (!query) return rows;
     return rows.filter((employee) => employeeSearchText(employee).includes(query));
-  }, [list, term, includeExited]);
+  }, [list, term]);
 
   const windowed = filtered.slice(0, WINDOW);
 
@@ -254,58 +226,17 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
         </Button>
       </div>
 
-      {/*
-        The override.
-
-        Shown whenever there are unlinked employees the rules would not offer — which, when the
-        employment-state derivation is wrong, is most of them. Without this the picker is a dead end:
-        it reports "154 excluded (relieved)" and gives no way to look at them or disagree.
-      */}
-      {list && list.otherEmployees.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
-          <p className="text-[11px] text-slate-600">
-            {includeExited ? (
-              <>
-                Showing everyone without a login, including {list.otherEmployees.length} that greytHR
-                reports as departed — <strong>marked in red below</strong>. Check the state before
-                picking one.
-              </>
-            ) : (
-              <>
-                {list.otherEmployees.length} employee
-                {list.otherEmployees.length === 1 ? '' : 's'} hidden because greytHR says they have left.
-                If somebody who still works here is missing, show them.
-              </>
-            )}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0 bg-white/80 text-xs"
-            onClick={() => setIncludeExited((previous) => !previous)}
-            disabled={disabled}
-          >
-            {includeExited ? 'Only currently working' : 'Show everyone'}
-          </Button>
-        </div>
-      )}
-
       {list && (
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
             {filtered.length} selectable
           </Badge>
-          <span>of {list.totalEmployees} employees</span>
-          {Object.entries(list.excluded)
-            // With the departed shown, calling them "excluded" contradicts the list directly below.
-            // Only the genuinely unavailable — already linked to a login — stay in this summary.
-            .filter(([reason]) => !includeExited || !reason.startsWith('Not currently working'))
-            .map(([reason, count]) => (
-              <span key={reason}>
-                · {count} excluded ({reason.toLowerCase()})
-              </span>
-            ))}
+          <span>of {list.totalEmployees} active employees</span>
+          {Object.entries(list.excluded).map(([reason, count]) => (
+            <span key={reason}>
+              · {count} excluded ({reason.toLowerCase()})
+            </span>
+          ))}
         </div>
       )}
 
@@ -325,6 +256,18 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
               Full resync
             </Link>{' '}
             to fetch everybody.
+          </p>
+        </div>
+      )}
+
+      {list && list.activeEmployeesMissingFromMirror > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <p>
+            {list.activeEmployeesMissingFromMirror} active employee
+            {list.activeEmployeesMissingFromMirror === 1 ? ' is' : 's are'} in greytHR but not yet in
+            the local mirror. Run{' '}
+            <Link href="/employee/sync" className="underline">Full resync</Link> to add them.
           </p>
         </div>
       )}
@@ -369,12 +312,8 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
               title={term ? `No employee matches “${term}”` : 'No selectable employees'}
               description={
                 term
-                  ? includeExited
-                    ? 'Try a different search, or create the user manually.'
-                    : 'Try a different search, or “Show everyone” above if greytHR has them marked as left.'
-                  : list?.otherEmployees.length
-                    ? 'Every employee greytHR reports as working already has a login. Use “Show everyone” above to include those marked as departed.'
-                    : 'Every employee already has a login, or the employee list has not been synced yet.'
+                  ? 'Try a different search, or create the user manually.'
+                  : 'Every active employee already has a login, or the employee list has not been synced yet.'
               }
             />
           </div>
@@ -409,14 +348,6 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
                         Notice period
                       </Badge>
                     )}
-                    {/* The override made this row visible, so it has to carry the reason it was
-                        hidden — in red, next to the name, not in a legend elsewhere. */}
-                    {!isWorkingState(employee.employmentState) && (
-                      <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[10px] text-rose-700">
-                        greytHR says: {employee.employmentState}
-                        {employee.exitDate ? ` · ${employee.exitDate}` : ''}
-                      </Badge>
-                    )}
                     {!employee.email && (
                       <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
                         No email in greytHR
@@ -428,14 +359,6 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
                       .filter(Boolean)
                       .join(' · ') || 'No further details in greytHR'}
                   </span>
-                  {/* The sync's own sentence. It names the date and the field that produced the
-                      classification, which is the difference between "this person left" and "this
-                      record has a placeholder in it". */}
-                  {!isWorkingState(employee.employmentState) && employee.employmentStateReason && (
-                    <span className="mt-0.5 block truncate text-[11px] text-rose-600">
-                      {employee.employmentStateReason}
-                    </span>
-                  )}
                 </span>
                 {resolvingId === employee.employeeId && (
                   <Loader2 className="mt-1 h-4 w-4 shrink-0 animate-spin text-indigo-600" />

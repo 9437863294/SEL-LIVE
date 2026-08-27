@@ -1743,6 +1743,46 @@ test('a genuine future departure is still notice period', () => {
   assert.equal(state.state, 'Notice Period');
 });
 
+test('CURRENT roster membership outranks a historical separation row', () => {
+  const state = deriveEmploymentState(
+    {
+      rosterCurrent: true,
+      leftOrg: true,
+      leavingDate: '2024-03-31',
+      finalSettlementDate: '2024-04-10',
+    },
+    TODAY,
+  );
+  assert.equal(state.state, 'Active');
+  assert.equal(state.exitDate, null);
+});
+
+test('a CURRENT employee with a future exit remains selectable as notice period', () => {
+  const state = deriveEmploymentState(
+    { rosterCurrent: true, leftOrg: true, leavingDate: '2026-12-31' },
+    TODAY,
+  );
+  assert.equal(state.state, 'Notice Period');
+  assert.equal(state.exitDate, '2026-12-31');
+});
+
+test('buildSyncedEmployee stores CURRENT roster membership as active', () => {
+  const record = buildSyncedEmployee({
+    employee: { employeeId: 81, employeeNo: 'E81', name: 'Rejoined Employee', leftorg: false },
+    currentInRoster: true,
+    separation: {
+      employeeId: 81,
+      leftOrg: true,
+      leavingDate: '2024-03-31',
+      finalSettlementDate: '2024-04-10',
+    },
+    onDate: TODAY,
+  });
+  assert.equal(record.greytHRCurrent, true);
+  assert.equal(record.employmentState, 'Active');
+  assert.equal(record.status, 'Active');
+});
+
 test('somebody who joined and left in the same period is not written off by the join-date rule', () => {
   // The rule is "on or before the joining date", so a real same-year exit survives it.
   const state = deriveEmploymentState(

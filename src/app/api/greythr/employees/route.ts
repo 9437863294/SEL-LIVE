@@ -14,9 +14,8 @@ import {
   indexUsersByEmail,
   indexUsersByEmployeeId,
   isEmployeeMasterRecord,
-  isOfferableForNewUser,
+  isWorkingState,
   normalizeCategories,
-  offerExclusionReason,
   resolveAllCategoriesAt,
   shouldForceFullResync,
   toLinkableEmployee,
@@ -24,23 +23,20 @@ import {
   type LinkableEmployee,
   type SyncedEmployee,
 } from '@/lib/greythr';
-import { fetchSingleEmployee, isGreytHRConfigured } from '@/lib/greythr-client';
+import { fetchEmployees, fetchSingleEmployee, isGreytHRConfigured } from '@/lib/greythr-client';
 import { readSyncSettings } from '@/lib/greythr-sync-service';
 
 /**
  * The employee directory behind the "create a user for this person" picker.
  *
- *   `GET  /api/greythr/employees`            — active employees without a login, from the local mirror
+ *   `GET  /api/greythr/employees`            — current employees without a login
  *   `GET  /api/greythr/employees?id=<id>`    — one employee, refreshed live from greytHR
  *
- * ── Why the list comes from Firestore and the detail comes from greytHR ─────────────────────────
+ * ── Why membership is live but list details come from Firestore ─────────────────────────────────
  *
- * The list is the synced mirror: it answers instantly, works when greytHR is down, and paging ~1,300
- * employees out of the HR system every time somebody opens the Add User drawer would be both slow
- * and rude. The *detail* for the one employee an administrator actually picks is fetched live, so the
- * designation and project that get prefilled are what greytHR says now rather than whatever the last
- * nightly run captured — which matters precisely for a new joiner, whose record was probably created
- * in greytHR this morning.
+ * greytHR's `state=CURRENT` roster is the authority for who still works here. The mirror supplies the
+ * richer department/designation/project fields and is the fallback when greytHR is unavailable. The
+ * detail for the employee an administrator picks is fetched live again before prefilling the form.
  *
  * Both paths compute "already has a login" the same way the sync does, so an employee cannot appear
  * offerable here and linked there.
@@ -158,16 +154,29 @@ export async function GET(request: Request) {
 
     /* ── The list, from the mirror ── */
 
-    const [employeeSnapshot, users, settings] = await Promise.all([
+    const currentRosterPromise = isGreytHRConfigured()
+      ? fetchEmployees({ state: 'CURRENT' })
+          .then((result) => result.rows)
+          .catch((error) => {
+            console.warn('[greythr/employees] Could not refresh CURRENT roster; using mirror state.', error);
+            return null;
+          })
+      : Promise.resolve(null);
+
+    const [employeeSnapshot, users, settings, currentRoster] = await Promise.all([
       db.collection('employees').get(),
       loadUsers(db),
       readSyncSettings(db),
+      currentRosterPromise,
     ]);
 
     const { index: byEmail } = indexUsersByEmail(users);
     const { index: byEmployeeId } = indexUsersByEmployeeId(users);
     const userNames = new Map(users.map((user) => [user.id, user.name]));
     const mirrorRefresh = shouldForceFullResync(settings);
+    const currentEmployeeIds = currentRoster && currentRoster.length > 0
+      ? new Set(currentRoster.map((employee) => String(employee.employeeId)))
+      : null;
 
     /**
      * Real employee records only.
@@ -181,11 +190,42 @@ export async function GET(request: Request) {
       .filter((doc) => isEmployeeMasterRecord(doc.data()))
       .map((doc) => {
         const data = doc.data() as Partial<SyncedEmployee>;
-        const record = { ...data, employeeId: String(data.employeeId ?? doc.id) };
+        const employeeId = String(data.employeeId ?? doc.id);
+        const isCurrent = currentEmployeeIds?.has(employeeId) === true;
+        const record = {
+          ...data,
+          employeeId,
+          // A live CURRENT-roster response is authoritative. Preserve Notice Period because that is
+          // also a working state, but never let a historical separation row hide a current person.
+          ...(isCurrent
+            ? {
+                status: 'Active' as const,
+                employmentState:
+                  data.employmentState === 'Notice Period' ? ('Notice Period' as const) : ('Active' as const),
+                greytHRCurrent: true,
+                ...(data.employmentState === 'Notice Period'
+                  ? {}
+                  : {
+                      employmentStateReason: 'Included in greytHR\'s current employee roster.',
+                      exitDate: null,
+                      leavingDate: null,
+                    }),
+              }
+            : {}),
+        };
         return toLinkableEmployee(record, resolveLink(record, byEmployeeId, byEmail));
       });
+    const mirroredEmployeeIds = new Set(all.map((employee) => employee.employeeId));
 
-    const offerable = all.filter(isOfferableForNewUser);
+    // When live membership is available, show exactly greytHR CURRENT employees (plus a mirrored
+    // notice-period employee, who still works until their leaving date). On an upstream outage,
+    // fall back to the corrected state stored by the last successful sync.
+    const working = all.filter((employee) =>
+      currentEmployeeIds
+        ? currentEmployeeIds.has(employee.employeeId) || employee.employmentState === 'Notice Period'
+        : isWorkingState(employee.employmentState),
+    );
+    const offerable = working.filter((employee) => !employee.linkedUserId);
 
     const withUserName = (employee: LinkableEmployee) => ({
       ...employee,
@@ -199,30 +239,23 @@ export async function GET(request: Request) {
       ok: true,
       /** The employees who can be turned into a user without an override. */
       employees: offerable.slice().sort(byName).map(withUserName),
-      /**
-       * Employees with no login whom the rules would not offer, because greytHR says they have left.
-       *
-       * Sent rather than merely counted so the picker can let an administrator override the
-       * classification. Employment state is derived from greytHR's own separation fields, and those
-       * are not always right — a placeholder leaving date reads as a departure. When the derivation is
-       * wrong, an administrator who cannot see the person has no route forward and no way to tell why;
-       * one who can see them marked "Relieved" can judge for themselves. Already-linked employees are
-       * *not* included: for them the answer is to edit the existing account, not make a second.
-       */
-      otherEmployees: all
-        .filter((employee) => !employee.linkedUserId && !isOfferableForNewUser(employee))
-        .sort(byName)
-        .map(withUserName),
-      totalEmployees: all.length,
+      /** Current employees only. Departed employees are deliberately not sent to Add User. */
+      totalEmployees: working.length,
       /**
        * Counted rather than listed, so the picker can explain "showing 412 of 1,306" without
        * shipping the other 894 records to a screen that will not show them.
        */
-      excluded: all.reduce<Record<string, number>>((counts, employee) => {
-        const reason = offerExclusionReason(employee);
-        if (reason) counts[reason] = (counts[reason] ?? 0) + 1;
+      excluded: working.reduce<Record<string, number>>((counts, employee) => {
+        if (employee.linkedUserId) {
+          const reason = 'Already has a platform login';
+          counts[reason] = (counts[reason] ?? 0) + 1;
+        }
         return counts;
       }, {}),
+      activeRosterSource: currentEmployeeIds ? 'greythr-current' : 'mirror',
+      activeEmployeesMissingFromMirror: currentEmployeeIds
+        ? [...currentEmployeeIds].filter((employeeId) => !mirroredEmployeeIds.has(employeeId)).length
+        : 0,
       /**
        * The mirror is only as current as the last sync. Surfaced so the picker can say so rather
        * than presenting stale data as fact.

@@ -106,16 +106,14 @@ export interface LinkableEmployeeRow extends LinkableEmployee {
 export interface LinkableEmployeeList {
   ok: boolean;
   employees: LinkableEmployeeRow[];
-  /**
-   * Unlinked employees greytHR says have left.
-   *
-   * Offered behind an explicit toggle so a wrong employment state cannot leave an administrator with
-   * no way to create a legitimate account.
-   */
-  otherEmployees: LinkableEmployeeRow[];
+  /** Number of current employees, including those who already have a login. */
   totalEmployees: number;
-  /** Reason → count, for "showing 412 of 1,306". */
+  /** Current employees excluded because they already have a platform login. */
   excluded: Record<string, number>;
+  /** Live CURRENT roster when greytHR was reachable, otherwise the last synced mirror. */
+  activeRosterSource: 'greythr-current' | 'mirror';
+  /** CURRENT employees that need a full sync before the mirror can supply their full details. */
+  activeEmployeesMissingFromMirror: number;
   /** When the local mirror was last refreshed from greytHR. */
   mirrorSyncedAt: string | null;
   /**

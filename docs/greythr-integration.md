@@ -74,7 +74,7 @@ x-greythr-domain: <tenant>.greythr.com
 
 | Data | Endpoint | Notes |
 | --- | --- | --- |
-| Roster | `GET /employee/v2/employees` | `state=ALL`, `modifiedSince=YYYY-MM-DDTHH:mm:ssZ` |
+| Roster | `GET /employee/v2/employees` | `state=ALL` for the mirror; `state=CURRENT` is the active-membership authority |
 | **Designation, Department, Location, Project** | `GET /employee/v2/employees/categories?descRequired=true` | `descRequired` is what makes this usable |
 | **Resignation / exit** | `GET /employee/v2/employees/separation` | |
 | Confirm date, notice period | `GET /employee/v2/employees/work` | |
@@ -351,6 +351,7 @@ some API routes checked status. Anyone currently marked Inactive will be unable 
 Order matters — the most specific true statement wins:
 
 ```text
+present in state=CURRENT roster        → Active / Notice Period (historical exit rows cannot override it)
 finalSettlementDate ≤ today            → Settled
 exitDate > today                       → Notice Period   ← outranks leftOrg
 leavingDate ≤ today                    → Relieved
@@ -363,7 +364,9 @@ otherwise                              → Active
 
 A future-dated exit outranks `leftOrg` because greytHR flips that flag when the resignation is
 *recorded*, not when the person leaves — and treating a notice-period engineer as gone is precisely
-the failure that would lock a working colleague out.
+the failure that would lock a working colleague out. Membership in greytHR's documented `CURRENT`
+roster outranks the separation feed because that feed can retain historical exit records for an
+employee who was rejoined or reactivated.
 
 ---
 
@@ -535,11 +538,11 @@ access-assignment permission. The employee picker accepts either Employee Manage
 Management `Add`, so an administrator who can create a user is not accidentally blocked from seeing
 eligible active employees.
 
-**Why list from the mirror but fetch detail live** — the list must answer instantly and keep working
-when greytHR is unreachable, and paging ~1,300 employees out of the HR system whenever somebody opens
-a drawer would be slow and rude. But a new joiner's greytHR record was probably created this morning,
-so the *one* employee actually chosen is refetched live. If that live call fails the picker falls back
-to the mirror row with a warning rather than blocking account creation.
+**How the list stays active-only** — the picker refreshes membership from greytHR's documented
+`state=CURRENT` roster, then supplies names, categories and projects from the local mirror. If
+greytHR is temporarily unreachable it falls back to the last synced employment state. Departed
+employees are neither returned to the picker nor available behind an override. The one employee
+actually chosen is still refetched live so a new joiner's details are current.
 
 The picker also states when the mirror was last synced, and warns when it never has been — because a
 picker that presents a stale list as fact sends administrators looking for people who aren't in it.

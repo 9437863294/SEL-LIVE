@@ -305,8 +305,12 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
   try {
     greytHRConfig(); // Fail fast and clearly if credentials are missing.
 
-    const [employeeResult, separationResult, categoryResult, workResult, reference] = await Promise.all([
+    const [employeeResult, currentRosterResult, separationResult, categoryResult, workResult, reference] = await Promise.all([
       fetchEmployees({ state: 'ALL', modifiedSince }),
+      // `CURRENT` is greytHR's own supported active/resigned boundary. The separation endpoint can
+      // retain historical rows for rejoined/reactivated employees, so it must enrich this roster,
+      // never replace its answer to "does this person still work here?".
+      fetchEmployees({ state: 'CURRENT' }),
       fetchSeparations(),
       fetchEmployeeCategories(),
       fetchEmployeeWork(),
@@ -329,6 +333,14 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
 
     run.employeesFetched = employeeResult.rows.length;
     const typeLabels = employmentTypeLabels(reference);
+    const currentEmployeeIds = new Set(
+      currentRosterResult.rows.map((employee) => String(employee.employeeId)),
+    );
+    // The documented roster row also carries `leftorg`. Union explicit false values as a defensive
+    // fallback in case a tenant's CURRENT filter is incomplete while the unfiltered roster is not.
+    for (const employee of employeeResult.rows) {
+      if (employee.leftorg === false) currentEmployeeIds.add(String(employee.employeeId));
+    }
 
     const separationById = new Map(separationResult.rows.map((row) => [String(row.employeeId), row]));
     const categoriesById = new Map(categoryResult.rows.map((row) => [String(row.employeeId), row]));
@@ -413,6 +425,7 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
 
       const record = buildSyncedEmployee({
         employee,
+        currentInRoster: currentEmployeeIds.has(id),
         separation,
         categories: categoryRow?.categoryList ?? null,
         work: workById.get(id) ?? null,
