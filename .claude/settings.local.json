@@ -71,7 +71,8 @@
       "Bash(echo \"--- exit=$? ---\")",
       "Bash(nslookup www.seltech.store)",
       "Bash(grep -n \"Settings.Policies\\\\|Settings\\\\`\\)\" src/components/e-approval/hooks.ts)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(NODE_PATH=\"d:/Application Dev/SEL Live/node_modules\" node \"C:/Users/Ashish/AppData/Local/Temp/claude/d--Application-Dev-SEL-Live/28874b21-8baf-41f6-8aed-d8f7b6560b62/scratchpad/diag-employees.js\")"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

@@ -337,6 +337,18 @@ export interface EmployeeRosterResponse {
   };
   /** False when greytHR was unreachable, so the states shown are mirror-only and unverified. */
   liveRoster: boolean;
+  /**
+   * How the live roster joined onto the mirror.
+   *
+   * Distinguishes a broken join from a genuinely incomplete mirror — the two look identical from the
+   * outside ("N not in the local mirror") and want opposite fixes.
+   */
+  joinDiagnostics?: {
+    matchedById: number;
+    matchedByEmployeeNo: number;
+    unmatched: number;
+    mirrorRecords: number;
+  };
   mirrorSyncedAt: string | null;
   baselineCompletedAt: string | null;
   mirrorRefresh: { force: boolean; reason: string | null };

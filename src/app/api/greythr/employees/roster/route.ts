@@ -102,11 +102,20 @@ function categoriesFor(record: Partial<SyncedEmployee>): Record<string, string> 
 
 async function loadMirror(db: Firestore): Promise<{
   employees: Map<string, Partial<SyncedEmployee>>;
+  /**
+   * Employee number → join id. A second join key, for records whose greytHR id was never stored.
+   *
+   * greytHR's employee *number* (`E1383`) is the identifier a human recognises and the one the
+   * legacy flows keyed on, so it is often the only thing a pre-integration document and a live
+   * roster row have in common.
+   */
+  byEmployeeNo: Map<string, string>;
   salaryRows: number;
   syncedAt: string | null;
 }> {
   const snapshot = await db.collection('employees').get();
   const employees = new Map<string, Partial<SyncedEmployee>>();
+  const byEmployeeNo = new Map<string, string>();
   let salaryRows = 0;
   let syncedAt: string | null = null;
 
@@ -122,13 +131,29 @@ async function loadMirror(db: Firestore): Promise<{
       continue;
     }
     const record = data as Partial<SyncedEmployee>;
-    employees.set(doc.id, { ...record, employeeId: String(record.employeeId ?? doc.id) });
+    /**
+     * Keyed by greytHR's employee id, **not** by the Firestore document id.
+     *
+     * They are usually the same — `runGreytHRSync` writes `doc(String(employee.employeeId))` — but
+     * not always, and assuming they were is what made this route report all 128 current employees as
+     * "not yet in the local mirror" while the mirror plainly held 182 records. Documents written by
+     * the older flows (and anything created through the Add Employee dialog, which uses `addDoc`)
+     * carry a generated id, so joining on `doc.id` matched nothing: every live employee looked new,
+     * and every stored row kept its stale departed state because the overlay never recognised it as
+     * current.
+     *
+     * The field is the join key because it is the thing greytHR and this mirror actually agree on.
+     */
+    const joinId = String(record.employeeId ?? '').trim() || doc.id;
+    employees.set(joinId, { ...record, employeeId: joinId });
+    const employeeNo = String(record.employeeNo ?? '').trim();
+    if (employeeNo) byEmployeeNo.set(employeeNo, joinId);
     if (typeof record.syncedAt === 'string' && (!syncedAt || record.syncedAt > syncedAt)) {
       syncedAt = record.syncedAt;
     }
   }
 
-  return { employees, salaryRows, syncedAt };
+  return { employees, byEmployeeNo, salaryRows, syncedAt };
 }
 
 export async function GET(request: Request) {
@@ -152,7 +177,7 @@ export async function GET(request: Request) {
         })
       : Promise.resolve(null);
 
-    const [{ employees: mirror, salaryRows, syncedAt }, settings, liveRoster] = await Promise.all([
+    const [{ employees: mirror, byEmployeeNo, salaryRows, syncedAt }, settings, liveRoster] = await Promise.all([
       loadMirror(db),
       readSyncSettings(db),
       liveRosterPromise,
@@ -166,10 +191,45 @@ export async function GET(request: Request) {
     // empty list very much is — and acting on it would mark the whole company departed.
     const haveLiveRoster = liveById.size > 0;
 
+    /**
+     * Which mirror rows the live roster vouches for, resolved once.
+     *
+     * Two join keys, because one is not enough: greytHR's employee id is the reliable one, and the
+     * employee number covers rows written before the id was stored. Resolving the live side down to
+     * mirror join-ids up front means the loop below is a set lookup rather than a nested scan.
+     */
+    const currentJoinIds = new Set<string>();
+    /**
+     * How the two sides actually joined.
+     *
+     * Reported because a join failure and a genuinely empty mirror produce the identical symptom —
+     * "N employees are not in the local mirror" — and they need opposite fixes: one is a bug here,
+     * the other wants a sync. Counting which key matched makes the difference visible instead of
+     * something to be guessed at from the outside.
+     */
+    const joinDiagnostics = { matchedById: 0, matchedByEmployeeNo: 0, unmatched: 0 };
+    if (haveLiveRoster) {
+      for (const [liveId, live] of liveById) {
+        if (mirror.has(liveId)) {
+          currentJoinIds.add(liveId);
+          joinDiagnostics.matchedById += 1;
+          continue;
+        }
+        const liveNo = String(live.employeeNo ?? '').trim();
+        const viaNo = liveNo ? byEmployeeNo.get(liveNo) : undefined;
+        if (viaNo) {
+          currentJoinIds.add(viaNo);
+          joinDiagnostics.matchedByEmployeeNo += 1;
+          continue;
+        }
+        joinDiagnostics.unmatched += 1;
+      }
+    }
+
     const rows: RosterEmployee[] = [];
 
     for (const [id, stored] of mirror) {
-      const overlaid = overlayLiveRosterState(stored, haveLiveRoster && liveById.has(id));
+      const overlaid = overlayLiveRosterState(stored, currentJoinIds.has(id));
       rows.push({
         ...overlaid,
         employeeId: id,
@@ -186,7 +246,12 @@ export async function GET(request: Request) {
      * full resync" — made finding a new colleague conditional on an unrelated maintenance job.
      */
     for (const [id, live] of liveById) {
+      // Both join keys again. Checking only the id is what turned a healthy 182-record mirror into
+      // "128 employees are not in the local mirror" — a false alarm that told the reader to run a
+      // resync which would have changed nothing.
       if (mirror.has(id)) continue;
+      const liveNo = String(live.employeeNo ?? '').trim();
+      if (liveNo && byEmployeeNo.has(liveNo)) continue;
       rows.push({
         ...live,
         employeeId: id,
@@ -226,6 +291,12 @@ export async function GET(request: Request) {
       },
       /** Whether the states above were verified against greytHR just now, or are mirror-only. */
       liveRoster: haveLiveRoster,
+      /**
+       * `mirrorRecords` alongside the match counts, so the two failure modes are distinguishable at a
+       * glance: `unmatched` high with `mirrorRecords` high means the join is wrong; `unmatched` high
+       * with `mirrorRecords` low means the mirror really is missing people and wants a sync.
+       */
+      joinDiagnostics: { ...joinDiagnostics, mirrorRecords: mirror.size },
       mirrorSyncedAt: syncedAt,
       baselineCompletedAt: settings.baselineCompletedAt ?? null,
       mirrorRefresh: shouldForceFullResync(settings),

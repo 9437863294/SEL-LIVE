@@ -392,12 +392,31 @@ export default function ManageEmployeePage() {
             </HrAlertNotice>
           )}
 
-          {report && counts && counts.awaitingSync > 0 && (
-            <HrAlertNotice tone="blue" title={`${counts.awaitingSync} employee(s) not yet in the local mirror`}>
-              greytHR has them but no sync has written them here yet, so their department, designation
-              and project may be blank until the next run. They are listed rather than hidden.
-            </HrAlertNotice>
-          )}
+          {/*
+            Deliberately two different messages, because "not in the mirror" has two causes that want
+            opposite responses. If the mirror holds plenty of records and yet almost nothing matched,
+            the join is at fault and running a sync would change nothing — saying "run a sync" there
+            sends somebody to do useless work and leaves them no wiser.
+          */}
+          {report && counts && counts.awaitingSync > 0 && (() => {
+            const join = report.joinDiagnostics;
+            const suspectJoin =
+              !!join && join.mirrorRecords > 0 && join.unmatched > 0 && join.matchedById + join.matchedByEmployeeNo === 0;
+
+            return suspectJoin ? (
+              <HrAlertNotice tone="amber" title={`${counts.awaitingSync} employee(s) could not be matched to a stored record`}>
+                The mirror holds {join!.mirrorRecords} record(s), but none of them matched a current
+                greytHR employee by either employee id or employee number. That points at a data
+                mismatch rather than a missing sync — running one is unlikely to help. The list below is
+                correct and comes from greytHR directly.
+              </HrAlertNotice>
+            ) : (
+              <HrAlertNotice tone="blue" title={`${counts.awaitingSync} employee(s) not yet in the local mirror`}>
+                greytHR has them but no sync has written them here yet, so their department, designation
+                and project may be blank until the next run. They are listed rather than hidden.
+              </HrAlertNotice>
+            );
+          })()}
 
           {report && counts && counts.salaryRows > 0 && (
             <HrAlertNotice tone="blue" title={`${counts.salaryRows} monthly salary row(s) hidden`}>

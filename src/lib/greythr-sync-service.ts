@@ -56,6 +56,7 @@ import {
   matchUserForEmployee,
   modifiedSinceFor,
   normalizeSyncSettings,
+  overlayLiveRosterState,
   resolveAccessDecision,
   shouldForceFullResync,
   shouldDeactivateOnResignation,
@@ -86,6 +87,7 @@ import {
 } from './greythr';
 import { assertNoProtectedFields, pickGreytHRFields } from './greythr-linking';
 import { bulkLink } from './greythr-link-service';
+import { fetchCurrentEmployeeRoster } from './greythr-live-roster';
 import {
   fetchAttendanceInsights,
   fetchLeaveBalances,
@@ -108,6 +110,7 @@ import {
   fetchReferenceData,
   fetchSeparations,
   greytHRConfig,
+  isGreytHRConfigured,
 } from './greythr-client';
 import {
   normalizeUserAccessGrant,
@@ -1237,6 +1240,21 @@ export async function countMirrorEmployees(
 ): Promise<MirrorCounts> {
   const snapshot = await db.collection(GREYTHR_COLLECTIONS.employees).get();
 
+  /**
+   * The same live-roster overlay `/api/greythr/employees/roster` applies, so this card cannot
+   * disagree with that screen about who is working.
+   *
+   * This was the one place that read `employmentState` raw. It matters here specifically: this card
+   * exists to answer "did the sync actually fix things", and if a run wrote a stored state this
+   * function then re-derives *worse* on the way out, an administrator watching this number after
+   * pressing Sync now would see it hold steady and reasonably conclude the sync did nothing — when
+   * the mirror itself may already be correct underneath a report that failed to say so.
+   */
+  const liveRoster = isGreytHRConfigured()
+    ? await fetchCurrentEmployeeRoster().catch(() => null)
+    : null;
+  const currentIds = new Set((liveRoster?.employees ?? []).map((employee) => String(employee.employeeId)));
+
   const counts: MirrorCounts = { employees: 0, working: 0, salaryRows: 0, byState: {} };
   for (const doc of snapshot.docs) {
     const data = doc.data();
@@ -1245,11 +1263,9 @@ export async function countMirrorEmployees(
       continue;
     }
     counts.employees += 1;
-    // Records written before this integration have no `employmentState` at all; they are counted as
-    // Unknown rather than silently folded into Active.
-    const state = String(data.employmentState ?? 'Unknown');
-    counts.byState[state] = (counts.byState[state] ?? 0) + 1;
-    if (isWorkingState(state as EmploymentState)) counts.working += 1;
+    const overlaid = overlayLiveRosterState(data, currentIds.has(doc.id));
+    counts.byState[overlaid.employmentState] = (counts.byState[overlaid.employmentState] ?? 0) + 1;
+    if (isWorkingState(overlaid.employmentState)) counts.working += 1;
   }
   return counts;
 }

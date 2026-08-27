@@ -94,15 +94,17 @@ export function GreytHRSyncWorkspace() {
   const [previewRun, setPreviewRun] = useState<GreytHRSyncRun | null>(null);
   const [connection, setConnection] = useState<{ ok: boolean; message: string; totalEmployees?: number } | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<SyncReport | null> => {
     setLoading(true);
     setError(null);
     try {
       const next = await fetchSyncReport();
       setReport(next);
       setDraft(next.settings);
+      return next;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load the sync settings.');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -143,15 +145,27 @@ export function GreytHRSyncWorkspace() {
       }
 
       if (!result.ok) throw new Error(result.run.error || 'The sync failed.');
+
+      // Compared before/after so the toast can say whether the mirror's "still working" count
+      // actually moved — not just that the run reported changes. A run can genuinely report
+      // "0 updated" and be correct (the mirror was already right); it can also report real numbers
+      // while the number that matters here does not move, if those changes were to fields other than
+      // employment state. Either way, this is the one line meant to settle "did that actually work".
+      const workingBefore = report?.mirror.working ?? null;
+      const refreshed = await load();
+      const workingAfter = refreshed?.mirror.working ?? null;
+
       toast({
         title: 'Sync complete',
         description:
           `${result.run.employeesCreated} added, ${result.run.employeesUpdated} updated, ` +
-          `${result.run.usersDeactivated} account(s) deactivated, ${result.run.flaggedForReview} flagged.`,
+          `${result.run.usersDeactivated} account(s) deactivated, ${result.run.flaggedForReview} flagged.` +
+          (workingBefore !== null && workingAfter !== null
+            ? ` Still working: ${workingBefore} → ${workingAfter}.`
+            : ''),
       });
       // The Employee screens listen for this to refetch, as the old sync page did.
       window.dispatchEvent(new CustomEvent('greytHRSyncSuccess'));
-      await load();
     } catch (err) {
       toast({
         title: mode === 'preview' ? 'Preview failed' : 'Sync failed',

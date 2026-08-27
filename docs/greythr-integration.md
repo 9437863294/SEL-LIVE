@@ -359,6 +359,17 @@ the line that gives it away**, because it is never true of a real company.
 grouped and an aggregation query cannot group. On a screen an administrator opens deliberately, over a
 few thousand small documents, that is the right trade.
 
+**This card was, itself, the one place that still read `employmentState` raw** — every other screen
+(the picker, Employee Management, the linking console) had been moved onto `reviseStoredEmploymentState`
+or the fuller `overlayLiveRosterState`, and this one had not. The failure mode that produces is
+specifically confusing: pressing **Sync now** can genuinely fix the mirror while this card holds
+steady, because the card was re-deriving a worse answer on the way *out* than what had just been
+written — "the sync worked, but this number says it didn't" is a report about the report, not about
+the sync. It now applies the same live-roster overlay `/api/greythr/employees/roster` uses, so it
+cannot disagree with that screen about who is working. The console also compares this count before and
+after a run and says so in the completion toast — `Still working: 12 → 224` — so the next time a sync
+appears to do nothing, that line settles whether it actually did.
+
 ### Incremental sync
 
 `modifiedSince` is set to the last **successful** run minus one hour. The overlap is deliberate:
