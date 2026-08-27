@@ -12,16 +12,61 @@
  * it re-exports).
  */
 
-import {
-  isWorkflowActivationDue,
-  type ActivationTimingPayment,
-} from './recurring-payments-schedule';
 import type {
   PaymentObligation,
   PaymentStatus,
   RecurringAmountAssignee,
   RecurringWorkflowStep,
 } from './recurring-payments';
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Parses a `YYYY-MM-DD` string as a local date. Deliberately a local copy of the schedule module's
+ * identical three-line helper: importing it would give this module a runtime dependency, and the
+ * whole point of the split is that this file loads standalone so the activation rules can be
+ * tested. Three lines of date parsing is a much smaller risk than an untested activation decision.
+ */
+function localDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/** The timing fields an obligation needs for its workflow to be scheduled; a structural subset of `PaymentObligation`. */
+export interface ActivationTimingPayment {
+  dueDate: string;
+  expectedBillDate?: string;
+}
+
+/**
+ * Whether an obligation should be in its workflow's first step by `today`.
+ *
+ * Two triggers, whichever comes first:
+ *
+ * 1. **Its bill is expected.** The first step is Bill Collection, and that step has real work to do
+ *    the moment the vendor's bill exists. This is the trigger that matters under arrears billing,
+ *    where the gap between bill date and due date is routinely wider than an organization's
+ *    activation window — a telecom bill raised on the 18th and due on the 5th is 18 days apart, so
+ *    a 7-day window left the obligation sitting Scheduled and *unassigned* for eleven days, through
+ *    exactly the period its owner was meant to be chasing the bill. Anchoring only to the due date
+ *    also made the master's own lead time pointless: the record was created early, then hidden.
+ * 2. **Its due date is inside the organization's activation window.** Retained as the backstop for
+ *    obligations with no expected bill date at all — manual payments, and anything generated before
+ *    the bill date became computable — which must keep behaving exactly as they did.
+ *
+ * Both the client generate actions and the Admin-SDK cron sweep call this; those two had already
+ * drifted into separate inline copies of the due-date rule.
+ */
+export function isWorkflowActivationDue(
+  payment: ActivationTimingPayment,
+  options: { activationDays: number; today: Date },
+): boolean {
+  // Callers pass `new Date()`, so normalize to midnight before any day arithmetic — otherwise the
+  // time of day skews the rounding and activation can land a day early or late.
+  const today = new Date(options.today.getFullYear(), options.today.getMonth(), options.today.getDate());
+  if (payment.expectedBillDate && localDate(payment.expectedBillDate) <= today) return true;
+  return Math.round((localDate(payment.dueDate).getTime() - today.getTime()) / DAY_MS) <= options.activationDays;
+}
 
 export type AssigneeResolutionPayment = Pick<PaymentObligation,
   'assignedTo' | 'backupAssignedTo' | 'verifierId' | 'approverId' | 'accountsProcessorId' |

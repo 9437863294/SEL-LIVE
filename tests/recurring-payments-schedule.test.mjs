@@ -7,11 +7,18 @@ import {
   buildRecurringCycle,
   buildRecurringCycleSchedule,
   describeRecurrence,
-  isWorkflowActivationDue,
   normalizeDueDateRule,
   pendingRecurringCycles,
   recurrenceLeadDays,
 } from '../src/lib/recurring-payments-schedule.ts';
+// Workflow entry logic lives in its own dependency-free module for exactly this reason.
+import {
+  isWorkflowActivationDue,
+  resolveAssignees,
+  resolveEntryAssignees,
+  resolveWorkflowActivation,
+  stepStatus,
+} from '../src/lib/recurring-payments-workflow.ts';
 
 /** The schedule is pure date math, so every case pins `asOf` rather than depending on today. */
 const asOf = (value) => new Date(`${value}T09:30:00`);
@@ -379,4 +386,108 @@ test('describeRecurrence states every rule in the chain', () => {
   assert.match(summary, /payment due 25 day\(s\) after the bill date/);
   assert.match(summary, /overdue after 3 grace day\(s\)/);
   assert.match(summary, /obligation created 1 day\(s\) before the bill date/);
+});
+
+/* ---------------------------------------------------------------------------
+ * Workflow entry. This path has regressed repeatedly — obligations generating
+ * but never reaching anyone's queue — so each failure mode is pinned here.
+ * ------------------------------------------------------------------------- */
+
+const ownerPayment = {
+  assignedTo: 'user-owner',
+  backupAssignedTo: 'user-backup',
+  expectedAmount: 17_658,
+  dueDate: '2026-09-05',
+  expectedBillDate: '2026-08-18',
+};
+const billCollection = {
+  id: '1',
+  name: 'Bill Collection',
+  description: '',
+  tat: 24,
+  assignmentType: 'Payment-owner',
+  assignedTo: [],
+  actions: [],
+  uploadRequired: true,
+};
+
+test('an unconfigured User-based entry step falls back to the payment owner', () => {
+  // The reported defect: "Generate all" created obligations that never entered the workflow. A
+  // first step left as User-based with no users chosen resolved to nobody, so the obligation was
+  // written as Scheduled with an empty assignee list — work no queue showed and nobody owned.
+  const unconfigured = { ...billCollection, assignmentType: 'User-based', assignedTo: [] };
+  assert.deepEqual(resolveAssignees(unconfigured, ownerPayment), []);
+  assert.deepEqual(resolveEntryAssignees(unconfigured, ownerPayment), ['user-owner']);
+
+  const activation = resolveWorkflowActivation(unconfigured, ownerPayment, {
+    activationDays: 7,
+    today: asOf('2026-08-22'),
+  });
+  assert.ok(activation, 'the obligation must enter the workflow');
+  assert.deepEqual(activation.assignees, ['user-owner']);
+  assert.equal(activation.currentStepId, '1');
+  assert.equal(activation.workflowStatus, 'In Progress');
+});
+
+test('the entry fallback reaches the backup owner when there is no primary', () => {
+  const unconfigured = { ...billCollection, assignmentType: 'User-based', assignedTo: [] };
+  assert.deepEqual(
+    resolveEntryAssignees(unconfigured, { ...ownerPayment, assignedTo: '' }),
+    ['user-backup'],
+  );
+  // Nobody at all is still nobody — the caller has to report that, not invent an assignee.
+  assert.deepEqual(
+    resolveEntryAssignees(unconfigured, { ...ownerPayment, assignedTo: '', backupAssignedTo: '' }),
+    [],
+  );
+  assert.equal(
+    resolveWorkflowActivation(
+      unconfigured,
+      { ...ownerPayment, assignedTo: '', backupAssignedTo: '' },
+      { activationDays: 7, today: asOf('2026-08-22') },
+    ),
+    null,
+  );
+});
+
+test('the owner fallback does not apply to a mid-workflow approval step', () => {
+  // Routing an unconfigured approval step to the payment owner would let them approve their own
+  // bill, so the fallback is scoped to workflow entry only.
+  const approval = {
+    ...billCollection,
+    id: '3',
+    name: 'Payment Approval',
+    assignmentType: 'User-based',
+    assignedTo: [],
+  };
+  assert.deepEqual(resolveAssignees(approval, { ...ownerPayment, approverId: '' }), []);
+  assert.deepEqual(
+    resolveAssignees(approval, { ...ownerPayment, approverId: 'user-approver' }),
+    ['user-approver'],
+  );
+});
+
+test('a configured entry step is untouched by the fallback', () => {
+  const configured = { ...billCollection, assignmentType: 'User-based', assignedTo: ['user-clerk'] };
+  assert.deepEqual(resolveEntryAssignees(configured, ownerPayment), ['user-clerk']);
+  // Payment-owner steps keep resolving to the owner, as before.
+  assert.deepEqual(resolveEntryAssignees(billCollection, ownerPayment), ['user-owner']);
+});
+
+test('activation still waits when the bill is not expected yet', () => {
+  // The fallback must not short-circuit the timing gate.
+  assert.equal(
+    resolveWorkflowActivation(billCollection, ownerPayment, {
+      activationDays: 7,
+      today: asOf('2026-08-10'),
+    }),
+    null,
+  );
+});
+
+test('the entry step sets the status its name implies', () => {
+  assert.equal(stepStatus(billCollection), 'Awaiting Bill');
+  assert.equal(stepStatus({ ...billCollection, name: 'Bill Verification' }), 'Under Verification');
+  assert.equal(stepStatus({ ...billCollection, name: 'Payment Approval' }), 'Pending Approval');
+  assert.equal(stepStatus(undefined), 'Generated');
 });
