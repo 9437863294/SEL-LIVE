@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -55,7 +55,7 @@ import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
 import { UserEffectiveAccessPanel } from './effective-access';
 import { RemovalPreviewDialog } from './assignment-preview';
 import { AuditHistory } from './audit-history';
-import { PermissionPairList, RoleBadge } from './access-ui';
+import { AccessBackLink, AccessCard, PermissionPairList, RoleBadge } from './access-ui';
 
 export function UserAccessProfile({
   userId,
@@ -138,11 +138,7 @@ export function UserAccessProfile({
     <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex items-start gap-2">
-          <Link href="/settings/access-management">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
+          <AccessBackLink href="/settings/access-management" label="Back to Access Control Center" />
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">
               {user.name || user.email}
@@ -198,7 +194,7 @@ export function UserAccessProfile({
         </TabsList>
 
         <TabsContent value="access" className="mt-3 space-y-3">
-          <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+          <AccessCard>
             <CardHeader className="px-4 py-3">
               <CardTitle className="text-sm">Employee information</CardTitle>
               <CardDescription className="text-xs">
@@ -219,7 +215,7 @@ export function UserAccessProfile({
                 {user.theme?.sessionDuration ? `${user.theme.sessionDuration} minutes` : 'Default (60 minutes)'}
               </HrField>
             </CardContent>
-          </Card>
+          </AccessCard>
 
           <GreytHRConnectionCard user={user} />
 
@@ -236,7 +232,7 @@ export function UserAccessProfile({
 
         <TabsContent value="grants" className="mt-3 space-y-3">
           {/* Base role — read-only here, deliberately */}
-          <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+          <AccessCard>
             <CardHeader className="px-4 py-3">
               <CardTitle className="text-sm">Base role</CardTitle>
               <CardDescription className="text-xs">
@@ -256,7 +252,7 @@ export function UserAccessProfile({
                 </Button>
               </Link>
             </CardContent>
-          </Card>
+          </AccessCard>
 
           {/* Additional roles */}
           <GrantSection
@@ -511,7 +507,7 @@ function GreytHRConnectionCard({ user }: { user: User }) {
   const connected = Boolean(user.employeeId);
 
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+    <AccessCard>
       <CardHeader className="px-4 py-3">
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <Link2 className={cn('h-4 w-4', connected ? 'text-emerald-600' : 'text-slate-400')} />
@@ -568,7 +564,7 @@ function GreytHRConnectionCard({ user }: { user: User }) {
           </Button>
         </div>
       </CardContent>
-    </Card>
+    </AccessCard>
   );
 }
 
@@ -587,7 +583,7 @@ function GrantSection({
 }) {
   const items = React.Children.toArray(children).filter(Boolean);
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+    <AccessCard>
       <CardHeader className="px-4 py-3">
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <Icon className="h-4 w-4 text-indigo-600" />
@@ -601,7 +597,7 @@ function GrantSection({
       <CardContent className="space-y-1.5 px-4 pb-4">
         {items.length ? items : <p className="text-xs text-muted-foreground">{empty}</p>}
       </CardContent>
-    </Card>
+    </AccessCard>
   );
 }
 

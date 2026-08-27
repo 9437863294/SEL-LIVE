@@ -462,6 +462,22 @@ export function GreytHRSyncWorkspace() {
                 icon={AlertTriangle}
                 tone={(shownRun?.flaggedForReview ?? 0) > 0 ? 'amber' : 'slate'}
               />
+              {/*
+                Shown as a pair. "12 linked" alone reads as a success; the queue beside it is the part
+                that matters, because an account nobody has linked is one the exit policy cannot touch
+                however it is configured.
+              */}
+              <HrKpiCard
+                label="Logins linked"
+                value={shownRun?.usersAutoLinked ?? 0}
+                hint={
+                  (shownRun?.usersLeftForReview ?? 0) > 0
+                    ? `${shownRun?.usersLeftForReview} need a human to choose`
+                    : 'Matched on id, employee no or email'
+                }
+                icon={UserCheck}
+                tone={(shownRun?.usersLeftForReview ?? 0) > 0 ? 'amber' : 'emerald'}
+              />
             </div>
 
             <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
@@ -817,6 +833,31 @@ export function GreytHRSyncWorkspace() {
                         disabled={!canEdit}
                         onCheckedChange={(value) =>
                           setDraft({ ...draft, mapping: { ...draft.mapping, syncAccessMembership: value } })
+                        }
+                      />
+                    </label>
+
+                    <label className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 p-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800">
+                          Link logins to greytHR employees automatically
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          Matches platform accounts to greytHR employees on every run, using the greytHR
+                          employee id, employee number or official email. Name and phone matches are never
+                          applied automatically — those stay in the review queue in{' '}
+                          <Link href="/settings/user-management/greythr-linking" className="underline">
+                            greytHR linking
+                          </Link>
+                          . Worth leaving on: the exit policy above can only act on an account it can
+                          identify, so an unlinked login keeps working after the person has left.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={draft.mapping.autoLinkUsers}
+                        disabled={!canEdit}
+                        onCheckedChange={(value) =>
+                          setDraft({ ...draft, mapping: { ...draft.mapping, autoLinkUsers: value } })
                         }
                       />
                     </label>

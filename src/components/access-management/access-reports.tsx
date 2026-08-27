@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -46,7 +46,7 @@ import {
 } from '@/lib/access-control';
 import { listAccessAuditEntries } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { RiskBadges, RoleBadge } from './access-ui';
+import { AccessCard, RiskBadges, RoleBadge } from './access-ui';
 
 type ReportId =
   | 'user-access'
@@ -103,7 +103,7 @@ export function AccessReports({ state }: { state: AccessDirectoryState }) {
         })}
       </div>
 
-      <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+      <AccessCard>
         <CardHeader className="px-4 py-3">
           <CardTitle className="text-sm">{report.label}</CardTitle>
           <CardDescription className="text-xs">{report.description}</CardDescription>
@@ -118,7 +118,7 @@ export function AccessReports({ state }: { state: AccessDirectoryState }) {
           {selected === 'changes' && <AccessChangeReport state={state} />}
           {selected === 'inactive' && <InactiveUsersReport state={state} />}
         </CardContent>
-      </Card>
+      </AccessCard>
     </div>
   );
 }

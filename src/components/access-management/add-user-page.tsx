@@ -18,17 +18,15 @@
 
 import * as React from 'react';
 import { useCallback, useMemo } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, UserPlus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
+import { UserPlus } from 'lucide-react';
 import { HrAccessDenied, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
 import { actorFromUser, canAssignAccess } from '@/lib/access-control-service';
 import { canCreateUser } from '@/lib/access-control';
+import { AccessPageShell } from './access-ui';
 import { AddUserForm } from './add-user-form';
 
 const DEFAULT_RETURN = '/settings/access-management';
@@ -85,39 +83,31 @@ export function AddUserPage() {
   if (!actor) return <HrAccessDenied what="creating users" />;
 
   return (
-    <div className="relative min-h-screen">
-      <AuroraBackdrop />
-      <div className="relative mx-auto max-w-5xl px-3 py-4 sm:px-6 sm:py-6">
-        <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2">
-          <Link href={returnTo}>
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            Back
-          </Link>
-        </Button>
+    // A form, so the shell caps the width — fields stretched across a 27" monitor read as a
+    // spreadsheet rather than as a form.
+    <AccessPageShell width="form" backHref={returnTo} backLabel="Back">
+      <HrPageHeader
+        title="Add user"
+        description="Creates the login and the profile, then returns you to the assignment step with this user selected. A welcome email with the credentials is sent automatically."
+      />
 
-        <HrPageHeader
-          title="Add user"
-          description="Creates the login and the profile, then returns you to the assignment step with this user selected. A welcome email with the credentials is sent automatically."
-        />
+      {state.error && (
+        <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {state.error}
+        </div>
+      )}
 
-        {state.error && (
-          <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {state.error}
-          </div>
-        )}
-
-        <AddUserForm
-          roles={state.directory.roles}
-          departments={state.departments}
-          designations={state.designations}
-          projects={state.projects}
-          users={state.directory.users}
-          actor={actor}
-          onCreated={handleCreated}
-          onCancel={() => router.push(returnTo)}
-        />
-      </div>
-    </div>
+      <AddUserForm
+        roles={state.directory.roles}
+        departments={state.departments}
+        designations={state.designations}
+        projects={state.projects}
+        users={state.directory.users}
+        actor={actor}
+        onCreated={handleCreated}
+        onCancel={() => router.push(returnTo)}
+      />
+    </AccessPageShell>
   );
 }
 

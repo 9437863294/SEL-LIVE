@@ -143,12 +143,38 @@ export async function GET(request: Request) {
       const { index: byEmployeeId } = indexUsersByEmployeeId(users);
       const link = resolveLink(record, byEmployeeId, byEmail);
 
+      /**
+       * Reporting manager, read from the mirror rather than fetched live.
+       *
+       * greytHR's org tree comes from a *bulk* endpoint — there is no single-employee equivalent —
+       * so resolving it live here would mean paging every employee's reporting line just to look up
+       * one person's manager, on every pick. It is cheap instead: a normal sync already resolves this
+       * into `reportingManagerEmployeeId` / `reportingManagerName` on the mirror document (the
+       * "reporting" detail group), so one extra document read answers it for free when the mirror
+       * has it, and answers nothing — honestly — when it does not.
+       */
+      const mirrorDoc = await db.collection('employees').doc(singleId).get();
+      const mirrorData = mirrorDoc.exists ? (mirrorDoc.data() as Record<string, unknown>) : null;
+      const managerEmployeeId = mirrorData?.reportingManagerEmployeeId
+        ? String(mirrorData.reportingManagerEmployeeId)
+        : null;
+      const reportingManager = managerEmployeeId
+        ? {
+            employeeId: managerEmployeeId,
+            name: (mirrorData?.reportingManagerName as string | undefined) ?? null,
+            // Present only if the manager already has a platform login — creating one for them is
+            // not this screen's job, so the form falls back to their name when this is null.
+            userId: byEmployeeId.get(managerEmployeeId) ?? null,
+          }
+        : null;
+
       return NextResponse.json({
         ok: true,
         employee: toLinkableEmployee(record, link),
         /** Every category greytHR holds for them, including any this app does not name explicitly. */
         allCategories: resolveAllCategoriesAt(normalized, todayIso()),
         linkedUserName: link.userId ? (users.find((user) => user.id === link.userId)?.name ?? null) : null,
+        reportingManager,
         source: 'greythr',
       });
     }

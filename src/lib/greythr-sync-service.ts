@@ -85,6 +85,7 @@ import {
   type SyncedEmployee,
 } from './greythr';
 import { assertNoProtectedFields, pickGreytHRFields } from './greythr-linking';
+import { bulkLink } from './greythr-link-service';
 import {
   fetchAttendanceInsights,
   fetchLeaveBalances,
@@ -772,6 +773,57 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
           merge: true,
         })),
       ]);
+    }
+
+    /* ── Link logins to employees ── */
+
+    /**
+     * Deliberately after the employee writes, and deliberately not inside them.
+     *
+     * The matcher joins on `employeeNo` and official email, both of which come off the mirror
+     * documents this run just wrote — so running it first would match against the previous run's
+     * roster and miss every new joiner it had itself just created. It also writes through
+     * `linkUser`, which runs its own per-user transaction (it re-checks that no other account has
+     * claimed the employee in the meantime); folding that into `commitBatched` would lose the check.
+     *
+     * A failure here is a warning, never a failed run. The mirror is already committed and correct
+     * at this point, and a linking hiccup must not roll back an otherwise good sync or advance the
+     * watermark past employees this run genuinely wrote.
+     */
+    if (!options.dryRun && settings.mapping.autoLinkUsers) {
+      try {
+        const result = await bulkLink(
+          { userId: SYNC_ACTOR, userName: 'greytHR sync' },
+          db,
+        );
+        run.usersAutoLinked = result.linked;
+        run.usersLeftForReview = result.plan.skip.length;
+        if (result.failed.length) {
+          warnings.push(
+            `${result.failed.length} account(s) could not be linked automatically: ` +
+              `${result.failed.slice(0, 3).map((row) => `${row.userName} (${row.error})`).join('; ')}` +
+              `${result.failed.length > 3 ? '…' : ''}`,
+          );
+        }
+        if (result.plan.skip.length) {
+          // Named as a queue rather than a statistic: until these are linked by hand, the exit
+          // policy cannot act on those people at all, whatever it is set to.
+          warnings.push(
+            `${result.plan.skip.length} account(s) need a human to choose the greytHR employee. ` +
+              'Until they are linked, a resignation in greytHR will not change their platform access. ' +
+              'Review them under Access Management → greytHR linking.',
+          );
+        }
+      } catch (error) {
+        warnings.push(
+          `Automatic user linking failed and was skipped: ${error instanceof Error ? error.message : 'unknown error'}`,
+        );
+      }
+    } else if (!settings.mapping.autoLinkUsers) {
+      warnings.push(
+        'Automatic user linking is switched off, so newly created logins will not be matched to ' +
+          'greytHR employees — and the exit policy cannot act on an unlinked account.',
+      );
     }
 
     const summary = summarizeRun(outcomes, created);

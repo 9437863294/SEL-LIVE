@@ -48,6 +48,7 @@ import {
   fetchLinkableEmployees,
   type LinkableEmployeeList,
   type LinkableEmployeeRow,
+  type ReportingManagerInfo,
 } from '@/lib/greythr-sync-client';
 
 /** How many rows render at once. The rest are reachable by narrowing the search. */
@@ -57,11 +58,17 @@ export interface EmployeePickerProps {
   /** The currently chosen employee, if any. */
   value: LinkableEmployeeRow | null;
   /**
-   * Called with the live-refreshed employee, plus every greytHR category they hold — including ones
-   * this app does not name explicitly, so the caller can show them without this component deciding
-   * which matter.
+   * Called with the live-refreshed employee, every greytHR category they hold — including ones this
+   * app does not name explicitly — and their reporting manager, when the mirror has resolved one.
+   * `reportingManager` is `null` on the manual-entry path and on a refresh failure, same as
+   * `allCategories`: existing callers ignore extra arguments, so widening this did not need to touch
+   * them.
    */
-  onSelect: (employee: LinkableEmployeeRow | null, allCategories: Record<string, string>) => void;
+  onSelect: (
+    employee: LinkableEmployeeRow | null,
+    allCategories: Record<string, string>,
+    reportingManager?: ReportingManagerInfo | null,
+  ) => void;
   disabled?: boolean;
 }
 
@@ -113,7 +120,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
         await load();
         return;
       }
-      onSelect(detail.employee, detail.allCategories);
+      onSelect(detail.employee, detail.allCategories, detail.reportingManager);
     } catch (err) {
       // Falling back to the mirror row rather than blocking: an administrator with greytHR down can
       // still create the account from the last known details and correct them later.

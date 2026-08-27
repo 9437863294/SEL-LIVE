@@ -120,7 +120,25 @@ const IDENTITY_LABELS: Record<GreytHRIdentityCode, string> = {
 export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   const { can, isLoading: authLoading } = useAuthorization();
 
-  const canView = can('View', 'Employee.Manage') || can('View Module', 'Employee');
+  /**
+   * Either namespace opens the profile, and that is a fix rather than laxity.
+   *
+   * Two permission trees cover the same ground: the granular `Employee.*` module (Manage, Personal
+   * Data, Documents, …) which only this screen ever checked, and the coarse
+   * `Settings.Employee Management` which every *other* employee screen checks. So a user granted
+   * `Settings.Employee Management · View` could list the whole roster on Manage Employee, click a
+   * name, and be told they have no access — a dead end reached from a link the same permission had
+   * just rendered.
+   *
+   * Accepting both is additive: it can only ever grant access to somebody who already had it on the
+   * listing screen, never take it away. The narrower `Employee.Personal Data` and
+   * `Employee.Documents` checks below are deliberately left alone — those guard special-category
+   * data and national identity documents, and "may see the roster" is not consent to those.
+   */
+  const canView =
+    can('View', 'Employee.Manage') ||
+    can('View Module', 'Employee') ||
+    can('View', 'Settings.Employee Management');
   const canViewPersonal = can('View', 'Employee.Personal Data');
   const canUnmask = can('View Unmasked', 'Employee.Personal Data');
   const canViewDocuments = can('View', 'Employee.Documents');

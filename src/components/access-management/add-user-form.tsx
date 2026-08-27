@@ -39,7 +39,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import type { Department, Project, Role, User } from '@/lib/types';
 import { createUserWithAccess, type AccessActor } from '@/lib/access-control-service';
-import type { LinkableEmployeeRow } from '@/lib/greythr-sync-client';
+import type { LinkableEmployeeRow, ReportingManagerInfo } from '@/lib/greythr-sync-client';
 import { RolePicker } from './pickers';
 import { CategoryChips, EmployeePicker } from './employee-picker';
 
@@ -118,6 +118,15 @@ export function AddUserForm({
   const [employee, setEmployee] = useState<LinkableEmployeeRow | null>(null);
   const [employeeCategories, setEmployeeCategories] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<'greythr' | 'manual'>('greythr');
+  /**
+   * The picked employee's reporting manager, kept even when they have no platform login.
+   *
+   * `form.reportingManagerId` can only ever be a real user id, because it feeds a `<Select>` of real
+   * accounts — there is nothing to select for a manager who has not been onboarded yet. This is kept
+   * alongside so that case can still say something ("reports to Priya Kumar — no login yet") instead
+   * of leaving the field blank with no explanation.
+   */
+  const [reportingManagerInfo, setReportingManagerInfo] = useState<ReportingManagerInfo | null>(null);
 
   // One password per visit to the page. Regenerating on every render would change it under an
   // administrator who had already copied it.
@@ -129,18 +138,33 @@ export function AddUserForm({
   /**
    * Prefill from the chosen employee.
    *
-   * Matching by *name* for department, designation and project, because greytHR is the authority on
-   * what those are called and this app's own masters were populated from the same source. A greytHR
-   * value with no local counterpart is still shown on the employee record — it just cannot be turned
-   * into a department id or a project id, so those selects stay empty rather than guessing.
+   * Matching by *name* for department and project, because greytHR is the authority on what those
+   * are called and this app's own masters were populated from the same source. A greytHR value with
+   * no local counterpart is still shown on the employee record — it just cannot be turned into a
+   * department id or a project id, so those selects stay empty; a note under each one says so rather
+   * than leaving a silent blank that reads as a bug.
+   *
+   * Designation is different — it is not an id lookup, it is a plain string written straight to
+   * `form.designation`. The failure mode there was a Radix `<Select>` gotcha, not a missing record:
+   * its `value` prop has to match one of its options *exactly*, and greytHR's designation string is
+   * not guaranteed to be byte-identical to whatever the shared `designations` list happens to hold
+   * (case, trailing space, or simply a value this app has never seen before). `designationOptions`
+   * below guarantees a match by construction — see there — so this only needs to normalise onto an
+   * existing entry when one already matches, to avoid listing "Site Accountant" and "SITE ACCOUNTANT"
+   * as two different options for what is one designation.
    */
   const applyEmployee = useCallback(
-    (picked: LinkableEmployeeRow | null, categories: Record<string, string>) => {
+    (
+      picked: LinkableEmployeeRow | null,
+      categories: Record<string, string>,
+      reportingManager?: ReportingManagerInfo | null,
+    ) => {
       setEmployee(picked);
       setEmployeeCategories(categories);
+      setReportingManagerInfo(reportingManager ?? null);
 
       if (!picked) {
-        setForm((current) => ({ ...current, employeeId: '', employeeNo: '' }));
+        setForm((current) => ({ ...current, employeeId: '', employeeNo: '', reportingManagerId: '' }));
         return;
       }
 
@@ -150,6 +174,9 @@ export function AddUserForm({
       const project = projects.find(
         (entry) => (entry.projectName || '').trim().toLowerCase() === picked.projectName.trim().toLowerCase(),
       );
+      const designation =
+        designations.find((entry) => entry.trim().toLowerCase() === picked.designation.trim().toLowerCase()) ??
+        picked.designation;
 
       setForm((current) => ({
         ...current,
@@ -158,14 +185,30 @@ export function AddUserForm({
         name: picked.name || current.name,
         email: picked.email || current.email,
         mobile: picked.phone || current.mobile,
-        designation: picked.designation || current.designation,
+        designation: designation || current.designation,
         location: picked.location || current.location,
         departmentId: department?.id ?? '',
         projectId: project?.id ?? '',
+        // Blank when the manager has no login yet — `reportingManagerInfo` still carries their name
+        // so the screen can say who, even though there is nobody to select.
+        reportingManagerId: reportingManager?.userId ?? '',
       }));
     },
-    [departments, projects],
+    [departments, designations, projects],
   );
+
+  /**
+   * The Designation select's own option list, with the picked value guaranteed present.
+   *
+   * The shared `designations` list (from `useAccessDirectory`) feeds scope-grant pickers elsewhere in
+   * Access Management too, so it is not mutated here — this is a local copy for this one control. If
+   * greytHR's value is not already in it, it is appended rather than left to render as a blank Select
+   * next to a form that quietly does hold the right value in `form.designation`.
+   */
+  const designationOptions = useMemo(() => {
+    if (!form.designation || designations.includes(form.designation)) return designations;
+    return [...designations, form.designation].sort((a, b) => a.localeCompare(b));
+  }, [designations, form.designation]);
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -417,13 +460,21 @@ export function AddUserForm({
                   ))}
                 </SelectContent>
               </Select>
+              {/* Only shown when greytHR named a department and it genuinely has no local match —
+                  otherwise a blank select with no explanation reads as this screen having failed to
+                  fill it in, when the real answer is "there is nothing to select yet". */}
+              {employee?.department && !form.departmentId && (
+                <p className="text-[11px] text-amber-700">
+                  greytHR: {employee.department} — no matching department record.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Designation</Label>
               <Select value={form.designation} onValueChange={(value) => set('designation', value)}>
                 <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                 <SelectContent>
-                  {designations.map((designation) => (
+                  {designationOptions.map((designation) => (
                     <SelectItem key={designation} value={designation}>{designation}</SelectItem>
                   ))}
                 </SelectContent>
@@ -442,6 +493,19 @@ export function AddUserForm({
                     ))}
                 </SelectContent>
               </Select>
+              {/* greytHR knows who they report to, but that person has no platform login to select —
+                  the name is worth showing even though the field itself has to stay empty. */}
+              {reportingManagerInfo && !form.reportingManagerId && (
+                <p className="text-[11px] text-amber-700">
+                  greytHR: reports to {reportingManagerInfo.name || `employee ${reportingManagerInfo.employeeId}`}
+                  {' '}— no platform login yet.
+                </p>
+              )}
+              {employee && !reportingManagerInfo && (
+                <p className="text-[11px] text-muted-foreground">
+                  Not recorded in greytHR for this employee.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Project / site</Label>
@@ -455,6 +519,11 @@ export function AddUserForm({
                   ))}
                 </SelectContent>
               </Select>
+              {employee?.projectName && !form.projectId && (
+                <p className="text-[11px] text-amber-700">
+                  greytHR: {employee.projectName} — no matching project record.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="new-user-location">Location</Label>

@@ -267,6 +267,51 @@ otherwise skip a whole day.
 **On Firebase App Hosting** there is no built-in cron — point a Cloud Scheduler job at the same URL
 hourly and the behaviour is identical.
 
+### ⚠️ This deployment *is* on App Hosting, so the `vercel.json` crons never fired
+
+Not hypothetical, and not limited to this integration. The live site identifies as Google
+infrastructure (`server: envoy`, `via: 1.1 google`, `x-cloud-trace-context`, and no `x-vercel-*`
+header), and `apphosting.yaml` sets `APP_BASE_URL: https://seltech.store`. Vercel's cron runner is
+the only thing that reads `vercel.json`, so **every one of the six schedules declared there was
+inert**:
+
+| Endpoint | Intended | Module affected |
+| --- | --- | --- |
+| `/api/greythr/sync` | hourly | this integration — hence the stale mirror |
+| `/api/workflow/check-escalations` | hourly | e-approval escalations |
+| `/api/recurring-payments/generate` | daily 00:15 | recurring payments |
+| `/api/vehicle-management/insurance-workflow` | daily 00:30 | vehicle insurance |
+| `/api/fixed-deposit/daily-controls` | daily 00:45 | fixed deposits |
+| `/api/hr/sla` | daily 01:00 | HR SLA sweep |
+
+This is the root cause of the symptom that started the investigation — Manage Employee reporting 181
+of 182 employees as departed. The mirror was not wrong because the derivation was wrong; it was wrong
+because nothing had rebuilt it since before the derivation was fixed, and `shouldForceFullResync`
+only self-heals *on a run that happens*.
+
+`scripts/setup-cloud-scheduler.sh` creates the six jobs on Cloud Scheduler. `vercel.json` is left in
+place deliberately — it remains correct configuration if this app is ever also deployed to Vercel,
+and every one of these routes is idempotent, so two runners would be wasteful rather than harmful.
+
+Two things the script cannot do for you:
+
+1. **`CRON_SECRET` is currently set nowhere.** `isAuthorizedCron` treats a missing secret as
+   "authorised", so these endpoints are publicly callable today — anyone could trigger a payroll
+   generation run. The script creates the secret; you must add it to `apphosting.yaml` and redeploy.
+2. **`DEFAULT_SYNC_SCHEDULE.enabled` is `false`.** Even once the cron fires, `isSyncDue` answers
+   "Automatic sync is switched off" until somebody enables it at `/employee/sync`. That remains a
+   deliberate decision rather than a default, because the exit policy is what decides whether a
+   greytHR separation closes a login — though the default policy (`Flag for review`) changes nobody's
+   access, so switching the schedule on is safe.
+
+### A footnote on time zones
+
+The cron expressions above were written for Vercel, which runs them in UTC. Cloud Scheduler makes the
+zone explicit, so the setup script chooses `Asia/Kolkata` — these read as an Indian company's
+overnight batch times. Note separately that `todayIso()` uses the *server's* local time, which on
+Cloud Run is UTC; for an IST tenant that is a 5½-hour disagreement about what "today" means at the
+edges of a day. Not addressed here, but worth knowing before trusting a date-boundary calculation.
+
 ### A watermark is worthless without a baseline
 
 An incremental run can *maintain* a complete mirror. It cannot *build* one — it only returns what
@@ -572,6 +617,33 @@ until a sync runs; but it is now informational, not a blocker.
 The one employee actually chosen is still refetched live so a new joiner's details are current. The
 picker also states when the mirror was last synced, and warns when it never has been — because a
 picker that presents a stale list as fact sends administrators looking for people who aren't in it.
+
+### The prefilled form fields did not always fill
+
+Three different failure modes, reported together as "these details are not getting filled auto":
+
+- **Designation showed blank despite the value being set correctly.** It is a plain string written
+  straight into `form.designation` and rendered through a Radix `<Select>`, whose `value` prop must
+  match one of its own options **exactly** — case and whitespace included. Nothing guaranteed that
+  greytHR's string was byte-identical to whatever the shared `designations` list (deduplicated from
+  the employee master, used by scope-grant pickers too) happened to hold, so a mismatch showed an
+  empty box while the state underneath was fine. Fixed with a local option list —
+  `designationOptions` — that always contains whatever `form.designation` holds, appending it if the
+  shared list does not already have it, without mutating that shared list for its other consumers.
+- **Department and Project were sometimes genuinely unmatched**, not broken: both are `<Select>`s
+  bound to real Firestore documents by id, so there is nothing to select when no local Department or
+  Project record shares the greytHR name — a real masters-data gap, not a bug in the lookup (which was
+  already case/whitespace-insensitive). Previously this failed silently; now a line names the greytHR
+  value and says so, so it reads as "create this record" rather than "the form is broken".
+- **Reporting manager was never attempted at all.** greytHR's org tree is a *bulk* endpoint with no
+  single-employee equivalent, so resolving it live on every pick would mean paging the whole
+  organisation's reporting lines to look up one person. Instead it is read from the **mirror**: a
+  normal sync already resolves `reportingManagerEmployeeId` / `reportingManagerName` onto the employee
+  document (the "reporting" detail group), so the single-employee route does one extra document read
+  and, when the manager already has a login, resolves it to their user id via the same
+  `indexUsersByEmployeeId` join the sync itself uses. When the manager exists in greytHR but has no
+  platform login, the field stays empty — there is nothing to select — but the name is still shown, so
+  it reads as "not yet onboarded" rather than "not filled in".
 
 ### A wrinkle worth knowing
 

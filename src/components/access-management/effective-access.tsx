@@ -53,7 +53,7 @@ import {
   type RegistryNode,
 } from '@/lib/access-control';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { PermissionPair, RiskBadges, RoleBadge, SourceBadges, StatLine } from './access-ui';
+import { AccessCard, PermissionPair, RiskBadges, RoleBadge, SourceBadges, StatLine } from './access-ui';
 
 export function EffectiveAccessViewer({
   state,
@@ -71,7 +71,7 @@ export function EffectiveAccessViewer({
 
   return (
     <div className="space-y-3">
-      <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+      <AccessCard>
         <CardContent className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center">
           <Label className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Inspect
@@ -94,7 +94,7 @@ export function EffectiveAccessViewer({
             </SelectContent>
           </Select>
         </CardContent>
-      </Card>
+      </AccessCard>
 
       {!user || !access ? (
         <HrEmptyState
@@ -169,7 +169,7 @@ export function UserEffectiveAccessPanel({
   return (
     <div className="space-y-3">
       {/* Summary */}
-      <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+      <AccessCard>
         <CardHeader className="px-4 py-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
@@ -313,7 +313,7 @@ export function UserEffectiveAccessPanel({
             </div>
           )}
         </CardContent>
-      </Card>
+      </AccessCard>
 
       {/* Detail tabs */}
       <Tabs defaultValue="permissions">
@@ -399,7 +399,7 @@ function PermissionExplainer({
 
   return (
     <div className="space-y-3">
-      <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+      <AccessCard>
         <CardHeader className="px-4 py-3">
           <CardTitle className="flex items-center gap-1.5 text-sm">
             <HelpCircle className="h-4 w-4 text-indigo-600" />
@@ -435,7 +435,7 @@ function PermissionExplainer({
             </SelectContent>
           </Select>
         </CardContent>
-      </Card>
+      </AccessCard>
 
       {explanation && (
         <Card

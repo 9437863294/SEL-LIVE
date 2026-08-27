@@ -1194,6 +1194,71 @@ export function reviseStoredEmploymentState(stored: {
   };
 }
 
+/**
+ * Overlay greytHR's live CURRENT roster onto a stored mirror record.
+ *
+ * The mirror is only ever as correct as the last sync that wrote it, and a sync that has not run —
+ * or ran before a derivation fix — leaves working employees stored as `Relieved`. Every screen that
+ * lists employees therefore needs the same correction, and until this existed each one applied it
+ * inline: the Add User picker had its own copy, `/employee/current` sidestepped the mirror entirely,
+ * and Manage Employee trusted the mirror blindly and so showed a workforce that had all left.
+ *
+ * Membership in the live roster is authoritative in one direction only — it can promote somebody to
+ * working, never demote them. When greytHR says a person is CURRENT that outranks any stored exit
+ * date or historical separation row; when the roster is silent about them (or could not be fetched at
+ * all) the stored state stands, re-judged for placeholder dates by `reviseStoredEmploymentState`.
+ * Demoting on absence would be wrong for a reason that matters: a paging gap, a scope difference
+ * between API users, or an unreachable greytHR would silently mark the whole company as departed.
+ *
+ * `Notice Period` is preserved rather than flattened to `Active`. It is a working state, so the
+ * overlay has nothing to correct, and it carries a real fact — a resignation is on file — that
+ * overwriting would discard.
+ */
+export function overlayLiveRosterState<T extends Partial<SyncedEmployee>>(
+  stored: T,
+  isCurrentInLiveRoster: boolean,
+): T & {
+  status: 'Active' | 'Inactive';
+  employmentState: EmploymentState;
+  employmentStateReason: string;
+  exitDate: string | null;
+  leavingDate: string | null;
+  greytHRCurrent: boolean | null;
+  /** True when the live roster or the placeholder rule overruled what the mirror had stored. */
+  employmentStateCorrected: boolean;
+} {
+  const revised = reviseStoredEmploymentState(stored);
+
+  if (isCurrentInLiveRoster) {
+    const onNotice = revised.state === 'Notice Period';
+    return {
+      ...stored,
+      status: 'Active',
+      employmentState: onNotice ? 'Notice Period' : 'Active',
+      employmentStateReason: onNotice
+        ? revised.reason
+        : "Included in greytHR's current employee roster.",
+      exitDate: onNotice ? revised.exitDate : null,
+      leavingDate: onNotice ? revised.exitDate : null,
+      greytHRCurrent: true,
+      // A stored exit state that the live roster contradicts is a correction worth surfacing, and so
+      // is one the placeholder rule already caught.
+      employmentStateCorrected: revised.corrected || hasExited((stored.employmentState ?? 'Unknown') as EmploymentState),
+    };
+  }
+
+  return {
+    ...stored,
+    status: isWorkingState(revised.state) ? 'Active' : 'Inactive',
+    employmentState: revised.state,
+    employmentStateReason: revised.reason,
+    exitDate: revised.exitDate,
+    leavingDate: revised.exitDate,
+    greytHRCurrent: stored.greytHRCurrent ?? null,
+    employmentStateCorrected: revised.corrected,
+  };
+}
+
 export interface EmploymentStateResult {
   state: EmploymentState;
   /** The date the exit takes effect, when one is known. */
@@ -2045,12 +2110,29 @@ export interface GreytHRMappingPolicy {
   syncAccessMembership: boolean;
   /** Grant project-scoped access from the greytHR "Project Name" category. Off by default. */
   syncProjectAccess: boolean;
+  /**
+   * Link platform logins to greytHR employees automatically, on every run.
+   *
+   * On by default, and the default matters more than it looks. The sync can only act on a
+   * resignation for a user it can *identify* — `resolveAccessDecision` is reached through
+   * `matchUserForEmployee`, so an unlinked account is invisible to it. Linking was previously a
+   * button on a screen reachable only from inside one user's profile card, which meant the
+   * deactivate-on-exit policy quietly did nothing for every account nobody had got round to linking.
+   *
+   * Only the confident subset is applied: `planBulkLink` returns rows the matcher marked `auto`,
+   * which `AUTO_LINK_METHODS` restricts to greytHR employee id, employee number and official email.
+   * Name and phone matches are excluded by design and stay in the review queue, as does anything
+   * that matched more than one employee. So this automates the identifications a human would have
+   * rubber-stamped and none of the judgement calls.
+   */
+  autoLinkUsers: boolean;
 }
 
 export const DEFAULT_MAPPING_POLICY: GreytHRMappingPolicy = {
   syncEmployeeFacts: true,
   syncAccessMembership: true,
   syncProjectAccess: false,
+  autoLinkUsers: true,
 };
 
 export interface GreytHRSyncSettings {
@@ -2587,6 +2669,9 @@ export function normalizeSyncSettings(
       syncEmployeeFacts: true,
       syncAccessMembership: raw?.mapping?.syncAccessMembership !== false,
       syncProjectAccess: raw?.mapping?.syncProjectAccess === true,
+      // `!== false` rather than `=== true`, so a settings document written before this field existed
+      // adopts the default rather than silently disabling the linking every exit policy depends on.
+      autoLinkUsers: raw?.mapping?.autoLinkUsers !== false,
     },
     // Read per group against each one's own default, so a settings document written before a group
     // existed picks up that group's default rather than silently enabling a sensitive fetch.
@@ -2649,6 +2734,15 @@ export interface GreytHRSyncRun {
   usersReactivated: number;
   flaggedForReview: number;
   membershipUpdated: number;
+  /**
+   * Logins linked to a greytHR employee by this run, and how many the matcher declined to guess at.
+   *
+   * Reported as a pair on purpose. "12 linked" alone reads as success; "12 linked, 3 left for
+   * review" says there is a queue somebody has to work through — and those three are precisely the
+   * accounts an exit policy still cannot act on.
+   */
+  usersAutoLinked?: number;
+  usersLeftForReview?: number;
   /** Restricted-data documents written. 0 when no sensitive group is enabled. */
   sensitiveRecordsWritten?: number;
   /** Which detail groups this run actually fetched, for the report. */

@@ -53,6 +53,7 @@ import {
   indexUsersByEmail,
   isSyncDue,
   isWorkingState,
+  overlayLiveRosterState,
   matchUserForEmployee,
   isGreytHRTimestamp,
   modifiedSinceFor,
@@ -1935,4 +1936,95 @@ test('isPlaceholderExitDate is precise about its two rules', () => {
   assert.equal(isPlaceholderExitDate('2026-08-01', '2026-08-01'), true, 'same day as joining');
   assert.equal(isPlaceholderExitDate(null), false, 'absent is not a placeholder');
   assert.equal(isPlaceholderExitDate(undefined), false);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * overlayLiveRosterState — correcting a stored record against greytHR's live CURRENT roster
+ * ---------------------------------------------------------------------------------------------- */
+
+test('overlayLiveRosterState promotes a stored leaver that greytHR still lists as current', () => {
+  // The exact shape that made Manage Employee report 181 of 182 people as departed: a placeholder
+  // leaving date, read literally by an earlier sync.
+  const stored = {
+    employeeId: '208',
+    employmentState: 'Relieved',
+    employmentStateReason: 'Last working day was 1900-01-01.',
+    exitDate: '1900-01-01',
+    dateOfJoin: '1986-11-20',
+    status: 'Inactive',
+  };
+
+  const overlaid = overlayLiveRosterState(stored, true);
+  assert.equal(overlaid.employmentState, 'Active');
+  assert.equal(overlaid.status, 'Active');
+  assert.equal(overlaid.exitDate, null, 'a placeholder exit date is not carried forward');
+  assert.equal(overlaid.leavingDate, null);
+  assert.equal(overlaid.greytHRCurrent, true);
+  assert.equal(overlaid.employmentStateCorrected, true, 'the override is reported, not silent');
+});
+
+test('overlayLiveRosterState preserves Notice Period rather than flattening it to Active', () => {
+  const stored = {
+    employeeId: '9',
+    employmentState: 'Notice Period',
+    employmentStateReason: 'Leaving on 2026-12-31 — still working until then.',
+    exitDate: '2026-12-31',
+    dateOfJoin: '2007-12-11',
+  };
+
+  const overlaid = overlayLiveRosterState(stored, true);
+  // Still working, so there is nothing to correct — and the resignation is a real fact that
+  // overwriting would discard.
+  assert.equal(overlaid.employmentState, 'Notice Period');
+  assert.equal(overlaid.status, 'Active');
+  assert.equal(overlaid.exitDate, '2026-12-31', 'the genuine exit date survives');
+  assert.equal(overlaid.employmentStateCorrected, false);
+});
+
+test('overlayLiveRosterState never demotes somebody the live roster is merely silent about', () => {
+  // Absence from the roster is not evidence of departure: a paging gap or an unreachable greytHR
+  // would otherwise mark the entire company as gone.
+  const stored = {
+    employeeId: '164',
+    employmentState: 'Active',
+    employmentStateReason: "Included in greytHR's current employee roster.",
+    exitDate: null,
+    dateOfJoin: '2005-04-15',
+  };
+
+  const overlaid = overlayLiveRosterState(stored, false);
+  assert.equal(overlaid.employmentState, 'Active', 'stays working');
+  assert.equal(overlaid.status, 'Active');
+  assert.equal(overlaid.employmentStateCorrected, false);
+});
+
+test('overlayLiveRosterState keeps a genuine leaver departed', () => {
+  const stored = {
+    employeeId: '3',
+    employmentState: 'Relieved',
+    employmentStateReason: 'Last working day was 2025-05-03.',
+    exitDate: '2025-05-03',
+    dateOfJoin: '1989-12-05',
+  };
+
+  const overlaid = overlayLiveRosterState(stored, false);
+  assert.equal(overlaid.employmentState, 'Relieved', 'a plausible exit date is respected');
+  assert.equal(overlaid.status, 'Inactive');
+  assert.equal(overlaid.exitDate, '2025-05-03');
+  assert.equal(overlaid.employmentStateCorrected, false);
+});
+
+test('overlayLiveRosterState corrects a placeholder exit date even with no live roster', () => {
+  // The placeholder rule stands on its own: it needs no greytHR call, only the joining date.
+  const stored = {
+    employeeId: '77',
+    employmentState: 'Relieved',
+    exitDate: '2020-01-01',
+    dateOfJoin: '2022-03-01',
+  };
+
+  const overlaid = overlayLiveRosterState(stored, false);
+  assert.equal(overlaid.employmentState, 'Active', 'nobody leaves before they arrive');
+  assert.equal(overlaid.status, 'Active');
+  assert.equal(overlaid.employmentStateCorrected, true);
 });

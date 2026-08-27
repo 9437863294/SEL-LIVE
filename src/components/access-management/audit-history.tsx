@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -41,7 +41,7 @@ import { exportRowsToExcel } from '@/lib/report-excel';
 import { describeAuditEntry, formatGrantDate, type AccessAuditEntry, type AccessBatchRecord } from '@/lib/access-control';
 import { listAccessAuditEntries, listAccessBatches } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { PermissionPairList, StatLine } from './access-ui';
+import { AccessCard, PermissionPairList, StatLine } from './access-ui';
 
 export function AuditHistory({
   state,
@@ -150,7 +150,7 @@ export function AuditHistory({
       </TabsList>
 
       <TabsContent value="timeline" className="space-y-3">
-        <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+        <AccessCard>
           <CardContent className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-5">
             <div className="relative lg:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -193,7 +193,7 @@ export function AuditHistory({
               </div>
             </div>
           </CardContent>
-        </Card>
+        </AccessCard>
 
         <div className="flex flex-wrap items-center justify-between gap-2 px-1">
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -218,11 +218,11 @@ export function AuditHistory({
         </div>
 
         {loading ? (
-          <Card className="border-white/60 bg-white/80">
+          <AccessCard>
             <CardContent className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading the audit trail…
             </CardContent>
-          </Card>
+          </AccessCard>
         ) : visible.length === 0 ? (
           <HrEmptyState
             icon={History}
@@ -230,7 +230,7 @@ export function AuditHistory({
             description="Every grant and removal made from this screen is logged here with who, what, when, why and the exact permissions involved."
           />
         ) : (
-          <Card className="overflow-hidden border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+          <AccessCard className="overflow-hidden">
             <ScrollArea className="h-[30rem]">
               <div className="divide-y divide-slate-100">
                 {visible.map((entry, index) => {
@@ -332,7 +332,7 @@ export function AuditHistory({
                 })}
               </div>
             </ScrollArea>
-          </Card>
+          </AccessCard>
         )}
       </TabsContent>
 
@@ -346,7 +346,7 @@ export function AuditHistory({
         ) : (
           <div className="space-y-2.5">
             {batches.map((batch) => (
-              <Card key={batch.id} className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+              <AccessCard key={batch.id}>
                 <CardContent className="space-y-2.5 p-3.5">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -409,7 +409,7 @@ export function AuditHistory({
                     </div>
                   )}
                 </CardContent>
-              </Card>
+              </AccessCard>
             ))}
           </div>
         )}

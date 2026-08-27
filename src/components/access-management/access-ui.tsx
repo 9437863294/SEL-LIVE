@@ -8,11 +8,21 @@
  * pieces that mean something about *access* live here: the source badge that answers "where did
  * this permission come from", the risk badges, and the two small readouts the preview screens rely
  * on.
+ *
+ * The three exceptions to "access-specific only" are `AccessPageShell`, `AccessBackLink` and
+ * `AccessCard`. They are not about access at all — they are the module's chrome, and they live here
+ * because the alternative was what this module actually had: three different page shells across four
+ * entry points, two different back buttons, and one glass-card class string copy-pasted twenty-odd
+ * times in three drifting variants. hr-ui is shared with every other module, so the canonical
+ * *values* belong to whoever owns them; keeping the module's chrome here means it stays consistent
+ * inside the module without reaching across into somebody else's kit.
  */
 
 import * as React from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
+  ArrowLeft,
   Building2,
   CalendarClock,
   Check,
@@ -26,7 +36,10 @@ import {
   UserCog,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { cn } from '@/lib/utils';
 import {
   formatGrantDate,
@@ -36,6 +49,105 @@ import {
   type PrivilegeFinding,
   type SodConflict,
 } from '@/lib/access-control';
+
+/* ------------------------------------------------------------------------------------------------
+ * Module chrome — the page shell, the back button, the glass card
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The module's card surface.
+ *
+ * `bg-white/85` is the canonical opacity — it was the majority spelling of the three that had drifted
+ * apart (85, 80, and one with no shadow at all), and on the aurora backdrop the difference between 80
+ * and 85 is visible when two cards sit side by side.
+ */
+export const ACCESS_CARD_CLASS = 'border-white/60 bg-white/85 shadow-sm backdrop-blur-sm';
+
+export const AccessCard = React.forwardRef<HTMLDivElement, React.ComponentPropsWithoutRef<typeof Card>>(
+  function AccessCard({ className, ...props }, ref) {
+    return <Card ref={ref} className={cn(ACCESS_CARD_CLASS, className)} {...props} />;
+  },
+);
+
+/**
+ * The way back, everywhere in the module.
+ *
+ * Round, icon-only and floating over the backdrop — the idiom the two main routes already used. The
+ * label is not rendered but is the accessible name, so an icon-only control still announces where it
+ * goes.
+ */
+export function AccessBackLink({
+  href,
+  label = 'Back',
+  className,
+}: {
+  href: string;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <Button asChild variant="ghost" size="icon" className={cn('rounded-full bg-white/70 shadow-sm backdrop-blur', className)}>
+      <Link href={href} aria-label={label}>
+        <ArrowLeft className="h-5 w-5" />
+      </Link>
+    </Button>
+  );
+}
+
+const SHELL_WIDTH = {
+  /** Full-bleed — the default, because the two main routes are registers that want the width. */
+  full: '',
+  /** A form. Wider than a reading column, narrow enough that fields do not stretch absurdly. */
+  form: 'mx-auto max-w-5xl',
+  /** A wide table that still wants a ceiling on a large monitor. */
+  wide: 'mx-auto max-w-7xl',
+} as const;
+
+/**
+ * Backdrop, page padding, optional width ceiling and optional back link — once, for all four entry
+ * points.
+ *
+ * The height is `100dvh-4rem` rather than `100vh`: the protected layout has a 4rem header, and `dvh`
+ * is what stops a phone's collapsing address bar from leaving a strip of unpainted page below the
+ * backdrop.
+ *
+ * `overflow-x-clip`, not `overflow-hidden`. `overflow: hidden` makes this div a scroll container, and
+ * a scroll container that never scrolls silently kills `position: sticky` in everything below it —
+ * the Assign Access selection bar and the Add User action bar are both sticky. `clip` does the same
+ * job for stray horizontal overflow without establishing one. The aurora's own blobs do not need
+ * clipping here: `AuroraBackdrop` clips itself.
+ */
+export function AccessPageShell({
+  children,
+  backHref,
+  backLabel,
+  aside,
+  width = 'full',
+  className,
+}: {
+  children: React.ReactNode;
+  backHref?: string;
+  backLabel?: string;
+  /** Rendered on the same row as the back link — a badge, or a heading on the denied/loading states. */
+  aside?: React.ReactNode;
+  width?: keyof typeof SHELL_WIDTH;
+  className?: string;
+}) {
+  return (
+    <div className="relative min-h-[calc(100dvh-4rem)] overflow-x-clip px-4 py-3 sm:px-5">
+      <AuroraBackdrop />
+      <div className={cn('relative', SHELL_WIDTH[width], className)}>
+        {(backHref || aside) && (
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            {backHref && <AccessBackLink href={backHref} label={backLabel} />}
+            {aside}
+          </div>
+        )}
+        {children}
+      </div>
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------------------------------------
  * Source badges (§8)

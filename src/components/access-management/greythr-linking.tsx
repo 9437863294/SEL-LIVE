@@ -20,7 +20,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   CheckCircle2,
   Link2,
   Link2Off,
@@ -47,7 +46,6 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
   HrDataList,
@@ -58,6 +56,7 @@ import {
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import { AccessPageShell } from './access-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -377,314 +376,304 @@ export function GreytHRLinkingWorkspace() {
   ];
 
   return (
-    <div className="relative min-h-screen">
-      <AuroraBackdrop />
-      <div className="relative mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
-        <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2">
-          <Link href="/settings/user-management">
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            User Management
-          </Link>
-        </Button>
+    <AccessPageShell width="wide" backHref="/settings/user-management" backLabel="Back to User Management">
+      <HrPageHeader
+        title="greytHR linking"
+        description="Match every platform login to its greytHR employee record. HR data flows in; roles and permissions stay here."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => void load()} disabled={!!busy}>
+              <RefreshCw className={cn('mr-1.5 h-4 w-4', busy === 'bulk' && 'animate-spin')} />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              disabled={!canLink || !report?.plan.apply.length || !!busy}
+              onClick={() => setConfirmBulk(true)}
+            >
+              <Users className="mr-1.5 h-4 w-4" />
+              Link {report?.plan.apply.length ?? 0} confident match
+              {report?.plan.apply.length === 1 ? '' : 'es'}
+            </Button>
+          </>
+        }
+      />
 
-        <HrPageHeader
-          title="greytHR linking"
-          description="Match every platform login to its greytHR employee record. HR data flows in; roles and permissions stay here."
-          actions={
-            <>
-              <Button variant="outline" size="sm" onClick={() => void load()} disabled={!!busy}>
-                <RefreshCw className={cn('mr-1.5 h-4 w-4', busy === 'bulk' && 'animate-spin')} />
-                Refresh
-              </Button>
-              <Button
-                size="sm"
-                disabled={!canLink || !report?.plan.apply.length || !!busy}
-                onClick={() => setConfirmBulk(true)}
-              >
-                <Users className="mr-1.5 h-4 w-4" />
-                Link {report?.plan.apply.length ?? 0} confident match
-                {report?.plan.apply.length === 1 ? '' : 'es'}
-              </Button>
-            </>
-          }
+      {error && (
+        <Card className="mb-4 border-rose-200 bg-rose-50/80">
+          <CardContent className="flex items-start gap-2 p-4 text-sm text-rose-800">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Only shown when the report actually says the mirror is empty — an unreachable server
+          leaves `report` null, which is a different problem and gets the error card above. */}
+      {report && !report.rows.length && (
+        <Card className="mb-4 border-amber-200 bg-amber-50/80">
+          <CardContent className="flex items-start gap-2 p-4 text-sm text-amber-900">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>No platform users were found. Nothing can be linked yet.</span>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-5">
+        <HrKpiCard label="Linked" value={counts?.linked ?? 0} icon={CheckCircle2} tone="emerald" />
+        <HrKpiCard
+          label="Ready to link"
+          value={counts?.suggested ?? 0}
+          icon={Link2}
+          tone="blue"
+          hint="Matched on ID, number or email"
         />
+        <HrKpiCard
+          label="Needs review"
+          value={needsWork}
+          icon={AlertTriangle}
+          tone={needsWork ? 'amber' : 'slate'}
+          hint="Ambiguous or conflicting"
+        />
+        <HrKpiCard
+          label="Not in greytHR"
+          value={counts?.unlinked ?? 0}
+          icon={Link2Off}
+          tone="slate"
+          hint="No matching employee"
+        />
+        <HrKpiCard
+          label="Employees without a login"
+          value={counts?.unlinkedEmployees ?? 0}
+          icon={UserPlus}
+          tone="indigo"
+          hint="Most never need one"
+        />
+      </div>
 
-        {error && (
-          <Card className="mb-4 border-rose-200 bg-rose-50/80">
-            <CardContent className="flex items-start gap-2 p-4 text-sm text-rose-800">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </CardContent>
-          </Card>
-        )}
+      {report?.mirrorSyncedAt && (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Employee mirror last synced {new Date(report.mirrorSyncedAt).toLocaleString('en-IN')}.{' '}
+          <Link href="/employee/sync" className="underline">
+            Run a sync
+          </Link>{' '}
+          if it looks out of date.
+        </p>
+      )}
 
-        {/* Only shown when the report actually says the mirror is empty — an unreachable server
-            leaves `report` null, which is a different problem and gets the error card above. */}
-        {report && !report.rows.length && (
-          <Card className="mb-4 border-amber-200 bg-amber-50/80">
-            <CardContent className="flex items-start gap-2 p-4 text-sm text-amber-900">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>No platform users were found. Nothing can be linked yet.</span>
-            </CardContent>
-          </Card>
-        )}
+      {/* Duplicate join keys, surfaced because they are why some rows cannot be matched
+          automatically — and because they are worth fixing at the source in greytHR. */}
+      {report && (report.ambiguous.employeeNos.length > 0 || report.ambiguous.emails.length > 0) && (
+        <Card className="mb-4 border-amber-200 bg-amber-50/70">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-amber-900">Duplicate values in greytHR</CardTitle>
+            <CardDescription className="text-amber-800">
+              These appear on more than one employee, so they cannot be used to match automatically.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1 pt-0 text-xs text-amber-900">
+            {report.ambiguous.employeeNos.length > 0 && (
+              <p>Employee numbers: {report.ambiguous.employeeNos.slice(0, 10).join(', ')}</p>
+            )}
+            {report.ambiguous.emails.length > 0 && (
+              <p>Emails: {report.ambiguous.emails.slice(0, 10).join(', ')}</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-        <div className="mb-4 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-5">
-          <HrKpiCard label="Linked" value={counts?.linked ?? 0} icon={CheckCircle2} tone="emerald" />
-          <HrKpiCard
-            label="Ready to link"
-            value={counts?.suggested ?? 0}
-            icon={Link2}
-            tone="blue"
-            hint="Matched on ID, number or email"
-          />
-          <HrKpiCard
-            label="Needs review"
-            value={needsWork}
-            icon={AlertTriangle}
-            tone={needsWork ? 'amber' : 'slate'}
-            hint="Ambiguous or conflicting"
-          />
-          <HrKpiCard
-            label="Not in greytHR"
-            value={counts?.unlinked ?? 0}
-            icon={Link2Off}
-            tone="slate"
-            hint="No matching employee"
-          />
-          <HrKpiCard
-            label="Employees without a login"
-            value={counts?.unlinkedEmployees ?? 0}
-            icon={UserPlus}
-            tone="indigo"
-            hint="Most never need one"
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by name, email or employee number…"
+            className="pl-8"
           />
         </div>
+        <Select value={filter} onValueChange={(value) => setFilter(value as typeof filter)}>
+          <SelectTrigger className="sm:w-52">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {FILTERS.map((entry) => (
+              <SelectItem key={entry.value} value={entry.value}>
+                {entry.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-        {report?.mirrorSyncedAt && (
-          <p className="mb-3 text-xs text-muted-foreground">
-            Employee mirror last synced {new Date(report.mirrorSyncedAt).toLocaleString('en-IN')}.{' '}
-            <Link href="/employee/sync" className="underline">
-              Run a sync
-            </Link>{' '}
-            if it looks out of date.
-          </p>
-        )}
+      <HrDataList
+        rows={rows}
+        columns={columns}
+        empty={
+          <HrEmptyState
+            title="Nothing to show"
+            description="No user matches this filter."
+            icon={Users}
+          />
+        }
+      />
 
-        {/* Duplicate join keys, surfaced because they are why some rows cannot be matched
-            automatically — and because they are worth fixing at the source in greytHR. */}
-        {report && (report.ambiguous.employeeNos.length > 0 || report.ambiguous.emails.length > 0) && (
-          <Card className="mb-4 border-amber-200 bg-amber-50/70">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-amber-900">Duplicate values in greytHR</CardTitle>
-              <CardDescription className="text-amber-800">
-                These appear on more than one employee, so they cannot be used to match automatically.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1 pt-0 text-xs text-amber-900">
-              {report.ambiguous.employeeNos.length > 0 && (
-                <p>Employee numbers: {report.ambiguous.employeeNos.slice(0, 10).join(', ')}</p>
-              )}
-              {report.ambiguous.emails.length > 0 && (
-                <p>Emails: {report.ambiguous.emails.slice(0, 10).join(', ')}</p>
-              )}
-            </CardContent>
-          </Card>
-        )}
+      {/* ── Choose an employee ── */}
 
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by name, email or employee number…"
-              className="pl-8"
+      <Dialog open={!!choosing} onOpenChange={(open) => !open && setChoosing(null)}>
+        <DialogContent className={hrDialog.contentWide}>
+          <DialogHeader className={hrDialog.header}>
+            <DialogTitle>Link {choosing?.user.name || 'this user'}</DialogTitle>
+            <DialogDescription>
+              {choosing?.candidates.length
+                ? 'These employees matched. Pick the right one.'
+                : 'Search every employee who does not already have a login.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className={hrDialog.body}>
+            {!choosing?.candidates.length && (
+              <Input
+                value={employeeSearch}
+                onChange={(event) => setEmployeeSearch(event.target.value)}
+                placeholder="Employee number, name, department…"
+              />
+            )}
+
+            <ScrollArea className="h-72 rounded-md border">
+              <div className="divide-y">
+                {availableEmployees.length === 0 && (
+                  <p className="p-4 text-sm text-muted-foreground">
+                    No employees match. They may already be linked to another account.
+                  </p>
+                )}
+                {availableEmployees.map((employee: LinkCandidate) => (
+                  <button
+                    key={employee.employeeId}
+                    type="button"
+                    onClick={() => setChosenEmployee(employee.employeeId)}
+                    className={cn(
+                      'flex w-full items-start justify-between gap-3 p-3 text-left transition-colors hover:bg-slate-50',
+                      chosenEmployee === employee.employeeId && 'bg-indigo-50',
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-800">
+                        {employee.employeeNo} · {employee.name}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {[employee.designation, employee.department].filter(Boolean).join(' · ') || '—'}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <Badge variant="outline" className="font-normal">
+                        {employee.employmentState}
+                      </Badge>
+                      {choosing?.candidates.length ? (
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          {linkMethodLabel(employee.method)}
+                        </p>
+                      ) : null}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
+
+            <p className="text-xs text-muted-foreground">
+              Linking changes where HR data comes from. It does not grant, remove or alter any role
+              or permission.
+            </p>
+          </div>
+
+          <DialogFooter className={hrDialog.footer}>
+            <Button variant="outline" onClick={() => setChoosing(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!chosenEmployee || !!busy}
+              onClick={() => choosing && handleLink(choosing.user.id, chosenEmployee)}
+            >
+              {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Link2 className="mr-1.5 h-4 w-4" />}
+              Link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Unlink ── */}
+
+      <Dialog open={!!unlinking} onOpenChange={(open) => !open && setUnlinking(null)}>
+        <DialogContent className={hrDialog.content}>
+          <DialogHeader className={hrDialog.header}>
+            <DialogTitle>Unlink {unlinking?.user.name || 'this user'}?</DialogTitle>
+            <DialogDescription>
+              Their greytHR HR data will stop appearing, and a resignation in greytHR will no longer
+              deactivate this account. Roles and permissions are untouched.
+            </DialogDescription>
+          </DialogHeader>
+          <div className={hrDialog.body}>
+            <Label htmlFor="unlink-reason">Reason</Label>
+            <Textarea
+              id="unlink-reason"
+              value={unlinkReason}
+              onChange={(event) => setUnlinkReason(event.target.value)}
+              placeholder="Linked to the wrong employee record."
+              rows={3}
             />
           </div>
-          <Select value={filter} onValueChange={(value) => setFilter(value as typeof filter)}>
-            <SelectTrigger className="sm:w-52">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FILTERS.map((entry) => (
-                <SelectItem key={entry.value} value={entry.value}>
-                  {entry.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+          <DialogFooter className={hrDialog.footer}>
+            <Button variant="outline" onClick={() => setUnlinking(null)}>
+              Keep the link
+            </Button>
+            <Button variant="destructive" disabled={!!busy} onClick={() => void handleUnlink()}>
+              {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+              Unlink
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        <HrDataList
-          rows={rows}
-          columns={columns}
-          empty={
-            <HrEmptyState
-              title="Nothing to show"
-              description="No user matches this filter."
-              icon={Users}
-            />
-          }
-        />
+      {/* ── Bulk confirmation ── */}
 
-        {/* ── Choose an employee ── */}
-
-        <Dialog open={!!choosing} onOpenChange={(open) => !open && setChoosing(null)}>
-          <DialogContent className={hrDialog.contentWide}>
-            <DialogHeader className={hrDialog.header}>
-              <DialogTitle>Link {choosing?.user.name || 'this user'}</DialogTitle>
-              <DialogDescription>
-                {choosing?.candidates.length
-                  ? 'These employees matched. Pick the right one.'
-                  : 'Search every employee who does not already have a login.'}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className={hrDialog.body}>
-              {!choosing?.candidates.length && (
-                <Input
-                  value={employeeSearch}
-                  onChange={(event) => setEmployeeSearch(event.target.value)}
-                  placeholder="Employee number, name, department…"
-                />
-              )}
-
-              <ScrollArea className="h-72 rounded-md border">
-                <div className="divide-y">
-                  {availableEmployees.length === 0 && (
-                    <p className="p-4 text-sm text-muted-foreground">
-                      No employees match. They may already be linked to another account.
-                    </p>
-                  )}
-                  {availableEmployees.map((employee: LinkCandidate) => (
-                    <button
-                      key={employee.employeeId}
-                      type="button"
-                      onClick={() => setChosenEmployee(employee.employeeId)}
-                      className={cn(
-                        'flex w-full items-start justify-between gap-3 p-3 text-left transition-colors hover:bg-slate-50',
-                        chosenEmployee === employee.employeeId && 'bg-indigo-50',
-                      )}
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-800">
-                          {employee.employeeNo} · {employee.name}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {[employee.designation, employee.department].filter(Boolean).join(' · ') || '—'}
-                        </p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <Badge variant="outline" className="font-normal">
-                          {employee.employmentState}
-                        </Badge>
-                        {choosing?.candidates.length ? (
-                          <p className="mt-1 text-[10px] text-muted-foreground">
-                            {linkMethodLabel(employee.method)}
-                          </p>
-                        ) : null}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </ScrollArea>
-
-              <p className="text-xs text-muted-foreground">
-                Linking changes where HR data comes from. It does not grant, remove or alter any role
-                or permission.
-              </p>
-            </div>
-
-            <DialogFooter className={hrDialog.footer}>
-              <Button variant="outline" onClick={() => setChoosing(null)}>
-                Cancel
-              </Button>
-              <Button
-                disabled={!chosenEmployee || !!busy}
-                onClick={() => choosing && handleLink(choosing.user.id, chosenEmployee)}
-              >
-                {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Link2 className="mr-1.5 h-4 w-4" />}
-                Link
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* ── Unlink ── */}
-
-        <Dialog open={!!unlinking} onOpenChange={(open) => !open && setUnlinking(null)}>
-          <DialogContent className={hrDialog.content}>
-            <DialogHeader className={hrDialog.header}>
-              <DialogTitle>Unlink {unlinking?.user.name || 'this user'}?</DialogTitle>
-              <DialogDescription>
-                Their greytHR HR data will stop appearing, and a resignation in greytHR will no longer
-                deactivate this account. Roles and permissions are untouched.
-              </DialogDescription>
-            </DialogHeader>
-            <div className={hrDialog.body}>
-              <Label htmlFor="unlink-reason">Reason</Label>
-              <Textarea
-                id="unlink-reason"
-                value={unlinkReason}
-                onChange={(event) => setUnlinkReason(event.target.value)}
-                placeholder="Linked to the wrong employee record."
-                rows={3}
-              />
-            </div>
-            <DialogFooter className={hrDialog.footer}>
-              <Button variant="outline" onClick={() => setUnlinking(null)}>
-                Keep the link
-              </Button>
-              <Button variant="destructive" disabled={!!busy} onClick={() => void handleUnlink()}>
-                {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-                Unlink
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* ── Bulk confirmation ── */}
-
-        <Dialog open={confirmBulk} onOpenChange={setConfirmBulk}>
-          <DialogContent className={hrDialog.content}>
-            <DialogHeader className={hrDialog.header}>
-              <DialogTitle>Link {report?.plan.apply.length ?? 0} accounts?</DialogTitle>
-              <DialogDescription>
-                Only matches on greytHR employee ID, employee number or official email are included.
-                Name and mobile matches are never applied automatically.
-              </DialogDescription>
-            </DialogHeader>
-            <div className={hrDialog.body}>
-              <ScrollArea className="h-56 rounded-md border">
-                <div className="divide-y text-sm">
-                  {report?.plan.apply.slice(0, 200).map((entry) => (
-                    <div key={entry.userId} className="flex items-center justify-between gap-2 p-2.5">
-                      <span className="truncate">{entry.userName}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {entry.employeeNo} · {linkMethodLabel(entry.method)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-              <p className="text-xs text-muted-foreground">
-                {report?.plan.skip.length ?? 0} account(s) are left for review. Every link is recorded
-                and can be removed individually.
-              </p>
-            </div>
-            <DialogFooter className={hrDialog.footer}>
-              <Button variant="outline" onClick={() => setConfirmBulk(false)}>
-                Cancel
-              </Button>
-              <Button disabled={!!busy} onClick={() => void handleBulk()}>
-                {busy === 'bulk' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-                Link them
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </div>
+      <Dialog open={confirmBulk} onOpenChange={setConfirmBulk}>
+        <DialogContent className={hrDialog.content}>
+          <DialogHeader className={hrDialog.header}>
+            <DialogTitle>Link {report?.plan.apply.length ?? 0} accounts?</DialogTitle>
+            <DialogDescription>
+              Only matches on greytHR employee ID, employee number or official email are included.
+              Name and mobile matches are never applied automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className={hrDialog.body}>
+            <ScrollArea className="h-56 rounded-md border">
+              <div className="divide-y text-sm">
+                {report?.plan.apply.slice(0, 200).map((entry) => (
+                  <div key={entry.userId} className="flex items-center justify-between gap-2 p-2.5">
+                    <span className="truncate">{entry.userName}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {entry.employeeNo} · {linkMethodLabel(entry.method)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+            <p className="text-xs text-muted-foreground">
+              {report?.plan.skip.length ?? 0} account(s) are left for review. Every link is recorded
+              and can be removed individually.
+            </p>
+          </div>
+          <DialogFooter className={hrDialog.footer}>
+            <Button variant="outline" onClick={() => setConfirmBulk(false)}>
+              Cancel
+            </Button>
+            <Button disabled={!!busy} onClick={() => void handleBulk()}>
+              {busy === 'bulk' ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+              Link them
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </AccessPageShell>
   );
 }

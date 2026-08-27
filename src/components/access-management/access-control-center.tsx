@@ -3,7 +3,7 @@
 /**
  * The Access Control Center — the page shell, the Overview dashboard (§37) and the Users tab (§12).
  *
- * Nine tabs over one loaded directory (`useAccessDirectory`), so switching between Permission Matrix
+ * Ten tabs over one loaded directory (`useAccessDirectory`), so switching between Permission Matrix
  * and Audit History costs a render rather than five collection reads. The Assign Access tab is the
  * one everything else feeds into: the role library's "Assign", the template's "Apply to users" and a
  * user profile's "Add access" all hand their selection to it and switch to it.
@@ -21,7 +21,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   CalendarClock,
   ChevronRight,
   Clock,
@@ -30,6 +29,7 @@ import {
   KeyRound,
   Layers,
   LayoutDashboard,
+  Link2,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -43,10 +43,9 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
   HrDataList,
@@ -95,7 +94,7 @@ import {
   type UserDirectoryContext,
   type UserFilterState,
 } from './pickers';
-import { RiskBadges, RoleBadge } from './access-ui';
+import { AccessCard, AccessPageShell, RiskBadges, RoleBadge } from './access-ui';
 
 type TabId =
   | 'overview'
@@ -163,27 +162,21 @@ export function AccessControlCenter() {
 
   if (authLoading || (state.isLoading && allowed)) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <AccessPageShell>
         <HrLoader label="Loading users, roles and grants…" />
-      </div>
+      </AccessPageShell>
     );
   }
 
   if (!allowed) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
-        <div className="mb-4 flex items-center gap-2">
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-semibold text-slate-800">Access Management</h1>
-        </div>
+      <AccessPageShell
+        backHref="/settings"
+        backLabel="Back to settings"
+        aside={<h1 className="text-xl font-semibold text-slate-800">Access Management</h1>}
+      >
         <HrAccessDenied what="access management" />
-      </div>
+      </AccessPageShell>
     );
   }
 
@@ -194,129 +187,122 @@ export function AccessControlCenter() {
   const canRoles = canManageRoles(can);
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      <div className="relative">
-        <div className="mb-1 flex items-center gap-2">
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-              <ArrowLeft className="h-5 w-5" />
+    <AccessPageShell
+      backHref="/settings"
+      backLabel="Back to settings"
+      aside={
+        <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
+          <ShieldCheck className="h-3 w-3" />
+          Additive only — existing permissions are never replaced
+        </Badge>
+      }
+    >
+      <HrPageHeader
+        title="Access Control Center"
+        description="Users, roles, permissions, departments, designations, projects, reports and approval rights — from one screen."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => void state.refresh()}>
+              <RefreshCw className="mr-1.5 h-4 w-4" />
+              Refresh
             </Button>
-          </Link>
-          <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-            <ShieldCheck className="h-3 w-3" />
-            Additive only — existing permissions are never replaced
-          </Badge>
-        </div>
-
-        <HrPageHeader
-          title="Access Control Center"
-          description="Users, roles, permissions, departments, designations, projects, reports and approval rights — from one screen."
-          actions={
-            <>
-              <Button variant="outline" size="sm" onClick={() => void state.refresh()}>
-                <RefreshCw className="mr-1.5 h-4 w-4" />
-                Refresh
+            {canAssign && (
+              <Button size="sm" onClick={() => openAssignWith({})}>
+                <ShieldPlus className="mr-1.5 h-4 w-4" />
+                Assign access
               </Button>
-              {canAssign && (
-                <Button size="sm" onClick={() => openAssignWith({})}>
-                  <ShieldPlus className="mr-1.5 h-4 w-4" />
-                  Assign access
-                </Button>
-              )}
-            </>
-          }
-        />
+            )}
+          </>
+        }
+      />
 
-        {state.error && (
-          <div className="mb-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
-            {state.error}
-          </div>
-        )}
+      {state.error && (
+        <div className="mb-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+          {state.error}
+        </div>
+      )}
 
-        <Tabs value={tab} onValueChange={(value) => setTab(value as TabId)}>
-          <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
-            <TabsList className="inline-flex w-max">
-              <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
-              <TabsTrigger value="users" className="text-xs">Users</TabsTrigger>
-              <TabsTrigger value="roles" className="text-xs">Roles</TabsTrigger>
-              <TabsTrigger value="permissions" className="text-xs">Permissions</TabsTrigger>
-              <TabsTrigger value="assign" className="text-xs">Assign Access</TabsTrigger>
-              <TabsTrigger value="matrix" className="text-xs">Permission Matrix</TabsTrigger>
-              <TabsTrigger value="effective" className="text-xs">Effective Access</TabsTrigger>
-              <TabsTrigger value="templates" className="text-xs">Templates &amp; Rules</TabsTrigger>
-              <TabsTrigger value="reports" className="text-xs">Reports</TabsTrigger>
-              <TabsTrigger value="audit" className="text-xs">Audit History</TabsTrigger>
-            </TabsList>
-          </ScrollArea>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as TabId)}>
+        <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
+          <TabsList className="inline-flex w-max">
+            <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+            <TabsTrigger value="users" className="text-xs">Users</TabsTrigger>
+            <TabsTrigger value="roles" className="text-xs">Roles</TabsTrigger>
+            <TabsTrigger value="permissions" className="text-xs">Permissions</TabsTrigger>
+            <TabsTrigger value="assign" className="text-xs">Assign Access</TabsTrigger>
+            <TabsTrigger value="matrix" className="text-xs">Permission Matrix</TabsTrigger>
+            <TabsTrigger value="effective" className="text-xs">Effective Access</TabsTrigger>
+            <TabsTrigger value="templates" className="text-xs">Templates &amp; Rules</TabsTrigger>
+            <TabsTrigger value="reports" className="text-xs">Reports</TabsTrigger>
+            <TabsTrigger value="audit" className="text-xs">Audit History</TabsTrigger>
+          </TabsList>
+        </ScrollArea>
 
-          <TabsContent value="overview" className="mt-3">
-            <AccessOverview state={state} onNavigate={setTab} onAssign={openAssignWith} />
-          </TabsContent>
+        <TabsContent value="overview" className="mt-3">
+          <AccessOverview state={state} onNavigate={setTab} onAssign={openAssignWith} />
+        </TabsContent>
 
-          <TabsContent value="users" className="mt-3">
-            <UsersTab
-              state={state}
-              actor={actor}
-              canAssign={canAssign}
-              canRevoke={canRevoke}
-              onAssign={openAssignWith}
-            />
-          </TabsContent>
+        <TabsContent value="users" className="mt-3">
+          <UsersTab
+            state={state}
+            actor={actor}
+            canAssign={canAssign}
+            canRevoke={canRevoke}
+            onAssign={openAssignWith}
+          />
+        </TabsContent>
 
-          <TabsContent value="roles" className="mt-3">
-            <RoleLibrary
-              state={state}
-              actor={actor}
-              canManage={canRoles}
-              onAssignRole={(roleId) => openAssignWith({ roleIds: [roleId] })}
-            />
-          </TabsContent>
+        <TabsContent value="roles" className="mt-3">
+          <RoleLibrary
+            state={state}
+            actor={actor}
+            canManage={canRoles}
+            onAssignRole={(roleId) => openAssignWith({ roleIds: [roleId] })}
+          />
+        </TabsContent>
 
-          <TabsContent value="permissions" className="mt-3">
-            <PermissionRegistryTab state={state} />
-          </TabsContent>
+        <TabsContent value="permissions" className="mt-3">
+          <PermissionRegistryTab state={state} />
+        </TabsContent>
 
-          <TabsContent value="assign" className="mt-3">
-            <AssignAccess
-              key={assignSeed.key}
-              state={state}
-              actor={actor}
-              canAssign={canAssign}
-              initialUserIds={assignSeed.userIds}
-              initialRoleIds={assignSeed.roleIds}
-              initialTemplateIds={assignSeed.templateIds}
-            />
-          </TabsContent>
+        <TabsContent value="assign" className="mt-3">
+          <AssignAccess
+            key={assignSeed.key}
+            state={state}
+            actor={actor}
+            canAssign={canAssign}
+            initialUserIds={assignSeed.userIds}
+            initialRoleIds={assignSeed.roleIds}
+            initialTemplateIds={assignSeed.templateIds}
+          />
+        </TabsContent>
 
-          <TabsContent value="matrix" className="mt-3">
-            <PermissionMatrixView state={state} />
-          </TabsContent>
+        <TabsContent value="matrix" className="mt-3">
+          <PermissionMatrixView state={state} />
+        </TabsContent>
 
-          <TabsContent value="effective" className="mt-3">
-            <EffectiveAccessViewer state={state} />
-          </TabsContent>
+        <TabsContent value="effective" className="mt-3">
+          <EffectiveAccessViewer state={state} />
+        </TabsContent>
 
-          <TabsContent value="templates" className="mt-3">
-            <TemplatesAndScopes
-              state={state}
-              actor={actor}
-              canManage={canRoles}
-              onApplyTemplate={(templateId) => openAssignWith({ templateIds: [templateId] })}
-            />
-          </TabsContent>
+        <TabsContent value="templates" className="mt-3">
+          <TemplatesAndScopes
+            state={state}
+            actor={actor}
+            canManage={canRoles}
+            onApplyTemplate={(templateId) => openAssignWith({ templateIds: [templateId] })}
+          />
+        </TabsContent>
 
-          <TabsContent value="reports" className="mt-3">
-            <AccessReports state={state} />
-          </TabsContent>
+        <TabsContent value="reports" className="mt-3">
+          <AccessReports state={state} />
+        </TabsContent>
 
-          <TabsContent value="audit" className="mt-3">
-            <AuditHistory state={state} />
-          </TabsContent>
-        </Tabs>
-      </div>
-    </div>
+        <TabsContent value="audit" className="mt-3">
+          <AuditHistory state={state} />
+        </TabsContent>
+      </Tabs>
+    </AccessPageShell>
   );
 }
 
@@ -364,6 +350,19 @@ function AccessOverview({
   const unusedRoles = useMemo(
     () => directory.roles.filter((role) => (roleUsage[role.name]?.total ?? 0) === 0),
     [directory.roles, roleUsage],
+  );
+
+  /**
+   * Active logins with no greytHR employee record behind them.
+   *
+   * Only counted for active users: an inactive account with no link is somebody who left before the
+   * mirror existed, and nagging about it every time this screen opens teaches administrators to
+   * ignore the alert. A live login with no employee record is different — every piece of profile data
+   * on it has to be typed by hand and stays wrong when HR changes it.
+   */
+  const unlinkedActiveUsers = useMemo(
+    () => directory.users.filter((user) => user.status === 'Active' && !user.employeeId),
+    [directory.users],
   );
 
   return (
@@ -415,7 +414,9 @@ function AccessOverview({
         />
       </div>
 
-      {(dashboard.inactiveUsersHoldingAccess > 0 || usersWithoutRoles.length > 0) && (
+      {(dashboard.inactiveUsersHoldingAccess > 0 ||
+        usersWithoutRoles.length > 0 ||
+        unlinkedActiveUsers.length > 0) && (
         <div className="grid gap-2.5 lg:grid-cols-2">
           {dashboard.inactiveUsersHoldingAccess > 0 && (
             <AlertCard
@@ -440,12 +441,22 @@ function AccessOverview({
               onAction={() => onAssign({ userIds: usersWithoutRoles.map((user) => user.id) })}
             />
           )}
+          {unlinkedActiveUsers.length > 0 && (
+            <AlertCard
+              tone="amber"
+              icon={Link2}
+              title={`${unlinkedActiveUsers.length} active login(s) are not linked to a greytHR employee`}
+              description="Department, designation and joining date come from greytHR. Until a login is linked, its profile data has to be maintained by hand — and the linking console proposes the confident matches for you."
+              actionLabel="Open greytHR linking"
+              actionHref="/settings/user-management/greythr-linking"
+            />
+          )}
         </div>
       )}
 
       <div className="grid gap-2.5 lg:grid-cols-2">
         {/* Expiring temporary access */}
-        <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+        <AccessCard>
           <CardHeader className="px-4 py-3">
             <CardTitle className="flex items-center gap-1.5 text-sm">
               <Clock className="h-4 w-4 text-amber-600" />
@@ -481,10 +492,10 @@ function AccessOverview({
               ))
             )}
           </CardContent>
-        </Card>
+        </AccessCard>
 
         {/* Users with the most access */}
-        <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+        <AccessCard>
           <CardHeader className="px-4 py-3">
             <CardTitle className="flex items-center gap-1.5 text-sm">
               <UserCog className="h-4 w-4 text-indigo-600" />
@@ -523,11 +534,11 @@ function AccessOverview({
               </div>
             ))}
           </CardContent>
-        </Card>
+        </AccessCard>
       </div>
 
       {unusedRoles.length > 0 && (
-        <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+        <AccessCard>
           <CardHeader className="px-4 py-3">
             <CardTitle className="flex items-center gap-1.5 text-sm">
               <Sparkles className="h-4 w-4 text-slate-400" />
@@ -550,7 +561,7 @@ function AccessOverview({
               </Badge>
             )}
           </CardContent>
-        </Card>
+        </AccessCard>
       )}
 
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
@@ -558,6 +569,18 @@ function AccessOverview({
         <QuickLink icon={Grid3x3} label="Permission matrix" hint="Compare coverage" onClick={() => onNavigate('matrix')} />
         <QuickLink icon={LayoutDashboard} label="Effective access" hint="What one person can do" onClick={() => onNavigate('effective')} />
         <QuickLink icon={History} label="Audit history" hint="Every change, with reasons" onClick={() => onNavigate('audit')} />
+        {/*
+          greytHR linking is a route rather than a tab (it is reached from User Management too), and
+          before this it had no entry point on this screen at all — the only way in was a button
+          inside one user's profile card, which made the module's most automated screen its least
+          reachable one.
+        */}
+        <QuickLink
+          icon={Link2}
+          label="greytHR linking"
+          hint="Match logins to employee records"
+          href="/settings/user-management/greythr-linking"
+        />
       </div>
     </div>
   );
@@ -570,13 +593,17 @@ function AlertCard({
   description,
   actionLabel,
   onAction,
+  actionHref,
 }: {
   tone: 'amber' | 'rose';
   icon: React.ElementType;
   title: string;
   description: string;
   actionLabel: string;
-  onAction: () => void;
+  /** An in-page action — switch tabs, open the assignment workspace. */
+  onAction?: () => void;
+  /** A route instead, for the findings whose fix lives on another screen. */
+  actionHref?: string;
 }) {
   return (
     <div
@@ -592,9 +619,15 @@ function AlertCard({
           <p className={cn('text-xs', tone === 'amber' ? 'text-amber-800' : 'text-rose-800')}>{description}</p>
         </div>
       </div>
-      <Button variant="outline" size="sm" className="h-7 shrink-0 bg-white/80 text-xs" onClick={onAction}>
-        {actionLabel}
-      </Button>
+      {actionHref ? (
+        <Button asChild variant="outline" size="sm" className="h-7 shrink-0 bg-white/80 text-xs">
+          <Link href={actionHref}>{actionLabel}</Link>
+        </Button>
+      ) : (
+        <Button variant="outline" size="sm" className="h-7 shrink-0 bg-white/80 text-xs" onClick={onAction}>
+          {actionLabel}
+        </Button>
+      )}
     </div>
   );
 }
@@ -604,18 +637,20 @@ function QuickLink({
   label,
   hint,
   onClick,
+  href,
 }: {
   icon: React.ElementType;
   label: string;
   hint: string;
-  onClick: () => void;
+  /** A tab on this screen. */
+  onClick?: () => void;
+  /** A route, for the one quick link that leaves this screen. */
+  href?: string;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/80 px-3 py-2.5 text-left shadow-sm transition-shadow hover:shadow-md"
-    >
+  const shell =
+    'flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/80 px-3 py-2.5 text-left shadow-sm transition-shadow hover:shadow-md';
+  const body = (
+    <>
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 ring-4 ring-indigo-50/50">
         <Icon className="h-4 w-4 text-indigo-600" />
       </span>
@@ -623,6 +658,20 @@ function QuickLink({
         <span className="block truncate text-sm font-semibold text-slate-800">{label}</span>
         <span className="block truncate text-[11px] text-muted-foreground">{hint}</span>
       </span>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={shell}>
+        {body}
+      </Link>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={shell}>
+      {body}
     </button>
   );
 }
@@ -785,7 +834,7 @@ function UsersTab({
 
   return (
     <div className="space-y-3">
-      <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+      <AccessCard>
         <CardContent className="space-y-2.5 p-3">
           <UserFilterBar filter={filter} onChange={setFilter} context={context} />
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -843,7 +892,7 @@ function UsersTab({
             </div>
           </div>
         </CardContent>
-      </Card>
+      </AccessCard>
 
       {rows.length === 0 ? (
         <HrEmptyState icon={Users} title="No users match these filters" description="Try widening the search." />
@@ -932,7 +981,7 @@ function PermissionRegistryTab({ state }: { state: ReturnType<typeof useAccessDi
 
   return (
     <div className="space-y-3">
-      <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+      <AccessCard>
         <CardHeader className="px-4 py-3">
           <CardTitle className="text-sm">Module, page &amp; action registry</CardTitle>
           <CardDescription className="text-xs">
@@ -955,7 +1004,7 @@ function PermissionRegistryTab({ state }: { state: ReturnType<typeof useAccessDi
             heightClassName="h-[28rem]"
           />
         </CardContent>
-      </Card>
+      </AccessCard>
     </div>
   );
 }

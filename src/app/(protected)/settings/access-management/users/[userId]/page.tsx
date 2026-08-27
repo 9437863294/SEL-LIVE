@@ -9,11 +9,7 @@
  */
 
 import { useMemo } from 'react';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { HrAccessDenied, HrLoader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -23,6 +19,7 @@ import {
   canOpenAccessManagement,
   canRevokeAccess,
 } from '@/lib/access-control-service';
+import { AccessPageShell } from '@/components/access-management/access-ui';
 import { UserAccessProfile } from '@/components/access-management/user-access-profile';
 
 export default function UserAccessProfilePage() {
@@ -38,41 +35,33 @@ export default function UserAccessProfilePage() {
 
   if (authLoading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <AccessPageShell>
         <HrLoader />
-      </div>
+      </AccessPageShell>
     );
   }
 
   if (!allowed || !actor) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
-        <div className="mb-4 flex items-center gap-2">
-          <Link href="/settings">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-semibold text-slate-800">Access profile</h1>
-        </div>
+      <AccessPageShell
+        backHref="/settings"
+        backLabel="Back to settings"
+        aside={<h1 className="text-xl font-semibold text-slate-800">Access profile</h1>}
+      >
         <HrAccessDenied what="this access profile" />
-      </div>
+      </AccessPageShell>
     );
   }
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-      <div className="relative">
-        <UserAccessProfile
-          userId={userId}
-          state={state}
-          actor={actor}
-          canRevoke={canRevokeAccess(can)}
-        />
-      </div>
-    </div>
+    // No back link here: the profile renders its own, alongside the user's name and its actions.
+    <AccessPageShell>
+      <UserAccessProfile
+        userId={userId}
+        state={state}
+        actor={actor}
+        canRevoke={canRevokeAccess(can)}
+      />
+    </AccessPageShell>
   );
 }

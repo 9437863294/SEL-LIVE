@@ -16,7 +16,7 @@
  * rather than the generic responsive `HrDataList` card/table split used elsewhere in this module.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -81,6 +81,16 @@ function initials(name: string): string {
   return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
 
+/**
+ * How often the page re-fetches greytHR's CURRENT roster on its own.
+ *
+ * Every fetch replaces `employees` wholesale rather than merging into it — that is what makes
+ * "remove anyone who has left" automatic rather than a separate rule to get wrong: a person absent
+ * from the freshest CURRENT response simply isn't in the new array, whatever they looked like five
+ * minutes ago. Five minutes balances that against hammering greytHR's API from every open tab.
+ */
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
+
 function formatJoinDate(value: string | null): string {
   if (!value) return '—';
   const parsed = new Date(`${value}T00:00:00`);
@@ -111,21 +121,34 @@ export default function CurrentEmployeesLivePage() {
   const [search, setSearch] = useState('');
   const [viewEmployee, setViewEmployee] = useState<Row | null>(null);
 
+  // Guards the auto-refresh timer against overlapping requests — a slow greytHR response should not
+  // let a second interval tick pile another fetch on top of the one still in flight.
+  const isFetchingRef = useRef(false);
+
   const load = useCallback(
-    async (isRefresh: boolean) => {
-      isRefresh ? setRefreshing(true) : setLoading(true);
+    async (mode: 'initial' | 'manual' | 'auto') => {
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
+      if (mode === 'initial') setLoading(true);
+      else setRefreshing(true);
       setError(null);
       try {
         const result = await fetchCurrentEmployeesLive();
+        // A full replace, not a merge — see the note on `AUTO_REFRESH_MS`. This is the entirety of
+        // how a departed employee disappears from the page: they are simply not in this array.
         setEmployees(result.employees.map((employee) => ({ ...employee, id: employee.employeeId })));
         setFetchedAt(result.fetchedAt);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Could not load employees from greytHR.';
         setError(message);
-        if (isRefresh) toast({ title: 'Refresh failed', description: message, variant: 'destructive' });
+        // A silent background tick that fails does not interrupt with a toast — it retries on its own
+        // next cycle, and the "Last fetched" timestamp not moving is signal enough. A manual click
+        // failing is different: the person is looking at the button right now and expects an answer.
+        if (mode === 'manual') toast({ title: 'Refresh failed', description: message, variant: 'destructive' });
       } finally {
         setLoading(false);
         setRefreshing(false);
+        isFetchingRef.current = false;
       }
     },
     [toast],
@@ -136,7 +159,10 @@ export default function CurrentEmployeesLivePage() {
       if (!authLoading) setLoading(false);
       return;
     }
-    void load(false);
+    void load('initial');
+
+    const interval = setInterval(() => void load('auto'), AUTO_REFRESH_MS);
+    return () => clearInterval(interval);
   }, [authLoading, canView, load]);
 
   const filtered = useMemo(() => {
@@ -189,7 +215,7 @@ export default function CurrentEmployeesLivePage() {
               </p>
               {fetchedAt && !loading && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Last fetched {formatDistanceToNow(new Date(fetchedAt), { addSuffix: true })}
+                  Last fetched {formatDistanceToNow(new Date(fetchedAt), { addSuffix: true })} · auto-refreshes every 5 min
                 </p>
               )}
             </div>
@@ -197,7 +223,7 @@ export default function CurrentEmployeesLivePage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void load(true)}
+            onClick={() => void load('manual')}
             disabled={loading || refreshing}
             className="w-full shrink-0 bg-white sm:w-auto"
           >
@@ -216,7 +242,7 @@ export default function CurrentEmployeesLivePage() {
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Users className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">{error}</p>
-            <Button size="sm" onClick={() => void load(true)}>
+            <Button size="sm" onClick={() => void load('manual')}>
               Try again
             </Button>
           </CardContent>

@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -52,7 +52,7 @@ import {
 import { saveRole, setRoleStatus, type AccessActor } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
 import { PermissionMapSummary, PermissionTree } from './permission-tree';
-import { RiskBadges } from './access-ui';
+import { AccessCard, RiskBadges } from './access-ui';
 
 export function RoleLibrary({
   state,
@@ -118,7 +118,7 @@ export function RoleLibrary({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-2 rounded-2xl border border-white/70 bg-white/80 p-3 shadow-sm backdrop-blur lg:flex-row lg:items-center">
+      <div className="flex flex-col gap-2 rounded-xl border border-white/70 bg-white/80 p-3 shadow-sm backdrop-blur lg:flex-row lg:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
           <Input
@@ -189,12 +189,9 @@ export function RoleLibrary({
             const conflicts = detectSodConflicts(role.permissions ?? {});
 
             return (
-              <Card
+              <AccessCard
                 key={role.id}
-                className={cn(
-                  'border-white/60 bg-white/85 shadow-sm backdrop-blur-sm transition-shadow hover:shadow-md',
-                  disabled && 'opacity-70',
-                )}
+                className={cn('transition-shadow hover:shadow-md', disabled && 'opacity-70')}
               >
                 <CardContent className="space-y-2.5 p-3.5">
                   <div className="flex items-start justify-between gap-2">
@@ -291,7 +288,7 @@ export function RoleLibrary({
                     )}
                   </div>
                 </CardContent>
-              </Card>
+              </AccessCard>
             );
           })}
         </div>

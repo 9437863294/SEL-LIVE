@@ -22,7 +22,7 @@ import { useMemo, useState } from 'react';
 import { Building2, Layers, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +31,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { hrDialog, HrEmptyState } from '@/components/hr/hr-ui';
+import { AccessCard } from './access-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
@@ -153,7 +154,7 @@ function TemplateManager({
       ) : (
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
           {templates.map((template) => (
-            <Card key={template.id} className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+            <AccessCard key={template.id}>
               <CardContent className="space-y-2.5 p-3.5">
                 <div>
                   <p className="truncate text-sm font-semibold text-slate-800">{template.name}</p>
@@ -228,7 +229,7 @@ function TemplateManager({
                   )}
                 </div>
               </CardContent>
-            </Card>
+            </AccessCard>
           ))}
         </div>
       )}
@@ -477,7 +478,7 @@ function ScopeGrantManager({
         <div className="space-y-3">
           {(['Department', 'Designation', 'Project'] as const).map((scopeType) =>
             byType[scopeType].length === 0 ? null : (
-              <Card key={scopeType} className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+              <AccessCard key={scopeType}>
                 <CardHeader className="px-4 py-3">
                   <CardTitle className="text-sm">{scopeType} rules</CardTitle>
                   <CardDescription className="text-xs">
@@ -534,7 +535,7 @@ function ScopeGrantManager({
                     </div>
                   ))}
                 </CardContent>
-              </Card>
+              </AccessCard>
             ),
           )}
         </div>

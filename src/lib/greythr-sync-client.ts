@@ -15,6 +15,7 @@
 import { auth } from './firebase';
 import type {
   EmployeeDocumentTree,
+  EmploymentState,
   GreytHRSyncRun,
   GreytHRSyncSettings,
   LinkableEmployee,
@@ -146,6 +147,14 @@ export const fetchLinkableEmployees = (): Promise<LinkableEmployeeList> =>
  * Called when an administrator picks somebody, so the prefilled designation and project are current
  * rather than as at the last nightly run — which is exactly the case that matters for a new joiner.
  */
+/** Resolved from the mirror's synced org data, not fetched live — see the API route for why. */
+export interface ReportingManagerInfo {
+  employeeId: string;
+  name: string | null;
+  /** Set only if the manager already has a platform login. */
+  userId: string | null;
+}
+
 export const fetchEmployeeDetail = (
   employeeId: string,
 ): Promise<{
@@ -153,6 +162,7 @@ export const fetchEmployeeDetail = (
   employee: LinkableEmployeeRow;
   allCategories: Record<string, string>;
   linkedUserName: string | null;
+  reportingManager: ReportingManagerInfo | null;
 }> => authorizedFetch(`/api/greythr/employees?id=${encodeURIComponent(employeeId)}`);
 
 /* ------------------------------------------------------------------------------------------------
@@ -280,3 +290,47 @@ export interface LiveCurrentEmployeesResponse {
  */
 export const fetchCurrentEmployeesLive = (): Promise<LiveCurrentEmployeesResponse> =>
   authorizedFetch<LiveCurrentEmployeesResponse>('/api/greythr/employees/current');
+
+/* ------------------------------------------------------------------------------------------------
+ * The full roster — mirror, corrected against the live roster
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface RosterEmployeeRow extends Partial<SyncedEmployee> {
+  employeeId: string;
+  employmentState: EmploymentState;
+  employmentStateReason: string;
+  employmentStateCorrected: boolean;
+  awaitingSync: boolean;
+  categories: Record<string, string>;
+}
+
+export interface EmployeeRosterResponse {
+  ok: boolean;
+  employees: RosterEmployeeRow[];
+  /** Category name → the values actually present, for the filter dropdowns. */
+  filterOptions: Record<string, string[]>;
+  counts: {
+    total: number;
+    working: number;
+    departed: number;
+    awaitingSync: number;
+    corrected: number;
+    salaryRows: number;
+  };
+  /** False when greytHR was unreachable, so the states shown are mirror-only and unverified. */
+  liveRoster: boolean;
+  mirrorSyncedAt: string | null;
+  baselineCompletedAt: string | null;
+  mirrorRefresh: { force: boolean; reason: string | null };
+  fetchedAt: string;
+}
+
+/**
+ * Every employee — current and departed — with stored states corrected against greytHR.
+ *
+ * What Manage Employee reads. Distinct from `fetchCurrentEmployeesLive`, which deliberately omits
+ * anyone who has left, and from reading the `employees` collection directly, which is how that
+ * screen came to report a whole workforce as departed.
+ */
+export const fetchEmployeeRoster = (): Promise<EmployeeRosterResponse> =>
+  authorizedFetch<EmployeeRosterResponse>('/api/greythr/employees/roster');

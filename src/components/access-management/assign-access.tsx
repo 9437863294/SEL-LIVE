@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -60,7 +60,7 @@ import {
   type UserDirectoryContext,
   type UserFilterState,
 } from './pickers';
-import { StatLine } from './access-ui';
+import { AccessCard, StatLine } from './access-ui';
 
 export interface AssignAccessProps {
   state: AccessDirectoryState;
@@ -259,7 +259,7 @@ export function AssignAccess({
   return (
     <div className="space-y-3">
       {/* Sticky action toolbar (§33) */}
-      <div className="sticky top-0 z-20 -mx-1 rounded-2xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur">
+      <div className="sticky top-0 z-20 -mx-1 rounded-xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur">
         <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="outline" className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700">
@@ -334,7 +334,7 @@ export function AssignAccess({
 
       <div className="grid gap-3 xl:grid-cols-2">
         {/* ---- What to grant ---- */}
-        <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+        <AccessCard>
           <CardHeader className="px-4 py-3">
             <CardTitle className="text-sm">1 · What to grant</CardTitle>
             <CardDescription className="text-xs">
@@ -520,10 +520,10 @@ export function AssignAccess({
               )}
             </div>
           </CardContent>
-        </Card>
+        </AccessCard>
 
         {/* ---- Who to grant it to ---- */}
-        <Card className="border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+        <AccessCard>
           <CardHeader className="px-4 py-3">
             <CardTitle className="text-sm">2 · Who gets it</CardTitle>
             <CardDescription className="text-xs">
@@ -563,7 +563,7 @@ export function AssignAccess({
               </div>
             )}
           </CardContent>
-        </Card>
+        </AccessCard>
       </div>
 
       <AssignmentPreviewDialog
