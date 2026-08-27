@@ -84,6 +84,12 @@ x-greythr-domain: <tenant>.greythr.com
 `{data, pages:{hasNext, totalElements}}` envelope — note the published samples show `?page=1` while
 the envelope reports `first: true` for page 0, so paging is driven by `hasNext` from 0.
 
+The application deliberately uses the states for two different views:
+
+- **Employee Management** stores and lists `state=ALL`, with CURRENT employees marked Active/Notice
+  Period and everyone else marked Relieved, Retired, Settled or Left from separation details.
+- **Add User** exposes only CURRENT/Notice Period employees who do not already have a login.
+
 **No documented rate limit**, so one is assumed: requests are serialised with a short delay and
 429/5xx retried with exponential backoff honouring `Retry-After`.
 

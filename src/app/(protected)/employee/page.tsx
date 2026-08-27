@@ -44,7 +44,7 @@ const employeeSettingsItemsBase = [
   { 
     icon: Users, 
     text: 'Manage Employee', 
-    description: 'View, filter, and edit employee details.',
+    description: 'View the complete greytHR roster, including current and departed employees.',
     href: '/employee/manage' 
   },
   { 
@@ -193,4 +193,3 @@ export default function EmployeeSettingsPage() {
     </div>
   );
 }
-

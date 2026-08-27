@@ -1243,6 +1243,15 @@ export function deriveEmploymentState(
     };
   }
 
+  if (input.rosterCurrent === false) {
+    return {
+      state: 'Left',
+      exitDate: null,
+      resignationDate,
+      reason: 'Not included in greytHR\'s current employee roster.',
+    };
+  }
+
   if (input.leftOrg) {
     return {
       state: 'Left',

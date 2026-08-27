@@ -1757,6 +1757,15 @@ test('CURRENT roster membership outranks a historical separation row', () => {
   assert.equal(state.exitDate, null);
 });
 
+test('an ALL-roster employee absent from CURRENT is marked left even without separation detail', () => {
+  const state = deriveEmploymentState(
+    { rosterCurrent: false, leftOrg: false },
+    TODAY,
+  );
+  assert.equal(state.state, 'Left');
+  assert.match(state.reason, /current employee roster/i);
+});
+
 test('a CURRENT employee with a future exit remains selectable as notice period', () => {
   const state = deriveEmploymentState(
     { rosterCurrent: true, leftOrg: true, leavingDate: '2026-12-31' },

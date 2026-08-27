@@ -15,8 +15,14 @@ import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import type { Employee, Department, EmployeePosition } from '@/lib/types';
-import { isEmployeeMasterRecord } from '@/lib/greythr';
+import {
+  hasExited,
+  isEmployeeMasterRecord,
+  isWorkingState,
+  type EmploymentState,
+} from '@/lib/greythr';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -52,6 +58,19 @@ const initialNewEmployeeState = {
 
 type EnrichedEmployee = Employee & {
   positions?: Record<string, string>;
+};
+
+const employmentStateOf = (employee: Pick<Employee, 'employmentState' | 'status'>): EmploymentState =>
+  employee.employmentState ?? (employee.status === 'Active' ? 'Active' : 'Left');
+
+const EMPLOYMENT_STATE_TONE: Record<EmploymentState, string> = {
+  Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  'Notice Period': 'border-amber-200 bg-amber-50 text-amber-700',
+  Relieved: 'border-rose-200 bg-rose-50 text-rose-700',
+  Retired: 'border-violet-200 bg-violet-50 text-violet-700',
+  Settled: 'border-slate-300 bg-slate-100 text-slate-700',
+  Left: 'border-rose-200 bg-rose-50 text-rose-700',
+  Unknown: 'border-slate-200 bg-white text-slate-500',
 };
 
 const filterHierarchy: (keyof typeof initialFilters)[] = [
@@ -189,6 +208,19 @@ export default function ManageEmployeePage() {
     return Array.from(columns).sort();
   }, [employees]);
 
+  const employeeCounts = useMemo(() => {
+    let current = 0;
+    let departed = 0;
+    let unknown = 0;
+    for (const employee of employees) {
+      const state = employmentStateOf(employee);
+      if (isWorkingState(state)) current += 1;
+      else if (hasExited(state)) departed += 1;
+      else unknown += 1;
+    }
+    return { current, departed, unknown };
+  }, [employees]);
+
   const handleFilterChange = (field: keyof typeof filters, value: string) => {
     setFilters(prev => {
       const newState = { ...prev, [field]: value };
@@ -216,7 +248,12 @@ export default function ManageEmployeePage() {
           emp.employeeNo?.toLowerCase().includes(debouncedEmployeeId.toLowerCase()));
       const nameMatch = (debouncedName === '' ||
           emp.name.toLowerCase().includes(debouncedName.toLowerCase()));
-      const statusMatch = (filters.status === 'all' || emp.status === filters.status);
+      const employmentState = employmentStateOf(emp);
+      const statusMatch =
+        filters.status === 'all' ||
+        (filters.status === 'working' && isWorkingState(employmentState)) ||
+        (filters.status === 'departed' && hasExited(employmentState)) ||
+        filters.status === employmentState;
       
       const positionFiltersMatch = filterHierarchy.every(col => {
           const filterValue = filters[col as keyof typeof filters];
@@ -435,6 +472,16 @@ export default function ManageEmployeePage() {
             <h1 className="text-2xl font-bold">Manage Employee</h1>
             <p className="mt-0.5 text-sm text-slate-600">
               {employees.length} employee record{employees.length === 1 ? '' : 's'}
+              {' · '}
+              <span className="text-emerald-700">{employeeCounts.current} current</span>
+              {' · '}
+              <span className="text-rose-700">{employeeCounts.departed} left</span>
+              {employeeCounts.unknown > 0 && (
+                <>
+                  {' · '}
+                  <span className="text-slate-500">{employeeCounts.unknown} unknown</span>
+                </>
+              )}
               {/*
                 Stated because this screen used to list these rows as staff, which inflated the count
                 well beyond the real headcount. Anyone comparing this page against the greytHR picker
@@ -551,8 +598,15 @@ export default function ManageEmployeePage() {
               <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="working">Current (Active + Notice)</SelectItem>
+                <SelectItem value="departed">Left / Departed</SelectItem>
                 <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Inactive">Inactive</SelectItem>
+                <SelectItem value="Notice Period">Notice Period</SelectItem>
+                <SelectItem value="Relieved">Relieved</SelectItem>
+                <SelectItem value="Retired">Retired</SelectItem>
+                <SelectItem value="Settled">Settled</SelectItem>
+                <SelectItem value="Left">Left</SelectItem>
+                <SelectItem value="Unknown">Unknown</SelectItem>
               </SelectContent>
             </Select>
 
@@ -662,7 +716,15 @@ export default function ManageEmployeePage() {
                           </Link>
                         </TableCell>
                         <TableCell>{emp.dateOfJoin}</TableCell>
-                        <TableCell>{emp.status}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={EMPLOYMENT_STATE_TONE[employmentStateOf(emp)]}
+                            title={emp.employmentStateReason || undefined}
+                          >
+                            {employmentStateOf(emp)}
+                          </Badge>
+                        </TableCell>
                         {dynamicColumns.map(col => (
                           <TableCell key={col}>
                             {emp.positions?.[col] || '-'}
