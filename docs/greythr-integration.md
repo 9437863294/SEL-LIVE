@@ -271,10 +271,14 @@ records get edited — leavers and people on notice.** So a partial mirror doesn
 *wrong*. The employee picker fills with people who cannot be selected (it only offers Active and
 Notice Period) and the active majority is simply absent, indistinguishable from "not in greytHR".
 
-So `baselineCompletedAt` is tracked separately and set **only after a successful full run**.
-`shouldForceFullResync` forces a full fetch while it is absent, which makes the whole thing
-self-healing: any installation predating the field — and any that got into this state — rebuilds a
-baseline on its next run, then goes incremental.
+So `baselineCompletedAt` is tracked separately and set **only after a successful full run**. The
+baseline also carries `mirrorVersion`. A code change that alters derived fields for an otherwise
+unchanged employee increments `GREYTHR_MIRROR_VERSION`; a mismatched or missing version forces one
+full pass. This is essential for the active-status repair: without it, employees written Inactive by
+the old derivation would never be fetched by a later incremental run.
+
+`shouldForceFullResync` therefore forces a full fetch while the baseline is absent **or** its version
+is stale. Any installation predating either field rebuilds on its next run, then goes incremental.
 
 It is surfaced in three places, because "fresh" and "complete" are different claims and the console
 previously only made the first:
@@ -522,6 +526,14 @@ Access Management's drawer additionally prefills department, designation, locati
 seeds access membership from them; User Management's dialog has no such fields, so it prefills name,
 email and mobile and stores the link. Both write the same `employeeId` / `employeeNo`, so an account
 created from either screen is linked identically.
+
+Account creation is performed by the protected server endpoint, not by the browser. It verifies
+`Settings.User Management -> Add`, validates active roles and the selected employee against the
+mirror, creates Firebase Auth and the Firestore profile as one recoverable operation, and removes the
+Auth account if the profile commit fails. Assigning additive/scoped access also requires the narrower
+access-assignment permission. The employee picker accepts either Employee Management `View` or User
+Management `Add`, so an administrator who can create a user is not accidentally blocked from seeing
+eligible active employees.
 
 **Why list from the mirror but fetch detail live** — the list must answer instantly and keep working
 when greytHR is unreachable, and paging ~1,300 employees out of the HR system whenever somebody opens

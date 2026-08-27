@@ -378,7 +378,7 @@ export default function SessionManagementPage() {
   const { toast } = useToast();
 
   const isAdmin = can('View', 'Settings.Session Management');
-  const canTerminate = can('Delete', 'Settings.Session Management') || isAdmin;
+  const canTerminate = can('Delete', 'Settings.Session Management');
 
   const [tab, setTab] = useState<Tab>('active');
   const [activeSessions, setActiveSessions] = useState<UserSession[]>([]);

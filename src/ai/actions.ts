@@ -4,7 +4,7 @@
 
 import { suggestModuleTags as suggestModuleTagsFlow, type SuggestModuleTagsInput, type SuggestModuleTagsOutput } from './flows/suggest-module-tags';
 import { validateModuleContent as validateModuleContentFlow, type ValidateModuleContentInput, type ValidateModuleContentOutput } from './flows/validate-module-content';
-import { syncAllGreytHR as syncAllGreytHRFlow, type SyncGreytHROutput } from './flows/sync-greythr-flow';
+import type { SyncGreytHROutput } from './flows/sync-greythr-flow';
 import { syncGreytHRCategories as syncGreytHRCategoriesFlow, type SyncCategoriesOutput } from './flows/sync-categories-flow';
 import { getAllEmployeePositions as getAllEmployeePositionsFlow, type GetAllEmployeePositionsInput, type GetAllEmployeePositionsOutput } from './flows/get-all-employee-positions-flow';
 import { createExpenseRequest as createExpenseRequestFlow } from './flows/create-expense-request-flow';
@@ -20,7 +20,13 @@ export async function validateModuleContent(input: ValidateModuleContentInput): 
 }
 
 export async function syncAllGreytHR(): Promise<SyncGreytHROutput> {
-    return await syncAllGreytHRFlow();
+    // Kept as a non-mutating compatibility shim. The retired flow treats greytHR's numeric
+    // employment-type code as an active/inactive state and can corrupt the employee mirror.
+    // All real syncs must go through the authenticated /api/greythr/sync service.
+    return {
+      success: false,
+      message: 'This sync action has been retired. Run greytHR sync from Employee Management.',
+    };
 }
 
 export async function syncGreytHRCategories(): Promise<SyncCategoriesOutput> {

@@ -72,12 +72,12 @@ export const SYSTEM_LOG_ACTOR = {
  * the socket address is the proxy's, not the caller's.
  */
 export function requestProvenance(request: Request): {
-  ipAddress: string | null;
-  userAgent: string | null;
+  ipAddress?: string;
+  userAgent?: string;
 } {
   const forwarded = request.headers.get('x-forwarded-for');
   return {
-    ipAddress: forwarded?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || null,
-    userAgent: request.headers.get('user-agent') || null,
+    ipAddress: forwarded?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || undefined,
+    userAgent: request.headers.get('user-agent') || undefined,
   };
 }

@@ -23,11 +23,11 @@ export async function POST(request: Request) {
 
     const isSelf = userId === context.userId;
     const can = checkerFor(context.access);
-    const canManageSessions =
-      can('View', 'Settings.Session Management') ||
-      can('Delete', 'Settings.Session Management');
+    const canManageSessions = can('Delete', 'Settings.Session Management');
     if (!isSelf && !canManageSessions) {
-      throw new AccessDeniedError('Session Management permission is required to revoke another user.');
+      throw new AccessDeniedError(
+        'Delete permission on Settings.Session Management is required to revoke another user.',
+      );
     }
 
     await getFirebaseAdminAuth().revokeRefreshTokens(userId);
