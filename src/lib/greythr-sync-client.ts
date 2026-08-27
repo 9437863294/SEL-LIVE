@@ -14,7 +14,11 @@
 
 import { auth } from './firebase';
 import type {
+  EmployeeAttendanceSummary,
   EmployeeDocumentTree,
+  EmployeeLeaveBalance,
+  EmployeeOperationalDetail,
+  EmployeeSensitiveDetail,
   EmploymentState,
   GreytHRSyncRun,
   GreytHRSyncSettings,
@@ -164,6 +168,50 @@ export const fetchEmployeeDetail = (
   linkedUserName: string | null;
   reportingManager: ReportingManagerInfo | null;
 }> => authorizedFetch(`/api/greythr/employees?id=${encodeURIComponent(employeeId)}`);
+
+/* ------------------------------------------------------------------------------------------------
+ * One employee's profile
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface EmployeeProfileResponse {
+  ok: boolean;
+  employee: Partial<SyncedEmployee> & EmployeeOperationalDetail & { employeeId: string };
+  /** Present only when the caller holds `Employee.Personal Data · View`. */
+  sensitive: EmployeeSensitiveDetail | null;
+  leave: EmployeeLeaveBalance | null;
+  attendance: EmployeeAttendanceSummary | null;
+  resolution: {
+    /** Which key matched — or `greythr` when only greytHR had this person. */
+    via: 'documentId' | 'employeeIdField' | 'employeeNo' | 'greythr' | null;
+    documentId: string | null;
+    greytHRId: string | null;
+    /** greytHR has them; no sync has written them to the mirror yet. */
+    awaitingSync: boolean;
+  };
+  live: {
+    /** Whether the detail below was refreshed from greytHR just now. */
+    ok: boolean;
+    error: string | null;
+    /** Detail endpoints greytHR would not answer, so "not available" is distinguishable from "none". */
+    unavailable: string[];
+    fetchedAt: string | null;
+  };
+  personalDataIncluded: boolean;
+  mirrorSyncedAt: string | null;
+}
+
+/**
+ * One employee, resolved by any identifier and refreshed from greytHR.
+ *
+ * Replaces the screen's own `getDoc(doc(db, 'employees', employeeId))`, which could only ever find a
+ * record whose *document id* matched — and the roster links here with greytHR's employee id, which is
+ * a different thing for legacy records and does not exist at all for someone greytHR has that no sync
+ * has stored. See the route for the full account.
+ */
+export const fetchEmployeeProfile = (employeeId: string): Promise<EmployeeProfileResponse> =>
+  authorizedFetch<EmployeeProfileResponse>(
+    `/api/greythr/employees/${encodeURIComponent(employeeId)}`,
+  );
 
 /* ------------------------------------------------------------------------------------------------
  * Documents
@@ -364,3 +412,58 @@ export interface EmployeeRosterResponse {
  */
 export const fetchEmployeeRoster = (): Promise<EmployeeRosterResponse> =>
   authorizedFetch<EmployeeRosterResponse>('/api/greythr/employees/roster');
+
+/* ------------------------------------------------------------------------------------------------
+ * Leave and attendance registers
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface LeaveRegisterRow {
+  employeeId: string;
+  name: string;
+  employeeNo: string;
+  department: string;
+  designation: string;
+  employmentState: string;
+  balance: EmployeeLeaveBalance;
+}
+
+export interface LeaveRegisterResponse {
+  ok: boolean;
+  rows: LeaveRegisterRow[];
+  /** Every leave type any employee holds, in first-seen order — the register's column set. */
+  leaveTypes: string[];
+  totalsByType: Record<string, number>;
+  totalBalance: number;
+  year: string;
+  count: number;
+  /** Mirror employees with no leave record at all — usually the detail group was enabled recently. */
+  missing: number;
+}
+
+/** Everyone's leave balance, joined against the mirror for name and department. */
+export const fetchLeaveRegister = (): Promise<LeaveRegisterResponse> =>
+  authorizedFetch<LeaveRegisterResponse>('/api/greythr/employees/leave');
+
+export interface AttendanceRegisterRow {
+  employeeId: string;
+  name: string;
+  employeeNo: string;
+  department: string;
+  designation: string;
+  employmentState: string;
+  summary: EmployeeAttendanceSummary;
+}
+
+export interface AttendanceRegisterResponse {
+  ok: boolean;
+  rows: AttendanceRegisterRow[];
+  averageTypes: string[];
+  dayTypes: string[];
+  period: { start: string; end: string };
+  count: number;
+  missing: number;
+}
+
+/** Everyone's monthly attendance summary. Not a muster roll — see the API route for why. */
+export const fetchAttendanceRegister = (): Promise<AttendanceRegisterResponse> =>
+  authorizedFetch<AttendanceRegisterResponse>('/api/greythr/employees/attendance');

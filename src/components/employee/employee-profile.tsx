@@ -32,6 +32,7 @@ import {
   CalendarClock,
   CalendarDays,
   Clock,
+  CloudOff,
   Download,
   FileText,
   FolderOpen,
@@ -50,18 +51,18 @@ import {
   Phone,
   Plane,
   ShieldAlert,
+  ShieldCheck,
   UserRound,
 } from 'lucide-react';
-import { doc, getDoc } from 'firebase/firestore';
+import { formatDistanceToNow } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import { HrAccessDenied, HrEmptyState, HrField, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrAlertNotice, HrEmptyState, HrField, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { db } from '@/lib/firebase';
 import { cn } from '@/lib/utils';
 import type { Employee } from '@/lib/types';
 import {
@@ -77,11 +78,13 @@ import {
   type GreytHRAddressType,
   type GreytHRIdentityCode,
 } from '@/lib/greythr';
-import { formatGrantDate } from '@/lib/access-control';
+import { canViewEmployeeProfile, formatGrantDate } from '@/lib/access-control';
 import {
   fetchEmployeeDocumentTree,
+  fetchEmployeeProfile,
   openEmployeeDocument,
   type DocumentTreeResponse,
+  type EmployeeProfileResponse,
 } from '@/lib/greythr-sync-client';
 
 type FullEmployee = Employee & EmployeeOperationalDetail;
@@ -121,24 +124,11 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   const { can, isLoading: authLoading } = useAuthorization();
 
   /**
-   * Either namespace opens the profile, and that is a fix rather than laxity.
-   *
-   * Two permission trees cover the same ground: the granular `Employee.*` module (Manage, Personal
-   * Data, Documents, …) which only this screen ever checked, and the coarse
-   * `Settings.Employee Management` which every *other* employee screen checks. So a user granted
-   * `Settings.Employee Management · View` could list the whole roster on Manage Employee, click a
-   * name, and be told they have no access — a dead end reached from a link the same permission had
-   * just rendered.
-   *
-   * Accepting both is additive: it can only ever grant access to somebody who already had it on the
-   * listing screen, never take it away. The narrower `Employee.Personal Data` and
-   * `Employee.Documents` checks below are deliberately left alone — those guard special-category
-   * data and national identity documents, and "may see the roster" is not consent to those.
+   * Either namespace opens the profile — see `canViewEmployeeProfile` for why that is a fix rather
+   * than laxity. The rule lives in `access-control.ts` so this screen and the route that feeds it
+   * cannot disagree about who may open a profile.
    */
-  const canView =
-    can('View', 'Employee.Manage') ||
-    can('View Module', 'Employee') ||
-    can('View', 'Settings.Employee Management');
+  const canView = canViewEmployeeProfile(can);
   const canViewPersonal = can('View', 'Employee.Personal Data');
   const canUnmask = can('View Unmasked', 'Employee.Personal Data');
   const canViewDocuments = can('View', 'Employee.Documents');
@@ -147,11 +137,14 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   const [employee, setEmployee] = useState<FullEmployee | null>(null);
   const [sensitive, setSensitive] = useState<EmployeeSensitiveDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [unmasked, setUnmasked] = useState(false);
-  const [sensitiveError, setSensitiveError] = useState<string | null>(null);
   const [leave, setLeave] = useState<EmployeeLeaveBalance | null>(null);
   const [attendance, setAttendance] = useState<EmployeeAttendanceSummary | null>(null);
+  /** How the record was resolved and whether greytHR answered — reported, not just used. */
+  const [provenance, setProvenance] = useState<
+    Pick<EmployeeProfileResponse, 'resolution' | 'live' | 'mirrorSyncedAt'> | null
+  >(null);
 
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -168,47 +161,48 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
   const [openingFileId, setOpeningFileId] = useState<string | null>(null);
   const [tab, setTab] = useState('overview');
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setNotFound(false);
-    setLoadError(null);
-    try {
-      const snapshot = await getDoc(doc(db, 'employees', employeeId));
-      if (!snapshot.exists()) {
-        setNotFound(true);
-        return;
+  /**
+   * The whole profile, in one call.
+   *
+   * This used to be four Firestore reads made from the browser, the first of which was
+   * `getDoc(doc(db, 'employees', employeeId))` — a lookup by *document id*. Manage Employee links here
+   * with greytHR's *employee id*, which is a different value for records the older flows created and
+   * does not exist at all for someone greytHR employs that no sync has stored yet. Both cases landed
+   * on "Employee not found" with a full record sitting in greytHR.
+   *
+   * The route now resolves the employee by document id, employee id or employee number, refreshes the
+   * detail from greytHR's single-employee endpoints, and reports which of those happened — so a blank
+   * field is attributable rather than mysterious.
+   */
+  const load = useCallback(
+    async (mode: 'initial' | 'refresh' = 'initial') => {
+      if (mode === 'initial') setLoading(true);
+      else setRefreshing(true);
+      setLoadError(null);
+      try {
+        const result = await fetchEmployeeProfile(employeeId);
+        setEmployee({ id: result.employee.employeeId, ...result.employee } as FullEmployee);
+        setSensitive(result.sensitive);
+        setLeave(result.leave);
+        setAttendance(result.attendance);
+        setProvenance({
+          resolution: result.resolution,
+          live: result.live,
+          mirrorSyncedAt: result.mirrorSyncedAt,
+        });
+      } catch (error) {
+        // Lands on the page rather than escaping as an unhandled rejection, which surfaces as a
+        // Next.js error overlay and tells the reader nothing.
+        setLoadError(
+          error instanceof Error ? error.message : 'This employee record could not be loaded.',
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-      setEmployee({ id: snapshot.id, ...snapshot.data() } as FullEmployee);
-
-      // Leave and attendance are periodic snapshots in their own collections. Read in parallel and
-      // individually tolerant: a missing document just means that group is not being synced.
-      const [leaveSnap, attendanceSnap] = await Promise.all([
-        getDoc(doc(db, 'employeeLeaveBalance', employeeId)).catch(() => null),
-        getDoc(doc(db, 'employeeAttendance', employeeId)).catch(() => null),
-      ]);
-      setLeave(leaveSnap?.exists() ? (leaveSnap.data() as EmployeeLeaveBalance) : null);
-      setAttendance(attendanceSnap?.exists() ? (attendanceSnap.data() as EmployeeAttendanceSummary) : null);
-
-      // Only attempted when the viewer holds the permission: a read the rule will refuse is noise in
-      // the console and a misleading error on screen.
-      if (canViewPersonal) {
-        try {
-          const restricted = await getDoc(doc(db, 'employeeSensitive', employeeId));
-          setSensitive(restricted.exists() ? (restricted.data() as EmployeeSensitiveDetail) : null);
-        } catch (error) {
-          setSensitiveError(
-            error instanceof Error ? error.message : 'Restricted personal data could not be read.',
-          );
-        }
-      }
-    } catch (error) {
-      // A rules denial or an offline read must land on the page, not escape as an unhandled
-      // rejection — which surfaces as a Next.js error overlay and tells the user nothing.
-      setLoadError(error instanceof Error ? error.message : 'This employee record could not be loaded.');
-    } finally {
-      setLoading(false);
-    }
-  }, [employeeId, canViewPersonal]);
+    },
+    [employeeId],
+  );
 
   useEffect(() => {
     if (authLoading || !canView) {
@@ -218,18 +212,28 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
     void load();
   }, [authLoading, canView, load]);
 
+  /**
+   * The id greytHR itself answers to.
+   *
+   * Not necessarily the one in the URL: that is whatever the linking screen held, which for a legacy
+   * record is a Firestore document id. The document proxy calls `emp-docs/{id}` upstream, so handing
+   * it a document id returns nothing — the same mismatch that made this whole screen blank. Falls back
+   * to the URL value, which is correct in the common case and all there is before the profile loads.
+   */
+  const greytHRId = provenance?.resolution.greytHRId || employee?.employeeId || employeeId;
+
   /** Documents, on demand. Errors land on the page rather than escaping as a rejection. */
   const loadDocuments = useCallback(async () => {
     setDocumentsLoading(true);
     setDocumentsError(null);
     try {
-      setDocuments(await fetchEmployeeDocumentTree(employeeId));
+      setDocuments(await fetchEmployeeDocumentTree(greytHRId));
     } catch (error) {
       setDocumentsError(error instanceof Error ? error.message : 'Documents could not be loaded.');
     } finally {
       setDocumentsLoading(false);
     }
-  }, [employeeId]);
+  }, [greytHRId]);
 
   // Fetched when the tab is first opened, and not again unless refreshed — the proxy call is a
   // round trip to greytHR, so repeating it on every tab switch would be wasteful and slow.
@@ -244,14 +248,14 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
       setOpeningFileId(file.fileId);
       setDocumentsError(null);
       try {
-        await openEmployeeDocument(employeeId, file);
+        await openEmployeeDocument(greytHRId, file);
       } catch (error) {
         setDocumentsError(error instanceof Error ? error.message : 'The document could not be opened.');
       } finally {
         setOpeningFileId(null);
       }
     },
-    [employeeId],
+    [greytHRId],
   );
 
   const show = useCallback(
@@ -301,7 +305,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
     );
   }
 
-  if (notFound || !employee) {
+  if (!employee) {
     return (
       <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
         <AuroraBackdrop />
@@ -309,7 +313,12 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
         <HrEmptyState
           icon={UserRound}
           title="Employee not found"
-          description="No employee with this id exists in the mirror. It may not have been synced from greytHR yet."
+          description="No employee matched this id, in the local mirror or in greytHR."
+          action={
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
         />
       </div>
     );
@@ -337,6 +346,35 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
               {employee.employmentType && (
                 <Badge variant="outline" className="text-xs text-slate-600">{employee.employmentType}</Badge>
               )}
+              {/* Live-verified or mirror-only, stated rather than implied — the distinction this
+                  screen could not previously draw at all. */}
+              <Badge
+                variant="outline"
+                className={cn(
+                  'gap-1 text-xs',
+                  provenance?.live.ok
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-amber-200 bg-amber-50 text-amber-800',
+                )}
+                title={
+                  provenance?.live.ok
+                    ? 'Refreshed from greytHR when this page loaded'
+                    : (provenance?.live.error ?? 'Showing stored data')
+                }
+              >
+                {provenance?.live.ok ? <ShieldCheck className="h-3 w-3" /> : <CloudOff className="h-3 w-3" />}
+                {provenance?.live.ok ? 'Live' : 'Stored'}
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 bg-white/80 text-xs"
+                onClick={() => void load('refresh')}
+                disabled={refreshing}
+              >
+                <RefreshCw className={cn('mr-1 h-3.5 w-3.5', refreshing && 'animate-spin')} />
+                Refresh
+              </Button>
             </>
           }
         />
@@ -344,6 +382,49 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
         {employee.employmentStateReason && state !== 'Active' && (
           <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
             {employee.employmentStateReason}
+          </div>
+        )}
+
+        {/*
+          Where this record came from, when that changes what a blank field means.
+
+          A field can be empty for three quite different reasons — greytHR holds nothing, the group is
+          not being synced, or greytHR could not be reached — and a screen that renders all three
+          identically invites somebody to conclude the data is missing when it is merely unread.
+        */}
+        {provenance?.resolution.awaitingSync && (
+          <div className="mb-3">
+            <HrAlertNotice tone="blue" title="Read straight from greytHR — not in the local mirror yet">
+              No sync has written this employee here, so this page is showing greytHR&apos;s own answer.
+              Everything below is current; the roster and reports that read the mirror will not list them
+              until the next sync runs.
+            </HrAlertNotice>
+          </div>
+        )}
+
+        {provenance && !provenance.live.ok && (
+          <div className="mb-3">
+            <HrAlertNotice tone="amber" title="Showing stored data — not verified against greytHR">
+              {provenance.live.error ?? 'greytHR could not be reached.'} These fields are whatever the
+              last sync wrote
+              {provenance.mirrorSyncedAt
+                ? ` (${formatDistanceToNow(new Date(provenance.mirrorSyncedAt), { addSuffix: true })})`
+                : ''}
+              , so anything changed in greytHR since then is not reflected here.
+            </HrAlertNotice>
+          </div>
+        )}
+
+        {provenance && provenance.live.ok && provenance.live.unavailable.length > 0 && (
+          <div className="mb-3">
+            <HrAlertNotice
+              tone="amber"
+              title={`${provenance.live.unavailable.length} detail group(s) could not be read from greytHR`}
+            >
+              greytHR did not answer for {provenance.live.unavailable.join(', ')}. Those sections fall
+              back to whatever the last sync stored, and are blank if it stored nothing — they are not
+              evidence that greytHR holds nothing.
+            </HrAlertNotice>
           </div>
         )}
 
@@ -821,12 +902,6 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                     </Button>
                   )}
                 </div>
-
-                {sensitiveError && (
-                  <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                    {sensitiveError}
-                  </div>
-                )}
 
                 {!hasSensitiveDetail(sensitive) ? (
                   <HrEmptyState

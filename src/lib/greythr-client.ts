@@ -31,6 +31,7 @@ import 'server-only';
 import {
   GREYTHR_ADDRESS_TYPES,
   GREYTHR_CATEGORY_LOV_KEYS,
+  GREYTHR_DETAIL_LOV_KEYS,
   GREYTHR_IDENTITY_CODES,
   GREYTHR_LOV_KEYS,
   isGreytHRTimestamp,
@@ -430,6 +431,12 @@ export async function fetchEmployeeWork(
  *
  * `POST` with a JSON array of keys — `lov::status` for employment types, `cat::Designation` and
  * friends for category values. Returns `{ "lov::status": [[2, "Confirmed"], …] }`.
+ *
+ * **Never mix `lov::` and `cat::` keys in one call.** greytHR drops every `lov::` key when a `cat::`
+ * key is present, silently and with no error — see `fetchReferenceData`, which is why that function
+ * makes two requests. Keys the tenant has not configured are simply absent from the response, so a
+ * caller cannot tell a dropped list from an unconfigured one; keeping the two kinds apart is what
+ * makes the difference readable.
  */
 export async function fetchLov(
   keys: string[],
@@ -444,11 +451,41 @@ export async function fetchLov(
   });
 }
 
-/** The LOV keys this integration needs: employment types plus every category list. */
+/**
+ * Every reference list this integration needs: employment types, the personal-detail lists, and the
+ * category values.
+ *
+ * ── Why this is two requests and must stay two ──────────────────────────────────────────────────
+ *
+ * `/hr/v2/lov` silently drops **every** `lov::` key when a single `cat::` key appears in the same
+ * request. Measured against a live tenant, not inferred:
+ *
+ *   POST ["lov::status","lov::maritalstatus"]                    → both returned
+ *   POST ["lov::status","lov::maritalstatus","cat::Designation"] → only cat::Designation
+ *
+ * Three keys, so it is not a size or count limit — it is the mix. No error, no warning, no partial
+ * marker: the response is simply a smaller object than the one asked for.
+ *
+ * This was one request, which is why `lov::status` never arrived and `employmentTypeLabels` has been
+ * quietly falling back to its hardcoded defaults, and why `maritalStatus` and `bloodGroup` render as
+ * the raw codes greytHR sends (`1`, `3`) rather than "Married" and "A +ve". The failure is invisible
+ * from the inside — every caller reads `lov?.[key]`, gets `undefined`, and treats a dropped list as a
+ * list the tenant does not have.
+ *
+ * The `cat::` half is allowed to fail on its own. A tenant does not configure every category this
+ * integration knows about — this one has five of eleven — and the endpoints that matter return
+ * `categoryDesc`/`valueDesc` anyway, so these maps are a fallback rather than a dependency. Losing
+ * them must not cost the employment-type and personal-detail labels, which have no other source.
+ */
 export async function fetchReferenceData(
   options: { config?: GreytHRConfig } = {},
 ): Promise<GreytHRLovResponse> {
-  return fetchLov([...GREYTHR_LOV_KEYS, ...GREYTHR_CATEGORY_LOV_KEYS], options);
+  const [builtIn, categories] = await Promise.all([
+    fetchLov([...GREYTHR_LOV_KEYS, ...GREYTHR_DETAIL_LOV_KEYS], options),
+    fetchLov([...GREYTHR_CATEGORY_LOV_KEYS], options).catch(() => ({}) as GreytHRLovResponse),
+  ]);
+
+  return { ...categories, ...builtIn };
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -787,6 +824,178 @@ export async function fetchSingleEmployee(
   const reference = hasDescriptions || categories.length === 0 ? null : await settle(fetchReferenceData({ config }));
 
   return { employee, separation, work, categories, reference };
+}
+
+/**
+ * The detail groups for one employee, live.
+ *
+ * greytHR publishes a single-employee variant of every bulk detail endpoint —
+ * `GET /employee/v2/employees/{id}/profile`, `/personal`, `/qualifications`, `/assets` and the rest.
+ * They are what makes a profile screen possible without the mirror: the bulk fetchers page the whole
+ * workforce, which is right for a nightly sync and absurd for opening one person's record.
+ *
+ * Two shape differences from the bulk endpoints, both handled by the readers below rather than by
+ * each caller:
+ *
+ *   - **No `{data, pages}` envelope.** These return the bare object, or a bare array.
+ *   - **Singular endpoints sometimes answer with an array anyway** — one element, or none when the
+ *     employee has no such record. `readOne` takes the first element rather than failing the group.
+ *
+ * Every endpoint is individually tolerant. A tenant that has never recorded a visa 404s on `/visa`,
+ * and losing somebody's whole profile over that would be perverse — the same reasoning the bulk
+ * address and identity fan-outs already follow. What could not be read is named in `unavailable` so
+ * a caller can say "not recorded" rather than implying it checked and found nothing.
+ */
+export interface SingleEmployeeDetail {
+  profile: GreytHRProfileRow | null;
+  personal: GreytHRPersonalRow | null;
+  orgTree: GreytHROrgTreeRow | null;
+  qualifications: GreytHRQualificationRow[];
+  assets: GreytHRAssetRow[];
+  /** Populated only when `includeSensitive` was set. Keyed by address type. */
+  addresses: Partial<Record<GreytHRAddressType, GreytHRAddressRow>>;
+  statutory: GreytHRStatutoryRow | null;
+  /** Populated only when `includeSensitive` was set. Keyed by identity code. */
+  identities: Partial<Record<GreytHRIdentityCode, GreytHRIdentityRow>>;
+  bank: GreytHRBankRow | null;
+  pf: GreytHRPfRow | null;
+  passport: GreytHRTravelDocRow | null;
+  visa: GreytHRTravelDocRow | null;
+  /** Endpoint labels that could not be read, for an honest "not available" on screen. */
+  unavailable: string[];
+}
+
+export async function fetchSingleEmployeeDetail(
+  employeeId: string | number,
+  options: {
+    config?: GreytHRConfig;
+    /**
+     * Whether to fetch the restricted groups — addresses, statutory, identities, bank, PF, travel.
+     *
+     * Off by default, and the caller is expected to pass the result of a permission check rather
+     * than a constant. Special-category personal data should not cross the wire because a profile
+     * screen happened to open; the sensitive tab is a separate decision with a separate permission.
+     */
+    includeSensitive?: boolean;
+  } = {},
+): Promise<SingleEmployeeDetail> {
+  const id = String(employeeId);
+  const config = options.config ?? greytHRConfig();
+  const unavailable: string[] = [];
+
+  const request = async <T>(path: string, label: string): Promise<T | null> => {
+    try {
+      return await greytHRRequest<T>(`/employee/v2/employees/${encodeURIComponent(id)}${path}`, {
+        label: `${label} ${id}`,
+        config,
+      });
+    } catch {
+      unavailable.push(label);
+      return null;
+    }
+  };
+
+  /** One record, from an endpoint that may answer with the object, a one-element array, or nothing. */
+  const readOne = async <T>(path: string, label: string): Promise<T | null> => {
+    const json = await request<T | T[] | { data?: T[] }>(path, label);
+    if (json === null) return null;
+    if (Array.isArray(json)) return json.length ? json[0] : null;
+    const envelope = (json as { data?: T[] }).data;
+    if (Array.isArray(envelope)) return envelope.length ? envelope[0] : null;
+    return json as T;
+  };
+
+  /** Every record, from an endpoint that may answer with an array, an envelope, or a lone object. */
+  const readMany = async <T>(path: string, label: string): Promise<T[]> => {
+    const json = await request<T | T[] | { data?: T[] }>(path, label);
+    if (json === null) return [];
+    if (Array.isArray(json)) return json;
+    const envelope = (json as { data?: T[] }).data;
+    if (Array.isArray(envelope)) return envelope;
+    return [json as T];
+  };
+
+  /* ── Operational: always fetched, five requests in parallel ── */
+
+  const [profile, personal, orgTreeRaw, qualifications, assets] = await Promise.all([
+    readOne<GreytHRProfileRow>('/profile', 'profile'),
+    readOne<GreytHRPersonalRow>('/personal', 'personal'),
+    // Not read through `readOne`: this endpoint returns the tree itself rather than a row wrapping
+    // it, so taking `[0]` would hand `resolveReportingManager` one level instead of the whole tree.
+    request<unknown>('/org-tree', 'org-tree'),
+    readMany<GreytHRQualificationRow>('/qualifications', 'qualifications'),
+    readMany<GreytHRAssetRow>('/assets', 'assets'),
+  ]);
+
+  /**
+   * Normalised to the bulk row shape the detail builder expects.
+   *
+   * The bulk endpoint returns `{employeeId, orgtree}`; the single-employee one returns the `orgtree`
+   * payload directly. Wrapping it here keeps `buildOperationalDetail` unaware of which endpoint the
+   * data came from — and `resolveReportingManager` already walks whatever shape arrives.
+   */
+  const orgTree: GreytHROrgTreeRow | null =
+    orgTreeRaw === null
+      ? null
+      : {
+          employeeId: Number(id),
+          orgtree:
+            orgTreeRaw && typeof orgTreeRaw === 'object' && 'orgtree' in orgTreeRaw
+              ? (orgTreeRaw as { orgtree?: unknown }).orgtree
+              : orgTreeRaw,
+        };
+
+  const detail: SingleEmployeeDetail = {
+    profile,
+    personal,
+    orgTree,
+    qualifications,
+    assets,
+    addresses: {},
+    statutory: null,
+    identities: {},
+    bank: null,
+    pf: null,
+    passport: null,
+    visa: null,
+    unavailable,
+  };
+
+  if (!options.includeSensitive) return detail;
+
+  /* ── Restricted: two waves, so at most ten requests are in flight at once ── */
+
+  const addressEntries = await Promise.all(
+    GREYTHR_ADDRESS_TYPES.map(async (type) => {
+      const row = await readOne<GreytHRAddressRow>(`/addresses/${type}`, `addresses/${type}`);
+      return [type, row] as const;
+    }),
+  );
+  for (const [type, row] of addressEntries) {
+    if (row) detail.addresses[type] = row;
+  }
+
+  const identityEntries = await Promise.all(
+    GREYTHR_IDENTITY_CODES.map(async (code) => {
+      const row = await readOne<GreytHRIdentityRow>(`/identities/${code}`, `identities/${code}`);
+      // greytHR answers 200 with an empty shell for a document the employee does not have, so a row
+      // with no number is treated as absent — otherwise the screen lists ten blank identity fields.
+      return [code, row && String(row.documentNo ?? '').trim() ? row : null] as const;
+    }),
+  );
+  for (const [code, row] of identityEntries) {
+    if (row) detail.identities[code] = row;
+  }
+
+  const [statutory, bank, pf, passport, visa] = await Promise.all([
+    readOne<GreytHRStatutoryRow>('/statutory/india', 'statutory'),
+    readOne<GreytHRBankRow>('/bank', 'bank'),
+    readOne<GreytHRPfRow>('/pf', 'pf'),
+    readOne<GreytHRTravelDocRow>('/passport', 'passport'),
+    readOne<GreytHRTravelDocRow>('/visa', 'visa'),
+  ]);
+
+  return { ...detail, statutory, bank, pf, passport, visa };
 }
 
 /**

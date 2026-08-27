@@ -13,6 +13,8 @@ import {
   EXIT_ACCESS_POLICIES,
   GREYTHR_CATEGORY,
   GREYTHR_CATEGORY_LOV_KEYS,
+  GREYTHR_DETAIL_LOV_KEYS,
+  GREYTHR_LOV_KEYS,
   attendanceLabel,
   buildAttendanceSummary,
   buildCategoryIdMaps,
@@ -45,6 +47,7 @@ import {
   offerExclusionReason,
   toLinkableEmployee,
   deriveEmploymentState,
+  detailLabels,
   diffSyncedEmployee,
   employmentSignals,
   employmentTypeLabel,
@@ -1498,6 +1501,133 @@ test('resolveReportingManager stops rather than recursing forever', () => {
   const deep = { a: { b: { c: { d: { e: { supervisorId: 99 } } } } } };
   // Bounded depth: a cyclic or pathological tree must not hang the sync.
   assert.equal(resolveReportingManager(deep), null);
+});
+
+/*
+ * The shape the live API actually returns, captured from `/employee/v2/employees/{id}/org-tree`.
+ *
+ * Every profile showed a blank reporting manager while greytHR had one, because the key-name
+ * heuristic above looks for `supervisorId`/`managerId`/`reportsTo` and this payload uses none of
+ * them — the id is a plain `employeeId` nested under `manager`, indistinguishable from the
+ * employee's own id to a heuristic that only reads key names.
+ */
+const LIVE_ORG_TREE = [
+  { manager: { employeeId: 217, employeeNo: 'D005', name: 'Sarika Palo' }, level: 0 },
+  { manager: { employeeId: 208, employeeNo: 'D001', name: 'Sudhansu Sekhar Palo' }, level: -1 },
+];
+
+test('resolveReportingManager reads the live {level, manager} org tree', () => {
+  assert.deepEqual(resolveReportingManager(LIVE_ORG_TREE), {
+    employeeId: '217',
+    name: 'Sarika Palo',
+  });
+});
+
+test('resolveReportingManager returns the direct manager, not the one above them', () => {
+  // `level: 0` is the direct manager and `-1` is theirs, whatever order greytHR sends them in.
+  assert.equal(resolveReportingManager([...LIVE_ORG_TREE].reverse()).employeeId, '217');
+});
+
+test('resolveReportingManager skips a level whose manager carries no id', () => {
+  const partial = [
+    { manager: { employeeNo: 'D009', name: 'No id recorded' }, level: 0 },
+    { manager: { employeeId: 208, name: 'Sudhansu Sekhar Palo' }, level: -1 },
+  ];
+  assert.equal(resolveReportingManager(partial).employeeId, '208');
+});
+
+test('resolveReportingManager still prefers the documented shape over a stray key elsewhere', () => {
+  const mixed = [{ supervisorId: 42 }, { manager: { employeeId: 217, name: 'Sarika Palo' }, level: 0 }];
+  assert.equal(resolveReportingManager(mixed).employeeId, '217');
+});
+
+test('buildOperationalDetail resolves the reporting manager from a live org tree', () => {
+  const detail = buildOperationalDetail({ orgTree: { employeeId: 164, orgtree: LIVE_ORG_TREE } });
+  assert.equal(detail.reportingManagerEmployeeId, '217');
+  assert.equal(detail.reportingManagerName, 'Sarika Palo');
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Coded detail values
+ * ---------------------------------------------------------------------------------------------- */
+
+/** The LOV payload as `/hr/v2/lov` returns it: `[code, label]` pairs per key. */
+const LIVE_LOV = {
+  'lov::bloodgroup': [[3, 'A +ve'], [4, 'A -ve'], [6, 'AB +ve']],
+  'lov::maritalstatus': [[1, 'Married'], [2, 'Single'], [4, 'Separated']],
+  'lov::religion': [[1, 'HINDUISM'], [2, 'CHRISTIANITY']],
+  'lov::nationality': [[1, 'Indian'], [2, 'Others']],
+  'lov::bank': [[4, 'AXIS Bank'], [13, 'Bank of Baroda']],
+};
+
+test('GREYTHR_DETAIL_LOV_KEYS covers every list the detail endpoints answer in codes', () => {
+  // Without these keys `fetchReferenceData` never asks for them, `detailLabels` has nothing to look
+  // up, and a profile shows a marital status of "1".
+  assert.deepEqual([...GREYTHR_DETAIL_LOV_KEYS].sort(), [...Object.keys(LIVE_LOV)].sort());
+  // Distinct from the employment-type keys, which are requested alongside rather than instead.
+  assert.equal(GREYTHR_DETAIL_LOV_KEYS.includes('lov::status'), false);
+  assert.equal(GREYTHR_CATEGORY_LOV_KEYS.some((key) => GREYTHR_DETAIL_LOV_KEYS.includes(key)), false);
+});
+
+test('the two kinds of LOV key stay separable by prefix', () => {
+  /*
+   * `fetchReferenceData` has to request `lov::` and `cat::` keys in *separate* calls: greytHR drops
+   * every `lov::` key when a `cat::` key shares the request, silently and with no error. Measured
+   * against a live tenant — `["lov::status","lov::maritalstatus","cat::Designation"]` returns only
+   * `cat::Designation`, so it is the mix rather than a size limit.
+   *
+   * That split is only sound while each list holds one kind of key, which is what this asserts. A
+   * `cat::` key added to either `lov::` list would silently take the employment-type and
+   * personal-detail labels down with it, and the symptom would be a profile showing "1" for a
+   * marital status — not an error anybody could trace back to here.
+   */
+  for (const key of [...GREYTHR_LOV_KEYS, ...GREYTHR_DETAIL_LOV_KEYS]) {
+    assert.ok(key.startsWith('lov::'), `${key} belongs in GREYTHR_CATEGORY_LOV_KEYS`);
+  }
+  for (const key of GREYTHR_CATEGORY_LOV_KEYS) {
+    assert.ok(key.startsWith('cat::'), `${key} does not belong in GREYTHR_CATEGORY_LOV_KEYS`);
+  }
+});
+
+test('detailLabels turns the LOV payload into code→label maps', () => {
+  const labels = detailLabels(LIVE_LOV);
+  assert.equal(labels.maritalStatus['1'], 'Married');
+  assert.equal(labels.bloodGroup['3'], 'A +ve');
+  assert.equal(labels.religion['1'], 'HINDUISM');
+  assert.equal(labels.bank['4'], 'AXIS Bank');
+});
+
+test('detailLabels reports no map rather than an empty one', () => {
+  // `undefined` is what the builders read as "no map, pass the raw value through"; an empty object
+  // would look like a map that simply does not contain the code.
+  assert.equal(detailLabels(null).maritalStatus, undefined);
+  assert.equal(detailLabels({}).bloodGroup, undefined);
+  assert.equal(detailLabels({ 'lov::maritalstatus': [] }).maritalStatus, undefined);
+  assert.equal(detailLabels({ 'lov::maritalstatus': [[1]] }).maritalStatus, undefined, 'a pair needs both halves');
+});
+
+test('buildOperationalDetail names a coded marital status when it can', () => {
+  // `/employees/{id}/personal` answers `maritalStatus: 1`, not "Married".
+  const named = buildOperationalDetail({
+    personal: { employeeId: 208, maritalStatus: 1, bloodGroup: 3 },
+    labels: detailLabels(LIVE_LOV),
+  });
+  assert.equal(named.maritalStatus, 'Married');
+  assert.equal(named.bloodGroup, 'A +ve');
+});
+
+test('buildOperationalDetail keeps the raw code when no label is available', () => {
+  // A code is still better than a blank: it prompts somebody to check greytHR.
+  const unnamed = buildOperationalDetail({
+    personal: { employeeId: 208, maritalStatus: 1 },
+  });
+  assert.equal(unnamed.maritalStatus, '1');
+  assert.equal(
+    buildOperationalDetail({ personal: { employeeId: 208, maritalStatus: 99 }, labels: detailLabels(LIVE_LOV) })
+      .maritalStatus,
+    '99',
+    'a code the list does not contain falls through rather than vanishing',
+  );
 });
 
 test('summarizeRun counts created, updated and unchanged without double-counting', () => {

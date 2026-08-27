@@ -210,6 +210,11 @@ one `undefined` rejects the *entire* batch of 400.
 | [`src/components/access-management/greythr-linking.tsx`](../src/components/access-management/greythr-linking.tsx) | The console at `/settings/user-management/greythr-linking`. |
 | [`src/lib/greythr-live-roster.ts`](../src/lib/greythr-live-roster.ts) | The mirror-free CURRENT roster, shared by `/employee/current` and the Add User picker's live top-up. |
 | [`src/app/api/greythr/employees/current/route.ts`](../src/app/api/greythr/employees/current/route.ts) | "What does greytHR say, right now" — no mirror in the middle. |
+| [`src/app/api/greythr/employees/leave/route.ts`](../src/app/api/greythr/employees/leave/route.ts) | The organisation-wide leave register. |
+| [`src/app/api/greythr/employees/attendance/route.ts`](../src/app/api/greythr/employees/attendance/route.ts) | The organisation-wide attendance register. |
+| [`src/app/(protected)/employee/leave/page.tsx`](../src/app/(protected)/employee/leave/page.tsx) | The leave register screen. |
+| [`src/app/(protected)/employee/attendance/page.tsx`](../src/app/(protected)/employee/attendance/page.tsx) | The attendance register screen. |
+| [`src/app/(protected)/employee/reports/page.tsx`](../src/app/(protected)/employee/reports/page.tsx) | Headcount, movement and category reports, built from the roster route. |
 | [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 157 tests, including one per fixed bug. |
 | [`tests/greythr-linking.test.mjs`](../tests/greythr-linking.test.mjs) | 36 tests on ownership and matching. |
 
@@ -795,8 +800,8 @@ greytHR publishes 155 endpoints across five modules. What this integration cover
 | --- | --- | --- |
 | **Employee** | ~70 | ✅ Roster, work, separation, categories, profile, personal, org tree, qualifications, assets, addresses, statutory, identities, bank/PF, passport/visa |
 | **List of Values** | 5 | ✅ Employment types, all category value lists |
-| **Leave** | 5 | ⚠️ Balances ✅ · transactions ❌ |
-| **Attendance** | 6 | ⚠️ Summary ✅ · muster and swipes ❌ |
+| **Leave** | 5 | ⚠️ Balances ✅, now with an org-wide register · transactions ❌ |
+| **Attendance** | 6 | ⚠️ Summary ✅, now with an org-wide register · muster and swipes ❌ |
 | **Payroll** | ~25 | ❌ Salary statement only, via the separate legacy flow |
 | **Documents** | 4 | ✅ Proxied on demand — deliberately not synced |
 | Employee family | 6 | ❌ bulk fetch needs an undocumented relation-type id |
@@ -818,6 +823,25 @@ Leave types have **no LOV key**, and the bulk endpoint returns `leaveTypeCategor
 names come from one extra call to the *single-employee* variant, which returns the category as an
 object with `description` and `code` — leave types are organisation-wide, so one call names them for
 everybody. If that call fails, balances show `Leave type 7` rather than a blank, and the run warns.
+
+### The registers — `/employee/leave` and `/employee/attendance`
+
+Both existed only as a per-employee profile tab until now: the sync had written a document per
+employee into `employeeLeaveBalance` / `employeeAttendance` for as long as those detail groups were
+on, and nothing read either collection back except one profile at a time. "Who is sitting on the most
+unused leave" or "how many days does the organisation owe in total" had no page to ask — only however
+many hundred profile visits it would take to add it up by hand.
+
+`GET /api/greythr/employees/leave` and `GET /api/greythr/employees/attendance` join those collections
+against the mirror for name/department/designation and return one row per employee, plus the totals
+neither collection alone can answer — leave balance by type, across everyone. Both are read-only by
+design: applying, approving or rejecting leave writes back to greytHR, which this integration does not
+do (§12) — these show what greytHR has already decided, not a place to decide it.
+
+Not a muster roll. The attendance register is the same monthly *summary* the profile tab already
+shows, gathered into one table — greytHR's day-level swipe data is a separate, much larger endpoint
+this integration has never fetched, and pulling it for ~1,300 employees across a month is its own
+decision about volume and retention, not an extension of this register.
 
 ### Documents are proxied, not synced
 

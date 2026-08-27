@@ -8,18 +8,29 @@
  * is a different statement from "you cannot open Employee Management". Cards the user cannot use are
  * removed rather than disabled — a greyed-out tile still tells them a capability exists and invites a
  * support ticket. When nothing is left to show, the page says so plainly.
+ *
+ * ── Why sections, not one flat grid ─────────────────────────────────────────────────────────────
+ *
+ * Eight-plus tiles in one grid reads as an unordered list; an administrator has to read every label
+ * to find what they want. Grouped by what the tile is *for* — see who's here, see their time-off and
+ * attendance, keep the data current, handle pay — the page can be scanned by section instead of by
+ * tile, and a KPI strip up top answers "how many, how current" before anyone opens anything.
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  FileText,
   ArrowLeft,
-  Tags,
-  DownloadCloud,
-  Briefcase,
-  IndianRupee,
   BarChart3,
+  Briefcase,
+  CalendarClock,
+  Clock,
+  DownloadCloud,
+  FileText,
+  IndianRupee,
+  Link2,
+  RefreshCw,
+  Tags,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -28,12 +39,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import { HrAccessDenied, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrKpiCard, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
-import { db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { fetchSyncReport, type SyncReport } from '@/lib/greythr-sync-client';
 import { formatDistanceToNow } from 'date-fns';
 
 /** How often the "Last synced" phrase is recomputed, so it ages instead of freezing on mount. */
@@ -48,7 +58,13 @@ interface HubCard {
   permitted: boolean;
   /** Not built yet: rendered, labelled, and deliberately not a link. */
   comingSoon?: boolean;
-  lastSynced?: React.ReactNode;
+  badge?: React.ReactNode;
+}
+
+interface HubSection {
+  title: string;
+  description?: string;
+  cards: HubCard[];
 }
 
 function EmployeeSettingsCard({ item }: { item: HubCard }) {
@@ -74,12 +90,10 @@ function EmployeeSettingsCard({ item }: { item: HubCard }) {
           </CardTitle>
           <CardDescription className="mt-1 text-sm">{item.description}</CardDescription>
           {/*
-            `lastSynced` is either text or a loading `<Skeleton>` — a `<div>` — while it waits on the
-            timestamp. A `<p>` cannot legally contain a `<div>`, which is exactly the combination that
-            was here: valid while loading showed a string, broken the moment it showed the skeleton
-            instead. `<div>` accepts either.
+            A `<div>`, not a `<p>` — the badge can be a loading `<Skeleton>` (a `<div>`), and a `<p>`
+            cannot legally contain one. That mismatch is what broke hydration here before.
           */}
-          {item.lastSynced && <div className="mt-2 text-xs text-muted-foreground">{item.lastSynced}</div>}
+          {item.badge && <div className="mt-2 text-xs text-muted-foreground">{item.badge}</div>}
         </div>
       </CardHeader>
     </Card>
@@ -102,150 +116,187 @@ function EmployeeSettingsCard({ item }: { item: HubCard }) {
   );
 }
 
+function HubSectionBlock({ section }: { section: HubSection }) {
+  if (section.cards.length === 0) return null;
+  return (
+    <section className="mb-6">
+      <div className="mb-2.5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{section.title}</h2>
+        {section.description && <p className="text-xs text-muted-foreground">{section.description}</p>}
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+        {section.cards.map((item) => (
+          <EmployeeSettingsCard key={item.text} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function EmployeeSettingsPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
   const canView = can('View', 'Settings.Employee Management');
   const canSync = can('Sync from GreytHR', 'Settings.Employee Management');
+  const canLink = can('View', 'Settings.User Management');
 
-  /** The parsed timestamp, kept as a Date so the phrase below can be recomputed as time passes. */
-  const [syncedAt, setSyncedAt] = useState<Date | null>(null);
-  const [stampLoading, setStampLoading] = useState(true);
-  const [tick, setTick] = useState(0);
+  /**
+   * The KPI strip's numbers, from the same cheap Firestore-only report `/employee/sync` reads —
+   * deliberately not the live-roster roster route, which is a real greytHR round trip and too heavy
+   * to pay on every visit to a hub page nobody opens to wait.
+   */
+  const [report, setReport] = useState<SyncReport | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  const loadStats = useCallback(async () => {
+    try {
+      setReport(await fetchSyncReport());
+    } catch {
+      // The hub still works with no stats — the cards below are what matters, and a failed read
+      // here should not block them or show an alarming error on a page that is mostly links.
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (isAuthLoading) return;
-    // Only the Sync card shows this, so there is no reason to read Firestore for someone who will
-    // never see the card.
-    if (!canSync) {
-      setStampLoading(false);
+    if (!canView) {
+      setStatsLoading(false);
       return;
     }
+    void loadStats();
+  }, [isAuthLoading, canView, loadStats]);
 
-    let cancelled = false;
-
-    const fetchLastSynced = async () => {
-      try {
-        /**
-         * `settings/greythrSync` is where the current sync records its runs;
-         * `settings/employeeSync` is the old flow's document, which nothing writes any more.
-         * Both are read so the timestamp keeps working on an installation that has not yet run
-         * the new sync — otherwise this card would go blank on deploy and look broken.
-         */
-        const [current, legacy] = await Promise.all([
-          getDoc(doc(db, 'settings', 'greythrSync')),
-          getDoc(doc(db, 'settings', 'employeeSync')),
-        ]);
-        const stamp =
-          (current.exists() ? (current.data().lastSuccessfulRunAt ?? current.data().lastRunAt) : null)
-          ?? (legacy.exists() ? legacy.data().lastSynced : null);
-        if (cancelled) return;
-        if (stamp) {
-          const parsed = new Date(stamp);
-          if (!Number.isNaN(parsed.getTime())) {
-            setSyncedAt(parsed);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to fetch last sync time:", error);
-      } finally {
-        if (!cancelled) setStampLoading(false);
-      }
-    };
-
-    void fetchLastSynced();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthLoading, canSync]);
-
-  /**
-   * "Last synced 2 minutes ago" was computed once and then stayed there for as long as the tab was
-   * open, so a stamp read at 09:00 still claimed "a few seconds ago" at noon. This re-renders once a
-   * minute, which is the coarsest tick that keeps a relative phrase honest.
-   */
+  const [tick, setTick] = useState(0);
   useEffect(() => {
-    if (!syncedAt) return;
+    if (!report?.settings.lastSuccessfulRunAt) return;
     const interval = setInterval(() => setTick((value) => value + 1), STAMP_REFRESH_MS);
     return () => clearInterval(interval);
-  }, [syncedAt]);
+  }, [report?.settings.lastSuccessfulRunAt]);
 
-  const lastSyncedLabel = useMemo(
-    // `tick` is what makes this recompute — the timestamp itself does not change.
-    () => (syncedAt ? `Last synced: ${formatDistanceToNow(syncedAt, { addSuffix: true })}` : null),
-    [syncedAt, tick],
-  );
+  const lastSyncedLabel = useMemo(() => {
+    void tick; // Recomputes the relative phrase as time passes; the timestamp itself does not change.
+    const stamp = report?.settings.lastSuccessfulRunAt;
+    if (!stamp) return null;
+    const parsed = new Date(stamp);
+    return Number.isNaN(parsed.getTime()) ? null : `Last synced ${formatDistanceToNow(parsed, { addSuffix: true })}`;
+  }, [report?.settings.lastSuccessfulRunAt, tick]);
 
-  const cards = useMemo<HubCard[]>(
+  const sections = useMemo<HubSection[]>(
     () => [
       {
-        icon: Users,
-        text: 'Manage Employee',
-        description: 'View the complete greytHR roster, including current and departed employees.',
-        href: '/employee/manage',
-        permitted: canView,
+        title: 'Directory',
+        description: 'Who works here, and the numbers behind it.',
+        cards: [
+          {
+            icon: Users,
+            text: 'Manage Employee',
+            description: 'The full roster, current and departed, corrected against greytHR live.',
+            href: '/employee/manage',
+            permitted: canView,
+          },
+          {
+            icon: UserCheck,
+            text: 'Current Employees (Live)',
+            description: "Who greytHR says is currently employed, fetched fresh — bypasses the stored mirror entirely.",
+            href: '/employee/current',
+            permitted: canView,
+          },
+          {
+            icon: BarChart3,
+            text: 'Reports',
+            description: 'Headcount, movement and category breakdowns, built from the same corrected roster.',
+            href: '/employee/reports',
+            permitted: canView,
+          },
+        ],
       },
       {
-        icon: DownloadCloud,
-        text: 'Sync with GreytHR',
-        description: 'Fetch and import employee data from GreytHR.',
-        href: '/employee/sync',
-        permitted: canSync,
-        lastSynced: stampLoading ? <Skeleton className="h-3 w-32" /> : lastSyncedLabel,
+        title: 'Time & leave',
+        description: "Registers of what greytHR already holds — read-only; applying or approving still happens in greytHR.",
+        cards: [
+          {
+            icon: CalendarClock,
+            text: 'Leave register',
+            description: 'Every employee’s leave balance by type, organisation-wide.',
+            href: '/employee/leave',
+            permitted: canView,
+          },
+          {
+            icon: Clock,
+            text: 'Attendance register',
+            description: "Everyone's synced monthly attendance summary, in one table.",
+            href: '/employee/attendance',
+            permitted: canView,
+          },
+        ],
       },
       {
-        icon: UserCheck,
-        text: 'Current Employees (Live)',
-        description:
-          "Who greytHR says is currently employed, fetched fresh on every visit — bypasses the stored mirror entirely.",
-        href: '/employee/current',
-        permitted: canView,
+        title: 'Sync & setup',
+        description: 'Keep the mirror correct, and connect logins to the people they belong to.',
+        cards: [
+          {
+            icon: DownloadCloud,
+            text: 'Sync with GreytHR',
+            description: 'Schedule, run and review the sync that keeps the mirror current.',
+            href: '/employee/sync',
+            permitted: canSync,
+            badge: statsLoading ? <Skeleton className="h-3 w-32" /> : lastSyncedLabel,
+          },
+          {
+            icon: Tags,
+            text: 'Manage Category',
+            description: 'View synced departments and designations.',
+            href: '/employee/category',
+            permitted: canView,
+          },
+          {
+            icon: Briefcase,
+            text: 'Employee Position Details',
+            description: 'Effective-dated category history for one employee.',
+            href: '/employee/position-details',
+            permitted: canView,
+          },
+          {
+            icon: Link2,
+            text: 'greytHR Linking',
+            description: 'Reconcile platform logins with greytHR employees — who is linked, who is not.',
+            href: '/settings/user-management/greythr-linking',
+            permitted: canLink,
+          },
+        ],
       },
       {
-        icon: Tags,
-        text: 'Manage Category',
-        description: 'View synced departments and designations.',
-        href: '/employee/category',
-        permitted: canView,
-      },
-      {
-        icon: Briefcase,
-        text: 'Employee Position Details',
-        description: 'Get position details for an employee.',
-        // Leading slash: without it this resolved relative to the current URL and broke the moment
-        // the path gained a trailing slash.
-        href: '/employee/position-details',
-        permitted: canView,
-      },
-      {
-        icon: IndianRupee,
-        text: 'Employee Salary',
-        description: 'View and manage employee salary details.',
-        href: '/employee/salary',
-        permitted: canView,
-      },
-      {
-        icon: BarChart3,
-        text: 'Reports',
-        description: 'Employee headcount, movement and category reports.',
-        href: '#',
-        permitted: canView,
-        comingSoon: true,
-      },
-      {
-        icon: FileText,
-        text: 'Pay Slip Config',
-        description: 'Configure settings for generating pay slips.',
-        href: '#',
-        permitted: canView,
-        comingSoon: true,
+        title: 'Payroll',
+        cards: [
+          {
+            icon: IndianRupee,
+            text: 'Employee Salary',
+            description: 'View and manage employee salary details.',
+            href: '/employee/salary',
+            permitted: canView,
+          },
+          {
+            icon: FileText,
+            text: 'Pay Slip Config',
+            description:
+              'Blocked on the salary-row migration — greytHR’s monthly salary sync still writes into the employee mirror rather than its own collection. See docs/greythr-integration.md §11a.',
+            href: '#',
+            permitted: canView,
+            comingSoon: true,
+          },
+        ],
       },
     ],
-    [canView, canSync, stampLoading, lastSyncedLabel],
+    [canView, canSync, canLink, statsLoading, lastSyncedLabel],
   );
 
-  const visibleCards = useMemo(() => cards.filter((card) => card.permitted), [cards]);
+  const visibleSections = sections
+    .map((section) => ({ ...section, cards: section.cards.filter((card) => card.permitted) }))
+    .filter((section) => section.cards.length > 0);
+
+  const totalVisible = visibleSections.reduce((sum, section) => sum + section.cards.length, 0);
 
   return (
     <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
@@ -261,19 +312,64 @@ export default function EmployeeSettingsPage() {
 
       <HrPageHeader
         title="Employee Management"
-        description="The employee roster, its greytHR sync, categories, position details and salary — each opening only for the permissions you hold."
+        description="The employee roster, its greytHR sync, leave, attendance, categories, position details and salary — each opening only for the permissions you hold."
+        actions={
+          canView ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href="/employee/sync">
+                <RefreshCw className="mr-1.5 h-4 w-4" />
+                Sync status
+              </Link>
+            </Button>
+          ) : undefined
+        }
       />
 
       {isAuthLoading ? (
         <HrLoader label="Checking your access…" />
-      ) : visibleCards.length === 0 ? (
+      ) : totalVisible === 0 ? (
         <HrAccessDenied what="Employee Management" />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-          {visibleCards.map((item) => (
-            <EmployeeSettingsCard key={item.text} item={item} />
+        <>
+          {canView && (
+            <div className="mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              {/*
+                `HrKpiCard` renders `value` inside a `<p>`, so the loading placeholder has to be text
+                — an ellipsis, not a `<Skeleton>` (a `<div>`). That exact mismatch is the hydration
+                bug fixed on this same page last time; reusing `HrKpiCard` here must not reintroduce it.
+              */}
+              <HrKpiCard
+                label="Employee records"
+                value={statsLoading ? '…' : report?.mirror.employees ?? '—'}
+                icon={Users}
+                tone="indigo"
+              />
+              <HrKpiCard
+                label="Still working"
+                value={statsLoading ? '…' : report?.mirror.working ?? '—'}
+                icon={UserCheck}
+                tone={report && report.mirror.employees > 0 && report.mirror.working === 0 ? 'rose' : 'emerald'}
+              />
+              <HrKpiCard
+                label="Full baseline"
+                value={statsLoading ? '…' : report?.settings.baselineCompletedAt ? 'Complete' : 'Never'}
+                hint={report && !report.settings.baselineCompletedAt ? 'Next sync fetches everybody' : undefined}
+                icon={RefreshCw}
+                tone={report?.settings.baselineCompletedAt ? 'emerald' : 'amber'}
+              />
+              <HrKpiCard
+                label="Last sync"
+                value={statsLoading ? '…' : (lastSyncedLabel?.replace('Last synced ', '') ?? 'Never')}
+                icon={Clock}
+                tone="blue"
+              />
+            </div>
+          )}
+
+          {visibleSections.map((section) => (
+            <HubSectionBlock key={section.title} section={section} />
           ))}
-        </div>
+        </>
       )}
     </div>
   );

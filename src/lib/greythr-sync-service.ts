@@ -46,6 +46,7 @@ import {
   hasSensitiveDetail,
   isSensitiveGroup,
   deriveEmploymentState,
+  detailLabels,
   diffSyncedEmployee,
   employmentSignals,
   employmentTypeLabels,
@@ -72,7 +73,6 @@ import {
   type GreytHRBankRow,
   type GreytHRIdentityCode,
   type GreytHRIdentityRow,
-  type GreytHRLovResponse,
   type GreytHROrgTreeRow,
   type GreytHRPersonalRow,
   type GreytHRPfRow,
@@ -1071,29 +1071,6 @@ async function fetchEnabledDetailGroups(
   }
 
   return detail;
-}
-
-/** Turn the LOV payload into the code→label maps the detail builders use. */
-function detailLabels(reference: GreytHRLovResponse | null) {
-  const asMap = (key: string): Record<string, string> | undefined => {
-    const rows = reference?.[key];
-    if (!Array.isArray(rows)) return undefined;
-    const out: Record<string, string> = {};
-    for (const row of rows) {
-      if (!Array.isArray(row) || row.length < 2) continue;
-      if (row[0] === null || row[0] === undefined || typeof row[1] !== 'string') continue;
-      out[String(row[0])] = row[1];
-    }
-    return Object.keys(out).length ? out : undefined;
-  };
-
-  return {
-    bloodGroup: asMap('lov::bloodgroup'),
-    maritalStatus: asMap('lov::maritalstatus'),
-    nationality: asMap('lov::nationality'),
-    religion: asMap('lov::religion'),
-    bank: asMap('lov::bank'),
-  };
 }
 
 /* ------------------------------------------------------------------------------------------------

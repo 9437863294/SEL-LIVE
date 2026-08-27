@@ -176,6 +176,26 @@ export const GREYTHR_CATEGORY_LOV_KEYS = Object.values(GREYTHR_CATEGORY).map(
 /** Built-in `lov::` keys worth caching — status is the one that matters for employment type. */
 export const GREYTHR_LOV_KEYS = ['lov::status', 'lov::transitiontype'] as const;
 
+/**
+ * The `lov::` keys the *detail* endpoints need to be readable.
+ *
+ * `/employees/{id}/personal` answers `maritalStatus: 1`, not `"Married"`; `/statutory/india` does the
+ * same for religion and nationality, and `/bank` for the bank name. Without these keys
+ * `detailLabels` has nothing to look up and the raw codes are stored and displayed — which is how a
+ * profile ends up showing a marital status of "1" and a blood group of "3".
+ *
+ * Separate from `GREYTHR_LOV_KEYS` only because that list is about employment type and is used in
+ * places that have no interest in personal detail; both are requested together by
+ * `fetchReferenceData`.
+ */
+export const GREYTHR_DETAIL_LOV_KEYS = [
+  'lov::bloodgroup',
+  'lov::maritalstatus',
+  'lov::nationality',
+  'lov::religion',
+  'lov::bank',
+] as const;
+
 /* ------------------------------------------------------------------------------------------------
  * The full employee record — detail groups
  * ---------------------------------------------------------------------------------------------- */
@@ -699,6 +719,44 @@ export function maskIdentifier(value: string | null | undefined, visible = 4): s
 export function resolveReportingManager(
   orgtree: unknown,
 ): { employeeId?: string; name?: string } | null {
+  /**
+   * The shape this tenant's API actually returns, tried before the loose walk below.
+   *
+   *   [{ "level": 0, "manager": { "employeeId": 217, "employeeNo": "D005", "name": "…" } },
+   *    { "level": -1, "manager": { … } }]
+   *
+   * The loose walk cannot read it: it looks for `supervisorId`, `managerId`, `reportsTo` and friends,
+   * and this payload uses none of them — the id is a plain `employeeId` nested under `manager`, which
+   * is indistinguishable from the employee's own id to a key-name heuristic. So every profile showed
+   * a blank reporting manager while greytHR had one all along.
+   *
+   * `level` is the distance up the chain: `0` is the direct manager, `-1` theirs. Sorted descending
+   * so the direct manager wins even if greytHR returns the levels in another order.
+   */
+  const fromLevels = (): { employeeId?: string; name?: string } | null => {
+    if (!Array.isArray(orgtree)) return null;
+
+    const levels = orgtree
+      .filter((entry): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+      .map((entry) => ({
+        // Absent `level` sorts last rather than tying with the direct manager at 0.
+        level: typeof entry.level === 'number' ? entry.level : Number.NEGATIVE_INFINITY,
+        manager: entry.manager,
+      }))
+      .filter(
+        (entry): entry is { level: number; manager: Record<string, unknown> } =>
+          !!entry.manager && typeof entry.manager === 'object' && !Array.isArray(entry.manager),
+      )
+      .sort((a, b) => b.level - a.level);
+
+    for (const { manager } of levels) {
+      const employeeId = text(manager.employeeId);
+      if (!employeeId || employeeId === '0') continue;
+      return { employeeId, name: text(manager.name) };
+    }
+    return null;
+  };
+
   const visit = (node: unknown, depth = 0): { employeeId?: string; name?: string } | null => {
     if (!node || depth > 4) return null;
 
@@ -741,7 +799,9 @@ export function resolveReportingManager(
     return null;
   };
 
-  return visit(orgtree);
+  // Documented shape first, loose walk second — so a tenant whose payload the heuristic *can* read
+  // keeps working, and one whose payload it cannot is no longer silently blank.
+  return fromLevels() ?? visit(orgtree);
 }
 
 export interface BuildDetailInput {
@@ -1547,6 +1607,42 @@ export function employmentTypeLabels(lov: GreytHRLovResponse | null | undefined)
     out[String(code)] = label;
   }
   return Object.keys(out).length ? out : { ...DEFAULT_EMPLOYMENT_TYPE_LABELS };
+}
+
+/**
+ * The code→label maps the detail builders use, from the LOV payload.
+ *
+ * `/employees/{id}/personal` answers `maritalStatus: 1` and `bloodGroup: 3`; `/statutory/india` does
+ * the same for religion and nationality. Without these maps `buildOperationalDetail` and
+ * `buildSensitiveDetail` pass the raw code straight through, which is how a profile shows a marital
+ * status of "1".
+ *
+ * Returns `undefined` for a list greytHR did not send, which the builders read as "no map" and fall
+ * back to the raw value — a code is still better than a blank when the label is genuinely unavailable.
+ *
+ * Lives here rather than in the sync service because the live profile route needs the same maps, and
+ * two copies of a lookup table are two chances to disagree about what "1" means.
+ */
+export function detailLabels(lov: GreytHRLovResponse | null | undefined) {
+  const asMap = (key: string): Record<string, string> | undefined => {
+    const rows = lov?.[key];
+    if (!Array.isArray(rows)) return undefined;
+    const out: Record<string, string> = {};
+    for (const row of rows) {
+      if (!Array.isArray(row) || row.length < 2) continue;
+      if (row[0] === null || row[0] === undefined || typeof row[1] !== 'string') continue;
+      out[String(row[0])] = row[1];
+    }
+    return Object.keys(out).length ? out : undefined;
+  };
+
+  return {
+    bloodGroup: asMap('lov::bloodgroup'),
+    maritalStatus: asMap('lov::maritalstatus'),
+    nationality: asMap('lov::nationality'),
+    religion: asMap('lov::religion'),
+    bank: asMap('lov::bank'),
+  };
 }
 
 export const employmentTypeLabel = (

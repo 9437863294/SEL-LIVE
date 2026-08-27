@@ -1529,6 +1529,29 @@ export function canUseEmployeePicker(can: PermissionChecker): boolean {
   return can('View', 'Settings.Employee Management') || canCreateUser(can);
 }
 
+/**
+ * May this user open one employee's profile?
+ *
+ * Two permission trees cover the same ground: the granular `Employee.*` module (Manage, Personal
+ * Data, Documents, …) which only the profile screen ever checked, and the coarse
+ * `Settings.Employee Management` which every *other* employee screen checks. Accepting either is a
+ * fix rather than laxity — a user granted `Settings.Employee Management · View` can list the whole
+ * roster on Manage Employee, and clicking a name from that list must not dead-end in "no access".
+ *
+ * It can only ever admit somebody who already had the listing, never exclude anybody. The narrower
+ * `Employee.Personal Data` and `Employee.Documents` checks stay separate: they guard special-category
+ * data and national identity documents, and "may see the roster" is not consent to those.
+ *
+ * Lives here so the screen and the API route that feeds it apply one rule, not two that drift.
+ */
+export function canViewEmployeeProfile(can: PermissionChecker): boolean {
+  return (
+    can('View', 'Employee.Manage') ||
+    can('View Module', 'Employee') ||
+    can('View', 'Settings.Employee Management')
+  );
+}
+
 export function canRevokeAccess(can: PermissionChecker): boolean {
   if (can('Revoke', 'Settings.Access Management')) return true;
   return can('Edit', 'Settings.User Management') && can('Edit', 'Settings.Role Management');
