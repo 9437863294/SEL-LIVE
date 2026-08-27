@@ -260,14 +260,21 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
         </div>
       )}
 
-      {list && list.activeEmployeesMissingFromMirror > 0 && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-900">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      {/*
+        Informational, not a warning: these employees are already in the list above, fetched
+        straight from greytHR. Nothing to do here — the note exists only because the local mirror
+        (Employee Management, reports) will not know about them until a sync runs, which is worth
+        knowing but is not this screen's problem to fix.
+      */}
+      {list && list.employeesFromLiveRosterOnly > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-xs text-sky-900">
+          <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <p>
-            {list.activeEmployeesMissingFromMirror} active employee
-            {list.activeEmployeesMissingFromMirror === 1 ? ' is' : 's are'} in greytHR but not yet in
-            the local mirror. Run{' '}
-            <Link href="/employee/sync" className="underline">Full resync</Link> to add them.
+            {list.employeesFromLiveRosterOnly} of these came straight from greytHR — they are not in
+            the local mirror yet, so they will not show up on Employee Management or in reports until
+            a{' '}
+            <Link href="/employee/sync" className="underline">sync</Link> runs. Their login works
+            immediately regardless.
           </p>
         </div>
       )}

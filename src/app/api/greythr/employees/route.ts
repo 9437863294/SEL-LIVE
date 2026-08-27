@@ -23,7 +23,8 @@ import {
   type LinkableEmployee,
   type SyncedEmployee,
 } from '@/lib/greythr';
-import { fetchEmployees, fetchSingleEmployee, isGreytHRConfigured } from '@/lib/greythr-client';
+import { fetchSingleEmployee, isGreytHRConfigured } from '@/lib/greythr-client';
+import { fetchCurrentEmployeeRoster } from '@/lib/greythr-live-roster';
 import { readSyncSettings } from '@/lib/greythr-sync-service';
 
 /**
@@ -152,30 +153,28 @@ export async function GET(request: Request) {
       });
     }
 
-    /* ── The list, from the mirror ── */
+    /* ── The list: the mirror, topped up with anyone greytHR has that the mirror does not ── */
 
-    const currentRosterPromise = isGreytHRConfigured()
-      ? fetchEmployees({ state: 'CURRENT' })
-          .then((result) => result.rows)
-          .catch((error) => {
-            console.warn('[greythr/employees] Could not refresh CURRENT roster; using mirror state.', error);
-            return null;
-          })
+    const liveRosterPromise = isGreytHRConfigured()
+      ? fetchCurrentEmployeeRoster().catch((error) => {
+          console.warn('[greythr/employees] Could not fetch the live CURRENT roster; using mirror state.', error);
+          return null;
+        })
       : Promise.resolve(null);
 
-    const [employeeSnapshot, users, settings, currentRoster] = await Promise.all([
+    const [employeeSnapshot, users, settings, liveRoster] = await Promise.all([
       db.collection('employees').get(),
       loadUsers(db),
       readSyncSettings(db),
-      currentRosterPromise,
+      liveRosterPromise,
     ]);
 
     const { index: byEmail } = indexUsersByEmail(users);
     const { index: byEmployeeId } = indexUsersByEmployeeId(users);
     const userNames = new Map(users.map((user) => [user.id, user.name]));
     const mirrorRefresh = shouldForceFullResync(settings);
-    const currentEmployeeIds = currentRoster && currentRoster.length > 0
-      ? new Set(currentRoster.map((employee) => String(employee.employeeId)))
+    const currentEmployeeIds = liveRoster && liveRoster.employees.length > 0
+      ? new Set(liveRoster.employees.map((employee) => String(employee.employeeId)))
       : null;
 
     /**
@@ -218,6 +217,31 @@ export async function GET(request: Request) {
     const mirroredEmployeeIds = new Set(all.map((employee) => employee.employeeId));
 
     /**
+     * Anyone greytHR reports as CURRENT who is not in the mirror at all.
+     *
+     * This is the actual fix for "add a new user I want, and it should pull the list from
+     * greytHR's current-employee roster". `all`, above, can only ever contain what
+     * `employeeSnapshot.docs` already holds — so an employee greytHR has always known about but no
+     * sync has ever stored (because they joined after the last successful run, or a run partially
+     * failed) was invisible here no matter how current they were. The picker said so — "128 active
+     * employees are in greytHR but not yet in the local mirror. Run Full resync to add them." — but
+     * that is a diagnosis, not a fix, and creating one login should not require rebuilding the
+     * mirror for everybody else first.
+     *
+     * Built straight from the live roster's own `SyncedEmployee` records — the same ones
+     * `/employee/current` shows — rather than from anything mirror-shaped, so nothing here depends
+     * on the mirror being right.
+     */
+    const liveOnly: LinkableEmployee[] = (liveRoster?.employees ?? [])
+      .filter((employee) => !mirroredEmployeeIds.has(String(employee.employeeId)))
+      .map((employee) => {
+        const record = { ...employee, employeeId: String(employee.employeeId) };
+        return toLinkableEmployee(record, resolveLink(record, byEmployeeId, byEmail));
+      });
+
+    const combined = [...all, ...liveOnly];
+
+    /**
      * Working = on greytHR's live CURRENT roster, OR the (placeholder-corrected) mirror state says so.
      *
      * Was an either/or on the *source* — live roster when available, mirror state only as a fallback
@@ -228,7 +252,7 @@ export async function GET(request: Request) {
      * live roster is still authoritative when it says somebody *is* current; it just no longer gets
      * the last word when it stays silent about somebody the corrected state says is fine.
      */
-    const working = all.filter(
+    const working = combined.filter(
       (employee) =>
         currentEmployeeIds?.has(employee.employeeId) === true || isWorkingState(employee.employmentState),
     );
@@ -260,9 +284,15 @@ export async function GET(request: Request) {
         return counts;
       }, {}),
       activeRosterSource: currentEmployeeIds ? 'greythr-current' : 'mirror',
-      activeEmployeesMissingFromMirror: currentEmployeeIds
-        ? [...currentEmployeeIds].filter((employeeId) => !mirroredEmployeeIds.has(employeeId)).length
-        : 0,
+      /**
+       * How many offerable employees came straight from greytHR rather than the Firestore mirror.
+       *
+       * No longer a count of people the picker *cannot* show — `liveOnly` already put them in
+       * `offerable` above. It is informational: the local mirror will not have these people until a
+       * sync runs, so anything that reads the mirror directly (Employee Management, reports) will
+       * lag this list until then, even though the login can be created right now.
+       */
+      employeesFromLiveRosterOnly: liveOnly.filter((employee) => !employee.linkedUserId).length,
       /**
        * The mirror is only as current as the last sync. Surfaced so the picker can say so rather
        * than presenting stale data as fact.

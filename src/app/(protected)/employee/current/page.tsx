@@ -9,6 +9,11 @@
  * what it says right now. Nothing here is cached in Firestore and nothing here can go stale in the
  * way the mirror can — the cost is that every visit is a live API round trip, which is the right
  * trade for a page whose entire purpose is "what does greytHR say, this second".
+ *
+ * Table styled to match `site-account-statement/expenses`: a plain, dense `<table>` in its own
+ * scrolling card (sticky slate header, hover rows, truncated cells with a `min-w` floor so it scrolls
+ * horizontally instead of squeezing), with a row click opening the full record in a detail dialog —
+ * rather than the generic responsive `HrDataList` card/table split used elsewhere in this module.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -16,10 +21,10 @@ import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 import {
   ArrowLeft,
+  Briefcase,
   Building2,
-  Mail,
+  Calendar,
   MapPin,
-  Phone,
   RefreshCw,
   Search,
   UserCheck,
@@ -31,15 +36,9 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import {
-  HrAccessDenied,
-  HrDataList,
-  HrEmptyState,
-  HrKpiCard,
-  HrLoader,
-  type HrListColumn,
-} from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrKpiCard, HrLoader } from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -56,17 +55,6 @@ const STATE_TONE: Record<EmploymentState, string> = {
   Settled: 'border-slate-200 bg-slate-100 text-slate-600',
   Left: 'border-rose-200 bg-rose-50 text-rose-700',
   Unknown: 'border-slate-300 bg-white text-slate-500',
-};
-
-/** The stripe down the left edge of each row, so scanning a long list for anyone on notice is a glance, not a read. */
-const STATE_ACCENT: Record<EmploymentState, string> = {
-  Active: 'border-l-4 border-l-emerald-300',
-  'Notice Period': 'border-l-4 border-l-amber-400',
-  Relieved: 'border-l-4 border-l-rose-300',
-  Retired: 'border-l-4 border-l-slate-300',
-  Settled: 'border-l-4 border-l-slate-300',
-  Left: 'border-l-4 border-l-rose-300',
-  Unknown: 'border-l-4 border-l-slate-200',
 };
 
 /** A stable colour per person, so the same name always gets the same avatar — not random per render. */
@@ -100,6 +88,16 @@ function formatJoinDate(value: string | null): string {
   return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+/** One field of the detail dialog. Blank values render as an em dash rather than being omitted. */
+function DetailField({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="mt-0.5 text-sm text-slate-800">{value || <span className="text-muted-foreground">—</span>}</div>
+    </div>
+  );
+}
+
 export default function CurrentEmployeesLivePage() {
   const { toast } = useToast();
   const { can, isLoading: authLoading } = useAuthorization();
@@ -111,6 +109,7 @@ export default function CurrentEmployeesLivePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [viewEmployee, setViewEmployee] = useState<Row | null>(null);
 
   const load = useCallback(
     async (isRefresh: boolean) => {
@@ -156,97 +155,6 @@ export default function CurrentEmployeesLivePage() {
     const locations = new Set(employees.map((employee) => employee.location).filter(Boolean)).size;
     return { notice, departments, locations };
   }, [employees]);
-
-  const columns: HrListColumn<Row>[] = [
-    {
-      header: 'Employee',
-      mobile: 'title',
-      className: 'min-w-[220px]',
-      cell: (row) => (
-        <div className="flex items-center gap-3">
-          <Avatar className="h-9 w-9 shrink-0">
-            <AvatarFallback className={cn('text-xs font-semibold', avatarTone(row.id))}>
-              {initials(row.name || row.employeeNo || '?')}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold leading-tight text-slate-800">{row.name || '—'}</p>
-            <p className="truncate text-xs text-muted-foreground">{row.employeeNo || row.employeeId}</p>
-          </div>
-        </div>
-      ),
-    },
-    {
-      header: 'State',
-      mobile: 'aside',
-      cell: (row) => (
-        <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
-          {row.employmentState}
-        </Badge>
-      ),
-    },
-    {
-      header: 'Department / Designation',
-      className: 'min-w-[200px]',
-      cell: (row) => (
-        <div className="min-w-0">
-          <p className="truncate text-sm text-slate-800">{row.designation || '—'}</p>
-          <p className="truncate text-xs text-muted-foreground">{row.department || '—'}</p>
-        </div>
-      ),
-    },
-    {
-      header: 'Location',
-      className: 'hidden md:table-cell',
-      cell: (row) => (
-        <span className="inline-flex items-center gap-1.5 text-sm text-slate-700">
-          <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate">{row.location || '—'}</span>
-        </span>
-      ),
-    },
-    {
-      header: 'Project',
-      className: 'hidden lg:table-cell',
-      cell: (row) => (
-        <div className="min-w-0">
-          <p className="truncate text-sm text-slate-700">{row.projectName || '—'}</p>
-          {row.projectDivision && <p className="truncate text-xs text-muted-foreground">{row.projectDivision}</p>}
-        </div>
-      ),
-    },
-    {
-      header: 'Type',
-      className: 'hidden lg:table-cell',
-      cell: (row) => (row.employmentType ? <Badge variant="secondary" className="font-normal">{row.employmentType}</Badge> : '—'),
-    },
-    {
-      header: 'Joined',
-      className: 'hidden md:table-cell whitespace-nowrap',
-      cell: (row) => formatJoinDate(row.dateOfJoin),
-    },
-    {
-      header: 'Contact',
-      className: 'hidden xl:table-cell',
-      cell: (row) => (
-        <div className="min-w-0 space-y-0.5 text-xs text-muted-foreground">
-          {row.email && (
-            <div className="flex items-center gap-1.5">
-              <Mail className="h-3 w-3 shrink-0" />
-              <span className="truncate">{row.email}</span>
-            </div>
-          )}
-          {row.phone && (
-            <div className="flex items-center gap-1.5">
-              <Phone className="h-3 w-3 shrink-0" />
-              <span className="truncate">{row.phone}</span>
-            </div>
-          )}
-          {!row.email && !row.phone && '—'}
-        </div>
-      ),
-    },
-  ];
 
   return (
     <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
@@ -304,15 +212,15 @@ export default function CurrentEmployeesLivePage() {
       ) : !canView ? (
         <HrAccessDenied what="the greytHR employee roster" />
       ) : error ? (
-        <HrEmptyState
-          title="Could not reach greytHR"
-          description={error}
-          action={
+        <Card className="border-white/60 bg-white/80 shadow-sm">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <Users className="h-10 w-10 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">{error}</p>
             <Button size="sm" onClick={() => void load(true)}>
               Try again
             </Button>
-          }
-        />
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-4">
           {/* ── KPIs ── */}
@@ -351,29 +259,165 @@ export default function CurrentEmployeesLivePage() {
           </div>
 
           {/* ── Table ── */}
-          {/*
-            `w-auto` overrides the shared list's default `w-full`: with only a handful of columns,
-            stretching the table edge-to-edge on a wide screen pads every cell with dead space and
-            makes each row read as scattered values rather than one record. `fitContent` then shrinks
-            the bordered card itself to match, so there is no leftover empty box beside the table —
-            every bit of visible surface is the table.
-          */}
-          <HrDataList
-            rows={filtered}
-            columns={columns}
-            rowClassName={(row) => STATE_ACCENT[row.employmentState]}
-            tableClassName="w-auto"
-            fitContent
-            empty={
-              <HrEmptyState
-                title={search ? 'No employees match that search' : 'greytHR reports nobody current'}
-                description={search ? 'Try a different name, department or project.' : undefined}
-                icon={Users}
-              />
-            }
-          />
+          <Card className="bg-white/80 backdrop-blur-sm">
+            <CardContent className="p-0">
+              {filtered.length === 0 ? (
+                <div className="flex flex-col items-center gap-3 py-12 text-center">
+                  <Users className="h-10 w-10 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">
+                    {search ? 'No employees match that search.' : "greytHR reports nobody current."}
+                  </p>
+                </div>
+              ) : (
+                <div className="max-h-[65vh] overflow-auto">
+                  <table className="w-full min-w-[1000px] text-sm">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="border-b bg-slate-100">
+                        <th className="px-4 py-2.5 text-left font-medium">Employee</th>
+                        <th className="px-4 py-2.5 text-left font-medium">State</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Department</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Designation</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Location</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Project</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Type</th>
+                        <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Joined</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Email</th>
+                        <th className="px-4 py-2.5 text-left font-medium">Phone</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((row) => (
+                        <tr
+                          key={row.id}
+                          className="cursor-pointer border-b transition-colors hover:bg-muted/20"
+                          onClick={() => setViewEmployee(row)}
+                        >
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2.5">
+                              <Avatar className="h-8 w-8 shrink-0">
+                                <AvatarFallback className={cn('text-[11px] font-semibold', avatarTone(row.id))}>
+                                  {initials(row.name || row.employeeNo || '?')}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0 max-w-[160px]">
+                                <p className="truncate font-medium text-slate-800">{row.name || '—'}</p>
+                                <p className="truncate text-xs text-muted-foreground">{row.employeeNo || row.employeeId}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
+                              {row.employmentState}
+                            </Badge>
+                          </td>
+                          <td className="max-w-[140px] truncate px-4 py-2.5">{row.department || '—'}</td>
+                          <td className="max-w-[160px] truncate px-4 py-2.5">{row.designation || '—'}</td>
+                          <td className="max-w-[130px] truncate px-4 py-2.5">{row.location || '—'}</td>
+                          <td className="max-w-[150px] truncate px-4 py-2.5">{row.projectName || '—'}</td>
+                          <td className="px-4 py-2.5">
+                            {row.employmentType ? <Badge variant="secondary" className="font-normal">{row.employmentType}</Badge> : '—'}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-2.5">{formatJoinDate(row.dateOfJoin)}</td>
+                          <td className="max-w-[170px] truncate px-4 py-2.5 text-muted-foreground">{row.email || '—'}</td>
+                          <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{row.phone || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-muted/30 font-semibold">
+                        <td className="px-4 py-2.5" colSpan={2}>
+                          Total
+                        </td>
+                        <td className="px-4 py-2.5 text-emerald-700" colSpan={8}>
+                          {filtered.length} current employee{filtered.length === 1 ? '' : 's'}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
+
+      {/* ── Employee detail dialog ── */}
+      <Dialog open={!!viewEmployee} onOpenChange={() => setViewEmployee(null)}>
+        <DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-emerald-600" />
+              Employee Details
+            </DialogTitle>
+          </DialogHeader>
+          {viewEmployee && (
+            <div className="space-y-4 py-1">
+              {/* Identity highlight */}
+              <div className="flex items-center gap-3 rounded-xl border bg-emerald-50 px-4 py-3">
+                <Avatar className="h-11 w-11 shrink-0">
+                  <AvatarFallback className={cn('text-sm font-semibold', avatarTone(viewEmployee.id))}>
+                    {initials(viewEmployee.name || viewEmployee.employeeNo || '?')}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-bold text-slate-800">{viewEmployee.name || '—'}</p>
+                  <p className="text-xs text-muted-foreground">{viewEmployee.employeeNo || viewEmployee.employeeId}</p>
+                </div>
+                <Badge variant="outline" className={cn('shrink-0 font-medium', STATE_TONE[viewEmployee.employmentState])}>
+                  {viewEmployee.employmentState}
+                </Badge>
+              </div>
+
+              {/* Fields grid */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                <DetailField label="Email" value={viewEmployee.email} />
+                <DetailField label="Phone" value={viewEmployee.phone} />
+                <DetailField label="Department" value={viewEmployee.department} />
+                <DetailField label="Designation" value={viewEmployee.designation} />
+                <DetailField
+                  label="Location"
+                  value={
+                    viewEmployee.location && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                        {viewEmployee.location}
+                      </span>
+                    )
+                  }
+                />
+                <DetailField label="Grade" value={viewEmployee.grade} />
+                <DetailField label="Project" value={viewEmployee.projectName} />
+                <DetailField label="Project Division" value={viewEmployee.projectDivision} />
+                <DetailField label="Cost Center" value={viewEmployee.costCenter} />
+                <DetailField label="Employee Type" value={viewEmployee.employeeType} />
+                <DetailField
+                  label="Employment Type"
+                  value={viewEmployee.employmentType && <Badge variant="secondary">{viewEmployee.employmentType}</Badge>}
+                />
+                <DetailField
+                  label="Date of Join"
+                  value={
+                    viewEmployee.dateOfJoin && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                        {formatJoinDate(viewEmployee.dateOfJoin)}
+                      </span>
+                    )
+                  }
+                />
+                {viewEmployee.confirmDate && <DetailField label="Confirmed On" value={formatJoinDate(viewEmployee.confirmDate)} />}
+                {viewEmployee.noticePeriodDays !== null && (
+                  <DetailField label="Notice Period" value={`${viewEmployee.noticePeriodDays} days`} />
+                )}
+                <div className="col-span-2 border-t pt-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Employment State Reason</p>
+                  <p className="mt-0.5 text-sm text-slate-700">{viewEmployee.employmentStateReason}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

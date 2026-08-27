@@ -113,8 +113,13 @@ export interface LinkableEmployeeList {
   excluded: Record<string, number>;
   /** Live CURRENT roster when greytHR was reachable, otherwise the last synced mirror. */
   activeRosterSource: 'greythr-current' | 'mirror';
-  /** CURRENT employees that need a full sync before the mirror can supply their full details. */
-  activeEmployeesMissingFromMirror: number;
+  /**
+   * How many offerable employees came straight from greytHR's live roster rather than the Firestore
+   * mirror — already included in `employees` above, not excluded from it. Purely informational: the
+   * local mirror will not have these people until a sync runs, so screens that read the mirror
+   * directly lag this list until then, even though a login can be created right now.
+   */
+  employeesFromLiveRosterOnly: number;
   /** When the local mirror was last refreshed from greytHR. */
   mirrorSyncedAt: string | null;
   /**

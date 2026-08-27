@@ -208,6 +208,8 @@ one `undefined` rejects the *entire* batch of 400.
 | [`src/lib/greythr-link-service.ts`](../src/lib/greythr-link-service.ts) | Admin-SDK link/unlink/bulk, transactional. |
 | [`src/app/api/greythr/link/route.ts`](../src/app/api/greythr/link/route.ts) | The linking API. |
 | [`src/components/access-management/greythr-linking.tsx`](../src/components/access-management/greythr-linking.tsx) | The console at `/settings/user-management/greythr-linking`. |
+| [`src/lib/greythr-live-roster.ts`](../src/lib/greythr-live-roster.ts) | The mirror-free CURRENT roster, shared by `/employee/current` and the Add User picker's live top-up. |
+| [`src/app/api/greythr/employees/current/route.ts`](../src/app/api/greythr/employees/current/route.ts) | "What does greytHR say, right now" — no mirror in the middle. |
 | [`tests/greythr-domain.test.mjs`](../tests/greythr-domain.test.mjs) | 157 tests, including one per fixed bug. |
 | [`tests/greythr-linking.test.mjs`](../tests/greythr-linking.test.mjs) | 36 tests on ownership and matching. |
 
@@ -547,13 +549,28 @@ access-assignment permission. The employee picker accepts either Employee Manage
 Management `Add`, so an administrator who can create a user is not accidentally blocked from seeing
 eligible active employees.
 
-**How the list stays active-only** — the picker refreshes membership from greytHR's documented
-`state=CURRENT` roster, then supplies names, categories and projects from the local mirror. If
-greytHR is temporarily unreachable it falls back to the last synced employment state. Departed
-employees are neither returned to the picker nor available behind an override. The one employee
-actually chosen is still refetched live so a new joiner's details are current.
+**How the list stays active-only** — the picker checks greytHR's documented `state=CURRENT` roster
+(via the shared [`fetchCurrentEmployeeRoster`](../src/lib/greythr-live-roster.ts)) and treats being on
+it, or the mirror's own (placeholder-corrected) state, as working — either signal is enough. If greytHR
+is temporarily unreachable it falls back to the mirror's state alone. Departed employees are not
+offered by default, but **can be shown deliberately** — a "Show everyone" toggle lists them too, each
+one marked in red with greytHR's own reason, because employment state is a derivation and derivations
+are sometimes wrong; a filter that hides someone with no way to override it is worse than one that
+shows them with the reason attached.
 
-The picker also states when the mirror was last synced, and warns when it never has been — because a
+**The list is not limited to what the mirror has stored.** It used to be — built only from
+`employeeSnapshot.docs`, so an employee greytHR has always known about but no sync had ever written
+(joined after the last successful run, or caught by a run that partially failed) was invisible however
+current they were. The picker said so ("128 active employees are in greytHR but not yet in the local
+mirror. Run Full resync to add them.") but that was a diagnosis, not a fix — creating one login should
+not require rebuilding the mirror for everyone else first. The list is now the mirror **topped up**
+with anyone on the live roster the mirror does not have, built from the same `SyncedEmployee` records
+`/employee/current` shows. A banner still names how many came from that live top-up, because the local
+mirror — and anything else that reads it directly, like Employee Management — will not know about them
+until a sync runs; but it is now informational, not a blocker.
+
+The one employee actually chosen is still refetched live so a new joiner's details are current. The
+picker also states when the mirror was last synced, and warns when it never has been — because a
 picker that presents a stale list as fact sends administrators looking for people who aren't in it.
 
 ### A wrinkle worth knowing

@@ -16,7 +16,8 @@
     "src/lib/greythr-linking.ts",
     "src/lib/greythr-link-service.ts",
     "src/components/access-management/greythr-linking.tsx",
-    "src/app/(protected)/settings/user-management/greythr-linking/**/*.tsx"
+    "src/app/(protected)/settings/user-management/greythr-linking/**/*.tsx",
+    "src/lib/greythr-live-roster.ts"
   ],
   "exclude": [
     "node_modules"
