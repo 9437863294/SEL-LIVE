@@ -16,6 +16,7 @@ import {
   Briefcase,
   IndianRupee,
   BarChart3,
+  UserCheck,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -47,11 +48,17 @@ const employeeSettingsItemsBase = [
     description: 'View the complete greytHR roster, including current and departed employees.',
     href: '/employee/manage' 
   },
-  { 
-    icon: DownloadCloud, 
+  {
+    icon: DownloadCloud,
     text: 'Sync with GreytHR',
     description: 'Fetch and import employee data from GreytHR.',
-    href: '/employee/sync' 
+    href: '/employee/sync'
+  },
+  {
+    icon: UserCheck,
+    text: 'Current Employees (Live)',
+    description: "Who greytHR says is currently employed, fetched fresh on every visit — bypasses the stored mirror entirely.",
+    href: '/employee/current'
   },
   { 
     icon: Tags, 

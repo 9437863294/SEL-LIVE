@@ -18,6 +18,7 @@ import type {
   GreytHRSyncRun,
   GreytHRSyncSettings,
   LinkableEmployee,
+  SyncedEmployee,
 } from './greythr';
 import type { BulkLinkPlan, LinkAuditEntry, LinkReport } from './greythr-linking';
 
@@ -253,3 +254,24 @@ export const testConnection = (): Promise<{ ok: boolean; message: string; totalE
     method: 'POST',
     body: JSON.stringify({ action: 'test-connection' }),
   });
+
+/* ------------------------------------------------------------------------------------------------
+ * Current employees, live from greytHR
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface LiveCurrentEmployeesResponse {
+  ok: boolean;
+  employees: SyncedEmployee[];
+  totalCurrent: number;
+  fetchedAt: string;
+  source: 'greythr-live';
+}
+
+/**
+ * greytHR's `state=CURRENT` roster, fetched fresh on every call — no Firestore mirror involved.
+ *
+ * For the times the mirror itself is suspect: every field here is derived from this request alone,
+ * so it cannot show a stale or placeholder-date-corrupted result.
+ */
+export const fetchCurrentEmployeesLive = (): Promise<LiveCurrentEmployeesResponse> =>
+  authorizedFetch<LiveCurrentEmployeesResponse>('/api/greythr/employees/current');
