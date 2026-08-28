@@ -17,6 +17,25 @@ intended to call this engine rather than each building their own approval logic.
 | `src/app/api/e-approval/escalations/route.ts` | Admin-SDK reminder/escalation sweep, for a scheduler. |
 | `tests/e-approval-domain.test.mjs` | 89 engine tests. `npm run test:e-approval`. |
 | `tsconfig.e-approval.json` | Module-scoped typecheck. `npm run typecheck:e-approval`. |
+| `src/lib/e-approval-manual.ts` | **The handbook, as data.** The single source for both the in-app Guide and the Word manual. |
+| `src/app/(protected)/e-approval/help/page.tsx` | The Guide screen — renders the handbook with an audience filter and full-text search. |
+| `scripts/build-e-approval-manual.mjs` | Renders the same handbook into `.docx`. `npm run manual:e-approval`. |
+
+## The handbook
+
+`src/lib/e-approval-manual.ts` holds the user and administrator manual as a structured array. Two
+things render it: the in-app Guide at `/e-approval/help`, and `npm run manual:e-approval`, which emits
+`docs/E-Approval-Manual.docx` and `public/docs/E-Approval-Manual.docx` (the second is what the Guide's
+download button serves).
+
+Editing that one file corrects both. A tutorial page maintained separately from the distributed manual
+is two documents that disagree by the next release, and the reader has no way to know which is stale.
+
+The docx is generated as raw WordprocessingML through `jszip` rather than a docx library, because
+`jszip` is already in the tree. Two things to know if you touch that script: every OOXML property
+element (`w:pPr`, `w:rPr`, `w:tblPr`, `docProps/core.xml`, `docProps/app.xml`) is a **strict sequence**,
+and Word's only complaint about a mis-ordered one is "the file appears to be corrupted" with no
+indication of which part. Well-formed XML is not enough — open the output in Word after changing it.
 
 ## The one idea everything rests on
 

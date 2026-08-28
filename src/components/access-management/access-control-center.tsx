@@ -50,11 +50,11 @@ import {
   HrAccessDenied,
   HrDataList,
   HrEmptyState,
-  HrKpiCard,
   HrLoader,
   HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import { SpotlightCard } from '@/components/effects/SpotlightCard';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
@@ -94,7 +94,7 @@ import {
   type UserDirectoryContext,
   type UserFilterState,
 } from './pickers';
-import { AccessCard, AccessPageShell, RiskBadges, RoleBadge } from './access-ui';
+import { AccessCard, AccessKpiCard, AccessPageShell, RiskBadges, RoleBadge } from './access-ui';
 
 type TabId =
   | 'overview'
@@ -384,44 +384,50 @@ function AccessOverview({
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <HrKpiCard label="Total users" value={dashboard.totalUsers} hint={`${dashboard.activeUsers} active`} icon={Users} tone="blue" />
-        <HrKpiCard label="Roles" value={dashboard.totalRoles} hint={`${dashboard.customRoles} custom`} icon={Layers} tone="indigo" />
-        <HrKpiCard
+        <AccessKpiCard index={0} label="Total users" value={dashboard.totalUsers} hint={`${dashboard.activeUsers} active`} icon={Users} tone="blue" />
+        <AccessKpiCard index={1} label="Roles" value={dashboard.totalRoles} hint={`${dashboard.customRoles} custom`} icon={Layers} tone="indigo" />
+        <AccessKpiCard
+          index={2}
           label="Grantable permissions"
           value={registryTotal}
           hint={`${dashboard.totalPermissions} used by roles`}
           icon={KeyRound}
           tone="violet"
         />
-        <HrKpiCard
+        <AccessKpiCard
+          index={3}
           label="Users with added access"
           value={dashboard.usersWithAdditionalAccess}
           hint="On top of their base role"
           icon={ShieldPlus}
           tone="emerald"
         />
-        <HrKpiCard
+        <AccessKpiCard
+          index={4}
           label="Privileged users"
           value={dashboard.privilegedUsers}
           hint="Hold a high-risk capability"
           icon={UserCog}
           tone="amber"
         />
-        <HrKpiCard
+        <AccessKpiCard
+          index={5}
           label="SoD conflicts"
           value={dashboard.usersWithSodConflicts}
           hint="Can create and approve"
           icon={AlertTriangle}
           tone={dashboard.usersWithSodConflicts ? 'rose' : 'slate'}
         />
-        <HrKpiCard
+        <AccessKpiCard
+          index={6}
           label="Temporary active"
           value={dashboard.temporaryAccessActive}
           hint={`${dashboard.temporaryAccessExpiringSoon} expiring in 7 days`}
           icon={CalendarClock}
           tone="orange"
         />
-        <HrKpiCard
+        <AccessKpiCard
+          index={7}
           label="Users without a role"
           value={dashboard.usersWithoutRoles}
           hint="Cannot access anything"
@@ -472,119 +478,137 @@ function AccessOverview({
 
       <div className="grid gap-2.5 lg:grid-cols-2">
         {/* Expiring temporary access */}
-        <AccessCard>
-          <CardHeader className="px-4 py-3">
-            <CardTitle className="flex items-center gap-1.5 text-sm">
-              <Clock className="h-4 w-4 text-amber-600" />
-              Access expiring soon
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Temporary grants lapsing within seven days. They expire on their own — no action needed
-              unless somebody still needs them.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-1.5 px-4 pb-4">
-            {expiring.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Nothing expiring in the next week.</p>
-            ) : (
-              expiring.map(({ user, entry }) => (
+        <SpotlightCard
+          spotlightColor="rgba(217, 119, 6, 0.14)"
+          style={{ animationDelay: '480ms', animationFillMode: 'both' }}
+          className="animate-am-card-in rounded-lg"
+        >
+          <AccessCard className="h-full transition-shadow duration-300 hover:shadow-lg">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="flex items-center gap-1.5 text-sm">
+                <Clock className="h-4 w-4 text-amber-600" />
+                Access expiring soon
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Temporary grants lapsing within seven days. They expire on their own — no action needed
+                unless somebody still needs them.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-1.5 px-4 pb-4">
+              {expiring.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nothing expiring in the next week.</p>
+              ) : (
+                expiring.map(({ user, entry }) => (
+                  <div
+                    key={`${user.id}-${entry.id}`}
+                    className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-amber-100 bg-amber-50/50 px-2.5 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-800">{user.name || user.email}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {entry.roleName || 'Direct permissions'} · until {entry.expiresAt.slice(0, 10)}
+                      </p>
+                    </div>
+                    <Link href={`/settings/access-management/users/${user.id}`}>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs">
+                        View
+                        <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </AccessCard>
+        </SpotlightCard>
+
+        {/* Users with the most access */}
+        <SpotlightCard
+          spotlightColor="rgba(79, 70, 229, 0.14)"
+          style={{ animationDelay: '540ms', animationFillMode: 'both' }}
+          className="animate-am-card-in rounded-lg"
+        >
+          <AccessCard className="h-full transition-shadow duration-300 hover:shadow-lg">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="flex items-center gap-1.5 text-sm">
+                <UserCog className="h-4 w-4 text-indigo-600" />
+                Widest access
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Not a problem by itself — but the first place to look when reviewing whether access has
+                accumulated beyond what a role needs.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-1.5 px-4 pb-4">
+              {mostAccess.map(({ user, access }) => (
                 <div
-                  key={`${user.id}-${entry.id}`}
-                  className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-amber-100 bg-amber-50/50 px-2.5 py-2"
+                  key={user.id}
+                  className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white bg-white/80 px-2.5 py-2"
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-800">{user.name || user.email}</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {entry.roleName || 'Direct permissions'} · until {entry.expiresAt.slice(0, 10)}
+                    <p className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                      {access?.baseRoleName ?? 'no base role'}
+                      {(access?.additionalRoleNames.length ?? 0) > 0 &&
+                        ` + ${access?.additionalRoleNames.length} additional`}
                     </p>
                   </div>
-                  <Link href={`/settings/access-management/users/${user.id}`}>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs">
-                      View
-                      <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
-                    </Button>
-                  </Link>
+                  <div className="flex items-center gap-1.5">
+                    {access && (
+                      <RiskBadges
+                        privileges={detectPrivilegedAccess(access)}
+                        conflicts={detectSodConflicts(access)}
+                      />
+                    )}
+                    <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
+                      {access?.permissionCount ?? 0}
+                    </Badge>
+                  </div>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </AccessCard>
-
-        {/* Users with the most access */}
-        <AccessCard>
-          <CardHeader className="px-4 py-3">
-            <CardTitle className="flex items-center gap-1.5 text-sm">
-              <UserCog className="h-4 w-4 text-indigo-600" />
-              Widest access
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Not a problem by itself — but the first place to look when reviewing whether access has
-              accumulated beyond what a role needs.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-1.5 px-4 pb-4">
-            {mostAccess.map(({ user, access }) => (
-              <div
-                key={user.id}
-                className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white bg-white/80 px-2.5 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-800">{user.name || user.email}</p>
-                  <p className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                    {access?.baseRoleName ?? 'no base role'}
-                    {(access?.additionalRoleNames.length ?? 0) > 0 &&
-                      ` + ${access?.additionalRoleNames.length} additional`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {access && (
-                    <RiskBadges
-                      privileges={detectPrivilegedAccess(access)}
-                      conflicts={detectSodConflicts(access)}
-                    />
-                  )}
-                  <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
-                    {access?.permissionCount ?? 0}
-                  </Badge>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </AccessCard>
+              ))}
+            </CardContent>
+          </AccessCard>
+        </SpotlightCard>
       </div>
 
       {unusedRoles.length > 0 && (
-        <AccessCard>
-          <CardHeader className="px-4 py-3">
-            <CardTitle className="flex items-center gap-1.5 text-sm">
-              <Sparkles className="h-4 w-4 text-slate-400" />
-              Roles nobody holds
-            </CardTitle>
-            <CardDescription className="text-xs">
-              {unusedRoles.length} role(s) with no holders. Safe to leave — but also safe to disable if
-              they were created for a project that has ended.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-1.5 px-4 pb-4">
-            {unusedRoles.slice(0, 24).map((role) => (
-              <Badge key={role.id} variant="outline" className="text-[10px] text-slate-500">
-                {role.name}
-              </Badge>
-            ))}
-            {unusedRoles.length > 24 && (
-              <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                +{unusedRoles.length - 24} more
-              </Badge>
-            )}
-          </CardContent>
-        </AccessCard>
+        <SpotlightCard
+          spotlightColor="rgba(100, 116, 139, 0.14)"
+          style={{ animationDelay: '600ms', animationFillMode: 'both' }}
+          className="animate-am-card-in rounded-lg"
+        >
+          <AccessCard className="transition-shadow duration-300 hover:shadow-lg">
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="flex items-center gap-1.5 text-sm">
+                <Sparkles className="h-4 w-4 text-slate-400" />
+                Roles nobody holds
+              </CardTitle>
+              <CardDescription className="text-xs">
+                {unusedRoles.length} role(s) with no holders. Safe to leave — but also safe to disable if
+                they were created for a project that has ended.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-1.5 px-4 pb-4">
+              {unusedRoles.slice(0, 24).map((role) => (
+                <Badge key={role.id} variant="outline" className="text-[10px] text-slate-500">
+                  {role.name}
+                </Badge>
+              ))}
+              {unusedRoles.length > 24 && (
+                <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                  +{unusedRoles.length - 24} more
+                </Badge>
+              )}
+            </CardContent>
+          </AccessCard>
+        </SpotlightCard>
       )}
 
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-        <QuickLink icon={ShieldPlus} label="Assign access" hint="Roles, permissions, projects" onClick={() => onNavigate('assign')} />
-        <QuickLink icon={Grid3x3} label="Permission matrix" hint="Compare coverage" onClick={() => onNavigate('matrix')} />
-        <QuickLink icon={LayoutDashboard} label="Effective access" hint="What one person can do" onClick={() => onNavigate('effective')} />
-        <QuickLink icon={History} label="Audit history" hint="Every change, with reasons" onClick={() => onNavigate('audit')} />
+        <QuickLink index={0} icon={ShieldPlus} label="Assign access" hint="Roles, permissions, projects" onClick={() => onNavigate('assign')} />
+        <QuickLink index={1} icon={Grid3x3} label="Permission matrix" hint="Compare coverage" onClick={() => onNavigate('matrix')} />
+        <QuickLink index={2} icon={LayoutDashboard} label="Effective access" hint="What one person can do" onClick={() => onNavigate('effective')} />
+        <QuickLink index={3} icon={History} label="Audit history" hint="Every change, with reasons" onClick={() => onNavigate('audit')} />
         {/*
           greytHR linking is a route rather than a tab (it is reached from User Management too), and
           before this it had no entry point on this screen at all — the only way in was a button
@@ -592,6 +616,7 @@ function AccessOverview({
           reachable one.
         */}
         <QuickLink
+          index={4}
           icon={Link2}
           label="greytHR linking"
           hint="Match logins to employee records"
@@ -654,6 +679,7 @@ function QuickLink({
   hint,
   onClick,
   href,
+  index = 0,
 }: {
   icon: React.ElementType;
   label: string;
@@ -662,12 +688,17 @@ function QuickLink({
   onClick?: () => void;
   /** A route, for the one quick link that leaves this screen. */
   href?: string;
+  /** Position in the row — staggers the entrance so the tiles don't pop in all at once. */
+  index?: number;
 }) {
-  const shell =
-    'flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/80 px-3 py-2.5 text-left shadow-sm transition-shadow hover:shadow-md';
+  const shell = cn(
+    'group flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/80 px-3 py-2.5 text-left shadow-sm',
+    'animate-am-card-in transition-all duration-300 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md',
+  );
+  const style = { animationDelay: `${660 + index * 60}ms`, animationFillMode: 'both' } as const;
   const body = (
     <>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 ring-4 ring-indigo-50/50">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 ring-4 ring-indigo-50/50 transition-transform duration-300 group-hover:scale-110">
         <Icon className="h-4 w-4 text-indigo-600" />
       </span>
       <span className="min-w-0">
@@ -679,14 +710,14 @@ function QuickLink({
 
   if (href) {
     return (
-      <Link href={href} className={shell}>
+      <Link href={href} className={shell} style={style}>
         {body}
       </Link>
     );
   }
 
   return (
-    <button type="button" onClick={onClick} className={shell}>
+    <button type="button" onClick={onClick} className={shell} style={style}>
       {body}
     </button>
   );

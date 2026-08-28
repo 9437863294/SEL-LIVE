@@ -40,6 +40,9 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
+import { SpotlightCard } from '@/components/effects/SpotlightCard';
+import { CountUp } from '@/components/effects/CountUp';
+import type { HrTone } from '@/components/hr/hr-ui';
 import { cn } from '@/lib/utils';
 import {
   formatGrantDate,
@@ -146,6 +149,92 @@ export function AccessPageShell({
         {children}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Dashboard KPI card
+ *
+ * The same numbers `HrKpiCard` renders, with the two touches that make a landing dashboard feel
+ * alive rather than printed: the value rolls up instead of just appearing (`CountUp`), and the
+ * card's border glows toward the cursor on hover (`SpotlightCard`, the "spotlight card" idiom). Kept
+ * local to this module rather than folded into the shared `HrKpiCard` — every other KPI grid in the
+ * app keeps its current, plainer look.
+ * ---------------------------------------------------------------------------------------------- */
+
+const KPI_TONES: Record<HrTone, { bg: string; text: string; ring: string; glow: string; bar: string }> = {
+  slate: { bg: 'bg-slate-50', text: 'text-slate-600', ring: 'ring-slate-100', glow: 'rgba(100, 116, 139, 0.16)', bar: 'from-slate-300 to-slate-400' },
+  emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', ring: 'ring-emerald-100', glow: 'rgba(16, 185, 129, 0.18)', bar: 'from-emerald-300 to-emerald-500' },
+  amber: { bg: 'bg-amber-50', text: 'text-amber-600', ring: 'ring-amber-100', glow: 'rgba(245, 158, 11, 0.18)', bar: 'from-amber-300 to-amber-500' },
+  rose: { bg: 'bg-rose-50', text: 'text-rose-600', ring: 'ring-rose-100', glow: 'rgba(244, 63, 94, 0.18)', bar: 'from-rose-300 to-rose-500' },
+  blue: { bg: 'bg-blue-50', text: 'text-blue-600', ring: 'ring-blue-100', glow: 'rgba(59, 130, 246, 0.18)', bar: 'from-blue-300 to-blue-500' },
+  indigo: { bg: 'bg-indigo-50', text: 'text-indigo-600', ring: 'ring-indigo-100', glow: 'rgba(99, 102, 241, 0.18)', bar: 'from-indigo-300 to-indigo-500' },
+  orange: { bg: 'bg-orange-50', text: 'text-orange-600', ring: 'ring-orange-100', glow: 'rgba(249, 115, 22, 0.18)', bar: 'from-orange-300 to-orange-500' },
+  violet: { bg: 'bg-violet-50', text: 'text-violet-600', ring: 'ring-violet-100', glow: 'rgba(139, 92, 246, 0.18)', bar: 'from-violet-300 to-violet-500' },
+  teal: { bg: 'bg-teal-50', text: 'text-teal-600', ring: 'ring-teal-100', glow: 'rgba(20, 184, 166, 0.18)', bar: 'from-teal-300 to-teal-500' },
+  cyan: { bg: 'bg-cyan-50', text: 'text-cyan-600', ring: 'ring-cyan-100', glow: 'rgba(6, 182, 212, 0.18)', bar: 'from-cyan-300 to-cyan-500' },
+};
+
+export function AccessKpiCard({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  tone = 'slate',
+  href,
+  index = 0,
+}: {
+  label: string;
+  value: number;
+  hint?: string;
+  icon?: React.ElementType;
+  tone?: HrTone;
+  href?: string;
+  /** Position in the grid — staggers the entrance so the row doesn't pop in all at once. */
+  index?: number;
+}) {
+  const palette = KPI_TONES[tone] ?? KPI_TONES.slate;
+
+  const body = (
+    <SpotlightCard
+      spotlightColor={palette.glow}
+      style={{ animationDelay: `${index * 60}ms`, animationFillMode: 'both' }}
+      className={cn(
+        'group h-full animate-am-card-in rounded-lg border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg',
+        ACCESS_CARD_CLASS,
+        href && 'cursor-pointer',
+      )}
+    >
+      <div className={cn('h-0.5 w-full bg-gradient-to-r', palette.bar)} />
+      <div className="flex items-start gap-3 p-4">
+        {Icon && (
+          <span
+            className={cn(
+              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-4 transition-transform duration-300 group-hover:scale-110',
+              palette.bg,
+              palette.ring,
+            )}
+          >
+            <Icon className={cn('h-4 w-4', palette.text)} />
+          </span>
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+          <p className="mt-0.5 truncate text-lg font-semibold leading-tight text-slate-800">
+            <CountUp value={value} />
+          </p>
+          {hint && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</p>}
+        </div>
+      </div>
+    </SpotlightCard>
+  );
+
+  return href ? (
+    <Link href={href} className="block h-full">
+      {body}
+    </Link>
+  ) : (
+    body
   );
 }
 
