@@ -60,7 +60,6 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import type { User } from '@/lib/types';
 import {
   countPermissions,
   detectPrivilegedAccess,
@@ -84,7 +83,7 @@ import { EffectiveAccessViewer } from './effective-access';
 import { PermissionMatrixView } from './permission-matrix';
 import { AuditHistory } from './audit-history';
 import { TemplatesAndScopes } from './templates-and-scopes';
-import { AccessReports } from './access-reports';
+import { AccessReports, type ReportId } from './access-reports';
 import { PermissionTree } from './permission-tree';
 import {
   EMPTY_USER_FILTER,
@@ -129,6 +128,10 @@ export function AccessControlCenter() {
     roleIds: string[];
     templateIds: string[];
   }>({ key: 0, userIds: [], roleIds: [], templateIds: [] });
+
+  /** Same remount idiom for the two other tabs the Overview deep-links into. */
+  const [reportSeed, setReportSeed] = useState<{ key: number; report?: ReportId }>({ key: 0 });
+  const [effectiveSeed, setEffectiveSeed] = useState<{ key: number; userId?: string }>({ key: 0 });
 
   const actor = useMemo(() => actorFromUser(user), [user]);
 
@@ -189,7 +192,19 @@ export function AccessControlCenter() {
     [],
   );
 
-  if (authLoading || (state.isLoading && allowed)) {
+  /** Open the Reports tab on a specific report — the Overview's alerts land on the finding, not the default. */
+  const openReportWith = useCallback((report: ReportId) => {
+    setReportSeed((current) => ({ key: current.key + 1, report }));
+    setTab('reports');
+  }, []);
+
+  /** Open Effective Access with a user already selected. */
+  const openEffectiveWith = useCallback((userId: string) => {
+    setEffectiveSeed((current) => ({ key: current.key + 1, userId }));
+    setTab('effective');
+  }, []);
+
+  if (authLoading || (state.isLoading && !state.isRefreshing && allowed)) {
     return (
       <AccessPageShell>
         <HrLoader label="Loading users, roles and grants…" />
@@ -209,7 +224,13 @@ export function AccessControlCenter() {
     );
   }
 
-  if (!actor) return <HrAccessDenied what="access management" />;
+  if (!actor) {
+    return (
+      <AccessPageShell backHref="/settings" backLabel="Back to settings">
+        <HrAccessDenied what="access management" />
+      </AccessPageShell>
+    );
+  }
 
   const canAssign = canAssignAccess(can);
   const canRevoke = canRevokeAccess(can);
@@ -231,9 +252,9 @@ export function AccessControlCenter() {
         description="Users, roles, permissions, departments, designations, projects, reports and approval rights — from one screen."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => void state.refresh()}>
-              <RefreshCw className="mr-1.5 h-4 w-4" />
-              Refresh
+            <Button variant="outline" size="sm" onClick={() => void state.refresh()} disabled={state.isRefreshing}>
+              <RefreshCw className={cn('mr-1.5 h-4 w-4', state.isRefreshing && 'animate-spin')} />
+              {state.isRefreshing ? 'Refreshing…' : 'Refresh'}
             </Button>
             {canAssign && (
               <Button size="sm" onClick={() => openAssignWith({})}>
@@ -268,7 +289,13 @@ export function AccessControlCenter() {
         </ScrollArea>
 
         <TabsContent value="overview" className="mt-3">
-          <AccessOverview state={state} onNavigate={setTab} onAssign={openAssignWith} />
+          <AccessOverview
+            state={state}
+            onNavigate={setTab}
+            onAssign={openAssignWith}
+            onOpenReport={openReportWith}
+            onInspect={openEffectiveWith}
+          />
         </TabsContent>
 
         <TabsContent value="users" className="mt-3">
@@ -311,7 +338,7 @@ export function AccessControlCenter() {
         </TabsContent>
 
         <TabsContent value="effective" className="mt-3">
-          <EffectiveAccessViewer state={state} />
+          <EffectiveAccessViewer key={effectiveSeed.key} state={state} initialUserId={effectiveSeed.userId} />
         </TabsContent>
 
         <TabsContent value="templates" className="mt-3">
@@ -324,7 +351,7 @@ export function AccessControlCenter() {
         </TabsContent>
 
         <TabsContent value="reports" className="mt-3">
-          <AccessReports state={state} />
+          <AccessReports key={reportSeed.key} state={state} initialReport={reportSeed.report} />
         </TabsContent>
 
         <TabsContent value="audit" className="mt-3">
@@ -343,10 +370,14 @@ function AccessOverview({
   state,
   onNavigate,
   onAssign,
+  onOpenReport,
+  onInspect,
 }: {
   state: ReturnType<typeof useAccessDirectory>;
   onNavigate: (tab: TabId) => void;
   onAssign: (seed: { userIds?: string[]; roleIds?: string[]; templateIds?: string[] }) => void;
+  onOpenReport: (report: ReportId) => void;
+  onInspect: (userId: string) => void;
 }) {
   const { dashboard, directory, accessByUser, registry, roleUsage } = state;
 
@@ -396,9 +427,10 @@ function AccessOverview({
 
   return (
     <div className="space-y-3">
+      {/* Every KPI opens the tab (or report) that explains its number — a count you cannot act on is trivia. */}
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <AccessKpiCard index={0} label="Total users" value={dashboard.totalUsers} hint={`${dashboard.activeUsers} active`} icon={Users} tone="blue" />
-        <AccessKpiCard index={1} label="Roles" value={dashboard.totalRoles} hint={`${dashboard.customRoles} custom`} icon={Layers} tone="indigo" />
+        <AccessKpiCard index={0} label="Total users" value={dashboard.totalUsers} hint={`${dashboard.activeUsers} active`} icon={Users} tone="blue" onClick={() => onNavigate('users')} />
+        <AccessKpiCard index={1} label="Roles" value={dashboard.totalRoles} hint={`${dashboard.customRoles} custom`} icon={Layers} tone="indigo" onClick={() => onNavigate('roles')} />
         <AccessKpiCard
           index={2}
           label="Grantable permissions"
@@ -406,6 +438,7 @@ function AccessOverview({
           hint={`${dashboard.totalPermissions} used by roles`}
           icon={KeyRound}
           tone="violet"
+          onClick={() => onNavigate('permissions')}
         />
         <AccessKpiCard
           index={3}
@@ -414,6 +447,7 @@ function AccessOverview({
           hint="On top of their base role"
           icon={ShieldPlus}
           tone="emerald"
+          onClick={() => onOpenReport('user-access')}
         />
         <AccessKpiCard
           index={4}
@@ -422,6 +456,7 @@ function AccessOverview({
           hint="Hold a high-risk capability"
           icon={UserCog}
           tone="amber"
+          onClick={() => onOpenReport('privileged')}
         />
         <AccessKpiCard
           index={5}
@@ -430,6 +465,7 @@ function AccessOverview({
           hint="Can create and approve"
           icon={AlertTriangle}
           tone={dashboard.usersWithSodConflicts ? 'rose' : 'slate'}
+          onClick={() => onOpenReport('privileged')}
         />
         <AccessKpiCard
           index={6}
@@ -438,6 +474,7 @@ function AccessOverview({
           hint={`${dashboard.temporaryAccessExpiringSoon} expiring in 7 days`}
           icon={CalendarClock}
           tone="orange"
+          onClick={() => onOpenReport('temporary')}
         />
         <AccessKpiCard
           index={7}
@@ -446,6 +483,7 @@ function AccessOverview({
           hint="Cannot access anything"
           icon={UserX}
           tone={dashboard.usersWithoutRoles ? 'rose' : 'slate'}
+          onClick={() => onNavigate('users')}
         />
       </div>
 
@@ -460,7 +498,7 @@ function AccessOverview({
               title={`${dashboard.inactiveUsersHoldingAccess} inactive user(s) still hold permissions`}
               description="They cannot sign in, but reactivating the account restores everything. Worth reviewing for anybody who has left permanently."
               actionLabel="Open the report"
-              onAction={() => onNavigate('reports')}
+              onAction={() => onOpenReport('inactive')}
             />
           )}
           {usersWithoutRoles.length > 0 && (
@@ -522,12 +560,12 @@ function AccessOverview({
                         {entry.roleName || 'Direct permissions'} · until {entry.expiresAt.slice(0, 10)}
                       </p>
                     </div>
-                    <Link href={`/settings/access-management/users/${user.id}`}>
-                      <Button variant="ghost" size="sm" className="h-7 text-xs">
+                    <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
+                      <Link href={`/settings/access-management/users/${user.id}`}>
                         View
                         <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
-                      </Button>
-                    </Link>
+                      </Link>
+                    </Button>
                   </div>
                 ))
               )}
@@ -553,32 +591,42 @@ function AccessOverview({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-1.5 px-4 pb-4">
-              {mostAccess.map(({ user, access }) => (
-                <div
-                  key={user.id}
-                  className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white bg-white/80 px-2.5 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-800">{user.name || user.email}</p>
-                    <p className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                      {access?.baseRoleName ?? 'no base role'}
-                      {(access?.additionalRoleNames.length ?? 0) > 0 &&
-                        ` + ${access?.additionalRoleNames.length} additional`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {access && (
-                      <RiskBadges
-                        privileges={detectPrivilegedAccess(access)}
-                        conflicts={detectSodConflicts(access)}
-                      />
-                    )}
-                    <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
-                      {access?.permissionCount ?? 0}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+              {mostAccess.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No effective access computed yet — this fills in once users hold roles or grants.
+                </p>
+              ) : (
+                mostAccess.map(({ user, access }) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => onInspect(user.id)}
+                    title="Open in Effective Access"
+                    className="flex w-full flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white bg-white/80 px-2.5 py-2 text-left transition-colors hover:border-indigo-200 hover:bg-indigo-50/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-800">{user.name || user.email}</p>
+                      <p className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                        {access?.baseRoleName ?? 'no base role'}
+                        {(access?.additionalRoleNames.length ?? 0) > 0 &&
+                          ` + ${access?.additionalRoleNames.length} additional`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {access && (
+                        <RiskBadges
+                          privileges={detectPrivilegedAccess(access)}
+                          conflicts={detectSodConflicts(access)}
+                        />
+                      )}
+                      <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
+                        {access?.permissionCount ?? 0}
+                      </Badge>
+                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                    </div>
+                  </button>
+                ))
+              )}
             </CardContent>
           </AccessCard>
         </SpotlightCard>
@@ -883,11 +931,9 @@ function UsersTab({
       align: 'right',
       mobile: 'footer',
       cell: (row) => (
-        <Link href={`/settings/access-management/users/${row.id}`}>
-          <Button variant="outline" size="sm" className="h-8 text-xs">
-            Access profile
-          </Button>
-        </Link>
+        <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+          <Link href={`/settings/access-management/users/${row.id}`}>Access profile</Link>
+        </Button>
       ),
     },
   ];
@@ -896,7 +942,7 @@ function UsersTab({
     <div className="space-y-3">
       <AccessCard>
         <CardContent className="space-y-2.5 p-3">
-          <UserFilterBar filter={filter} onChange={setFilter} context={context} />
+          <UserFilterBar filter={filter} onChange={setFilter} context={context} registry={state.registry} />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>

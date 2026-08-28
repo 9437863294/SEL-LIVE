@@ -239,12 +239,12 @@ export function UserAccessProfile({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href={`/settings/access-management?assignTo=${user.id}`}>
-            <Button size="sm">
+          <Button asChild size="sm">
+            <Link href={`/settings/access-management?assignTo=${user.id}`}>
               <ShieldPlus className="mr-1.5 h-4 w-4" />
               Add access
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           {canRevoke && (
             <Button
               variant="outline"
@@ -338,11 +338,9 @@ export function UserAccessProfile({
               ) : (
                 <span className="text-xs text-muted-foreground">No primary role assigned.</span>
               )}
-              <Link href="/settings/user-management">
-                <Button variant="outline" size="sm" className="h-7 text-xs">
-                  Change in User Management
-                </Button>
-              </Link>
+              <Button asChild variant="outline" size="sm" className="h-7 text-xs">
+                <Link href="/settings/user-management">Change in User Management</Link>
+              </Button>
             </CardContent>
           </AccessCard>
 

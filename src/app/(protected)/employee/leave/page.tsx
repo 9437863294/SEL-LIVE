@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CalendarClock, RefreshCw, Search, Users } from 'lucide-react';
+import { ArrowLeft, CalendarClock, Download, RefreshCw, Search, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,9 +32,17 @@ import {
   type HrListColumn,
 } from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchLeaveRegister, type LeaveRegisterResponse, type LeaveRegisterRow } from '@/lib/greythr-sync-client';
 
 type Row = LeaveRegisterRow & { id: string };
+
+/**
+ * How many rows are put in the DOM at once. Same lesson as position-details: the responsive list
+ * renders a mobile card and a table row per employee, and ~1,300 of each froze the page. It grows
+ * on request; search and the department filter are the fast way to a specific row.
+ */
+const PAGE_SIZE = 300;
 
 export default function LeaveRegisterPage() {
   const { can, isLoading: authLoading } = useAuthorization();
@@ -47,6 +55,7 @@ export default function LeaveRegisterPage() {
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('all');
   const [sortType, setSortType] = useState<string>('total');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const load = useCallback(
     async (isRefresh: boolean) => {
@@ -99,7 +108,40 @@ export default function LeaveRegisterPage() {
     return scoped.slice().sort((a, b) => value(b) - value(a));
   }, [report, search, department, sortType, balanceOf]);
 
-  const rows: Row[] = filtered.map((row) => ({ ...row, id: row.employeeId }));
+  const rows = useMemo<Row[]>(() => filtered.map((row) => ({ ...row, id: row.employeeId })), [filtered]);
+
+  // Narrowing the filters should start again from the top of a short list, not halfway down a long one.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [search, department, sortType]);
+
+  const visibleRows = useMemo(() => rows.slice(0, visibleCount), [rows, visibleCount]);
+
+  // The per-type KPI cards take whatever leave types exist, so the grid's column count follows the
+  // actual card count instead of leaving a ragged tail when a tenant has fewer than two types.
+  const typeKpis = (report?.leaveTypes ?? []).slice(0, 2);
+  const kpiGridCols =
+    typeKpis.length === 0 ? 'sm:grid-cols-2' : typeKpis.length === 1 ? 'sm:grid-cols-3' : 'sm:grid-cols-4';
+
+  const handleExport = async () => {
+    if (!filtered.length) return;
+    try {
+      await exportRowsToExcel(
+        'Leave register',
+        filtered.map((row) => ({
+          'Employee No': row.employeeNo,
+          Name: row.name,
+          Department: row.department,
+          Designation: row.designation,
+          ...Object.fromEntries((report?.leaveTypes ?? []).map((type) => [type, balanceOf(row, type)])),
+          'Total balance': row.balance.totalBalance,
+        })),
+        { filename: 'leave-register.xlsx' },
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not export the register.');
+    }
+  };
 
   const columns: Array<HrListColumn<Row>> = [
     {
@@ -139,28 +181,50 @@ export default function LeaveRegisterPage() {
     },
   ];
 
-  if (authLoading || loading) return <HrLoader label="Loading the leave register…" />;
-  if (!canView) return <HrAccessDenied what="the leave register" />;
+  if (authLoading || loading) {
+    return (
+      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+        <AuroraBackdrop />
+        <HrLoader label="Loading the leave register…" />
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+        <AuroraBackdrop />
+        <HrAccessDenied what="the leave register" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
       <AuroraBackdrop />
 
-      <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2">
+      <div className="mb-1 flex items-center gap-2">
         <Link href="/employee">
-          <ArrowLeft className="mr-1.5 h-4 w-4" />
-          Employee Management
+          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
         </Link>
-      </Button>
+      </div>
 
       <HrPageHeader
         title="Leave register"
         description={`Every employee's leave balance, from greytHR's own record${report?.year ? ` for ${report.year}` : ''}. Read-only — applying or approving leave still happens in greytHR.`}
         actions={
-          <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}>
-            <RefreshCw className={refreshing ? 'mr-1.5 h-4 w-4 animate-spin' : 'mr-1.5 h-4 w-4'} />
-            Refresh
-          </Button>
+          <>
+            <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={filtered.length === 0}>
+              <Download className="mr-1.5 h-4 w-4" />
+              Export
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void load(true)} disabled={refreshing}>
+              <RefreshCw className={refreshing ? 'mr-1.5 h-4 w-4 animate-spin' : 'mr-1.5 h-4 w-4'} />
+              Refresh
+            </Button>
+          </>
         }
       />
 
@@ -170,7 +234,7 @@ export default function LeaveRegisterPage() {
         </div>
       )}
 
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      <div className={`mb-4 grid grid-cols-2 gap-2.5 ${kpiGridCols}`}>
         <HrKpiCard label="Employees" value={report?.count ?? 0} icon={Users} tone="indigo" />
         <HrKpiCard
           label="Total balance"
@@ -179,7 +243,7 @@ export default function LeaveRegisterPage() {
           icon={CalendarClock}
           tone="emerald"
         />
-        {(report?.leaveTypes ?? []).slice(0, 2).map((type) => (
+        {typeKpis.map((type) => (
           <HrKpiCard
             key={type}
             label={type}
@@ -234,17 +298,33 @@ export default function LeaveRegisterPage() {
         </div>
       </HrFilterCard>
 
-      <HrDataList
-        rows={rows}
-        columns={columns}
-        empty={
-          <HrEmptyState
-            icon={CalendarClock}
-            title="No leave records match"
-            description={search || department !== 'all' ? 'Try a different search or department.' : 'Nothing synced yet.'}
-          />
-        }
-      />
+      <div className="space-y-2.5">
+        <HrDataList
+          rows={visibleRows}
+          columns={columns}
+          empty={
+            <HrEmptyState
+              icon={CalendarClock}
+              title="No leave records match"
+              description={search || department !== 'all' ? 'Try a different search or department.' : 'Nothing synced yet.'}
+            />
+          }
+        />
+
+        {rows.length > 0 && (
+          <div className="flex flex-col items-center gap-2 pb-2 text-center">
+            <p className="text-xs text-muted-foreground">
+              Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of {rows.length} employee
+              {rows.length === 1 ? '' : 's'}
+            </p>
+            {visibleRows.length < rows.length && (
+              <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                Show {Math.min(PAGE_SIZE, rows.length - visibleRows.length)} more
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

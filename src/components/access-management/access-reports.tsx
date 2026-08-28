@@ -48,7 +48,7 @@ import { listAccessAuditEntries } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
 import { AccessCard, RiskBadges, RoleBadge } from './access-ui';
 
-type ReportId =
+export type ReportId =
   | 'user-access'
   | 'role-usage'
   | 'permission-usage'
@@ -69,8 +69,15 @@ const REPORTS: Array<{ id: ReportId; label: string; description: string; icon: R
   { id: 'inactive', label: 'Inactive users holding access', description: 'Deactivated employees who still hold permissions.', icon: UserMinus },
 ];
 
-export function AccessReports({ state }: { state: AccessDirectoryState }) {
-  const [selected, setSelected] = useState<ReportId>('user-access');
+export function AccessReports({
+  state,
+  initialReport,
+}: {
+  state: AccessDirectoryState;
+  /** Which report to open on. The Overview's alerts pass this so "Open the report" lands on the finding, not the default. */
+  initialReport?: ReportId;
+}) {
+  const [selected, setSelected] = useState<ReportId>(initialReport ?? 'user-access');
 
   const report = REPORTS.find((entry) => entry.id === selected)!;
 

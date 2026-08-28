@@ -18,13 +18,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Layers, Loader2, RefreshCw, Search, Tags, Trash2, Users, X } from 'lucide-react';
+import { ArrowLeft, Clock, Download, Layers, Loader2, RefreshCw, Search, Tags, Trash2, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { getAllEmployeePositions } from '@/ai';
 import { Badge } from '@/components/ui/badge';
 import type { EmployeePosition } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { fetchEmployeeRoster } from '@/lib/greythr-sync-client';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { db } from '@/lib/firebase';
@@ -59,6 +62,7 @@ import {
 type PositionRow = {
   id: string;
   employeeId: string;
+  name: string;
   category: string;
   value: string;
   effectiveFrom: string;
@@ -95,8 +99,13 @@ function toDate(value: unknown): Date | null {
 
 const COLUMNS: Array<HrListColumn<PositionRow>> = [
   {
+    header: 'Name',
+    cell: row => <span className="font-medium text-slate-800">{row.name || '—'}</span>,
+    mobile: 'title',
+  },
+  {
     header: 'Employee ID',
-    cell: row => <span className="font-medium text-slate-800">{row.employeeId}</span>,
+    cell: row => <span className="tabular-nums text-slate-700">{row.employeeId}</span>,
     mobile: 'title',
   },
   {
@@ -126,8 +135,16 @@ export default function EmployeePositionDetailsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<SyncStamp | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  /**
+   * Employee number/id → name, from the roster endpoint Manage Employee already reads. The position
+   * documents themselves carry no names — the sync keys them by employee number alone — so this one
+   * extra fetch is what turns a register of bare ids into one a person can scan. Losing it costs
+   * the Name column, never the rows.
+   */
+  const [namesById, setNamesById] = useState<Map<string, string>>(new Map());
 
   const [filters, setFilters] = useState({
     employeeId: '',
@@ -140,6 +157,7 @@ export default function EmployeePositionDetailsPage() {
 
   const fetchPositionsFromDb = useCallback(async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const q = query(collection(db, 'employeePositions'));
       const [snapshot, legacyDoc, syncDoc] = await Promise.all([
@@ -165,15 +183,13 @@ export default function EmployeePositionDetailsPage() {
       setLastSynced(candidates[0] ?? null);
     } catch (error: any) {
       console.error('Error fetching positions from Firestore:', error);
-      toast({
-        title: 'Could not load position details',
-        description: error?.message || 'Failed to read the employeePositions collection.',
-        variant: 'destructive',
-      });
+      // On-page rather than a toast: a toast disappears and leaves the empty state behind, which
+      // reads as "no position details yet" — a claim about the data, not about the failed read.
+      setLoadError(error?.message || 'Failed to read the employeePositions collection.');
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -183,6 +199,28 @@ export default function EmployeePositionDetailsPage() {
       setIsLoading(false);
     }
   }, [isAuthLoading, canView, fetchPositionsFromDb]);
+
+  useEffect(() => {
+    if (isAuthLoading || !canView) return;
+    let cancelled = false;
+    fetchEmployeeRoster()
+      .then(report => {
+        if (cancelled) return;
+        const map = new Map<string, string>();
+        for (const row of report.employees) {
+          if (!row.name) continue;
+          // Position documents are keyed by employee number, falling back to the raw greytHR id
+          // when the number was unknown at sync time — so both keys resolve to the name.
+          if (row.employeeNo) map.set(String(row.employeeNo), row.name);
+          map.set(String(row.employeeId), row.name);
+        }
+        setNamesById(map);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthLoading, canView]);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -248,6 +286,7 @@ export default function EmployeePositionDetailsPage() {
   }, [allPositions]);
 
   const filteredPositions = useMemo(() => {
+    const term = filters.employeeId.trim().toLowerCase();
     return allPositions
       .map(pos => {
         const filteredCategoryList = pos.categoryList.filter(cat => {
@@ -257,10 +296,13 @@ export default function EmployeePositionDetailsPage() {
         return { ...pos, categoryList: filteredCategoryList };
       })
       .filter(pos => {
-        const employeeIdMatch = filters.employeeId === '' || String(pos.employeeId).includes(filters.employeeId);
-        return employeeIdMatch && pos.categoryList.length > 0;
+        const employeeMatch =
+          term === '' ||
+          String(pos.employeeId).toLowerCase().includes(term) ||
+          (namesById.get(String(pos.employeeId)) ?? '').toLowerCase().includes(term);
+        return employeeMatch && pos.categoryList.length > 0;
       });
-  }, [allPositions, filters]);
+  }, [allPositions, filters, namesById]);
 
   /** The register, flattened one row per (employee, category value). */
   const rows = useMemo<PositionRow[]>(
@@ -269,14 +311,39 @@ export default function EmployeePositionDetailsPage() {
         pos.categoryList.map(cat => ({
           id: `${pos.employeeId}-${cat.id}`,
           employeeId: String(pos.employeeId),
+          name: namesById.get(String(pos.employeeId)) ?? '',
           category: cat.category,
           value: cat.value,
           effectiveFrom: cat.effectiveFrom,
           effectiveTo: cat.effectiveTo,
         })),
       ),
-    [filteredPositions],
+    [filteredPositions, namesById],
   );
+
+  const handleExport = async () => {
+    if (!rows.length) return;
+    try {
+      await exportRowsToExcel(
+        'Employee position details',
+        rows.map(row => ({
+          'Employee ID': row.employeeId,
+          Name: row.name,
+          Category: row.category,
+          Value: row.value,
+          'Effective from': row.effectiveFrom,
+          'Effective to': row.effectiveTo ?? '',
+        })),
+        { filename: 'employee-position-details.xlsx' },
+      );
+    } catch (error: any) {
+      toast({
+        title: 'Export failed',
+        description: error?.message || 'Could not build the workbook.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // Narrowing the filters should start again from the top of a short list, not halfway down a long one.
   useEffect(() => {
@@ -329,6 +396,15 @@ export default function EmployeePositionDetailsPage() {
         description="Browse the effective-dated department, designation, grade, location and project history mirrored from greytHR."
         actions={
           <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleExport()}
+              disabled={isLoading || isDeleting || rows.length === 0}
+            >
+              <Download className="mr-1.5 h-4 w-4" />
+              Export
+            </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm" disabled={isSyncing || isDeleting || !canDelete}>
@@ -427,7 +503,7 @@ export default function EmployeePositionDetailsPage() {
           <div className="relative flex-grow">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search Employee ID..."
+              placeholder="Search employee ID or name..."
               className="pl-8"
               value={filters.employeeId}
               onChange={e => handleFilterChange('employeeId', e.target.value)}
@@ -446,14 +522,19 @@ export default function EmployeePositionDetailsPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="secondary" onClick={clearFilters}>
-            Clear Filters
-          </Button>
         </div>
       </HrFilterCard>
 
       {isLoading || isDeleting ? (
         <HrLoader label={isDeleting ? 'Clearing records and resyncing…' : 'Loading position details…'} />
+      ) : loadError ? (
+        <Card className="border-white/60 bg-white/80 shadow-sm">
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <Layers className="h-10 w-10 text-muted-foreground/40" />
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button size="sm" onClick={() => void fetchPositionsFromDb()}>Try again</Button>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-2.5">
           <HrDataList

@@ -37,6 +37,7 @@ import {
   Briefcase,
   Building2,
   Calendar,
+  Download,
   MapPin,
   RefreshCw,
   Search,
@@ -50,11 +51,13 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { HrAccessDenied, HrAlertNotice, HrKpiCard, HrLoader } from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchCurrentEmployeesLive, type LiveCurrentEmployeesResponse } from '@/lib/greythr-sync-client';
 import type { EmploymentState, SyncedEmployee } from '@/lib/greythr';
 
@@ -115,6 +118,14 @@ function formatJoinDate(value: string | null): string {
   return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+/** The compact filter controls, matching Manage Employee's bar so the two rosters read as siblings. */
+const FILTER_TRIGGER = 'h-8 text-xs';
+
+/** Applied filters are tinted, so a narrowed list is attributable at a glance. */
+const FILTER_TRIGGER_ACTIVE = 'border-primary/40 bg-primary/5 font-medium text-primary';
+
+const INITIAL_FILTERS = { department: 'all', location: 'all', state: 'all' };
+
 /** One field of the detail dialog. Blank values render as an em dash rather than being omitted. */
 function DetailField({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -136,6 +147,7 @@ export default function CurrentEmployeesLivePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [viewEmployee, setViewEmployee] = useState<Row | null>(null);
   /** What the last fetch did to the stored snapshot, and whether the data is live at all. */
   const [store, setStore] = useState<{
@@ -192,18 +204,84 @@ export default function CurrentEmployeesLivePage() {
     void load('initial');
 
     const interval = setInterval(() => void load('auto'), AUTO_REFRESH_MS);
-    return () => clearInterval(interval);
+    // The greytHR sync workspace announces a finished run with this event — refetch rather than
+    // wait out the five-minute tick. `load` already drops the call while a fetch is in flight.
+    const onSyncSuccess = () => void load('auto');
+    window.addEventListener('greytHRSyncSuccess', onSyncSuccess);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('greytHRSyncSuccess', onSyncSuccess);
+    };
   }, [authLoading, canView, load]);
+
+  /** Distinct values actually present in the loaded roster — an option list with no dead entries. */
+  const filterOptions = useMemo(() => {
+    const departments = new Set<string>();
+    const locations = new Set<string>();
+    const states = new Set<string>();
+    for (const employee of employees) {
+      if (employee.department) departments.add(employee.department);
+      if (employee.location) locations.add(employee.location);
+      states.add(employee.employmentState);
+    }
+    const sorted = (values: Set<string>) => [...values].sort((a, b) => a.localeCompare(b));
+    return { departments: sorted(departments), locations: sorted(locations), states: sorted(states) };
+  }, [employees]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return employees;
-    return employees.filter((employee) =>
-      [employee.name, employee.employeeNo, employee.email, employee.department, employee.designation, employee.location, employee.projectName]
-        .filter(Boolean)
-        .some((field) => field!.toLowerCase().includes(query)),
-    );
-  }, [employees, search]);
+    return employees.filter((employee) => {
+      if (
+        query &&
+        ![employee.name, employee.employeeNo, employee.email, employee.department, employee.designation, employee.location, employee.projectName]
+          .filter(Boolean)
+          .some((field) => field!.toLowerCase().includes(query))
+      ) {
+        return false;
+      }
+      if (filters.department !== 'all' && employee.department !== filters.department) return false;
+      if (filters.location !== 'all' && employee.location !== filters.location) return false;
+      if (filters.state !== 'all' && employee.employmentState !== filters.state) return false;
+      return true;
+    });
+  }, [employees, search, filters]);
+
+  const activeFilterCount =
+    (search.trim() ? 1 : 0) + Object.values(filters).filter((value) => value !== 'all').length;
+
+  const clearFilters = () => {
+    setSearch('');
+    setFilters(INITIAL_FILTERS);
+  };
+
+  const handleExport = async () => {
+    if (!filtered.length) return;
+    try {
+      await exportRowsToExcel(
+        'Current employees',
+        filtered.map((row) => ({
+          'Employee No': row.employeeNo || row.employeeId,
+          Name: row.name || '',
+          State: row.employmentState,
+          Department: row.department || '',
+          Designation: row.designation || '',
+          Location: row.location || '',
+          Project: row.projectName || '',
+          Type: row.employmentType || '',
+          Joined: row.dateOfJoin ?? '',
+          Email: row.email || '',
+          Phone: row.phone || '',
+        })),
+        { filename: 'current-employees.xlsx' },
+      );
+    } catch (err) {
+      toast({
+        title: 'Export failed',
+        description: err instanceof Error ? err.message : 'Unexpected error.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const stats = useMemo(() => {
     const notice = employees.filter((employee) => employee.employmentState === 'Notice Period').length;
@@ -211,6 +289,29 @@ export default function CurrentEmployeesLivePage() {
     const locations = new Set(employees.map((employee) => employee.location).filter(Boolean)).size;
     return { notice, departments, locations };
   }, [employees]);
+
+  /*
+   * Both guards return before the header card renders. The header carries a working Refresh button,
+   * and a viewer without access was previously handed that live control above the denial notice —
+   * a click that could only 403. Same shell-around-the-verdict shape as Manage Employee.
+   */
+  if (authLoading || loading) {
+    return (
+      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+        <AuroraBackdrop />
+        <HrLoader label="Fetching the current roster from greytHR…" />
+      </div>
+    );
+  }
+
+  if (!canView) {
+    return (
+      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
+        <AuroraBackdrop />
+        <HrAccessDenied what="the greytHR employee roster" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
@@ -243,31 +344,39 @@ export default function CurrentEmployeesLivePage() {
                 Fetched directly from greytHR&apos;s CURRENT roster on every load — not the stored employee mirror.
                 Use this when Manage Employee looks wrong.
               </p>
-              {fetchedAt && !loading && (
+              {fetchedAt && (
                 <p className="mt-1 text-xs text-muted-foreground">
                   Last fetched {formatDistanceToNow(new Date(fetchedAt), { addSuffix: true })} · auto-refreshes every 5 min
                 </p>
               )}
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void load('manual')}
-            disabled={loading || refreshing}
-            className="w-full shrink-0 bg-white sm:w-auto"
-          >
-            <RefreshCw className={cn('mr-1.5 h-4 w-4', refreshing && 'animate-spin')} />
-            Refresh
-          </Button>
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleExport()}
+              disabled={filtered.length === 0}
+              className="bg-white"
+            >
+              <Download className="mr-1.5 h-4 w-4" />
+              Export
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void load('manual')}
+              disabled={refreshing}
+              className="bg-white"
+            >
+              <RefreshCw className={cn('mr-1.5 h-4 w-4', refreshing && 'animate-spin')} />
+              Refresh
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
-      {authLoading || loading ? (
-        <HrLoader label="Fetching the current roster from greytHR…" />
-      ) : !canView ? (
-        <HrAccessDenied what="the greytHR employee roster" />
-      ) : error ? (
+      {error ? (
         <Card className="border-white/60 bg-white/80 shadow-sm">
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Users className="h-10 w-10 text-muted-foreground/40" />
@@ -319,12 +428,12 @@ export default function CurrentEmployeesLivePage() {
           </div>
 
           {/* ── Search / toolbar ── */}
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative flex-1 sm:max-w-md">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
+            <div className="relative w-full lg:w-[300px]">
+              <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search name, employee no, department, designation, project…"
-                className="pl-8 pr-8"
+                placeholder="Search name, employee no, project…"
+                className="h-8 pl-8 pr-8 text-xs"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -339,9 +448,59 @@ export default function CurrentEmployeesLivePage() {
                 </button>
               )}
             </div>
-            <p className="text-xs text-muted-foreground sm:text-right">
+
+            <Select value={filters.department} onValueChange={(value) => setFilters((f) => ({ ...f, department: value }))}>
+              <SelectTrigger
+                className={cn(FILTER_TRIGGER, 'w-full lg:w-[180px]', filters.department !== 'all' && FILTER_TRIGGER_ACTIVE)}
+              >
+                <SelectValue placeholder="All departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All departments</SelectItem>
+                {filterOptions.departments.map((option) => (
+                  <SelectItem key={option} value={option}>{option}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={filters.location} onValueChange={(value) => setFilters((f) => ({ ...f, location: value }))}>
+              <SelectTrigger
+                className={cn(FILTER_TRIGGER, 'w-full lg:w-[160px]', filters.location !== 'all' && FILTER_TRIGGER_ACTIVE)}
+              >
+                <SelectValue placeholder="All locations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All locations</SelectItem>
+                {filterOptions.locations.map((option) => (
+                  <SelectItem key={option} value={option}>{option}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={filters.state} onValueChange={(value) => setFilters((f) => ({ ...f, state: value }))}>
+              <SelectTrigger
+                className={cn(FILTER_TRIGGER, 'w-full lg:w-[160px]', filters.state !== 'all' && FILTER_TRIGGER_ACTIVE)}
+              >
+                <SelectValue placeholder="All states" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All states</SelectItem>
+                {filterOptions.states.map((option) => (
+                  <SelectItem key={option} value={option}>{option}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {activeFilterCount > 0 && (
+              <Button variant="ghost" size="sm" className="h-8 gap-1 text-xs" onClick={clearFilters}>
+                <X className="h-3.5 w-3.5" />
+                Clear
+              </Button>
+            )}
+
+            <p className="text-xs text-muted-foreground lg:ml-auto lg:text-right">
               Showing <span className="font-medium text-slate-700">{filtered.length}</span>
-              {search ? <> of {employees.length}</> : null} current employee{filtered.length === 1 ? '' : 's'}
+              {activeFilterCount > 0 ? <> of {employees.length}</> : null} current employee{filtered.length === 1 ? '' : 's'}
             </p>
           </div>
 
@@ -352,8 +511,13 @@ export default function CurrentEmployeesLivePage() {
                 <div className="flex flex-col items-center gap-3 py-12 text-center">
                   <Users className="h-10 w-10 text-muted-foreground/40" />
                   <p className="text-sm text-muted-foreground">
-                    {search ? 'No employees match that search.' : "greytHR reports nobody current."}
+                    {activeFilterCount > 0 ? 'No employees match these filters.' : "greytHR reports nobody current."}
                   </p>
+                  {activeFilterCount > 0 && (
+                    <Button variant="outline" size="sm" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div className="max-h-[65vh] overflow-auto">

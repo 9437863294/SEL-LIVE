@@ -8,14 +8,14 @@
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import { HrAccessDenied, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrEmptyState, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
 import { actorFromUser, canManageRoles } from '@/lib/access-control-service';
+import { AccessPageShell } from './access-ui';
 import { AccessTemplateForm } from './access-template-form';
 
 const DEFAULT_RETURN = '/settings/access-management?tab=templates';
@@ -52,70 +52,64 @@ export function AccessTemplatePage({ templateId }: { templateId?: string }) {
   }, [router, returnTo]);
 
   if (authLoading || (state.isLoading && allowed)) {
-    return <HrLoader label="Loading roles and templates…" />;
+    return (
+      <AccessPageShell>
+        <HrLoader label="Loading roles and templates…" />
+      </AccessPageShell>
+    );
   }
-  if (!allowed || !actor) return <HrAccessDenied what="managing access templates" />;
+  if (!allowed || !actor) {
+    return (
+      <AccessPageShell backHref={returnTo} backLabel="Back to templates">
+        <HrAccessDenied what="managing access templates" />
+      </AccessPageShell>
+    );
+  }
 
   // A stale link to a template that was since deleted — say so rather than silently opening a blank
   // "new template" form under an edit URL, which would let an edit turn into an accidental duplicate.
   if (templateId && !editing && !state.isLoading) {
     return (
-      <div className="relative min-h-screen">
-        <AuroraBackdrop />
-        <div className="relative mx-auto max-w-3xl px-3 py-4 sm:px-6 sm:py-6">
-          <HrAccessDenied what="a template that no longer exists" />
-          <div className="mt-3 text-center">
+      <AccessPageShell width="form" backHref={returnTo} backLabel="Back to templates">
+        <HrEmptyState
+          icon={Sparkles}
+          title="This template no longer exists"
+          description="It may have been deleted since this link was made. Open the template list to see what is available now."
+          action={
             <Button asChild variant="outline" size="sm">
-              <Link href={returnTo}>
-                <ArrowLeft className="mr-1.5 h-4 w-4" />
-                Back to templates
-              </Link>
+              <Link href={returnTo}>Back to templates</Link>
             </Button>
-          </div>
-        </div>
-      </div>
+          }
+        />
+      </AccessPageShell>
     );
   }
 
   return (
-    <div className="relative min-h-screen">
-      <AuroraBackdrop />
-      {/*
-        No `max-w` cap here, deliberately. The module-card grid and the permission tree both want
-        width — more columns per row, a wider tree — and a 1024px-capped container centred on a wide
-        monitor just turns that into two empty gutters. A small fixed side margin lets the form use
-        the screen instead of fighting it.
-      */}
-      <div className="relative px-4 py-4 sm:px-8 sm:py-6">
-        <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2">
-          <Link href={returnTo}>
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            Back
-          </Link>
-        </Button>
+    // Full width, deliberately — same reasoning as the role builder: the permission tree and its
+    // module chips are the content of this page, and a centred column would waste the room.
+    <AccessPageShell backHref={returnTo} backLabel="Back to templates">
+      <HrPageHeader
+        title={editing ? `Edit ${editing.name}` : 'New access template'}
+        description="A reusable bundle of roles, permissions and projects — applying one adds it on top of whatever the user already has."
+      />
 
-        <HrPageHeader
-          title={editing ? `Edit ${editing.name}` : 'New access template'}
-          description="A reusable bundle of roles, permissions and projects — applying one adds it on top of whatever the user already has."
-        />
+      {state.error && (
+        <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          {state.error}
+        </div>
+      )}
 
-        {state.error && (
-          <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {state.error}
-          </div>
-        )}
-
-        <AccessTemplateForm
-          editing={editing}
-          roles={state.directory.roles}
-          projects={state.projects}
-          registry={state.registry}
-          actor={actor}
-          onSaved={handleSaved}
-          onCancel={goBack}
-        />
-      </div>
-    </div>
+      <AccessTemplateForm
+        editing={editing}
+        roles={state.directory.roles}
+        projects={state.projects}
+        registry={state.registry}
+        actor={actor}
+        onSaved={handleSaved}
+        onCancel={goBack}
+      />
+    </AccessPageShell>
   );
 }
 

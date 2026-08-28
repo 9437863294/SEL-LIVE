@@ -15,12 +15,13 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, IndianRupee, Loader2, RefreshCw, Search, TrendingDown, Users, Wallet, X } from 'lucide-react';
+import { ArrowLeft, Download, IndianRupee, Loader2, RefreshCw, Search, TrendingDown, Users, Wallet, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
@@ -29,36 +30,80 @@ import {
   HrKpiCard,
   HrLoader,
   HrPageHeader,
-  Money,
+  SensitiveMoney,
+  hrDialog,
 } from '@/components/hr/hr-ui';
+import { useHrPermissions } from '@/components/hr/use-hr-config';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import type { Employee, SalaryDetail, SalarySyncLog, EmployeePosition } from '@/lib/types';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { syncSalary } from '@/ai';
+import { cn } from '@/lib/utils';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import { format, getYear } from 'date-fns';
 
 interface EnrichedEmployee extends Employee {
   positions?: Record<string, string>;
 }
 
-/** A figure that is genuinely absent reads as a dash — not as ₹0, which is a different statement. */
-function MoneyCell({ value }: { value: number | undefined | null }) {
+/**
+ * A figure that is genuinely absent reads as a dash — not as ₹0, which is a different statement.
+ * Present figures route through `SensitiveMoney` (control rule 63.12): the dash is fine to show
+ * anyone, because "nothing was synced" is not a salary figure.
+ */
+function MoneyCell({ value, canView }: { value: number | undefined | null; canView: boolean }) {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return <span className="text-muted-foreground">—</span>;
   }
-  return <Money value={value} exact />;
+  return <SensitiveMoney value={value} canView={canView} exact />;
+}
+
+/** One block of the payslip dialog: a component list with its amounts, hidden when empty. */
+function PayslipSection({
+  title,
+  items,
+  canView,
+  amountClassName,
+}: {
+  title: string;
+  items: SalaryDetail[];
+  canView: boolean;
+  amountClassName?: string;
+}) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
+      <div className="mt-1 divide-y divide-slate-100 rounded-lg border border-slate-100 bg-white/70">
+        {items.map((item, index) => (
+          // Index in the key: greytHR can emit two components with the same description.
+          <div key={`${item.description}-${index}`} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
+            <span className="min-w-0 truncate text-slate-700">{item.description || item.itemName}</span>
+            <SensitiveMoney value={item.amount} canView={canView} exact className={cn('shrink-0', amountClassName)} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function EmployeeSalaryPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  // Control rule 63.12 — the same gate `SensitiveMoney` callers use everywhere else. Viewing this
+  // page (Settings.Employee Management) and viewing the figures on it are separate permissions.
+  const { canViewSalary } = useHrPermissions();
   const [displayedEmployees, setDisplayedEmployees] = useState<EnrichedEmployee[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  // `isLoading` starts false, so without this the "not synced yet" empty state would flash on first
+  // paint before the fetch has even been issued — an answer shown before the question was asked.
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [payslipFor, setPayslipFor] = useState<EnrichedEmployee | null>(null);
 
   const currentYear = getYear(new Date());
   const currentMonth = new Date().getMonth();
@@ -144,6 +189,7 @@ export default function EmployeeSalaryPage() {
       setDisplayedEmployees([]);
       setError(e instanceof Error ? e.message : 'Could not load salary records for this month.');
     }
+    setHasLoaded(true);
     setIsLoading(false);
   }, [fetchLastSyncedTime]);
 
@@ -189,6 +235,7 @@ export default function EmployeeSalaryPage() {
 
         setError(null);
         setDisplayedEmployees(enrichedEmployees as EnrichedEmployee[]);
+        setHasLoaded(true);
         await fetchLastSyncedTime(monthKey);
       } else {
         throw new Error(result.message);
@@ -349,7 +396,32 @@ export default function EmployeeSalaryPage() {
     [filters],
   );
 
-  const isBusy = isLoading || isSyncing;
+  // `!hasLoaded` counts as busy so the first paint shows the loader, not zeros and "not synced yet".
+  const isBusy = isLoading || isSyncing || !hasLoaded;
+
+  const handleExport = async () => {
+    if (!filteredEmployees.length) return;
+    try {
+      await exportRowsToExcel(
+        `Salary ${monthLabel}`,
+        filteredEmployees.map(emp => ({
+          'Employee ID': emp.employeeNo || emp.employeeId,
+          Name: emp.name,
+          ...Object.fromEntries(dynamicColumns.map(col => [col, emp.positions?.[col] ?? ''])),
+          'Gross Salary': emp.grossSalary ?? '',
+          'Total Deductions': getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS'),
+          'Net Salary': emp.netSalary ?? '',
+        })),
+        { filename: `employee-salary-${monthKey}.xlsx` },
+      );
+    } catch (error) {
+      toast({
+        title: 'Export failed',
+        description: error instanceof Error ? error.message : 'Unexpected error.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const syncButton = (
     <Button
@@ -411,6 +483,22 @@ export default function EmployeeSalaryPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {/*
+                The workbook carries the very figures `SensitiveMoney` masks on screen, so the button
+                follows the same 63.12 permission — an ungated export would reopen the hole the mask
+                closes.
+              */}
+              {canViewSalary && (
+                <Button
+                  variant="outline"
+                  className="bg-white/80"
+                  onClick={() => void handleExport()}
+                  disabled={isBusy || filteredEmployees.length === 0}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export
+                </Button>
+              )}
               {syncButton}
             </>
           ) : undefined
@@ -447,21 +535,21 @@ export default function EmployeeSalaryPage() {
             />
             <HrKpiCard
               label="Gross salary"
-              value={isBusy ? '—' : <Money value={totals.gross} />}
+              value={isBusy ? '—' : <SensitiveMoney value={totals.gross} canView={canViewSalary} />}
               hint="Sum of gross pay shown"
               icon={Wallet}
               tone="indigo"
             />
             <HrKpiCard
               label="Total deductions"
-              value={isBusy ? '—' : <Money value={totals.deductions} />}
+              value={isBusy ? '—' : <SensitiveMoney value={totals.deductions} canView={canViewSalary} />}
               hint="All DEDUCT components"
               icon={TrendingDown}
               tone="rose"
             />
             <HrKpiCard
               label="Net payable"
-              value={isBusy ? '—' : <Money value={totals.net} />}
+              value={isBusy ? '—' : <SensitiveMoney value={totals.net} canView={canViewSalary} />}
               hint="Gross less deductions"
               icon={IndianRupee}
               tone="emerald"
@@ -577,7 +665,13 @@ export default function EmployeeSalaryPage() {
                     </thead>
                     <tbody>
                       {filteredEmployees.map(emp => (
-                        <tr key={emp.employeeId} className="border-b transition-colors hover:bg-muted/20">
+                        // Clickable only for 63.12 holders — the breakdown behind the click is the
+                        // very data the masked cells withhold.
+                        <tr
+                          key={emp.employeeId}
+                          className={cn('border-b transition-colors hover:bg-muted/20', canViewSalary && 'cursor-pointer')}
+                          onClick={canViewSalary ? () => setPayslipFor(emp) : undefined}
+                        >
                           <td className="whitespace-nowrap px-4 py-2.5">{emp.employeeNo || emp.employeeId}</td>
                           <td className="max-w-[180px] truncate px-4 py-2.5 font-medium text-slate-800">{emp.name}</td>
                           {dynamicColumns.map(col => (
@@ -586,13 +680,13 @@ export default function EmployeeSalaryPage() {
                             </td>
                           ))}
                           <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                            <MoneyCell value={emp.grossSalary} />
+                            <MoneyCell value={emp.grossSalary} canView={canViewSalary} />
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-right text-rose-700">
-                            <MoneyCell value={getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS')} />
+                            <MoneyCell value={getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS')} canView={canViewSalary} />
                           </td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-right font-medium">
-                            <MoneyCell value={emp.netSalary} />
+                            <MoneyCell value={emp.netSalary} canView={canViewSalary} />
                           </td>
                         </tr>
                       ))}
@@ -603,13 +697,13 @@ export default function EmployeeSalaryPage() {
                           Total · {filteredEmployees.length} employee{filteredEmployees.length === 1 ? '' : 's'}
                         </td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                          <Money value={totals.gross} exact />
+                          <SensitiveMoney value={totals.gross} canView={canViewSalary} exact />
                         </td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-right text-rose-700">
-                          <Money value={totals.deductions} exact />
+                          <SensitiveMoney value={totals.deductions} canView={canViewSalary} exact />
                         </td>
                         <td className="whitespace-nowrap px-4 py-2.5 text-right text-emerald-700">
-                          <Money value={totals.net} exact />
+                          <SensitiveMoney value={totals.net} canView={canViewSalary} exact />
                         </td>
                       </tr>
                     </tfoot>
@@ -627,6 +721,73 @@ export default function EmployeeSalaryPage() {
             </p>
           )}
         </div>
+      )}
+
+      {/* ── Payslip breakdown ── */}
+      {/*
+        Not rendered at all without the 63.12 permission — the rows are not clickable then either, so
+        there is no trigger pointing at a dialog full of masked figures.
+      */}
+      {canViewSalary && (
+        <Dialog open={!!payslipFor} onOpenChange={(open) => !open && setPayslipFor(null)}>
+          <DialogContent className={hrDialog.content}>
+            <DialogHeader className={hrDialog.header}>
+              <DialogTitle>Payslip breakdown</DialogTitle>
+              <DialogDescription>
+                {payslipFor?.name} · {payslipFor?.employeeNo || payslipFor?.employeeId} · {monthLabel}
+              </DialogDescription>
+            </DialogHeader>
+            {payslipFor && (
+              <div className={hrDialog.body}>
+                {(payslipFor.salaryDetails?.length ?? 0) === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    No component breakdown was synced for this employee — only the totals below.
+                  </p>
+                ) : (
+                  <>
+                    <PayslipSection
+                      title="Earnings"
+                      items={(payslipFor.salaryDetails ?? []).filter(d => d.type === 'INCOME')}
+                      canView={canViewSalary}
+                    />
+                    <PayslipSection
+                      title="Deductions"
+                      items={(payslipFor.salaryDetails ?? []).filter(d => d.type === 'DEDUCT')}
+                      canView={canViewSalary}
+                      amountClassName="text-rose-700"
+                    />
+                    <PayslipSection
+                      title="Other components"
+                      items={(payslipFor.salaryDetails ?? []).filter(d => d.type !== 'INCOME' && d.type !== 'DEDUCT')}
+                      canView={canViewSalary}
+                    />
+                  </>
+                )}
+                <div className="space-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-600">Gross salary</span>
+                    <MoneyCell value={payslipFor.grossSalary} canView={canViewSalary} />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-600">Total deductions</span>
+                    <span className="text-rose-700">
+                      <MoneyCell
+                        value={getSalaryComponentValue(payslipFor.salaryDetails, 'TOTAL DEDUCTIONS')}
+                        canView={canViewSalary}
+                      />
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-1 font-semibold">
+                    <span className="text-slate-700">Net salary</span>
+                    <span className="text-emerald-700">
+                      <MoneyCell value={payslipFor.netSalary} canView={canViewSalary} />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

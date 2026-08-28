@@ -210,6 +210,21 @@ export function AddUserForm({
     return [...designations, form.designation].sort((a, b) => a.localeCompare(b));
   }, [designations, form.designation]);
 
+  /**
+   * The manager dropdown renders at most 300 rows so the popover stays responsive on a ~1,300-user
+   * directory — the search narrows the list rather than the cap hiding people silently.
+   */
+  const [managerSearch, setManagerSearch] = useState('');
+  const managerCandidates = useMemo(() => {
+    const query = managerSearch.trim().toLowerCase();
+    return users
+      .filter((user) => user.status !== 'Inactive')
+      .filter(
+        (user) =>
+          !query || [user.name, user.email].filter(Boolean).join(' ').toLowerCase().includes(query),
+      );
+  }, [users, managerSearch]);
+
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
@@ -235,14 +250,24 @@ export function AddUserForm({
       });
       return;
     }
+    // This email becomes a Firebase Auth account and the welcome-mail recipient — a typo here is a
+    // login that can never be used, so it is cheaper to reject it now than to delete the account.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      toast({
+        title: 'Invalid email',
+        description: `“${form.email.trim()}” does not look like an email address.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     setSaving(true);
     try {
       const { user } = await createUserWithAccess(
         {
-          name: form.name,
-          email: form.email,
+          name: form.name.trim(),
+          email: form.email.trim(),
           password: form.password,
-          mobile: form.mobile,
+          mobile: form.mobile.trim(),
           baseRole: form.baseRole,
           status: form.status,
           additionalRoleIds,
@@ -452,9 +477,15 @@ export function AddUserForm({
             </div>
             <div className="space-y-1.5">
               <Label>Department</Label>
-              <Select value={form.departmentId} onValueChange={(value) => set('departmentId', value)}>
+              {/* Every optional select offers "None": without it, a value picked once could only be
+                  cleared by abandoning the page. Radix reserves the empty string, hence the sentinel. */}
+              <Select
+                value={form.departmentId || undefined}
+                onValueChange={(value) => set('departmentId', value === 'none' ? '' : value)}
+              >
                 <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
                   {departments.map((department) => (
                     <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>
                   ))}
@@ -471,9 +502,13 @@ export function AddUserForm({
             </div>
             <div className="space-y-1.5">
               <Label>Designation</Label>
-              <Select value={form.designation} onValueChange={(value) => set('designation', value)}>
+              <Select
+                value={form.designation || undefined}
+                onValueChange={(value) => set('designation', value === 'none' ? '' : value)}
+              >
                 <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
                   {designationOptions.map((designation) => (
                     <SelectItem key={designation} value={designation}>{designation}</SelectItem>
                   ))}
@@ -482,17 +517,28 @@ export function AddUserForm({
             </div>
             <div className="space-y-1.5">
               <Label>Reporting manager</Label>
-              <Select value={form.reportingManagerId} onValueChange={(value) => set('reportingManagerId', value)}>
+              <Input
+                value={managerSearch}
+                onChange={(event) => setManagerSearch(event.target.value)}
+                placeholder="Search by name or email…"
+              />
+              <Select
+                value={form.reportingManagerId || undefined}
+                onValueChange={(value) => set('reportingManagerId', value === 'none' ? '' : value)}
+              >
                 <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                 <SelectContent>
-                  {users
-                    .filter((user) => user.status !== 'Inactive')
-                    .slice(0, 300)
-                    .map((user) => (
-                      <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
-                    ))}
+                  <SelectItem value="none">None</SelectItem>
+                  {managerCandidates.slice(0, 300).map((user) => (
+                    <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {managerCandidates.length > 300 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Showing the first 300 of {managerCandidates.length} — search to find anyone else.
+                </p>
+              )}
               {/* greytHR knows who they report to, but that person has no platform login to select —
                   the name is worth showing even though the field itself has to stay empty. */}
               {reportingManagerInfo && !form.reportingManagerId && (
@@ -509,9 +555,13 @@ export function AddUserForm({
             </div>
             <div className="space-y-1.5">
               <Label>Project / site</Label>
-              <Select value={form.projectId} onValueChange={(value) => set('projectId', value)}>
+              <Select
+                value={form.projectId || undefined}
+                onValueChange={(value) => set('projectId', value === 'none' ? '' : value)}
+              >
                 <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
                   {projects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.projectName || project.siteCode || project.id}

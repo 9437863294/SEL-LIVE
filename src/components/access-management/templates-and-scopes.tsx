@@ -24,6 +24,15 @@ import { Building2, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -96,10 +105,37 @@ function TemplateManager({
   const { toast } = useToast();
   const { directory, projects, registry } = state;
 
+  /**
+   * Deleting is safe for existing holders (applying a template copies, nothing stays linked), but it
+   * is still the one destructive click on this screen — so it confirms like every other destructive
+   * action in the module instead of firing straight from a ghost icon.
+   */
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
   const templates = useMemo(
     () => directory.templates.filter((template) => template.active !== false),
     [directory.templates],
   );
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleteBusy(true);
+    try {
+      await deleteAccessTemplate(pendingDelete.id);
+      await state.refresh();
+      toast({ title: 'Template removed', description: 'Users who already had it keep their access.' });
+      setPendingDelete(null);
+    } catch (error) {
+      toast({
+        title: 'Could not remove the template',
+        description: error instanceof Error ? error.message : 'Unexpected error.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -198,11 +234,8 @@ function TemplateManager({
                         variant="ghost"
                         size="sm"
                         className="h-8 text-xs text-destructive"
-                        onClick={async () => {
-                          await deleteAccessTemplate(template.id);
-                          await state.refresh();
-                          toast({ title: 'Template removed', description: 'Users who already had it keep their access.' });
-                        }}
+                        title="Delete template"
+                        onClick={() => setPendingDelete({ id: template.id, name: template.name })}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -214,6 +247,26 @@ function TemplateManager({
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && !deleteBusy && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{pendingDelete?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The template disappears from this list and from the assignment workspace. Users it was
+              already applied to keep everything — applying a template copies access, nothing stays
+              linked to it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy}>Cancel</AlertDialogCancel>
+            <Button variant="destructive" onClick={() => void confirmDelete()} disabled={deleteBusy}>
+              {deleteBusy && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Delete template
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

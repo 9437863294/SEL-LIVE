@@ -236,6 +236,12 @@ export function RemoveAccessDialog({
             />
           ) : (
             <ScrollArea className="h-72 rounded-xl border border-white/70 bg-white/60">
+              {visible.length === 0 && (
+                <p className="px-3 py-10 text-center text-sm text-muted-foreground">
+                  Nothing matches “{term.trim()}”. Clear the filter to see all {removables.length}{' '}
+                  removable grant(s).
+                </p>
+              )}
               <div className="divide-y divide-slate-100">
                 {visible.map((item) => {
                   const key = `${item.kind}:${item.id}`;

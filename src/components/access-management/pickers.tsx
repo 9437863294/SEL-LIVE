@@ -18,7 +18,7 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Check, ChevronsUpDown, FolderKanban, Search, Users, X } from 'lucide-react';
+import { Check, ChevronsUpDown, FolderKanban, KeyRound, Search, Users, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -36,6 +36,7 @@ import {
   detectSodConflicts,
   isProtectedRole,
   type EffectiveAccess,
+  type RegistryNode,
   type UserAccessGrant,
 } from '@/lib/access-control';
 import { RiskBadges, RoleBadge } from './access-ui';
@@ -163,11 +164,14 @@ export function UserFilterBar({
   filter,
   onChange,
   context,
+  registry,
   className,
 }: {
   filter: UserFilterState;
   onChange: (next: UserFilterState) => void;
   context: UserDirectoryContext;
+  /** When provided, offers §29's filter-by-permission ("who can approve bank guarantees?"). */
+  registry?: RegistryNode[];
   className?: string;
 }) {
   const set = <K extends keyof UserFilterState>(key: K, value: UserFilterState[K]) =>
@@ -245,7 +249,131 @@ export function UserFilterBar({
           ))}
         </SelectContent>
       </Select>
+
+      {registry && (
+        <PermissionPairFilter
+          registry={registry}
+          value={filter.permissionPair}
+          onChange={(pair) => set('permissionPair', pair)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * "Who holds this exact permission?" — a combobox over the ~1,200-leaf registry.
+ *
+ * Items only render once the search has two characters: mounting every resource × action pair
+ * (several thousand rows) into the popover just to filter them again is what made this feature sit
+ * unshipped in the first place.
+ */
+function PermissionPairFilter({
+  registry,
+  value,
+  onChange,
+}: {
+  registry: RegistryNode[];
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const queryReady = search.trim().replace(/\s+/g, '').length >= 2;
+  const matches = useMemo(() => {
+    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!tokens.length || tokens.join('').length < 2) return [];
+    const rows: Array<{ pair: string; resource: string; action: string }> = [];
+    for (const node of registry) {
+      for (const action of node.actions) {
+        const haystack = `${node.module} ${node.resource} ${node.label} ${action}`.toLowerCase();
+        if (tokens.every((token) => haystack.includes(token))) {
+          rows.push({ pair: `${node.resource}::${action}`, resource: node.resource, action });
+          if (rows.length >= 120) return rows;
+        }
+      }
+    }
+    return rows;
+  }, [registry, search]);
+
+  const [selectedResource, selectedAction] = value ? value.split('::') : ['', ''];
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn('w-full justify-between font-normal', !value && 'text-muted-foreground')}
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <KeyRound className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <span className="truncate">
+              {value ? `${selectedResource} · ${selectedAction}` : 'Holding permission…'}
+            </span>
+          </span>
+          <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(26rem,90vw)] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Search a page or action, e.g. bank approve…"
+          />
+          <CommandList>
+            <CommandEmpty>
+              {queryReady
+                ? 'No permission matches that search.'
+                : 'Type at least two characters to search the registry.'}
+            </CommandEmpty>
+            {value && (
+              <CommandGroup>
+                <CommandItem
+                  value="__clear"
+                  onSelect={() => {
+                    onChange('');
+                    setOpen(false);
+                  }}
+                >
+                  <X className="mr-2 h-3.5 w-3.5" />
+                  Any permission (clear filter)
+                </CommandItem>
+              </CommandGroup>
+            )}
+            {matches.length > 0 && (
+              <CommandGroup>
+                {matches.map((row) => (
+                  <CommandItem
+                    key={row.pair}
+                    value={row.pair}
+                    onSelect={() => {
+                      onChange(row.pair);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check className={cn('mr-2 h-3.5 w-3.5', value === row.pair ? 'opacity-100' : 'opacity-0')} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm">{row.resource}</span>
+                      <span className="block text-[11px] text-muted-foreground">{row.action}</span>
+                    </span>
+                  </CommandItem>
+                ))}
+                {matches.length >= 120 && (
+                  <p className="px-3 py-1.5 text-[11px] text-muted-foreground">
+                    Showing the first 120 — keep typing to narrow it down.
+                  </p>
+                )}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -258,6 +386,7 @@ export function UserPicker({
   onFilterChange,
   selectedIds,
   onSelectionChange,
+  registry,
   heightClassName = 'h-[24rem]',
   showFilters = true,
 }: {
@@ -266,6 +395,8 @@ export function UserPicker({
   onFilterChange: (next: UserFilterState) => void;
   selectedIds: string[];
   onSelectionChange: (next: string[]) => void;
+  /** Forwarded to the filter bar's permission filter; omit to hide that filter. */
+  registry?: RegistryNode[];
   heightClassName?: string;
   showFilters?: boolean;
 }) {
@@ -288,7 +419,9 @@ export function UserPicker({
 
   return (
     <div className="space-y-2.5">
-      {showFilters && <UserFilterBar filter={filter} onChange={onFilterChange} context={context} />}
+      {showFilters && (
+        <UserFilterBar filter={filter} onChange={onFilterChange} context={context} registry={registry} />
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/70 bg-white/70 px-2.5 py-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">

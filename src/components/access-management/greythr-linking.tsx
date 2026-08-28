@@ -50,13 +50,12 @@ import {
   HrAccessDenied,
   HrDataList,
   HrEmptyState,
-  HrKpiCard,
   HrLoader,
   HrPageHeader,
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
-import { AccessPageShell } from './access-ui';
+import { AccessKpiCard, AccessPageShell } from './access-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -419,30 +418,36 @@ export function GreytHRLinkingWorkspace() {
         </Card>
       )}
 
+      {/* AccessKpiCard rather than HrKpiCard — this console is part of the access module's surface,
+          and its landing screen should not look plainer than the Overview one click away. */}
       <div className="mb-4 grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-5">
-        <HrKpiCard label="Linked" value={counts?.linked ?? 0} icon={CheckCircle2} tone="emerald" />
-        <HrKpiCard
+        <AccessKpiCard index={0} label="Linked" value={counts?.linked ?? 0} icon={CheckCircle2} tone="emerald" />
+        <AccessKpiCard
+          index={1}
           label="Ready to link"
           value={counts?.suggested ?? 0}
           icon={Link2}
           tone="blue"
           hint="Matched on ID, number or email"
         />
-        <HrKpiCard
+        <AccessKpiCard
+          index={2}
           label="Needs review"
           value={needsWork}
           icon={AlertTriangle}
           tone={needsWork ? 'amber' : 'slate'}
           hint="Ambiguous or conflicting"
         />
-        <HrKpiCard
+        <AccessKpiCard
+          index={3}
           label="Not in greytHR"
           value={counts?.unlinked ?? 0}
           icon={Link2Off}
           tone="slate"
           hint="No matching employee"
         />
-        <HrKpiCard
+        <AccessKpiCard
+          index={4}
           label="Employees without a login"
           value={counts?.unlinkedEmployees ?? 0}
           icon={UserPlus}

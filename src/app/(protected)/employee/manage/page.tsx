@@ -38,6 +38,7 @@ import {
   ArrowLeft,
   Building2,
   CloudOff,
+  Download,
   Plus,
   RefreshCw,
   Search,
@@ -70,8 +71,9 @@ import {
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, doc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { cn } from '@/lib/utils';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchEmployeeRoster, type EmployeeRosterResponse, type RosterEmployeeRow } from '@/lib/greythr-sync-client';
 import { hasExited, isWorkingState, type EmploymentState } from '@/lib/greythr';
 
@@ -154,7 +156,28 @@ interface EditState {
   employeeNo: string;
   name: string;
   dateOfJoin: string;
+  email: string;
+  phone: string;
 }
+
+/**
+ * Everything the Add dialog writes. The contact and posting fields are honest here because a
+ * manually added record has no `categories` map — the roster's `categoriesFor` falls back to these
+ * flat fields, so what is typed is what the table shows. The Edit dialog deliberately does not offer
+ * the posting fields: for a sync-written record the categories map wins over the flat fields, so an
+ * edit there would be silently ignored.
+ */
+const EMPTY_NEW_EMPLOYEE = {
+  employeeNo: '',
+  name: '',
+  dateOfJoin: '',
+  email: '',
+  phone: '',
+  department: '',
+  designation: '',
+  location: '',
+  projectName: '',
+};
 
 export default function ManageEmployeePage() {
   const { toast } = useToast();
@@ -175,7 +198,7 @@ export default function ManageEmployeePage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [addOpen, setAddOpen] = useState(false);
-  const [newEmployee, setNewEmployee] = useState({ employeeNo: '', name: '', dateOfJoin: '' });
+  const [newEmployee, setNewEmployee] = useState(EMPTY_NEW_EMPLOYEE);
   const [editing, setEditing] = useState<EditState | null>(null);
 
   const isFetchingRef = useRef(false);
@@ -211,7 +234,15 @@ export default function ManageEmployeePage() {
     }
     void load('initial');
     const interval = setInterval(() => void load('auto'), AUTO_REFRESH_MS);
-    return () => clearInterval(interval);
+    // The greytHR sync workspace announces a finished run with this event. Without it a roster left
+    // open kept showing pre-sync states for up to ten minutes after somebody ran the sync. `load`
+    // already drops the call if a fetch is in flight, so a burst of events cannot stack requests.
+    const onSyncSuccess = () => void load('auto');
+    window.addEventListener('greytHRSyncSuccess', onSyncSuccess);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('greytHRSyncSuccess', onSyncSuccess);
+    };
   }, [isAuthLoading, canView, load]);
 
   const employees = report?.employees ?? [];
@@ -258,22 +289,49 @@ export default function ManageEmployeePage() {
   /* ── Writes ── */
 
   const handleAdd = async () => {
-    if (!newEmployee.employeeNo.trim() || !newEmployee.name.trim()) {
+    const employeeNo = newEmployee.employeeNo.trim();
+    const name = newEmployee.name.trim();
+    if (!employeeNo || !name) {
       toast({ title: 'Validation', description: 'Employee No and Name are required.', variant: 'destructive' });
       return;
     }
-    try {
-      await addDoc(collection(db, 'employees'), {
-        ...newEmployee,
-        employeeId: '',
-        email: '',
-        phone: '',
-        status: 'Active',
-        department: '',
-        designation: '',
+    // The roster joins on the `employeeId` field with `employeeNo` as the fallback key, and both the
+    // profile route and the edit/delete writes address the record by it — two records sharing a
+    // number would resolve to whichever the map kept last.
+    const duplicate = employees.find(
+      (row) =>
+        (row.employeeNo ?? '').trim().toLowerCase() === employeeNo.toLowerCase() ||
+        row.employeeId === employeeNo,
+    );
+    if (duplicate) {
+      toast({
+        title: 'Employee number in use',
+        description: `${employeeNo} already belongs to ${duplicate.name || 'an existing record'}.`,
+        variant: 'destructive',
       });
-      toast({ title: 'Added', description: `${newEmployee.name} added.` });
-      setNewEmployee({ employeeNo: '', name: '', dateOfJoin: '' });
+      return;
+    }
+    try {
+      // Doc id, `employeeId` field and employee number are deliberately the same value. The roster's
+      // join id is `employeeId || doc.id`, and Edit/Delete on this screen write to
+      // `doc(db, 'employees', row.employeeId)` — if the field and the doc id disagreed, those writes
+      // would target a document that does not exist. It also makes the profile link resolvable,
+      // where the old `employeeId: ''` produced a dead `/employee/` URL.
+      await setDoc(doc(db, 'employees', employeeNo), {
+        employeeId: employeeNo,
+        employeeNo,
+        name,
+        dateOfJoin: newEmployee.dateOfJoin || '',
+        email: newEmployee.email.trim(),
+        phone: newEmployee.phone.trim(),
+        status: 'Active',
+        department: newEmployee.department.trim(),
+        designation: newEmployee.designation.trim(),
+        location: newEmployee.location.trim(),
+        projectName: newEmployee.projectName.trim(),
+      });
+      toast({ title: 'Added', description: `${name} added.` });
+      setNewEmployee(EMPTY_NEW_EMPLOYEE);
       setAddOpen(false);
       void load('manual');
     } catch (err) {
@@ -288,6 +346,8 @@ export default function ManageEmployeePage() {
         employeeNo: editing.employeeNo,
         name: editing.name,
         dateOfJoin: editing.dateOfJoin || null,
+        email: editing.email.trim(),
+        phone: editing.phone.trim(),
       });
       toast({ title: 'Updated', description: 'Employee updated.' });
       setEditing(null);
@@ -317,6 +377,35 @@ export default function ManageEmployeePage() {
       void load('manual');
     } catch (err) {
       toast({ title: 'Error', description: err instanceof Error ? err.message : 'Could not delete.', variant: 'destructive' });
+    }
+  };
+
+  const handleExport = async () => {
+    if (!filtered.length) return;
+    try {
+      // The filtered rows with the table's columns, and the same category-then-flat fallbacks the
+      // cells use, so the workbook says what the screen said.
+      await exportRowsToExcel(
+        'Employee roster',
+        filtered.map((row) => ({
+          'Employee No': row.employeeNo || row.employeeId,
+          Name: row.name ?? '',
+          State: row.employmentState,
+          Department: row.categories['Department'] || row.department || '',
+          Designation: row.categories['Designation'] || row.designation || '',
+          Location: row.categories['Location'] || row.location || '',
+          Project: row.categories['Project Name'] || row.projectName || '',
+          Joined: row.dateOfJoin ?? '',
+          'Exit date': row.exitDate ?? '',
+        })),
+        { filename: 'employee-roster.xlsx' },
+      );
+    } catch (err) {
+      toast({
+        title: 'Export failed',
+        description: err instanceof Error ? err.message : 'Unexpected error.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -362,6 +451,16 @@ export default function ManageEmployeePage() {
             <Button variant="outline" size="sm" onClick={() => void load('manual')} disabled={refreshing} className="bg-white">
               <RefreshCw className={cn('mr-1.5 h-4 w-4', refreshing && 'animate-spin')} />
               Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleExport()}
+              disabled={filtered.length === 0}
+              className="bg-white"
+            >
+              <Download className="mr-1.5 h-4 w-4" />
+              Export
             </Button>
             {canAdd && (
               <Button size="sm" onClick={() => setAddOpen(true)}>
@@ -695,6 +794,8 @@ export default function ManageEmployeePage() {
                               employeeNo: row.employeeNo ?? '',
                               name: row.name ?? '',
                               dateOfJoin: row.dateOfJoin ?? '',
+                              email: row.email ?? '',
+                              phone: row.phone ?? '',
                             })
                           }
                           onDelete={() => void handleDelete(row.employeeId)}
@@ -702,9 +803,18 @@ export default function ManageEmployeePage() {
                       ))}
                     </tbody>
                     <tfoot>
+                      {/*
+                        The two colSpans must sum to what the header actually renders: eight data
+                        columns, plus the checkbox column when canDelete, plus the actions column
+                        when canEdit || canDelete. Deriving the second from the total keeps the pair
+                        from drifting apart again per permission combination.
+                      */}
                       <tr className="bg-muted/30 font-semibold">
                         <td className="px-4 py-2.5" colSpan={canDelete ? 3 : 2}>Total</td>
-                        <td className="px-4 py-2.5" colSpan={(canEdit || canDelete) ? 8 : 7}>
+                        <td
+                          className="px-4 py-2.5"
+                          colSpan={8 + (canDelete ? 1 : 0) + (canEdit || canDelete ? 1 : 0) - (canDelete ? 3 : 2)}
+                        >
                           {filtered.length} record{filtered.length === 1 ? '' : 's'} ·{' '}
                           <span className="text-emerald-700">
                             {filtered.filter((row) => isWorkingState(row.employmentState)).length} working
@@ -750,6 +860,42 @@ export default function ManageEmployeePage() {
               <Input id="addDoj" type="date" value={newEmployee.dateOfJoin}
                 onChange={(e) => setNewEmployee((s) => ({ ...s, dateOfJoin: e.target.value }))} />
             </div>
+            {/*
+              These land on the flat fields of the document, which is exactly where the roster reads
+              them from for a record with no greytHR category map — see `EMPTY_NEW_EMPLOYEE`.
+            */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="addEmail">Email <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input id="addEmail" type="email" value={newEmployee.email}
+                  onChange={(e) => setNewEmployee((s) => ({ ...s, email: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="addPhone">Phone <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input id="addPhone" value={newEmployee.phone}
+                  onChange={(e) => setNewEmployee((s) => ({ ...s, phone: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="addDepartment">Department <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input id="addDepartment" value={newEmployee.department}
+                  onChange={(e) => setNewEmployee((s) => ({ ...s, department: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="addDesignation">Designation <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input id="addDesignation" value={newEmployee.designation}
+                  onChange={(e) => setNewEmployee((s) => ({ ...s, designation: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="addLocation">Location <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input id="addLocation" value={newEmployee.location}
+                  onChange={(e) => setNewEmployee((s) => ({ ...s, location: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="addProject">Project <span className="font-normal text-muted-foreground">(optional)</span></Label>
+                <Input id="addProject" value={newEmployee.projectName}
+                  onChange={(e) => setNewEmployee((s) => ({ ...s, projectName: e.target.value }))} />
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
@@ -785,6 +931,27 @@ export default function ManageEmployeePage() {
                 <Input id="editDoj" type="date" value={editing.dateOfJoin}
                   onChange={(e) => setEditing({ ...editing, dateOfJoin: e.target.value })} />
               </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editEmail">Email</Label>
+                  <Input id="editEmail" type="email" value={editing.email}
+                    onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="editPhone">Phone</Label>
+                  <Input id="editPhone" value={editing.phone}
+                    onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
+                </div>
+              </div>
+              {/*
+                No inputs for these on purpose: for a sync-written record the roster reads them from
+                the greytHR category map, not the flat fields, so an edit here would be shown nowhere
+                and quietly discarded — worse than not offering it.
+              */}
+              <p className="text-[11px] text-muted-foreground">
+                Department, designation, location and project come from greytHR&apos;s category
+                assignments and sync from there — they cannot be edited on this screen.
+              </p>
             </div>
           )}
           <DialogFooter>

@@ -63,6 +63,11 @@ export function AuditHistory({
   const [to, setTo] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [batchFilter, setBatchFilter] = useState<string | null>(null);
+  /**
+   * Controlled, because "Open changes" on a batch card filters the timeline — a filter applied to a
+   * tab the user cannot see is indistinguishable from a button that does nothing.
+   */
+  const [view, setView] = useState<'timeline' | 'batches'>('timeline');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -143,7 +148,7 @@ export function AuditHistory({
   }, [entries]);
 
   return (
-    <Tabs defaultValue="timeline" className="space-y-3">
+    <Tabs value={view} onValueChange={(value) => setView(value as 'timeline' | 'batches')} className="space-y-3">
       <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:grid-cols-2">
         <TabsTrigger value="timeline" className="text-xs">Change timeline</TabsTrigger>
         <TabsTrigger value="batches" className="text-xs">Bulk operations</TabsTrigger>
@@ -369,6 +374,7 @@ export function AuditHistory({
                       onClick={() => {
                         setBatchFilter(batch.id);
                         setTargetUserId('all');
+                        setView('timeline');
                       }}
                     >
                       Open changes

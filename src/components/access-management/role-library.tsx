@@ -29,6 +29,7 @@ import {
   CopyPlus,
   Layers,
   Loader2,
+  Lock,
   Pencil,
   Plus,
   Search,
@@ -287,15 +288,29 @@ export function RoleLibrary({
                             <CopyPlus className="h-3.5 w-3.5" />
                           </Link>
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-xs"
-                          title={disabled ? 'Re-enable this role' : 'Disable this role'}
-                          onClick={() => setDisabling(role)}
-                        >
-                          <ShieldOff className={cn('h-3.5 w-3.5', !disabled && 'text-destructive')} />
-                        </Button>
+                        {/*
+                          A protected role gets a lock, not a disable button — offering the button
+                          and refusing inside the dialog teaches administrators the control is broken.
+                        */}
+                        {isProtectedRole(role.name) && !disabled ? (
+                          <span
+                            title="Protected role — cannot be disabled"
+                            aria-label={`${role.name} is protected and cannot be disabled`}
+                            className="flex h-8 items-center px-2.5 text-slate-400"
+                          >
+                            <Lock className="h-3.5 w-3.5" />
+                          </span>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-xs"
+                            title={disabled ? 'Re-enable this role' : 'Disable this role'}
+                            onClick={() => setDisabling(role)}
+                          >
+                            <ShieldOff className={cn('h-3.5 w-3.5', !disabled && 'text-destructive')} />
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>

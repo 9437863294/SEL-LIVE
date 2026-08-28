@@ -187,7 +187,7 @@ export function AssignAccess({
           ? {
               startAt: new Date(`${temporaryStart}T00:00:00`).toISOString(),
               expiresAt: new Date(`${temporaryExpiry}T23:59:59`).toISOString(),
-              reason: temporaryReason,
+              reason: temporaryReason.trim(),
             }
           : null,
     }),
@@ -212,6 +212,14 @@ export function AssignAccess({
     selectedDepartmentIds.length > 0 ||
     selectedDesignations.length > 0 ||
     selectedTemplateIds.length > 0;
+
+  /**
+   * `request.temporary` is only built once start and expiry are both set — so a half-filled
+   * temporary section would otherwise save a *permanent* grant, which is the opposite of what the
+   * switch promised. Blocked here rather than silently degraded.
+   */
+  const temporaryIncomplete =
+    temporaryEnabled && (!temporaryStart || !temporaryExpiry || !temporaryReason.trim());
 
   const resetGrant = () => {
     setSelectedRoleIds([]);
@@ -316,7 +324,7 @@ export function AssignAccess({
             </Button>
             <Button
               size="sm"
-              disabled={selectedUserIds.length === 0 || !hasGrantToMake}
+              disabled={selectedUserIds.length === 0 || !hasGrantToMake || temporaryIncomplete}
               onClick={() => setPreviewOpen(true)}
             >
               <ShieldPlus className="mr-1.5 h-4 w-4" />
@@ -516,6 +524,12 @@ export function AssignAccess({
                       placeholder="e.g. Covering BG approvals while Anil is on leave"
                     />
                   </div>
+                  {temporaryIncomplete && (
+                    <p className="text-[11px] font-medium text-rose-700 sm:col-span-2">
+                      Start date, expiry date and reason are all required — without them this would be
+                      saved as a permanent grant.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -538,6 +552,7 @@ export function AssignAccess({
               onFilterChange={setFilter}
               selectedIds={selectedUserIds}
               onSelectionChange={setSelectedUserIds}
+              registry={state.registry}
               heightClassName="h-[25rem]"
             />
 
@@ -696,7 +711,23 @@ function CopyAccessDialog({
 }) {
   const { directory, projects } = state;
   const [sourceId, setSourceId] = useState('');
+  const [sourceSearch, setSourceSearch] = useState('');
   const [includeBaseRole, setIncludeBaseRole] = useState(false);
+
+  /**
+   * The dropdown renders at most 400 rows to keep the popover responsive on a ~1,300-user
+   * directory — the search narrows the list rather than the truncation hiding people silently.
+   */
+  const sourceCandidates = useMemo(() => {
+    const query = sourceSearch.trim().toLowerCase();
+    return directory.users
+      .filter((user) => user.status !== 'Inactive')
+      .filter(
+        (user) =>
+          !query ||
+          [user.name, user.email, user.role].filter(Boolean).join(' ').toLowerCase().includes(query),
+      );
+  }, [directory.users, sourceSearch]);
 
   const source = directory.users.find((user) => user.id === sourceId);
   const sourceGrant = sourceId ? (directory.grants[sourceId] ?? emptyUserAccessGrant(sourceId)) : null;
@@ -723,19 +754,26 @@ function CopyAccessDialog({
         <div className={hrDialog.body}>
           <div className="space-y-1.5">
             <Label>Copy from</Label>
+            <Input
+              value={sourceSearch}
+              onChange={(event) => setSourceSearch(event.target.value)}
+              placeholder="Search by name, email or role…"
+            />
             <Select value={sourceId} onValueChange={setSourceId}>
               <SelectTrigger><SelectValue placeholder="Select a user" /></SelectTrigger>
               <SelectContent>
-                {directory.users
-                  .filter((user) => user.status !== 'Inactive')
-                  .slice(0, 400)
-                  .map((user) => (
-                    <SelectItem key={user.id} value={user.id}>
-                      {user.name || user.email} {user.role ? `· ${user.role}` : ''}
-                    </SelectItem>
-                  ))}
+                {sourceCandidates.slice(0, 400).map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {user.name || user.email} {user.role ? `· ${user.role}` : ''}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {sourceCandidates.length > 400 && (
+              <p className="text-[11px] text-muted-foreground">
+                Showing the first 400 of {sourceCandidates.length} — search to find anyone else.
+              </p>
+            )}
           </div>
 
           {source && (

@@ -44,7 +44,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import {
   countPermissions,
-  permissionKey,
   registryActions,
   registryToPermissionMap,
   searchRegistry,
@@ -171,7 +170,8 @@ export function PermissionTree({
       const current = new Set(next[node.resource] ?? []);
       if (checked) current.add(action);
       else current.delete(action);
-      next[node.resource] = [...current];
+      if (current.size) next[node.resource] = [...current];
+      else delete next[node.resource];
     }
     commit(next);
   };
@@ -240,19 +240,39 @@ export function PermissionTree({
           Apply an action everywhere
         </span>
         {['View', 'Add', 'Edit', 'Delete', 'Approve', 'Export'].filter((action) => allActions.includes(action)).map(
-          (action) => (
-            <Button
-              key={action}
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={disabled}
-              className="h-7 px-2 text-xs"
-              onClick={() => setActionEverywhere(action, true)}
-            >
-              + {action}
-            </Button>
-          ),
+          (action) => {
+            // The undo appears only once the action is ticked somewhere — a mis-click across 27
+            // modules should not have to be unpicked page by page.
+            const heldSomewhere = Object.values(value).some((actions) => actions.includes(action));
+            return (
+              <span key={action} className="flex items-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={disabled}
+                  className={cn('h-7 px-2 text-xs', heldSomewhere && 'rounded-r-none border-r-0')}
+                  onClick={() => setActionEverywhere(action, true)}
+                >
+                  + {action}
+                </Button>
+                {heldSomewhere && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={disabled}
+                    title={`Remove ${action} everywhere`}
+                    aria-label={`Remove ${action} everywhere`}
+                    className="h-7 rounded-l-none px-1.5 text-xs text-destructive hover:bg-destructive/5"
+                    onClick={() => setActionEverywhere(action, false)}
+                  >
+                    ×
+                  </Button>
+                )}
+              </span>
+            );
+          },
         )}
       </div>
 

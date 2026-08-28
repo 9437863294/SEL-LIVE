@@ -65,6 +65,12 @@ export interface AccessDirectoryState {
   dashboard: AccessDashboardStats;
   roleUsage: Record<string, { base: number; additional: number; total: number }>;
   isLoading: boolean;
+  /**
+   * A reload after the first load has completed. Split from `isLoading` so the header's Refresh can
+   * spin in place — swapping the whole workspace for the page loader would unmount every tab's
+   * filter state just to repaint the same screen.
+   */
+  isRefreshing: boolean;
   error: string | null;
   refresh: () => Promise<void>;
 }
@@ -175,6 +181,7 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
     dashboard,
     roleUsage,
     isLoading: enabled && (!hasLoaded || inFlight),
+    isRefreshing: enabled && hasLoaded && inFlight,
     error,
     refresh,
   };

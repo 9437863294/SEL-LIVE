@@ -182,6 +182,7 @@ export function AccessKpiCard({
   icon: Icon,
   tone = 'slate',
   href,
+  onClick,
   index = 0,
 }: {
   label: string;
@@ -190,6 +191,8 @@ export function AccessKpiCard({
   icon?: React.ElementType;
   tone?: HrTone;
   href?: string;
+  /** An in-page action — the Overview uses this to land on the tab that explains the number. */
+  onClick?: () => void;
   /** Position in the grid — staggers the entrance so the row doesn't pop in all at once. */
   index?: number;
 }) {
@@ -202,7 +205,7 @@ export function AccessKpiCard({
       className={cn(
         'group h-full animate-am-card-in rounded-lg border transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg',
         ACCESS_CARD_CLASS,
-        href && 'cursor-pointer',
+        (href || onClick) && 'cursor-pointer',
       )}
     >
       <div className={cn('h-0.5 w-full bg-gradient-to-r', palette.bar)} />
@@ -229,13 +232,23 @@ export function AccessKpiCard({
     </SpotlightCard>
   );
 
-  return href ? (
-    <Link href={href} className="block h-full">
-      {body}
-    </Link>
-  ) : (
-    body
-  );
+  if (href) {
+    return (
+      <Link href={href} className="block h-full">
+        {body}
+      </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className="block h-full w-full text-left">
+        {body}
+      </button>
+    );
+  }
+
+  return body;
 }
 
 /* ------------------------------------------------------------------------------------------------
