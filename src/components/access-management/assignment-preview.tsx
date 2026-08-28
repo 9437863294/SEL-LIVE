@@ -206,7 +206,8 @@ export function AssignmentPreviewDialog({
             )}
           </div>
 
-          <DialogFooter className={hrDialog.footer}>
+          {/* One button — the phone footer's two-column grid would leave half the row empty. */}
+          <DialogFooter className={cn(hrDialog.footer, 'max-sm:grid-cols-1')}>
             <Button onClick={close}>Done</Button>
           </DialogFooter>
         </DialogContent>
@@ -336,7 +337,7 @@ export function AssignmentPreviewDialog({
             <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Per-user impact
             </p>
-            <ScrollArea className="h-56 rounded-xl border border-white/70 bg-white/60">
+            <ScrollArea className="h-auto rounded-xl border border-white/70 bg-white/60 sm:h-56">
               <div className="divide-y divide-slate-100">
                 {preview.plans.map((plan) => {
                   const isOpen = expanded === plan.userId;
@@ -581,7 +582,7 @@ export function RemovalPreviewDialog({
             </div>
           )}
 
-          <ScrollArea className="h-56 rounded-xl border border-white/70 bg-white/60">
+          <ScrollArea className="h-auto rounded-xl border border-white/70 bg-white/60 sm:h-56">
             <div className="divide-y divide-slate-100">
               {impact.map(({ user, lost, retained }) => (
                 <div key={user.id} className="px-2.5 py-2">

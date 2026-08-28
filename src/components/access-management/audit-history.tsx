@@ -149,7 +149,7 @@ export function AuditHistory({
 
   return (
     <Tabs value={view} onValueChange={(value) => setView(value as 'timeline' | 'batches')} className="space-y-3">
-      <TabsList className="grid w-full grid-cols-2 sm:w-auto sm:grid-cols-2">
+      <TabsList className="grid h-auto w-full grid-cols-2 sm:h-10 sm:w-auto sm:grid-cols-2">
         <TabsTrigger value="timeline" className="text-xs">Change timeline</TabsTrigger>
         <TabsTrigger value="batches" className="text-xs">Bulk operations</TabsTrigger>
       </TabsList>
@@ -168,7 +168,7 @@ export function AuditHistory({
             </div>
             <Select value={targetUserId} onValueChange={setTargetUserId}>
               <SelectTrigger><SelectValue placeholder="Affected user" /></SelectTrigger>
-              <SelectContent className="max-h-72">
+              <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
                 <SelectItem value="all">Any affected user</SelectItem>
                 {directory.users
                   .slice()
@@ -206,7 +206,14 @@ export function AuditHistory({
             {batchFilter && (
               <Badge variant="outline" className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700">
                 Batch {batchFilter}
-                <button type="button" onClick={() => setBatchFilter(null)} className="px-1">×</button>
+                <button
+                  type="button"
+                  onClick={() => setBatchFilter(null)}
+                  aria-label="Clear the batch filter"
+                  className="hr-inline-action -my-1 inline-flex items-center justify-center rounded-full px-1 hover:bg-indigo-100"
+                >
+                  ×
+                </button>
               </Badge>
             )}
           </div>
@@ -236,7 +243,7 @@ export function AuditHistory({
           />
         ) : (
           <AccessCard className="overflow-hidden">
-            <ScrollArea className="h-[30rem]">
+            <ScrollArea className="h-auto sm:h-[30rem]">
               <div className="divide-y divide-slate-100">
                 {visible.map((entry, index) => {
                   const key = entry.id ?? `${entry.targetUserId}-${entry.changedAt}-${index}`;
@@ -258,10 +265,12 @@ export function AuditHistory({
                           {isRemoval ? <ShieldMinus className="h-3.5 w-3.5" /> : <ShieldPlus className="h-3.5 w-3.5" />}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-slate-800">
+                          {/* Two lines on a phone: a headline cut at 28 characters told nobody what changed,
+                              and the reason — the thing the trail records — vanished after the date. */}
+                          <p className="line-clamp-2 text-sm font-medium text-slate-800 sm:line-clamp-none sm:truncate">
                             {describeAuditEntry(entry)}
                           </p>
-                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground sm:line-clamp-none sm:truncate">
                             {formatGrantDate(entry.changedAt)}{' '}
                             {new Date(entry.changedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ·{' '}
                             {entry.changedByName}
@@ -325,7 +334,7 @@ export function AuditHistory({
                             </p>
                             <PermissionPairList pairs={entry.permissionsSkipped} emptyLabel="None" max={80} />
                             <div className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-                              {entry.userAgent && <p className="truncate">Device: {entry.userAgent}</p>}
+                              {entry.userAgent && <p className="line-clamp-2 break-all">Device: {entry.userAgent}</p>}
                               {entry.ipAddress && <p>IP: {entry.ipAddress}</p>}
                               {entry.approvalReference && <p>Approval ref: {entry.approvalReference}</p>}
                             </div>

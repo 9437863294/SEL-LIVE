@@ -35,7 +35,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -51,7 +50,7 @@ import {
   type PermissionMap,
 } from '@/lib/access-control';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { AccessCard } from './access-ui';
+import { AccessCard, AccessHint } from './access-ui';
 
 type SubjectKind = 'role' | 'user';
 
@@ -183,7 +182,7 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
               <SelectTrigger>
                 <SelectValue placeholder={kind === 'role' ? 'Select a role' : 'Select a user'} />
               </SelectTrigger>
-              <SelectContent className="max-h-72">
+              <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
                 {kind === 'role'
                   ? directory.roles
                       .slice()
@@ -260,7 +259,7 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
           {rows.length === 0 ? (
             <HrEmptyState title="No modules match" description="Try clearing the search or the granted-only filter." />
           ) : (
-            <ScrollArea className="h-[30rem]">
+            <ScrollArea className="h-auto sm:h-[30rem]">
               <HrDataList
                 rows={rows}
                 columns={columns}
@@ -272,7 +271,7 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
 
           <p className="px-1 text-[11px] text-muted-foreground">
             A tick means the subject holds at least one action in that family somewhere in the module —
-            hover it (or press and hold on a phone) for the exact permissions. An indigo ring marks a
+            hover it (tap it on a phone) for the exact permissions. An indigo ring marks a
             tick that comes entirely from additional access rather than the base role.
           </p>
         </>
@@ -288,25 +287,18 @@ function MatrixTick({ action, cell }: { action: MatrixAction; cell: MatrixCellDa
   }
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            className={cn(
-              'mx-auto flex h-6 w-6 items-center justify-center rounded-md',
-              cell.inherited
-                ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-300'
-                : 'bg-emerald-100 text-emerald-700',
-            )}
-          >
-            <Check className="h-3.5 w-3.5" />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs">
-          <MatrixCellDetail action={action} cell={cell} />
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <AccessHint content={<MatrixCellDetail action={action} cell={cell} />}>
+      <span
+        className={cn(
+          'mx-auto flex h-6 w-6 items-center justify-center rounded-md',
+          cell.inherited
+            ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-300'
+            : 'bg-emerald-100 text-emerald-700',
+        )}
+      >
+        <Check className="h-3.5 w-3.5" />
+      </span>
+    </AccessHint>
   );
 }
 
@@ -319,44 +311,38 @@ function MatrixTick({ action, cell }: { action: MatrixAction; cell: MatrixCellDa
  */
 function MatrixActionChips({ row }: { row: MatrixRow }) {
   return (
-    <TooltipProvider>
-      <div className="flex flex-wrap gap-1.5">
-        {MATRIX_ACTIONS.map((action) => {
-          const cell = row.cells[action];
-          if (!cell.granted) {
-            return (
-              <span
-                key={action}
-                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50/80 px-2 py-1 text-[11px] text-slate-400"
-              >
-                <Minus className="h-3 w-3 shrink-0" />
-                {action}
-              </span>
-            );
-          }
+    <div className="flex flex-wrap gap-1.5">
+      {MATRIX_ACTIONS.map((action) => {
+        const cell = row.cells[action];
+        if (!cell.granted) {
           return (
-            <Tooltip key={action}>
-              <TooltipTrigger asChild>
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-[11px] font-medium',
-                    cell.inherited
-                      ? 'border-indigo-300 bg-indigo-100 text-indigo-700'
-                      : 'border-emerald-200 bg-emerald-100 text-emerald-700',
-                  )}
-                >
-                  <Check className="h-3 w-3 shrink-0" />
-                  {action}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs">
-                <MatrixCellDetail action={action} cell={cell} />
-              </TooltipContent>
-            </Tooltip>
+            <span
+              key={action}
+              className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50/80 px-2 py-1 text-[11px] text-slate-400"
+            >
+              <Minus className="h-3 w-3 shrink-0" />
+              {action}
+            </span>
           );
-        })}
-      </div>
-    </TooltipProvider>
+        }
+        return (
+          <AccessHint key={action} content={<MatrixCellDetail action={action} cell={cell} />}>
+            <button
+              type="button"
+              className={cn(
+                'hr-inline-action inline-flex items-center gap-1 rounded-xl border px-2 py-1 text-[11px] font-medium',
+                cell.inherited
+                  ? 'border-indigo-300 bg-indigo-100 text-indigo-700'
+                  : 'border-emerald-200 bg-emerald-100 text-emerald-700',
+              )}
+            >
+              <Check className="h-3 w-3 shrink-0" />
+              {action}
+            </button>
+          </AccessHint>
+        );
+      })}
+    </div>
   );
 }
 

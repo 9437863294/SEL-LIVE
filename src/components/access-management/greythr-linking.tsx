@@ -280,6 +280,9 @@ export function GreytHRLinkingWorkspace() {
     },
     {
       header: 'greytHR employee',
+      // A second title line on the phone card; the two-column detail grid truncated
+      // "E1401 · Priyanka Venkataraman" to a handful of characters.
+      mobile: 'title',
       cell: (row) =>
         row.employee ? (
           <div className="min-w-0">
@@ -301,6 +304,9 @@ export function GreytHRLinkingWorkspace() {
     {
       header: 'Why',
       className: 'hidden lg:table-cell',
+      // The reason is the point of this console; it reads as the card's subtitle rather than as a
+      // truncated half-width detail cell.
+      mobile: 'title',
       cell: (row) => <span className="text-xs text-muted-foreground">{row.reason}</span>,
     },
     {
@@ -391,8 +397,10 @@ export function GreytHRLinkingWorkspace() {
               onClick={() => setConfirmBulk(true)}
             >
               <Users className="mr-1.5 h-4 w-4" />
-              Link {report?.plan.apply.length ?? 0} confident match
-              {report?.plan.apply.length === 1 ? '' : 'es'}
+              Link {report?.plan.apply.length ?? 0}
+              <span className="hidden sm:inline">
+                &nbsp;confident match{report?.plan.apply.length === 1 ? '' : 'es'}
+              </span>
             </Button>
           </>
         }
@@ -545,7 +553,7 @@ export function GreytHRLinkingWorkspace() {
               />
             )}
 
-            <ScrollArea className="h-72 rounded-md border">
+            <ScrollArea className="h-auto rounded-md border sm:h-72">
               <div className="divide-y">
                 {availableEmployees.length === 0 && (
                   <p className="p-4 text-sm text-muted-foreground">
@@ -651,12 +659,15 @@ export function GreytHRLinkingWorkspace() {
             </DialogDescription>
           </DialogHeader>
           <div className={hrDialog.body}>
-            <ScrollArea className="h-56 rounded-md border">
+            <ScrollArea className="h-auto rounded-md border sm:h-56">
               <div className="divide-y text-sm">
                 {report?.plan.apply.slice(0, 200).map((entry) => (
-                  <div key={entry.userId} className="flex items-center justify-between gap-2 p-2.5">
-                    <span className="truncate">{entry.userName}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                  <div
+                    key={entry.userId}
+                    className="flex flex-col items-start gap-0.5 p-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2"
+                  >
+                    <span className="min-w-0 max-w-full truncate">{entry.userName}</span>
+                    <span className="text-xs text-muted-foreground sm:shrink-0">
                       {entry.employeeNo} · {linkMethodLabel(entry.method)}
                     </span>
                   </div>

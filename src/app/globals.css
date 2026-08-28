@@ -856,7 +856,7 @@ main {
   .hr-module-root h2 {
     overflow-wrap: anywhere;
   }
-  .hr-module-root button:not([role="switch"]),
+  .hr-module-root button:not([role="switch"]):not([role="checkbox"]):not([role="radio"]):not(.hr-inline-action),
   .hr-module-root [role="button"]:not([role="switch"]),
   .hr-module-root [role="combobox"],
   .hr-module-root input,
@@ -946,7 +946,10 @@ main {
     width: 100%;
     margin: 0 !important;
   }
-  .hr-mobile-dialog button,
+  /* Radix Checkbox/RadioGroup items render as <button role="checkbox|radio">; the min-height
+     below would stretch a 16px box into a 44px sliver, so they are excluded — the label row is
+     the tap target for those. */
+  .hr-mobile-dialog button:not([role="checkbox"]):not([role="radio"]):not(.hr-inline-action),
   .hr-mobile-dialog [role="button"],
   .hr-mobile-dialog [role="combobox"],
   .hr-mobile-dialog input {
@@ -965,6 +968,13 @@ main {
   .hr-module-root input[type='number']::-webkit-outer-spin-button {
     appearance: none;
     margin: 0;
+  }
+
+  /* A remove-× inside a chip or a clear-× inside an input: big enough to hit, but not the full
+     44px that would make the chip or the input's corner balloon. */
+  .hr-inline-action {
+    min-height: 2rem;
+    min-width: 2rem;
   }
 
   /* The requirement wizard's sticky save bar has to clear the home indicator. */

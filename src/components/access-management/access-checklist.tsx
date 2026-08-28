@@ -44,7 +44,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
   hasPermission,
@@ -54,6 +53,7 @@ import {
   type PermissionSource,
   type RegistryNode,
 } from '@/lib/access-control';
+import { AccessHint, ModulePicker } from './access-ui';
 
 export interface PendingChange {
   resource: string;
@@ -151,7 +151,7 @@ export function AccessChecklist({ registry, access, pending, onToggle, canGrant,
             type="button"
             onClick={() => setTerm('')}
             aria-label="Clear search"
-            className="absolute right-2 top-2 rounded-full p-1 text-slate-400 hover:bg-slate-100"
+            className="hr-inline-action absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full p-1 text-slate-400 hover:bg-slate-100"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -165,42 +165,18 @@ export function AccessChecklist({ registry, access, pending, onToggle, canGrant,
           No modules match “{term}”.
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-          {grouped.map(([moduleName, nodes]) => {
+        <ModulePicker
+          modules={grouped.map(([moduleName, nodes]) => {
             const { held, total } = moduleCounts(nodes);
-            const selected = selectedModule === moduleName;
-            return (
-              <button
-                key={moduleName}
-                type="button"
-                onClick={() => setSelectedModule(moduleName)}
-                aria-pressed={selected}
-                title={moduleName}
-                className={cn(
-                  'flex min-w-0 items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left shadow-sm transition-colors',
-                  selected
-                    ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200'
-                    : 'border-white/70 bg-white/80 hover:border-indigo-200 hover:bg-indigo-50/40',
-                )}
-              >
-                <span className="min-w-0 truncate text-xs font-semibold text-slate-800">{moduleName}</span>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    'shrink-0 px-1 text-[9px] leading-tight',
-                    held === 0
-                      ? 'border-slate-200 bg-white text-slate-500'
-                      : held === total
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                        : 'border-amber-200 bg-amber-50 text-amber-700',
-                  )}
-                >
-                  {held}/{total}
-                </Badge>
-              </button>
-            );
+            return {
+              name: moduleName,
+              caption: `${held}/${total}`,
+              tone: held === 0 ? 'none' : held === total ? 'all' : 'some',
+            };
           })}
-        </div>
+          selected={selectedModule}
+          onSelect={setSelectedModule}
+        />
       )}
 
       {/* The detail panel: one module's pages, below the whole grid rather than under its own card,
@@ -208,7 +184,7 @@ export function AccessChecklist({ registry, access, pending, onToggle, canGrant,
       {activeModule ? (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
           <p className="mb-2 text-sm font-semibold text-slate-800">{activeModule[0]}</p>
-          <ScrollArea className="h-[24rem] rounded-xl border border-white/70 bg-white/80">
+          <ScrollArea className="h-auto rounded-xl border border-white/70 bg-white/80 sm:h-[24rem]">
             <div className="space-y-1.5 p-2.5">
               {activeModule[1].map((node) => {
                 const label = node.depth === 0 ? 'Module access' : node.resource.split('.').slice(1).join(' › ');
@@ -227,7 +203,7 @@ export function AccessChecklist({ registry, access, pending, onToggle, canGrant,
                             key={id}
                             htmlFor={id}
                             className={cn(
-                              'flex min-h-8 items-center gap-1.5 text-xs',
+                              'flex min-h-11 basis-[calc(50%-0.5rem)] items-center gap-2 text-xs sm:min-h-8 sm:basis-auto sm:gap-1.5',
                               locked ? 'cursor-not-allowed text-slate-400' : 'cursor-pointer',
                               changed && !locked && 'font-medium text-indigo-700',
                             )}
@@ -240,17 +216,18 @@ export function AccessChecklist({ registry, access, pending, onToggle, canGrant,
                             />
                             <span className="truncate">{action}</span>
                             {locked && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Lock className="h-3 w-3 shrink-0 text-slate-400" />
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs text-xs">
+                              <AccessHint
+                                content={
+                                  <>
                                     Held {sourceSummary(sources)}. Remove it from there — Additional roles,
                                     Departments, Projects or Temporary access below — not by unticking here.
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                                  </>
+                                }
+                              >
+                                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center" aria-label="Why is this locked?">
+                                  <Lock className="h-3 w-3 text-slate-400" />
+                                </span>
+                              </AccessHint>
                             )}
                             {changed && !locked && (
                               checked ? (
@@ -306,7 +283,7 @@ export function AccessChecklistSaveBar({
   const revokes = pending.size - grants;
 
   return (
-    <div className="sticky bottom-0 -mx-1 space-y-2 rounded-xl border border-indigo-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm">
+    <div className="hr-sticky-actions sticky bottom-0 -mx-1 space-y-2 rounded-xl border border-indigo-200 bg-white/95 p-3 shadow-lg backdrop-blur-sm">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         {grants > 0 && (
           <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700">
@@ -333,7 +310,7 @@ export function AccessChecklistSaveBar({
         className="text-sm"
       />
 
-      <div className="flex justify-end gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
         <Button variant="outline" size="sm" onClick={onDiscard} disabled={saving}>
           Discard
         </Button>

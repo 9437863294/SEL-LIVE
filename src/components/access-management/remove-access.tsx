@@ -235,7 +235,7 @@ export function RemoveAccessDialog({
               }
             />
           ) : (
-            <ScrollArea className="h-72 rounded-xl border border-white/70 bg-white/60">
+            <ScrollArea className="h-auto rounded-xl border border-white/70 bg-white/60 sm:h-72">
               {visible.length === 0 && (
                 <p className="px-3 py-10 text-center text-sm text-muted-foreground">
                   Nothing matches “{term.trim()}”. Clear the filter to see all {removables.length}{' '}
@@ -258,7 +258,7 @@ export function RemoveAccessDialog({
                       <Checkbox checked={checked} onCheckedChange={() => toggle(key)} className="mt-0.5" />
                       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-slate-800">{item.label}</span>
+                        <span className="block break-words text-sm text-slate-800 sm:truncate">{item.label}</span>
                         <span className="block text-[11px] text-muted-foreground">{item.detail}</span>
                       </span>
                       {/* Only meaningful for a multi-user removal, and misleading for one. */}

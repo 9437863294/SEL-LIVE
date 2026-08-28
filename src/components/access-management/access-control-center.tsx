@@ -274,7 +274,7 @@ export function AccessControlCenter() {
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as TabId)}>
         <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
-          <TabsList className="inline-flex w-max">
+          <TabsList className="inline-flex h-auto w-max sm:h-10">
             <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
             <TabsTrigger value="users" className="text-xs">Users</TabsTrigger>
             <TabsTrigger value="roles" className="text-xs">Roles</TabsTrigger>
@@ -1003,7 +1003,7 @@ function UsersTab({
       {rows.length === 0 ? (
         <HrEmptyState icon={Users} title="No users match these filters" description="Try widening the search." />
       ) : (
-        <ScrollArea className="h-[30rem]">
+        <ScrollArea className="h-auto sm:h-[30rem]">
           <HrDataList
             rows={rows.slice(0, 250)}
             columns={columns}
@@ -1107,7 +1107,7 @@ function PermissionRegistryTab({ state }: { state: ReturnType<typeof useAccessDi
             registry={registry}
             value={selection}
             onChange={setSelection}
-            heightClassName="h-[28rem]"
+            heightClassName="sm:h-[28rem]"
           />
         </CardContent>
       </AccessCard>

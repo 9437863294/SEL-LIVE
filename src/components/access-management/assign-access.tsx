@@ -267,7 +267,10 @@ export function AssignAccess({
   return (
     <div className="space-y-3">
       {/* Sticky action toolbar (§33) */}
-      <div className="sticky top-0 z-20 -mx-1 rounded-xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur">
+      {/* Offset by the app header, plus the settings layout's mobile bar below `lg` — at `top-0`
+          the bar (and the "Add access" button on it) slid underneath both as soon as the page
+          scrolled. */}
+      <div className="sticky top-[117px] z-20 -mx-1 rounded-xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur lg:top-16">
         <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="outline" className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700">
@@ -297,7 +300,7 @@ export function AssignAccess({
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
             {/*
               Leaves the page rather than opening a dialog, and comes back with the new user selected
               through `?assignTo=`. Any selection already made here is lost on the way — which is why
@@ -352,11 +355,11 @@ export function AssignAccess({
           </CardHeader>
           <CardContent className="space-y-3 px-4 pb-4">
             <Tabs defaultValue="roles">
-              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
-                <TabsTrigger value="roles" className="text-xs">Roles</TabsTrigger>
-                <TabsTrigger value="permissions" className="text-xs">Permissions</TabsTrigger>
-                <TabsTrigger value="scope" className="text-xs">Scope</TabsTrigger>
-                <TabsTrigger value="templates" className="text-xs">Templates</TabsTrigger>
+              <TabsList className="flex h-auto w-full sm:grid sm:h-10 sm:grid-cols-4">
+                <TabsTrigger value="roles" className="flex-1 shrink-0 text-xs">Roles</TabsTrigger>
+                <TabsTrigger value="permissions" className="flex-1 shrink-0 text-xs">Permissions</TabsTrigger>
+                <TabsTrigger value="scope" className="flex-1 shrink-0 text-xs">Scope</TabsTrigger>
+                <TabsTrigger value="templates" className="flex-1 shrink-0 text-xs">Templates</TabsTrigger>
               </TabsList>
 
               <TabsContent value="roles" className="mt-3 space-y-2">
@@ -365,7 +368,7 @@ export function AssignAccess({
                   roleUsage={roleUsage}
                   selectedIds={selectedRoleIds}
                   onSelectionChange={setSelectedRoleIds}
-                  heightClassName="h-[19rem]"
+                  heightClassName="sm:h-[19rem]"
                 />
                 {Object.keys(roleContents).length > 0 && (
                   <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-2.5">
@@ -398,7 +401,7 @@ export function AssignAccess({
                       ? `by ${selectedUsers[0].name || 'this user'}`
                       : `by all ${selectedUsers.length} selected users`
                   }
-                  heightClassName="h-[21rem]"
+                  heightClassName="sm:h-[21rem]"
                 />
               </TabsContent>
 
@@ -553,7 +556,7 @@ export function AssignAccess({
               selectedIds={selectedUserIds}
               onSelectionChange={setSelectedUserIds}
               registry={state.registry}
-              heightClassName="h-[25rem]"
+              heightClassName="sm:h-[25rem]"
             />
 
             {selectedUsers.length > 0 && (
@@ -671,7 +674,7 @@ function ScopeMultiSelect({
                   type="button"
                   onClick={() => onChange(selected.filter((entry) => entry !== id))}
                   aria-label={`Remove ${option?.label ?? id}`}
-                  className="rounded-full px-1 text-slate-400 hover:bg-slate-100"
+                  className="hr-inline-action inline-flex items-center justify-center rounded-full px-1 text-slate-400 hover:bg-slate-100"
                 >
                   ×
                 </button>

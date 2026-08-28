@@ -40,7 +40,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import {
   countPermissions,
@@ -50,6 +49,7 @@ import {
   type PermissionMap,
   type RegistryNode,
 } from '@/lib/access-control';
+import { AccessHint, ModulePicker } from './access-ui';
 
 export interface PermissionTreeProps {
   registry: RegistryNode[];
@@ -65,7 +65,11 @@ export interface PermissionTreeProps {
   /** Label for the inherited badge — "from HR Executive", "from 2 roles". */
   inheritedLabel?: string;
   disabled?: boolean;
-  /** Height of the scroll area. The role builder wants more than a dialog does. */
+  /**
+   * Height of the pages panel from `sm` up — pass it `sm:`-prefixed (`sm:h-[34rem]`). On a phone the
+   * panel is `h-auto`: the page is the only thing that scrolls, instead of a 400px box trapping the
+   * swipe inside a page that also scrolls.
+   */
   heightClassName?: string;
 }
 
@@ -79,7 +83,7 @@ export function PermissionTree({
   inherited,
   inheritedLabel = 'inherited',
   disabled = false,
-  heightClassName = 'h-[26rem]',
+  heightClassName = 'sm:h-[26rem]',
 }: PermissionTreeProps) {
   const [term, setTerm] = useState('');
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
@@ -204,13 +208,13 @@ export function PermissionTree({
               type="button"
               onClick={() => setTerm('')}
               aria-label="Clear search"
-              className="absolute right-2 top-2 rounded-full p-1 text-slate-400 hover:bg-slate-100"
+              className="hr-inline-action absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full p-1 text-slate-400 hover:bg-slate-100"
             >
               <X className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
           <Button
             type="button"
             variant={onlySelected ? 'default' : 'outline'}
@@ -264,7 +268,7 @@ export function PermissionTree({
                     disabled={disabled}
                     title={`Remove ${action} everywhere`}
                     aria-label={`Remove ${action} everywhere`}
-                    className="h-7 rounded-l-none px-1.5 text-xs text-destructive hover:bg-destructive/5"
+                    className="h-7 min-w-9 rounded-l-none px-1.5 text-xs text-destructive hover:bg-destructive/5 sm:min-w-0"
                     onClick={() => setActionEverywhere(action, false)}
                   >
                     ×
@@ -295,47 +299,18 @@ export function PermissionTree({
           No permissions match “{term}”.
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-          {grouped.map(([moduleName, nodes]) => {
-            const state = moduleState(nodes);
+        <ModulePicker
+          modules={grouped.map(([moduleName, nodes]) => {
             const total = nodes.reduce((sum, node) => sum + node.actions.length, 0);
             const chosen = nodes.reduce(
               (sum, node) => sum + node.actions.filter((action) => hasAction(value, node.resource, action)).length,
               0,
             );
-            const selected = selectedModule === moduleName;
-            return (
-              <button
-                key={moduleName}
-                type="button"
-                onClick={() => setSelectedModule(moduleName)}
-                aria-pressed={selected}
-                title={moduleName}
-                className={cn(
-                  'flex min-w-0 items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left shadow-sm transition-colors',
-                  selected
-                    ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200'
-                    : 'border-white/70 bg-white/80 hover:border-indigo-200 hover:bg-indigo-50/40',
-                )}
-              >
-                <span className="min-w-0 truncate text-xs font-semibold text-slate-800">{moduleName}</span>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    'shrink-0 px-1 text-[9px] leading-tight',
-                    state === 'all'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : state === 'some'
-                        ? 'border-amber-200 bg-amber-50 text-amber-700'
-                        : 'border-slate-200 bg-white text-slate-500',
-                  )}
-                >
-                  {chosen}/{total}
-                </Badge>
-              </button>
-            );
+            return { name: moduleName, caption: `${chosen}/${total}`, tone: moduleState(nodes) };
           })}
-        </div>
+          selected={selectedModule}
+          onSelect={setSelectedModule}
+        />
       )}
 
       {activeModule ? (
@@ -358,7 +333,7 @@ export function PermissionTree({
               {moduleState(activeModule[1]) === 'all' ? 'Clear module' : 'Select whole module'}
             </Button>
           </div>
-          <ScrollArea className={cn('rounded-xl border border-white/70 bg-white/80', heightClassName)}>
+          <ScrollArea className={cn('h-auto rounded-xl border border-white/70 bg-white/80', heightClassName)}>
             <div className="space-y-1.5 p-2.5">
               {activeModule[1].map((node) => {
                 const nodeAll = node.actions.every((action) => hasAction(value, node.resource, action));
@@ -388,7 +363,7 @@ export function PermissionTree({
                             key={id}
                             htmlFor={id}
                             className={cn(
-                              'flex min-h-8 cursor-pointer items-center gap-1.5 text-xs',
+                              'flex min-h-11 basis-[calc(50%-0.5rem)] cursor-pointer items-center gap-2 text-xs sm:min-h-8 sm:basis-auto sm:gap-1.5',
                               isInherited && 'cursor-not-allowed text-slate-400',
                             )}
                           >
@@ -400,16 +375,11 @@ export function PermissionTree({
                             />
                             <span className="truncate">{action}</span>
                             {isInherited && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Lock className="h-3 w-3 shrink-0 text-slate-400" />
-                                  </TooltipTrigger>
-                                  <TooltipContent className="text-xs">
-                                    Already held {inheritedLabel} — granting it again would change nothing.
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
+                              <AccessHint content={`Already held ${inheritedLabel} — granting it again would change nothing.`}>
+                                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center" aria-label="Why is this locked?">
+                                  <Lock className="h-3 w-3 text-slate-400" />
+                                </span>
+                              </AccessHint>
                             )}
                           </label>
                         );

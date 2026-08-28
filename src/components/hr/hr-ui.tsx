@@ -416,6 +416,7 @@ export function HrDataList<T extends { id: string }>({
   cardHref,
   tableClassName,
   fitContent,
+  onRowClick,
 }: {
   rows: T[];
   columns: Array<HrListColumn<T>>;
@@ -440,6 +441,12 @@ export function HrDataList<T extends { id: string }>({
    * table. This collapses the card to match.
    */
   fitContent?: boolean;
+  /**
+   * Makes each desktop row and each phone card (one without `cardHref` or footer actions) a tap
+   * target — for pickers where the row *is* the control. Controls inside the row that must not
+   * also fire it (a checkbox) should stop propagation themselves.
+   */
+  onRowClick?: (row: T) => void;
 }) {
   if (rows.length === 0) return <>{empty}</>;
 
@@ -501,11 +508,33 @@ export function HrDataList<T extends { id: string }>({
 
           // A card wrapped in a link still has to let its footer buttons receive the tap, so the
           // link only covers the informational part when there are actions.
-          return href && footers.length === 0 ? (
-            <Link key={row.id} href={href} className={cn(shell, 'block')}>
-              {body}
-            </Link>
-          ) : (
+          if (href && footers.length === 0) {
+            return (
+              <Link key={row.id} href={href} className={cn(shell, 'block')}>
+                {body}
+              </Link>
+            );
+          }
+          if (onRowClick && !href && footers.length === 0) {
+            return (
+              <div
+                key={row.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onRowClick(row)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onRowClick(row);
+                  }
+                }}
+                className={cn(shell, 'cursor-pointer')}
+              >
+                {body}
+              </div>
+            );
+          }
+          return (
             <div key={row.id} className={shell}>
               {body}
             </div>
@@ -545,7 +574,11 @@ export function HrDataList<T extends { id: string }>({
           </TableHeader>
           <TableBody>
             {rows.map(row => (
-              <TableRow key={row.id} className={rowClassName?.(row)}>
+              <TableRow
+                key={row.id}
+                className={cn(rowClassName?.(row), onRowClick && 'cursor-pointer')}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+              >
                 {columns.map(column => (
                   <TableCell key={column.header} className={cn('text-sm', column.align === 'right' && 'text-right', column.className)}>
                     {column.cell(row)}

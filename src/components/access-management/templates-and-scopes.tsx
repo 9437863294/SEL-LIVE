@@ -73,9 +73,9 @@ export function TemplatesAndScopes({
 }) {
   return (
     <Tabs defaultValue="templates" className="space-y-3">
-      <TabsList className="grid w-full grid-cols-2 sm:w-auto">
-        <TabsTrigger value="templates" className="text-xs">Access templates</TabsTrigger>
-        <TabsTrigger value="scopes" className="text-xs">Department &amp; designation rules</TabsTrigger>
+      <TabsList className="flex h-auto w-full sm:inline-flex sm:h-10 sm:w-auto">
+        <TabsTrigger value="templates" className="flex-1 shrink-0 text-xs sm:flex-none">Access templates</TabsTrigger>
+        <TabsTrigger value="scopes" className="flex-1 shrink-0 text-xs sm:flex-none">Department &amp; designation rules</TabsTrigger>
       </TabsList>
 
       <TabsContent value="templates">
@@ -147,7 +147,7 @@ function TemplateManager({
         {canManage && (
           // A link, not a dialog trigger — this form carries a full permission tree, a role picker
           // and a project chooser, and comes back here with `?returnTo=`.
-          <Button asChild size="sm">
+          <Button asChild size="sm" className="max-sm:w-full">
             <Link href={`/settings/access-management/templates/new?returnTo=${TEMPLATES_RETURN_TO}`}>
               <Plus className="mr-1.5 h-4 w-4" />
               New template
@@ -212,7 +212,7 @@ function TemplateManager({
                   permission(s)
                 </p>
 
-                <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
+                <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5 [&>*]:flex-1 sm:[&>*]:flex-none">
                   <Button
                     variant="outline"
                     size="sm"
@@ -235,9 +235,11 @@ function TemplateManager({
                         size="sm"
                         className="h-8 text-xs text-destructive"
                         title="Delete template"
+                        aria-label={`Delete ${template.name}`}
                         onClick={() => setPendingDelete({ id: template.id, name: template.name })}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
+                        <span className="ml-1 sm:hidden">Delete</span>
                       </Button>
                     </>
                   )}
@@ -249,9 +251,9 @@ function TemplateManager({
       )}
 
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && !deleteBusy && setPendingDelete(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[90dvh] w-[calc(100vw-2rem)] overflow-y-auto rounded-xl sm:w-full">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete “{pendingDelete?.name}”?</AlertDialogTitle>
+            <AlertDialogTitle className="break-words">Delete “{pendingDelete?.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
               The template disappears from this list and from the assignment workspace. Users it was
               already applied to keep everything — applying a template copies access, nothing stays
@@ -317,6 +319,7 @@ function ScopeGrantManager({
         {canManage && (
           <Button
             size="sm"
+            className="max-sm:w-full"
             onClick={() => {
               setEditing(null);
               setEditorOpen(true);
@@ -383,7 +386,7 @@ function ScopeGrantManager({
                         <Button
                           variant="outline"
                           size="sm"
-                          className="h-8 text-xs"
+                          className="h-8 text-xs max-sm:w-full"
                           onClick={() => {
                             setEditing(grant);
                             setEditorOpen(true);
@@ -530,7 +533,7 @@ function ScopeGrantEditor({
               roles={roles}
               selectedIds={roleIds}
               onSelectionChange={setRoleIds}
-              heightClassName="h-40"
+              heightClassName="sm:h-40"
             />
           </div>
 
@@ -546,7 +549,7 @@ function ScopeGrantEditor({
               registry={registry}
               value={permissions}
               onChange={setPermissions}
-              heightClassName="h-56"
+              heightClassName="sm:h-56"
             />
           </div>
         </div>

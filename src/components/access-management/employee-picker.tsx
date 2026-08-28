@@ -212,7 +212,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
           <Input
             value={term}
             onChange={(event) => setTerm(event.target.value)}
-            placeholder="Search by name, employee no., email, department, designation or project…"
+            placeholder="Search by name, employee no. or email…"
             className="pl-9"
             disabled={disabled}
           />
@@ -221,7 +221,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
               type="button"
               onClick={() => setTerm('')}
               aria-label="Clear search"
-              className="absolute right-2 top-2 rounded-full p-1 text-slate-400 hover:bg-slate-100"
+              className="hr-inline-action absolute right-1 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full p-1 text-slate-400 hover:bg-slate-100"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -314,7 +314,9 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
         </div>
       )}
 
-      <ScrollArea className="h-64 rounded-xl border border-white/70 bg-white/60 sm:h-80">
+      {/* Bounded on a phone too — this sits mid-form, and a page that grew by the whole employee
+          list would put the fields below it a long scroll away. Half the viewport, not a fixed 256px. */}
+      <ScrollArea className="h-[50dvh] rounded-xl border border-white/70 bg-white/60 sm:h-80">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-14 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading employees…
@@ -368,7 +370,7 @@ export function EmployeePicker({ value, onSelect, disabled }: EmployeePickerProp
                       </Badge>
                     )}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                  <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground sm:line-clamp-none sm:truncate">
                     {[employee.email, employee.designation, employee.department, employee.projectName]
                       .filter(Boolean)
                       .join(' · ') || 'No further details in greytHR'}

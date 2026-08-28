@@ -38,7 +38,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import { SpotlightCard } from '@/components/effects/SpotlightCard';
 import { CountUp } from '@/components/effects/CountUp';
@@ -125,6 +128,12 @@ const SHELL_WIDTH = {
  * the Assign Access selection bar and the Add User action bar are both sticky. `clip` does the same
  * job for stray horizontal overflow without establishing one. The aurora's own blobs do not need
  * clipping here: `AuroraBackdrop` clips itself.
+ *
+ * `hr-module-root` is the kit's phone ruleset (globals.css): a 44px floor on buttons, inputs and
+ * selects below 640px, horizontally scrolling tab strips, compacted card padding and safe-area
+ * padding at the bottom. It is applied here, once, so every screen in the module inherits it —
+ * the module's routes go through the settings layout, not the HR module shell, and without this
+ * the 28px row buttons and the six-tab strips were exactly as small on a phone as on a desktop.
  */
 export function AccessPageShell({
   children,
@@ -143,7 +152,7 @@ export function AccessPageShell({
   className?: string;
 }) {
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-x-clip px-4 py-3 sm:px-5">
+    <div className="hr-module-root relative min-h-[calc(100dvh-4rem)] overflow-x-clip px-4 py-3 sm:px-5">
       <AuroraBackdrop />
       <div className={cn('relative', SHELL_WIDTH[width], className)}>
         {(backHref || aside) && (
@@ -155,6 +164,151 @@ export function AccessPageShell({
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * The sticky Save / Discard bar the module's long forms share — one class string so the four of
+ * them cannot drift. `hr-sticky-actions` adds the home-indicator safe-area padding on phones.
+ */
+export const ACCESS_STICKY_BAR_CLASS =
+  'hr-sticky-actions sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:items-center';
+
+/**
+ * A hover tooltip on a desktop, a tap-to-open popover on a phone.
+ *
+ * Radix Tooltip never opens on touch, and this module leans on tooltips for things that matter —
+ * which role a locked permission came from, which privileges make a role "high privilege", what the
+ * seven ticks in the matrix actually cover. Everything that used to be a bare Tooltip goes through
+ * this so the same content reaches a phone.
+ */
+export function AccessHint({
+  content,
+  children,
+  className,
+  side = 'top',
+}: {
+  content: React.ReactNode;
+  /** The trigger — must accept a ref and DOM props (a Badge, a button, an icon wrapper). */
+  children: React.ReactElement;
+  className?: string;
+  side?: 'top' | 'bottom' | 'left' | 'right';
+}) {
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <Popover>
+        <PopoverTrigger asChild>{children}</PopoverTrigger>
+        <PopoverContent
+          side={side}
+          className={cn('w-auto max-w-[calc(100vw-2rem)] px-3 py-2 text-xs shadow-md', className)}
+        >
+          {content}
+        </PopoverContent>
+      </Popover>
+    );
+  }
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent side={side} className={cn('max-w-xs text-xs', className)}>
+          {content}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Module picker — the "27 narrow cards" grid, and its phone form
+ * ---------------------------------------------------------------------------------------------- */
+
+export type ModulePickerTone = 'none' | 'some' | 'all' | 'info';
+
+export interface ModulePickerItem {
+  name: string;
+  /** The small figure on the chip — "12/40", "7". */
+  caption: string;
+  tone: ModulePickerTone;
+}
+
+const MODULE_TONE: Record<ModulePickerTone, string> = {
+  none: 'border-slate-200 bg-white text-slate-500',
+  some: 'border-amber-200 bg-amber-50 text-amber-700',
+  all: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  info: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+};
+
+/**
+ * One module out of ~27, for the permission tree, the access checklist and the effective-access
+ * viewer — the three screens that show "every module as a narrow card, one module's pages below".
+ *
+ * From `sm` up that is the card grid the three always had. On a phone the grid was the problem:
+ * two columns of ~140px chips truncated "Project Management" to "Project M…", the full name lived
+ * only in a hover `title`, and 27 chips pushed the panel they open a full screen below the fold.
+ * A native select does the same job in one row, reads the whole name, and opens the panel where
+ * the eye already is.
+ */
+export function ModulePicker({
+  modules,
+  selected,
+  onSelect,
+  placeholder = 'Choose a module…',
+}: {
+  modules: ModulePickerItem[];
+  selected: string | null;
+  onSelect: (moduleName: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <>
+      <div className="sm:hidden">
+        <Select value={selected ?? ''} onValueChange={onSelect}>
+          <SelectTrigger aria-label="Module">
+            <SelectValue placeholder={placeholder} />
+          </SelectTrigger>
+          <SelectContent className="max-h-[60dvh] max-w-[calc(100vw-2rem)]">
+            {modules.map((item) => (
+              <SelectItem key={item.name} value={item.name}>
+                <span className="flex items-center gap-2">
+                  <span className="truncate">{item.name}</span>
+                  <span className={cn('rounded border px-1 text-[10px] leading-tight', MODULE_TONE[item.tone])}>
+                    {item.caption}
+                  </span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="hidden gap-1.5 sm:grid sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+        {modules.map((item) => {
+          const isSelected = selected === item.name;
+          return (
+            <button
+              key={item.name}
+              type="button"
+              onClick={() => onSelect(item.name)}
+              aria-pressed={isSelected}
+              title={item.name}
+              className={cn(
+                'flex min-w-0 items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left shadow-sm transition-colors',
+                isSelected
+                  ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200'
+                  : 'border-white/70 bg-white/80 hover:border-indigo-200 hover:bg-indigo-50/40',
+              )}
+            >
+              <span className="min-w-0 truncate text-xs font-semibold text-slate-800">{item.name}</span>
+              <Badge variant="outline" className={cn('shrink-0 px-1 text-[9px] leading-tight', MODULE_TONE[item.tone])}>
+                {item.caption}
+              </Badge>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -215,11 +369,13 @@ export function AccessKpiCard({
       )}
     >
       <div className={cn('h-0.5 w-full bg-gradient-to-r', palette.bar)} />
-      <div className="flex items-start gap-3 p-4">
+      {/* Two of these share a 360px row, so on a phone the icon goes and the label wraps rather
+          than truncating "Grantable permissions" to "Grantab…". */}
+      <div className="flex items-start gap-3 p-3 sm:p-4">
         {Icon && (
           <span
             className={cn(
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-4 transition-transform duration-300 group-hover:scale-110',
+              'hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-4 transition-transform duration-300 group-hover:scale-110 sm:flex',
               palette.bg,
               palette.ring,
             )}
@@ -228,11 +384,13 @@ export function AccessKpiCard({
           </span>
         )}
         <div className="min-w-0">
-          <p className="truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+          <p className="text-[11px] font-medium uppercase leading-tight tracking-wide text-muted-foreground sm:truncate">
+            {label}
+          </p>
           <p className="mt-0.5 truncate text-lg font-semibold leading-tight text-slate-800">
             <CountUp value={value} />
           </p>
-          {hint && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{hint}</p>}
+          {hint && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground sm:truncate">{hint}</p>}
         </div>
       </div>
     </SpotlightCard>
@@ -303,20 +461,15 @@ export function SourceBadge({
     .join(' · ');
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge
-            variant="outline"
-            className={cn('gap-1 whitespace-nowrap text-[10px] font-medium', style.className, className)}
-          >
-            <Icon className="h-3 w-3 shrink-0" />
-            <span className="max-w-[10rem] truncate">{compact ? style.short : source.label}</span>
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs text-xs">{detail}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <AccessHint content={detail}>
+      <Badge
+        variant="outline"
+        className={cn('gap-1 whitespace-nowrap text-[10px] font-medium', style.className, className)}
+      >
+        <Icon className="h-3 w-3 shrink-0" />
+        <span className="max-w-[10rem] truncate">{compact ? style.short : source.label}</span>
+      </Badge>
+    </AccessHint>
   );
 }
 
@@ -392,7 +545,7 @@ export function RoleBadge({
           type="button"
           onClick={onRemove}
           aria-label={`Remove ${name}`}
-          className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-black/10"
+          className="hr-inline-action ml-0.5 inline-flex items-center justify-center rounded-full p-0.5 transition-colors hover:bg-black/10"
         >
           <Minus className="h-3 w-3" />
         </button>
@@ -489,44 +642,40 @@ export function RiskBadges({
 }) {
   if (!privileges.length && !conflicts.length) return null;
   return (
-    <TooltipProvider>
-      <span className={cn('inline-flex flex-wrap items-center gap-1', className)}>
-        {privileges.length > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-                <UserCog className="h-3 w-3" />
-                High privilege
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs text-xs">
-              <ul className="list-disc pl-4">
-                {privileges.map((finding) => (
-                  <li key={finding.label}>{finding.label}</li>
-                ))}
-              </ul>
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {conflicts.length > 0 && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Badge variant="outline" className="gap-1 border-rose-200 bg-rose-50 text-[10px] text-rose-700">
-                <AlertTriangle className="h-3 w-3" />
-                {conflicts.length} SoD conflict{conflicts.length === 1 ? '' : 's'}
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs text-xs">
-              <ul className="list-disc pl-4">
-                {conflicts.map((conflict) => (
-                  <li key={conflict.id}>{conflict.label}</li>
-                ))}
-              </ul>
-            </TooltipContent>
-          </Tooltip>
-        )}
-      </span>
-    </TooltipProvider>
+    <span className={cn('inline-flex flex-wrap items-center gap-1', className)}>
+      {privileges.length > 0 && (
+        <AccessHint
+          content={
+            <ul className="list-disc pl-4">
+              {privileges.map((finding) => (
+                <li key={finding.label}>{finding.label}</li>
+              ))}
+            </ul>
+          }
+        >
+          <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
+            <UserCog className="h-3 w-3" />
+            High privilege
+          </Badge>
+        </AccessHint>
+      )}
+      {conflicts.length > 0 && (
+        <AccessHint
+          content={
+            <ul className="list-disc pl-4">
+              {conflicts.map((conflict) => (
+                <li key={conflict.id}>{conflict.label}</li>
+              ))}
+            </ul>
+          }
+        >
+          <Badge variant="outline" className="gap-1 border-rose-200 bg-rose-50 text-[10px] text-rose-700">
+            <AlertTriangle className="h-3 w-3" />
+            {conflicts.length} SoD conflict{conflicts.length === 1 ? '' : 's'}
+          </Badge>
+        </AccessHint>
+      )}
+    </span>
   );
 }
 
@@ -539,8 +688,8 @@ export function PermissionPair({ pair, className }: { pair: string; className?: 
   const { resource, action } = splitPermissionKey(pair);
   const segments = resource.split('.');
   return (
-    <span className={cn('inline-flex min-w-0 items-baseline gap-1 text-xs', className)}>
-      <span className="truncate text-slate-500">{segments.join(' › ')}</span>
+    <span className={cn('inline-flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs sm:flex-nowrap', className)}>
+      <span className="min-w-0 break-words text-slate-500 sm:truncate">{segments.join(' › ')}</span>
       <span className="shrink-0 font-medium text-slate-800">· {action}</span>
     </span>
   );
@@ -561,7 +710,7 @@ export function PermissionPairList({
   return (
     <div className="space-y-0.5">
       {shown.map((pair) => (
-        <div key={pair} className="truncate">
+        <div key={pair} className="sm:truncate">
           <PermissionPair pair={pair} />
         </div>
       ))}

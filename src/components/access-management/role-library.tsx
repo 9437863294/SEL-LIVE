@@ -153,7 +153,7 @@ export function RoleLibrary({
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:w-auto">
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
-            <SelectTrigger className="min-w-28"><SelectValue /></SelectTrigger>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="Active">Active</SelectItem>
               <SelectItem value="Inactive">Disabled</SelectItem>
@@ -161,7 +161,7 @@ export function RoleLibrary({
             </SelectContent>
           </Select>
           <Select value={typeFilter} onValueChange={(value) => setTypeFilter(value as typeof typeFilter)}>
-            <SelectTrigger className="min-w-28"><SelectValue /></SelectTrigger>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All types</SelectItem>
               <SelectItem value="System">System</SelectItem>
@@ -169,7 +169,7 @@ export function RoleLibrary({
             </SelectContent>
           </Select>
           <Select value={moduleFilter} onValueChange={setModuleFilter}>
-            <SelectTrigger className="min-w-36"><SelectValue placeholder="Module" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="Module" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Any module</SelectItem>
               {modules.map((moduleName) => (
@@ -255,7 +255,9 @@ export function RoleLibrary({
 
                   <PermissionMapSummary map={role.permissions ?? {}} registry={registry} max={6} />
 
-                  <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
+                  {/* Every button stretches on a phone (and shows its label — the icon-only pair had
+                      hover-only titles), the compact desktop row from `sm` up. */}
+                  <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5 [&>*]:flex-1 sm:[&>*]:flex-none">
                     <Button
                       variant="outline"
                       size="sm"
@@ -286,6 +288,7 @@ export function RoleLibrary({
                             aria-label={`Duplicate ${role.name}`}
                           >
                             <CopyPlus className="h-3.5 w-3.5" />
+                            <span className="ml-1 sm:hidden">Duplicate</span>
                           </Link>
                         </Button>
                         {/*
@@ -296,9 +299,10 @@ export function RoleLibrary({
                           <span
                             title="Protected role — cannot be disabled"
                             aria-label={`${role.name} is protected and cannot be disabled`}
-                            className="flex h-8 items-center px-2.5 text-slate-400"
+                            className="flex h-8 items-center justify-center px-2.5 text-slate-400"
                           >
                             <Lock className="h-3.5 w-3.5" />
+                            <span className="ml-1 text-[11px] sm:hidden">Protected</span>
                           </span>
                         ) : (
                           <Button
@@ -306,9 +310,11 @@ export function RoleLibrary({
                             size="sm"
                             className="h-8 text-xs"
                             title={disabled ? 'Re-enable this role' : 'Disable this role'}
+                            aria-label={disabled ? `Re-enable ${role.name}` : `Disable ${role.name}`}
                             onClick={() => setDisabling(role)}
                           >
                             <ShieldOff className={cn('h-3.5 w-3.5', !disabled && 'text-destructive')} />
+                            <span className="ml-1 sm:hidden">{disabled ? 'Re-enable' : 'Disable'}</span>
                           </Button>
                         )}
                       </>

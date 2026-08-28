@@ -53,7 +53,15 @@ import {
   type RegistryNode,
 } from '@/lib/access-control';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { AccessCard, PermissionPair, RiskBadges, RoleBadge, SourceBadges, StatLine } from './access-ui';
+import {
+  AccessCard,
+  PermissionPair,
+  RiskBadges,
+  RoleBadge,
+  SourceBadges,
+  StatLine,
+  ModulePicker,
+} from './access-ui';
 
 export function EffectiveAccessViewer({
   state,
@@ -347,10 +355,12 @@ export function UserEffectiveAccessPanel({
 
       {/* Detail tabs */}
       <Tabs defaultValue="permissions">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="permissions" className="text-xs">Permissions &amp; sources</TabsTrigger>
-          <TabsTrigger value="explain" className="text-xs">Why?</TabsTrigger>
-          <TabsTrigger value="simulate" className="text-xs">Preview as user</TabsTrigger>
+        {/* A flex strip on a phone so the three labels scroll sideways instead of overlapping;
+            the equal-thirds grid from `sm` up. */}
+        <TabsList className="flex h-auto w-full sm:grid sm:h-10 sm:grid-cols-3">
+          <TabsTrigger value="permissions" className="flex-1 shrink-0 text-xs">Permissions &amp; sources</TabsTrigger>
+          <TabsTrigger value="explain" className="flex-1 shrink-0 text-xs">Why?</TabsTrigger>
+          <TabsTrigger value="simulate" className="flex-1 shrink-0 text-xs">Preview as user</TabsTrigger>
         </TabsList>
 
         <TabsContent value="permissions" className="mt-3 space-y-2">
@@ -380,41 +390,21 @@ export function UserEffectiveAccessPanel({
               No permissions match this filter.
             </p>
           ) : (
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-              {heldByModule.map(([moduleName, pages]) => {
-                const count = pages.reduce((sum, [, entries]) => sum + entries.length, 0);
-                const selected = selectedModule === moduleName;
-                return (
-                  <button
-                    key={moduleName}
-                    type="button"
-                    onClick={() => setSelectedModule(moduleName)}
-                    aria-pressed={selected}
-                    title={moduleName}
-                    className={cn(
-                      'flex min-w-0 items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left shadow-sm transition-colors',
-                      selected
-                        ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200'
-                        : 'border-white/70 bg-white/80 hover:border-indigo-200 hover:bg-indigo-50/40',
-                    )}
-                  >
-                    <span className="min-w-0 truncate text-xs font-semibold text-slate-800">{moduleName}</span>
-                    <Badge
-                      variant="outline"
-                      className="shrink-0 border-indigo-200 bg-indigo-50 px-1 text-[9px] leading-tight text-indigo-700"
-                    >
-                      {count}
-                    </Badge>
-                  </button>
-                );
-              })}
-            </div>
+            <ModulePicker
+              modules={heldByModule.map(([moduleName, pages]) => ({
+                name: moduleName,
+                caption: String(pages.reduce((sum, [, entries]) => sum + entries.length, 0)),
+                tone: 'info' as const,
+              }))}
+              selected={selectedModule}
+              onSelect={setSelectedModule}
+            />
           )}
 
           {activeModule ? (
             <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
               <p className="mb-2 text-sm font-semibold text-slate-800">{activeModule[0]}</p>
-              <ScrollArea className="h-[24rem] rounded-xl border border-white/70 bg-white/80">
+              <ScrollArea className="h-auto rounded-xl border border-white/70 sm:h-[24rem] bg-white/80">
                 <div className="space-y-1.5 p-2.5">
                   {activeModule[1].map(([resource, entries]) => (
                     <div key={resource} className="rounded-lg border border-white bg-white/90 px-2.5 py-2 shadow-sm">
@@ -638,7 +628,7 @@ function AccessSimulation({
         <StatLine label="Actions available" value={access.permissionCount} tone="indigo" />
       </div>
 
-      <ScrollArea className="h-[24rem] rounded-xl border border-white/70 bg-white/60">
+      <ScrollArea className="h-auto rounded-xl border border-white/70 sm:h-[24rem] bg-white/60">
         <div className="divide-y divide-slate-100">
           {reachable.length === 0 && (
             <p className="px-3 py-10 text-center text-sm text-muted-foreground">

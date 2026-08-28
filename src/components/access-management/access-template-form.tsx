@@ -131,7 +131,7 @@ export function AccessTemplateForm({
       </FormSection>
 
       <FormSection title="Roles in this template">
-        <RolePicker roles={roles} selectedIds={roleIds} onSelectionChange={setRoleIds} heightClassName="h-48" />
+        <RolePicker roles={roles} selectedIds={roleIds} onSelectionChange={setRoleIds} heightClassName="sm:h-48" />
       </FormSection>
 
       <FormSection title="Projects (optional)">
@@ -143,10 +143,10 @@ export function AccessTemplateForm({
       </FormSection>
 
       <FormSection title="Direct permissions (optional)">
-        <PermissionTree registry={registry} value={permissions} onChange={setPermissions} heightClassName="h-[28rem]" />
+        <PermissionTree registry={registry} value={permissions} onChange={setPermissions} heightClassName="sm:h-[28rem]" />
       </FormSection>
 
-      <div className="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:justify-end">
+      <div className="hr-sticky-actions sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:justify-end">
         <Button variant="outline" onClick={onCancel} disabled={saving} className="sm:w-32">
           Cancel
         </Button>

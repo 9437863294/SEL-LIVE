@@ -236,7 +236,7 @@ function UserAccessReport({ state }: { state: AccessDirectoryState }) {
       <div className="flex justify-end">
         <ExportButton title="User access report" rows={exportRows} filename="user-access-report.xlsx" />
       </div>
-      <ScrollArea className="h-[26rem]">
+      <ScrollArea className="h-auto sm:h-[26rem]">
         <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No users" />} />
       </ScrollArea>
     </div>
@@ -305,7 +305,7 @@ function RoleUsageReport({ state }: { state: AccessDirectoryState }) {
       <div className="flex justify-end">
         <ExportButton title="Role usage report" rows={exportRows} filename="role-usage-report.xlsx" />
       </div>
-      <ScrollArea className="h-[26rem]">
+      <ScrollArea className="h-auto sm:h-[26rem]">
         <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No roles" />} />
       </ScrollArea>
     </div>
@@ -371,10 +371,10 @@ function PermissionUsageReport({ state }: { state: AccessDirectoryState }) {
             }}
           >
             <SelectTrigger><SelectValue placeholder="Module › page" /></SelectTrigger>
-            <SelectContent className="max-h-72">
+            <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
               {registry.map((entry) => (
                 <SelectItem key={entry.resource} value={entry.resource}>
-                  {entry.resource.split('.').join(' › ')}
+                  <span className="block truncate">{entry.resource.split('.').join(' › ')}</span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -397,13 +397,13 @@ function PermissionUsageReport({ state }: { state: AccessDirectoryState }) {
         <HrEmptyState icon={KeyRound} title="Pick a permission" description="You'll see everybody who holds it and which grant gives it to them." />
       ) : (
         <>
-          <div className="flex items-center justify-between gap-2">
-            <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Badge variant="outline" className="whitespace-normal border-indigo-200 bg-indigo-50 text-indigo-700">
               {holders.length} user(s) hold {resource} · {action}
             </Badge>
             <ExportButton title="Permission usage report" rows={exportRows} filename="permission-usage-report.xlsx" />
           </div>
-          <ScrollArea className="h-[22rem]">
+          <ScrollArea className="h-auto sm:h-[22rem]">
             <HrDataList
               rows={holders}
               columns={columns}
@@ -474,14 +474,14 @@ function PrivilegedUsersReport({ state }: { state: AccessDirectoryState }) {
 
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-muted-foreground">
           Detected from what these users can actually do, not from role names — a custom role that
           happens to grant user management shows up here.
         </p>
         <ExportButton title="Privileged user report" rows={exportRows} filename="privileged-user-report.xlsx" />
       </div>
-      <ScrollArea className="h-[24rem]">
+      <ScrollArea className="h-auto sm:h-[24rem]">
         <HrDataList
           rows={rows}
           columns={columns}
@@ -544,14 +544,14 @@ function ProjectAccessReport({ state }: { state: AccessDirectoryState }) {
 
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-muted-foreground">
           Users with an explicit project grant. A user with no project restriction can reach every
           project and is not listed here.
         </p>
         <ExportButton title="Project access report" rows={exportRows} filename="project-access-report.xlsx" />
       </div>
-      <ScrollArea className="h-[24rem]">
+      <ScrollArea className="h-auto sm:h-[24rem]">
         <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No projects" />} />
       </ScrollArea>
     </div>
@@ -639,8 +639,15 @@ function TemporaryAccessReport({ state }: { state: AccessDirectoryState }) {
       mobile: 'detail',
       cell: (row) => (row.grantState === 'Active' && row.daysLeft !== null ? row.daysLeft : '—'),
     },
-    { header: 'Reason', className: 'hidden lg:table-cell', cell: (row) => row.reason || '—' },
-    { header: 'Approved by', className: 'hidden xl:table-cell', cell: (row) => row.approvedByName || '—' },
+    // A free-text reason in a phone card's two-column detail grid truncates to four words, so it
+    // gets the card's full-width footer row instead; "approved by" is not worth a phone's space.
+    {
+      header: 'Reason',
+      className: 'hidden lg:table-cell',
+      mobile: 'footer',
+      cell: (row) => <span className="text-xs text-muted-foreground">{row.reason || '—'}</span>,
+    },
+    { header: 'Approved by', className: 'hidden xl:table-cell', mobile: 'omit', cell: (row) => row.approvedByName || '—' },
   ];
 
   const exportRows = rows.map((row) => ({
@@ -671,7 +678,7 @@ function TemporaryAccessReport({ state }: { state: AccessDirectoryState }) {
         </div>
         <ExportButton title="Temporary access report" rows={exportRows} filename="temporary-access-report.xlsx" />
       </div>
-      <ScrollArea className="h-[24rem]">
+      <ScrollArea className="h-auto sm:h-[24rem]">
         <HrDataList
           rows={rows}
           columns={columns}
@@ -732,7 +739,7 @@ function AccessChangeReport({ state }: { state: AccessDirectoryState }) {
 
   return (
     <div className="space-y-2.5">
-      <div className="grid gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="space-y-1.5">
           <Label className="text-xs">From</Label>
           <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
@@ -741,12 +748,12 @@ function AccessChangeReport({ state }: { state: AccessDirectoryState }) {
           <Label className="text-xs">To</Label>
           <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
         </div>
-        <div className="flex items-end">
+        <div className="flex items-end [&>*]:flex-1 sm:[&>*]:flex-none">
           <Button size="sm" onClick={() => void run()} disabled={loading}>
             {loading ? 'Building…' : 'Build report'}
           </Button>
         </div>
-        <div className="flex items-end justify-end">
+        <div className="flex items-end justify-end [&>*]:flex-1 sm:[&>*]:flex-none">
           <ExportButton title="Access change report" rows={rows} filename="access-change-report.xlsx" />
         </div>
       </div>
@@ -758,7 +765,7 @@ function AccessChangeReport({ state }: { state: AccessDirectoryState }) {
           description="Pick a date range and build the report. Every grant and removal is included."
         />
       ) : (
-        <ScrollArea className="h-[22rem] rounded-xl border border-white/70 bg-white/60">
+        <ScrollArea className="h-auto sm:h-[22rem] rounded-xl border border-white/70 bg-white/60">
           <div className="divide-y divide-slate-100 text-xs">
             {rows.map((row, index) => (
               <div key={index} className="px-3 py-2">
@@ -843,7 +850,7 @@ function InactiveUsersReport({ state }: { state: AccessDirectoryState }) {
         </p>
         <ExportButton title="Inactive user access report" rows={exportRows} filename="inactive-user-access-report.xlsx" />
       </div>
-      <ScrollArea className="h-[24rem]">
+      <ScrollArea className="h-auto sm:h-[24rem]">
         <HrDataList
           rows={rows}
           columns={columns}

@@ -414,13 +414,14 @@ export function AddUserForm({
                 id="new-user-password"
                 value={form.password}
                 readOnly
-                className="flex-1 border-dashed bg-slate-50 font-mono tracking-widest"
+                className="min-w-0 flex-1 border-dashed bg-slate-50 font-mono sm:tracking-widest"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
                 title="Copy password"
+                aria-label="Copy password"
                 onClick={() => {
                   void navigator.clipboard.writeText(form.password);
                   setCopied(true);
@@ -434,6 +435,7 @@ export function AddUserForm({
                 variant="outline"
                 size="icon"
                 title="Generate a new password"
+                aria-label="Generate a new password"
                 onClick={() => {
                   set('password', generatePassword());
                   setCopied(false);
@@ -604,7 +606,7 @@ export function AddUserForm({
           roles={activeRoles}
           selectedIds={additionalRoleIds}
           onSelectionChange={setAdditionalRoleIds}
-          heightClassName="h-64"
+          heightClassName="h-[45dvh] sm:h-64"
         />
       </FormSection>
 
@@ -613,7 +615,7 @@ export function AddUserForm({
         bottom is a save button an administrator has to hunt for. `bottom-0` with a blurred backdrop
         rather than a fixed bar, so it sits inside the page's own scroll container.
       */}
-      <div className="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:justify-end">
+      <div className="hr-sticky-actions sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:justify-end">
         <Button variant="outline" onClick={onCancel} disabled={saving} className="sm:w-32">
           Cancel
         </Button>

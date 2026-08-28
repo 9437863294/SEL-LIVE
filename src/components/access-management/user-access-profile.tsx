@@ -229,10 +229,10 @@ export function UserAccessProfile({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex items-start gap-2">
+        <div className="flex min-w-0 items-start gap-2">
           <AccessBackLink href="/settings/access-management" label="Back to Access Control Center" />
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">
+          <div className="min-w-0">
+            <h1 className="break-words text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">
               {user.name || user.email}
             </h1>
             <p className="text-sm text-muted-foreground">Access profile · everything this user can do, and why</p>
@@ -279,10 +279,10 @@ export function UserAccessProfile({
       )}
 
       <Tabs defaultValue="access">
-        <TabsList className="grid w-full grid-cols-3 sm:w-auto">
-          <TabsTrigger value="access" className="text-xs">Effective access</TabsTrigger>
-          <TabsTrigger value="grants" className="text-xs">Grants</TabsTrigger>
-          <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
+        <TabsList className="flex h-auto w-full sm:inline-flex sm:h-10 sm:w-auto">
+          <TabsTrigger value="access" className="flex-1 shrink-0 text-xs sm:flex-none">Effective access</TabsTrigger>
+          <TabsTrigger value="grants" className="flex-1 shrink-0 text-xs sm:flex-none">Grants</TabsTrigger>
+          <TabsTrigger value="history" className="flex-1 shrink-0 text-xs sm:flex-none">History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="access" className="mt-3 space-y-3">
@@ -711,7 +711,12 @@ function GrantRow({
         )}
       </div>
       {onRemove && (
-        <Button variant="ghost" size="sm" className="h-7 shrink-0 text-xs text-destructive" onClick={onRemove}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 shrink-0 text-xs text-destructive max-sm:w-full max-sm:justify-start"
+          onClick={onRemove}
+        >
           <Trash2 className="mr-1 h-3.5 w-3.5" />
           {removeLabel ? `Revoke ${removeLabel}` : 'Remove'}
         </Button>

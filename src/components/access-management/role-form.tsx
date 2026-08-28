@@ -213,12 +213,15 @@ export function RoleForm({
           Taller than the dialog's `h-[24rem]` because there is now room for it. Still a fixed height
           rather than a viewport calculation: the tree owns its own scroll, and a tree that grew to fit
           its content would put the Save button an unpredictable distance down a very long page.
+          From `sm` up, that is — on a phone the panel is auto-height and the page scrolls, because
+          544px of nested scroller on a 640px screen trapped every swipe (the Save bar is sticky, so
+          it is never far away).
         */}
         <PermissionTree
           registry={registry}
           value={permissions}
           onChange={setPermissions}
-          heightClassName="h-[34rem]"
+          heightClassName="sm:h-[34rem]"
         />
       </FormSection>
 
@@ -226,7 +229,7 @@ export function RoleForm({
         Sticky, so Save is reachable without scrolling back up from wherever in the tree you finished
         — the same bar the other two long forms in this module use.
       */}
-      <div className="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:items-center">
+      <div className="hr-sticky-actions sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:items-center">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
             Selected: {selectedCount} permission{selectedCount === 1 ? '' : 's'}
