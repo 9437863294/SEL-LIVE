@@ -358,7 +358,7 @@ export function AddUserForm({
       </FormSection>
 
       <FormSection title="Identity" description="What they sign in with.">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             <div className="space-y-1.5">
               <Label htmlFor="new-user-name">Name *</Label>
               <Input
@@ -449,7 +449,7 @@ export function AddUserForm({
         title="Role and placement"
         description="The base role is their primary one, written exactly as User Management writes it. Department, designation and project also decide what any scoped rules confer on them."
       >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             <div className="space-y-1.5">
               <Label>Base role *</Label>
               <Select value={form.baseRole} onValueChange={(value) => set('baseRole', value)}>

@@ -75,17 +75,26 @@ export function AddUserPage() {
   );
 
   if (authLoading || (state.isLoading && allowed)) {
-    return <HrLoader label="Loading roles and organisation data…" />;
+    return (
+      <AccessPageShell width="inset">
+        <HrLoader label="Loading roles and organisation data…" />
+      </AccessPageShell>
+    );
   }
-  if (!allowed) return <HrAccessDenied what="creating users" />;
   // The protected layout should make this unreachable, but every write here is attributed to the
   // actor — so an unattributable creation is refused rather than recorded against nobody.
-  if (!actor) return <HrAccessDenied what="creating users" />;
+  if (!allowed || !actor) {
+    return (
+      <AccessPageShell width="inset" backHref={returnTo} backLabel="Back">
+        <HrAccessDenied what="creating users" />
+      </AccessPageShell>
+    );
+  }
 
   return (
-    // A form, so the shell caps the width — fields stretched across a 27" monitor read as a
-    // spreadsheet rather than as a form.
-    <AccessPageShell width="form" backHref={returnTo} backLabel="Back">
+    // A 2 cm gutter each side rather than a centred column: the form's sections are wide grids and
+    // a role picker, and a 1024px cap on a wide monitor left more empty margin than form.
+    <AccessPageShell width="inset" backHref={returnTo} backLabel="Back">
       <HrPageHeader
         title="Add user"
         description="Creates the login and the profile, then returns you to the assignment step with this user selected. A welcome email with the credentials is sent automatically."

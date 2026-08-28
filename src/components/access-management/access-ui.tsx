@@ -104,6 +104,12 @@ const SHELL_WIDTH = {
   form: 'mx-auto max-w-5xl',
   /** A wide table that still wants a ceiling on a large monitor. */
   wide: 'mx-auto max-w-7xl',
+  /**
+   * Full width with a fixed 2 cm gutter each side from `md` up. The shell already pads `sm:px-5`
+   * (1.25rem), so the margin makes up the difference rather than stacking on top of it. Phones keep
+   * the ordinary padding — 4 cm of gutter on a 9 cm screen would leave no room for the form.
+   */
+  inset: 'md:mx-[calc(2cm_-_1.25rem)]',
 } as const;
 
 /**
