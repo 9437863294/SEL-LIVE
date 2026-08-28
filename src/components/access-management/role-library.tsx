@@ -17,6 +17,7 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   CopyPlus,
   Layers,
@@ -46,13 +47,31 @@ import {
   detectSodConflicts,
   isProtectedRole,
   registryPermissionCount,
-  type PermissionMap,
-  type RegistryNode,
 } from '@/lib/access-control';
-import { saveRole, setRoleStatus, type AccessActor } from '@/lib/access-control-service';
+import { setRoleStatus, type AccessActor } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { PermissionMapSummary, PermissionTree } from './permission-tree';
+import { PermissionMapSummary } from './permission-tree';
 import { AccessCard, RiskBadges } from './access-ui';
+
+/** The tab the builder returns to, so a round trip lands where it started. */
+const ROLES_TAB = '/settings/access-management?tab=roles';
+
+/**
+ * Where the Role Builder lives, now that it is a page rather than a dialog.
+ *
+ * One helper for all three entry points so the `returnTo` is impossible to forget: without it the
+ * builder's Cancel and Save both fall back to Overview, and an administrator who came from the roles
+ * tab is dropped somewhere they were not.
+ */
+function builderHref(options: { roleId?: string; duplicateFrom?: string } = {}): string {
+  const base = options.roleId
+    ? `/settings/access-management/roles/${encodeURIComponent(options.roleId)}`
+    : '/settings/access-management/roles/new';
+  const query = new URLSearchParams({ returnTo: ROLES_TAB });
+  // Duplicating creates a role, so it is `new` with a source — never the source role's own URL.
+  if (!options.roleId && options.duplicateFrom) query.set('duplicateFrom', options.duplicateFrom);
+  return `${base}?${query.toString()}`;
+}
 
 export function RoleLibrary({
   state,
@@ -74,9 +93,6 @@ export function RoleLibrary({
   const [statusFilter, setStatusFilter] = useState<'all' | 'Active' | 'Inactive'>('Active');
   const [moduleFilter, setModuleFilter] = useState('all');
 
-  const [builderOpen, setBuilderOpen] = useState(false);
-  const [editing, setEditing] = useState<Role | null>(null);
-  const [duplicating, setDuplicating] = useState<Role | null>(null);
   const [disabling, setDisabling] = useState<Role | null>(null);
 
   const modules = useMemo(
@@ -156,15 +172,11 @@ export function RoleLibrary({
           </Select>
         </div>
         {canManage && (
-          <Button
-            onClick={() => {
-              setEditing(null);
-              setDuplicating(null);
-              setBuilderOpen(true);
-            }}
-          >
-            <Plus className="mr-1.5 h-4 w-4" />
-            New role
+          <Button asChild>
+            <Link href={builderHref()}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              New role
+            </Link>
           </Button>
         )}
       </div>
@@ -249,31 +261,25 @@ export function RoleLibrary({
                     </Button>
                     {canManage && (
                       <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => {
-                            setEditing(role);
-                            setDuplicating(null);
-                            setBuilderOpen(true);
-                          }}
-                        >
-                          <Pencil className="mr-1 h-3.5 w-3.5" />
-                          Edit
+                        <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+                          <Link href={builderHref({ roleId: role.id })}>
+                            <Pencil className="mr-1 h-3.5 w-3.5" />
+                            Edit
+                          </Link>
                         </Button>
                         <Button
+                          asChild
                           variant="outline"
                           size="sm"
                           className="h-8 text-xs"
                           title="Duplicate this role"
-                          onClick={() => {
-                            setEditing(null);
-                            setDuplicating(role);
-                            setBuilderOpen(true);
-                          }}
                         >
-                          <CopyPlus className="h-3.5 w-3.5" />
+                          <Link
+                            href={builderHref({ duplicateFrom: role.id })}
+                            aria-label={`Duplicate ${role.name}`}
+                          >
+                            <CopyPlus className="h-3.5 w-3.5" />
+                          </Link>
                         </Button>
                         <Button
                           variant="ghost"
@@ -294,24 +300,6 @@ export function RoleLibrary({
         </div>
       )}
 
-      <RoleBuilderDialog
-        open={builderOpen}
-        onOpenChange={setBuilderOpen}
-        registry={registry}
-        editing={editing}
-        duplicating={duplicating}
-        existingNames={directory.roles.map((role) => role.name)}
-        actor={actor}
-        onSaved={async (roleId) => {
-          await state.refresh();
-          toast({
-            title: editing ? 'Role updated' : 'Role created',
-            description: 'Use Assign to add it to users — existing permissions are never replaced.',
-          });
-          if (!editing) onAssignRole(roleId);
-        }}
-      />
-
       <DisableRoleDialog
         role={disabling}
         onOpenChange={(open) => !open && setDisabling(null)}
@@ -326,179 +314,6 @@ export function RoleLibrary({
   );
 }
 
-/* ------------------------------------------------------------------------------------------------
- * Role Builder (§38) — also the duplicate flow (§39)
- * ---------------------------------------------------------------------------------------------- */
-
-function RoleBuilderDialog({
-  open,
-  onOpenChange,
-  registry,
-  editing,
-  duplicating,
-  existingNames,
-  actor,
-  onSaved,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  registry: RegistryNode[];
-  editing: Role | null;
-  duplicating: Role | null;
-  existingNames: string[];
-  actor: AccessActor;
-  onSaved: (roleId: string) => Promise<void>;
-}) {
-  const { toast } = useToast();
-  const [saving, setSaving] = useState(false);
-
-  const source = editing ?? duplicating;
-  // Keyed so switching which role the dialog is editing resets the form. A dialog that kept the
-  // previous role's permissions when reopened on another role is how a role gets saved with
-  // somebody else's permission set.
-  const formKey = `${editing?.id ?? ''}|${duplicating?.id ?? ''}|${open}`;
-
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [type, setType] = useState<'System' | 'Custom'>('Custom');
-  const [permissions, setPermissions] = useState<PermissionMap>({});
-  const [initialisedFor, setInitialisedFor] = useState('');
-
-  if (open && initialisedFor !== formKey) {
-    setInitialisedFor(formKey);
-    setName(editing ? editing.name : duplicating ? `${duplicating.name} (copy)` : '');
-    setDescription(source?.description ?? '');
-    setType((source?.type as 'System' | 'Custom') ?? 'Custom');
-    setPermissions((source?.permissions ?? {}) as PermissionMap);
-  }
-
-  const nameTaken =
-    !editing && existingNames.some((existing) => existing.trim().toLowerCase() === name.trim().toLowerCase());
-
-  const handleSave = async () => {
-    if (!name.trim()) {
-      toast({ title: 'A role needs a name', variant: 'destructive' });
-      return;
-    }
-    if (nameTaken) {
-      toast({ title: 'That role name already exists', variant: 'destructive' });
-      return;
-    }
-    setSaving(true);
-    try {
-      const roleId = await saveRole(
-        {
-          id: editing?.id,
-          name,
-          description,
-          type,
-          status: 'Active',
-          permissions,
-          duplicatedFrom: duplicating,
-        },
-        actor,
-      );
-      onOpenChange(false);
-      setInitialisedFor('');
-      await onSaved(roleId);
-    } catch (error) {
-      toast({
-        title: 'Could not save the role',
-        description: error instanceof Error ? error.message : 'Unexpected error.',
-        variant: 'destructive',
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={hrDialog.contentWide}>
-        <DialogHeader className={hrDialog.header}>
-          <DialogTitle>
-            {editing ? `Edit ${editing.name}` : duplicating ? `Duplicate ${duplicating.name}` : 'New role'}
-          </DialogTitle>
-          <DialogDescription>
-            {duplicating
-              ? 'Starts from the original’s permissions. Add or remove before saving — the original is untouched.'
-              : editing
-                ? 'Changes reach everybody holding this role, whether it is their base role or an additional one.'
-                : 'Pick the permissions this role should carry, then assign it to users.'}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className={hrDialog.body}>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="role-name">Role name *</Label>
-              <Input
-                id="role-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. Assistant Project Manager"
-              />
-              {nameTaken && <p className="text-xs text-destructive">A role with this name already exists.</p>}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Role type</Label>
-              <Select value={type} onValueChange={(value) => setType(value as 'System' | 'Custom')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Custom">Custom</SelectItem>
-                  <SelectItem value="System">System</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5 sm:col-span-3">
-              <Label htmlFor="role-description">Description</Label>
-              <Textarea
-                id="role-description"
-                rows={2}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="What this role is for, and who should hold it."
-              />
-            </div>
-          </div>
-
-          {editing && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800">
-              <p className="font-semibold">
-                {countPermissions(editing.permissions)} permissions today. Editing a role changes access for
-                everybody holding it.
-              </p>
-              <p className="mt-0.5">
-                Removing a permission here removes it from every holder who has no other source for it. If
-                you only want to widen access, add permissions and leave the existing ticks alone.
-              </p>
-            </div>
-          )}
-
-          <PermissionTree
-            registry={registry}
-            value={permissions}
-            onChange={setPermissions}
-            heightClassName="h-[24rem]"
-          />
-        </div>
-
-        <DialogFooter className={hrDialog.footer}>
-          <Badge variant="outline" className="mr-auto hidden border-indigo-200 bg-indigo-50 text-indigo-700 sm:inline-flex">
-            Selected: {countPermissions(permissions)} permissions
-          </Badge>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={saving || !name.trim() || nameTaken}>
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {editing ? 'Save role' : 'Create role'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 /* ------------------------------------------------------------------------------------------------
  * Disable / re-enable (§31)
