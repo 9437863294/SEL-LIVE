@@ -1,12 +1,19 @@
 'use client';
 
 /**
- * The role library (§4) and the Role Builder (§38, §39).
+ * The role library (§4) — browse, search and act on roles.
  *
  * Roles here are the *same* `roles` collection the existing Role Management screen edits — not a
  * parallel set. This screen adds a description, a status, a System/Custom marker and a user count,
  * all optional fields that a role written before they existed simply does not have. Nothing here
  * requires them, and a role saved from the old screen keeps working after this one has touched it.
+ *
+ * ── Where the builder went ─────────────────────────────────────────────────────────────────────
+ *
+ * New / Edit / Duplicate (§38, §39) used to open a dialog defined in this file. They are now links to
+ * `/settings/access-management/roles/…` — see `RoleForm` for why a ~1,200-checkbox permission tree
+ * had no business inside a modal. This file kept the parts that belong to a *library*: the filters,
+ * the cards, and the two small confirmations.
  *
  * ── Why disable rather than delete ──────────────────────────────────────────────────────────────
  *
@@ -85,7 +92,6 @@ export function RoleLibrary({
   /** Hands the role to the assignment workspace — §38's "immediately allow Assign Role to Users". */
   onAssignRole: (roleId: string) => void;
 }) {
-  const { toast } = useToast();
   const { directory, registry, roleUsage } = state;
 
   const [term, setTerm] = useState('');

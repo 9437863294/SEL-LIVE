@@ -140,6 +140,12 @@ export function AccessControlCenter() {
    *   `?assignTo=<userId>` opens Assign Access with that user already selected — used by the user
    *   profile's "Add access" button.
    *
+   *   `?assignRole=<roleId>` opens Assign Access with that role already selected — used by the Role
+   *   Builder (now its own page under `/roles/new` and `/roles/[roleId]`) after *creating* a role.
+   *   The dialog it replaced handed a new role straight to the assignment step in-process; a separate
+   *   page cannot call back into this component, so it says the same thing in the URL instead. Only on
+   *   create: saving an existing role changes nothing about who holds it.
+   *
    *   `?tab=<TabId>` opens any tab directly — used by the template editor (now its own page under
    *   `/templates/new` and `/templates/[templateId]`) to land back on Templates after Save or Cancel,
    *   rather than always returning to Overview.
@@ -151,6 +157,13 @@ export function AccessControlCenter() {
     const assignTo = search.get('assignTo');
     if (assignTo) {
       setAssignSeed((current) => ({ ...current, key: current.key + 1, userIds: [assignTo] }));
+      setTab('assign');
+      return;
+    }
+
+    const assignRole = search.get('assignRole');
+    if (assignRole) {
+      setAssignSeed((current) => ({ ...current, key: current.key + 1, roleIds: [assignRole] }));
       setTab('assign');
       return;
     }
