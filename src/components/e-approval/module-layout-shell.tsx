@@ -6,6 +6,7 @@ import { useState } from 'react';
 import {
   BadgeCheck,
   BarChart3,
+  BookOpen,
   Building2,
   CheckCircle2,
   FilePlus2,
@@ -61,6 +62,8 @@ const sections: Array<{
   { href: `${E_APPROVAL_BASE_PATH}/delegations`, label: 'Delegations', icon: UserCheck, color: 'text-fuchsia-600', bg: 'bg-fuchsia-100', group: 'config', gate: 'delegations' },
   { href: `${E_APPROVAL_BASE_PATH}/reports`, label: 'Reports', icon: BarChart3, color: 'text-blue-600', bg: 'bg-blue-100', group: 'config', gate: 'reports' },
   { href: `${E_APPROVAL_BASE_PATH}/settings`, label: 'Settings', icon: Settings, color: 'text-slate-600', bg: 'bg-slate-200', group: 'config', gate: 'settings' },
+  // Ungated on purpose: the person who cannot find anything is exactly the person who needs the guide.
+  { href: `${E_APPROVAL_BASE_PATH}/help`, label: 'Guide', icon: BookOpen, color: 'text-rose-600', bg: 'bg-rose-100', group: 'config', gate: 'always' },
 ];
 
 const groupLabels: Record<string, string> = {

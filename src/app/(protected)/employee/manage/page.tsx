@@ -125,11 +125,27 @@ function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-/** Filter columns, in display order. The server only returns the ones a tenant actually uses. */
+/**
+ * Filter columns, in display order. The server only returns the ones a tenant actually uses.
+ *
+ * Ten of them, which is why the grid below is five across: two exact rows, no ragged tail.
+ */
 const FILTER_ORDER = [
   'Project Name', 'Project Division', 'Department', 'Location', 'Cost Center',
   'Designation', 'EMPLOYEE TYPE', 'Grade', 'Shift', 'COST CENTER CODE',
 ];
+
+/**
+ * The compact filter control, one class string so all eleven selects stay identical.
+ *
+ * `h-8 text-xs` against the `h-10 text-sm` default: these are secondary controls sitting above the
+ * thing somebody actually came to read, and at full size eleven of them crowd the table off the
+ * screen entirely.
+ */
+const FILTER_TRIGGER = 'h-8 text-xs';
+
+/** Applied filters are tinted, so the set ones are findable among the unset ones without reading all ten. */
+const FILTER_TRIGGER_ACTIVE = 'border-primary/40 bg-primary/5 font-medium text-primary';
 
 const initialFilters = { status: 'all' as string, categories: {} as Record<string, string> };
 
@@ -455,71 +471,138 @@ export default function ManageEmployeePage() {
               ) : undefined
             }
           >
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search name, employee no, email…"
-                  className="pl-8 pr-8"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-                {search && (
-                  <button
-                    type="button"
-                    onClick={() => setSearch('')}
-                    className="absolute right-2 top-2 text-muted-foreground hover:text-slate-600"
-                    aria-label="Clear search"
+            {/*
+              Two bands, not one twelve-cell grid.
+
+              Search and status answer "find this person"; the ten category selects answer "narrow
+              this list", and they are used at different moments. Sharing one three-column grid gave
+              every control the same 600px on a wide screen — a box that wide to hold the word
+              "Grade" — and stacked twelve of them into four full-height rows that pushed the table
+              itself below the fold.
+
+              Now the finders keep a fixed, readable width instead of stretching to fill, and the
+              categories sit in a five-across grid that divides exactly into two rows. Same twelve
+              controls, roughly half the height, and nothing hidden behind a disclosure — on a screen
+              whose whole purpose is filtering, a filter you have to go looking for is worse than a
+              small one.
+            */}
+            <div className="flex flex-col gap-2">
+              {/*
+                The record count moved in here, into the width the fixed-size finders leave over.
+                It was a standalone line below the card; now the row carries it instead of trailing a
+                thousand pixels of nothing, and the page is one element shorter.
+              */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative w-full sm:w-[340px]">
+                  <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search name, employee no, email…"
+                    className="h-8 pl-8 pr-8 text-xs"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch('')}
+                      className="absolute right-2 top-2 text-muted-foreground hover:text-slate-600"
+                      aria-label="Clear search"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
+                <Select value={filters.status} onValueChange={(value) => setFilters((f) => ({ ...f, status: value }))}>
+                  <SelectTrigger
+                    className={cn(
+                      FILTER_TRIGGER,
+                      'w-full sm:w-[200px]',
+                      filters.status !== 'all' && FILTER_TRIGGER_ACTIVE,
+                    )}
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              <Select value={filters.status} onValueChange={(value) => setFilters((f) => ({ ...f, status: value }))}>
-                <SelectTrigger><SelectValue placeholder="All statuses" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="working">Currently working</SelectItem>
-                  <SelectItem value="departed">Departed</SelectItem>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Notice Period">Notice Period</SelectItem>
-                  <SelectItem value="Relieved">Relieved</SelectItem>
-                  <SelectItem value="Retired">Retired</SelectItem>
-                  <SelectItem value="Settled">Settled</SelectItem>
-                  <SelectItem value="Left">Left</SelectItem>
-                  <SelectItem value="corrected">Corrected on the fly</SelectItem>
-                  <SelectItem value="awaitingSync">Awaiting first sync</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {FILTER_ORDER.filter((category) => filterOptions[category]?.length).map((category) => (
-                <Select
-                  key={category}
-                  value={filters.categories[category] ?? 'all'}
-                  onValueChange={(value) =>
-                    setFilters((f) => ({ ...f, categories: { ...f.categories, [category]: value } }))
-                  }
-                >
-                  <SelectTrigger><SelectValue placeholder={`All ${category}`} /></SelectTrigger>
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All {category}</SelectItem>
-                    {filterOptions[category].map((value) => (
-                      <SelectItem key={value} value={value}>{value}</SelectItem>
-                    ))}
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="working">Currently working</SelectItem>
+                    <SelectItem value="departed">Departed</SelectItem>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="Notice Period">Notice Period</SelectItem>
+                    <SelectItem value="Relieved">Relieved</SelectItem>
+                    <SelectItem value="Retired">Retired</SelectItem>
+                    <SelectItem value="Settled">Settled</SelectItem>
+                    <SelectItem value="Left">Left</SelectItem>
+                    <SelectItem value="corrected">Corrected on the fly</SelectItem>
+                    <SelectItem value="awaitingSync">Awaiting first sync</SelectItem>
                   </SelectContent>
                 </Select>
-              ))}
+
+                <p className="text-xs text-muted-foreground sm:ml-auto">
+                  Showing <span className="font-medium text-slate-700">{filtered.length}</span>
+                  {filtered.length !== employees.length ? <> of {employees.length}</> : null} record
+                  {filtered.length === 1 ? '' : 's'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {FILTER_ORDER.filter((category) => filterOptions[category]?.length).map((category) => {
+                  const value = filters.categories[category] ?? 'all';
+                  const isActive = value !== 'all';
+                  return (
+                    <Select
+                      key={category}
+                      value={value}
+                      onValueChange={(next) =>
+                        setFilters((f) => ({ ...f, categories: { ...f.categories, [category]: next } }))
+                      }
+                    >
+                      {/*
+                        Tinted when set, so which of the ten are actually filtering is answerable at a
+                        glance. A chip row below would say the same thing twice and would spend the
+                        height this change just saved.
+
+                        The label is carried in the trigger rather than left to `SelectValue`, which
+                        renders the bare value: "S1" and "Directors" sitting in a ten-cell grid do not
+                        say *which* filter they are, and once the fields are small enough to fit two
+                        rows there is no column heading to infer it from either. Prefixing costs
+                        nothing when the field is wide and truncates the value — never the category —
+                        when it is not, so the more useful half always survives.
+                      */}
+                      <SelectTrigger
+                        className={cn(FILTER_TRIGGER, isActive && FILTER_TRIGGER_ACTIVE)}
+                        title={isActive ? `${category}: ${value}` : `Filter by ${category}`}
+                      >
+                        <span className="truncate">
+                          {isActive ? (
+                            <>
+                              <span className="opacity-70">{category}:</span> {value}
+                            </>
+                          ) : (
+                            `All ${category}`
+                          )}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All {category}</SelectItem>
+                        {filterOptions[category].map((option) => (
+                          <SelectItem key={option} value={option}>{option}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  );
+                })}
+              </div>
             </div>
           </HrFilterCard>
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
-              Showing <span className="font-medium text-slate-700">{filtered.length}</span>
-              {filtered.length !== employees.length ? <> of {employees.length}</> : null} record
-              {filtered.length === 1 ? '' : 's'}
-            </p>
-            {selectedIds.length > 0 && canDelete && (
+          {/*
+            Only the bulk action lives here now — the record count moved up into the filter row,
+            which had spare width and no reason not to carry it. Rendered conditionally rather than
+            left as an empty flex row, so an unselected table has no gap above it at all.
+          */}
+          {selectedIds.length > 0 && canDelete && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" size="sm">
@@ -543,8 +626,8 @@ export default function ManageEmployeePage() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* ── Table ── */}
           <Card className="bg-white/80 backdrop-blur-sm">

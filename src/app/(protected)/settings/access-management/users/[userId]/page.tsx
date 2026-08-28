@@ -16,6 +16,7 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
 import {
   actorFromUser,
+  canAssignAccess,
   canOpenAccessManagement,
   canRevokeAccess,
 } from '@/lib/access-control-service';
@@ -61,6 +62,7 @@ export default function UserAccessProfilePage() {
         state={state}
         actor={actor}
         canRevoke={canRevokeAccess(can)}
+        canAssign={canAssignAccess(can)}
       />
     </AccessPageShell>
   );

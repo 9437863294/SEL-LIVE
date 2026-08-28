@@ -133,17 +133,33 @@ export function AccessControlCenter() {
   const actor = useMemo(() => actorFromUser(user), [user]);
 
   /**
-   * Deep link from a user's access profile: `?assignTo=<userId>` opens the assignment workspace with
-   * that user already selected. Read once on mount rather than kept in sync — the tab is a working
-   * surface after that, and re-seeding it on every render would fight the administrator's selection.
+   * Two deep links, read once on mount rather than kept in sync — the tabs are a working surface
+   * after that, and re-seeding either on every render would fight whatever the administrator has
+   * since selected.
+   *
+   *   `?assignTo=<userId>` opens Assign Access with that user already selected — used by the user
+   *   profile's "Add access" button.
+   *
+   *   `?tab=<TabId>` opens any tab directly — used by the template editor (now its own page under
+   *   `/templates/new` and `/templates/[templateId]`) to land back on Templates after Save or Cancel,
+   *   rather than always returning to Overview.
    */
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const assignTo = new URLSearchParams(window.location.search).get('assignTo');
+    const search = new URLSearchParams(window.location.search);
+
+    const assignTo = search.get('assignTo');
     if (assignTo) {
       setAssignSeed((current) => ({ ...current, key: current.key + 1, userIds: [assignTo] }));
       setTab('assign');
+      return;
     }
+
+    const requestedTab = search.get('tab') as TabId | null;
+    const validTabs: TabId[] = [
+      'overview', 'users', 'roles', 'permissions', 'assign', 'matrix', 'effective', 'templates', 'reports', 'audit',
+    ];
+    if (requestedTab && validTabs.includes(requestedTab)) setTab(requestedTab);
   }, []);
 
   /** Hand a selection to the Assign Access tab and switch to it. */

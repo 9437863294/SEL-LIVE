@@ -143,11 +143,14 @@ export function UserEffectiveAccessPanel({
   const privileges = useMemo(() => detectPrivilegedAccess(access), [access]);
   const conflicts = useMemo(() => detectSodConflicts(access), [access]);
 
-  /** Held permissions, grouped by module, filtered by the search box. */
+  /**
+   * Held permissions, grouped by module and then by page — the same two-level shape the Grants
+   * tab's checklist uses, so the two do not read as two different tools for the same job.
+   */
   const heldByModule = useMemo(() => {
     const nodes = searchRegistry(registry, term);
     const allowed = new Set(nodes.map((node) => node.resource));
-    const grouped = new Map<string, Array<{ resource: string; action: string }>>();
+    const grouped = new Map<string, Map<string, Array<{ resource: string; action: string }>>>();
 
     for (const [resource, actions] of Object.entries(access.permissions)) {
       // Scoped keys (`Resource.projectId`) resolve to a registry node by dropping the scope segment.
@@ -156,15 +159,42 @@ export function UserEffectiveAccessPanel({
         : [...allowed].find((candidate) => resource.startsWith(`${candidate}.`));
       if (!base) continue;
       const moduleName = base.split('.')[0];
-      const list = grouped.get(moduleName) ?? [];
+      const byPage = grouped.get(moduleName) ?? new Map<string, Array<{ resource: string; action: string }>>();
+      const list = byPage.get(base) ?? [];
       for (const action of actions) list.push({ resource, action });
-      grouped.set(moduleName, list);
+      byPage.set(base, list);
+      grouped.set(moduleName, byPage);
     }
 
     return [...grouped.entries()]
-      .map(([moduleName, entries]) => [moduleName, entries.sort((a, b) => a.resource.localeCompare(b.resource))] as const)
+      .map(
+        ([moduleName, byPage]) =>
+          [
+            moduleName,
+            [...byPage.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+          ] as const,
+      )
       .sort((a, b) => a[0].localeCompare(b[0]));
   }, [access.permissions, registry, term]);
+
+  const totalHeld = useMemo(
+    () => heldByModule.reduce((sum, [, pages]) => sum + pages.reduce((inner, [, entries]) => inner + entries.length, 0), 0),
+    [heldByModule],
+  );
+
+  /**
+   * Every module is a card, always visible; selecting one shows its pages in a panel below the
+   * whole grid — not an accordion opening inline under that card, which would push the cards below
+   * it around every time a different module is picked. Same layout as `AccessChecklist` on the
+   * Grants tab, so the two read as one tool rather than two.
+   */
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (heldByModule.length === 1) setSelectedModule(heldByModule[0][0]);
+  }, [heldByModule]);
+
+  const activeModule = heldByModule.find(([moduleName]) => moduleName === selectedModule);
 
   return (
     <div className="space-y-3">
@@ -334,38 +364,89 @@ export function UserEffectiveAccessPanel({
             />
           </div>
 
-          <ScrollArea className="h-[28rem] rounded-xl border border-white/70 bg-white/60">
-            {heldByModule.length === 0 ? (
-              <p className="px-3 py-10 text-center text-sm text-muted-foreground">
-                No permissions match this filter.
-              </p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {heldByModule.map(([moduleName, entries]) => (
-                  <div key={moduleName} className="px-3 py-2.5">
-                    <p className="mb-1.5 text-xs font-semibold text-slate-800">
-                      {moduleName}
-                      <span className="ml-1.5 font-normal text-muted-foreground">({entries.length})</span>
-                    </p>
-                    <div className="space-y-1">
-                      {entries.map((entry) => (
-                        <div
-                          key={`${entry.resource}::${entry.action}`}
-                          className="flex flex-wrap items-center justify-between gap-1.5"
-                        >
-                          <PermissionPair pair={`${entry.resource}::${entry.action}`} />
-                          <SourceBadges
-                            sources={access.sources[`${entry.resource}::${entry.action}`] ?? []}
-                            max={3}
-                          />
-                        </div>
-                      ))}
+          {heldByModule.length > 0 && (
+            <p className="text-[11px] text-muted-foreground">
+              {totalHeld} permission{totalHeld === 1 ? '' : 's'} across {heldByModule.length} module
+              {heldByModule.length === 1 ? '' : 's'}. Select a module below to see its pages and why
+              each permission is held.
+            </p>
+          )}
+
+          {/* Every module with a held permission, as a narrow single-line card — not a list where
+              opening one pushes the rest down. Selecting a card shows its pages in the panel below
+              the whole grid. */}
+          {heldByModule.length === 0 ? (
+            <p className="rounded-xl border border-white/70 bg-white/60 px-3 py-10 text-center text-sm text-muted-foreground">
+              No permissions match this filter.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+              {heldByModule.map(([moduleName, pages]) => {
+                const count = pages.reduce((sum, [, entries]) => sum + entries.length, 0);
+                const selected = selectedModule === moduleName;
+                return (
+                  <button
+                    key={moduleName}
+                    type="button"
+                    onClick={() => setSelectedModule(moduleName)}
+                    aria-pressed={selected}
+                    title={moduleName}
+                    className={cn(
+                      'flex min-w-0 items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left shadow-sm transition-colors',
+                      selected
+                        ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200'
+                        : 'border-white/70 bg-white/80 hover:border-indigo-200 hover:bg-indigo-50/40',
+                    )}
+                  >
+                    <span className="min-w-0 truncate text-xs font-semibold text-slate-800">{moduleName}</span>
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 border-indigo-200 bg-indigo-50 px-1 text-[9px] leading-tight text-indigo-700"
+                    >
+                      {count}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {activeModule ? (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
+              <p className="mb-2 text-sm font-semibold text-slate-800">{activeModule[0]}</p>
+              <ScrollArea className="h-[24rem] rounded-xl border border-white/70 bg-white/80">
+                <div className="space-y-1.5 p-2.5">
+                  {activeModule[1].map(([resource, entries]) => (
+                    <div key={resource} className="rounded-lg border border-white bg-white/90 px-2.5 py-2 shadow-sm">
+                      <p className="mb-1.5 truncate text-xs font-semibold text-slate-700">
+                        {resource.split('.').slice(1).join(' › ') || 'Module access'}
+                      </p>
+                      <div className="space-y-1">
+                        {entries.map((entry) => (
+                          <div
+                            key={`${entry.resource}::${entry.action}`}
+                            className="flex flex-wrap items-center justify-between gap-1.5"
+                          >
+                            <span className="text-xs font-medium text-slate-800">{entry.action}</span>
+                            <SourceBadges
+                              sources={access.sources[`${entry.resource}::${entry.action}`] ?? []}
+                              max={3}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          ) : (
+            heldByModule.length > 0 && (
+              <p className="rounded-xl border border-dashed border-slate-200 bg-white/50 px-3 py-8 text-center text-sm text-muted-foreground">
+                Select a module above to see its pages.
+              </p>
+            )
+          )}
         </TabsContent>
 
         <TabsContent value="explain" className="mt-3">

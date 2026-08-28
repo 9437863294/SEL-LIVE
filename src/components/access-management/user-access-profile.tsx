@@ -48,7 +48,7 @@ import {
   temporaryGrantState,
   type PermissionMap,
 } from '@/lib/access-control';
-import { revokeAccess, setAccessLayerStatus, type AccessActor } from '@/lib/access-control-service';
+import { grantAccess, revokeAccess, setAccessLayerStatus, type AccessActor } from '@/lib/access-control-service';
 import { linkMethodLabel } from '@/lib/greythr-linking';
 import type { User } from '@/lib/types';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
@@ -56,17 +56,21 @@ import { UserEffectiveAccessPanel } from './effective-access';
 import { RemovalPreviewDialog } from './assignment-preview';
 import { AuditHistory } from './audit-history';
 import { AccessBackLink, AccessCard, PermissionPairList, RoleBadge } from './access-ui';
+import { AccessChecklist, AccessChecklistSaveBar, type PendingChange } from './access-checklist';
 
 export function UserAccessProfile({
   userId,
   state,
   actor,
   canRevoke,
+  canAssign,
 }: {
   userId: string;
   state: AccessDirectoryState;
   actor: AccessActor;
   canRevoke: boolean;
+  /** Whether this administrator may grant new direct permissions from the checklist below. */
+  canAssign: boolean;
 }) {
   const { toast } = useToast();
   const { directory, accessByUser, departments, projects, employees, registry, isLoading } = state;
@@ -79,6 +83,20 @@ export function UserAccessProfile({
     directPermissions: PermissionMap;
   } | null>(null);
   const [suspendOpen, setSuspendOpen] = useState(false);
+
+  /**
+   * Staged tick/untick changes from the checklist below, keyed `${resource}::${action}`.
+   *
+   * Kept separate from `removal` (the per-row dialogs above) deliberately: those confirm one grant's
+   * worth of removal at a time with its own preview; the checklist stages an arbitrary mix of grants
+   * and revokes across the whole registry and saves them together with one reason, which is a
+   * different enough shape of action to deserve its own state rather than being force-fit into
+   * `removal`'s.
+   */
+  const [pendingChanges, setPendingChanges] = useState<Map<string, PendingChange>>(new Map());
+  const [checklistReason, setChecklistReason] = useState('');
+  const [checklistSaving, setChecklistSaving] = useState(false);
+  const [checklistError, setChecklistError] = useState<string | null>(null);
 
   const user = directory.users.find((entry) => entry.id === userId);
   const access = accessByUser[userId];
@@ -132,6 +150,80 @@ export function UserAccessProfile({
       title: 'Additional access removed',
       description: 'Their base role is untouched, and anything another source still grants is retained.',
     });
+  };
+
+  /** Stage or un-stage one checkbox. Toggling back to the held state removes the pending entry
+   * entirely, rather than leaving a no-op change sitting in the save bar. */
+  const toggleChecklistAction = (resource: string, action: string, next: boolean) => {
+    const key = `${resource}::${action}`;
+    const heldNow = access ? resource in access.permissions && access.permissions[resource].includes(action) : false;
+    setPendingChanges((current) => {
+      const updated = new Map(current);
+      if (next === heldNow) updated.delete(key);
+      else updated.set(key, { resource, action, next });
+      return updated;
+    });
+  };
+
+  const discardChecklistChanges = () => {
+    setPendingChanges(new Map());
+    setChecklistReason('');
+    setChecklistError(null);
+  };
+
+  const saveChecklistChanges = async () => {
+    if (pendingChanges.size === 0 || !checklistReason.trim()) return;
+    setChecklistSaving(true);
+    setChecklistError(null);
+    try {
+      const toGrant: PermissionMap = {};
+      const toRevoke: PermissionMap = {};
+      for (const change of pendingChanges.values()) {
+        const target = change.next ? toGrant : toRevoke;
+        target[change.resource] = [...(target[change.resource] ?? []), change.action];
+      }
+
+      // Two separate writes rather than one combined request: `grantAccess` and `revokeAccess` are
+      // different operations with different audit shapes (one records what was added, the other what
+      // was lost and what survived elsewhere), and collapsing them would blur that distinction in the
+      // history for no benefit — nothing here depends on them being atomic with each other.
+      if (Object.keys(toGrant).length) {
+        await grantAccess({
+          users: [user],
+          request: { directPermissions: toGrant },
+          directory,
+          actor,
+          reason: checklistReason.trim(),
+          label: `Grant direct permissions to ${user.name || user.id}`,
+        });
+      }
+      if (Object.keys(toRevoke).length) {
+        await revokeAccess({
+          users: [user],
+          request: { directPermissions: toRevoke },
+          directory,
+          actor,
+          reason: checklistReason.trim(),
+          label: `Revoke direct permissions from ${user.name || user.id}`,
+        });
+      }
+
+      discardChecklistChanges();
+      await state.refresh();
+      toast({
+        title: 'Permissions updated',
+        description:
+          `${Object.values(toGrant).reduce((sum, actions) => sum + actions.length, 0)} granted, ` +
+          `${Object.values(toRevoke).reduce((sum, actions) => sum + actions.length, 0)} revoked.`,
+      });
+    } catch (error) {
+      // Kept open with the reason and every staged tick intact — a partial failure here (the grant
+      // half committed, the revoke half did not, or vice versa) is exactly when the administrator
+      // most needs to see what is still pending rather than lose it to a closed panel.
+      setChecklistError(error instanceof Error ? error.message : 'Nothing more was saved.');
+    } finally {
+      setChecklistSaving(false);
+    }
   };
 
   return (
@@ -287,73 +379,47 @@ export function UserAccessProfile({
           </GrantSection>
 
           {/*
-            Direct permissions.
+            The permission checklist.
 
-            One row per *action*, not per resource. A resource like "HR.Requirements" commonly holds
-            several — View, Add, Edit, Delete — granted together and needing to be taken back one at a
-            time: revoking Delete while a person keeps View and Edit is the ordinary case, not an edge
-            one. A single "Remove" button per resource could only take all of them at once, which is
-            the gap reported: there was no way to page-wise revoke just Add, or just Edit, or just
-            Delete, for one person.
+            Requested as a specific interaction: every module collapsed, opening one page-wise —
+            module, then page, then action — with a tick to grant and an untick to revoke, and
+            opening a different module closes whichever was open. `AccessChecklist` owns that
+            interaction; this page owns staging the changes and saving them, because the check for
+            "is this actually editable" needs `access.sources`, which only this page's own data has.
           */}
-          <GrantSection
-            title="Direct permissions"
-            icon={KeyRound}
-            description="Granted straight to this person, outside any role. Revoke one action at a time, or the whole page at once."
-            empty="No direct permissions."
-          >
-            {(grant?.directPermissions ?? []).flatMap((entry) =>
-              entry.actions.map((action) => (
-                <GrantRow
-                  key={`${entry.resource}::${action}`}
-                  title={entry.resource.split('.').join(' › ')}
-                  subtitle={action}
-                  meta={[
-                    entry.assignedByName ? `assigned by ${entry.assignedByName}` : null,
-                    entry.assignedAt ? formatGrantDate(entry.assignedAt) : null,
-                    entry.expiresAt ? `expires ${formatGrantDate(entry.expiresAt)}` : null,
-                    entry.reason ? `“${entry.reason}”` : null,
-                  ]}
-                  onRemove={
-                    canRevoke
-                      ? () =>
-                          setRemoval({
-                            roleIds: [],
-                            projectIds: [],
-                            temporaryIds: [],
-                            // Only this one action. The other actions on the same resource are
-                            // untouched — `removeAccessFromGrant` keeps whatever is left of the entry.
-                            directPermissions: { [entry.resource]: [action] },
-                          })
-                      : undefined
-                  }
-                  removeLabel={action}
-                />
-              )),
-            )}
-            {canRevoke && (grant?.directPermissions?.length ?? 0) > 1 && (
-              <div className="pt-1 text-right">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-destructive"
-                  onClick={() =>
-                    setRemoval({
-                      roleIds: [],
-                      projectIds: [],
-                      temporaryIds: [],
-                      directPermissions: Object.fromEntries(
-                        (grant?.directPermissions ?? []).map((entry) => [entry.resource, entry.actions]),
-                      ),
-                    })
-                  }
-                >
-                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                  Remove every direct permission
-                </Button>
-              </div>
-            )}
-          </GrantSection>
+          <AccessCard>
+            <CardHeader className="px-4 py-3">
+              <CardTitle className="flex items-center gap-1.5 text-sm">
+                <KeyRound className="h-4 w-4 text-indigo-600" />
+                Permissions
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Every module, collapsed — open one to see its pages. A locked, ticked box is held
+                through a role, department, project or temporary grant; remove it from that section
+                below instead of here. An open box tickable here is either unheld, or held directly and
+                revocable directly.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 px-4 pb-4">
+              <AccessChecklist
+                registry={registry}
+                access={access}
+                pending={pendingChanges}
+                onToggle={toggleChecklistAction}
+                canGrant={canAssign}
+                canRevoke={canRevoke}
+              />
+              <AccessChecklistSaveBar
+                pending={pendingChanges}
+                reason={checklistReason}
+                onReasonChange={setChecklistReason}
+                onSave={() => void saveChecklistChanges()}
+                onDiscard={discardChecklistChanges}
+                saving={checklistSaving}
+                error={checklistError}
+              />
+            </CardContent>
+          </AccessCard>
 
           {/* Projects */}
           <GrantSection

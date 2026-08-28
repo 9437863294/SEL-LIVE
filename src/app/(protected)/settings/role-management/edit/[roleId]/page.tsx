@@ -43,12 +43,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { Badge } from "@/components/ui/badge";
 import { AuroraBackdrop } from "@/components/effects/AuroraBackdrop";
@@ -161,7 +155,12 @@ export default function EditRolePage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [permissionQuery, setPermissionQuery] = useState("");
-  const [openModules, setOpenModules] = useState<string[]>([]);
+  /**
+   * One module's content shows below the whole card grid at a time — not an accordion where every
+   * module can be open at once and each one's content pushes the modules below it down the page.
+   * Picking a different card swaps the panel; it does not add a second one.
+   */
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
 
   // Set once we know a rename would need to cascade to real users; confirmed via dialog before saving.
   const [pendingRenameSave, setPendingRenameSave] = useState<{
@@ -378,11 +377,23 @@ export default function EditRolePage() {
     );
   }, [permissionQuery, departments, projects]);
 
+  // A search that narrows to exactly one module opens it straight away — picking the only card left
+  // would be busywork. It does not auto-select on a broader match, so a query that matches several
+  // modules leaves the choice to the administrator rather than guessing which one they meant.
   useEffect(() => {
-    const q = permissionQuery.trim();
-    if (!q) return;
-    setOpenModules(filteredModules.map(([m]) => m));
+    if (!permissionQuery.trim()) return;
+    if (filteredModules.length === 1) setSelectedModule(filteredModules[0][0]);
   }, [permissionQuery, filteredModules]);
+
+  /** How many permissions are currently set for a module, across its own key and every nested one
+   * (including per-department and per-project keys) — the count shown on its card. */
+  const countHeldForModule = (moduleName: string): number => {
+    let held = 0;
+    for (const [key, actions] of Object.entries(editingRole?.permissions ?? {})) {
+      if (key === moduleName || key.startsWith(`${moduleName}.`)) held += actions.length;
+    }
+    return held;
+  };
 
   if (isAuthLoading || isLoading) {
     return (
@@ -562,28 +573,17 @@ export default function EditRolePage() {
                     />
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="bg-white/70 border-slate-200 rounded-full"
-                      onClick={() =>
-                        setOpenModules(filteredModules.map(([m]) => m))
-                      }
-                      disabled={filteredModules.length === 0}
-                    >
-                      Expand All
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="bg-white/70 border-slate-200 rounded-full"
-                      onClick={() => setOpenModules([])}
-                      disabled={openModules.length === 0}
-                    >
-                      Collapse
-                    </Button>
+                    {selectedModule && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="bg-white/70 border-slate-200 rounded-full"
+                        onClick={() => setSelectedModule(null)}
+                      >
+                        Deselect
+                      </Button>
+                    )}
                     <span className="text-xs text-slate-500 whitespace-nowrap">
                       {filteredModules.length} modules
                     </span>
@@ -607,49 +607,83 @@ export default function EditRolePage() {
               Select the actions this role can perform for each module.
             </CardDescriptionShad>
           </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="h-[calc(100dvh-20rem)]">
-              <div className="p-5">
-                <Accordion
-                  type="multiple"
-                  value={openModules}
-                  onValueChange={(v) => setOpenModules(v as string[])}
-                  className="w-full space-y-2"
-                >
-                  {filteredModules.map(([moduleName, moduleValue]) => {
-                    const isViewModuleOnly =
-                      typeof moduleValue === "object" &&
-                      !Array.isArray(moduleValue) &&
-                      Object.keys(moduleValue).length === 1 &&
-                      "View Module" in moduleValue;
-                    const isViewModulePermission =
-                      (editingRole.permissions?.[moduleName] || []).includes(
-                        "View Module",
-                      ) || (moduleValue as any)["View Module"] === true;
-                    return (
-                      <AccordionItem
-                        value={moduleName}
-                        key={moduleName}
-                        className="rounded-xl border border-slate-200/80 bg-white/60 px-1 overflow-hidden"
+          <CardContent className="space-y-3 p-5">
+            {/* Every module, as a narrow single-line card, always visible — not an accordion where
+                opening one pushes the rest down. Picking a different card swaps the panel below the
+                whole grid; it never opens a second one. */}
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+              {filteredModules.map(([moduleName, moduleValue]) => {
+                const isViewModuleOnly =
+                  typeof moduleValue === "object" &&
+                  !Array.isArray(moduleValue) &&
+                  Object.keys(moduleValue).length === 1 &&
+                  "View Module" in moduleValue;
+                const held = countHeldForModule(moduleName);
+                const selected = selectedModule === moduleName;
+                return (
+                  <button
+                    key={moduleName}
+                    type="button"
+                    onClick={() => setSelectedModule(moduleName)}
+                    aria-pressed={selected}
+                    title={moduleName}
+                    className={cn(
+                      "flex min-w-0 items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left shadow-sm transition-colors",
+                      selected
+                        ? "border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200"
+                        : "border-slate-200/80 bg-white/60 hover:border-indigo-200 hover:bg-indigo-50/40",
+                    )}
+                  >
+                    <span className="min-w-0 truncate text-xs font-semibold text-slate-800">
+                      {moduleName}
+                    </span>
+                    {isViewModuleOnly ? (
+                      <Badge
+                        variant="outline"
+                        className="shrink-0 border-slate-200 bg-white px-1 text-[9px] leading-tight text-slate-500"
                       >
-                        <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-slate-50/80 rounded-xl">
-                          <div className="flex w-full items-center justify-between gap-3 pr-2">
-                            <span className="font-semibold text-slate-800 text-sm">
-                              {moduleName}
-                            </span>
-                            {isViewModuleOnly && (
-                              <Badge
-                                variant="outline"
-                                className="border-slate-200 bg-white/80 text-slate-500 text-xs"
-                              >
-                                View only
-                              </Badge>
-                            )}
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent>
-                          <div className="px-3 pb-3 pt-1 space-y-2.5">
-                            {Array.isArray(moduleValue) ? (
+                        View
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "shrink-0 px-1 text-[9px] leading-tight",
+                          held === 0
+                            ? "border-slate-200 bg-white text-slate-500"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-700",
+                        )}
+                      >
+                        {held}
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {(() => {
+              const selectedEntry = filteredModules.find(([name]) => name === selectedModule);
+              if (!selectedEntry) {
+                return (
+                  <p className="rounded-xl border border-dashed border-slate-200 bg-white/50 px-3 py-10 text-center text-sm text-slate-500">
+                    {filteredModules.length === 0
+                      ? "No modules match this search."
+                      : "Select a module above to edit its permissions."}
+                  </p>
+                );
+              }
+              const [moduleName, moduleValue] = selectedEntry;
+              const isViewModulePermission =
+                (editingRole.permissions?.[moduleName] || []).includes(
+                  "View Module",
+                ) || (moduleValue as any)["View Module"] === true;
+              return (
+                <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
+                  <p className="mb-2 text-sm font-semibold text-slate-800">{moduleName}</p>
+                  <ScrollArea className="h-[calc(100dvh-26rem)] rounded-xl border border-white/70 bg-white/70">
+                    <div className="px-3 pb-3 pt-2.5 space-y-2.5">
+                      {Array.isArray(moduleValue) ? (
                               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                 {moduleValue.map((permission) => (
                                   <label
@@ -1140,14 +1174,11 @@ export default function EditRolePage() {
                                 </div>
                               </>
                             )}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    );
-                  })}
-                </Accordion>
-              </div>
-            </ScrollArea>
+                    </div>
+                  </ScrollArea>
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
 

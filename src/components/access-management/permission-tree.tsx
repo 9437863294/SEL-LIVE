@@ -18,13 +18,23 @@
  *
  *   2. **Only modules matching the search render their children.** The registry has ~1,200 leaves.
  *      Mounting every checkbox and letting CSS hide them is what makes a permission tree feel
- *      broken on a mid-range laptop, so filtered-out modules are not rendered at all and collapsed
- *      accordions never mount their contents.
+ *      broken on a mid-range laptop, so filtered-out modules are not rendered at all, and only the
+ *      selected module's pages ever mount their checkboxes.
+ *
+ * ── Layout: a card grid up top, one detail panel below ──────────────────────────────────────────
+ *
+ * Every module is a narrow, single-line card, always visible. Selecting one shows its pages in a
+ * panel below the whole grid — not an accordion where opening a module's content pushed the cards
+ * below it around, and not a multi-open tree where several modules could be expanded across a long
+ * scroll at once. One module's detail is on screen at a time, in one place, however many modules
+ * there are above it. Same layout as the access checklist and the effective-access viewer, so a
+ * permission tree looks like one tool everywhere it appears — building a role, granting direct
+ * permissions, building a template, or defining a scope rule.
  */
 
 import * as React from 'react';
-import { useMemo, useState } from 'react';
-import { ChevronRight, Lock, Search, SquareCheck, SquareMinus, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Lock, Search, SquareCheck, SquareMinus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -73,7 +83,7 @@ export function PermissionTree({
   heightClassName = 'h-[26rem]',
 }: PermissionTreeProps) {
   const [term, setTerm] = useState('');
-  const [openModules, setOpenModules] = useState<string[]>([]);
+  const [selectedModule, setSelectedModule] = useState<string | null>(null);
   const [onlySelected, setOnlySelected] = useState(false);
 
   const allActions = useMemo(() => registryActions(registry), [registry]);
@@ -97,12 +107,14 @@ export function PermissionTree({
     return [...byModule.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [registry, term, onlySelected, value, inherited]);
 
-  // A search narrows to a handful of modules, and making the user expand each one to see the hit is
-  // busywork — so a query auto-expands what it matched.
-  const effectiveOpen = useMemo(() => {
-    if (term.trim() || onlySelected) return new Set(grouped.map(([moduleName]) => moduleName));
-    return new Set(openModules);
-  }, [term, onlySelected, grouped, openModules]);
+  // A search (or "Selected only") that narrows the grid to exactly one module opens it straight
+  // away — picking the only card left would be busywork. It does not auto-select on a broader match,
+  // so a query that matches several modules leaves the choice to the administrator.
+  useEffect(() => {
+    if (grouped.length === 1) setSelectedModule(grouped[0][0]);
+  }, [grouped]);
+
+  const activeModule = grouped.find(([moduleName]) => moduleName === selectedModule);
 
   const selectedCount = countPermissions(value);
   const inheritedCount = countPermissions(inherited);
@@ -256,140 +268,144 @@ export function PermissionTree({
         <span>{grouped.length} module(s) shown</span>
       </div>
 
-      {/* Tree */}
-      <ScrollArea className={cn('rounded-xl border border-white/70 bg-white/60', heightClassName)}>
-        <div className="divide-y divide-slate-100">
-          {grouped.length === 0 && (
-            <p className="px-3 py-10 text-center text-sm text-muted-foreground">
-              No permissions match “{term}”.
-            </p>
-          )}
-
+      {/* Every module, as a narrow single-line card, always visible — not a list where opening one
+          pushes the rest down. Selecting a card shows its pages in the panel below the whole grid. */}
+      {grouped.length === 0 ? (
+        <p className="rounded-xl border border-white/70 bg-white/60 px-3 py-10 text-center text-sm text-muted-foreground">
+          No permissions match “{term}”.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
           {grouped.map(([moduleName, nodes]) => {
-            const open = effectiveOpen.has(moduleName);
             const state = moduleState(nodes);
             const total = nodes.reduce((sum, node) => sum + node.actions.length, 0);
             const chosen = nodes.reduce(
               (sum, node) => sum + node.actions.filter((action) => hasAction(value, node.resource, action)).length,
               0,
             );
-
+            const selected = selectedModule === moduleName;
             return (
-              <div key={moduleName}>
-                <div className="flex items-center gap-2 px-2.5 py-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOpenModules((current) =>
-                        current.includes(moduleName)
-                          ? current.filter((name) => name !== moduleName)
-                          : [...current, moduleName],
-                      )
-                    }
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    aria-expanded={open}
-                  >
-                    <ChevronRight
-                      className={cn('h-4 w-4 shrink-0 text-slate-400 transition-transform', open && 'rotate-90')}
-                    />
-                    <span className="truncate text-sm font-semibold text-slate-800">{moduleName}</span>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'shrink-0 text-[10px]',
-                        state === 'all'
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                          : state === 'some'
-                            ? 'border-amber-200 bg-amber-50 text-amber-700'
-                            : 'border-slate-200 bg-white text-slate-500',
-                      )}
-                    >
-                      {chosen}/{total}
-                    </Badge>
-                  </button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={disabled}
-                    className="h-7 shrink-0 gap-1 px-2 text-xs"
-                    onClick={() => setModuleAll(nodes, state !== 'all')}
-                  >
-                    {state === 'all' ? <SquareMinus className="h-3.5 w-3.5" /> : <SquareCheck className="h-3.5 w-3.5" />}
-                    {state === 'all' ? 'Clear' : 'All'}
-                  </Button>
-                </div>
-
-                {open && (
-                  <div className="space-y-1.5 bg-slate-50/60 px-2.5 pb-2.5 pt-1">
-                    {nodes.map((node) => {
-                      const nodeAll = node.actions.every((action) => hasAction(value, node.resource, action));
-                      const label = node.depth === 0 ? 'Module access' : node.resource.split('.').slice(1).join(' › ');
-                      return (
-                        <div
-                          key={node.resource}
-                          className="rounded-lg border border-white bg-white/80 px-2.5 py-2 shadow-sm"
-                        >
-                          <div className="mb-1.5 flex items-center justify-between gap-2">
-                            <p className="min-w-0 truncate text-xs font-semibold text-slate-700">{label}</p>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              disabled={disabled}
-                              className="h-6 shrink-0 px-1.5 text-[11px]"
-                              onClick={() => setNodeAll(node, !nodeAll)}
-                            >
-                              {nodeAll ? 'Clear' : 'Select all'}
-                            </Button>
-                          </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                            {node.actions.map((action) => {
-                              const isInherited = hasAction(inherited, node.resource, action);
-                              const checked = isInherited || hasAction(value, node.resource, action);
-                              const id = `${node.resource}::${action}`;
-                              return (
-                                <label
-                                  key={id}
-                                  htmlFor={id}
-                                  className={cn(
-                                    'flex min-h-8 cursor-pointer items-center gap-1.5 text-xs',
-                                    isInherited && 'cursor-not-allowed text-slate-400',
-                                  )}
-                                >
-                                  <Checkbox
-                                    id={id}
-                                    checked={checked}
-                                    disabled={disabled || isInherited}
-                                    onCheckedChange={(next) => toggleAction(node.resource, action, next === true)}
-                                  />
-                                  <span className="truncate">{action}</span>
-                                  {isInherited && (
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Lock className="h-3 w-3 shrink-0 text-slate-400" />
-                                        </TooltipTrigger>
-                                        <TooltipContent className="text-xs">
-                                          Already held {inheritedLabel} — granting it again would change nothing.
-                                        </TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-                                  )}
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+              <button
+                key={moduleName}
+                type="button"
+                onClick={() => setSelectedModule(moduleName)}
+                aria-pressed={selected}
+                title={moduleName}
+                className={cn(
+                  'flex min-w-0 items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left shadow-sm transition-colors',
+                  selected
+                    ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200'
+                    : 'border-white/70 bg-white/80 hover:border-indigo-200 hover:bg-indigo-50/40',
                 )}
-              </div>
+              >
+                <span className="min-w-0 truncate text-xs font-semibold text-slate-800">{moduleName}</span>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    'shrink-0 px-1 text-[9px] leading-tight',
+                    state === 'all'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : state === 'some'
+                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                        : 'border-slate-200 bg-white text-slate-500',
+                  )}
+                >
+                  {chosen}/{total}
+                </Badge>
+              </button>
             );
           })}
         </div>
-      </ScrollArea>
+      )}
+
+      {activeModule ? (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="min-w-0 truncate text-sm font-semibold text-slate-800">{activeModule[0]}</p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={disabled}
+              className="h-7 shrink-0 gap-1 px-2 text-xs"
+              onClick={() => setModuleAll(activeModule[1], moduleState(activeModule[1]) !== 'all')}
+            >
+              {moduleState(activeModule[1]) === 'all' ? (
+                <SquareMinus className="h-3.5 w-3.5" />
+              ) : (
+                <SquareCheck className="h-3.5 w-3.5" />
+              )}
+              {moduleState(activeModule[1]) === 'all' ? 'Clear module' : 'Select whole module'}
+            </Button>
+          </div>
+          <ScrollArea className={cn('rounded-xl border border-white/70 bg-white/80', heightClassName)}>
+            <div className="space-y-1.5 p-2.5">
+              {activeModule[1].map((node) => {
+                const nodeAll = node.actions.every((action) => hasAction(value, node.resource, action));
+                const label = node.depth === 0 ? 'Module access' : node.resource.split('.').slice(1).join(' › ');
+                return (
+                  <div key={node.resource} className="rounded-lg border border-white bg-white/90 px-2.5 py-2 shadow-sm">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-xs font-semibold text-slate-700">{label}</p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={disabled}
+                        className="h-6 shrink-0 px-1.5 text-[11px]"
+                        onClick={() => setNodeAll(node, !nodeAll)}
+                      >
+                        {nodeAll ? 'Clear' : 'Select all'}
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                      {node.actions.map((action) => {
+                        const isInherited = hasAction(inherited, node.resource, action);
+                        const checked = isInherited || hasAction(value, node.resource, action);
+                        const id = `${node.resource}::${action}`;
+                        return (
+                          <label
+                            key={id}
+                            htmlFor={id}
+                            className={cn(
+                              'flex min-h-8 cursor-pointer items-center gap-1.5 text-xs',
+                              isInherited && 'cursor-not-allowed text-slate-400',
+                            )}
+                          >
+                            <Checkbox
+                              id={id}
+                              checked={checked}
+                              disabled={disabled || isInherited}
+                              onCheckedChange={(next) => toggleAction(node.resource, action, next === true)}
+                            />
+                            <span className="truncate">{action}</span>
+                            {isInherited && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Lock className="h-3 w-3 shrink-0 text-slate-400" />
+                                  </TooltipTrigger>
+                                  <TooltipContent className="text-xs">
+                                    Already held {inheritedLabel} — granting it again would change nothing.
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </div>
+      ) : (
+        <p className="rounded-xl border border-dashed border-slate-200 bg-white/50 px-3 py-8 text-center text-sm text-muted-foreground">
+          Select a module above to see its pages.
+        </p>
+      )}
     </div>
   );
 }

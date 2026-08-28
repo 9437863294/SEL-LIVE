@@ -19,36 +19,36 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Building2, Layers, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { Building2, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import { hrDialog, HrEmptyState } from '@/components/hr/hr-ui';
 import { AccessCard } from './access-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
   countPermissions,
-  type AccessTemplate,
   type PermissionMap,
   type ScopeGrantConfig,
 } from '@/lib/access-control';
 import {
   deleteAccessTemplate,
-  saveAccessTemplate,
   saveScopeGrant,
   type AccessActor,
 } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
 import { PermissionMapSummary, PermissionTree } from './permission-tree';
 import { RolePicker } from './pickers';
+
+/** Where the template editor sends you back to, from either entry point below. */
+const TEMPLATES_RETURN_TO = encodeURIComponent('/settings/access-management?tab=templates');
 
 export function TemplatesAndScopes({
   state,
@@ -70,12 +70,7 @@ export function TemplatesAndScopes({
       </TabsList>
 
       <TabsContent value="templates">
-        <TemplateManager
-          state={state}
-          actor={actor}
-          canManage={canManage}
-          onApplyTemplate={onApplyTemplate}
-        />
+        <TemplateManager state={state} canManage={canManage} onApplyTemplate={onApplyTemplate} />
       </TabsContent>
 
       <TabsContent value="scopes">
@@ -91,19 +86,15 @@ export function TemplatesAndScopes({
 
 function TemplateManager({
   state,
-  actor,
   canManage,
   onApplyTemplate,
 }: {
   state: AccessDirectoryState;
-  actor: AccessActor;
   canManage: boolean;
   onApplyTemplate: (templateId: string) => void;
 }) {
   const { toast } = useToast();
   const { directory, projects, registry } = state;
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [editing, setEditing] = useState<AccessTemplate | null>(null);
 
   const templates = useMemo(
     () => directory.templates.filter((template) => template.active !== false),
@@ -118,15 +109,13 @@ function TemplateManager({
           the user already has.
         </p>
         {canManage && (
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditing(null);
-              setEditorOpen(true);
-            }}
-          >
-            <Plus className="mr-1.5 h-4 w-4" />
-            New template
+          // A link, not a dialog trigger — this form carries a full permission tree, a role picker
+          // and a project chooser, and comes back here with `?returnTo=`.
+          <Button asChild size="sm">
+            <Link href={`/settings/access-management/templates/new?returnTo=${TEMPLATES_RETURN_TO}`}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              New template
+            </Link>
           </Button>
         )}
       </div>
@@ -138,15 +127,11 @@ function TemplateManager({
           description="Create one for the roles you set up repeatedly — Site Engineer, Finance Executive, Store Keeper — and assigning a new joiner becomes one click."
           action={
             canManage ? (
-              <Button
-                size="sm"
-                onClick={() => {
-                  setEditing(null);
-                  setEditorOpen(true);
-                }}
-              >
-                <Plus className="mr-1.5 h-4 w-4" />
-                New template
+              <Button asChild size="sm">
+                <Link href={`/settings/access-management/templates/new?returnTo=${TEMPLATES_RETURN_TO}`}>
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  New template
+                </Link>
               </Button>
             ) : undefined
           }
@@ -202,16 +187,12 @@ function TemplateManager({
                   </Button>
                   {canManage && (
                     <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs"
-                        onClick={() => {
-                          setEditing(template);
-                          setEditorOpen(true);
-                        }}
-                      >
-                        Edit
+                      <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+                        <Link
+                          href={`/settings/access-management/templates/${template.id}?returnTo=${TEMPLATES_RETURN_TO}`}
+                        >
+                          Edit
+                        </Link>
                       </Button>
                       <Button
                         variant="ghost"
@@ -233,184 +214,10 @@ function TemplateManager({
           ))}
         </div>
       )}
-
-      <TemplateEditorDialog
-        open={editorOpen}
-        onOpenChange={setEditorOpen}
-        editing={editing}
-        state={state}
-        actor={actor}
-        onSaved={async () => {
-          await state.refresh();
-          toast({ title: editing ? 'Template updated' : 'Template created' });
-        }}
-      />
     </div>
   );
 }
 
-function TemplateEditorDialog({
-  open,
-  onOpenChange,
-  editing,
-  state,
-  actor,
-  onSaved,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  editing: AccessTemplate | null;
-  state: AccessDirectoryState;
-  actor: AccessActor;
-  onSaved: () => Promise<void>;
-}) {
-  const { toast } = useToast();
-  const { directory, projects, registry } = state;
-  const [saving, setSaving] = useState(false);
-  const [initialisedFor, setInitialisedFor] = useState('');
-
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [roleIds, setRoleIds] = useState<string[]>([]);
-  const [projectIds, setProjectIds] = useState<string[]>([]);
-  const [permissions, setPermissions] = useState<PermissionMap>({});
-
-  const formKey = `${editing?.id ?? 'new'}|${open}`;
-  if (open && initialisedFor !== formKey) {
-    setInitialisedFor(formKey);
-    setName(editing?.name ?? '');
-    setDescription(editing?.description ?? '');
-    setRoleIds(editing?.roleIds ?? []);
-    setProjectIds(editing?.projectIds ?? []);
-    setPermissions((editing?.permissions ?? {}) as PermissionMap);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={hrDialog.contentWide}>
-        <DialogHeader className={hrDialog.header}>
-          <DialogTitle>{editing ? `Edit ${editing.name}` : 'New access template'}</DialogTitle>
-          <DialogDescription>
-            A template is a shortcut, not a link. Applying it copies these roles and permissions onto a
-            user; changing the template later does not change anybody who already has it.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className={hrDialog.body}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="template-name">Template name *</Label>
-              <Input
-                id="template-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. Site Engineer"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="template-description">Description</Label>
-              <Input
-                id="template-description"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Who this is for"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Roles in this template</Label>
-            <RolePicker
-              roles={directory.roles}
-              selectedIds={roleIds}
-              onSelectionChange={setRoleIds}
-              heightClassName="h-40"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Projects (optional)</Label>
-            <div className="flex flex-wrap gap-1.5 rounded-xl border border-white/70 bg-white/70 p-2">
-              {projects.slice(0, 40).map((project) => {
-                const selected = projectIds.includes(project.id);
-                return (
-                  <button
-                    key={project.id}
-                    type="button"
-                    onClick={() =>
-                      setProjectIds((current) =>
-                        selected ? current.filter((id) => id !== project.id) : [...current, project.id],
-                      )
-                    }
-                    className={cn(
-                      'rounded-full border px-2.5 py-1 text-xs transition-colors',
-                      selected
-                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
-                    )}
-                  >
-                    {project.projectName || project.siteCode || project.id}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Direct permissions (optional)</Label>
-            <PermissionTree
-              registry={registry}
-              value={permissions}
-              onChange={setPermissions}
-              heightClassName="h-64"
-            />
-          </div>
-        </div>
-
-        <DialogFooter className={hrDialog.footer}>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button
-            disabled={saving || !name.trim()}
-            onClick={async () => {
-              setSaving(true);
-              try {
-                await saveAccessTemplate(
-                  {
-                    id: editing?.id,
-                    name,
-                    description,
-                    roleIds,
-                    roleNames: roleIds
-                      .map((id) => directory.roles.find((role) => role.id === id)?.name)
-                      .filter(Boolean) as string[],
-                    projectIds,
-                    permissions,
-                    active: true,
-                  },
-                  actor,
-                );
-                onOpenChange(false);
-                setInitialisedFor('');
-                await onSaved();
-              } catch (error) {
-                toast({
-                  title: 'Could not save the template',
-                  description: error instanceof Error ? error.message : 'Unexpected error.',
-                  variant: 'destructive',
-                });
-              } finally {
-                setSaving(false);
-              }
-            }}
-          >
-            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {editing ? 'Save template' : 'Create template'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 /* ------------------------------------------------------------------------------------------------
  * Scope grants (§21)

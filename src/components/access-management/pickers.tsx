@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The two selectors the assignment workflow is built from: users (§12) and roles (§4).
+ * The selectors the assignment workflow is built from: users (§12), roles (§4), and projects.
  *
  * Both are extracted rather than inlined because §5 and §13 are the same workflow entered from
  * opposite ends — "pick roles then users" and "filter users then pick roles" — and the only honest
@@ -18,13 +18,16 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Check, Search, Users, X } from 'lucide-react';
+import { Check, ChevronsUpDown, FolderKanban, Search, Users, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import type { Department, Employee, Project, Role, User } from '@/lib/types';
 import {
@@ -328,63 +331,82 @@ export function UserPicker({
             <p className="text-sm text-muted-foreground">No users match these filters.</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {windowed.map((user) => {
-              const access = context.accessByUser[user.id];
-              const grant = context.grants[user.id];
-              const employee = employeeIndex.get((user.email || '').trim().toLowerCase());
-              const isSelected = selected.has(user.id);
+          <Table>
+            <TableHeader className="bg-slate-100/80">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10" />
+                <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Name
+                </TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Contact
+                </TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Roles
+                </TableHead>
+                <TableHead className="text-right text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Permissions
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {windowed.map((user) => {
+                const access = context.accessByUser[user.id];
+                const grant = context.grants[user.id];
+                const employee = employeeIndex.get((user.email || '').trim().toLowerCase());
+                const isSelected = selected.has(user.id);
 
-              return (
-                <label
-                  key={user.id}
-                  className={cn(
-                    'flex cursor-pointer items-start gap-2.5 px-2.5 py-2.5 transition-colors',
-                    isSelected ? 'bg-indigo-50/70' : 'hover:bg-slate-50/70',
-                  )}
-                >
-                  <Checkbox checked={isSelected} onCheckedChange={() => toggle(user.id)} className="mt-0.5" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="truncate text-sm font-semibold text-slate-800">{user.name || user.email}</span>
-                      {(user.status ?? 'Active') !== 'Active' && (
-                        <Badge variant="outline" className="border-slate-200 bg-white text-[10px] text-slate-500">
-                          Inactive
-                        </Badge>
-                      )}
-                      {access && (
-                        <RiskBadges
-                          privileges={detectPrivilegedAccess(access)}
-                          conflicts={detectSodConflicts(access)}
-                        />
-                      )}
-                    </div>
-                    <p className="truncate text-xs text-muted-foreground">
+                return (
+                  <TableRow
+                    key={user.id}
+                    onClick={() => toggle(user.id)}
+                    className={cn('cursor-pointer', isSelected && 'bg-indigo-50/70')}
+                  >
+                    <TableCell onClick={(event) => event.stopPropagation()}>
+                      <Checkbox checked={isSelected} onCheckedChange={() => toggle(user.id)} />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-semibold text-slate-800">{user.name || user.email}</span>
+                        {(user.status ?? 'Active') !== 'Active' && (
+                          <Badge variant="outline" className="border-slate-200 bg-white text-[10px] text-slate-500">
+                            Inactive
+                          </Badge>
+                        )}
+                        {access && (
+                          <RiskBadges
+                            privileges={detectPrivilegedAccess(access)}
+                            conflicts={detectSodConflicts(access)}
+                          />
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
                       {[user.email, employee?.employeeId, employee?.department, employee?.designation]
                         .filter(Boolean)
                         .join(' · ')}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-1">
-                      {user.role && <RoleBadge name={user.role} kind="base" />}
-                      {(grant?.additionalRoles ?? []).slice(0, 3).map((assignment) => (
-                        <RoleBadge key={assignment.roleId} name={assignment.roleName} kind="additional" />
-                      ))}
-                      {(grant?.additionalRoles?.length ?? 0) > 3 && (
-                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                          +{(grant?.additionalRoles?.length ?? 0) - 3}
-                        </Badge>
-                      )}
-                      {access && (
-                        <span className="text-[10px] text-muted-foreground">
-                          {countPermissions(access.permissions)} permissions
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {user.role && <RoleBadge name={user.role} kind="base" />}
+                        {(grant?.additionalRoles ?? []).slice(0, 3).map((assignment) => (
+                          <RoleBadge key={assignment.roleId} name={assignment.roleName} kind="additional" />
+                        ))}
+                        {(grant?.additionalRoles?.length ?? 0) > 3 && (
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                            +{(grant?.additionalRoles?.length ?? 0) - 3}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right text-xs text-muted-foreground">
+                      {access ? countPermissions(access.permissions) : '—'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
       </ScrollArea>
     </div>
@@ -451,7 +473,9 @@ export function RolePicker({
         {filtered.length === 0 ? (
           <p className="px-3 py-10 text-center text-sm text-muted-foreground">No roles match “{term}”.</p>
         ) : (
-          <div className="divide-y divide-slate-100">
+          // As many cards as fit a row, wrapping to the next one — not a single-column list of rows,
+          // which left most of a wide dialog empty next to a narrow strip of text.
+          <div className="grid grid-cols-1 gap-2 p-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map((role) => {
               const isSelected = selected.has(role.id);
               const usage = roleUsage?.[role.name];
@@ -459,11 +483,13 @@ export function RolePicker({
                 <label
                   key={role.id}
                   className={cn(
-                    'flex cursor-pointer items-start gap-2.5 px-2.5 py-2.5 transition-colors',
-                    isSelected ? 'bg-indigo-50/70' : 'hover:bg-slate-50/70',
+                    'flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2.5 shadow-sm transition-colors',
+                    isSelected
+                      ? 'border-indigo-300 bg-indigo-50/70'
+                      : 'border-white/70 bg-white/80 hover:border-indigo-200 hover:bg-slate-50/70',
                   )}
                 >
-                  <Checkbox checked={isSelected} onCheckedChange={() => toggle(role.id)} className="mt-0.5" />
+                  <Checkbox checked={isSelected} onCheckedChange={() => toggle(role.id)} className="mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="truncate text-sm font-semibold text-slate-800">{role.name}</span>
@@ -484,13 +510,131 @@ export function RolePicker({
                       {usage ? ` · ${usage.total} user${usage.total === 1 ? '' : 's'}` : ''}
                     </p>
                   </div>
-                  {isSelected && <Check className="mt-1 h-4 w-4 shrink-0 text-indigo-600" />}
+                  {isSelected && <Check className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />}
                 </label>
               );
             })}
           </div>
         )}
       </ScrollArea>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Project selection
+ * ---------------------------------------------------------------------------------------------- */
+
+const projectLabel = (project: Project): string => project.projectName || project.siteCode || project.id;
+
+/**
+ * A search-as-you-pop combobox rather than a wall of pill buttons. With a few hundred projects a flat
+ * `flex-wrap` of buttons ran to several visual rows before anyone had chosen anything — the picker
+ * itself was the largest thing on the form. Collapsing it into one trigger, opened on demand, means
+ * the form's size reflects what has been picked, not how many projects exist to pick from; the chips
+ * below the trigger are the "good view" of the selection, each removable without reopening the popover.
+ */
+export function ProjectPicker({
+  projects,
+  selectedIds,
+  onSelectionChange,
+  placeholder = 'Add a project…',
+}: {
+  projects: Project[];
+  selectedIds: string[];
+  onSelectionChange: (next: string[]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const sorted = useMemo(
+    () => [...projects].sort((a, b) => projectLabel(a).localeCompare(projectLabel(b))),
+    [projects],
+  );
+  const selectedProjects = useMemo(
+    () => selectedIds.map((id) => projects.find((project) => project.id === id)).filter((project): project is Project => !!project),
+    [selectedIds, projects],
+  );
+
+  const toggle = (projectId: string) => {
+    onSelectionChange(
+      selected.has(projectId) ? selectedIds.filter((id) => id !== projectId) : [...selectedIds, projectId],
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between sm:w-auto sm:min-w-[18rem]"
+          >
+            <span className="flex items-center gap-1.5 text-slate-600">
+              <FolderKanban className="h-4 w-4 text-slate-400" />
+              {selectedIds.length > 0
+                ? `${selectedIds.length} project${selectedIds.length === 1 ? '' : 's'} selected`
+                : placeholder}
+            </span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[--radix-popover-trigger-width] min-w-[20rem] p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Search projects or sites…" />
+            <CommandList>
+              <CommandEmpty>No project matches.</CommandEmpty>
+              <CommandGroup>
+                <ScrollArea className="h-64">
+                  {sorted.map((project) => {
+                    const isSelected = selected.has(project.id);
+                    return (
+                      <CommandItem
+                        key={project.id}
+                        value={`${projectLabel(project)} ${project.id}`}
+                        onSelect={() => toggle(project.id)}
+                      >
+                        <Check
+                          className={cn('mr-2 h-4 w-4 shrink-0 text-indigo-600', isSelected ? 'opacity-100' : 'opacity-0')}
+                        />
+                        <span className="truncate">{projectLabel(project)}</span>
+                      </CommandItem>
+                    );
+                  })}
+                </ScrollArea>
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+
+      {selectedProjects.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 rounded-xl border border-white/70 bg-white/70 p-2">
+          {selectedProjects.map((project) => (
+            <Badge
+              key={project.id}
+              variant="outline"
+              className="flex items-center gap-1 border-emerald-200 bg-emerald-50 py-1 pl-2 pr-1 text-xs text-emerald-700"
+            >
+              <FolderKanban className="h-3 w-3 shrink-0" />
+              <span className="max-w-[14rem] truncate">{projectLabel(project)}</span>
+              <button
+                type="button"
+                onClick={() => toggle(project.id)}
+                aria-label={`Remove ${projectLabel(project)}`}
+                className="rounded-full p-0.5 hover:bg-emerald-100"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No projects selected — this template will not scope to any site.</p>
+      )}
     </div>
   );
 }

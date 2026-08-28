@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "manual:e-approval": "node scripts/build-e-approval-manual.mjs",
     "mobile:doctor": "npx cap doctor",
     "mobile:sync": "npx cap sync",
     "mobile:copy": "npx cap copy",
