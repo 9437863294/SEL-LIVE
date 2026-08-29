@@ -7,5 +7,11 @@ export const metadata: Metadata = {
 };
 
 export default function EmployeeLayout({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  return (
+    // `hr-module-root` is the shared kit's phone ruleset (globals.css): 44px tap targets on buttons,
+    // inputs and selects below 640px, horizontally scrolling tab strips, compacted card padding and
+    // safe-area padding at the bottom. Applied once here so every employee screen inherits it —
+    // these routes do not go through the HR module shell that would otherwise supply it.
+    <div className="hr-module-root">{children}</div>
+  );
 }

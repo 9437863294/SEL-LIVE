@@ -61,7 +61,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import { HrAccessDenied, HrAlertNotice, HrEmptyState, HrField, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import {
+  HrAccessDenied,
+  HrAlertNotice,
+  HrDataList,
+  HrEmptyState,
+  HrField,
+  HrLoader,
+  HrPageHeader,
+  type HrListColumn,
+} from '@/components/hr/hr-ui';
+import type { LeaveBalanceLine } from '@/lib/greythr';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
 import type { Employee } from '@/lib/types';
@@ -88,6 +98,37 @@ import {
 } from '@/lib/greythr-sync-client';
 
 type FullEmployee = Employee & EmployeeOperationalDetail;
+
+/**
+ * The leave-balance register, as the module's responsive list: a six-column table from `sm` up and
+ * one card per leave type on a phone, with the balance — the number anybody asks for — as the aside.
+ */
+const LEAVE_COLUMNS: Array<HrListColumn<LeaveBalanceLine & { id: string }>> = [
+  {
+    header: 'Leave type',
+    mobile: 'title',
+    cell: (line) => (
+      <span className="font-medium text-slate-800">
+        {line.leaveType}
+        {line.code && <span className="ml-1 text-[10px] font-normal text-slate-400">{line.code}</span>}
+      </span>
+    ),
+  },
+  { header: 'Opening', align: 'right', className: 'text-slate-600', cell: (line) => line.openingBalance },
+  { header: 'Granted', align: 'right', className: 'text-slate-600', cell: (line) => line.granted },
+  { header: 'Availed', align: 'right', className: 'text-slate-600', cell: (line) => line.availed },
+  { header: 'Lapsed', align: 'right', className: 'text-slate-600', cell: (line) => line.lapsed },
+  {
+    header: 'Balance',
+    align: 'right',
+    mobile: 'aside',
+    cell: (line) => (
+      <span className={cn('font-semibold', line.balance < 0 ? 'text-destructive' : 'text-slate-800')}>
+        {line.balance}
+      </span>
+    ),
+  },
+];
 
 const STATE_TONE: Record<string, string> = {
   Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -789,44 +830,10 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                         {leave.totalBalance} day{leave.totalBalance === 1 ? '' : 's'} total
                       </Badge>
                     </div>
-                    <div className="overflow-x-auto rounded-xl border border-white bg-white/80">
-                      <table className="w-full text-xs">
-                        <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-muted-foreground">
-                          <tr>
-                            <th className="px-2.5 py-2 text-left">Leave type</th>
-                            <th className="px-2.5 py-2 text-right">Opening</th>
-                            <th className="px-2.5 py-2 text-right">Granted</th>
-                            <th className="px-2.5 py-2 text-right">Availed</th>
-                            <th className="px-2.5 py-2 text-right">Lapsed</th>
-                            <th className="px-2.5 py-2 text-right font-semibold">Balance</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {leave.lines.map((line) => (
-                            <tr key={line.leaveTypeId}>
-                              <td className="px-2.5 py-1.5 font-medium text-slate-800">
-                                {line.leaveType}
-                                {line.code && (
-                                  <span className="ml-1 text-[10px] text-slate-400">{line.code}</span>
-                                )}
-                              </td>
-                              <td className="px-2.5 py-1.5 text-right text-slate-600">{line.openingBalance}</td>
-                              <td className="px-2.5 py-1.5 text-right text-slate-600">{line.granted}</td>
-                              <td className="px-2.5 py-1.5 text-right text-slate-600">{line.availed}</td>
-                              <td className="px-2.5 py-1.5 text-right text-slate-600">{line.lapsed}</td>
-                              <td
-                                className={cn(
-                                  'px-2.5 py-1.5 text-right font-semibold',
-                                  line.balance < 0 ? 'text-destructive' : 'text-slate-800',
-                                )}
-                              >
-                                {line.balance}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <HrDataList
+                      rows={leave.lines.map((line) => ({ ...line, id: line.leaveTypeId }))}
+                      columns={LEAVE_COLUMNS}
+                    />
                   </>
                 ) : (
                   <p className="text-xs text-muted-foreground">No leave balance recorded for this employee.</p>

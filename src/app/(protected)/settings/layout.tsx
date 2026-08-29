@@ -158,7 +158,19 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         </div>
       </aside>
 
-      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'lg:ml-56' : 'lg:ml-14')}>
+      {/*
+        `min-w-0` is what makes every settings screen fit a phone. A flex item's minimum width is
+        its content's intrinsic width unless told otherwise, so any wide descendant — the Access
+        Control Center's ten-tab strip, a register's scroll container — used to size this column
+        to ~900px and the whole page scrolled sideways, scroll areas or not. The HR module shell
+        (`hr-content min-w-0`) and the recurring-payments content frame fix the same thing.
+      */}
+      <div
+        className={cn(
+          'flex min-h-screen min-w-0 max-w-full flex-1 flex-col transition-all duration-300',
+          isExpanded ? 'lg:ml-56' : 'lg:ml-14',
+        )}
+      >
         {/* Mobile navigation bar — only on screens below lg */}
         <div className="lg:hidden flex items-center justify-between border-b border-border/40 bg-background/95 backdrop-blur-sm px-4 py-2.5 sticky top-16 z-30">
           <div className="flex items-center gap-2">
@@ -228,7 +240,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           </Sheet>
         </div>
 
-        <main className="flex-grow">{children}</main>
+        <main className="min-w-0 flex-grow overflow-x-clip">{children}</main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>
         </footer>

@@ -23,10 +23,10 @@
  * The payoff: when greytHR is unreachable this page serves the stored snapshot, clearly labelled as
  * stored rather than live, instead of failing.
  *
- * Table styled to match `site-account-statement/expenses`: a plain, dense `<table>` in its own
- * scrolling card (sticky slate header, hover rows, truncated cells with a `min-w` floor so it scrolls
- * horizontally instead of squeezing), with a row click opening the full record in a detail dialog —
- * rather than the generic responsive `HrDataList` card/table split used elsewhere in this module.
+ * The register is the module's responsive `HrDataList`: a table from `sm` up, one card per person on
+ * a phone, and a row (or card) tap opens the full record in a detail dialog. It used to be a dense
+ * custom `<table>` with a 1000px floor that scrolled sideways — on a phone that meant nine of ten
+ * columns were off-screen, which is not a roster anybody can read on site.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -53,7 +53,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import { HrAccessDenied, HrAlertNotice, HrKpiCard, HrLoader } from '@/components/hr/hr-ui';
+import {
+  HrAccessDenied,
+  HrAlertNotice,
+  HrDataList,
+  HrKpiCard,
+  HrLoader,
+  hrDialog,
+  type HrListColumn,
+} from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -111,6 +119,12 @@ function initials(name: string): string {
  */
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
+/**
+ * Rows in the DOM at once. The responsive register renders a phone card *and* a table row for every
+ * record, and CURRENT is ~1,300 people — the guard Position Details needed, applied here first.
+ */
+const PAGE_SIZE = 300;
+
 function formatJoinDate(value: string | null): string {
   if (!value) return '—';
   const parsed = new Date(`${value}T00:00:00`);
@@ -149,6 +163,7 @@ export default function CurrentEmployeesLivePage() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [viewEmployee, setViewEmployee] = useState<Row | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   /** What the last fetch did to the stored snapshot, and whether the data is live at all. */
   const [store, setStore] = useState<{
     source: 'greythr-live' | 'snapshot';
@@ -246,6 +261,13 @@ export default function CurrentEmployeesLivePage() {
     });
   }, [employees, search, filters]);
 
+  // Back to the first page whenever the result set changes shape.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [search, filters]);
+
+  const visibleRows = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount]);
+
   const activeFilterCount =
     (search.trim() ? 1 : 0) + Object.values(filters).filter((value) => value !== 'all').length;
 
@@ -289,6 +311,54 @@ export default function CurrentEmployeesLivePage() {
     const locations = new Set(employees.map((employee) => employee.location).filter(Boolean)).size;
     return { notice, departments, locations };
   }, [employees]);
+
+  /* ── Register columns ── */
+
+  /*
+   * One column spec drives both the desktop table and the phone cards (`HrDataList`); a row or a
+   * card opens the detail dialog. On a phone the name is the card's title, the state its aside and
+   * the posting and contact fields its detail grid.
+   */
+  const columns: Array<HrListColumn<Row>> = [
+    {
+      header: 'Employee',
+      mobile: 'title',
+      cell: (row) => (
+        <div className="flex items-center gap-2.5">
+          <Avatar className="h-8 w-8 shrink-0">
+            <AvatarFallback className={cn('text-[11px] font-semibold', avatarTone(row.id))}>
+              {initials(row.name || row.employeeNo || '?')}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 sm:max-w-[160px]">
+            <p className="truncate font-medium text-slate-800">{row.name || '—'}</p>
+            <p className="truncate text-xs font-normal text-muted-foreground">{row.employeeNo || row.employeeId}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'State',
+      mobile: 'aside',
+      cell: (row) => (
+        <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
+          {row.employmentState}
+        </Badge>
+      ),
+    },
+    { header: 'Department', className: 'max-w-[140px] truncate', cell: (row) => row.department || '—' },
+    { header: 'Designation', className: 'max-w-[160px] truncate', cell: (row) => row.designation || '—' },
+    { header: 'Location', className: 'max-w-[130px] truncate', cell: (row) => row.location || '—' },
+    { header: 'Project', className: 'max-w-[150px] truncate', cell: (row) => row.projectName || '—' },
+    {
+      header: 'Type',
+      cell: (row) =>
+        row.employmentType ? <Badge variant="secondary" className="font-normal">{row.employmentType}</Badge> : '—',
+    },
+    { header: 'Joined', className: 'whitespace-nowrap', cell: (row) => formatJoinDate(row.dateOfJoin) },
+    { header: 'Email', className: 'max-w-[170px] truncate text-muted-foreground', cell: (row) => row.email || '—' },
+    { header: 'Phone', className: 'whitespace-nowrap text-muted-foreground', cell: (row) => row.phone || '—' },
+  ];
 
   /*
    * Both guards return before the header card renders. The header carries a working Refresh button,
@@ -441,7 +511,7 @@ export default function CurrentEmployeesLivePage() {
                 <button
                   type="button"
                   onClick={() => setSearch('')}
-                  className="absolute right-2 top-2 text-muted-foreground hover:text-slate-600"
+                  className="hr-inline-action absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted-foreground hover:text-slate-600"
                   aria-label="Clear search"
                 >
                   <X className="h-4 w-4" />
@@ -504,105 +574,54 @@ export default function CurrentEmployeesLivePage() {
             </p>
           </div>
 
-          {/* ── Table ── */}
-          <Card className="bg-white/80 backdrop-blur-sm">
-            <CardContent className="p-0">
-              {filtered.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 py-12 text-center">
-                  <Users className="h-10 w-10 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">
-                    {activeFilterCount > 0 ? 'No employees match these filters.' : "greytHR reports nobody current."}
-                  </p>
-                  {activeFilterCount > 0 && (
-                    <Button variant="outline" size="sm" onClick={clearFilters}>
-                      Clear filters
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="max-h-[65vh] overflow-auto">
-                  <table className="w-full min-w-[1000px] text-sm">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="border-b bg-slate-100">
-                        <th className="px-4 py-2.5 text-left font-medium">Employee</th>
-                        <th className="px-4 py-2.5 text-left font-medium">State</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Department</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Designation</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Location</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Project</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Type</th>
-                        <th className="px-4 py-2.5 text-left font-medium whitespace-nowrap">Joined</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Email</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Phone</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((row) => (
-                        <tr
-                          key={row.id}
-                          className="cursor-pointer border-b transition-colors hover:bg-muted/20"
-                          onClick={() => setViewEmployee(row)}
-                        >
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-2.5">
-                              <Avatar className="h-8 w-8 shrink-0">
-                                <AvatarFallback className={cn('text-[11px] font-semibold', avatarTone(row.id))}>
-                                  {initials(row.name || row.employeeNo || '?')}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0 max-w-[160px]">
-                                <p className="truncate font-medium text-slate-800">{row.name || '—'}</p>
-                                <p className="truncate text-xs text-muted-foreground">{row.employeeNo || row.employeeId}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
-                              {row.employmentState}
-                            </Badge>
-                          </td>
-                          <td className="max-w-[140px] truncate px-4 py-2.5">{row.department || '—'}</td>
-                          <td className="max-w-[160px] truncate px-4 py-2.5">{row.designation || '—'}</td>
-                          <td className="max-w-[130px] truncate px-4 py-2.5">{row.location || '—'}</td>
-                          <td className="max-w-[150px] truncate px-4 py-2.5">{row.projectName || '—'}</td>
-                          <td className="px-4 py-2.5">
-                            {row.employmentType ? <Badge variant="secondary" className="font-normal">{row.employmentType}</Badge> : '—'}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-2.5">{formatJoinDate(row.dateOfJoin)}</td>
-                          <td className="max-w-[170px] truncate px-4 py-2.5 text-muted-foreground">{row.email || '—'}</td>
-                          <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{row.phone || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-muted/30 font-semibold">
-                        <td className="px-4 py-2.5" colSpan={2}>
-                          Total
-                        </td>
-                        <td className="px-4 py-2.5 text-emerald-700" colSpan={8}>
-                          {filtered.length} current employee{filtered.length === 1 ? '' : 's'}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* ── Register ── */}
+          {filtered.length === 0 ? (
+            <Card className="bg-white/80 backdrop-blur-sm">
+              <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                <Users className="h-10 w-10 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">
+                  {activeFilterCount > 0 ? 'No employees match these filters.' : "greytHR reports nobody current."}
+                </p>
+                {activeFilterCount > 0 && (
+                  <Button variant="outline" size="sm" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2.5">
+              <HrDataList rows={visibleRows} columns={columns} onRowClick={(row) => setViewEmployee(row)} />
+
+              {/* The old <tfoot> total, as a line that reads on a phone too. */}
+              <div className="flex flex-col items-center gap-2 pb-2 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
+                  <span className="font-medium text-emerald-700">{filtered.length}</span> current employee
+                  {filtered.length === 1 ? '' : 's'}
+                </p>
+                {visibleRows.length < filtered.length && (
+                  <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                    Show {Math.min(PAGE_SIZE, filtered.length - visibleRows.length)} more
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── Employee detail dialog ── */}
+      {/* ── Employee detail dialog — a full-screen sheet on a phone, a capped centred dialog above. ── */}
       <Dialog open={!!viewEmployee} onOpenChange={() => setViewEmployee(null)}>
-        <DialogContent className="max-h-[90vh] max-w-[95vw] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
+        <DialogContent className={cn(hrDialog.content, 'sm:max-h-[90dvh] sm:max-w-xl sm:overflow-y-auto')}>
+          <DialogHeader className={hrDialog.header}>
             <DialogTitle className="flex items-center gap-2">
               <Briefcase className="h-4 w-4 text-emerald-600" />
               Employee Details
             </DialogTitle>
           </DialogHeader>
           {viewEmployee && (
-            <div className="space-y-4 py-1">
+            <div className={cn(hrDialog.body, 'space-y-4')}>
               {/* Identity highlight */}
               <div className="flex items-center gap-3 rounded-xl border bg-emerald-50 px-4 py-3">
                 <Avatar className="h-11 w-11 shrink-0">

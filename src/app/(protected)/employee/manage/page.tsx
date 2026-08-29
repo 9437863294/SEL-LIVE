@@ -66,7 +66,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
-  HrAccessDenied, HrAlertNotice, HrEmptyState, HrFilterCard, HrKpiCard, HrLoader, HrPageHeader, hrDialog,
+  HrAccessDenied,
+  HrAlertNotice,
+  HrDataList,
+  HrEmptyState,
+  HrFilterCard,
+  HrKpiCard,
+  HrLoader,
+  HrPageHeader,
+  hrDialog,
+  type HrListColumn,
 } from '@/components/hr/hr-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
@@ -86,6 +95,15 @@ import { hasExited, isWorkingState, type EmploymentState } from '@/lib/greythr';
  * to stay honest, rare enough not to fight the user.
  */
 const AUTO_REFRESH_MS = 10 * 60 * 1000;
+
+/**
+ * Rows in the DOM at once.
+ *
+ * The responsive register renders a phone card *and* a table row for every record, and the full
+ * roster is ~1,300 people — the same guard Position Details needed at ten thousand, applied before
+ * this screen finds out the hard way. The filters above are the fast route to a specific person.
+ */
+const PAGE_SIZE = 300;
 
 const STATE_TONE: Record<EmploymentState, string> = {
   Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -196,6 +214,7 @@ export default function ManageEmployeePage() {
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState(initialFilters);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const [addOpen, setAddOpen] = useState(false);
   const [newEmployee, setNewEmployee] = useState(EMPTY_NEW_EMPLOYEE);
@@ -275,6 +294,16 @@ export default function ManageEmployeePage() {
       return true;
     });
   }, [employees, search, filters]);
+
+  // Back to the first page whenever the result set changes shape.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [search, filters]);
+
+  const visibleRows = useMemo(
+    () => filtered.slice(0, visibleCount).map((row) => ({ ...row, id: row.employeeId })),
+    [filtered, visibleCount],
+  );
 
   const activeFilterCount =
     (filters.status !== 'all' ? 1 : 0) +
@@ -408,6 +437,170 @@ export default function ManageEmployeePage() {
       });
     }
   };
+
+  /* ── Register columns ── */
+
+  type RosterListRow = RosterEmployeeRow & { id: string };
+
+  /*
+   * One column spec drives both the desktop table and the phone cards (`HrDataList`). On a phone
+   * the name is the card's title, the state and checkbox its aside, the posting fields its detail
+   * grid and Edit/Delete its footer — the old 1,100px `<table>` put nine of ten columns off-screen.
+   */
+  const checkboxColumn: HrListColumn<RosterListRow> = {
+    header: '',
+    className: 'w-10',
+    mobile: 'aside',
+    cell: (row) => (
+      <span className="inline-flex" onClick={(event) => event.stopPropagation()}>
+        <Checkbox
+          checked={selectedIds.includes(row.employeeId)}
+          onCheckedChange={(checked) =>
+            setSelectedIds((prev) =>
+              checked ? [...prev, row.employeeId] : prev.filter((id) => id !== row.employeeId),
+            )
+          }
+          aria-label={`Select ${row.name || row.employeeId}`}
+        />
+      </span>
+    ),
+  };
+
+  const actionsColumn: HrListColumn<RosterListRow> = {
+    header: 'Actions',
+    align: 'right',
+    mobile: 'footer',
+    cell: (row) => (
+      <div className="flex flex-1 justify-end gap-1">
+        {canEdit && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setEditing({
+                employeeId: row.employeeId,
+                employeeNo: row.employeeNo ?? '',
+                name: row.name ?? '',
+                dateOfJoin: row.dateOfJoin ?? '',
+                email: row.email ?? '',
+                phone: row.phone ?? '',
+              })
+            }
+          >
+            Edit
+          </Button>
+        )}
+        {canDelete && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 sm:h-8 sm:w-8 sm:p-0">
+                <Trash2 className="h-3.5 w-3.5 sm:mr-0" />
+                <span className="ml-1.5 sm:hidden">Delete</span>
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete {row.name || 'this employee'}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This removes the local record only — it does not change greytHR, so the next sync will
+                  recreate them if greytHR still has them. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => void handleDelete(row.employeeId)}
+                  className="bg-destructive hover:bg-destructive/90"
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </div>
+    ),
+  };
+
+  const columns: Array<HrListColumn<RosterListRow>> = [
+    ...(canDelete ? [checkboxColumn] : []),
+    {
+      header: 'Employee',
+      mobile: 'title',
+      cell: (row) => (
+        <div className="flex items-center gap-2.5">
+          <Avatar className="h-8 w-8 shrink-0">
+            <AvatarFallback className={cn('text-[11px] font-semibold', avatarTone(row.employeeId))}>
+              {initials(row.name || row.employeeNo || '?')}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 sm:max-w-[170px]">
+            {/* The profile screen holds every field greytHR has, plus the restricted block. */}
+            <Link
+              href={`/employee/${encodeURIComponent(row.employeeId)}`}
+              className="block truncate font-medium text-slate-800 hover:underline"
+            >
+              {row.name || '—'}
+            </Link>
+            <p className="truncate text-xs font-normal text-muted-foreground">{row.employeeNo || row.employeeId}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: 'State',
+      mobile: 'aside',
+      cell: (row) => (
+        <div className="flex flex-col items-end gap-1 sm:items-start">
+          <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
+            {row.employmentState}
+          </Badge>
+          {/*
+            Surfaced rather than applied silently: "Active because greytHR says so" and "Active
+            because we disbelieved the stored leaving date" are different claims, and somebody
+            deciding whether to grant a login should be able to tell them apart.
+          */}
+          {row.employmentStateCorrected && (
+            <span className="text-[10px] font-medium text-blue-600" title={row.employmentStateReason}>
+              corrected
+            </span>
+          )}
+          {row.awaitingSync && (
+            <span className="text-[10px] font-medium text-amber-600" title="In greytHR but not yet written to the local mirror">
+              awaiting sync
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: 'Department',
+      className: 'max-w-[140px] truncate',
+      cell: (row) => row.categories['Department'] || row.department || '—',
+    },
+    {
+      header: 'Designation',
+      className: 'max-w-[160px] truncate',
+      cell: (row) => row.categories['Designation'] || row.designation || '—',
+    },
+    {
+      header: 'Location',
+      className: 'max-w-[130px] truncate',
+      cell: (row) => row.categories['Location'] || row.location || '—',
+    },
+    {
+      header: 'Project',
+      className: 'max-w-[150px] truncate',
+      cell: (row) => row.categories['Project Name'] || row.projectName || '—',
+    },
+    { header: 'Joined', className: 'whitespace-nowrap', cell: (row) => formatDate(row.dateOfJoin) },
+    {
+      header: 'Exit date',
+      className: 'whitespace-nowrap text-muted-foreground',
+      cell: (row) => formatDate(row.exitDate),
+    },
+    ...(canEdit || canDelete ? [actionsColumn] : []),
+  ];
 
   /* ── Render ── */
 
@@ -604,7 +797,7 @@ export default function ManageEmployeePage() {
                     <button
                       type="button"
                       onClick={() => setSearch('')}
-                      className="absolute right-2 top-2 text-muted-foreground hover:text-slate-600"
+                      className="hr-inline-action absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted-foreground hover:text-slate-600"
                       aria-label="Clear search"
                     >
                       <X className="h-4 w-4" />
@@ -696,155 +889,112 @@ export default function ManageEmployeePage() {
           </HrFilterCard>
 
           {/*
-            Only the bulk action lives here now — the record count moved up into the filter row,
-            which had spare width and no reason not to carry it. Rendered conditionally rather than
-            left as an empty flex row, so an unselected table has no gap above it at all.
+            Select-all used to live in the table's header row; the responsive register has no header
+            on a phone, so it sits above the list at every width. It selects everything the filter
+            matched — not just the rows rendered so far — which is what "all" means to the person
+            about to delete them. Rendered only when there is something to select, so an unselectable
+            list has no gap above it.
           */}
-          {selectedIds.length > 0 && canDelete && (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" size="sm">
-                    <Trash2 className="mr-1.5 h-4 w-4" />
-                    Delete ({selectedIds.length})
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete {selectedIds.length} employee record(s)?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This removes the local records only — it does not change anything in greytHR, so the
-                      next sync will recreate anyone greytHR still has. This cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => void handleDeleteSelected()} className="bg-destructive hover:bg-destructive/90">
-                      Delete
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+          {canDelete && filtered.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={selectedIds.length === filtered.length}
+                  onCheckedChange={(checked) =>
+                    setSelectedIds(checked ? filtered.map((row) => row.employeeId) : [])
+                  }
+                  aria-label="Select all"
+                />
+                <span>
+                  Select all {filtered.length}
+                  {selectedIds.length > 0 && (
+                    <span className="font-medium text-slate-700"> · {selectedIds.length} selected</span>
+                  )}
+                </span>
+              </label>
+              {selectedIds.length > 0 && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm">
+                      <Trash2 className="mr-1.5 h-4 w-4" />
+                      Delete ({selectedIds.length})
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete {selectedIds.length} employee record(s)?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This removes the local records only — it does not change anything in greytHR, so the
+                        next sync will recreate anyone greytHR still has. This cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => void handleDeleteSelected()} className="bg-destructive hover:bg-destructive/90">
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
             </div>
           )}
 
-          {/* ── Table ── */}
-          <Card className="bg-white/80 backdrop-blur-sm">
-            <CardContent className="p-0">
-              {filtered.length === 0 ? (
-                <div className="py-4">
-                  <HrEmptyState
-                    icon={Users}
-                    title={activeFilterCount ? 'No employees match these filters' : 'No employee records yet'}
-                    description={
-                      activeFilterCount
-                        ? 'Try a different name, status, department or project.'
-                        : 'Run a greytHR sync to populate the roster.'
-                    }
-                    action={
-                      activeFilterCount ? (
-                        <Button size="sm" variant="outline" onClick={clearFilters}>Clear filters</Button>
-                      ) : undefined
-                    }
-                  />
-                </div>
-              ) : (
-                <div className="max-h-[65vh] overflow-auto">
-                  <table className="w-full min-w-[1100px] text-sm">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="border-b bg-slate-100">
-                        {canDelete && (
-                          <th className="w-[44px] px-4 py-2.5">
-                            <Checkbox
-                              checked={filtered.length > 0 && selectedIds.length === filtered.length}
-                              onCheckedChange={(checked) =>
-                                setSelectedIds(checked ? filtered.map((row) => row.employeeId) : [])
-                              }
-                              aria-label="Select all"
-                            />
-                          </th>
-                        )}
-                        <th className="px-4 py-2.5 text-left font-medium">Employee</th>
-                        <th className="px-4 py-2.5 text-left font-medium">State</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Department</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Designation</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Location</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Project</th>
-                        <th className="whitespace-nowrap px-4 py-2.5 text-left font-medium">Joined</th>
-                        <th className="whitespace-nowrap px-4 py-2.5 text-left font-medium">Exit date</th>
-                        {(canEdit || canDelete) && <th className="px-4 py-2.5 text-right font-medium">Actions</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((row) => (
-                        <RosterRow
-                          key={row.employeeId}
-                          row={row}
-                          canEdit={canEdit}
-                          canDelete={canDelete}
-                          selected={selectedIds.includes(row.employeeId)}
-                          onSelect={(checked) =>
-                            setSelectedIds((prev) =>
-                              checked ? [...prev, row.employeeId] : prev.filter((id) => id !== row.employeeId),
-                            )
-                          }
-                          onEdit={() =>
-                            setEditing({
-                              employeeId: row.employeeId,
-                              employeeNo: row.employeeNo ?? '',
-                              name: row.name ?? '',
-                              dateOfJoin: row.dateOfJoin ?? '',
-                              email: row.email ?? '',
-                              phone: row.phone ?? '',
-                            })
-                          }
-                          onDelete={() => void handleDelete(row.employeeId)}
-                        />
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      {/*
-                        The two colSpans must sum to what the header actually renders: eight data
-                        columns, plus the checkbox column when canDelete, plus the actions column
-                        when canEdit || canDelete. Deriving the second from the total keeps the pair
-                        from drifting apart again per permission combination.
-                      */}
-                      <tr className="bg-muted/30 font-semibold">
-                        <td className="px-4 py-2.5" colSpan={canDelete ? 3 : 2}>Total</td>
-                        <td
-                          className="px-4 py-2.5"
-                          colSpan={8 + (canDelete ? 1 : 0) + (canEdit || canDelete ? 1 : 0) - (canDelete ? 3 : 2)}
-                        >
-                          {filtered.length} record{filtered.length === 1 ? '' : 's'} ·{' '}
-                          <span className="text-emerald-700">
-                            {filtered.filter((row) => isWorkingState(row.employmentState)).length} working
-                          </span>{' '}
-                          ·{' '}
-                          <span className="text-rose-700">
-                            {filtered.filter((row) => hasExited(row.employmentState)).length} departed
-                          </span>
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* ── Register ── */}
+          {filtered.length === 0 ? (
+            <HrEmptyState
+              icon={Users}
+              title={activeFilterCount ? 'No employees match these filters' : 'No employee records yet'}
+              description={
+                activeFilterCount
+                  ? 'Try a different name, status, department or project.'
+                  : 'Run a greytHR sync to populate the roster.'
+              }
+              action={
+                activeFilterCount ? (
+                  <Button size="sm" variant="outline" onClick={clearFilters}>Clear filters</Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <div className="space-y-2.5">
+              <HrDataList rows={visibleRows} columns={columns} />
+
+              {/* The old <tfoot> totals, as a line that reads on a phone too. */}
+              <div className="flex flex-col items-center gap-2 pb-2 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
+                  {filtered.length} record{filtered.length === 1 ? '' : 's'} ·{' '}
+                  <span className="text-emerald-700">
+                    {filtered.filter((row) => isWorkingState(row.employmentState)).length} working
+                  </span>{' '}
+                  ·{' '}
+                  <span className="text-rose-700">
+                    {filtered.filter((row) => hasExited(row.employmentState)).length} departed
+                  </span>
+                </p>
+                {visibleRows.length < filtered.length && (
+                  <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                    Show {Math.min(PAGE_SIZE, filtered.length - visibleRows.length)} more
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── Add ── */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className={hrDialog.content}>
-          <DialogHeader>
+          <DialogHeader className={hrDialog.header}>
             <DialogTitle>Add employee</DialogTitle>
             <DialogDescription>
               For someone greytHR does not have. A greytHR sync will not overwrite this record unless the
               employee number matches.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className={hrDialog.body}>
             <div className="space-y-1.5">
               <Label htmlFor="addEmployeeNo">Employee No</Label>
               <Input id="addEmployeeNo" value={newEmployee.employeeNo}
@@ -897,7 +1047,7 @@ export default function ManageEmployeePage() {
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className={hrDialog.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleAdd()}>Add employee</Button>
           </DialogFooter>
@@ -907,7 +1057,7 @@ export default function ManageEmployeePage() {
       {/* ── Edit ── */}
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className={hrDialog.content}>
-          <DialogHeader>
+          <DialogHeader className={hrDialog.header}>
             <DialogTitle>Edit employee</DialogTitle>
             <DialogDescription>
               greytHR is the source of truth for these fields — the next sync will overwrite anything you
@@ -915,7 +1065,7 @@ export default function ManageEmployeePage() {
             </DialogDescription>
           </DialogHeader>
           {editing && (
-            <div className="space-y-3 py-2">
+            <div className={hrDialog.body}>
               <div className="space-y-1.5">
                 <Label htmlFor="editEmployeeNo">Employee No</Label>
                 <Input id="editEmployeeNo" value={editing.employeeNo}
@@ -954,7 +1104,7 @@ export default function ManageEmployeePage() {
               </p>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className={hrDialog.footer}>
             <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
             <Button onClick={() => void handleUpdate()}>Save changes</Button>
           </DialogFooter>
@@ -964,98 +1114,3 @@ export default function ManageEmployeePage() {
   );
 }
 
-function RosterRow({
-  row, canEdit, canDelete, selected, onSelect, onEdit, onDelete,
-}: {
-  row: RosterEmployeeRow;
-  canEdit: boolean;
-  canDelete: boolean;
-  selected: boolean;
-  onSelect: (checked: boolean) => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <tr className="border-b transition-colors hover:bg-muted/20" data-state={selected ? 'selected' : undefined}>
-      {canDelete && (
-        <td className="px-4 py-2.5">
-          <Checkbox checked={selected} onCheckedChange={(checked) => onSelect(!!checked)}
-            aria-label={`Select ${row.name || row.employeeId}`} />
-        </td>
-      )}
-      <td className="px-4 py-2.5">
-        <div className="flex items-center gap-2.5">
-          <Avatar className="h-8 w-8 shrink-0">
-            <AvatarFallback className={cn('text-[11px] font-semibold', avatarTone(row.employeeId))}>
-              {initials(row.name || row.employeeNo || '?')}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 max-w-[170px]">
-            {/* The profile screen holds every field greytHR has, plus the restricted block. */}
-            <Link href={`/employee/${encodeURIComponent(row.employeeId)}`} className="truncate font-medium text-slate-800 hover:underline block">
-              {row.name || '—'}
-            </Link>
-            <p className="truncate text-xs text-muted-foreground">{row.employeeNo || row.employeeId}</p>
-          </div>
-        </div>
-      </td>
-      <td className="px-4 py-2.5">
-        <div className="flex flex-col items-start gap-1">
-          <Badge variant="outline" className={cn('font-medium', STATE_TONE[row.employmentState])} title={row.employmentStateReason}>
-            {row.employmentState}
-          </Badge>
-          {/*
-            Surfaced rather than applied silently: "Active because greytHR says so" and "Active
-            because we disbelieved the stored leaving date" are different claims, and somebody
-            deciding whether to grant a login should be able to tell them apart.
-          */}
-          {row.employmentStateCorrected && (
-            <span className="text-[10px] font-medium text-blue-600" title={row.employmentStateReason}>
-              corrected
-            </span>
-          )}
-          {row.awaitingSync && (
-            <span className="text-[10px] font-medium text-amber-600" title="In greytHR but not yet written to the local mirror">
-              awaiting sync
-            </span>
-          )}
-        </div>
-      </td>
-      <td className="max-w-[140px] truncate px-4 py-2.5">{row.categories['Department'] || row.department || '—'}</td>
-      <td className="max-w-[160px] truncate px-4 py-2.5">{row.categories['Designation'] || row.designation || '—'}</td>
-      <td className="max-w-[130px] truncate px-4 py-2.5">{row.categories['Location'] || row.location || '—'}</td>
-      <td className="max-w-[150px] truncate px-4 py-2.5">{row.categories['Project Name'] || row.projectName || '—'}</td>
-      <td className="whitespace-nowrap px-4 py-2.5">{formatDate(row.dateOfJoin)}</td>
-      <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{formatDate(row.exitDate)}</td>
-      {(canEdit || canDelete) && (
-        <td className="px-4 py-2.5 text-right">
-          <div className="flex justify-end gap-1">
-            {canEdit && <Button variant="outline" size="sm" onClick={onEdit}>Edit</Button>}
-            {canDelete && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete {row.name || 'this employee'}?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This removes the local record only — it does not change greytHR, so the next sync will
-                      recreate them if greytHR still has them. This cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={onDelete} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
-          </div>
-        </td>
-      )}
-    </tr>
-  );
-}

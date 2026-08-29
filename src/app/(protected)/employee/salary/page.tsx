@@ -9,8 +9,9 @@
  * one, which normally has not been run yet — the empty case says exactly that instead of the generic
  * "no data", which otherwise reads as "these people have no salary".
  *
- * Styled to match `employee/current`: KPI row, a dense scrolling `<table>` with a sticky header, and
- * a `<tfoot>` carrying the gross / deductions / net totals for whatever the filters currently show.
+ * Styled to match `employee/current`: KPI row, the module's responsive register (a table from `sm`
+ * up, one card per person on a phone), and a totals strip carrying gross / deductions / net for
+ * whatever the filters currently show.
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -25,6 +26,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
+  HrDataList,
   HrEmptyState,
   HrFilterCard,
   HrKpiCard,
@@ -32,6 +34,7 @@ import {
   HrPageHeader,
   SensitiveMoney,
   hrDialog,
+  type HrListColumn,
 } from '@/components/hr/hr-ui';
 import { useHrPermissions } from '@/components/hr/use-hr-config';
 import { useToast } from '@/hooks/use-toast';
@@ -89,6 +92,12 @@ function PayslipSection({
   );
 }
 
+/**
+ * Rows in the DOM at once. The responsive register renders a phone card *and* a table row for every
+ * record; a payroll month is the whole company, so it grows on request rather than all at once.
+ */
+const PAGE_SIZE = 300;
+
 export default function EmployeeSalaryPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -104,6 +113,7 @@ export default function EmployeeSalaryPage() {
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [payslipFor, setPayslipFor] = useState<EnrichedEmployee | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const currentYear = getYear(new Date());
   const currentMonth = new Date().getMonth();
@@ -373,6 +383,16 @@ export default function EmployeeSalaryPage() {
     );
   }, [filteredEmployees]);
 
+  // Back to the first page whenever the result set changes shape — a filter change or a new month.
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [filters, monthKey]);
+
+  const visibleRows = useMemo(
+    () => filteredEmployees.slice(0, visibleCount).map((emp) => ({ ...emp, id: emp.employeeId })),
+    [filteredEmployees, visibleCount],
+  );
+
   const handleFilterChange = (filterName: keyof typeof filters, value: string) => {
     setFilters(prev => ({ ...prev, [filterName]: value }));
   };
@@ -422,6 +442,56 @@ export default function EmployeeSalaryPage() {
       });
     }
   };
+
+  /* ── Register columns ── */
+
+  type SalaryListRow = EnrichedEmployee & { id: string };
+
+  /*
+   * One column spec for the desktop table and the phone cards (`HrDataList`). Net pay is the card's
+   * aside — the figure anybody opening this on a phone is looking for — and the posting columns fill
+   * its detail grid. The old 1000px `<table>` scrolled sideways and hid the money columns entirely.
+   */
+  const columns: Array<HrListColumn<SalaryListRow>> = [
+    {
+      header: 'Employee',
+      mobile: 'title',
+      cell: (emp) => (
+        <div className="min-w-0 sm:max-w-[180px]">
+          <p className="truncate font-medium text-slate-800">{emp.name}</p>
+          <p className="truncate text-xs font-normal text-muted-foreground">{emp.employeeNo || emp.employeeId}</p>
+        </div>
+      ),
+    },
+    ...dynamicColumns.map(
+      (col): HrListColumn<SalaryListRow> => ({
+        header: col,
+        className: 'max-w-[150px] truncate',
+        cell: (emp) => emp.positions?.[col] || '—',
+      }),
+    ),
+    {
+      header: 'Gross Salary',
+      align: 'right',
+      className: 'whitespace-nowrap',
+      cell: (emp) => <MoneyCell value={emp.grossSalary} canView={canViewSalary} />,
+    },
+    {
+      header: 'Total Deductions',
+      align: 'right',
+      className: 'whitespace-nowrap text-rose-700',
+      cell: (emp) => (
+        <MoneyCell value={getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS')} canView={canViewSalary} />
+      ),
+    },
+    {
+      header: 'Net Salary',
+      align: 'right',
+      mobile: 'aside',
+      className: 'whitespace-nowrap font-medium',
+      cell: (emp) => <MoneyCell value={emp.netSalary} canView={canViewSalary} />,
+    },
+  ];
 
   const syncButton = (
     <Button
@@ -647,78 +717,57 @@ export default function EmployeeSalaryPage() {
               />
             )
           ) : (
-            <Card className="bg-white/80 backdrop-blur-sm">
-              <CardContent className="p-0">
-                <div className="max-h-[62vh] overflow-auto">
-                  <table className="w-full min-w-[1000px] text-sm">
-                    <thead className="sticky top-0 z-10">
-                      <tr className="border-b bg-slate-100">
-                        <th className="whitespace-nowrap px-4 py-2.5 text-left font-medium">Employee ID</th>
-                        <th className="px-4 py-2.5 text-left font-medium">Name</th>
-                        {dynamicColumns.map(col => (
-                          <th key={col} className="px-4 py-2.5 text-left font-medium">{col}</th>
-                        ))}
-                        <th className="whitespace-nowrap px-4 py-2.5 text-right font-medium">Gross Salary</th>
-                        <th className="whitespace-nowrap px-4 py-2.5 text-right font-medium">Total Deductions</th>
-                        <th className="whitespace-nowrap px-4 py-2.5 text-right font-medium">Net Salary</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredEmployees.map(emp => (
-                        // Clickable only for 63.12 holders — the breakdown behind the click is the
-                        // very data the masked cells withhold.
-                        <tr
-                          key={emp.employeeId}
-                          className={cn('border-b transition-colors hover:bg-muted/20', canViewSalary && 'cursor-pointer')}
-                          onClick={canViewSalary ? () => setPayslipFor(emp) : undefined}
-                        >
-                          <td className="whitespace-nowrap px-4 py-2.5">{emp.employeeNo || emp.employeeId}</td>
-                          <td className="max-w-[180px] truncate px-4 py-2.5 font-medium text-slate-800">{emp.name}</td>
-                          {dynamicColumns.map(col => (
-                            <td key={col} className="max-w-[150px] truncate px-4 py-2.5">
-                              {emp.positions?.[col] || '—'}
-                            </td>
-                          ))}
-                          <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                            <MoneyCell value={emp.grossSalary} canView={canViewSalary} />
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-2.5 text-right text-rose-700">
-                            <MoneyCell value={getSalaryComponentValue(emp.salaryDetails, 'TOTAL DEDUCTIONS')} canView={canViewSalary} />
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-2.5 text-right font-medium">
-                            <MoneyCell value={emp.netSalary} canView={canViewSalary} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-muted/30 font-semibold">
-                        <td className="px-4 py-2.5" colSpan={2 + dynamicColumns.length}>
-                          Total · {filteredEmployees.length} employee{filteredEmployees.length === 1 ? '' : 's'}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                          <SensitiveMoney value={totals.gross} canView={canViewSalary} exact />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right text-rose-700">
-                          <SensitiveMoney value={totals.deductions} canView={canViewSalary} exact />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right text-emerald-700">
-                          <SensitiveMoney value={totals.net} canView={canViewSalary} exact />
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+            <div className="space-y-2.5">
+              {/* Rows open the payslip only for 63.12 holders — the breakdown behind the tap is the
+                  very data the masked cells withhold. */}
+              <HrDataList
+                rows={visibleRows}
+                columns={columns}
+                onRowClick={canViewSalary ? (emp) => setPayslipFor(emp) : undefined}
+              />
 
-          {!isBusy && filteredEmployees.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Showing <span className="font-medium text-slate-700">{filteredEmployees.length}</span>
-              {activeFilterCount > 0 ? <> of {displayedEmployees.length}</> : null} salary record
-              {filteredEmployees.length === 1 ? '' : 's'} for {monthLabel}
-            </p>
+              {/* The old <tfoot>: totals for what the filters show, as a strip that reads on a phone. */}
+              <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+                <CardContent className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <p className="font-semibold text-slate-800">
+                    Total · {filteredEmployees.length} employee{filteredEmployees.length === 1 ? '' : 's'}
+                  </p>
+                  <div className="grid grid-cols-3 gap-3 sm:flex sm:gap-6 sm:text-right">
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Gross</p>
+                      <SensitiveMoney value={totals.gross} canView={canViewSalary} exact className="font-semibold" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Deductions</p>
+                      <SensitiveMoney
+                        value={totals.deductions}
+                        canView={canViewSalary}
+                        exact
+                        className="font-semibold text-rose-700"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Net</p>
+                      <SensitiveMoney value={totals.net} canView={canViewSalary} exact className="font-semibold text-emerald-700" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="flex flex-col items-center gap-2 pb-2 text-center">
+                <p className="text-xs text-muted-foreground">
+                  Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
+                  {filteredEmployees.length}
+                  {activeFilterCount > 0 ? <> (filtered from {displayedEmployees.length})</> : null} salary record
+                  {filteredEmployees.length === 1 ? '' : 's'} for {monthLabel}
+                </p>
+                {visibleRows.length < filteredEmployees.length && (
+                  <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
+                    Show {Math.min(PAGE_SIZE, filteredEmployees.length - visibleRows.length)} more
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}

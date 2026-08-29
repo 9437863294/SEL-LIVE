@@ -330,9 +330,11 @@ export function GreytHRSyncWorkspace() {
         )}
 
         <Tabs defaultValue="status">
-          <TabsList className="grid w-full grid-cols-4 sm:w-auto">
-            <TabsTrigger value="status" className="text-xs">Status</TabsTrigger>
-            <TabsTrigger value="review" className="text-xs">
+          {/* A flex row rather than a four-column grid: the module's phone ruleset lets a tab strip
+              scroll sideways, which a grid of fixed columns would squeeze into wrapped labels instead. */}
+          <TabsList className="flex w-full sm:inline-flex sm:w-auto">
+            <TabsTrigger value="status" className="flex-1 text-xs sm:flex-none">Status</TabsTrigger>
+            <TabsTrigger value="review" className="flex-1 text-xs sm:flex-none">
               Review
               {(shownRun?.flaggedForReview ?? 0) > 0 && (
                 <Badge variant="outline" className="ml-1.5 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
@@ -340,8 +342,8 @@ export function GreytHRSyncWorkspace() {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="text-xs">Schedule</TabsTrigger>
-            <TabsTrigger value="history" className="text-xs">History</TabsTrigger>
+            <TabsTrigger value="schedule" className="flex-1 text-xs sm:flex-none">Schedule</TabsTrigger>
+            <TabsTrigger value="history" className="flex-1 text-xs sm:flex-none">History</TabsTrigger>
           </TabsList>
 
           {/* ── Status ── */}

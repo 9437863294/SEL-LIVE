@@ -289,9 +289,12 @@ export default function EmployeeReportsPage() {
                     page is read on phones, where hover does not exist — and the shared baseline is
                     what lets a short bar read as "one" instead of "nothing".
                   */}
-                  <div className="overflow-x-auto">
-                    <div className="min-w-[540px]">
-                      <div className="flex items-end gap-1 border-b border-slate-300">
+                  {/* Twelve months share the width at every size — on a phone each bar is a few pixels
+                      wide, which still reads, whereas a fixed minimum width forced the whole chart to
+                      scroll sideways. */}
+                  <div className="min-w-0">
+                    <div>
+                      <div className="flex items-end gap-0.5 border-b border-slate-300 sm:gap-1">
                         {movement.map((entry) => (
                           <div key={entry.month} className="flex flex-1 items-end justify-center gap-0.5">
                             <div className="flex w-1/2 max-w-[20px] flex-col items-center gap-0.5">
@@ -309,9 +312,12 @@ export default function EmployeeReportsPage() {
                           </div>
                         ))}
                       </div>
-                      <div className="mt-1 flex gap-1">
+                      <div className="mt-1 flex gap-0.5 sm:gap-1">
                         {movement.map((entry) => (
-                          <span key={entry.month} className="flex-1 text-center text-[10px] text-muted-foreground">
+                          <span
+                            key={entry.month}
+                            className="min-w-0 flex-1 truncate text-center text-[9px] text-muted-foreground sm:text-[10px]"
+                          >
                             {monthLabel(entry.month)}
                           </span>
                         ))}
