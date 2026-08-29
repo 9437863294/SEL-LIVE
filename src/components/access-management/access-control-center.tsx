@@ -24,11 +24,9 @@ import {
   CalendarClock,
   ChevronRight,
   Clock,
-  Grid3x3,
   History,
   KeyRound,
   Layers,
-  LayoutDashboard,
   Link2,
   RefreshCw,
   ShieldAlert,
@@ -705,26 +703,6 @@ function AccessOverview({
           </AccessCard>
         </SpotlightCard>
       )}
-
-      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-        <QuickLink index={0} icon={ShieldPlus} label="Assign access" hint="Roles, permissions, projects" onClick={() => onNavigate('assign')} />
-        <QuickLink index={1} icon={Grid3x3} label="Permission matrix" hint="Compare coverage" onClick={() => onNavigate('matrix')} />
-        <QuickLink index={2} icon={LayoutDashboard} label="Effective access" hint="What one person can do" onClick={() => onNavigate('effective')} />
-        <QuickLink index={3} icon={History} label="Audit history" hint="Every change, with reasons" onClick={() => onNavigate('audit')} />
-        {/*
-          greytHR linking is a route rather than a tab (it is reached from User Management too), and
-          before this it had no entry point on this screen at all — the only way in was a button
-          inside one user's profile card, which made the module's most automated screen its least
-          reachable one.
-        */}
-        <QuickLink
-          index={4}
-          icon={Link2}
-          label="greytHR linking"
-          hint="Match logins to employee records"
-          href="/settings/user-management/greythr-linking"
-        />
-      </div>
     </div>
   );
 }
@@ -772,56 +750,6 @@ function AlertCard({
         </Button>
       )}
     </div>
-  );
-}
-
-function QuickLink({
-  icon: Icon,
-  label,
-  hint,
-  onClick,
-  href,
-  index = 0,
-}: {
-  icon: React.ElementType;
-  label: string;
-  hint: string;
-  /** A tab on this screen. */
-  onClick?: () => void;
-  /** A route, for the one quick link that leaves this screen. */
-  href?: string;
-  /** Position in the row — staggers the entrance so the tiles don't pop in all at once. */
-  index?: number;
-}) {
-  const shell = cn(
-    'group flex items-center gap-2.5 rounded-xl border border-white/70 bg-white/80 px-3 py-2.5 text-left shadow-sm',
-    'animate-am-card-in transition-all duration-300 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md',
-  );
-  const style = { animationDelay: `${660 + index * 60}ms`, animationFillMode: 'both' } as const;
-  const body = (
-    <>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 ring-4 ring-indigo-50/50 transition-transform duration-300 group-hover:scale-110">
-        <Icon className="h-4 w-4 text-indigo-600" />
-      </span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold text-slate-800">{label}</span>
-        <span className="block truncate text-[11px] text-muted-foreground">{hint}</span>
-      </span>
-    </>
-  );
-
-  if (href) {
-    return (
-      <Link href={href} className={shell} style={style}>
-        {body}
-      </Link>
-    );
-  }
-
-  return (
-    <button type="button" onClick={onClick} className={shell} style={style}>
-      {body}
-    </button>
   );
 }
 
