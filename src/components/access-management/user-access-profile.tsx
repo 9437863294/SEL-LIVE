@@ -32,11 +32,14 @@ import {
   PlayCircle,
   ShieldPlus,
   Trash2,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -48,7 +51,15 @@ import {
   temporaryGrantState,
   type PermissionMap,
 } from '@/lib/access-control';
-import { grantAccess, revokeAccess, setAccessLayerStatus, type AccessActor } from '@/lib/access-control-service';
+import {
+  checkAdministrationSurvives,
+  deactivateUserAccount,
+  grantAccess,
+  reactivateUserAccount,
+  revokeAccess,
+  setAccessLayerStatus,
+  type AccessActor,
+} from '@/lib/access-control-service';
 import { linkMethodLabel } from '@/lib/greythr-linking';
 import type { User } from '@/lib/types';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
@@ -83,6 +94,9 @@ export function UserAccessProfile({
     directPermissions: PermissionMap;
   } | null>(null);
   const [suspendOpen, setSuspendOpen] = useState(false);
+  /** The account dialog, and — when disabling — why it must not go ahead (the last administrator). */
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountGuard, setAccountGuard] = useState<string | null>(null);
 
   /**
    * Staged tick/untick changes from the checklist below, keyed `${resource}::${action}`.
@@ -128,6 +142,20 @@ export function UserAccessProfile({
   }
 
   const layerSuspended = grant?.status === 'Suspended';
+  const accountInactive = user.status === 'Inactive';
+  const isSelf = user.id === actor.userId;
+
+  const openAccountDialog = () => {
+    // Checked when the dialog opens rather than on every render — it resolves everybody's
+    // effective access to find out whether this is the last administrator.
+    const survives = accountInactive ? null : checkAdministrationSurvives(directory, [user.id]);
+    setAccountGuard(
+      survives && !survives.safe
+        ? (survives.message ?? 'This would leave nobody able to manage users and roles.')
+        : null,
+    );
+    setAccountOpen(true);
+  };
 
   const doRevoke = async (reason: string) => {
     if (!removal) return;
@@ -266,8 +294,53 @@ export function UserAccessProfile({
               )}
             </Button>
           )}
+          {/*
+            The account itself, as distinct from the additive layer above: disabled, the user cannot
+            sign in at all. Never offered on your own profile — you would only lock yourself out.
+          */}
+          {canRevoke && !isSelf && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openAccountDialog}
+              className={
+                accountInactive
+                  ? 'text-emerald-700'
+                  : 'border-destructive/30 text-destructive hover:bg-destructive/5 hover:text-destructive'
+              }
+            >
+              {accountInactive ? (
+                <>
+                  <UserCheck className="mr-1.5 h-4 w-4" />
+                  Reactivate account
+                </>
+              ) : (
+                <>
+                  <UserX className="mr-1.5 h-4 w-4" />
+                  Disable account
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
+
+      {accountInactive && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5 text-sm text-rose-900">
+          <p className="font-semibold">
+            {user.deactivation?.until
+              ? `This account is disabled until ${formatGrantDate(user.deactivation.until)}.`
+              : 'This account is disabled.'}
+          </p>
+          <p className="text-xs">
+            They cannot sign in
+            {user.deactivation?.until ? ' until then — it reactivates on its own after that date' : ''}.
+            {user.deactivation
+              ? ` Disabled by ${user.deactivation.deactivatedByName} on ${formatGrantDate(user.deactivation.deactivatedAt)} — “${user.deactivation.reason}”.`
+              : ' Roles and grants are kept, and come back when the account is reactivated.'}
+          </p>
+        </div>
+      )}
 
       {layerSuspended && (
         <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-900">
@@ -303,7 +376,11 @@ export function UserAccessProfile({
               <HrField label="Department">{employee?.department}</HrField>
               <HrField label="Designation">{employee?.designation}</HrField>
               <HrField label="Date of joining">{employee?.dateOfJoin}</HrField>
-              <HrField label="Account status">{user.status ?? 'Active'}</HrField>
+              <HrField label="Account status">
+                {accountInactive && user.deactivation?.until
+                  ? `Inactive until ${formatGrantDate(user.deactivation.until)}`
+                  : (user.status ?? 'Active')}
+              </HrField>
               <HrField label="Session length">
                 {user.theme?.sessionDuration ? `${user.theme.sessionDuration} minutes` : 'Default (60 minutes)'}
               </HrField>
@@ -551,6 +628,29 @@ export function UserAccessProfile({
           });
         }}
       />
+
+      <AccountStatusDialog
+        open={accountOpen}
+        onOpenChange={setAccountOpen}
+        userName={user.name || user.email || user.id}
+        inactive={accountInactive}
+        guard={accountGuard}
+        onConfirm={async ({ until, reason }) => {
+          if (accountInactive) await reactivateUserAccount(user, actor, reason);
+          else await deactivateUserAccount({ user, until, reason, actor });
+          await state.refresh();
+          toast({
+            title: accountInactive
+              ? 'Account reactivated'
+              : until
+                ? `Account disabled until ${formatGrantDate(until)}`
+                : 'Account disabled',
+            description: accountInactive
+              ? 'They can sign in again now, with everything they had.'
+              : 'They are signed out on their next request and cannot sign in. Roles and grants are kept.',
+          });
+        }}
+      />
     </div>
   );
 }
@@ -688,7 +788,7 @@ function GrantRow({
   return (
     <div className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-white bg-white/80 px-2.5 py-2">
       <div className="min-w-0">
-        <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
+        <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
           {title}
           {badge && (
             <Badge
@@ -705,7 +805,7 @@ function GrantRow({
               {badge}
             </Badge>
           )}
-        </p>
+        </div>
         {subtitle && <p className="text-xs text-slate-600">{subtitle}</p>}
         {visibleMeta.length > 0 && (
           <p className="mt-0.5 text-[11px] text-muted-foreground">{visibleMeta.join(' · ')}</p>
@@ -808,3 +908,156 @@ function SuspendLayerDialog({
   );
 }
 
+/**
+ * Disable an account — for a while or for good — or bring it back.
+ *
+ * The temporary option exists because "on leave until October" is the common case and a permanent
+ * deactivation that somebody has to remember to undo is how people come back to find they cannot
+ * sign in. Both need a reason: the audit trail records why, and "why was I disabled?" is a question
+ * that gets asked.
+ */
+function AccountStatusDialog({
+  open,
+  onOpenChange,
+  userName,
+  inactive,
+  guard,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  userName: string;
+  /** Currently disabled — the dialog offers reactivation instead. */
+  inactive: boolean;
+  /** Why disabling must not go ahead (the last administrator), or null. */
+  guard: string | null;
+  onConfirm: (input: { until: string | null; reason: string }) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<'temporary' | 'permanent'>('temporary');
+  const [untilDate, setUntilDate] = useState('');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const blocked = !inactive && guard !== null;
+  const dateMissing = !inactive && mode === 'temporary' && !(untilDate && untilDate >= today);
+  const canSubmit = !saving && !blocked && !dateMissing && reason.trim().length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className={hrDialog.content}>
+        <DialogHeader className={hrDialog.header}>
+          <DialogTitle>{inactive ? `Reactivate ${userName}` : `Disable ${userName}`}</DialogTitle>
+          <DialogDescription>
+            {inactive
+              ? 'They can sign in again straight away, with every role and grant they had before.'
+              : 'They are signed out and cannot sign in. Nothing is deleted — roles, grants and history stay, and come back when the account is reactivated.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className={hrDialog.body}>
+          {blocked && (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <p className="font-semibold">Cannot disable this account</p>
+              <p className="mt-0.5 text-xs">{guard}</p>
+            </div>
+          )}
+
+          {!inactive && (
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { id: 'temporary', label: 'Temporarily', hint: 'Comes back on its own after a date' },
+                  { id: 'permanent', label: 'Permanently', hint: 'Until somebody reactivates it' },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setMode(option.id)}
+                  aria-pressed={mode === option.id}
+                  className={cn(
+                    'rounded-xl border px-3 py-2 text-left transition-colors',
+                    mode === option.id
+                      ? 'border-indigo-300 bg-indigo-50 text-indigo-900'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                  )}
+                >
+                  <span className="block text-sm font-semibold">{option.label}</span>
+                  <span className="block text-[11px] text-muted-foreground">{option.hint}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!inactive && mode === 'temporary' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="disable-until">Disabled until *</Label>
+              <Input
+                id="disable-until"
+                type="date"
+                min={today}
+                value={untilDate}
+                onChange={(event) => setUntilDate(event.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                The account reactivates itself after the end of this day — nobody has to remember.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3">
+              <p className="text-sm font-semibold text-destructive">Nothing was changed</p>
+              <p className="mt-0.5 text-xs text-destructive">{error}</p>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="account-reason">Reason *</Label>
+            <Textarea
+              id="account-reason"
+              rows={2}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder={inactive ? 'e.g. Back from leave' : 'e.g. On long leave until October'}
+            />
+          </div>
+        </div>
+
+        <DialogFooter className={hrDialog.footer}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            variant={inactive ? 'default' : 'destructive'}
+            disabled={!canSubmit}
+            onClick={async () => {
+              setSaving(true);
+              setError(null);
+              try {
+                // End of the chosen day, local time — the same reading the temporary grants use.
+                const until =
+                  !inactive && mode === 'temporary' ? new Date(`${untilDate}T23:59:59`).toISOString() : null;
+                await onConfirm({ until, reason: reason.trim() });
+                setReason('');
+                setUntilDate('');
+                setMode('temporary');
+                onOpenChange(false);
+              } catch (err) {
+                // Nothing changed, so the dialog stays open and says why.
+                setError(err instanceof Error ? err.message : 'The change could not be saved.');
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {inactive ? 'Reactivate account' : mode === 'temporary' ? 'Disable until that date' : 'Disable account'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

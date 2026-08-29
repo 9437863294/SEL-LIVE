@@ -33,7 +33,6 @@ import { Button } from '@/components/ui/button';
 import { CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
@@ -259,14 +258,13 @@ export function PermissionMatrixView({ state }: { state: AccessDirectoryState })
           {rows.length === 0 ? (
             <HrEmptyState title="No modules match" description="Try clearing the search or the granted-only filter." />
           ) : (
-            <ScrollArea className="h-auto sm:h-[30rem]">
-              <HrDataList
-                rows={rows}
-                columns={columns}
-                tableClassName="min-w-[46rem]"
-                rowClassName={(row) => (row.grantedCount === 0 ? 'opacity-60' : undefined)}
-              />
-            </ScrollArea>
+            <HrDataList
+              rows={rows}
+              columns={columns}
+              tableClassName="min-w-[46rem]"
+              rowClassName={(row) => (row.grantedCount === 0 ? 'opacity-60' : undefined)}
+              maxHeightClassName="sm:max-h-[30rem]"
+            />
           )}
 
           <p className="px-1 text-[11px] text-muted-foreground">

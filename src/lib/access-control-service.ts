@@ -21,6 +21,7 @@
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -69,7 +70,8 @@ import {
   type ScopeGrantConfig,
   type UserAccessGrant,
 } from './access-control';
-import type { Role, User } from './types';
+import type { Role, User, UserDeactivation } from './types';
+import { deactivationHasLapsed, formatGrantDate } from './access-control';
 import { createPlatformUser } from './user-management-client';
 
 export { canAssignAccess, canManageRoles, canOpenAccessManagement, canRevokeAccess };
@@ -235,7 +237,9 @@ export interface AccessDirectory {
 
 export async function loadAccessDirectory(): Promise<AccessDirectory> {
   const [users, roles, grants, scopeGrants, templates] = await Promise.all([
-    listUsers(),
+    // Temporary deactivations whose date has passed are lifted on the way in — see
+    // `deactivationHasLapsed` for why nothing scheduled does it.
+    listUsers().then((loaded) => reactivateLapsedDeactivations(loaded)),
     listRoles(),
     listUserAccessGrants(),
     listScopeGrants().catch(() => [] as ScopeGrantConfig[]),
@@ -744,6 +748,134 @@ export async function setAccessLayerStatus(
       organizationId: actor.organizationId ?? null,
     },
   ]);
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Account status — disable a login, for a while or for good
+ * ---------------------------------------------------------------------------------------------- */
+
+/** The actor on audit rows nobody wrote — a temporary deactivation reaching its date. */
+const SYSTEM_ACTOR: AccessActor = { userId: 'system', userName: 'System — deactivation period ended' };
+
+function accountAuditEntry(
+  user: User,
+  action: AccessAuditEntry['action'],
+  actor: AccessActor,
+  reason: string,
+  changedAt: string,
+): AccessAuditEntry {
+  return {
+    targetUserId: user.id,
+    targetUserName: user.name || user.email || user.id,
+    action,
+    roleNames: [],
+    permissionsAdded: [],
+    permissionsRemoved: [],
+    permissionsSkipped: [],
+    sourceKind: 'System',
+    changedBy: actor.userId,
+    changedByName: actor.userName,
+    changedAt,
+    reason,
+    organizationId: actor.organizationId ?? null,
+  };
+}
+
+export interface DeactivateAccountInput {
+  user: User;
+  /** ISO timestamp after which the account comes back on its own; null (or omitted) for permanent. */
+  until?: string | null;
+  reason: string;
+  actor: AccessActor;
+}
+
+/**
+ * Deactivate an account: `users/{id}.status = 'Inactive'`, which is what every gate already checks —
+ * the AuthProvider signs the user out, the API routes refuse them, and the resolver drops their
+ * additive access. Nothing is deleted: roles, grants and history stay, so reactivation restores
+ * exactly what they had. A temporary deactivation records `until`; `deactivationHasLapsed` says
+ * how it lifts itself.
+ */
+export async function deactivateUserAccount({ user, until = null, reason, actor }: DeactivateAccountInput): Promise<void> {
+  if (user.id === actor.userId) {
+    throw new Error("You can't disable your own account. Ask another administrator if it is really needed.");
+  }
+  const now = new Date().toISOString();
+  const deactivation: UserDeactivation = {
+    until,
+    reason,
+    deactivatedBy: actor.userId,
+    deactivatedByName: actor.userName,
+    deactivatedAt: now,
+  };
+  await updateDoc(doc(db, ACCESS_COLLECTIONS.users, user.id), { status: 'Inactive', deactivation });
+
+  await writeAuditEntries([
+    accountAuditEntry(
+      user,
+      until ? 'Deactivate Account Temporarily' : 'Deactivate Account',
+      actor,
+      until ? `${reason} (until ${formatGrantDate(until)})` : reason,
+      now,
+    ),
+  ]);
+  void logUserActivity({
+    userId: actor.userId,
+    userName: actor.userName,
+    module: 'Settings',
+    action: until ? 'Deactivate User Temporarily' : 'Deactivate User',
+    recordId: user.id,
+    recordRef: user.name || user.email || user.id,
+    details: { until, reason },
+  });
+}
+
+/** The reverse: the account can sign in again, with everything it had. */
+export async function reactivateUserAccount(user: User, actor: AccessActor, reason: string): Promise<void> {
+  const now = new Date().toISOString();
+  await updateDoc(doc(db, ACCESS_COLLECTIONS.users, user.id), { status: 'Active', deactivation: deleteField() });
+  await writeAuditEntries([accountAuditEntry(user, 'Reactivate Account', actor, reason, now)]);
+  void logUserActivity({
+    userId: actor.userId,
+    userName: actor.userName,
+    module: 'Settings',
+    action: 'Reactivate User',
+    recordId: user.id,
+    recordRef: user.name || user.email || user.id,
+    details: { reason },
+  });
+}
+
+/**
+ * Lift every temporary deactivation whose date has passed, and return the users as they now are.
+ *
+ * Called wherever users are loaded — the directory, the user's own sign-in — because nothing
+ * scheduled does it. The audit row is attributed to the system: no administrator made this change.
+ */
+export async function reactivateLapsedDeactivations(users: User[], now = new Date()): Promise<User[]> {
+  const lapsed = users.filter((user) => deactivationHasLapsed(user, now));
+  if (!lapsed.length) return users;
+
+  const at = now.toISOString();
+  await Promise.all(
+    lapsed.map(async (user) => {
+      await updateDoc(doc(db, ACCESS_COLLECTIONS.users, user.id), { status: 'Active', deactivation: deleteField() });
+      await writeAuditEntries([
+        accountAuditEntry(
+          user,
+          'Reactivate Account',
+          SYSTEM_ACTOR,
+          `Temporary deactivation until ${formatGrantDate(user.deactivation?.until)} ended.`,
+          at,
+        ),
+      ]);
+    }),
+  );
+
+  const lifted = new Set(lapsed.map((user) => user.id));
+  return users.map((user) =>
+    lifted.has(user.id) ? { ...user, status: 'Active' as const, deactivation: null } : user,
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------

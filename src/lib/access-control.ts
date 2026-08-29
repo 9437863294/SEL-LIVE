@@ -1004,6 +1004,28 @@ export function explainPermission(
 }
 
 /** `2026-08-25T…` → `25-Aug-2026`, the format the rest of the app's audit views use. */
+/**
+ * A temporary deactivation whose end has passed.
+ *
+ * The account should be treated as active — and put back to Active by whoever notices first: the
+ * user at sign-in, an administrator loading the directory, or the server on an API call. There is
+ * no scheduled job for it, deliberately: "until 30 September" has to mean 30 September, not the
+ * next time somebody remembers. A permanent deactivation (no `until`), a legacy Inactive user, and
+ * an unparseable date never lapse — the safe reading of a doubtful record is "still disabled".
+ */
+export function deactivationHasLapsed(
+  user: { status?: string | null; deactivation?: { until?: string | null } | null },
+  now: Date | number | string = Date.now(),
+): boolean {
+  if (user.status !== 'Inactive') return false;
+  const untilRaw = user.deactivation?.until;
+  if (!untilRaw) return false;
+  const until = Date.parse(untilRaw);
+  if (Number.isNaN(until)) return false;
+  const at = now instanceof Date ? now.getTime() : typeof now === 'number' ? now : Date.parse(now);
+  return !Number.isNaN(at) && until <= at;
+}
+
 export function formatGrantDate(iso: string | null | undefined): string {
   const time = toTime(iso);
   if (time === null) return '—';
@@ -2046,6 +2068,9 @@ export type AccessAuditAction =
   | 'Revoke Temporary Access'
   | 'Suspend Access Layer'
   | 'Resume Access Layer'
+  | 'Deactivate Account'
+  | 'Deactivate Account Temporarily'
+  | 'Reactivate Account'
   | 'Create User';
 
 export interface AccessAuditEntry {
@@ -2106,6 +2131,17 @@ export function formatBatchId(date: Date, sequence: number): string {
 }
 
 /** Human summary for one audit row, so the timeline reads as prose rather than as fields. */
+/** Actions on the account or the layer as a whole. They move no permissions, so the removal
+ * count that follows a grant would only be noise after them. */
+const ACCOUNT_LEVEL_ACTIONS = new Set<AccessAuditAction>([
+  'Suspend Access Layer',
+  'Resume Access Layer',
+  'Deactivate Account',
+  'Deactivate Account Temporarily',
+  'Reactivate Account',
+  'Create User',
+]);
+
 export function describeAuditEntry(entry: AccessAuditEntry): string {
   const parts: string[] = [];
   if (entry.roleNames.length) {
@@ -2118,7 +2154,7 @@ export function describeAuditEntry(entry: AccessAuditEntry): string {
     parts.push(entry.action);
   }
   parts.push(`for ${entry.targetUserName}`);
-  if (entry.action !== 'Revoke Access') {
+  if (entry.action !== 'Revoke Access' && !ACCOUNT_LEVEL_ACTIONS.has(entry.action)) {
     parts.push(`— existing permissions removed: ${entry.permissionsRemoved.length}`);
   }
   return parts.join(' ');

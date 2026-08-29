@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { ChevronDown, Loader2, ShieldAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -417,6 +417,10 @@ export function HrDataList<T extends { id: string }>({
   tableClassName,
   fitContent,
   onRowClick,
+  maxHeightClassName,
+  expandedId,
+  renderExpanded,
+  dense,
 }: {
   rows: T[];
   columns: Array<HrListColumn<T>>;
@@ -447,6 +451,30 @@ export function HrDataList<T extends { id: string }>({
    * also fire it (a checkbox) should stop propagation themselves.
    */
   onRowClick?: (row: T) => void;
+  /**
+   * Caps the desktop table's height, makes the table's own wrapper the element that scrolls, and
+   * pins the header row to its top — `'sm:max-h-[30rem]'`.
+   *
+   * Use this instead of wrapping the list in a `ScrollArea`. The wrapper is already a scroll
+   * container (`overflow-x-auto`), so a sticky header pins to *it* — and inside a ScrollArea it never
+   * scrolls vertically, which is why headers scrolled away with the rows. The phone cards are not
+   * affected; the page scrolls those.
+   */
+  maxHeightClassName?: string;
+  /**
+   * An expandable detail under a row — the audit trail's per-change permission lists. The caller
+   * owns which row is open (`expandedId`, one at a time, usually toggled from `onRowClick`) and
+   * renders it; the list places it as a full-width row under the table row on a desktop and as a
+   * panel at the foot of the card on a phone.
+   */
+  expandedId?: string | null;
+  renderExpanded?: (row: T) => React.ReactNode;
+  /**
+   * Tighter desktop cells (`px-3 py-1.5`, a shorter header) for a register that is scanned rather
+   * than read. The default `p-4` puts 32px of padding around a row of badges, which made the user
+   * directory ~60px a row; dense is ~40px. Phone cards are unaffected.
+   */
+  dense?: boolean;
 }) {
   if (rows.length === 0) return <>{empty}</>;
 
@@ -461,6 +489,7 @@ export function HrDataList<T extends { id: string }>({
       <div className="space-y-2.5 sm:hidden">
         {rows.map(row => {
           const href = cardHref?.(row);
+          const isExpanded = !!renderExpanded && expandedId === row.id;
           const body = (
             <>
               <div className="mb-2 flex items-start justify-between gap-2">
@@ -496,6 +525,14 @@ export function HrDataList<T extends { id: string }>({
                   {footers.map(column => (
                     <div key={column.header} className="flex flex-1 gap-2">{column.cell(row)}</div>
                   ))}
+                </div>
+              )}
+
+              {isExpanded && renderExpanded && (
+                // Stops the tap reaching a card that toggles on click, so reading the detail
+                // does not close it.
+                <div className="mt-2.5 border-t border-slate-100 pt-2.5" onClick={event => event.stopPropagation()}>
+                  {renderExpanded(row)}
                 </div>
               )}
             </>
@@ -547,9 +584,16 @@ export function HrDataList<T extends { id: string }>({
         className={cn(
           'hidden overflow-x-auto rounded-lg border border-white/60 bg-white/80 backdrop-blur-sm',
           fitContent ? 'sm:inline-block max-w-full' : 'sm:block',
+          maxHeightClassName && cn('overflow-y-auto', maxHeightClassName),
         )}
       >
-        <Table className={tableClassName}>
+        {/*
+          The kit's Table wraps <table> in its own `overflow-auto` div — a scroll container sitting
+          between the pinned header cells and the wrapper above that actually scrolls, so the header
+          pinned to *it* and rode away with the rows. Made visible when this list scrolls itself; the
+          outer wrapper already handles sideways overflow.
+        */}
+        <Table className={tableClassName} containerClassName={maxHeightClassName ? 'overflow-visible' : undefined}>
           {/*
             The header row used to render with the same near-white background as the body and a
             `text-muted-foreground` weight barely darker than the page behind it — on a
@@ -563,6 +607,10 @@ export function HrDataList<T extends { id: string }>({
                   key={column.header}
                   className={cn(
                     'h-10 text-[11px] font-semibold uppercase tracking-wide text-slate-600',
+                    dense && 'h-9 px-3',
+                    // Pinned per cell, not on <thead>: collapsed row borders do not travel with a
+                    // sticky cell, so the rule under the header is an inset shadow instead.
+                    maxHeightClassName && 'sticky top-0 z-10 bg-slate-100 shadow-[inset_0_-1px_0_#e2e8f0]',
                     column.align === 'right' && 'text-right',
                     column.className,
                   )}
@@ -573,19 +621,34 @@ export function HrDataList<T extends { id: string }>({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map(row => (
-              <TableRow
-                key={row.id}
-                className={cn(rowClassName?.(row), onRowClick && 'cursor-pointer')}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-              >
-                {columns.map(column => (
-                  <TableCell key={column.header} className={cn('text-sm', column.align === 'right' && 'text-right', column.className)}>
-                    {column.cell(row)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {rows.map(row => {
+              const isExpanded = !!renderExpanded && expandedId === row.id;
+              return (
+                <Fragment key={row.id}>
+                  <TableRow
+                    className={cn(rowClassName?.(row), onRowClick && 'cursor-pointer', isExpanded && 'bg-slate-50/70')}
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  >
+                    {columns.map(column => (
+                      <TableCell
+                        key={column.header}
+                        className={cn('text-sm', dense && 'px-3 py-1.5', column.align === 'right' && 'text-right', column.className)}
+                      >
+                        {column.cell(row)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                  {isExpanded && renderExpanded && (
+                    <TableRow className="hover:bg-transparent">
+                      {/* Spans hidden columns too; browsers clamp a colSpan to what is rendered. */}
+                      <TableCell colSpan={columns.length} className="bg-slate-50/60 p-0">
+                        {renderExpanded(row)}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

@@ -25,6 +25,7 @@ import {
 } from 'firebase/firestore';
 import type { User, Role, SavedUser } from '@/lib/types';
 import {
+  deactivationHasLapsed,
   mergePermissionMaps,
   resolveEffectiveAccess,
   type EffectiveAccess,
@@ -35,6 +36,7 @@ import {
 import {
   ACCESS_COLLECTIONS,
   listenToUserAccessGrant,
+  reactivateLapsedDeactivations,
 } from '@/lib/access-control-service';
 import { useToast } from '@/hooks/use-toast';
 import { PinSetupDialog } from './PinSetupDialog';
@@ -321,10 +323,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return null;
         }
 
-        const userData = {
+        let userData = {
           id: snap.id,
           ...snap.data(),
         } as User;
+
+        /**
+         * A temporary deactivation whose end date has passed lifts itself here, at the first
+         * sign-in after it — there is no scheduled job for it, and "until 30 September" must not
+         * mean "until an administrator remembers". The write is best-effort: the server-side
+         * check already treats a lapsed deactivation as active, so a refusal here costs only the
+         * tidy-up, and the user still gets in.
+         */
+        if (deactivationHasLapsed(userData)) {
+          try {
+            [userData] = await reactivateLapsedDeactivations([userData]);
+          } catch (error) {
+            console.error('Could not lift a lapsed temporary deactivation', error);
+            userData = { ...userData, status: 'Active', deactivation: null };
+          }
+        }
 
         /**
          * A deactivated account cannot use the application.

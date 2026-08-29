@@ -253,9 +253,7 @@ function UserAccessReport({ state }: { state: AccessDirectoryState }) {
       <div className="flex justify-end">
         <ExportButton title="User access report" rows={exportRows} filename="user-access-report.xlsx" />
       </div>
-      <ScrollArea className="h-auto sm:h-[26rem]">
-        <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No users" />} />
-      </ScrollArea>
+      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No users" />} maxHeightClassName="sm:max-h-[26rem]" />
     </div>
   );
 }
@@ -322,9 +320,7 @@ function RoleUsageReport({ state }: { state: AccessDirectoryState }) {
       <div className="flex justify-end">
         <ExportButton title="Role usage report" rows={exportRows} filename="role-usage-report.xlsx" />
       </div>
-      <ScrollArea className="h-auto sm:h-[26rem]">
-        <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No roles" />} />
-      </ScrollArea>
+      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No roles" />} maxHeightClassName="sm:max-h-[26rem]" />
     </div>
   );
 }
@@ -420,13 +416,12 @@ function PermissionUsageReport({ state }: { state: AccessDirectoryState }) {
             </Badge>
             <ExportButton title="Permission usage report" rows={exportRows} filename="permission-usage-report.xlsx" />
           </div>
-          <ScrollArea className="h-auto sm:h-[22rem]">
-            <HrDataList
-              rows={holders}
-              columns={columns}
-              empty={<HrEmptyState title="Nobody holds this permission" />}
-            />
-          </ScrollArea>
+          <HrDataList
+            rows={holders}
+            columns={columns}
+            empty={<HrEmptyState title="Nobody holds this permission" />}
+            maxHeightClassName="sm:max-h-[22rem]"
+          />
         </>
       )}
     </div>
@@ -498,13 +493,12 @@ function PrivilegedUsersReport({ state }: { state: AccessDirectoryState }) {
         </p>
         <ExportButton title="Privileged user report" rows={exportRows} filename="privileged-user-report.xlsx" />
       </div>
-      <ScrollArea className="h-auto sm:h-[24rem]">
-        <HrDataList
-          rows={rows}
-          columns={columns}
-          empty={<HrEmptyState title="No privileged users detected" description="Nobody currently holds a high-risk capability or a segregation-of-duties conflict." />}
-        />
-      </ScrollArea>
+      <HrDataList
+        rows={rows}
+        columns={columns}
+        empty={<HrEmptyState title="No privileged users detected" description="Nobody currently holds a high-risk capability or a segregation-of-duties conflict." />}
+        maxHeightClassName="sm:max-h-[24rem]"
+      />
     </div>
   );
 }
@@ -568,9 +562,7 @@ function ProjectAccessReport({ state }: { state: AccessDirectoryState }) {
         </p>
         <ExportButton title="Project access report" rows={exportRows} filename="project-access-report.xlsx" />
       </div>
-      <ScrollArea className="h-auto sm:h-[24rem]">
-        <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No projects" />} />
-      </ScrollArea>
+      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No projects" />} maxHeightClassName="sm:max-h-[24rem]" />
     </div>
   );
 }
@@ -695,13 +687,12 @@ function TemporaryAccessReport({ state }: { state: AccessDirectoryState }) {
         </div>
         <ExportButton title="Temporary access report" rows={exportRows} filename="temporary-access-report.xlsx" />
       </div>
-      <ScrollArea className="h-auto sm:h-[24rem]">
-        <HrDataList
-          rows={rows}
-          columns={columns}
-          empty={<HrEmptyState title="No temporary access granted" description="Temporary grants lapse on their own and stay listed here afterwards for the audit trail." />}
-        />
-      </ScrollArea>
+      <HrDataList
+        rows={rows}
+        columns={columns}
+        empty={<HrEmptyState title="No temporary access granted" description="Temporary grants lapse on their own and stay listed here afterwards for the audit trail." />}
+        maxHeightClassName="sm:max-h-[24rem]"
+      />
     </div>
   );
 }
@@ -867,13 +858,12 @@ function InactiveUsersReport({ state }: { state: AccessDirectoryState }) {
         </p>
         <ExportButton title="Inactive user access report" rows={exportRows} filename="inactive-user-access-report.xlsx" />
       </div>
-      <ScrollArea className="h-auto sm:h-[24rem]">
-        <HrDataList
-          rows={rows}
-          columns={columns}
-          empty={<HrEmptyState title="No inactive users hold access" description="Every deactivated account has no permissions attached." />}
-        />
-      </ScrollArea>
+      <HrDataList
+        rows={rows}
+        columns={columns}
+        empty={<HrEmptyState title="No inactive users hold access" description="Every deactivated account has no permissions attached." />}
+        maxHeightClassName="sm:max-h-[24rem]"
+      />
     </div>
   );
 }

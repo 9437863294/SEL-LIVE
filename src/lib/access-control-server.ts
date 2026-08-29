@@ -28,6 +28,7 @@ import {
   canOpenAccessManagement,
   canRevokeAccess,
   checkerFor,
+  deactivationHasLapsed,
   hasAllPermissions,
   hasAnyPermission,
   hasPermission,
@@ -94,7 +95,10 @@ export async function authenticateAccess(request: Request): Promise<AccessReques
   if (!userSnapshot.exists) throw new AccessDeniedError('The signed-in user is not registered.');
 
   const userData = userSnapshot.data() || {};
-  if (userData.status === 'Inactive') throw new AccessDeniedError('This user account is inactive.');
+  // A temporary deactivation whose date has passed counts as active here even before the document
+  // has been put right — the client lifts it at the user's next sign-in (see AuthProvider).
+  const lapsed = deactivationHasLapsed(userData);
+  if (userData.status === 'Inactive' && !lapsed) throw new AccessDeniedError('This user account is inactive.');
 
   const userId = userSnapshot.id;
 
@@ -123,7 +127,7 @@ export async function authenticateAccess(request: Request): Promise<AccessReques
       name: String(userData.name || ''),
       email: String(userData.email || ''),
       role: String(userData.role || ''),
-      status: String(userData.status || 'Active'),
+      status: lapsed ? 'Active' : String(userData.status || 'Active'),
     },
     roles,
     grant,

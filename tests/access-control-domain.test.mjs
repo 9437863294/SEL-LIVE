@@ -20,6 +20,7 @@ import {
   countPermissions,
   countRoleUsage,
   daysUntilExpiry,
+  deactivationHasLapsed,
   describeAuditEntry,
   detectPrivilegedAccess,
   detectSodConflicts,
@@ -1218,4 +1219,37 @@ test('duplicate entries for one resource are all cleaned up', () => {
     { roles, actor },
   );
   assert.deepEqual(out.grant.directPermissions, []);
+});
+
+/* ------------------------------------------------------------------------------------------------
+ * Account deactivation — temporary ones lift themselves
+ * ---------------------------------------------------------------------------------------------- */
+
+test('deactivationHasLapsed is true only for an Inactive account whose until has passed', () => {
+  const until = '2026-09-30T23:59:59.000Z';
+  assert.equal(deactivationHasLapsed({ status: 'Inactive', deactivation: { until } }, '2026-10-01T00:00:00.000Z'), true);
+  assert.equal(deactivationHasLapsed({ status: 'Inactive', deactivation: { until } }, '2026-09-15T00:00:00.000Z'), false);
+  // Permanent, legacy and active accounts never lapse.
+  assert.equal(deactivationHasLapsed({ status: 'Inactive', deactivation: { until: null } }, '2030-01-01'), false);
+  assert.equal(deactivationHasLapsed({ status: 'Inactive' }, '2030-01-01'), false);
+  assert.equal(deactivationHasLapsed({ status: 'Active', deactivation: { until } }, '2030-01-01'), false);
+  // A date that cannot be read is treated as "still disabled", not as already lapsed.
+  assert.equal(deactivationHasLapsed({ status: 'Inactive', deactivation: { until: 'someday' } }, '2030-01-01'), false);
+});
+
+test('describeAuditEntry names account actions without a removal count', () => {
+  const line = describeAuditEntry({
+    targetUserId: 'u1',
+    targetUserName: 'Rahul Kumar',
+    action: 'Deactivate Account Temporarily',
+    roleNames: [],
+    permissionsAdded: [],
+    permissionsRemoved: [],
+    permissionsSkipped: [],
+    sourceKind: 'System',
+    changedBy: 'admin-1',
+    changedByName: 'Debaprasad',
+    changedAt: NOW,
+  });
+  assert.equal(line, 'Deactivate Account Temporarily for Rahul Kumar');
 });

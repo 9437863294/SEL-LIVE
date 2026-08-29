@@ -58,6 +58,22 @@ export interface User {
   employeeId?: string;
   employeeNo?: string;
   greytHR?: UserGreytHRLink;
+  /**
+   * Why — and, for a temporary one, until when — the account is deactivated. Written by Access
+   * Management's "Disable account"; a legacy Inactive user, or one deactivated from User Management,
+   * has none. Cleared on reactivation.
+   */
+  deactivation?: UserDeactivation | null;
+}
+
+export interface UserDeactivation {
+  /** ISO timestamp after which the account reactivates on its own; null for a permanent one. */
+  until?: string | null;
+  reason: string;
+  deactivatedBy: string;
+  deactivatedByName: string;
+  /** ISO timestamp. */
+  deactivatedAt: string;
 }
 
 export interface SavedUser {

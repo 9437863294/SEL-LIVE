@@ -365,14 +365,14 @@ function ScopeGrantManager({
                       )}
                     >
                       <div className="min-w-0">
-                        <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
+                        <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
                           {scopeLabel(grant)}
                           {grant.active === false && (
                             <Badge variant="outline" className="border-slate-300 bg-slate-100 text-[10px] text-slate-600">
                               Inactive
                             </Badge>
                           )}
-                        </p>
+                        </div>
                         <div className="mt-1 flex flex-wrap gap-1">
                           {(grant.roleIds ?? []).map((roleId) => {
                             const role = directory.roles.find((entry) => entry.id === roleId);

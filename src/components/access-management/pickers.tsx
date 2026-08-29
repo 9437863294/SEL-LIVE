@@ -165,6 +165,8 @@ export function UserFilterBar({
   onChange,
   context,
   registry,
+  defaultFilter = EMPTY_USER_FILTER,
+  trailing,
   className,
 }: {
   filter: UserFilterState;
@@ -172,26 +174,36 @@ export function UserFilterBar({
   context: UserDirectoryContext;
   /** When provided, offers §29's filter-by-permission ("who can approve bank guarantees?"). */
   registry?: RegistryNode[];
+  /**
+   * The bar's resting state — what "no filter in effect" means for the count on the Filters button.
+   * The Users tab starts on all statuses, so for it `status: 'all'` is the baseline, not a filter.
+   */
+  defaultFilter?: UserFilterState;
+  /**
+   * Rendered on the search row, after the Filters button — the user picker puts its selection
+   * summary and "Select all" here, so everything above the list is one row.
+   */
+  trailing?: React.ReactNode;
   className?: string;
 }) {
   const set = <K extends keyof UserFilterState>(key: K, value: UserFilterState[K]) =>
     onChange({ ...filter, [key]: value });
 
-  // Six selects under a search box is 350px of controls before the first result on a phone, so
-  // below `lg` they fold behind a "Filters" button that carries the count of the ones in effect.
-  // The search box is the filter people reach for first and stays out.
+  // The six selects are optional and mostly unused, so at every width they fold behind a "Filters"
+  // button that carries the count of the ones in effect — open, they were two rows of controls
+  // between the search box and the first result. The search box is the filter people reach for
+  // first and stays out. Opened, they fill an auto-fill grid of ~12rem columns: one compact row
+  // where the bar is wide (the Users tab), two even rows of three where it is not (the Assign
+  // Access panel) — never an orphaned sixth control on its own line.
   const [open, setOpen] = useState(false);
-  const activeCount = (Object.keys(filter) as Array<keyof UserFilterState>).filter((key) => {
-    if (key === 'term') return false;
-    const value = filter[key];
-    if (key === 'status') return value !== 'Active';
-    return !!value && value !== 'all';
-  }).length;
+  const activeCount = (Object.keys(filter) as Array<keyof UserFilterState>).filter(
+    (key) => key !== 'term' && filter[key] !== defaultFilter[key],
+  ).length;
 
   return (
     <div className={cn('space-y-2', className)}>
-      <div className="flex gap-2">
-        <div className="relative min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[12rem] flex-1">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
           <Input
             value={filter.term}
@@ -213,16 +225,17 @@ export function UserFilterBar({
         <Button
           type="button"
           variant={activeCount > 0 ? 'default' : 'outline'}
-          className="shrink-0 gap-1 lg:hidden"
+          className="shrink-0 gap-1"
           aria-expanded={open}
           onClick={() => setOpen((flag) => !flag)}
         >
           <SlidersHorizontal className="h-4 w-4" />
           Filters{activeCount > 0 ? ` (${activeCount})` : ''}
         </Button>
+        {trailing}
       </div>
 
-      <div className={cn('grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3', !open && 'hidden lg:grid')}>
+      <div className={cn('grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]', !open && 'hidden')}>
       <Select value={filter.status} onValueChange={(value) => set('status', value as UserFilterState['status'])}>
         <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
         <SelectContent>
@@ -412,7 +425,7 @@ export function UserPicker({
   selectedIds,
   onSelectionChange,
   registry,
-  heightClassName = 'sm:h-[24rem]',
+  heightClassName = 'sm:max-h-[24rem]',
   showFilters = true,
 }: {
   context: UserDirectoryContext;
@@ -422,6 +435,7 @@ export function UserPicker({
   onSelectionChange: (next: string[]) => void;
   /** Forwarded to the filter bar's permission filter; omit to hide that filter. */
   registry?: RegistryNode[];
+  /** Max height of the desktop list from `sm` up (`'sm:max-h-[25rem]'`); the header stays pinned while it scrolls. */
   heightClassName?: string;
   showFilters?: boolean;
 }) {
@@ -467,7 +481,7 @@ export function UserPicker({
         const employee = employeeIndex.get((user.email || '').trim().toLowerCase());
         return (
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap sm:whitespace-nowrap">
               <span className="font-semibold text-slate-800">{user.name || user.email}</span>
               {(user.status ?? 'Active') !== 'Active' && (
                 <Badge variant="outline" className="border-slate-200 bg-white text-[10px] text-slate-500">
@@ -475,7 +489,11 @@ export function UserPicker({
                 </Badge>
               )}
               {access && (
-                <RiskBadges privileges={detectPrivilegedAccess(access)} conflicts={detectSodConflicts(access)} />
+                <RiskBadges
+                  privileges={detectPrivilegedAccess(access)}
+                  conflicts={detectSodConflicts(access)}
+                  className="sm:flex-nowrap"
+                />
               )}
             </div>
             {/* The contact line lives here on a phone (a card's two-column detail grid would truncate it). */}
@@ -489,7 +507,7 @@ export function UserPicker({
     {
       header: 'Contact',
       mobile: 'omit',
-      className: 'text-xs text-muted-foreground',
+      className: 'max-w-[16rem] truncate text-xs text-muted-foreground',
       cell: (user) => {
         const employee = employeeIndex.get((user.email || '').trim().toLowerCase());
         return [user.email, employee?.employeeId, employee?.department, employee?.designation].filter(Boolean).join(' · ');
@@ -500,7 +518,7 @@ export function UserPicker({
       cell: (user) => {
         const grant = context.grants[user.id];
         return (
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1 sm:flex-nowrap sm:whitespace-nowrap">
             {user.role && <RoleBadge name={user.role} kind="base" />}
             {(grant?.additionalRoles ?? []).slice(0, 3).map((assignment) => (
               <RoleBadge key={assignment.roleId} name={assignment.roleName} kind="additional" />
@@ -525,47 +543,54 @@ export function UserPicker({
     },
   ];
 
+  /** "0 selected · 36 match the filter · Select all 36 filtered" — shares the search row. */
+  const selectionControls = (
+    <>
+      <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
+        {selectedIds.length} selected
+      </Badge>
+      <span className="text-xs text-muted-foreground">
+        {filtered.length} match the filter
+        {filtered.length > windowed.length ? ` · showing first ${windowed.length}` : ''}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={!filtered.length}
+        onClick={() =>
+          onSelectionChange(
+            allFilteredSelected
+              ? selectedIds.filter((id) => !filtered.some((user) => user.id === id))
+              : [...new Set([...selectedIds, ...filtered.map((user) => user.id)])],
+          )
+        }
+      >
+        {allFilteredSelected ? 'Deselect' : 'Select all'} {filtered.length} filtered
+      </Button>
+      {selectedIds.length > 0 && (
+        <Button type="button" variant="ghost" onClick={() => onSelectionChange([])}>
+          Clear
+        </Button>
+      )}
+    </>
+  );
+
   return (
     <div className="space-y-2.5">
-      {showFilters && (
-        <UserFilterBar filter={filter} onChange={onFilterChange} context={context} registry={registry} />
+      {showFilters ? (
+        <UserFilterBar
+          filter={filter}
+          onChange={onFilterChange}
+          context={context}
+          registry={registry}
+          trailing={selectionControls}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">{selectionControls}</div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/70 bg-white/70 px-2.5 py-2">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-indigo-700">
-            {selectedIds.length} selected
-          </Badge>
-          <span className="text-muted-foreground">{filtered.length} match the filter</span>
-          {filtered.length > windowed.length && (
-            <span className="text-muted-foreground">· showing first {windowed.length}</span>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={!filtered.length}
-            onClick={() =>
-              onSelectionChange(
-                allFilteredSelected
-                  ? selectedIds.filter((id) => !filtered.some((user) => user.id === id))
-                  : [...new Set([...selectedIds, ...filtered.map((user) => user.id)])],
-              )
-            }
-          >
-            {allFilteredSelected ? 'Deselect' : 'Select all'} {filtered.length} filtered
-          </Button>
-          {selectedIds.length > 0 && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => onSelectionChange([])}>
-              Clear
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <ScrollArea className={cn('h-auto rounded-xl border border-white/70 bg-white/60', heightClassName)}>
+      {/* A plain box, not a ScrollArea: the list scrolls itself so its header can stay put. */}
+      <div className="rounded-xl border border-white/70 bg-white/60">
         {windowed.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-14 text-center">
             <Users className="h-8 w-8 text-slate-300" />
@@ -578,10 +603,12 @@ export function UserPicker({
               columns={columns}
               onRowClick={(user) => toggle(user.id)}
               rowClassName={(user) => (selected.has(user.id) ? 'border-indigo-200 bg-indigo-50/70' : undefined)}
+              maxHeightClassName={heightClassName}
+              dense
             />
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }

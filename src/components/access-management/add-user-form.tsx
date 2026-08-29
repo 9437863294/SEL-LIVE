@@ -50,6 +50,13 @@ const LOWER = 'abcdefghjkmnpqrstuvwxyz';
 const NUMS = '23456789';
 const SYMS = '@#$%!&';
 
+/**
+ * The base role a new account starts on unless the administrator picks another. Matched by name,
+ * because a role *name* is what `users.role` stores; if no role is called this the field simply
+ * starts empty, exactly as it did before.
+ */
+const DEFAULT_BASE_ROLE = 'Default';
+
 function generatePassword(): string {
   const pick = (set: string) => set[Math.floor(Math.random() * set.length)];
   const chars = [
@@ -232,6 +239,17 @@ export function AddUserForm({
     () => roles.filter((role) => role.status !== 'Inactive' && role.status !== 'Disabled'),
     [roles],
   );
+
+  // Preselect "Default" — the role most new logins start on, so the common case is one field fewer.
+  // Only fills an empty field: a base role the administrator has already chosen is never overwritten,
+  // and the roles list arriving later (or refreshing) cannot flip it back.
+  useEffect(() => {
+    const fallback = activeRoles.find(
+      (role) => role.name.trim().toLowerCase() === DEFAULT_BASE_ROLE.toLowerCase(),
+    );
+    if (!fallback) return;
+    setForm((current) => (current.baseRole ? current : { ...current, baseRole: fallback.name }));
+  }, [activeRoles]);
 
   /*
    * There is no `reset()` any more.

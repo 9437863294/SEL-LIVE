@@ -581,7 +581,7 @@ export function AssignAccess({
               selectedIds={selectedUserIds}
               onSelectionChange={setSelectedUserIds}
               registry={state.registry}
-              heightClassName="sm:h-[25rem]"
+              heightClassName="sm:max-h-[25rem]"
             />
 
             {selectedUsers.length > 0 && (

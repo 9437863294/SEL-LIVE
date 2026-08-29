@@ -24,6 +24,7 @@ import {
   CalendarClock,
   ChevronRight,
   Clock,
+  Download,
   History,
   KeyRound,
   Layers,
@@ -59,11 +60,13 @@ import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { exportRowsToExcel } from '@/lib/report-excel';
 import {
   countPermissions,
   detectPrivilegedAccess,
   detectSodConflicts,
   expiringTemporaryGrants,
+  formatGrantDate,
   registryPermissionCount,
 } from '@/lib/access-control';
 import {
@@ -299,7 +302,8 @@ export function AccessControlCenter() {
       <Tabs value={tab} onValueChange={(value) => setTab(value as TabId)}>
         {/* A select on a phone: ten tabs in a horizontal strip show three at a time and hide the
             rest behind a swipe nobody is told about, whereas a select names all ten in one row.
-            The strip from `sm` up, scrolling sideways where it still overflows. Same idiom as
+            The strip from `sm` up fills the page width — ten equal tabs (`flex-1`) — and still
+            scrolls sideways (`min-w-max`) where a narrow window cannot fit them. Same idiom as
             `ModulePicker`. */}
         <div className="sm:hidden">
           <Select value={tab} onValueChange={(value) => setTab(value as TabId)}>
@@ -317,9 +321,9 @@ export function AccessControlCenter() {
         </div>
         <div ref={tabStripRef} className="hidden sm:block">
           <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
-            <TabsList className="inline-flex h-auto w-max sm:h-10">
+            <TabsList className="flex h-auto w-full min-w-max sm:h-10">
               {TAB_ITEMS.map((item) => (
-                <TabsTrigger key={item.id} value={item.id} className="text-xs">
+                <TabsTrigger key={item.id} value={item.id} className="flex-1 text-xs">
                   {item.label}
                 </TabsTrigger>
               ))}
@@ -757,6 +761,10 @@ function AlertCard({
  * Users tab (§12, §29)
  * ---------------------------------------------------------------------------------------------- */
 
+/** The Users tab lists everybody by default — inactive accounts holding access are exactly what an
+ * administrator reviewing this screen wants to see — so "all statuses" is its resting state. */
+const USERS_TAB_FILTER: UserFilterState = { ...EMPTY_USER_FILTER, status: 'all' };
+
 function UsersTab({
   state,
   actor,
@@ -772,7 +780,7 @@ function UsersTab({
 }) {
   const { toast } = useToast();
   const { directory, accessByUser, departments, projects, designations, employees } = state;
-  const [filter, setFilter] = useState<UserFilterState>({ ...EMPTY_USER_FILTER, status: 'all' });
+  const [filter, setFilter] = useState<UserFilterState>(USERS_TAB_FILTER);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [removalSelection, setRemovalSelection] = useState<RemoveAccessSelection | null>(null);
@@ -804,16 +812,62 @@ function UsersTab({
     [filtered, selectedIds],
   );
 
+  /** A→Z by the User column (name, else email) — the directory's own order is just insertion order. */
   const rows = useMemo(
     () =>
-      filtered.map((user) => {
-        const access = accessByUser[user.id];
-        const grant = directory.grants[user.id];
-        const employee = employeeForUser(user, employees);
-        return { id: user.id, user, access, grant, employee };
-      }),
+      filtered
+        .slice()
+        .sort((a, b) =>
+          (a.name || a.email || '').localeCompare(b.name || b.email || '', undefined, { sensitivity: 'base' }),
+        )
+        .map((user) => {
+          const access = accessByUser[user.id];
+          const grant = directory.grants[user.id];
+          const employee = employeeForUser(user, employees);
+          return { id: user.id, user, access, grant, employee };
+        }),
     [filtered, accessByUser, directory.grants, employees],
   );
+
+  /**
+   * Everyone matching the filter — all of them, not the 250 the register shows — as a workbook.
+   * The register's columns plus what an access review asks for next: the exact effective count,
+   * the modules and projects reachable, and the risk findings spelled out rather than as badges.
+   */
+  const exportUsers = async () => {
+    if (!rows.length) return;
+    try {
+      await exportRowsToExcel(
+        'User access',
+        rows.map(({ user, access, grant, employee }) => ({
+          User: user.name || user.email || user.id,
+          Email: user.email ?? '',
+          'Employee ID': employee?.employeeId ?? '',
+          Department: employee?.department ?? '',
+          Designation: employee?.designation ?? '',
+          Status: user.status ?? 'Active',
+          'Base role': user.role ?? '',
+          'Additional roles': (grant?.additionalRoles ?? []).map((assignment) => assignment.roleName).join(', '),
+          'Temporary active': access?.temporaryActive.length ?? 0,
+          Projects:
+            (access?.projectIds ?? [])
+              .map((id) => projects.find((project) => project.id === id)?.projectName ?? id)
+              .join(', ') || 'All',
+          'Effective permissions': countPermissions(access?.permissions),
+          Modules: (access?.modules ?? []).join(', '),
+          'High privilege': access ? detectPrivilegedAccess(access).map((finding) => finding.label).join('; ') : '',
+          'SoD conflicts': access ? detectSodConflicts(access).map((conflict) => conflict.label).join('; ') : '',
+        })),
+        { filename: 'users.xlsx' },
+      );
+    } catch (error) {
+      toast({
+        title: 'Export failed',
+        description: error instanceof Error ? error.message : 'Unexpected error.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   const columns: Array<HrListColumn<(typeof rows)[number]>> = [
     {
@@ -891,7 +945,9 @@ function UsersTab({
               : 'border-emerald-200 bg-emerald-50 text-emerald-700'
           }
         >
-          {row.user.status ?? 'Active'}
+          {row.user.status === 'Inactive' && row.user.deactivation?.until
+            ? `Inactive until ${formatGrantDate(row.user.deactivation.until)}`
+            : (row.user.status ?? 'Active')}
         </Badge>
       ),
     },
@@ -900,7 +956,7 @@ function UsersTab({
       align: 'right',
       mobile: 'footer',
       cell: (row) => (
-        <Button asChild variant="outline" size="sm" className="h-8 text-xs max-sm:flex-1">
+        <Button asChild variant="outline" size="sm" className="h-7 text-xs max-sm:flex-1">
           <Link href={`/settings/access-management/users/${row.id}`}>Access profile</Link>
         </Button>
       ),
@@ -911,7 +967,13 @@ function UsersTab({
     <div className="space-y-3">
       <AccessCard>
         <CardContent className="space-y-2.5 p-3">
-          <UserFilterBar filter={filter} onChange={setFilter} context={context} registry={state.registry} />
+          <UserFilterBar
+            filter={filter}
+            onChange={setFilter}
+            context={context}
+            registry={state.registry}
+            defaultFilter={USERS_TAB_FILTER}
+          />
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>
@@ -925,6 +987,10 @@ function UsersTab({
             </div>
             {/* Full-width (sharing a row where two fit) on a phone, natural width from `sm` up. */}
             <div className="flex flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
+              <Button variant="outline" size="sm" disabled={!rows.length} onClick={() => void exportUsers()}>
+                <Download className="mr-1.5 h-4 w-4" />
+                Export ({rows.length})
+              </Button>
               {canAssign && (
                 // A link, not a dialog trigger: the form is its own page now, and it comes back here
                 // with the new user preselected via `assignTo`.
@@ -973,11 +1039,13 @@ function UsersTab({
       {rows.length === 0 ? (
         <HrEmptyState icon={Users} title="No users match these filters" description="Try widening the search." />
       ) : (
-        <ScrollArea className="h-auto sm:h-[30rem]">
+        <>
           <HrDataList
             rows={rows.slice(0, 250)}
             columns={columns}
             cardHref={(row) => `/settings/access-management/users/${row.id}`}
+            maxHeightClassName="sm:max-h-[30rem]"
+            dense
           />
           {rows.length > 250 && (
             <p className="py-3 text-center text-xs text-muted-foreground">
@@ -985,7 +1053,7 @@ function UsersTab({
               still apply to all {rows.length}.
             </p>
           )}
-        </ScrollArea>
+        </>
       )}
 
       {/* Step 1: what to remove. */}

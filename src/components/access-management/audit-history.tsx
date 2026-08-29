@@ -32,10 +32,9 @@ import { Button } from '@/components/ui/button';
 import { CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { HrEmptyState } from '@/components/hr/hr-ui';
+import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
@@ -151,6 +150,121 @@ export function AuditHistory({
     return [...seen.entries()];
   }, [entries]);
 
+  const rows = useMemo<TimelineRow[]>(
+    () =>
+      visible.map((entry, index) => ({
+        id: entry.id ?? `${entry.targetUserId}-${entry.changedAt}-${index}`,
+        entry,
+      })),
+    [visible],
+  );
+
+  /**
+   * One column spec for the desktop table and the phone cards. Low-priority columns drop out as the
+   * table narrows (batch, reason, then the two names) rather than forcing a sideways scroll; on a
+   * phone the reason rides under the headline and the batch lives in the expanded detail.
+   */
+  const columns: Array<HrListColumn<TimelineRow>> = [
+    {
+      header: 'When',
+      className: 'whitespace-nowrap',
+      cell: ({ entry }) => (
+        <span className="text-xs text-muted-foreground">
+          {formatGrantDate(entry.changedAt)}{' '}
+          {new Date(entry.changedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      ),
+    },
+    {
+      header: 'Change',
+      mobile: 'title',
+      cell: ({ entry }) => {
+        const isRemoval = entry.action === 'Revoke Access';
+        return (
+          <span className="flex items-start gap-2">
+            <span
+              className={cn(
+                'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
+                isRemoval ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700',
+              )}
+            >
+              {isRemoval ? <ShieldMinus className="h-3.5 w-3.5" /> : <ShieldPlus className="h-3.5 w-3.5" />}
+            </span>
+            <span className="min-w-0">
+              <span className="block font-medium text-slate-800 max-sm:line-clamp-2">{describeAuditEntry(entry)}</span>
+              {entry.reason && (
+                <span className="mt-0.5 block text-xs font-normal text-muted-foreground sm:hidden">“{entry.reason}”</span>
+              )}
+            </span>
+          </span>
+        );
+      },
+    },
+    { header: 'Affected user', className: 'hidden lg:table-cell', cell: ({ entry }) => entry.targetUserName },
+    { header: 'Changed by', className: 'hidden lg:table-cell', cell: ({ entry }) => entry.changedByName },
+    {
+      header: 'Source',
+      className: 'hidden md:table-cell',
+      cell: ({ entry }) => (
+        <Badge variant="outline" className="text-[10px] text-slate-600">
+          {entry.sourceKind}
+        </Badge>
+      ),
+    },
+    {
+      header: 'Permissions',
+      align: 'right',
+      className: 'whitespace-nowrap',
+      mobile: 'aside',
+      cell: ({ entry }) => (
+        <span className="inline-flex items-center gap-1">
+          {entry.permissionsAdded.length > 0 && (
+            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
+              +{entry.permissionsAdded.length}
+            </Badge>
+          )}
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px]',
+              entry.permissionsRemoved.length
+                ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                : 'border-slate-200 bg-white text-slate-500',
+            )}
+          >
+            −{entry.permissionsRemoved.length}
+          </Badge>
+        </span>
+      ),
+    },
+    {
+      header: 'Batch',
+      className: 'hidden xl:table-cell',
+      mobile: 'omit',
+      cell: ({ entry }) => (entry.batchId ? <BatchBadge batchId={entry.batchId} onSelect={setBatchFilter} /> : '—'),
+    },
+    {
+      header: 'Reason',
+      className: 'hidden xl:table-cell',
+      mobile: 'omit',
+      cell: ({ entry }) => (
+        <span className="line-clamp-2 text-xs text-muted-foreground">{entry.reason ? `“${entry.reason}”` : '—'}</span>
+      ),
+    },
+    {
+      header: '',
+      className: 'w-8',
+      mobile: 'aside',
+      // Purely visual — the row itself toggles, so a second button here would fire both.
+      cell: (row) => (
+        <ChevronDown
+          aria-hidden
+          className={cn('h-4 w-4 text-slate-400 transition-transform', expanded === row.id && 'rotate-180')}
+        />
+      ),
+    },
+  ];
+
   return (
     <Tabs value={view} onValueChange={(value) => setView(value as 'timeline' | 'batches')} className="space-y-3">
       <TabsList className="grid h-auto w-full grid-cols-2 sm:h-10 sm:w-auto sm:grid-cols-2">
@@ -264,111 +378,14 @@ export function AuditHistory({
             description="Every grant and removal made from this screen is logged here with who, what, when, why and the exact permissions involved."
           />
         ) : (
-          <AccessCard className="overflow-hidden">
-            <ScrollArea className="h-auto sm:h-[30rem]">
-              <div className="divide-y divide-slate-100">
-                {visible.map((entry, index) => {
-                  const key = entry.id ?? `${entry.targetUserId}-${entry.changedAt}-${index}`;
-                  const isOpen = expanded === key;
-                  const isRemoval = entry.action === 'Revoke Access';
-                  return (
-                    <div key={key}>
-                      <button
-                        type="button"
-                        onClick={() => setExpanded(isOpen ? null : key)}
-                        className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-slate-50/70"
-                      >
-                        <span
-                          className={cn(
-                            'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
-                            isRemoval ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700',
-                          )}
-                        >
-                          {isRemoval ? <ShieldMinus className="h-3.5 w-3.5" /> : <ShieldPlus className="h-3.5 w-3.5" />}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          {/* Two lines on a phone: a headline cut at 28 characters told nobody what changed,
-                              and the reason — the thing the trail records — vanished after the date. */}
-                          <p className="line-clamp-2 text-sm font-medium text-slate-800 sm:line-clamp-none sm:truncate">
-                            {describeAuditEntry(entry)}
-                          </p>
-                          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground sm:line-clamp-none sm:truncate">
-                            {formatGrantDate(entry.changedAt)}{' '}
-                            {new Date(entry.changedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ·{' '}
-                            {entry.changedByName}
-                            {entry.reason ? ` · “${entry.reason}”` : ''}
-                          </p>
-                          <div className="mt-1 flex flex-wrap items-center gap-1">
-                            <Badge variant="outline" className="text-[10px] text-slate-600">{entry.sourceKind}</Badge>
-                            {entry.permissionsAdded.length > 0 && (
-                              <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-                                +{entry.permissionsAdded.length}
-                              </Badge>
-                            )}
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                'text-[10px]',
-                                entry.permissionsRemoved.length
-                                  ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                                  : 'border-slate-200 bg-white text-slate-500',
-                              )}
-                            >
-                              −{entry.permissionsRemoved.length}
-                            </Badge>
-                            {entry.batchId && (
-                              <Badge
-                                variant="outline"
-                                className="cursor-pointer border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setBatchFilter(entry.batchId ?? null);
-                                }}
-                              >
-                                {entry.batchId}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        <ChevronDown
-                          className={cn('mt-1 h-4 w-4 shrink-0 text-slate-400 transition-transform', isOpen && 'rotate-180')}
-                        />
-                      </button>
-
-                      {isOpen && (
-                        <div className="grid gap-3 bg-slate-50/60 px-3 py-3 sm:grid-cols-3">
-                          <div>
-                            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                              Added ({entry.permissionsAdded.length})
-                            </p>
-                            <PermissionPairList pairs={entry.permissionsAdded} emptyLabel="None" max={80} />
-                          </div>
-                          <div>
-                            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-destructive">
-                              Removed ({entry.permissionsRemoved.length})
-                            </p>
-                            <PermissionPairList pairs={entry.permissionsRemoved} emptyLabel="None" max={80} />
-                          </div>
-                          <div>
-                            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                              {isRemoval ? 'Retained by another source' : 'Already held'} (
-                              {entry.permissionsSkipped.length})
-                            </p>
-                            <PermissionPairList pairs={entry.permissionsSkipped} emptyLabel="None" max={80} />
-                            <div className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-                              {entry.userAgent && <p className="line-clamp-2 break-all">Device: {entry.userAgent}</p>}
-                              {entry.ipAddress && <p>IP: {entry.ipAddress}</p>}
-                              {entry.approvalReference && <p>Approval ref: {entry.approvalReference}</p>}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-          </AccessCard>
+          <HrDataList
+            rows={rows}
+            columns={columns}
+            onRowClick={(row) => setExpanded((current) => (current === row.id ? null : row.id))}
+            expandedId={expanded}
+            renderExpanded={(row) => <AuditEntryDetail entry={row.entry} onSelectBatch={setBatchFilter} />}
+            maxHeightClassName="sm:max-h-[30rem]"
+          />
         )}
       </TabsContent>
 
@@ -386,12 +403,12 @@ export function AuditHistory({
                 <CardContent className="space-y-2.5 p-3.5">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="flex flex-wrap items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <Badge variant="outline" className="border-indigo-200 bg-indigo-50 font-mono text-[10px] text-indigo-700">
                           {batch.id}
                         </Badge>
                         <span className="truncate text-sm font-semibold text-slate-800">{batch.label}</span>
-                      </p>
+                      </div>
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {formatGrantDate(batch.performedAt)}{' '}
                         {new Date(batch.performedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ·{' '}
@@ -452,5 +469,70 @@ export function AuditHistory({
         )}
       </TabsContent>
     </Tabs>
+  );
+}
+
+/** `HrDataList` keys rows by `id`; an audit entry may lack one, so the row carries a derived key. */
+interface TimelineRow {
+  id: string;
+  entry: AccessAuditEntry;
+}
+
+/** The batch id, as the filter it applies — inside a clickable row, so it stops the click there. */
+function BatchBadge({ batchId, onSelect }: { batchId: string; onSelect: (batchId: string) => void }) {
+  return (
+    <Badge
+      variant="outline"
+      className="cursor-pointer border-indigo-200 bg-indigo-50 font-mono text-[10px] text-indigo-700"
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect(batchId);
+      }}
+    >
+      {batchId}
+    </Badge>
+  );
+}
+
+/** What one change did, exactly: the permission pairs it added, removed and left alone. */
+function AuditEntryDetail({
+  entry,
+  onSelectBatch,
+}: {
+  entry: AccessAuditEntry;
+  onSelectBatch: (batchId: string) => void;
+}) {
+  const isRemoval = entry.action === 'Revoke Access';
+  return (
+    <div className="grid gap-3 p-3 max-sm:p-0 sm:grid-cols-3">
+      <div>
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+          Added ({entry.permissionsAdded.length})
+        </p>
+        <PermissionPairList pairs={entry.permissionsAdded} emptyLabel="None" max={80} />
+      </div>
+      <div>
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-destructive">
+          Removed ({entry.permissionsRemoved.length})
+        </p>
+        <PermissionPairList pairs={entry.permissionsRemoved} emptyLabel="None" max={80} />
+      </div>
+      <div>
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          {isRemoval ? 'Retained by another source' : 'Already held'} ({entry.permissionsSkipped.length})
+        </p>
+        <PermissionPairList pairs={entry.permissionsSkipped} emptyLabel="None" max={80} />
+        <div className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+          {entry.batchId && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              Batch: <BatchBadge batchId={entry.batchId} onSelect={onSelectBatch} />
+            </div>
+          )}
+          {entry.userAgent && <p className="line-clamp-2 break-all">Device: {entry.userAgent}</p>}
+          {entry.ipAddress && <p>IP: {entry.ipAddress}</p>}
+          {entry.approvalReference && <p>Approval ref: {entry.approvalReference}</p>}
+        </div>
+      </div>
+    </div>
   );
 }
