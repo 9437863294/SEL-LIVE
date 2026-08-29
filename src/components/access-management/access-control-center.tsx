@@ -20,25 +20,15 @@ import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  AlertTriangle,
   CalendarClock,
-  ChevronRight,
-  Clock,
   Download,
   History,
-  KeyRound,
-  Layers,
-  Link2,
   RefreshCw,
-  ShieldAlert,
   ShieldCheck,
   ShieldMinus,
   ShieldPlus,
-  Sparkles,
-  UserCog,
   UserPlus,
   Users,
-  UserX,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,7 +44,6 @@ import {
   HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
-import { SpotlightCard } from '@/components/effects/SpotlightCard';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAccessDirectory } from '@/hooks/useAccessDirectory';
@@ -65,7 +54,6 @@ import {
   countPermissions,
   detectPrivilegedAccess,
   detectSodConflicts,
-  expiringTemporaryGrants,
   formatGrantDate,
   registryPermissionCount,
 } from '@/lib/access-control';
@@ -87,6 +75,7 @@ import { AuditHistory } from './audit-history';
 import { TemplatesAndScopes } from './templates-and-scopes';
 import { AccessReports, type ReportId } from './access-reports';
 import { PermissionTree } from './permission-tree';
+import { AccessOverview } from './access-overview';
 import {
   EMPTY_USER_FILTER,
   UserFilterBar,
@@ -95,7 +84,7 @@ import {
   type UserDirectoryContext,
   type UserFilterState,
 } from './pickers';
-import { AccessCard, AccessKpiCard, AccessPageShell, RiskBadges, RoleBadge } from './access-ui';
+import { AccessCard, AccessPageShell, RiskBadges, RoleBadge } from './access-ui';
 
 type TabId =
   | 'overview'
@@ -402,358 +391,6 @@ export function AccessControlCenter() {
         </TabsContent>
       </Tabs>
     </AccessPageShell>
-  );
-}
-
-/* ------------------------------------------------------------------------------------------------
- * Overview dashboard (§37)
- * ---------------------------------------------------------------------------------------------- */
-
-function AccessOverview({
-  state,
-  onNavigate,
-  onAssign,
-  onOpenReport,
-  onInspect,
-}: {
-  state: ReturnType<typeof useAccessDirectory>;
-  onNavigate: (tab: TabId) => void;
-  onAssign: (seed: { userIds?: string[]; roleIds?: string[]; templateIds?: string[] }) => void;
-  onOpenReport: (report: ReportId) => void;
-  onInspect: (userId: string) => void;
-}) {
-  const { dashboard, directory, accessByUser, registry, roleUsage } = state;
-
-  const registryTotal = useMemo(() => registryPermissionCount(registry), [registry]);
-
-  const usersWithoutRoles = useMemo(
-    () => directory.users.filter((user) => !user.role && !(directory.grants[user.id]?.additionalRoles.length)),
-    [directory],
-  );
-
-  const expiring = useMemo(() => {
-    const grants = directory.users.flatMap((user) =>
-      (directory.grants[user.id]?.temporaryAccess ?? []).map((entry) => ({ user, entry })),
-    );
-    const soon = expiringTemporaryGrants(grants.map((row) => row.entry), 7);
-    const ids = new Set(soon.map((entry) => entry.id));
-    return grants.filter((row) => ids.has(row.entry.id));
-  }, [directory]);
-
-  const mostAccess = useMemo(
-    () =>
-      directory.users
-        .map((user) => ({ user, access: accessByUser[user.id] }))
-        .filter((row) => row.access)
-        .sort((a, b) => (b.access?.permissionCount ?? 0) - (a.access?.permissionCount ?? 0))
-        .slice(0, 8),
-    [directory.users, accessByUser],
-  );
-
-  const unusedRoles = useMemo(
-    () => directory.roles.filter((role) => (roleUsage[role.name]?.total ?? 0) === 0),
-    [directory.roles, roleUsage],
-  );
-
-  /**
-   * Active logins with no greytHR employee record behind them.
-   *
-   * Only counted for active users: an inactive account with no link is somebody who left before the
-   * mirror existed, and nagging about it every time this screen opens teaches administrators to
-   * ignore the alert. A live login with no employee record is different — every piece of profile data
-   * on it has to be typed by hand and stays wrong when HR changes it.
-   */
-  const unlinkedActiveUsers = useMemo(
-    () => directory.users.filter((user) => user.status === 'Active' && !user.employeeId),
-    [directory.users],
-  );
-
-  return (
-    <div className="space-y-3">
-      {/* Every KPI opens the tab (or report) that explains its number — a count you cannot act on is trivia. */}
-      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-        <AccessKpiCard index={0} label="Total users" value={dashboard.totalUsers} hint={`${dashboard.activeUsers} active`} icon={Users} tone="blue" onClick={() => onNavigate('users')} />
-        <AccessKpiCard index={1} label="Roles" value={dashboard.totalRoles} hint={`${dashboard.customRoles} custom`} icon={Layers} tone="indigo" onClick={() => onNavigate('roles')} />
-        <AccessKpiCard
-          index={2}
-          label="Grantable permissions"
-          value={registryTotal}
-          hint={`${dashboard.totalPermissions} used by roles`}
-          icon={KeyRound}
-          tone="violet"
-          onClick={() => onNavigate('permissions')}
-        />
-        <AccessKpiCard
-          index={3}
-          label="Users with added access"
-          value={dashboard.usersWithAdditionalAccess}
-          hint="On top of their base role"
-          icon={ShieldPlus}
-          tone="emerald"
-          onClick={() => onOpenReport('user-access')}
-        />
-        <AccessKpiCard
-          index={4}
-          label="Privileged users"
-          value={dashboard.privilegedUsers}
-          hint="Hold a high-risk capability"
-          icon={UserCog}
-          tone="amber"
-          onClick={() => onOpenReport('privileged')}
-        />
-        <AccessKpiCard
-          index={5}
-          label="SoD conflicts"
-          value={dashboard.usersWithSodConflicts}
-          hint="Can create and approve"
-          icon={AlertTriangle}
-          tone={dashboard.usersWithSodConflicts ? 'rose' : 'slate'}
-          onClick={() => onOpenReport('privileged')}
-        />
-        <AccessKpiCard
-          index={6}
-          label="Temporary active"
-          value={dashboard.temporaryAccessActive}
-          hint={`${dashboard.temporaryAccessExpiringSoon} expiring in 7 days`}
-          icon={CalendarClock}
-          tone="orange"
-          onClick={() => onOpenReport('temporary')}
-        />
-        <AccessKpiCard
-          index={7}
-          label="Users without a role"
-          value={dashboard.usersWithoutRoles}
-          hint="Cannot access anything"
-          icon={UserX}
-          tone={dashboard.usersWithoutRoles ? 'rose' : 'slate'}
-          onClick={() => onNavigate('users')}
-        />
-      </div>
-
-      {(dashboard.inactiveUsersHoldingAccess > 0 ||
-        usersWithoutRoles.length > 0 ||
-        unlinkedActiveUsers.length > 0) && (
-        <div className="grid gap-2.5 lg:grid-cols-2">
-          {dashboard.inactiveUsersHoldingAccess > 0 && (
-            <AlertCard
-              tone="amber"
-              icon={UserX}
-              title={`${dashboard.inactiveUsersHoldingAccess} inactive user(s) still hold permissions`}
-              description="They cannot sign in, but reactivating the account restores everything. Worth reviewing for anybody who has left permanently."
-              actionLabel="Open the report"
-              onAction={() => onOpenReport('inactive')}
-            />
-          )}
-          {usersWithoutRoles.length > 0 && (
-            <AlertCard
-              tone="rose"
-              icon={ShieldAlert}
-              title={`${usersWithoutRoles.length} user(s) have no role at all`}
-              description={`${usersWithoutRoles
-                .slice(0, 4)
-                .map((user) => user.name || user.email)
-                .join(', ')}${usersWithoutRoles.length > 4 ? `, +${usersWithoutRoles.length - 4} more` : ''}. They can sign in but see nothing.`}
-              actionLabel="Assign access"
-              onAction={() => onAssign({ userIds: usersWithoutRoles.map((user) => user.id) })}
-            />
-          )}
-          {unlinkedActiveUsers.length > 0 && (
-            <AlertCard
-              tone="amber"
-              icon={Link2}
-              title={`${unlinkedActiveUsers.length} active login(s) are not linked to a greytHR employee`}
-              description="Department, designation and joining date come from greytHR. Until a login is linked, its profile data has to be maintained by hand — and the linking console proposes the confident matches for you."
-              actionLabel="Open greytHR linking"
-              actionHref="/settings/user-management/greythr-linking"
-            />
-          )}
-        </div>
-      )}
-
-      <div className="grid gap-2.5 lg:grid-cols-2">
-        {/* Expiring temporary access */}
-        <SpotlightCard
-          spotlightColor="rgba(217, 119, 6, 0.14)"
-          style={{ animationDelay: '480ms', animationFillMode: 'both' }}
-          className="animate-am-card-in rounded-lg"
-        >
-          <AccessCard className="h-full transition-shadow duration-300 hover:shadow-lg">
-            <CardHeader className="px-4 py-3">
-              <CardTitle className="flex items-center gap-1.5 text-sm">
-                <Clock className="h-4 w-4 text-amber-600" />
-                Access expiring soon
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Temporary grants lapsing within seven days. They expire on their own — no action needed
-                unless somebody still needs them.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1.5 px-4 pb-4">
-              {expiring.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nothing expiring in the next week.</p>
-              ) : (
-                expiring.map(({ user, entry }) => (
-                  <div
-                    key={`${user.id}-${entry.id}`}
-                    className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-amber-100 bg-amber-50/50 px-2.5 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-800">{user.name || user.email}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {entry.roleName || 'Direct permissions'} · until {entry.expiresAt.slice(0, 10)}
-                      </p>
-                    </div>
-                    <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
-                      <Link href={`/settings/access-management/users/${user.id}`}>
-                        View
-                        <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
-                      </Link>
-                    </Button>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </AccessCard>
-        </SpotlightCard>
-
-        {/* Users with the most access */}
-        <SpotlightCard
-          spotlightColor="rgba(79, 70, 229, 0.14)"
-          style={{ animationDelay: '540ms', animationFillMode: 'both' }}
-          className="animate-am-card-in rounded-lg"
-        >
-          <AccessCard className="h-full transition-shadow duration-300 hover:shadow-lg">
-            <CardHeader className="px-4 py-3">
-              <CardTitle className="flex items-center gap-1.5 text-sm">
-                <UserCog className="h-4 w-4 text-indigo-600" />
-                Widest access
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Not a problem by itself — but the first place to look when reviewing whether access has
-                accumulated beyond what a role needs.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-1.5 px-4 pb-4">
-              {mostAccess.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No effective access computed yet — this fills in once users hold roles or grants.
-                </p>
-              ) : (
-                mostAccess.map(({ user, access }) => (
-                  <button
-                    key={user.id}
-                    type="button"
-                    onClick={() => onInspect(user.id)}
-                    title="Open in Effective Access"
-                    className="flex w-full flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white bg-white/80 px-2.5 py-2 text-left transition-colors hover:border-indigo-200 hover:bg-indigo-50/40"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-800">{user.name || user.email}</p>
-                      <p className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
-                        {access?.baseRoleName ?? 'no base role'}
-                        {(access?.additionalRoleNames.length ?? 0) > 0 &&
-                          ` + ${access?.additionalRoleNames.length} additional`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {access && (
-                        <RiskBadges
-                          privileges={detectPrivilegedAccess(access)}
-                          conflicts={detectSodConflicts(access)}
-                        />
-                      )}
-                      <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
-                        {access?.permissionCount ?? 0}
-                      </Badge>
-                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                    </div>
-                  </button>
-                ))
-              )}
-            </CardContent>
-          </AccessCard>
-        </SpotlightCard>
-      </div>
-
-      {unusedRoles.length > 0 && (
-        <SpotlightCard
-          spotlightColor="rgba(100, 116, 139, 0.14)"
-          style={{ animationDelay: '600ms', animationFillMode: 'both' }}
-          className="animate-am-card-in rounded-lg"
-        >
-          <AccessCard className="transition-shadow duration-300 hover:shadow-lg">
-            <CardHeader className="px-4 py-3">
-              <CardTitle className="flex items-center gap-1.5 text-sm">
-                <Sparkles className="h-4 w-4 text-slate-400" />
-                Roles nobody holds
-              </CardTitle>
-              <CardDescription className="text-xs">
-                {unusedRoles.length} role(s) with no holders. Safe to leave — but also safe to disable if
-                they were created for a project that has ended.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-1.5 px-4 pb-4">
-              {unusedRoles.slice(0, 24).map((role) => (
-                <Badge key={role.id} variant="outline" className="text-[10px] text-slate-500">
-                  {role.name}
-                </Badge>
-              ))}
-              {unusedRoles.length > 24 && (
-                <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                  +{unusedRoles.length - 24} more
-                </Badge>
-              )}
-            </CardContent>
-          </AccessCard>
-        </SpotlightCard>
-      )}
-    </div>
-  );
-}
-
-function AlertCard({
-  tone,
-  icon: Icon,
-  title,
-  description,
-  actionLabel,
-  onAction,
-  actionHref,
-}: {
-  tone: 'amber' | 'rose';
-  icon: React.ElementType;
-  title: string;
-  description: string;
-  actionLabel: string;
-  /** An in-page action — switch tabs, open the assignment workspace. */
-  onAction?: () => void;
-  /** A route instead, for the findings whose fix lives on another screen. */
-  actionHref?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex flex-wrap items-start justify-between gap-2 rounded-xl border px-3 py-2.5',
-        tone === 'amber' ? 'border-amber-200 bg-amber-50/70' : 'border-rose-200 bg-rose-50/70',
-      )}
-    >
-      <div className="flex min-w-0 gap-2">
-        <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', tone === 'amber' ? 'text-amber-700' : 'text-rose-700')} />
-        <div className="min-w-0">
-          <p className={cn('text-sm font-semibold', tone === 'amber' ? 'text-amber-900' : 'text-rose-900')}>{title}</p>
-          <p className={cn('text-xs', tone === 'amber' ? 'text-amber-800' : 'text-rose-800')}>{description}</p>
-        </div>
-      </div>
-      {actionHref ? (
-        <Button asChild variant="outline" size="sm" className="h-7 shrink-0 bg-white/80 text-xs">
-          <Link href={actionHref}>{actionLabel}</Link>
-        </Button>
-      ) : (
-        <Button variant="outline" size="sm" className="h-7 shrink-0 bg-white/80 text-xs" onClick={onAction}>
-          {actionLabel}
-        </Button>
-      )}
-    </div>
   );
 }
 

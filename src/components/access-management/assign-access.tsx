@@ -393,7 +393,10 @@ export function AssignAccess({
                   roleUsage={roleUsage}
                   selectedIds={selectedRoleIds}
                   onSelectionChange={setSelectedRoleIds}
-                  heightClassName="sm:h-[19rem]"
+                  // Fills the panel down to the bottom of the screen instead of stopping at a fixed 19rem
+                  // with a blank band beneath: the viewport less the chrome above it (headers, tabs, the
+                  // toolbar, this card's header, its search) and the temporary-access block below.
+                  heightClassName="sm:h-[max(14rem,calc(100dvh-37rem))]"
                 />
                 {Object.keys(roleContents).length > 0 && (
                   <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-2.5">
@@ -581,7 +584,9 @@ export function AssignAccess({
               selectedIds={selectedUserIds}
               onSelectionChange={setSelectedUserIds}
               registry={state.registry}
-              heightClassName="sm:max-h-[25rem]"
+              // Same idea as the role list opposite — grows to the bottom of the screen on a tall
+              // monitor, shrinks on a small laptop, never below 20rem.
+              heightClassName="sm:max-h-[max(20rem,calc(100dvh-31rem))]"
             />
 
             {selectedUsers.length > 0 && (

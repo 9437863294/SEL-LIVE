@@ -41,7 +41,7 @@ import { exportRowsToExcel } from '@/lib/report-excel';
 import { describeAuditEntry, formatGrantDate, type AccessAuditEntry, type AccessBatchRecord } from '@/lib/access-control';
 import { listAccessAuditEntries, listAccessBatches } from '@/lib/access-control-service';
 import type { AccessDirectoryState } from '@/hooks/useAccessDirectory';
-import { AccessCard, PermissionPairList, StatLine } from './access-ui';
+import { AccessCard, PermissionPairList } from './access-ui';
 
 export function AuditHistory({
   state,
@@ -62,6 +62,7 @@ export function AuditHistory({
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [batchFilter, setBatchFilter] = useState<string | null>(null);
   /**
    * Controlled, because "Open changes" on a batch card filters the timeline — a filter applied to a
@@ -265,6 +266,136 @@ export function AuditHistory({
     },
   ];
 
+  /** "Open changes": the timeline, filtered to this batch. */
+  const openBatchChanges = (batchId: string) => {
+    setBatchFilter(batchId);
+    setTargetUserId('all');
+    setView('timeline');
+  };
+
+  const batchRows = useMemo<BatchRow[]>(() => batches.map((batch) => ({ id: batch.id, batch })), [batches]);
+
+  const batchColumns: Array<HrListColumn<BatchRow>> = [
+    {
+      header: 'Operation',
+      mobile: 'title',
+      cell: ({ batch }) => <span className="font-medium text-slate-800">{batch.label}</span>,
+    },
+    {
+      header: 'Batch',
+      className: 'whitespace-nowrap',
+      mobile: 'title',
+      cell: ({ batch }) => (
+        <Badge variant="outline" className="border-indigo-200 bg-indigo-50 font-mono text-[10px] text-indigo-700">
+          {batch.id}
+        </Badge>
+      ),
+    },
+    {
+      header: 'When',
+      className: 'whitespace-nowrap',
+      cell: ({ batch }) => (
+        <span className="text-xs text-muted-foreground">
+          {formatGrantDate(batch.performedAt)}{' '}
+          {new Date(batch.performedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      ),
+    },
+    { header: 'By', className: 'hidden lg:table-cell', cell: ({ batch }) => batch.performedByName },
+    { header: 'Users', align: 'right', cell: ({ batch }) => batch.userCount },
+    {
+      header: 'Updated',
+      align: 'right',
+      cell: ({ batch }) => <span className="font-medium text-emerald-700">{batch.successCount}</span>,
+    },
+    { header: 'Skipped', align: 'right', className: 'hidden lg:table-cell', cell: ({ batch }) => batch.skippedCount },
+    {
+      header: 'Failed',
+      align: 'right',
+      mobile: 'aside',
+      cell: ({ batch }) =>
+        batch.failedCount ? (
+          <Badge variant="outline" className="border-destructive/40 bg-destructive/10 text-[10px] text-destructive">
+            {batch.failedCount} failed
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">0</span>
+        ),
+    },
+    {
+      header: 'Permissions',
+      align: 'right',
+      className: 'whitespace-nowrap',
+      mobile: 'aside',
+      cell: ({ batch }) => (
+        <span className="inline-flex items-center gap-1">
+          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
+            +{batch.permissionsAdded}
+          </Badge>
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px]',
+              batch.permissionsRemoved
+                ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                : 'border-slate-200 bg-white text-slate-500',
+            )}
+          >
+            −{batch.permissionsRemoved}
+          </Badge>
+        </span>
+      ),
+    },
+    {
+      header: 'Reason',
+      className: 'hidden xl:table-cell',
+      mobile: 'omit',
+      cell: ({ batch }) => (
+        <span className="line-clamp-2 text-xs text-muted-foreground">{batch.reason ? `“${batch.reason}”` : '—'}</span>
+      ),
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      className: 'whitespace-nowrap',
+      mobile: 'footer',
+      cell: ({ batch }) => (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={(event) => {
+            event.stopPropagation();
+            openBatchChanges(batch.id);
+          }}
+        >
+          Open changes
+        </Button>
+      ),
+    },
+    {
+      header: '',
+      className: 'w-8',
+      mobile: 'aside',
+      // A real button here, unlike the timeline's: a card with a footer action is not itself
+      // tappable, so on a phone this is the only way to open the detail.
+      cell: (row) => (
+        <button
+          type="button"
+          aria-label={expandedBatch === row.id ? 'Hide details' : 'Show details'}
+          aria-expanded={expandedBatch === row.id}
+          className="hr-inline-action inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100"
+          onClick={(event) => {
+            event.stopPropagation();
+            setExpandedBatch((current) => (current === row.id ? null : row.id));
+          }}
+        >
+          <ChevronDown className={cn('h-4 w-4 transition-transform', expandedBatch === row.id && 'rotate-180')} />
+        </button>
+      ),
+    },
+  ];
+
   return (
     <Tabs value={view} onValueChange={(value) => setView(value as 'timeline' | 'batches')} className="space-y-3">
       <TabsList className="grid h-auto w-full grid-cols-2 sm:h-10 sm:w-auto sm:grid-cols-2">
@@ -274,12 +405,14 @@ export function AuditHistory({
 
       <TabsContent value="timeline" className="space-y-3">
         <AccessCard>
-          <CardContent className="space-y-2 p-3">
-            {/* The search stays out; the other four fold behind a "Filters" button below `lg`, the
-                same way the user picker's do — otherwise they were ~200px of controls between the
-                tab strip and the first entry on a phone. */}
-            <div className="flex gap-2">
-              <div className="relative min-w-0 flex-1">
+          <CardContent className="p-3">
+            {/* One row from `lg` up: the search stretches, the four filters sit beside it at compact
+                widths (the wrapper is `display: contents` there, so they are items of this row).
+                Below `lg` the four fold behind the "Filters" button, the same way the user picker's
+                do — otherwise they were ~200px of controls between the tab strip and the first entry
+                on a phone. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[14rem] flex-1">
                 <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <Input
                   value={term}
@@ -298,38 +431,61 @@ export function AuditHistory({
                 <SlidersHorizontal className="h-4 w-4" />
                 Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
               </Button>
-            </div>
 
-            <div className={cn('grid gap-2 sm:grid-cols-2 lg:grid-cols-4', !filtersOpen && 'hidden lg:grid')}>
-              <Select value={targetUserId} onValueChange={setTargetUserId}>
-                <SelectTrigger><SelectValue placeholder="Affected user" /></SelectTrigger>
-                <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
-                  <SelectItem value="all">Any affected user</SelectItem>
-                  {directory.users
-                    .slice()
-                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                    .map((user) => (
-                      <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
+              <div
+                className={cn(
+                  'grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:contents',
+                  !filtersOpen && 'hidden lg:contents',
+                )}
+              >
+                <Select value={targetUserId} onValueChange={setTargetUserId}>
+                  <SelectTrigger className="lg:w-52" aria-label="Affected user">
+                    <SelectValue placeholder="Affected user" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
+                    <SelectItem value="all">Any affected user</SelectItem>
+                    {directory.users
+                      .slice()
+                      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                      .map((user) => (
+                        <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Select value={changedBy} onValueChange={setChangedBy}>
+                  <SelectTrigger className="lg:w-48" aria-label="Changed by">
+                    <SelectValue placeholder="Changed by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any administrator</SelectItem>
+                    {administrators.map(([id, name]) => (
+                      <SelectItem key={id} value={id}>{name}</SelectItem>
                     ))}
-                </SelectContent>
-              </Select>
-              <Select value={changedBy} onValueChange={setChangedBy}>
-                <SelectTrigger><SelectValue placeholder="Changed by" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Any administrator</SelectItem>
-                  {administrators.map(([id, name]) => (
-                    <SelectItem key={id} value={id}>{name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="grid grid-cols-2 gap-2 sm:col-span-2">
-                <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">From</Label>
-                  <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="audit-from" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    From
+                  </Label>
+                  <Input
+                    id="audit-from"
+                    type="date"
+                    value={from}
+                    onChange={(event) => setFrom(event.target.value)}
+                    className="min-w-0 flex-1 lg:w-40 lg:flex-none"
+                  />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">To</Label>
-                  <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="audit-to" className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    To
+                  </Label>
+                  <Input
+                    id="audit-to"
+                    type="date"
+                    value={to}
+                    onChange={(event) => setTo(event.target.value)}
+                    className="min-w-0 flex-1 lg:w-40 lg:flex-none"
+                  />
                 </div>
               </div>
             </div>
@@ -397,75 +553,15 @@ export function AuditHistory({
             description="Every assignment — one user or a thousand — gets a batch identifier so it can be reviewed as one operation."
           />
         ) : (
-          <div className="space-y-2.5">
-            {batches.map((batch) => (
-              <AccessCard key={batch.id}>
-                <CardContent className="space-y-2.5 p-3.5">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant="outline" className="border-indigo-200 bg-indigo-50 font-mono text-[10px] text-indigo-700">
-                          {batch.id}
-                        </Badge>
-                        <span className="truncate text-sm font-semibold text-slate-800">{batch.label}</span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {formatGrantDate(batch.performedAt)}{' '}
-                        {new Date(batch.performedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ·{' '}
-                        {batch.performedByName}
-                        {batch.reason ? ` · “${batch.reason}”` : ''}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setBatchFilter(batch.id);
-                        setTargetUserId('all');
-                        setView('timeline');
-                      }}
-                    >
-                      Open changes
-                    </Button>
-                  </div>
-
-                  {batch.roleNames.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {batch.roleNames.map((name) => (
-                        <Badge key={name} variant="outline" className="text-[10px] text-slate-600">{name}</Badge>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                    <StatLine label="Users" value={batch.userCount} />
-                    <StatLine label="Updated" value={batch.successCount} tone="emerald" />
-                    <StatLine label="Skipped" value={batch.skippedCount} />
-                    <StatLine label="Failed" value={batch.failedCount} tone={batch.failedCount ? 'rose' : 'slate'} />
-                    <StatLine label="Permissions added" value={batch.permissionsAdded} tone="indigo" />
-                    <StatLine
-                      label="Permissions removed"
-                      value={batch.permissionsRemoved}
-                      tone={batch.permissionsRemoved ? 'rose' : 'emerald'}
-                    />
-                  </div>
-
-                  {batch.failures && batch.failures.length > 0 && (
-                    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-2.5">
-                      <p className="mb-1 text-xs font-semibold text-destructive">Failed assignments</p>
-                      <ul className="space-y-0.5 text-[11px] text-destructive">
-                        {batch.failures.map((failure) => (
-                          <li key={failure.userId}>
-                            <span className="font-medium">{failure.userName}</span> — {failure.message}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </CardContent>
-              </AccessCard>
-            ))}
-          </div>
+          <HrDataList
+            rows={batchRows}
+            columns={batchColumns}
+            onRowClick={(row) => setExpandedBatch((current) => (current === row.id ? null : row.id))}
+            expandedId={expandedBatch}
+            renderExpanded={(row) => <BatchDetail batch={row.batch} />}
+            maxHeightClassName="sm:max-h-[30rem]"
+            dense
+          />
         )}
       </TabsContent>
     </Tabs>
@@ -476,6 +572,63 @@ export function AuditHistory({
 interface TimelineRow {
   id: string;
   entry: AccessAuditEntry;
+}
+
+interface BatchRow {
+  id: string;
+  batch: AccessBatchRecord;
+}
+
+/** What a batch row does not have room for: the reason in full, the roles, and any failures. */
+function BatchDetail({ batch }: { batch: AccessBatchRecord }) {
+  return (
+    <div className="grid gap-3 p-3 max-sm:p-0 sm:grid-cols-3">
+      <div>
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">Reason</p>
+        <p className="text-xs text-slate-700">{batch.reason ? `“${batch.reason}”` : '—'}</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Performed by {batch.performedByName} · {batch.skippedCount} skipped
+        </p>
+      </div>
+      <div>
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          Roles ({batch.roleNames.length})
+        </p>
+        {batch.roleNames.length ? (
+          <div className="flex flex-wrap gap-1">
+            {batch.roleNames.map((name) => (
+              <Badge key={name} variant="outline" className="text-[10px] text-slate-600">
+                {name}
+              </Badge>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">None — direct permissions, projects or scope only</p>
+        )}
+      </div>
+      <div>
+        <p
+          className={cn(
+            'mb-1 text-[11px] font-semibold uppercase tracking-wide',
+            batch.failures?.length ? 'text-destructive' : 'text-slate-600',
+          )}
+        >
+          Failed assignments ({batch.failures?.length ?? 0})
+        </p>
+        {batch.failures && batch.failures.length > 0 ? (
+          <ul className="space-y-0.5 text-[11px] text-destructive">
+            {batch.failures.map((failure) => (
+              <li key={failure.userId}>
+                <span className="font-medium">{failure.userName}</span> — {failure.message}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">None</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /** The batch id, as the filter it applies — inside a clickable row, so it stops the click there. */

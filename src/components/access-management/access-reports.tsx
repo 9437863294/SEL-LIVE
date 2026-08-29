@@ -34,6 +34,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { HrDataList, HrEmptyState, type HrListColumn } from '@/components/hr/hr-ui';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import {
   countPermissions,
@@ -100,7 +101,10 @@ export function AccessReports({
         </Select>
       </div>
 
-      <div className="hidden gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-4">
+      {/* Compact chips on one row (wrapping only where a window cannot fit eight). The description
+          each tile used to carry is repeated in the card header below, so a chip needs only its
+          icon and name — it stays in the tooltip for a hover. */}
+      <div className="hidden flex-wrap gap-2 sm:flex">
         {REPORTS.map((entry) => {
           const Icon = entry.icon;
           const active = entry.id === selected;
@@ -109,24 +113,24 @@ export function AccessReports({
               key={entry.id}
               type="button"
               onClick={() => setSelected(entry.id)}
-              className={`rounded-xl border p-3 text-left transition-colors ${
+              aria-pressed={active}
+              title={entry.description}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors',
                 active
-                  ? 'border-indigo-300 bg-indigo-50'
-                  : 'border-white/70 bg-white/80 hover:bg-slate-50'
-              }`}
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-900'
+                  : 'border-white/70 bg-white/80 text-slate-700 hover:bg-slate-50',
+              )}
             >
-              <span className="flex items-start gap-2">
-                <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'text-indigo-600' : 'text-slate-400'}`} />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-slate-800">{entry.label}</span>
-                  <span className="block text-[11px] text-muted-foreground">{entry.description}</span>
-                </span>
-              </span>
+              <Icon className={cn('h-4 w-4 shrink-0', active ? 'text-indigo-600' : 'text-slate-400')} />
+              {entry.label}
             </button>
           );
         })}
       </div>
 
+      {/* Each report's table runs to the bottom of the screen rather than stopping at a fixed height
+          with a blank band beneath — the viewport less the chrome above it. */}
       <AccessCard>
         <CardHeader className="px-4 py-3">
           <CardTitle className="text-sm">{report.label}</CardTitle>
@@ -253,7 +257,7 @@ function UserAccessReport({ state }: { state: AccessDirectoryState }) {
       <div className="flex justify-end">
         <ExportButton title="User access report" rows={exportRows} filename="user-access-report.xlsx" />
       </div>
-      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No users" />} maxHeightClassName="sm:max-h-[26rem]" />
+      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No users" />} maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]" dense />
     </div>
   );
 }
@@ -320,7 +324,7 @@ function RoleUsageReport({ state }: { state: AccessDirectoryState }) {
       <div className="flex justify-end">
         <ExportButton title="Role usage report" rows={exportRows} filename="role-usage-report.xlsx" />
       </div>
-      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No roles" />} maxHeightClassName="sm:max-h-[26rem]" />
+      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No roles" />} maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]" dense />
     </div>
   );
 }
@@ -420,7 +424,8 @@ function PermissionUsageReport({ state }: { state: AccessDirectoryState }) {
             rows={holders}
             columns={columns}
             empty={<HrEmptyState title="Nobody holds this permission" />}
-            maxHeightClassName="sm:max-h-[22rem]"
+            maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-36rem))]"
+            dense
           />
         </>
       )}
@@ -497,7 +502,8 @@ function PrivilegedUsersReport({ state }: { state: AccessDirectoryState }) {
         rows={rows}
         columns={columns}
         empty={<HrEmptyState title="No privileged users detected" description="Nobody currently holds a high-risk capability or a segregation-of-duties conflict." />}
-        maxHeightClassName="sm:max-h-[24rem]"
+        maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]"
+        dense
       />
     </div>
   );
@@ -562,7 +568,7 @@ function ProjectAccessReport({ state }: { state: AccessDirectoryState }) {
         </p>
         <ExportButton title="Project access report" rows={exportRows} filename="project-access-report.xlsx" />
       </div>
-      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No projects" />} maxHeightClassName="sm:max-h-[24rem]" />
+      <HrDataList rows={rows} columns={columns} empty={<HrEmptyState title="No projects" />} maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]" dense />
     </div>
   );
 }
@@ -691,7 +697,8 @@ function TemporaryAccessReport({ state }: { state: AccessDirectoryState }) {
         rows={rows}
         columns={columns}
         empty={<HrEmptyState title="No temporary access granted" description="Temporary grants lapse on their own and stay listed here afterwards for the audit trail." />}
-        maxHeightClassName="sm:max-h-[24rem]"
+        maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]"
+        dense
       />
     </div>
   );
@@ -773,7 +780,7 @@ function AccessChangeReport({ state }: { state: AccessDirectoryState }) {
           description="Pick a date range and build the report. Every grant and removal is included."
         />
       ) : (
-        <ScrollArea className="h-auto sm:h-[22rem] rounded-xl border border-white/70 bg-white/60">
+        <ScrollArea className="h-auto sm:h-[max(16rem,calc(100dvh-36rem))] rounded-xl border border-white/70 bg-white/60">
           <div className="divide-y divide-slate-100 text-xs">
             {rows.map((row, index) => (
               <div key={index} className="px-3 py-2">
@@ -862,7 +869,8 @@ function InactiveUsersReport({ state }: { state: AccessDirectoryState }) {
         rows={rows}
         columns={columns}
         empty={<HrEmptyState title="No inactive users hold access" description="Every deactivated account has no permissions attached." />}
-        maxHeightClassName="sm:max-h-[24rem]"
+        maxHeightClassName="sm:max-h-[max(16rem,calc(100dvh-30rem))]"
+        dense
       />
     </div>
   );
