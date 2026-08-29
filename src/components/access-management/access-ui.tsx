@@ -92,7 +92,7 @@ export function AccessBackLink({
   className?: string;
 }) {
   return (
-    <Button asChild variant="ghost" size="icon" className={cn('rounded-full bg-white/70 shadow-sm backdrop-blur', className)}>
+    <Button asChild variant="ghost" size="icon" className={cn('rounded-full bg-white/70 shadow-sm backdrop-blur max-sm:h-11 max-sm:w-11', className)}>
       <Link href={href} aria-label={label}>
         <ArrowLeft className="h-5 w-5" />
       </Link>

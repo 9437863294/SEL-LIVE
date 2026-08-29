@@ -74,8 +74,15 @@ export function TemplatesAndScopes({
   return (
     <Tabs defaultValue="templates" className="space-y-3">
       <TabsList className="flex h-auto w-full sm:inline-flex sm:h-10 sm:w-auto">
-        <TabsTrigger value="templates" className="flex-1 shrink-0 text-xs sm:flex-none">Access templates</TabsTrigger>
-        <TabsTrigger value="scopes" className="flex-1 shrink-0 text-xs sm:flex-none">Department &amp; designation rules</TabsTrigger>
+        {/* Short labels on a phone — the two full ones together are wider than the screen. */}
+        <TabsTrigger value="templates" className="flex-1 shrink-0 text-xs sm:flex-none">
+          <span className="sm:hidden">Templates</span>
+          <span className="hidden sm:inline">Access templates</span>
+        </TabsTrigger>
+        <TabsTrigger value="scopes" className="flex-1 shrink-0 text-xs sm:flex-none">
+          <span className="sm:hidden">Scope rules</span>
+          <span className="hidden sm:inline">Department &amp; designation rules</span>
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="templates">

@@ -874,6 +874,14 @@ main {
   .hr-module-root th button {
     min-height: 2rem;
   }
+  /* `Button asChild` renders an <a>, which the floor above cannot see — so an "Edit" link sat
+     32px tall beside a 44px "Assign" button. The Button base class is the marker. */
+  .hr-module-root a[class~="ring-offset-background"] {
+    min-height: 2.75rem;
+  }
+  .hr-module-root td a[class~="ring-offset-background"] {
+    min-height: 2rem;
+  }
   .hr-module-root [role="tablist"] {
     max-width: 100%;
     justify-content: flex-start;

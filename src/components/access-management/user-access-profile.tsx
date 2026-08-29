@@ -238,7 +238,8 @@ export function UserAccessProfile({
             <p className="text-sm text-muted-foreground">Access profile · everything this user can do, and why</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        {/* Full-width on a phone, natural width from `sm` up. */}
+        <div className="flex w-full flex-wrap gap-2 sm:w-auto [&>*]:flex-1 sm:[&>*]:flex-none">
           <Button asChild size="sm">
             <Link href={`/settings/access-management?assignTo=${user.id}`}>
               <ShieldPlus className="mr-1.5 h-4 w-4" />
@@ -295,7 +296,7 @@ export function UserAccessProfile({
                   : 'No matching employee record — department and designation come only from access grants.'}
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3 px-4 pb-4 sm:grid-cols-3 lg:grid-cols-4">
+            <CardContent className="grid grid-cols-2 gap-3 px-4 pb-4 sm:grid-cols-3 lg:grid-cols-4">
               <HrField label="Employee ID">{employee?.employeeId}</HrField>
               <HrField label="Email">{user.email}</HrField>
               <HrField label="Mobile">{user.mobile !== 'N/A' ? user.mobile : employee?.phone}</HrField>
@@ -596,7 +597,7 @@ function GreytHRConnectionCard({ user }: { user: User }) {
       </CardHeader>
       <CardContent className="space-y-3 px-4 pb-4">
         {connected && (
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <HrField label="greytHR employee ID">{user.employeeId}</HrField>
             <HrField label="Employee no.">{user.employeeNo || '—'}</HrField>
             <HrField label="Linked">

@@ -17,7 +17,7 @@
  */
 
 import * as React from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -45,6 +45,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   HrAccessDenied,
@@ -106,6 +107,23 @@ type TabId =
   | 'templates'
   | 'reports'
   | 'audit';
+
+/**
+ * The ten sections, in strip order. One list feeds the desktop strip, the phone select and the
+ * `?tab=` deep-link check, so the three cannot disagree about what exists.
+ */
+const TAB_ITEMS: Array<{ id: TabId; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'users', label: 'Users' },
+  { id: 'roles', label: 'Roles' },
+  { id: 'permissions', label: 'Permissions' },
+  { id: 'assign', label: 'Assign Access' },
+  { id: 'matrix', label: 'Permission Matrix' },
+  { id: 'effective', label: 'Effective Access' },
+  { id: 'templates', label: 'Templates & Rules' },
+  { id: 'reports', label: 'Reports' },
+  { id: 'audit', label: 'Audit History' },
+];
 
 export function AccessControlCenter() {
   const { user } = useAuth();
@@ -172,11 +190,19 @@ export function AccessControlCenter() {
     }
 
     const requestedTab = search.get('tab') as TabId | null;
-    const validTabs: TabId[] = [
-      'overview', 'users', 'roles', 'permissions', 'assign', 'matrix', 'effective', 'templates', 'reports', 'audit',
-    ];
-    if (requestedTab && validTabs.includes(requestedTab)) setTab(requestedTab);
+    if (requestedTab && TAB_ITEMS.some((item) => item.id === requestedTab)) setTab(requestedTab);
   }, []);
+
+  /**
+   * Keep the active tab in view on the strip. Ten tabs overflow anything narrower than ~950px, and
+   * a deep link (or an Overview card) landing on Audit History used to leave the strip showing
+   * Overview…Assign with the highlighted tab scrolled out of sight.
+   */
+  const tabStripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const active = tabStripRef.current?.querySelector<HTMLElement>('[role="tab"][data-state="active"]');
+    active?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [tab]);
 
   /** Hand a selection to the Assign Access tab and switch to it. */
   const openAssignWith = useCallback(
@@ -273,20 +299,35 @@ export function AccessControlCenter() {
       )}
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as TabId)}>
-        <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
-          <TabsList className="inline-flex h-auto w-max sm:h-10">
-            <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
-            <TabsTrigger value="users" className="text-xs">Users</TabsTrigger>
-            <TabsTrigger value="roles" className="text-xs">Roles</TabsTrigger>
-            <TabsTrigger value="permissions" className="text-xs">Permissions</TabsTrigger>
-            <TabsTrigger value="assign" className="text-xs">Assign Access</TabsTrigger>
-            <TabsTrigger value="matrix" className="text-xs">Permission Matrix</TabsTrigger>
-            <TabsTrigger value="effective" className="text-xs">Effective Access</TabsTrigger>
-            <TabsTrigger value="templates" className="text-xs">Templates &amp; Rules</TabsTrigger>
-            <TabsTrigger value="reports" className="text-xs">Reports</TabsTrigger>
-            <TabsTrigger value="audit" className="text-xs">Audit History</TabsTrigger>
-          </TabsList>
-        </ScrollArea>
+        {/* A select on a phone: ten tabs in a horizontal strip show three at a time and hide the
+            rest behind a swipe nobody is told about, whereas a select names all ten in one row.
+            The strip from `sm` up, scrolling sideways where it still overflows. Same idiom as
+            `ModulePicker`. */}
+        <div className="sm:hidden">
+          <Select value={tab} onValueChange={(value) => setTab(value as TabId)}>
+            <SelectTrigger aria-label="Section" className="bg-white/85 font-medium">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-[70dvh]">
+              {TAB_ITEMS.map((item) => (
+                <SelectItem key={item.id} value={item.id}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div ref={tabStripRef} className="hidden sm:block">
+          <ScrollArea className="w-full pb-1" showHorizontalScrollbar>
+            <TabsList className="inline-flex h-auto w-max sm:h-10">
+              {TAB_ITEMS.map((item) => (
+                <TabsTrigger key={item.id} value={item.id} className="text-xs">
+                  {item.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </ScrollArea>
+        </div>
 
         <TabsContent value="overview" className="mt-3">
           <AccessOverview
@@ -931,7 +972,7 @@ function UsersTab({
       align: 'right',
       mobile: 'footer',
       cell: (row) => (
-        <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+        <Button asChild variant="outline" size="sm" className="h-8 text-xs max-sm:flex-1">
           <Link href={`/settings/access-management/users/${row.id}`}>Access profile</Link>
         </Button>
       ),
@@ -954,7 +995,8 @@ function UsersTab({
                 </Badge>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
+            {/* Full-width (sharing a row where two fit) on a phone, natural width from `sm` up. */}
+            <div className="flex flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
               {canAssign && (
                 // A link, not a dialog trigger: the form is its own page now, and it comes back here
                 // with the new user preselected via `assignTo`.

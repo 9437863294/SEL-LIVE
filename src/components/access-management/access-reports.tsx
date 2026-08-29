@@ -83,7 +83,24 @@ export function AccessReports({
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Eight tiles are a screen and a half on a phone before the report itself; a select is one
+          row and names all eight at once. Same idiom as `ModulePicker`. */}
+      <div className="sm:hidden">
+        <Select value={selected} onValueChange={(value) => setSelected(value as ReportId)}>
+          <SelectTrigger aria-label="Report" className="bg-white/85 font-medium">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-[70dvh]">
+            {REPORTS.map((entry) => (
+              <SelectItem key={entry.id} value={entry.id}>
+                {entry.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="hidden gap-2 sm:grid sm:grid-cols-2 lg:grid-cols-4">
         {REPORTS.map((entry) => {
           const Icon = entry.icon;
           const active = entry.id === selected;

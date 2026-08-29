@@ -25,6 +25,7 @@ import {
   Search,
   ShieldMinus,
   ShieldPlus,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,9 @@ export function AuditHistory({
    * tab the user cannot see is indistinguishable from a button that does nothing.
    */
   const [view, setView] = useState<'timeline' | 'batches'>('timeline');
+  /** Below `lg` the four non-search filters fold away; the button carries how many are in effect. */
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilterCount = [targetUserId !== 'all', changedBy !== 'all', !!from, !!to].filter(Boolean).length;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -156,45 +160,63 @@ export function AuditHistory({
 
       <TabsContent value="timeline" className="space-y-3">
         <AccessCard>
-          <CardContent className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="relative lg:col-span-2">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <Input
-                value={term}
-                onChange={(event) => setTerm(event.target.value)}
-                placeholder="Search user, admin, role or reason…"
-                className="pl-9"
-              />
-            </div>
-            <Select value={targetUserId} onValueChange={setTargetUserId}>
-              <SelectTrigger><SelectValue placeholder="Affected user" /></SelectTrigger>
-              <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
-                <SelectItem value="all">Any affected user</SelectItem>
-                {directory.users
-                  .slice()
-                  .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                  .map((user) => (
-                    <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-            <Select value={changedBy} onValueChange={setChangedBy}>
-              <SelectTrigger><SelectValue placeholder="Changed by" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any administrator</SelectItem>
-                {administrators.map(([id, name]) => (
-                  <SelectItem key={id} value={id}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">From</Label>
-                <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+          <CardContent className="space-y-2 p-3">
+            {/* The search stays out; the other four fold behind a "Filters" button below `lg`, the
+                same way the user picker's do — otherwise they were ~200px of controls between the
+                tab strip and the first entry on a phone. */}
+            <div className="flex gap-2">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  value={term}
+                  onChange={(event) => setTerm(event.target.value)}
+                  placeholder="Search user, admin, role or reason…"
+                  className="pl-9"
+                />
               </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">To</Label>
-                <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+              <Button
+                type="button"
+                variant={activeFilterCount > 0 ? 'default' : 'outline'}
+                className="shrink-0 gap-1 lg:hidden"
+                aria-expanded={filtersOpen}
+                onClick={() => setFiltersOpen((flag) => !flag)}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+              </Button>
+            </div>
+
+            <div className={cn('grid gap-2 sm:grid-cols-2 lg:grid-cols-4', !filtersOpen && 'hidden lg:grid')}>
+              <Select value={targetUserId} onValueChange={setTargetUserId}>
+                <SelectTrigger><SelectValue placeholder="Affected user" /></SelectTrigger>
+                <SelectContent className="max-h-72 max-w-[calc(100vw-2rem)]">
+                  <SelectItem value="all">Any affected user</SelectItem>
+                  {directory.users
+                    .slice()
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .map((user) => (
+                      <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Select value={changedBy} onValueChange={setChangedBy}>
+                <SelectTrigger><SelectValue placeholder="Changed by" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Any administrator</SelectItem>
+                  {administrators.map(([id, name]) => (
+                    <SelectItem key={id} value={id}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="grid grid-cols-2 gap-2 sm:col-span-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">From</Label>
+                  <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">To</Label>
+                  <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+                </div>
               </div>
             </div>
           </CardContent>

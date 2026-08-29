@@ -238,7 +238,9 @@ export function RoleForm({
               privilege or separation-of-duties warning is to be seen while it is still a draft. */}
           <RiskBadges privileges={privileges} conflicts={conflicts} />
         </div>
-        <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row">
+        {/* Side by side on a phone (the dialog footers' two-column idiom) rather than stacked —
+            two 44px rows plus the badges made the sticky bar a quarter of the screen. */}
+        <div className="grid grid-cols-2 gap-2 sm:ml-auto sm:flex">
           <Button variant="outline" onClick={onCancel} disabled={saving} className="sm:w-32">
             Cancel
           </Button>

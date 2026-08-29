@@ -169,7 +169,7 @@ export function RoleLibrary({
             </SelectContent>
           </Select>
           <Select value={moduleFilter} onValueChange={setModuleFilter}>
-            <SelectTrigger><SelectValue placeholder="Module" /></SelectTrigger>
+            <SelectTrigger className="col-span-2 sm:col-span-1"><SelectValue placeholder="Module" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Any module</SelectItem>
               {modules.map((moduleName) => (

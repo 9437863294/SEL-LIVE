@@ -615,7 +615,7 @@ export function AddUserForm({
         bottom is a save button an administrator has to hunt for. `bottom-0` with a blurred backdrop
         rather than a fixed bar, so it sits inside the page's own scroll container.
       */}
-      <div className="hr-sticky-actions sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex-row sm:justify-end">
+      <div className="hr-sticky-actions sticky bottom-0 -mx-1 grid grid-cols-2 gap-2 border-t border-white/70 bg-white/85 px-1 py-3 backdrop-blur-sm sm:flex sm:justify-end">
         <Button variant="outline" onClick={onCancel} disabled={saving} className="sm:w-32">
           Cancel
         </Button>

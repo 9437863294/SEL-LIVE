@@ -264,15 +264,56 @@ export function AssignAccess({
     );
   }
 
+  /**
+   * Add user, Copy access, Clear grant — rendered in one of two places, because the sticky bar
+   * cannot afford them on a phone (see below) and a desktop wants them beside the primary action.
+   */
+  const secondaryActions = (className?: string) => (
+    <>
+      {/*
+        Leaves the page rather than opening a dialog, and comes back with the new user selected
+        through `?assignTo=`. Any selection already made here is lost on the way — which is why
+        the entry point sits beside "Add user" in the *user* picker rather than mid-assignment,
+        and why the new user arrives preselected so the trip is not wasted.
+      */}
+      <Button asChild variant="outline" size="sm" className={className}>
+        <Link href="/settings/access-management/users/new?returnTo=%2Fsettings%2Faccess-management">
+          <UserPlus className="mr-1.5 h-4 w-4" />
+          Add user
+        </Link>
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className={className}
+        disabled={selectedUserIds.length === 0}
+        onClick={() => setCopyOpen(true)}
+      >
+        <Copy className="mr-1.5 h-4 w-4" />
+        Copy access from…
+      </Button>
+      <Button variant="ghost" size="sm" className={className} onClick={resetGrant} disabled={!hasGrantToMake}>
+        Clear grant
+      </Button>
+    </>
+  );
+
   return (
-    <div className="space-y-3">
-      {/* Sticky action toolbar (§33) */}
-      {/* Offset by the app header, plus the settings layout's mobile bar below `lg` — at `top-0`
-          the bar (and the "Add access" button on it) slid underneath both as soon as the page
-          scrolled. */}
-      <div className="sticky top-[117px] z-20 -mx-1 rounded-xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur lg:top-16">
-        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
+    <div className="flex flex-col gap-3">
+      {/*
+        Sticky action toolbar (§33).
+
+        Below `lg` it is a bottom bar and the last thing in the column (`max-lg:order-last`). It
+        used to stick under the app header and the settings layout's mobile bar, and with four
+        wrapped 44px buttons it took ~270px of a phone's viewport before any content — and the
+        bottom is where a thumb is anyway. On a phone the three secondary actions leave the bar
+        for an ordinary row above the two panels; the bar keeps the selection summary and the one
+        button that commits. From `lg` up it is the top bar it always was, offset by the 4rem
+        app header.
+      */}
+      <div className="hr-sticky-actions sticky bottom-0 z-20 -mx-1 rounded-xl border border-white/70 bg-white/85 px-3 py-2.5 shadow-sm backdrop-blur max-lg:order-last lg:bottom-auto lg:top-16">
+        <div className="flex items-center gap-2 lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm lg:gap-2">
             <Badge variant="outline" className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700">
               <Users className="h-3.5 w-3.5" />
               {selectedUserIds.length} user{selectedUserIds.length === 1 ? '' : 's'}
@@ -300,48 +341,32 @@ export function AssignAccess({
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
-            {/*
-              Leaves the page rather than opening a dialog, and comes back with the new user selected
-              through `?assignTo=`. Any selection already made here is lost on the way — which is why
-              the entry point sits beside "Add user" in the *user* picker rather than mid-assignment,
-              and why the new user arrives preselected so the trip is not wasted.
-            */}
-            <Button asChild variant="outline" size="sm">
-              <Link href="/settings/access-management/users/new?returnTo=%2Fsettings%2Faccess-management">
-                <UserPlus className="mr-1.5 h-4 w-4" />
-                Add user
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={selectedUserIds.length === 0}
-              onClick={() => setCopyOpen(true)}
-            >
-              <Copy className="mr-1.5 h-4 w-4" />
-              Copy access from…
-            </Button>
-            <Button variant="ghost" size="sm" onClick={resetGrant} disabled={!hasGrantToMake}>
-              Clear grant
-            </Button>
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {secondaryActions('hidden lg:inline-flex')}
             <Button
               size="sm"
               disabled={selectedUserIds.length === 0 || !hasGrantToMake || temporaryIncomplete}
               onClick={() => setPreviewOpen(true)}
             >
               <ShieldPlus className="mr-1.5 h-4 w-4" />
-              Add access to {selectedUserIds.length || 0} user{selectedUserIds.length === 1 ? '' : 's'}
+              {/* The badges beside it already say how many users on a phone. */}
+              <span className="lg:hidden">Add access</span>
+              <span className="hidden lg:inline">
+                Add access to {selectedUserIds.length || 0} user{selectedUserIds.length === 1 ? '' : 's'}
+              </span>
             </Button>
           </div>
         </div>
         {selectedUserIds.length > 0 && hasGrantToMake && (
-          <p className="mt-1.5 text-[11px] text-emerald-700">
+          <p className="mt-1.5 hidden text-[11px] text-emerald-700 lg:block">
             Additive only — existing permissions are never removed. You'll see the full impact before
             anything is saved.
           </p>
         )}
       </div>
+
+      {/* The secondary actions' phone home — see the toolbar comment. */}
+      <div className="flex flex-wrap gap-2 lg:hidden [&>*]:flex-1">{secondaryActions()}</div>
 
       <div className="grid gap-3 xl:grid-cols-2">
         {/* ---- What to grant ---- */}
