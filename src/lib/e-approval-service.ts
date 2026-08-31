@@ -578,6 +578,34 @@ export async function loadEApprovalDetail(approvalId: string): Promise<EApproval
   return { request, steps, history, comments, attachments, versions };
 }
 
+/**
+ * Everything one person has done, across every approval — the personal log behind the "My Activity"
+ * screen. One query against `eApprovalHistory` by `actorId`, made possible by denormalising
+ * `referenceNo`/`subject` onto each entry at write time (see `commitEApprovalTransition`); reading
+ * this the other way — one `eApprovalRequests` lookup per matching entry — is exactly the N+1 this
+ * module avoids everywhere else.
+ *
+ * Bounded rather than paginated, like `loadEApprovalAnalyticsData`: `truncated` tells the caller
+ * whether the limit was hit, so a screen can say "showing the most recent 500" instead of silently
+ * looking complete when it is not.
+ */
+export async function listEApprovalMyActivity(
+  userId: string,
+  organizationId?: string,
+  limit = 500,
+): Promise<{ entries: EApprovalHistoryEntry[]; truncated: boolean }> {
+  const snapshot = await getDocs(
+    query(
+      collection(db, E_APPROVAL_COLLECTIONS.history),
+      ...scopeQuery(organizationId),
+      where('actorId', '==', userId),
+      orderBy('recordedAt', 'desc'),
+      fsLimit(limit),
+    ),
+  );
+  return { entries: mapDocs<EApprovalHistoryEntry>(snapshot.docs), truncated: snapshot.size >= limit };
+}
+
 export interface EApprovalListFilter {
   organizationId?: string;
   /** Pending with this user — their own assignments only. */
@@ -1402,6 +1430,14 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
       ...pruneUndefined(event as unknown as Record<string, unknown>),
       approvalId: request.id,
       organizationId: actor.organizationId ?? null,
+      // Denormalised so a person's own activity log (every action they have taken, across every
+      // approval) is one query rather than one read per approval a matching entry belongs to — the
+      // same reasoning `referenceNo`/`subject` are copied onto each step a few lines above.
+      referenceNo: transition.request.referenceNo ?? request.referenceNo ?? null,
+      subject: request.subject ?? null,
+      requesterId: request.requesterId ?? null,
+      requesterName: request.requesterName ?? null,
+      departmentName: request.departmentName ?? null,
       recordedAt: serverTimestamp(),
     });
   });

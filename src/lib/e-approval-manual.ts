@@ -128,6 +128,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
               ['My Inbox', 'Everything waiting on you — approvals, verifications, clarifications and returns.'],
               ['Created by Me', 'Every request you have raised, at whatever stage.'],
               ['Drafts', 'Saved but not submitted. A draft has no reference number yet.'],
+              ['My Activity', 'Everything you have personally done — approved, verified, returned and the rest — across every approval.'],
               ['Department Inbox', 'Approvals sent to your department rather than to you by name.'],
               ['All Approvals', 'The full register, for those permitted to see it.'],
               ['Completed / Rejected', 'Closed files.'],

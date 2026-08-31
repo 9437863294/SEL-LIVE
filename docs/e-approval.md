@@ -201,6 +201,35 @@ Dates the engine reads or writes (`startedAt`, `dueAt`, `pausedAt`, `completedAt
 the engine can run under Node with no Firebase installed. The six shared audit stamps stay Firestore
 `Timestamp`s written by `withCreateAudit`, so these records sort and render like every other module's.
 
+## My Activity — one person's own log
+
+`/e-approval/my-activity` answers "what have I actually done" — every approve, verify, return,
+reject, forward, delegate, escalate, hold, recall and reverse a person has personally carried out,
+across every approval, newest first. Nothing new is recorded for it: `eApprovalHistory` was already
+the complete, append-only record of every action; this screen is the first thing that reads it back
+filtered to one `actorId` instead of one `approvalId`.
+
+Two things make that one query instead of an N+1:
+
+- **`referenceNo`, `subject`, `requesterId`, `requesterName` and `departmentName` are denormalised
+  onto every history entry at write time** (`commitEApprovalTransition`), the same way steps already
+  denormalise them. Reading the request `subject` back per matching history entry — after the fact,
+  across however many approvals a person has ever touched — is exactly the pattern this module avoids
+  everywhere else. Entries written before this field existed have none of the five; the screen falls
+  back to a bare "View approval" link rather than a blank title.
+- A new composite index, `eApprovalHistory: organizationId ASC, actorId ASC, recordedAt DESC`
+  (`firestore.indexes.json`), makes `where('actorId', '==', userId) orderBy('recordedAt', 'desc')` a
+  single indexed query. Deploy it with the others (`firebase deploy --only firestore:indexes`).
+
+`listEApprovalMyActivity` bounds the result at 500 and reports `truncated` rather than paginating —
+the same choice `loadEApprovalAnalyticsData` makes, for the same reason: a bound the screen admits to
+is honest, a page number is scaffolding nobody asked for yet.
+
+Deliberately excludes two things that would otherwise leak in: the cron's own `Escalation Fired`
+entries (`actorId: 'system'`, never matches a real user) and actions a delegate took on *this*
+person's steps (`onBehalfOfUserId === them`, `actorId` is the delegate) — that is what the delegate
+did, correctly attributed to the delegate's own log, not to the person they were covering for.
+
 ## Reference numbers
 
 `EA/FIN/2026-27/00125`, or `EA/2026-27/00125` with department codes switched off. Allocated **on

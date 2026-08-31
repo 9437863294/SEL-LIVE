@@ -3718,6 +3718,97 @@ export function eApprovalMomentum(
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Personal activity log — "everything I have done" (spec: My Activity)
+ *
+ * The history collection is already the complete record of every action ever taken; this is just the
+ * read of it filtered to one actor, plus a label and a rough grouping so a page full of raw event
+ * kinds reads as a log a person recognises.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** What a history entry needs to carry for the log to group and label it. */
+export interface EApprovalActivityEntry {
+  kind: EApprovalEventKind;
+  at: string;
+}
+
+export const E_APPROVAL_ACTIVITY_GROUPS = [
+  'Approved',
+  'Verified',
+  'Clarified',
+  'Returned',
+  'Rejected',
+  'Routed',
+  'Other',
+] as const;
+export type EApprovalActivityGroup = (typeof E_APPROVAL_ACTIVITY_GROUPS)[number];
+
+/**
+ * Which of the seven groups a raw event kind belongs to, for the summary tiles at the top of the
+ * log. Coarser than the full label set on purpose: "Approved" covers both the ordinary approve and
+ * approve-and-complete, because the tile answers "how much did I approve", not "which button".
+ */
+export function eApprovalActivityGroupOf(kind: EApprovalEventKind): EApprovalActivityGroup {
+  switch (kind) {
+    case 'Approve':
+    case 'Approve And Complete':
+      return 'Approved';
+    case 'Verify':
+      return 'Verified';
+    case 'Provide Clarification':
+      return 'Clarified';
+    case 'Return':
+    case 'Auto Returned':
+      return 'Returned';
+    case 'Reject':
+      return 'Rejected';
+    case 'Forward':
+    case 'Delegate':
+    case 'Escalate':
+    case 'Assign':
+    case 'Add Approver':
+    case 'Take Ownership':
+      return 'Routed';
+    default:
+      return 'Other';
+  }
+}
+
+export interface EApprovalActivitySummary {
+  total: number;
+  thisMonth: number;
+  byGroup: Record<EApprovalActivityGroup, number>;
+}
+
+/**
+ * Tallies a person's activity log for the summary strip: how much of each kind, and how much of it
+ * was this month. Takes whatever the caller has already loaded rather than re-deriving a window from
+ * Firestore — the log itself decides how far back "loaded" reaches.
+ */
+export function summarizeEApprovalMyActivity(
+  entries: EApprovalActivityEntry[],
+  now: string | Date = new Date(),
+): EApprovalActivitySummary {
+  const nowDate = parseEApprovalDate(now) ?? new Date();
+  const monthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime();
+  const byGroup: Record<EApprovalActivityGroup, number> = {
+    Approved: 0,
+    Verified: 0,
+    Clarified: 0,
+    Returned: 0,
+    Rejected: 0,
+    Routed: 0,
+    Other: 0,
+  };
+  let thisMonth = 0;
+  for (const entry of entries) {
+    byGroup[eApprovalActivityGroupOf(entry.kind)] += 1;
+    const at = millis(entry.at);
+    if (at != null && at >= monthStart) thisMonth += 1;
+  }
+  return { total: entries.length, thisMonth, byGroup };
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Seed templates (spec section 12)
  * ---------------------------------------------------------------------------------------------- */
 

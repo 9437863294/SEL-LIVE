@@ -13,6 +13,7 @@ import {
   FileStack,
   FileText,
   Gauge,
+  History,
   Inbox,
   Menu,
   ShieldAlert,
@@ -53,6 +54,7 @@ const sections: Array<{
   { href: `${E_APPROVAL_BASE_PATH}/inbox`, label: 'My Inbox', icon: Inbox, color: 'text-indigo-600', bg: 'bg-indigo-100', group: 'work', gate: 'inbox' },
   { href: `${E_APPROVAL_BASE_PATH}/created-by-me`, label: 'Created by Me', icon: FileText, color: 'text-violet-600', bg: 'bg-violet-100', group: 'work', gate: 'mine' },
   { href: `${E_APPROVAL_BASE_PATH}/drafts`, label: 'Drafts', icon: FileStack, color: 'text-slate-600', bg: 'bg-slate-200', group: 'work', gate: 'mine' },
+  { href: `${E_APPROVAL_BASE_PATH}/my-activity`, label: 'My Activity', icon: History, color: 'text-emerald-600', bg: 'bg-emerald-100', group: 'work', gate: 'mine' },
 
   { href: `${E_APPROVAL_BASE_PATH}/department`, label: 'Department Inbox', icon: Building2, color: 'text-amber-600', bg: 'bg-amber-100', group: 'registers', gate: 'department' },
   { href: `${E_APPROVAL_BASE_PATH}/all`, label: 'All Approvals', icon: BadgeCheck, color: 'text-teal-600', bg: 'bg-teal-100', group: 'registers', gate: 'all' },

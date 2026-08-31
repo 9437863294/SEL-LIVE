@@ -218,6 +218,17 @@ export interface EApprovalHistoryEntry extends EApprovalEvent {
   organizationId?: string;
   /** Wall-clock stamp alongside the engine's ISO `at`, for ordering with other modules' logs. */
   recordedAt?: Timestamp | null;
+  /**
+   * Denormalised from the request at write time — not read from it — so "everything I have done"
+   * (spec: My Activity) is one query across every approval rather than one read per approval an
+   * entry belongs to. Absent on entries written before this field existed; screens fall back to the
+   * reference-only link in that case rather than a blank title.
+   */
+  referenceNo?: string;
+  subject?: string;
+  requesterId?: string;
+  requesterName?: string;
+  departmentName?: string;
 }
 
 export interface EApprovalCommentEdit {
