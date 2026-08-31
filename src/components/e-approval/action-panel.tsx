@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils';
 import {
   availableEApprovalActions,
   canActOnEApprovalStep,
+  canAssignEApprovalStep,
   canTakeEApprovalOwnership,
   describeEApprovalAssignment,
   eApprovalReturnTargets,
@@ -72,6 +73,7 @@ const actionIcons: Partial<Record<EApprovalActionKind, typeof CheckCircle2>> = {
   Hold: PauseCircle,
   Resume: PlayCircle,
   'Take Ownership': HandMetal,
+  Assign: UserPlus,
   'Add Participant': UserPlus,
   Submit: Send,
   Resubmit: Send,
@@ -166,6 +168,13 @@ const dialogs: Record<string, DialogConfig> = {
   Hold: { kind: 'Hold', needsReason: true, description: 'Put the file on hold. The SLA clock stops until you resume.' },
   Resume: { kind: 'Resume', description: 'Take the file off hold and restart the clock.' },
   'Take Ownership': { kind: 'Take Ownership', description: 'Claim this department step so it is assigned to you.' },
+  Assign: {
+    kind: 'Assign',
+    needsTargets: 'single',
+    needsInstruction: true,
+    description:
+      'Hand this department file to a named member. It stays on the department’s record; they become the one responsible for it.',
+  },
   'Add Participant': {
     kind: 'Add Participant',
     needsParticipants: true,
@@ -248,6 +257,13 @@ export function ActionPanel({
     [steps, engineActor],
   );
 
+  /** Department steps this actor heads — assignable whether or not a member has already claimed one. */
+  const assignable = useMemo(
+    () => (engineActor ? steps.filter((step) => canAssignEApprovalStep(step, engineActor)) : []),
+    [steps, engineActor],
+  );
+  const [assignStepId, setAssignStepId] = useState<string | null>(null);
+
   const activeStep: EApprovalStep | null =
     (stepId ? myActiveSteps.find((step) => step.id === stepId) : myActiveSteps[0]) ?? myActiveSteps[0] ?? null;
 
@@ -277,9 +293,10 @@ export function ActionPanel({
     [activeStep, steps, settings?.allowReturnToAnyStep],
   );
 
-  const openDialog = (kind: EApprovalActionKind) => {
+  const openDialog = (kind: EApprovalActionKind, targetStepId?: string) => {
     const config = dialogs[kind];
     if (!config) return;
+    setAssignStepId(targetStepId ?? null);
     setComment('');
     setReason('');
     setInstruction('');
@@ -312,7 +329,8 @@ export function ActionPanel({
           request.id,
           {
             kind: dialog.kind,
-            stepId: activeStep?.id,
+            // An Assign acts on the head's department step, which need not be one the head holds.
+            stepId: dialog.kind === 'Assign' ? (assignStepId ?? undefined) : activeStep?.id,
             comment: comment.trim() || undefined,
             reason: reason.trim() || undefined,
             instruction: instruction.trim() || undefined,
@@ -352,7 +370,7 @@ export function ActionPanel({
   })();
 
   const nothingToDo =
-    !stepActions.length && !requesterActions.length && !heldByMe.length && !claimable.length;
+    !stepActions.length && !requesterActions.length && !heldByMe.length && !claimable.length && !assignable.length;
 
   if (nothingToDo) return null;
 
@@ -400,6 +418,20 @@ export function ActionPanel({
           {stepActions.map(renderButton)}
           {heldByMe.length > 0 && !stepActions.includes('Resume') && renderButton('Resume')}
           {claimable.length > 0 && renderButton('Take Ownership')}
+          {assignable.map((step) => (
+            <Button
+              key={`assign-${step.id}`}
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-9 gap-1.5"
+              onClick={() => openDialog('Assign', step.id)}
+            >
+              <UserPlus className="h-4 w-4" />
+              {step.ownedByUserId ? 'Reassign' : 'Assign to'}
+              {assignable.length > 1 && <span className="text-muted-foreground">· {step.name}</span>}
+            </Button>
+          ))}
           {requesterActions.map(renderButton)}
         </CardContent>
       </Card>
@@ -413,13 +445,21 @@ export function ActionPanel({
 
           {dialog && (
             <div className={eApprovalDialogClass.body}>
-              {activeStep && dialog.kind !== 'Submit' && dialog.kind !== 'Cancel' && dialog.kind !== 'Resubmit' && (
-                <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-xs">
-                  <span className="text-muted-foreground">Step: </span>
-                  <span className="font-medium">{activeStep.name}</span>
-                  <span className="text-muted-foreground"> · {describeEApprovalAssignment(activeStep.assignment)}</span>
-                </div>
-              )}
+              {(() => {
+                const shown =
+                  dialog.kind === 'Assign' ? steps.find((step) => step.id === assignStepId) ?? null : activeStep;
+                if (!shown || dialog.kind === 'Submit' || dialog.kind === 'Cancel' || dialog.kind === 'Resubmit') return null;
+                return (
+                  <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-xs">
+                    <span className="text-muted-foreground">Step: </span>
+                    <span className="font-medium">{shown.name}</span>
+                    <span className="text-muted-foreground"> · {describeEApprovalAssignment(shown.assignment)}</span>
+                    {shown.ownedByName && dialog.kind === 'Assign' && (
+                      <span className="text-muted-foreground"> · currently with {shown.ownedByName}</span>
+                    )}
+                  </div>
+                );
+              })()}
 
               {dialog.needsOutcome && (
                 <div>
@@ -472,6 +512,8 @@ export function ActionPanel({
                   onChange={setTargets}
                   multiple={dialog.needsTargets === 'multiple'}
                   allowRequester={dialog.kind === 'Request Clarification'}
+                  allowDepartment={dialog.kind !== 'Assign'}
+                  allowRole={dialog.kind !== 'Assign'}
                   label={
                     dialog.kind === 'Send For Verification'
                       ? 'Verify with'
@@ -479,7 +521,9 @@ export function ActionPanel({
                         ? 'Ask'
                         : dialog.kind === 'Add Approver'
                           ? 'Add approver'
-                          : 'Send to'
+                          : dialog.kind === 'Assign'
+                            ? 'Assign to'
+                            : 'Send to'
                   }
                 />
               )}
@@ -499,7 +543,11 @@ export function ActionPanel({
               {dialog.needsInstruction && (
                 <div>
                   <Label className="text-xs">
-                    {dialog.kind === 'Add Approver' ? 'Note for the approver' : 'What should they check?'}
+                    {dialog.kind === 'Add Approver'
+                      ? 'Note for the approver'
+                      : dialog.kind === 'Assign'
+                        ? 'Note for them (optional)'
+                        : 'What should they check?'}
                   </Label>
                   <Textarea
                     value={instruction}

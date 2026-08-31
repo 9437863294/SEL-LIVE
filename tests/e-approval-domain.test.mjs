@@ -7,6 +7,7 @@ import {
   availableEApprovalActions,
   buildEApprovalSteps,
   canActOnEApprovalStep,
+  canAssignEApprovalStep,
   canTakeEApprovalOwnership,
   canRecallEApprovalAction,
   canReverseEApprovalAction,
@@ -1019,15 +1020,79 @@ test('mode B — a department-head step is only for the head', () => {
 });
 
 test('mode C — a queue step waits for the head to assign it', () => {
-  const state = submitted(deptStep('Queue'));
-  const step = stepNamed(state, 'Finance');
-  assert.equal(canActOnEApprovalStep(step, { userId: 'u-a', departmentId: 'd-fin' }), false);
-  assert.equal(
-    canActOnEApprovalStep(step, { userId: 'u-hod', departmentId: 'd-fin', isDepartmentHead: true }),
-    true,
+  let state = submitted(deptStep('Queue'));
+  const step = () => stepNamed(state, 'Finance');
+  const member = { userId: 'u-a', departmentId: 'd-fin' };
+  const other = { userId: 'u-b', departmentId: 'd-fin' };
+  const head = { userId: 'u-hod', departmentId: 'd-fin', isDepartmentHead: true };
+  const otherHead = { userId: 'u-hr-hod', departmentId: 'd-hr', isDepartmentHead: true };
+  assert.equal(canActOnEApprovalStep(step(), member), false);
+  assert.equal(canActOnEApprovalStep(step(), head), true);
+  // Held for the head: a member cannot help themselves to a queued file.
+  assert.equal(canTakeEApprovalOwnership(step(), member), false);
+  assert.equal(canTakeEApprovalOwnership(step(), head), true);
+  assert.equal(canAssignEApprovalStep(step(), head), true);
+  assert.equal(canAssignEApprovalStep(step(), member), false);
+  assert.equal(canAssignEApprovalStep(step(), otherHead), false, 'a head assigns only within their own department');
+  assert.equal(describeEApprovalAssignment(step().assignment), 'Finance Queue');
+
+  assert.throws(
+    () => act(state, { kind: 'Assign', actor: member, stepId: step().id, targets: [user('u-b', 'B')] }),
+    /head of this department/,
   );
-  assert.equal(canTakeEApprovalOwnership(step, { userId: 'u-a', departmentId: 'd-fin' }), true);
-  assert.equal(describeEApprovalAssignment(step.assignment), 'Finance Queue');
+  assert.throws(() => act(state, { kind: 'Assign', actor: head, stepId: step().id, targets: [] }), /Choose who/);
+
+  state = act(state, {
+    kind: 'Assign',
+    actor: head,
+    stepId: step().id,
+    targets: [user('u-a', 'A')],
+    instruction: 'Please check the vendor invoice.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(step().ownedByUserId, 'u-a');
+  assert.equal(step().assignment.kind, 'Department', 'still addressed to the department');
+  assert.equal(canActOnEApprovalStep(step(), member), true, 'the assignee can now act');
+  assert.equal(canActOnEApprovalStep(step(), other), false);
+  assert.deepEqual(state.request.currentAssigneeIds, ['u-a']);
+  assert.match(state.events[0].summary, /assigned to A by/);
+  const notice = state.notifications.find((entry) => entry.kind === 'Assigned');
+  assert.deepEqual(notice.userIds, ['u-a']);
+  assert.match(notice.body, /Please check the vendor invoice/);
+  assert.ok(state.events[0].undo, 'an assignment is recallable');
+
+  // The head can move it again; the first assignee is told it is no longer theirs.
+  state = act(state, { kind: 'Assign', actor: head, stepId: step().id, targets: [user('u-b', 'B')], now: '2026-08-22T12:00:00.000Z' });
+  assert.equal(step().ownedByUserId, 'u-b');
+  assert.equal(step().reassignments.length, 2);
+  assert.equal(step().reassignments[1].from.userId, 'u-a');
+  const released = state.notifications.find((entry) => entry.kind === 'Returned');
+  assert.deepEqual(released.userIds, ['u-a']);
+});
+
+test('a file returned to the requester is pending with the requester', () => {
+  let state = submitted();
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-mgr' }, now: '2026-08-22T11:00:00.000Z' });
+  state = act(state, {
+    kind: 'Return',
+    actor: { userId: 'u-fin' },
+    returnTo: 'REQUESTER',
+    reason: 'Attach the quotation.',
+    now: '2026-08-22T12:00:00.000Z',
+  });
+  assert.equal(state.request.status, 'Returned');
+  assert.deepEqual(state.request.currentStepIds, [], 'no step is active while the requester corrects it');
+  assert.deepEqual(
+    state.request.currentAssigneeIds,
+    [requester.userId],
+    'the inbox query finds it in the requester\'s inbox, and the dashboard counts it as returned to them',
+  );
+  assert.equal(state.request.pendingLabel, 'Pending with Debaprasad');
+  const counts = summarizeEApprovalDashboard([state.request], requester, '2026-08-22T13:00:00.000Z');
+  assert.equal(counts.returnedToMe, 1);
+
+  state = act(state, { kind: 'Resubmit', actor: requester, now: '2026-08-22T14:00:00.000Z' });
+  assert.deepEqual(state.request.currentAssigneeIds, ['u-fin'], 'back with whoever returned it');
 });
 
 test('a role-assigned step is for whoever holds the role', () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -9,6 +9,7 @@ import type { Department, Project, User } from '@/lib/types';
 import {
   E_APPROVAL_PERMISSION_RESOURCE,
   type EApprovalActor,
+  type EApprovalRequest,
   type EApprovalSettingsRecord,
   type EApprovalType,
 } from '@/lib/e-approval';
@@ -16,6 +17,7 @@ import {
   loadEApprovalActorContext,
   loadEApprovalSettings,
   listEApprovalTypes,
+  subscribeEApprovalWorkload,
   type EApprovalServiceActor,
 } from '@/lib/e-approval-service';
 
@@ -31,7 +33,7 @@ import {
  * "can I act on this?", and doing that against a fresh Firestore read each time would make the
  * detail screen unusable.
  */
-export function useEApprovalActor() {
+export function useEApprovalActorStandalone(enabled = true) {
   const { user, loading } = useAuth();
   const [engineActor, setEngineActor] = useState<EApprovalActor | null>(null);
   const [contextLoading, setContextLoading] = useState(true);
@@ -53,6 +55,7 @@ export function useEApprovalActor() {
   );
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     if (!serviceActor) {
       setEngineActor(null);
       setContextLoading(false);
@@ -78,7 +81,7 @@ export function useEApprovalActor() {
     } finally {
       if (mounted.current) setContextLoading(false);
     }
-  }, [serviceActor]);
+  }, [serviceActor, enabled]);
 
   useEffect(() => {
     mounted.current = true;
@@ -98,12 +101,13 @@ export function useEApprovalActor() {
 }
 
 /** Module settings, loaded once per screen. */
-export function useEApprovalSettings() {
+export function useEApprovalSettingsStandalone(enabled = true) {
   const { user } = useAuth();
   const [settings, setSettings] = useState<EApprovalSettingsRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     setIsLoading(true);
     try {
       setSettings(await loadEApprovalSettings(user?.organizationId));
@@ -112,7 +116,7 @@ export function useEApprovalSettings() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.organizationId]);
+  }, [user?.organizationId, enabled]);
 
   useEffect(() => {
     void refresh();
@@ -137,9 +141,8 @@ export interface EApprovalDirectory {
  * One hook rather than a fetch per picker: the create form and every action dialog offer the same
  * choices, and three dialogs each loading the user list is three copies of it in memory.
  */
-export function useEApprovalDirectory() {
-  const { users } = useAuth();
-  const { user } = useAuth();
+export function useEApprovalDirectoryStandalone(enabled = true) {
+  const { users, user } = useAuth();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
@@ -147,6 +150,7 @@ export function useEApprovalDirectory() {
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     setIsLoading(true);
     try {
       const [departmentSnap, projectSnap, roleSnap, typeRows] = await Promise.all([
@@ -178,7 +182,7 @@ export function useEApprovalDirectory() {
     } finally {
       setIsLoading(false);
     }
-  }, [user?.organizationId]);
+  }, [user?.organizationId, enabled]);
 
   useEffect(() => {
     void refresh();
@@ -203,6 +207,109 @@ export function useEApprovalDirectory() {
   );
 
   return { directory, isLoading, refreshDirectory: refresh };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Shared module context
+ *
+ * The module has eleven route groups and every one of them called `useEApprovalActor`,
+ * `useEApprovalSettings` and `useEApprovalDirectory` independently — three Firestore round trips
+ * repeated on every navigation, for data that changes rarely mid-session (who you are, the
+ * organisation's approval settings, the user/department/project/type lists).
+ *
+ * `EApprovalModuleProvider`, mounted once by the layout shell, loads all three exactly once and
+ * hands them down through context. Every hook below keeps its original name and return shape — no
+ * consumer needs to change — and falls back to loading its own copy when no provider is mounted
+ * (a page rendered in isolation, a test). The standalone hook is still *called* unconditionally
+ * (satisfying the rules of hooks); its `enabled` flag only decides whether it does any work.
+ * ---------------------------------------------------------------------------------------------- */
+
+interface EApprovalModuleContextValue {
+  actor: ReturnType<typeof useEApprovalActorStandalone>;
+  settings: ReturnType<typeof useEApprovalSettingsStandalone>;
+  directory: ReturnType<typeof useEApprovalDirectoryStandalone>;
+}
+
+const EApprovalModuleContext = createContext<EApprovalModuleContextValue | null>(null);
+
+export function EApprovalModuleProvider({ children }: { children: ReactNode }) {
+  const actor = useEApprovalActorStandalone();
+  const settings = useEApprovalSettingsStandalone();
+  const directory = useEApprovalDirectoryStandalone();
+  const value = useMemo(() => ({ actor, settings, directory }), [actor, settings, directory]);
+  return <EApprovalModuleContext.Provider value={value}>{children}</EApprovalModuleContext.Provider>;
+}
+
+export function useEApprovalActor() {
+  const shared = useContext(EApprovalModuleContext);
+  const standalone = useEApprovalActorStandalone(!shared);
+  return shared ? shared.actor : standalone;
+}
+
+export function useEApprovalSettings() {
+  const shared = useContext(EApprovalModuleContext);
+  const standalone = useEApprovalSettingsStandalone(!shared);
+  return shared ? shared.settings : standalone;
+}
+
+export function useEApprovalDirectory() {
+  const shared = useContext(EApprovalModuleContext);
+  const standalone = useEApprovalDirectoryStandalone(!shared);
+  return shared ? shared.directory : standalone;
+}
+
+/**
+ * Every open approval the actor is involved in — mine to act on, my department's, my role's, and
+ * mine as requester — kept live.
+ *
+ * Replaces a one-shot `loadEApprovalWorkload` + a Refresh button with four standing Firestore
+ * listeners (`subscribeEApprovalWorkload`). A file somebody else acts on while this is open moves out
+ * of the inbox on its own, rather than sitting there stale until the next manual refresh — which is
+ * how an approver comes to act on a file a colleague has already forwarded.
+ */
+export function useEApprovalWorkload() {
+  const { serviceActor, engineActor, isLoading: actorLoading } = useEApprovalActor();
+  const [rows, setRows] = useState<EApprovalRequest[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!serviceActor || !engineActor) return;
+    setIsLoading(true);
+    const unsubscribe = subscribeEApprovalWorkload(
+      engineActor,
+      serviceActor.organizationId,
+      (nextRows) => {
+        setRows(nextRows);
+        setLastUpdated(new Date());
+        setHasLoadedOnce(true);
+        setIsLoading(false);
+        setError(null);
+      },
+      (err) => {
+        setError(err);
+        setIsLoading(false);
+      },
+    );
+    return unsubscribe;
+    // `engineActor` is reloaded as a new object on every actor-context refresh even when its content
+    // is unchanged; resubscribing then is one extra round trip, not a correctness issue, so it is not
+    // worth memoising just to avoid it here.
+  }, [serviceActor, engineActor]);
+
+  return {
+    rows,
+    engineActor,
+    serviceActor,
+    isLoading: isLoading || actorLoading,
+    hasLoadedOnce,
+    /** True once there is data on screen and a live update is refreshing it, for a dimmed re-render rather than a skeleton. */
+    isRevalidating: (isLoading || actorLoading) && hasLoadedOnce,
+    lastUpdated,
+    error,
+  };
 }
 
 /**

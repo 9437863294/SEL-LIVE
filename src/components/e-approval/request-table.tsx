@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ArrowUpDown, FileSearch, Inbox, Search } from 'lucide-react';
+import { ArrowUpDown, CheckCircle2, FileSearch, Inbox, Loader2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -226,46 +226,85 @@ export function EApprovalRequestTable({
   );
 }
 
-/** A compact card list for the dashboard's "Requires My Action" panel. */
+/**
+ * A compact card list for the dashboard's "Requires My Action" panel.
+ *
+ * `onQuickApprove` + `isQuickApprovable` are optional: pass both to offer a one-click Approve on the
+ * rows safe for it (see `eApprovalRowIsQuickApprovable` — a plain approval, assigned by name, alone).
+ * The row stays a link everywhere else; only the button intercepts the click, so the common case of
+ * "clear the easy ones without leaving the dashboard" does not cost the ability to open a file for a
+ * closer look.
+ */
 export function EApprovalActionList({
   rows,
   emptyTitle = 'Nothing needs your action',
+  isQuickApprovable,
+  onQuickApprove,
 }: {
   rows: EApprovalRequest[];
   emptyTitle?: string;
+  isQuickApprovable?: (row: EApprovalRequest) => boolean;
+  onQuickApprove?: (row: EApprovalRequest) => Promise<void>;
 }) {
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+
   if (!rows.length) {
     return <EApprovalEmptyState icon={Inbox} title={emptyTitle} description="Approvals assigned to you appear here." />;
   }
   return (
     <div className="divide-y">
-      {rows.map((row) => (
-        <Link
-          key={row.id}
-          href={`${E_APPROVAL_BASE_PATH}/${row.id}`}
-          className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/40"
-        >
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-mono text-[11px] text-muted-foreground">{row.referenceNo}</span>
-              <EApprovalPriorityBadge priority={row.priority} />
-              <EApprovalConfidentialBadge confidential={row.confidential} />
-            </div>
-            <p className="line-clamp-1 text-sm font-medium">{row.subject}</p>
-            <p className="truncate text-[11px] text-muted-foreground">
-              {row.requesterName}
-              {row.departmentName ? ` · ${row.departmentName}` : ''}
-              {row.currentStepName ? ` · ${row.currentStepName}` : ''}
-            </p>
-          </div>
-          <div className={cn('shrink-0 text-right')}>
-            {row.amount != null && (
-              <p className="text-xs font-semibold tabular-nums">{formatEApprovalAmount(row.amount)}</p>
+      {rows.map((row) => {
+        const quickApprovable = Boolean(onQuickApprove && isQuickApprovable?.(row));
+        const approving = approvingId === row.id;
+        return (
+          // A plain row, not a <Link> — a Button nested inside an <a> is invalid HTML nesting (React
+          // warns and can mis-hydrate), so the anchor covers only the content beside the button.
+          <div key={row.id} className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/40">
+            <Link href={`${E_APPROVAL_BASE_PATH}/${row.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-mono text-[11px] text-muted-foreground">{row.referenceNo}</span>
+                  <EApprovalPriorityBadge priority={row.priority} />
+                  <EApprovalConfidentialBadge confidential={row.confidential} />
+                </div>
+                <p className="line-clamp-1 text-sm font-medium">{row.subject}</p>
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {row.requesterName}
+                  {row.departmentName ? ` · ${row.departmentName}` : ''}
+                  {row.currentStepName ? ` · ${row.currentStepName}` : ''}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                {row.amount != null && (
+                  <p className="text-xs font-semibold tabular-nums">{formatEApprovalAmount(row.amount)}</p>
+                )}
+                <EApprovalDueBadge dueAt={row.currentDueAt} />
+              </div>
+            </Link>
+            {quickApprovable && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 gap-1 border-emerald-200 bg-emerald-50 px-2 text-[11px] text-emerald-800 hover:bg-emerald-100"
+                disabled={approving}
+                onClick={async () => {
+                  if (approvingId) return;
+                  setApprovingId(row.id);
+                  try {
+                    await onQuickApprove?.(row);
+                  } finally {
+                    setApprovingId((current) => (current === row.id ? null : current));
+                  }
+                }}
+              >
+                {approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Approve
+              </Button>
             )}
-            <EApprovalDueBadge dueAt={row.currentDueAt} />
           </div>
-        </Link>
-      ))}
+        );
+      })}
     </div>
   );
 }

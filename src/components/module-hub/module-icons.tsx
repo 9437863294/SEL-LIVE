@@ -301,6 +301,15 @@ export function GearIcon(props: ModuleIconProps) {
   );
 }
 
+/** Tour, Travel & Expense — a departing plane. */
+export function PlaneIcon(props: ModuleIconProps) {
+  return (
+    <Base {...props}>
+      <path d="M12.5 2.5c.7 0 1.3.6 1.3 1.4v6.2l6.4 4v2l-6.4-1.9v4.4l2 1.7v1.6l-3.8-1.3-3.8 1.3v-1.6l2-1.7v-4.4L3.8 16.1v-2l6.4-4V3.9c0-.8.6-1.4 1.3-1.4Z" />
+    </Base>
+  );
+}
+
 /** Generic fallback for any module without a dedicated icon yet. */
 export function DocumentIcon(props: ModuleIconProps) {
   return (

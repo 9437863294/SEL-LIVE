@@ -1395,7 +1395,12 @@ export function canActOnEApprovalStep(
   return isEApprovalStepAssignee(step, actor, options);
 }
 
-/** An unclaimed department-queue step the actor may take ownership of (mode A and C). */
+/**
+ * An unclaimed department step the actor may take ownership of.
+ *
+ * Mode A ('Anyone'): any member. Mode C ('Queue'): only the head — a queue is *held for the head to
+ * assign*, and letting members help themselves is mode A with a different label.
+ */
 export function canTakeEApprovalOwnership(
   step: EApprovalStepRecord,
   actor: EApprovalActor | null | undefined,
@@ -1405,7 +1410,24 @@ export function canTakeEApprovalOwnership(
   if (step.ownedByUserId) return false;
   const mode = step.assignment.departmentMode ?? 'Anyone';
   if (mode === 'Head') return false;
-  return Boolean(step.assignment.departmentId && actorDepartments(actor).includes(step.assignment.departmentId));
+  if (!step.assignment.departmentId || !actorDepartments(actor).includes(step.assignment.departmentId)) return false;
+  if (mode === 'Queue') return Boolean(actor.isDepartmentHead);
+  return true;
+}
+
+/**
+ * Whether the actor may hand a department step to a named member — the head working a queue (mode
+ * C), or a head redistributing a file a member has already claimed (mode A). Only a head, because
+ * "assign it to Rahul" is a management act, and only within their own department.
+ */
+export function canAssignEApprovalStep(
+  step: EApprovalStepRecord,
+  actor: EApprovalActor | null | undefined,
+): boolean {
+  if (!actor?.userId || step.status !== 'Active') return false;
+  if (step.assignment.kind !== 'Department') return false;
+  if (!step.assignment.departmentId || !actorDepartments(actor).includes(step.assignment.departmentId)) return false;
+  return Boolean(actor.isDepartmentHead);
 }
 
 export const E_APPROVAL_ACTION_KINDS = [
@@ -1427,6 +1449,7 @@ export const E_APPROVAL_ACTION_KINDS = [
   'Cancel',
   'Resubmit',
   'Take Ownership',
+  'Assign',
   'Add Participant',
   'Recall',
   'Reverse',
@@ -1454,6 +1477,7 @@ export const E_APPROVAL_ACTION_LABELS: Record<EApprovalActionKind, string> = {
   Cancel: 'Cancel',
   Resubmit: 'Resubmit',
   'Take Ownership': 'Take Ownership',
+  Assign: 'Assign to',
   'Add Participant': 'Add Participant',
   Recall: 'Recall',
   Reverse: 'Reverse',
@@ -1679,6 +1703,7 @@ export const RECALLABLE_E_APPROVAL_ACTIONS: readonly EApprovalActionKind[] = [
   'Delegate',
   'Add Approver',
   'Escalate',
+  'Assign',
 ];
 
 /** Actions a privileged user can reverse after the fact — decisions, not dispatches. */
@@ -1973,14 +1998,20 @@ function refreshPointers(request: EApprovalRequestState, steps: EApprovalStepRec
   request.currentStepIds = active.map((step) => step.id);
   request.currentAssigneeIds = Array.from(
     new Set(
-      active.flatMap((step) =>
-        [
-          step.assignment.kind === 'User' ? step.assignment.userId : undefined,
-          step.delegatedToUserId,
-          step.ownedByUserId,
-          step.assignment.kind === 'Requester' ? request.requesterId : undefined,
-        ].filter(Boolean) as string[],
-      ),
+      [
+        ...active.flatMap((step) =>
+          [
+            step.assignment.kind === 'User' ? step.assignment.userId : undefined,
+            step.delegatedToUserId,
+            step.ownedByUserId,
+            step.assignment.kind === 'Requester' ? request.requesterId : undefined,
+          ].filter(Boolean) as string[],
+        ),
+        // A file returned to the requester has no active step, but it is very much pending with
+        // somebody: the requester. Without this pointer the file is in nobody's inbox — the
+        // requester's "Returned to you" count reads zero while an approver waits for a correction.
+        ...(request.status === 'Returned' && request.requesterId ? [request.requesterId] : []),
+      ],
     ),
   );
   request.currentDepartmentIds = Array.from(
@@ -2574,10 +2605,14 @@ export function applyEApprovalAction(
     approvalTypeId: request.approvalTypeId,
   };
   // Resume is the one action whose step is not Active — it is the action that makes it active again.
+  // Assign is resolved by headship rather than by holding the step: a head redistributing a file a
+  // member has claimed is not, at that moment, the person the step is pending with.
   const actionable = steps.filter((step) =>
     input.kind === 'Resume'
       ? step.status === 'On Hold' && isEApprovalStepAssignee(step, actor, assigneeOptions)
-      : canActOnEApprovalStep(step, actor, assigneeOptions),
+      : input.kind === 'Assign'
+        ? canAssignEApprovalStep(step, actor)
+        : canActOnEApprovalStep(step, actor, assigneeOptions),
   );
 
   const step = input.stepId
@@ -2607,6 +2642,57 @@ export function applyEApprovalAction(
       stepType: step.type,
       summary: `${actorLabel(actor)} took ownership of "${step.name}" from the ${describeEApprovalAssignment(step.assignment)}`,
     });
+    return finish();
+  }
+
+  if (input.kind === 'Assign') {
+    if (!canAssignEApprovalStep(step, actor)) {
+      throw new EApprovalRuleError('Only the head of this department can assign its files.');
+    }
+    const target = (input.targets ?? [])[0];
+    if (!target?.userId) throw new EApprovalRuleError('Choose who to assign this to.');
+    const previousOwner = step.ownedByUserId;
+    // Ownership, not assignment: the step stays addressed to the department so the record still
+    // shows the queue it came through, and an unassign is a matter of clearing one field.
+    step.ownedByUserId = target.userId;
+    step.ownedByName = target.userName;
+    step.reassignments = [
+      ...(step.reassignments ?? []),
+      {
+        at: now,
+        kind: 'Reassign',
+        byUserId: actor.userId,
+        byName: actor.userName,
+        from: previousOwner ? { kind: 'User', userId: previousOwner, userName: step.ownedByName } : { ...step.assignment },
+        to: target,
+        reason: input.reason ?? input.comment,
+      },
+    ];
+    pushEvent({
+      kind: 'Assign',
+      stepId: step.id,
+      stepName: step.name,
+      stepType: step.type,
+      reason: input.reason,
+      comment: input.comment,
+      summary: `"${step.name}" assigned to ${describeEApprovalAssignment(target)} by ${actorLabel(actor)}`,
+    });
+    notifications.push({
+      kind: 'Assigned',
+      userIds: [target.userId],
+      title: 'Approval assigned to you',
+      body: `${describeEApprovalSubject(request)} — ${actorLabel(actor)} assigned "${step.name}" to you${
+        input.instruction ? `: ${input.instruction}` : '.'
+      }`,
+    });
+    if (previousOwner && previousOwner !== target.userId) {
+      notifications.push({
+        kind: 'Returned',
+        userIds: [previousOwner],
+        title: 'Approval reassigned',
+        body: `${describeEApprovalSubject(request)} — "${step.name}" was reassigned to ${describeEApprovalAssignment(target)} by ${actorLabel(actor)}. No action is needed from you.`,
+      });
+    }
     return finish();
   }
 
@@ -3123,6 +3209,7 @@ export interface EApprovalInboxRow {
   id: string;
   status: EApprovalStatus | string;
   requesterId: string;
+  currentStepIds?: string[];
   currentAssigneeIds?: string[];
   currentDepartmentIds?: string[];
   currentRoles?: string[];
@@ -3215,6 +3302,419 @@ export function eApprovalAgeingBucket(
   if (days <= 7) return '4-7 days';
   if (days <= 15) return '8-15 days';
   return '15+ days';
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Dashboard selectors — the "what should I do first?" layer
+ *
+ * Pure, so the ordering a person sees on the dashboard is the same ordering the tests assert on and
+ * the same one the inbox will use. Every function here takes `now` so a test can pin the clock.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** What the dashboard reads off a request row. Satisfied by the Firestore request document. */
+export interface EApprovalWorkRow extends EApprovalInboxRow {
+  subject?: string;
+  referenceNo?: string;
+  priority?: EApprovalPriority;
+  amount?: number;
+  submittedAt?: string | null;
+  pendingLabel?: string;
+  currentStepName?: string;
+  requesterName?: string;
+  departmentName?: string;
+  /** Firestore `Timestamp`, ISO string or Date — the policy stays Firestore-free by accepting any. */
+  updatedAt?: unknown;
+  createdAt?: unknown;
+}
+
+/** Milliseconds from an ISO string, a Date, a Firestore Timestamp-like, or nothing. */
+const anyMillis = (value: unknown): number | null => {
+  if (value == null) return null;
+  if (typeof value === 'string' || value instanceof Date) return millis(value);
+  if (typeof value === 'object') {
+    const candidate = value as { toMillis?: () => number; seconds?: number };
+    if (typeof candidate.toMillis === 'function') return candidate.toMillis();
+    if (typeof candidate.seconds === 'number') return candidate.seconds * 1000;
+  }
+  return null;
+};
+
+/** Whether the file is sitting with this actor — directly, via a department, or via a role. */
+export function isEApprovalRowWithActor(row: EApprovalInboxRow, actor: EApprovalActor): boolean {
+  return rowIsWithActor(row, actor);
+}
+
+export const E_APPROVAL_URGENCIES = ['Overdue', 'Due Today', 'Due Soon', 'On Track', 'No Clock'] as const;
+export type EApprovalUrgency = (typeof E_APPROVAL_URGENCIES)[number];
+
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+
+/**
+ * The urgency band a pending file falls in, from its due time alone.
+ *
+ * "Due Today" is the next 24 hours rather than the calendar day, because an approver who opens the
+ * dashboard at 6pm needs to see what is due by 6pm tomorrow, not only what is due by midnight.
+ */
+export function eApprovalUrgencyOf(row: Pick<EApprovalInboxRow, 'currentDueAt'>, now: string | Date = new Date()): EApprovalUrgency {
+  const due = millis(row.currentDueAt);
+  if (due == null) return 'No Clock';
+  const remaining = due - (millis(now) ?? Date.now());
+  if (remaining < 0) return 'Overdue';
+  if (remaining <= DAY) return 'Due Today';
+  if (remaining <= 3 * DAY) return 'Due Soon';
+  return 'On Track';
+}
+
+const priorityRank: Record<EApprovalPriority, number> = { Urgent: 0, High: 1, Normal: 2, Low: 3 };
+
+/**
+ * Orders pending files by consequence: the most overdue first, then the soonest due, then priority,
+ * then amount, then age. This is the one ordering the dashboard queue, the inbox default sort and
+ * the "next up" card all share — three screens each inventing their own is how an approver clears
+ * the inbox and still gets an escalation.
+ */
+export function compareEApprovalUrgency(
+  a: EApprovalWorkRow,
+  b: EApprovalWorkRow,
+  now: string | Date = new Date(),
+): number {
+  const at = parseEApprovalDate(now) ?? new Date();
+  const bandA = E_APPROVAL_URGENCIES.indexOf(eApprovalUrgencyOf(a, at));
+  const bandB = E_APPROVAL_URGENCIES.indexOf(eApprovalUrgencyOf(b, at));
+  if (bandA !== bandB) return bandA - bandB;
+  const dueA = millis(a.currentDueAt);
+  const dueB = millis(b.currentDueAt);
+  if (dueA != null && dueB != null && dueA !== dueB) return dueA - dueB;
+  const priorityA = priorityRank[a.priority ?? 'Normal'] ?? 2;
+  const priorityB = priorityRank[b.priority ?? 'Normal'] ?? 2;
+  if (priorityA !== priorityB) return priorityA - priorityB;
+  const amountA = a.amount ?? 0;
+  const amountB = b.amount ?? 0;
+  if (amountA !== amountB) return amountB - amountA;
+  const ageA = millis(a.submittedAt) ?? Number.MAX_SAFE_INTEGER;
+  const ageB = millis(b.submittedAt) ?? Number.MAX_SAFE_INTEGER;
+  return ageA - ageB;
+}
+
+export type EApprovalWorkKind = 'Approval' | 'Verification' | 'Clarification' | 'Correction';
+
+/** Which of the four kinds of task this row is, for the person holding it. */
+export function eApprovalWorkKindOf(row: EApprovalInboxRow): EApprovalWorkKind {
+  if (row.status === 'Returned') return 'Correction';
+  if (row.currentStepType === 'VERIFICATION' || row.currentStepType === 'REVIEW') return 'Verification';
+  if (row.currentStepType === 'CLARIFICATION') return 'Clarification';
+  return 'Approval';
+}
+
+/**
+ * Whether a row is safe to approve with one click from a list, with no dialog.
+ *
+ * True only for a plain approval step assigned to this actor by name — never a department or role
+ * step (claiming isn't the same act as approving, and a click meant as "approve" must not silently
+ * claim a step for the whole department), never a parallel group (approving there is one vote among
+ * several, worth seeing named), and never anything that already needed a decision from the person —
+ * verification, clarification, a return. The action still goes through `applyEApprovalAction`
+ * exactly as the detail page's Approve button does; this only decides when the row is safe to skip
+ * the confirmation and let one click mean it.
+ */
+export function eApprovalRowIsQuickApprovable(row: EApprovalInboxRow, actor: EApprovalActor): boolean {
+  if (eApprovalWorkKindOf(row) !== 'Approval') return false;
+  if (!isOpenEApprovalStatus(row.status)) return false;
+  if (!(row.currentAssigneeIds ?? []).includes(actor.userId)) return false;
+  if ((row.currentDepartmentIds ?? []).length || (row.currentRoles ?? []).length) return false;
+  // More than one active assignee or step means a parallel group, or more than one stage open at
+  // once — either way, "approve" is one vote among several and deserves to be seen named, not
+  // one-clicked from a list.
+  if ((row.currentAssigneeIds ?? []).length > 1 || (row.currentStepIds ?? []).length > 1) return false;
+  return true;
+}
+
+export interface EApprovalWorkQueue<T extends EApprovalWorkRow = EApprovalWorkRow> {
+  /** Open files sitting with the actor, most consequential first. */
+  rows: T[];
+  byUrgency: Record<EApprovalUrgency, number>;
+  byKind: Record<EApprovalWorkKind, number>;
+  /** Sum of the amounts on the files pending the actor's decision. */
+  valuePending: number;
+  /** The single file to open next, or null when the queue is clear. */
+  next: T | null;
+}
+
+/**
+ * Everything waiting on the actor, ordered and counted once.
+ *
+ * One pass over one list, so the hero number, the triage chips, the kind tiles and the queue can
+ * never disagree — they are all views of `rows`.
+ */
+export function eApprovalWorkQueue<T extends EApprovalWorkRow>(
+  rows: T[],
+  actor: EApprovalActor,
+  now: string | Date = new Date(),
+): EApprovalWorkQueue<T> {
+  const at = parseEApprovalDate(now) ?? new Date();
+  const mine = rows
+    .filter((row) => isOpenEApprovalStatus(row.status))
+    .filter((row) => rowIsWithActor(row, actor))
+    .sort((a, b) => compareEApprovalUrgency(a, b, at));
+  const byUrgency: Record<EApprovalUrgency, number> = { Overdue: 0, 'Due Today': 0, 'Due Soon': 0, 'On Track': 0, 'No Clock': 0 };
+  const byKind: Record<EApprovalWorkKind, number> = { Approval: 0, Verification: 0, Clarification: 0, Correction: 0 };
+  let valuePending = 0;
+  for (const row of mine) {
+    byUrgency[eApprovalUrgencyOf(row, at)] += 1;
+    byKind[eApprovalWorkKindOf(row)] += 1;
+    valuePending += row.amount ?? 0;
+  }
+  return { rows: mine, byUrgency, byKind, valuePending, next: mine[0] ?? null };
+}
+
+export interface EApprovalBreachProjection<T extends EApprovalWorkRow = EApprovalWorkRow> {
+  withinHours: number;
+  /** Files not yet overdue that will be unless acted on inside the horizon. */
+  count: number;
+  value: number;
+  rows: T[];
+}
+
+/**
+ * "At this pace, N files will breach by tomorrow."
+ *
+ * Counts files due inside each horizon that are not already overdue — the already-overdue ones are
+ * a separate, louder number. Horizons are cumulative: a file due in 6 hours appears in both the
+ * 24-hour and the 72-hour projection.
+ */
+export function projectEApprovalBreaches<T extends EApprovalWorkRow>(
+  queueRows: T[],
+  now: string | Date = new Date(),
+  horizonsHours: number[] = [24, 72],
+): EApprovalBreachProjection<T>[] {
+  const nowMs = millis(now) ?? Date.now();
+  return horizonsHours.map((withinHours) => {
+    const rows = queueRows.filter((row) => {
+      const due = millis(row.currentDueAt);
+      return due != null && due >= nowMs && due - nowMs <= withinHours * HOUR;
+    });
+    return { withinHours, count: rows.length, value: rows.reduce((sum, row) => sum + (row.amount ?? 0), 0), rows };
+  });
+}
+
+export const E_APPROVAL_AGENDA_BUCKETS = ['Overdue', 'Today', 'Tomorrow', 'This week', 'Later', 'No deadline'] as const;
+export type EApprovalAgendaBucket = (typeof E_APPROVAL_AGENDA_BUCKETS)[number];
+
+/**
+ * Deadlines grouped the way a diary groups them.
+ *
+ * Calendar days in the caller's local time, unlike `eApprovalUrgencyOf` which uses rolling 24-hour
+ * windows: an agenda is read against a calendar, a triage chip against a clock.
+ */
+export function eApprovalAgenda<T extends EApprovalWorkRow>(
+  queueRows: T[],
+  now: string | Date = new Date(),
+): Array<{ bucket: EApprovalAgendaBucket; rows: T[] }> {
+  const nowDate = parseEApprovalDate(now) ?? new Date();
+  const startOfToday = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
+  const endOfToday = startOfToday + DAY;
+  const endOfTomorrow = endOfToday + DAY;
+  const endOfWeek = startOfToday + 7 * DAY;
+  const groups = new Map<EApprovalAgendaBucket, T[]>(E_APPROVAL_AGENDA_BUCKETS.map((bucket) => [bucket, []]));
+  for (const row of queueRows) {
+    const due = millis(row.currentDueAt);
+    const bucket: EApprovalAgendaBucket =
+      due == null
+        ? 'No deadline'
+        : due < nowDate.getTime()
+          ? 'Overdue'
+          : due < endOfToday
+            ? 'Today'
+            : due < endOfTomorrow
+              ? 'Tomorrow'
+              : due < endOfWeek
+                ? 'This week'
+                : 'Later';
+    groups.get(bucket)?.push(row);
+  }
+  return E_APPROVAL_AGENDA_BUCKETS.map((bucket) => ({
+    bucket,
+    rows: (groups.get(bucket) ?? []).sort((a, b) => (millis(a.currentDueAt) ?? 0) - (millis(b.currentDueAt) ?? 0)),
+  })).filter((group) => group.rows.length > 0);
+}
+
+export interface EApprovalCoverageNotice {
+  /** 'covering': the actor is acting for somebody. 'covered': somebody is acting for the actor. */
+  kind: 'covering' | 'covered';
+  delegationId: string;
+  counterpartUserId: string;
+  counterpartName?: string;
+  /** Inclusive ISO date, or null for open-ended. */
+  until: string | null;
+  reason?: string;
+}
+
+/**
+ * "You are covering for Priya until Friday" / "Rahul is covering for you until 30 Aug".
+ *
+ * Read from the delegations already on the actor, so it costs no query — and shown on the dashboard
+ * because a substitute who does not know they are one is a file that stalls for a fortnight.
+ */
+export function eApprovalCoverageNotices(actor: EApprovalActor, now: string | Date = new Date()): EApprovalCoverageNotice[] {
+  const nowMs = millis(now) ?? Date.now();
+  const notices: EApprovalCoverageNotice[] = [];
+  for (const delegation of actor.delegations ?? []) {
+    if (delegation.active === false) continue;
+    const from = millis(delegation.fromDate);
+    if (from != null && nowMs < from) continue;
+    const to = millis(delegation.toDate);
+    if (to != null && nowMs > to + DAY - 1) continue;
+    if (delegation.toUserId === actor.userId) {
+      notices.push({
+        kind: 'covering',
+        delegationId: delegation.id,
+        counterpartUserId: delegation.fromUserId,
+        counterpartName: delegation.fromUserName,
+        until: delegation.toDate ?? null,
+        reason: delegation.reason,
+      });
+    } else if (delegation.fromUserId === actor.userId) {
+      notices.push({
+        kind: 'covered',
+        delegationId: delegation.id,
+        counterpartUserId: delegation.toUserId,
+        counterpartName: delegation.toUserName,
+        until: delegation.toDate ?? null,
+        reason: delegation.reason,
+      });
+    }
+  }
+  return notices;
+}
+
+/** Drafts the actor raised and has not touched for `thresholdDays` — the ones worth a nudge. */
+export function staleEApprovalDrafts<T extends EApprovalWorkRow>(
+  rows: T[],
+  requesterId: string,
+  now: string | Date = new Date(),
+  thresholdDays = 3,
+): T[] {
+  const nowMs = millis(now) ?? Date.now();
+  return rows
+    .filter((row) => row.status === 'Draft' && row.requesterId === requesterId)
+    .filter((row) => {
+      const touched = anyMillis(row.updatedAt) ?? anyMillis(row.createdAt);
+      return touched != null && nowMs - touched >= thresholdDays * DAY;
+    })
+    .sort((a, b) => (anyMillis(a.updatedAt) ?? 0) - (anyMillis(b.updatedAt) ?? 0));
+}
+
+export interface EApprovalHolderSummary {
+  holder: string;
+  count: number;
+  oldestDays: number;
+  overdue: number;
+  value: number;
+  requestIds: string[];
+}
+
+/**
+ * Who is holding the files this requester raised — the "pending with whom?" question, aggregated
+ * so chasing goes to the right desk. Most files first, then the longest-held.
+ */
+export function summarizeEApprovalHolders(
+  rows: EApprovalWorkRow[],
+  requesterId: string,
+  now: string | Date = new Date(),
+): EApprovalHolderSummary[] {
+  const nowMs = millis(now) ?? Date.now();
+  const tally = new Map<string, EApprovalHolderSummary>();
+  for (const row of rows) {
+    if (row.requesterId !== requesterId || !isOpenEApprovalStatus(row.status)) continue;
+    const holder =
+      row.pendingLabel?.replace(/^(Pending with|Verification pending with|Clarification pending with)\s*/i, '').trim() ||
+      'Unassigned';
+    const entry = tally.get(holder) ?? { holder, count: 0, oldestDays: 0, overdue: 0, value: 0, requestIds: [] };
+    entry.count += 1;
+    entry.value += row.amount ?? 0;
+    entry.requestIds.push(row.id);
+    const since = millis(row.submittedAt);
+    if (since != null) entry.oldestDays = Math.max(entry.oldestDays, Math.floor((nowMs - since) / DAY));
+    const due = millis(row.currentDueAt);
+    if (due != null && due < nowMs) entry.overdue += 1;
+    tally.set(holder, entry);
+  }
+  return Array.from(tally.values()).sort((a, b) => b.count - a.count || b.oldestDays - a.oldestDays);
+}
+
+export interface EApprovalMomentumPeriod {
+  raised: number;
+  approved: number;
+  rejected: number;
+  /** Median submission-to-closure of the files approved in the period, or null with none. */
+  medianCycleHours: number | null;
+  approvedValue: number;
+}
+
+export interface EApprovalMomentum {
+  period: 'month' | 'week';
+  current: EApprovalMomentumPeriod;
+  previous: EApprovalMomentumPeriod;
+}
+
+const median = (values: number[]): number | null => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+
+/**
+ * This period against the last: how many were raised, how many closed, how fast.
+ *
+ * Counted on the rows the caller has (their own workload), so it is the momentum of the approvals
+ * around this person, not of the organisation — the org-wide figure lives in Reports.
+ */
+export function eApprovalMomentum(
+  rows: EApprovalWorkRow[],
+  now: string | Date = new Date(),
+  period: 'month' | 'week' = 'month',
+): EApprovalMomentum {
+  const nowDate = parseEApprovalDate(now) ?? new Date();
+  let currentStart: number;
+  let previousStart: number;
+  if (period === 'month') {
+    currentStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime();
+    previousStart = new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1).getTime();
+  } else {
+    const startOfToday = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
+    // Weeks start on Monday, the working week this organisation keeps.
+    const dayOffset = (nowDate.getDay() + 6) % 7;
+    currentStart = startOfToday - dayOffset * DAY;
+    previousStart = currentStart - 7 * DAY;
+  }
+  const bucket = (from: number, to: number): EApprovalMomentumPeriod => {
+    const inWindow = (value: string | null | undefined) => {
+      const at = millis(value);
+      return at != null && at >= from && at < to;
+    };
+    const summary: EApprovalMomentumPeriod = { raised: 0, approved: 0, rejected: 0, medianCycleHours: null, approvedValue: 0 };
+    const cycles: number[] = [];
+    for (const row of rows) {
+      if (inWindow(row.submittedAt)) summary.raised += 1;
+      if (row.status === 'Approved' && inWindow(row.completedAt)) {
+        summary.approved += 1;
+        summary.approvedValue += row.amount ?? 0;
+        const submitted = millis(row.submittedAt);
+        const completed = millis(row.completedAt);
+        if (submitted != null && completed != null && completed >= submitted) cycles.push((completed - submitted) / HOUR);
+      }
+      if (row.status === 'Rejected' && inWindow(row.completedAt)) summary.rejected += 1;
+    }
+    summary.medianCycleHours = median(cycles);
+    return summary;
+  };
+  return {
+    period,
+    current: bucket(currentStart, Number.MAX_SAFE_INTEGER),
+    previous: bucket(previousStart, currentStart),
+  };
 }
 
 /* ------------------------------------------------------------------------------------------------

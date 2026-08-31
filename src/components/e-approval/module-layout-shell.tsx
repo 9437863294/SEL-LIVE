@@ -26,7 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 import { E_APPROVAL_BASE_PATH } from '@/lib/e-approval';
-import { useEApprovalPermissions } from './hooks';
+import { EApprovalModuleProvider, useEApprovalPermissions } from './hooks';
 
 type NavKey =
   | 'always'
@@ -73,6 +73,19 @@ const groupLabels: Record<string, string> = {
 };
 
 export default function EApprovalLayoutShell({ children }: { children: React.ReactNode }) {
+  return (
+    <EApprovalModuleProvider>
+      <EApprovalLayoutShellInner>{children}</EApprovalLayoutShellInner>
+    </EApprovalModuleProvider>
+  );
+}
+
+/**
+ * Split from the provider so `useEApprovalPermissions` (via `useAuthorization`, not this module's
+ * context) and the nav's own state are unaffected by where the provider sits — and so the provider
+ * wraps every route this layout renders, including the access-denied screen below.
+ */
+function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
   const permissions = useEApprovalPermissions();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);

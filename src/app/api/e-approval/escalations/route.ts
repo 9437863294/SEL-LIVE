@@ -178,6 +178,17 @@ export async function GET(request: Request) {
       }
       if (step.assignment.kind === 'Requester') recipients.add(approval.requesterId);
 
+      // An escalation with no configured targets still has to reach *somebody senior*, or "Escalate
+      // to HOD" is a reminder with a grander name. The holder's department head is the default: the
+      // head of the department the step is addressed to, else the head of the request's department.
+      if (entry.rule.kind === 'Escalation' && !entry.rule.targets?.length) {
+        const escalateTo =
+          step.assignment.kind === 'Department' && step.assignment.departmentId
+            ? step.assignment.departmentId
+            : approval.departmentId;
+        if (escalateTo) (await usersForDepartment(escalateTo, true)).forEach((userId) => recipients.add(userId));
+      }
+
       // Ladder targets: an escalation usually names the HOD or a senior authority.
       for (const target of entry.rule.targets ?? []) {
         if (target.userId) recipients.add(target.userId);

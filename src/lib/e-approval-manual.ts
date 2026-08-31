@@ -326,6 +326,10 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
               ['Reject', 'Close the request. A reason is required.'],
               ['Hold / Resume', 'Stop the clock while something is outstanding. Only you can release your own hold.'],
               ['Take Ownership', 'Claim a step addressed to your department, so it is yours alone.'],
+              [
+                'Assign to',
+                'Department heads only. Hand a file addressed to your department to a named member — or move it from one member to another. It stays on the department’s record.',
+              ],
               ['Add Participant', 'Give somebody view and comment access.'],
             ],
           ),
@@ -530,7 +534,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
             [
               ['Anyone', 'Any listed member can take it. Claiming it locks it to that person.'],
               ['Head', 'Goes straight to the department head.'],
-              ['Queue', 'Held for the head to assign to somebody.'],
+              ['Queue', 'Held for the head, who uses Assign to hand it to a member. Members cannot claim it themselves.'],
             ],
           ),
           warn(

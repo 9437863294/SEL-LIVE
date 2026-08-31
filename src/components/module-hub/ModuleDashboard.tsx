@@ -35,6 +35,7 @@ const moduleIcons: Record<string, string> = {
   "Vehicle Management": "Truck",
   "Driver Management": "SteeringWheel",
   "Site Account Statement": "LedgerChart",
+  "Tour, Travel & Expense": "Plane",
 };
 
 const moduleDescriptions: Record<string, string> = {
@@ -71,6 +72,8 @@ const moduleDescriptions: Record<string, string> = {
     "Driver mobile workflows, trip actions, and assignment execution.",
   "Site Account Statement":
     "Track project-wise payments, expenses, and budgets with forecasts and reports.",
+  "Tour, Travel & Expense":
+    "Raise tour requests, route them for approval, and manage travel advances, expense claims, and settlements.",
 };
 
 export default function ModuleDashboard() {

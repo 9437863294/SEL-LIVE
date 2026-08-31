@@ -8,6 +8,7 @@ import {
   getDoc,
   getDocs,
   limit as fsLimit,
+  onSnapshot,
   orderBy,
   query,
   runTransaction,
@@ -16,7 +17,10 @@ import {
   updateDoc,
   where,
   writeBatch,
+  type DocumentData,
+  type Query,
   type QueryConstraint,
+  type QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { withCreateAudit, withUpdateAudit, type AuditActor } from '@/lib/audit-fields';
@@ -598,6 +602,19 @@ export interface EApprovalListFilter {
  * each of them invent a different compromise.
  */
 export async function listEApprovals(filter: EApprovalListFilter): Promise<EApprovalRequest[]> {
+  const { firestoreQuery, narrow } = buildEApprovalListQuery(filter);
+  const snapshot = await getDocs(firestoreQuery);
+  return narrow(snapshot.docs);
+}
+
+/**
+ * The query behind `listEApprovals`, plus the in-memory narrowing it needs — shared with the live
+ * subscription so a screen cannot show one set of rows on first paint and a different set on update.
+ */
+function buildEApprovalListQuery(filter: EApprovalListFilter): {
+  firestoreQuery: Query<DocumentData>;
+  narrow: (docs: QueryDocumentSnapshot<DocumentData>[]) => EApprovalRequest[];
+} {
   const constraints: QueryConstraint[] = [...scopeQuery(filter.organizationId)];
   // Any array predicate pushes the status filter in memory. Firestore's rules on combining
   // `array-contains-any` with `in` differ from those for `array-contains`, and a query that works in
@@ -630,13 +647,38 @@ export async function listEApprovals(filter: EApprovalListFilter): Promise<EAppr
   constraints.push(orderBy('createdAt', 'desc'));
   if (filter.limit) constraints.push(fsLimit(filter.limit));
 
-  const snapshot = await getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.requests), ...constraints));
-  let rows = mapDocs<EApprovalRequest>(snapshot.docs).filter((row) => row.isDeleted !== true);
-  if (filterStatusInMemory && statuses.length) {
-    const allowed = new Set(statuses);
-    rows = rows.filter((row) => allowed.has(row.status));
-  }
-  return rows;
+  const allowed = new Set(statuses);
+  return {
+    firestoreQuery: query(collection(db, E_APPROVAL_COLLECTIONS.requests), ...constraints),
+    narrow: (docs) => {
+      let rows = mapDocs<EApprovalRequest>(docs).filter((row) => row.isDeleted !== true);
+      if (filterStatusInMemory && statuses.length) rows = rows.filter((row) => allowed.has(row.status));
+      return rows;
+    },
+  };
+}
+
+/**
+ * `listEApprovals`, but live.
+ *
+ * Returns the unsubscribe function. `onRows` fires on every server change, so an approval somebody
+ * else acts on while the inbox is open moves out of the inbox on its own — the alternative, a Refresh
+ * button, is how an approver comes to act on a file that a colleague has already forwarded.
+ */
+export function subscribeEApprovals(
+  filter: EApprovalListFilter,
+  onRows: (rows: EApprovalRequest[]) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  const { firestoreQuery, narrow } = buildEApprovalListQuery(filter);
+  return onSnapshot(
+    firestoreQuery,
+    (snapshot) => onRows(narrow(snapshot.docs)),
+    (error) => {
+      console.error('[e-approval] live query failed', error);
+      onError?.(error);
+    },
+  );
 }
 
 /**
@@ -661,6 +703,45 @@ export async function loadEApprovalWorkload(
   const byId = new Map<string, EApprovalRequest>();
   [...mine, ...byDepartment, ...byRole, ...created].forEach((row) => byId.set(row.id, row));
   return Array.from(byId.values());
+}
+
+/**
+ * `loadEApprovalWorkload`, but live.
+ *
+ * The same four queries, each subscribed, merged by id on every change. `onRows` is first called once
+ * every source has reported (so the dashboard never paints a partial workload and then "grows"), and
+ * thereafter on any change to any of them. Returns the unsubscribe for all four.
+ */
+export function subscribeEApprovalWorkload(
+  actor: EApprovalActor,
+  organizationId: string | undefined,
+  onRows: (rows: EApprovalRequest[]) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  const sources: EApprovalListFilter[] = [
+    { organizationId, assigneeId: actor.userId, limit: 300 },
+    ...(actor.departmentIds?.length ? [{ organizationId, departmentIds: actor.departmentIds, limit: 300 }] : []),
+    ...(actor.role ? [{ organizationId, role: actor.role, limit: 300 }] : []),
+    { organizationId, requesterId: actor.userId, limit: 300 },
+  ];
+  const latest = new Map<number, EApprovalRequest[]>();
+  const emit = () => {
+    if (latest.size < sources.length) return;
+    const byId = new Map<string, EApprovalRequest>();
+    for (const rows of latest.values()) rows.forEach((row) => byId.set(row.id, row));
+    onRows(Array.from(byId.values()));
+  };
+  const unsubscribes = sources.map((filter, index) =>
+    subscribeEApprovals(
+      filter,
+      (rows) => {
+        latest.set(index, rows);
+        emit();
+      },
+      onError,
+    ),
+  );
+  return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
 }
 
 /* ------------------------------------------------------------------------------------------------

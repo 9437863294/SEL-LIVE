@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, Table2 } from 'lucide-react';
+import { AlertTriangle, CalendarClock, CheckCircle2, Clock, FileClock, Table2, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { formatEApprovalDate } from '@/components/e-approval/hooks';
+import type { EApprovalAgendaBucket, EApprovalCoverageNotice } from '@/lib/e-approval';
 
 /**
  * Chart parameters for the module, validated rather than eyeballed.
@@ -299,6 +301,144 @@ export function ChartCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * "You are covering for Priya until 25 Aug" / "Rahul is covering your files until 30 Aug".
+ *
+ * Read straight off the actor's own delegations (`eApprovalCoverageNotices`), so it costs no query.
+ * Shown near the top of the dashboard because a substitute who does not know they are one is a file
+ * that stalls for a fortnight, and a person who does not know somebody is covering for them keeps
+ * chasing their own inbox unnecessarily.
+ */
+export function EApprovalCoverageBanner({ notices }: { notices: EApprovalCoverageNotice[] }) {
+  if (!notices.length) return null;
+  return (
+    <div className="space-y-1.5">
+      {notices.map((notice) => (
+        <div
+          key={notice.delegationId}
+          className="flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900"
+        >
+          <UserCheck className="h-4 w-4 shrink-0 text-violet-600" />
+          <span>
+            {notice.kind === 'covering' ? (
+              <>
+                You are covering for <span className="font-semibold">{notice.counterpartName || 'a colleague'}</span>
+                {notice.until ? (
+                  <>
+                    {' '}
+                    until <span className="font-medium">{formatEApprovalDate(notice.until)}</span>
+                  </>
+                ) : (
+                  ' until further notice'
+                )}
+                . Their approvals reach you too.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold">{notice.counterpartName || 'A colleague'}</span> is covering your
+                approvals
+                {notice.until ? (
+                  <>
+                    {' '}
+                    until <span className="font-medium">{formatEApprovalDate(notice.until)}</span>
+                  </>
+                ) : (
+                  ' until further notice'
+                )}
+                .
+              </>
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * "3 files will breach their SLA within 24 hours if nobody acts." A projection, not a count of what
+ * is already overdue — those are the red triage chip. This is the warning a minute before that.
+ */
+export function EApprovalBreachBanner({
+  count,
+  value,
+  withinHours,
+  href,
+}: {
+  count: number;
+  value: number;
+  withinHours: number;
+  href: string;
+}) {
+  if (count <= 0) return null;
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 transition-colors hover:bg-amber-100"
+    >
+      <FileClock className="h-4 w-4 shrink-0 text-amber-600" />
+      <span>
+        At this pace, <span className="font-semibold">{count}</span> more {count === 1 ? 'file' : 'files'} will breach
+        {withinHours <= 24 ? ' its SLA today' : ` its SLA within ${Math.round(withinHours / 24)} days`} —{' '}
+        {compactRupees(value)} of value.
+      </span>
+    </Link>
+  );
+}
+
+const agendaBucketTone: Record<EApprovalAgendaBucket, string> = {
+  Overdue: 'border-rose-200 bg-rose-50 text-rose-800',
+  Today: 'border-amber-200 bg-amber-50 text-amber-900',
+  Tomorrow: 'border-sky-200 bg-sky-50 text-sky-800',
+  'This week': 'border-slate-200 bg-slate-50 text-slate-700',
+  Later: 'border-slate-200 bg-slate-50 text-slate-600',
+  'No deadline': 'border-slate-200 bg-slate-50 text-slate-500',
+};
+
+/**
+ * The deadline agenda: Overdue / Today / Tomorrow / This week / Later, each a horizontally
+ * scrollable strip of cards. A diary view alongside the SLA-clock triage above it — the triage says
+ * how urgent, the agenda says *when*.
+ */
+export function EApprovalAgendaStrip({
+  groups,
+}: {
+  groups: Array<{ bucket: EApprovalAgendaBucket; rows: Array<{ id: string; referenceNo?: string; subject?: string; currentDueAt?: string | null }> }>;
+}) {
+  if (!groups.length) return null;
+  return (
+    <div>
+      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <CalendarClock className="h-3.5 w-3.5" /> Deadline agenda
+      </p>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {groups.map((group) => (
+          <div key={group.bucket} className={cn('shrink-0 rounded-lg border px-2.5 py-2', agendaBucketTone[group.bucket])}>
+            <p className="text-[10px] font-semibold uppercase tracking-wide">
+              {group.bucket} · {group.rows.length}
+            </p>
+            <div className="mt-1 space-y-1">
+              {group.rows.slice(0, 3).map((row) => (
+                <Link
+                  key={row.id}
+                  href={`/e-approval/${row.id}`}
+                  className="block max-w-[180px] truncate text-xs font-medium hover:underline"
+                  title={row.subject}
+                >
+                  {row.subject || row.referenceNo || 'Untitled'}
+                </Link>
+              ))}
+              {group.rows.length > 3 && (
+                <p className="text-[10px] text-muted-foreground">+{group.rows.length - 3} more</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

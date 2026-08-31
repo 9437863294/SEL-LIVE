@@ -72,6 +72,10 @@ export default function ModuleCard({
       // The slug fallback below would produce "hr-&-recruitment", so this needs naming explicitly.
       case "HR & Recruitment":
         return "/hr";
+      // The slug fallback below would produce "tour,-travel-&-expense" (comma and ampersand carried
+      // straight through), a URL no route matches, so this needs naming explicitly too.
+      case "Tour, Travel & Expense":
+        return "/tour-travel";
       case "Letter of Credit Management":
         return "/letter-of-credit";
       case "Bank Guarantee Management":

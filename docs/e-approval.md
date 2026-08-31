@@ -106,7 +106,8 @@ testable as a table and lets the same function run on the client, in a service c
 | Hold / Resume | Pauses and restarts the clock. Only the holder can release it. |
 | Cancel | Requester only, while not terminal. |
 | Resubmit | Requester only, from Returned. Runs change detection (below). |
-| Take Ownership | Claims a department-queue step. |
+| Take Ownership | Claims a department step. Any member in 'Anyone' mode; only the head in 'Queue' mode. |
+| Assign | Department head hands a department step to a named member (or moves it between members). Sets `ownedByUserId`; the assignment stays departmental. Recallable. |
 | Add Participant | Grants view/comment access. |
 
 Anything the actor is not entitled to do throws `EApprovalRuleError` rather than silently no-oping —
