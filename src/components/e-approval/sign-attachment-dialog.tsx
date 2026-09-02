@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { EApprovalAttachment, EApprovalSignatureRecord } from '@/lib/e-approval';
 import {
   loadEApprovalSignature,
+  proxiedEApprovalFileUrl,
   signEApprovalAttachment,
   type EApprovalServiceActor,
 } from '@/lib/e-approval-service';
@@ -76,7 +77,10 @@ export function EApprovalSignAttachmentDialog({
     setLoading(true);
     setLoadError(null);
     try {
-      const [savedSignature, response] = await Promise.all([loadEApprovalSignature(serviceActor.userId), fetch(attachment.url)]);
+      const [savedSignature, response] = await Promise.all([
+        loadEApprovalSignature(serviceActor.userId),
+        fetch(proxiedEApprovalFileUrl(attachment.url)),
+      ]);
       setSignature(savedSignature);
       if (!response.ok) throw new Error('Could not read this document.');
       const bytes = await response.arrayBuffer();

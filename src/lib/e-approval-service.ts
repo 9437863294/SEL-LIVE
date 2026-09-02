@@ -1820,6 +1820,19 @@ export async function saveEApprovalSignature(
   return { id: who.userId, ...(record as unknown as Omit<EApprovalSignatureRecord, 'id'>) };
 }
 
+/**
+ * Routes a Firebase Storage download URL through this app's own server instead of fetching it
+ * directly from the browser.
+ *
+ * A plain `fetch(storageUrl)` from client code fails with "Failed to fetch" — Firebase Storage's
+ * download host does not send the browser a permissive `Access-Control-Allow-Origin` for a
+ * script-initiated request, only for a full navigation (an `<a href>` click, an `<img src>`). See
+ * `src/app/api/e-approval/fetch-attachment/route.ts` for what actually fetches the bytes and why a
+ * proxy, rather than bucket CORS configuration, is the fix here.
+ */
+export const proxiedEApprovalFileUrl = (url: string): string =>
+  `/api/e-approval/fetch-attachment?url=${encodeURIComponent(url)}`;
+
 export interface SignEApprovalAttachmentOptions {
   /** 0-based. */
   pageIndex: number;
@@ -1851,8 +1864,8 @@ export async function signEApprovalAttachment(
 
   const [{ embedEApprovalSignatureIntoPdf }, pdfResponse, signatureResponse] = await Promise.all([
     import('@/lib/e-approval-pdf-signing'),
-    fetch(attachment.url),
-    fetch(signature.url),
+    fetch(proxiedEApprovalFileUrl(attachment.url)),
+    fetch(proxiedEApprovalFileUrl(signature.url)),
   ]);
   if (!pdfResponse.ok) throw new EApprovalServiceError('Could not read the original document to sign it.');
   if (!signatureResponse.ok) throw new EApprovalServiceError('Could not read your saved signature.');
