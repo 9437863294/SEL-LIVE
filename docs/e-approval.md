@@ -20,6 +20,8 @@ intended to call this engine rather than each building their own approval logic.
 | `src/lib/e-approval-manual.ts` | **The handbook, as data.** The single source for both the in-app Guide and the Word manual. |
 | `src/app/(protected)/e-approval/help/page.tsx` | The Guide screen — renders the handbook with an audience filter and full-text search. |
 | `scripts/build-e-approval-manual.mjs` | Renders the same handbook into `.docx`. `npm run manual:e-approval`. |
+| `src/lib/e-approval-pdf-signing.ts` | Pure signature-placement geometry + the `pdf-lib` embedding call. Unit-tested (`tests/e-approval-pdf-signing.test.mjs`). |
+| `src/components/e-approval/signature-pad.tsx`, `sign-attachment-dialog.tsx` | Capturing a signature and burning it into a PDF attachment. |
 
 ## The handbook
 
@@ -187,6 +189,7 @@ eApprovalDepartmentRouting
 eApprovalDelegations     substitute approvers, dated
 eApprovalSettings        one document per organisation
 eApprovalCounters        reference-number sequences, per FY and department
+eApprovalSignatures      one per user — their saved signature image, overwritten on replace
 ```
 
 Three collections the original spec lists are deliberately absent:
@@ -229,6 +232,37 @@ Deliberately excludes two things that would otherwise leak in: the cron's own `E
 entries (`actorId: 'system'`, never matches a real user) and actions a delegate took on *this*
 person's steps (`onBehalfOfUserId === them`, `actorId` is the delegate) — that is what the delegate
 did, correctly attributed to the delegate's own log, not to the person they were covering for.
+
+## Signing an attachment
+
+Any PDF attachment can be signed from the Attachments tab. This is a **visual mark, not a
+cryptographic signature** — the same trust model as signing a paper note-sheet by hand: the record
+shows who placed it, when, and on which page, not a certificate chain. A legally-binding digital
+signature (a DSC — eMudhra, (n)Code, a USB token, the kind GST/MCA filings use) is a materially
+different feature: it needs a licensed certificate provider, is issued to a person rather than drawn
+by them, and cannot be added by a web app on its own. If that is ever needed, it is a separate
+integration, not an extension of this one.
+
+How it works:
+
+1. **`eApprovalSignatures/{userId}`** holds one saved signature per person — drawn on a canvas or
+   uploaded as an image, converted to PNG and (for a drawn one) cropped to its own ink's bounding box
+   so a small signature is not stretched to a fixed pad's aspect ratio (`signature-pad.tsx`). Saved
+   once, reused every time; replacing it overwrites the old one, because a signature is a personal
+   setting rather than part of any approval's record.
+2. **`computeEApprovalSignaturePlacement`** (`e-approval-pdf-signing.ts`, pure, unit-tested) turns a
+   page size, one of nine anchors (corners, edges, centre), a width-as-percentage-of-page-width, and
+   an optional fine offset into an `{x, y, width, height}` in PDF point-space, clamped fully on the
+   page. There is deliberately no live page preview — that would need a PDF-rendering dependency
+   (e.g. `pdfjs-dist`) to draw the actual page for drag-and-drop placement. The nine-anchor picker is
+   the cheaper, still-real v1; a WYSIWYG placement is the natural upgrade if this proves imprecise.
+3. **`signEApprovalAttachment`** fetches the original PDF and the saved signature (both already
+   reachable client-side via their Storage download URLs — no server round trip), embeds the PNG with
+   `pdf-lib`, and uploads the result as a **new** attachment with `signedFromAttachmentId` pointing at
+   the original. The source PDF is never touched, the same rule every attachment in this module
+   already follows for a revised quotation. A document can be signed more than once — signing an
+   already-signed copy adds a second mark, which is what a note-sheet needing two signatories on one
+   document actually wants.
 
 ## Reference numbers
 
@@ -275,6 +309,11 @@ Stated plainly so nobody hunts for them:
 - **Other modules calling the engine** — the engine is ready for it (`submitEApproval` +
   `performEApprovalAction` take everything they need), but no existing module has been migrated onto
   it.
+- **A cryptographic digital signature (DSC)** — signing an attachment burns a visual signature image
+  into the PDF (see "Signing an attachment" above); it is not a certificate-backed, legally-binding
+  signature and does not attempt to be. That is a separate integration with a licensed provider.
+- **Live PDF placement preview** — the sign dialog offers nine fixed anchors and a fine offset rather
+  than a draggable preview of the actual page, to avoid a PDF-rendering dependency for v1.
 
 ## Recall and reverse (taking an action back)
 

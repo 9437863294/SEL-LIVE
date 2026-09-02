@@ -70,6 +70,7 @@ export const E_APPROVAL_COLLECTIONS = {
   departmentRouting: 'eApprovalDepartmentRouting',
   settings: 'eApprovalSettings',
   counters: 'eApprovalCounters',
+  signatures: 'eApprovalSignatures',
 } as const;
 
 export const E_APPROVAL_PERMISSION_RESOURCE = 'E-Approval';
@@ -283,6 +284,34 @@ export interface EApprovalAttachment extends EApprovalAuditFields {
   uploadedAt?: string;
   /** Points at the attachment this one replaces. The original is never overwritten (spec section 8). */
   supersedesAttachmentId?: string | null;
+  /**
+   * Set when this attachment is a signed copy of another one — the signature is burned into the PDF
+   * itself, produced as a *new* attachment rather than edited in place, for the same reason a
+   * revised quotation is a new file beside the original: the record has to keep showing what an
+   * approver actually saw signed, unmodifiable after the fact.
+   */
+  signedFromAttachmentId?: string;
+  signedByUserId?: string;
+  signedByName?: string;
+  signedAt?: string;
+  signedPage?: number;
+}
+
+/**
+ * One person's saved signature — a drawn or uploaded image, reused every time they sign a document
+ * in this module rather than redrawn each time. One per user; saving again replaces it (the image
+ * itself, in Storage, is overwritten on purpose here — unlike an approval attachment, a signature is
+ * a personal setting, not part of any approval's record. Documents it has already been burned into
+ * keep their own copy and are unaffected by a later change).
+ */
+export interface EApprovalSignatureRecord extends EApprovalAuditFields {
+  id: string;
+  organizationId?: string;
+  url: string;
+  storagePath: string;
+  /** Natural pixel size of the stored image, so it is placed at the right aspect ratio. */
+  width: number;
+  height: number;
 }
 
 /** A frozen snapshot of the content a set of approvals was given against (spec section 6). */

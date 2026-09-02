@@ -68,6 +68,7 @@ import {
   type EApprovalRequestState,
   type EApprovalRuleRecord,
   type EApprovalSettingsRecord,
+  type EApprovalSignatureRecord,
   type EApprovalStatus,
   type EApprovalStep,
   type EApprovalStepRecord,
@@ -77,6 +78,7 @@ import {
   type EApprovalUndoEligibility,
   type EApprovalVersionRecord,
 } from '@/lib/e-approval';
+import type { EApprovalSignaturePosition } from '@/lib/e-approval-pdf-signing';
 
 /**
  * Write-side service for the E-Approval module.
@@ -1756,6 +1758,150 @@ export async function uploadEApprovalAttachment(
     recordId: approvalId,
     recordRef: request.referenceNo,
   });
+  return { id: created.id, ...(record as unknown as Omit<EApprovalAttachment, 'id'>) };
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Signatures — a saved image, burned into an uploaded PDF on request
+ * ---------------------------------------------------------------------------------------------- */
+
+/** The signed-in user's saved signature, or null if they have never saved one. */
+export async function loadEApprovalSignature(
+  userId: string,
+): Promise<EApprovalSignatureRecord | null> {
+  const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.signatures, userId));
+  if (!snapshot.exists()) return null;
+  return { id: snapshot.id, ...(snapshot.data() as Omit<EApprovalSignatureRecord, 'id'>) };
+}
+
+/**
+ * Saves (or replaces) the actor's signature image, one per user.
+ *
+ * Overwriting is correct here in a way it is not for an approval attachment: a signature is a
+ * personal setting, not part of any approval's record, so there is nothing that needs a version kept
+ * of the old one. A document already signed keeps the copy that was burned into it at the time —
+ * changing your saved signature tomorrow does not reach back and alter what you signed yesterday.
+ */
+export async function saveEApprovalSignature(
+  imageBlob: Blob,
+  dimensions: { width: number; height: number },
+  actor: EApprovalServiceActor,
+): Promise<EApprovalSignatureRecord> {
+  const who = requireActor(actor);
+  const [{ storage }, { getDownloadURL, ref, uploadBytes }] = await Promise.all([
+    import('@/lib/firebase-storage'),
+    import('firebase/storage'),
+  ]);
+  const storagePath = `${E_APPROVAL_STORAGE_PREFIX}/signatures/${who.userId}.png`;
+  const storageRef = ref(storage, storagePath);
+  await uploadBytes(storageRef, imageBlob, { contentType: 'image/png' });
+  // Cache-bust the URL so a browser that already fetched the old signature (e.g. the sign dialog,
+  // left open across a re-save) does not silently keep using it from HTTP cache.
+  const url = `${await getDownloadURL(storageRef)}&_v=${Date.now()}`;
+
+  const existing = await loadEApprovalSignature(who.userId);
+  const record = pruneUndefined({
+    organizationId: who.organizationId,
+    url,
+    storagePath,
+    width: dimensions.width,
+    height: dimensions.height,
+    ...(existing ? withUpdateAudit(who) : withCreateAudit(who)),
+  } as Record<string, unknown>);
+  await setDoc(doc(db, E_APPROVAL_COLLECTIONS.signatures, who.userId), record, { merge: true });
+  return { id: who.userId, ...(record as unknown as Omit<EApprovalSignatureRecord, 'id'>) };
+}
+
+export interface SignEApprovalAttachmentOptions {
+  /** 0-based. */
+  pageIndex: number;
+  position: EApprovalSignaturePosition;
+  widthPct: number;
+  offsetX?: number;
+  offsetY?: number;
+}
+
+/**
+ * Signs one PDF attachment: fetches its bytes and the actor's saved signature, burns the signature
+ * in at the chosen spot, and uploads the result as a *new* attachment pointing back at the original
+ * via `signedFromAttachmentId` — the original is never touched, the rule every attachment in this
+ * module already follows for a revised quotation or a corrected drawing.
+ */
+export async function signEApprovalAttachment(
+  approvalId: string,
+  attachment: EApprovalAttachment,
+  options: SignEApprovalAttachmentOptions,
+  actor: EApprovalServiceActor,
+): Promise<EApprovalAttachment> {
+  const who = requireActor(actor);
+  const signature = await loadEApprovalSignature(who.userId);
+  if (!signature) {
+    throw new EApprovalServiceError('Save a signature first — draw one or upload an image of it.');
+  }
+  const request = await getEApprovalRequest(approvalId);
+  if (!request) throw new EApprovalServiceError('This approval no longer exists.');
+
+  const [{ embedEApprovalSignatureIntoPdf }, pdfResponse, signatureResponse] = await Promise.all([
+    import('@/lib/e-approval-pdf-signing'),
+    fetch(attachment.url),
+    fetch(signature.url),
+  ]);
+  if (!pdfResponse.ok) throw new EApprovalServiceError('Could not read the original document to sign it.');
+  if (!signatureResponse.ok) throw new EApprovalServiceError('Could not read your saved signature.');
+
+  const signedBytes = await embedEApprovalSignatureIntoPdf(
+    await pdfResponse.arrayBuffer(),
+    await signatureResponse.arrayBuffer(),
+    options,
+  );
+
+  const [{ storage }, { getDownloadURL, ref, uploadBytes }] = await Promise.all([
+    import('@/lib/firebase-storage'),
+    import('firebase/storage'),
+  ]);
+  const signedName = `${attachment.name.replace(/\.pdf$/i, '')} (signed).pdf`;
+  const safeName = signedName.replace(/[^\w.\-() ]+/g, '_');
+  const storagePath = `${E_APPROVAL_STORAGE_PREFIX}/${approvalId}/v${request.version}/${Date.now()}-${safeName}`;
+  const storageRef = ref(storage, storagePath);
+  // `signedBytes` is a plain Uint8Array; Blob needs an ArrayBuffer-backed view to construct from.
+  const signedBlob = new Blob([signedBytes as BlobPart], { type: 'application/pdf' });
+  await uploadBytes(storageRef, signedBlob, { contentType: 'application/pdf' });
+  const url = await getDownloadURL(storageRef);
+
+  const record = pruneUndefined({
+    approvalId,
+    organizationId: who.organizationId,
+    name: signedName,
+    url,
+    storagePath,
+    contentType: 'application/pdf',
+    size: signedBlob.size,
+    stepId: null,
+    stepName: null,
+    version: request.version,
+    description: `Signed copy of "${attachment.name}"`,
+    signedFromAttachmentId: attachment.id,
+    signedByUserId: who.userId,
+    signedByName: who.userName,
+    signedAt: nowIso(),
+    signedPage: options.pageIndex + 1,
+    uploadedById: who.userId,
+    uploadedByName: who.userName,
+    uploadedAt: nowIso(),
+    ...withCreateAudit(who),
+  } as Record<string, unknown>);
+
+  const created = await addDoc(collection(db, E_APPROVAL_COLLECTIONS.attachments), record);
+  await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId), {
+    attachmentCount: (request.attachmentCount ?? 0) + 1,
+    ...withUpdateAudit(who),
+  });
+  await logEApprovalActivity(
+    who,
+    'Sign Attachment',
+    { name: attachment.name, page: options.pageIndex + 1 },
+    { recordId: approvalId, recordRef: request.referenceNo },
+  );
   return { id: created.id, ...(record as unknown as Omit<EApprovalAttachment, 'id'>) };
 }
 

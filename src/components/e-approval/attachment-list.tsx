@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Download, FileText, Loader2, Paperclip, Upload } from 'lucide-react';
+import { Download, FileSignature, FileText, Loader2, Paperclip, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,11 @@ import type { EApprovalAttachment } from '@/lib/e-approval';
 import { uploadEApprovalAttachment, type EApprovalServiceActor } from '@/lib/e-approval-service';
 import { EApprovalEmptyState } from './shared';
 import { formatEApprovalDateTime } from './hooks';
+import { EApprovalSignAttachmentDialog } from './sign-attachment-dialog';
+
+/** Content-type sniffing is unreliable for older uploads; the extension is the honest fallback. */
+const isPdf = (attachment: EApprovalAttachment): boolean =>
+  attachment.contentType === 'application/pdf' || /\.pdf$/i.test(attachment.name);
 
 const prettySize = (size: number | undefined) => {
   if (!size) return '';
@@ -40,6 +45,7 @@ export function AttachmentList({
 }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
+  const [signing, setSigning] = useState<EApprovalAttachment | null>(null);
 
   const byVersion = useMemo(() => {
     const groups = new Map<number, EApprovalAttachment[]>();
@@ -107,6 +113,12 @@ export function AttachmentList({
                       {attachment.size ? ` · ${prettySize(attachment.size)}` : ''}
                       {attachment.stepName ? ` · at ${attachment.stepName}` : ''}
                     </p>
+                    {attachment.signedByName && (
+                      <p className="truncate text-[11px] text-emerald-700">
+                        Signed by {attachment.signedByName} · {formatEApprovalDateTime(attachment.signedAt)}
+                        {attachment.signedPage ? ` · page ${attachment.signedPage}` : ''}
+                      </p>
+                    )}
                     {attachment.description && (
                       <p className="truncate text-[11px] italic text-muted-foreground">{attachment.description}</p>
                     )}
@@ -115,6 +127,22 @@ export function AttachmentList({
                     <Badge variant="outline" className="shrink-0 text-[10px]">
                       Revision
                     </Badge>
+                  )}
+                  {attachment.signedByName && (
+                    <Badge variant="outline" className="shrink-0 gap-1 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-800">
+                      <FileSignature className="h-3 w-3" /> Signed
+                    </Badge>
+                  )}
+                  {canUpload && isPdf(attachment) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 shrink-0 gap-1 px-2 text-xs"
+                      onClick={() => setSigning(attachment)}
+                    >
+                      <FileSignature className="h-3.5 w-3.5" /> Sign
+                    </Button>
                   )}
                   <Button asChild size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-2 text-xs">
                     <a href={attachment.url} target="_blank" rel="noopener noreferrer">
@@ -127,6 +155,15 @@ export function AttachmentList({
           </div>
         ))
       )}
+
+      <EApprovalSignAttachmentDialog
+        open={signing !== null}
+        onOpenChange={(next) => !next && setSigning(null)}
+        approvalId={approvalId}
+        attachment={signing}
+        serviceActor={serviceActor}
+        onSigned={onChanged}
+      />
     </div>
   );
 }

@@ -261,6 +261,30 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
           ),
         ],
       },
+      {
+        id: 'signing-attachments',
+        number: '1.8',
+        title: 'Signing a document',
+        audience: 'everyone',
+        summary: 'Draw or upload your signature once, then stamp it onto any PDF attachment.',
+        blocks: [
+          p(
+            'Open the Attachments tab and choose Sign on any PDF. The first time, you will be asked to draw your signature with a finger, stylus or mouse, or upload an image of it — it is saved and reused automatically from then on.',
+          ),
+          steps(
+            'Choose which page to sign.',
+            'Choose roughly where on the page — one of nine positions (corners, edges or centre) — and how large.',
+            'Optionally fine-tune the exact spot.',
+            'Sign & save.',
+          ),
+          note(
+            'Signing creates a new, signed copy of the document. The original you uploaded is never changed, and stays on the record exactly as it was.',
+          ),
+          warn(
+            'This is a visual signature — a scanned mark, the same as signing a paper note-sheet by hand. It is not a certificate-backed digital signature (a DSC). If your organisation needs a legally-binding cryptographic signature, that requires a licensed signing provider and is outside what this module does.',
+          ),
+        ],
+      },
     ],
   },
 
@@ -660,6 +684,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
             'Comments do not support voice notes.',
             'The workflow builder is a structured list editor, not a drag-and-drop canvas.',
             'No other module yet routes its approvals through this engine, though it is built to accept them.',
+            'Signing a document places a visual mark, not a certificate-backed digital signature (DSC) — see 1.8.',
           ),
         ],
       },

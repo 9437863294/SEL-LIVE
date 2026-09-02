@@ -13,7 +13,8 @@
     "src/lib/e-approval-policy.ts",
     "src/lib/e-approval-analytics.ts",
     "src/lib/e-approval.ts",
-    "src/lib/e-approval-service.ts"
+    "src/lib/e-approval-service.ts",
+    "src/lib/e-approval-pdf-signing.ts"
   ],
   "exclude": [
     "node_modules"
