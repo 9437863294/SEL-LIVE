@@ -1404,10 +1404,24 @@
         },
         {
           "fieldPath": "expenseDate",
-          "order": "DESCENDING"
+          "order": "ASCENDING"
         },
         {
-          "fieldPath": "__name__",
+          "fieldPath": "expenseAmount",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "expenseCategory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expenseDate",
           "order": "DESCENDING"
         }
       ]
@@ -1463,20 +1477,6 @@
         {
           "fieldPath": "expenseAmount",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "siteAccountExpenses",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "expenseDate",
-          "order": "DESCENDING"
-        },
-        {
-          "fieldPath": "__name__",
-          "order": "DESCENDING"
         }
       ]
     },
@@ -1490,10 +1490,24 @@
         },
         {
           "fieldPath": "expenseDate",
-          "order": "DESCENDING"
+          "order": "ASCENDING"
         },
         {
-          "fieldPath": "__name__",
+          "fieldPath": "expenseAmount",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "isGstBill",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expenseDate",
           "order": "DESCENDING"
         }
       ]
@@ -1530,10 +1544,24 @@
         },
         {
           "fieldPath": "expenseDate",
-          "order": "DESCENDING"
+          "order": "ASCENDING"
         },
         {
-          "fieldPath": "__name__",
+          "fieldPath": "expenseAmount",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "paymentMode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expenseDate",
           "order": "DESCENDING"
         }
       ]
@@ -1592,10 +1620,28 @@
         },
         {
           "fieldPath": "expenseDate",
-          "order": "DESCENDING"
+          "order": "ASCENDING"
         },
         {
-          "fieldPath": "__name__",
+          "fieldPath": "expenseAmount",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expenseCategory",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expenseDate",
           "order": "DESCENDING"
         }
       ]
@@ -1642,10 +1688,6 @@
         },
         {
           "fieldPath": "expenseDate",
-          "order": "DESCENDING"
-        },
-        {
-          "fieldPath": "__name__",
           "order": "DESCENDING"
         }
       ]
@@ -1664,10 +1706,28 @@
         },
         {
           "fieldPath": "expenseDate",
-          "order": "DESCENDING"
+          "order": "ASCENDING"
         },
         {
-          "fieldPath": "__name__",
+          "fieldPath": "expenseAmount",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isGstBill",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expenseDate",
           "order": "DESCENDING"
         }
       ]
@@ -1686,10 +1746,64 @@
         },
         {
           "fieldPath": "expenseDate",
-          "order": "DESCENDING"
+          "order": "ASCENDING"
         },
         {
-          "fieldPath": "__name__",
+          "fieldPath": "expenseAmount",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountExpenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "paymentMode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "expenseDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "paymentMode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "receiptDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "receivedAmount",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "siteAccountPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "projectId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "paymentMode",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "receiptDate",
           "order": "DESCENDING"
         }
       ]
@@ -1737,10 +1851,6 @@
         {
           "fieldPath": "receiptDate",
           "order": "DESCENDING"
-        },
-        {
-          "fieldPath": "__name__",
-          "order": "DESCENDING"
         }
       ]
     },
@@ -1755,20 +1865,6 @@
         {
           "fieldPath": "receivedAmount",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "siteAccountPayments",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "receiptDate",
-          "order": "DESCENDING"
-        },
-        {
-          "fieldPath": "__name__",
-          "order": "DESCENDING"
         }
       ]
     },

@@ -24,7 +24,6 @@
 import {
   collection,
   count,
-  documentId,
   getAggregateFromServer,
   getCountFromServer,
   getDocs,
@@ -109,13 +108,22 @@ export interface SASCursor {
   readonly marks: (QueryDocumentSnapshot<DocumentData> | null)[];
   /** Indices of chunks that returned nothing further, so they are not re-queried on later pages. */
   readonly done: readonly number[];
+  /**
+   * Row offset, set only while paging through an unindexed fallback result.
+   *
+   * Firestore cursors are document snapshots from an ordered server query. When the composite index
+   * that ordering needs does not exist, there is no server ordering to anchor to, so the fallback
+   * sorts client-side and pages by position instead.
+   */
+  readonly offset?: number;
 }
 
 function makeCursor(
   marks: (QueryDocumentSnapshot<DocumentData> | null)[],
   done: readonly number[],
+  offset?: number,
 ): SASCursor {
-  return { __brand: 'SASCursor', marks, done } as SASCursor;
+  return { __brand: 'SASCursor', marks, done, offset } as SASCursor;
 }
 
 const chunkScope = (projectIds: string[] | null) => chunkProjectIds(projectIds);
@@ -144,6 +152,119 @@ function isMissingIndex(error: unknown): boolean {
   return (error as { code?: string })?.code === 'failed-precondition';
 }
 
+let warnedAboutIndexes = false;
+
+/**
+ * How long to stop attempting a query shape that has already failed for want of an index.
+ *
+ * Without this, every call re-attempts the indexed path, eats a failed round-trip, and lets the
+ * Firestore SDK log its own error before our fallback runs — so a single page load produces a dozen
+ * wasted requests and a wall of red console output for a condition we already know about.
+ *
+ * It expires rather than latching so that a tab left open while `firebase deploy --only
+ * firestore:indexes` finishes picks the fast path back up on its own, without a reload.
+ */
+const INDEX_RETRY_MS = 5 * 60 * 1000;
+
+/** Query shape → when it is worth attempting the indexed path again. */
+const indexUnavailableUntil = new Map<string, number>();
+
+function indexKnownMissing(shape: string): boolean {
+  const until = indexUnavailableUntil.get(shape);
+  if (until === undefined) return false;
+  if (Date.now() >= until) {
+    indexUnavailableUntil.delete(shape);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Records that a query shape has no index yet, and tells the developer once.
+ *
+ * Every function here can answer its question without the composite indexes, just less efficiently.
+ * That matters because the indexes in `firestore.indexes.json` have to be deployed separately
+ * (`firebase deploy --only firestore:indexes`) and take minutes to build — the module must keep
+ * working in the gap rather than showing the user an error they cannot act on.
+ */
+function noteMissingIndex(shape: string): void {
+  indexUnavailableUntil.set(shape, Date.now() + INDEX_RETRY_MS);
+  if (!warnedAboutIndexes) {
+    warnedAboutIndexes = true;
+    console.warn(
+      '[SAS] Composite indexes are not deployed yet — falling back to client-side filtering. '
+      + 'Run `firebase deploy --only firestore:indexes` and allow a few minutes for them to build. '
+      + 'Figures stay correct; queries are slower and read more until then.',
+    );
+  }
+}
+
+/**
+ * Every row for one chunk, without relying on any composite index.
+ *
+ * Firestore always has single-field indexes, so exactly two query shapes are safe here: filtering on
+ * `projectId` alone, or ranging and ordering on the date field alone. Anything that combines them
+ * needs the composite index this path exists precisely because we do not have.
+ *
+ *   • Scoped to projects → filter on `projectId` and apply dates locally. Deliberately unbounded:
+ *     truncating without a server-side ordering would drop arbitrary rows and quietly understate
+ *     every total. This path is transitional — once the indexes are built it stops being used — so
+ *     reading a project's rows in full is the right trade against reporting a wrong number.
+ *   • All projects → range and order on the date field server-side, which *is* a single-field
+ *     query, and cap the read. Filtering after a cap would be the silent-truncation bug above, so
+ *     the bound goes into the query rather than into the loop below.
+ */
+async function fetchChunkUnindexed(
+  kind: LedgerKind,
+  scope: SASLedgerScope,
+  chunk: string[] | null,
+  maxScan: number,
+): Promise<QueryDocumentSnapshot<DocumentData>[]> {
+  const dateField = DATE_FIELD[kind];
+
+  const constraints: QueryConstraint[] = chunk === null
+    ? [
+        ...(scope.from ? [where(dateField, '>=', scope.from)] : []),
+        ...(scope.to   ? [where(dateField, '<=', scope.to)]   : []),
+        orderBy(dateField, 'desc'),
+        limit(maxScan + 1),
+      ]
+    : [chunk.length === 1 ? where('projectId', '==', chunk[0]) : where('projectId', 'in', chunk)];
+
+  const snap = await getDocs(query(collection(db, COLLECTION[kind]), ...constraints) as Query<DocumentData>);
+
+  return snap.docs.filter(doc => {
+    const data = doc.data();
+    const date = String(data[dateField] ?? '');
+    if (scope.from && date < scope.from) return false;
+    if (scope.to   && date > scope.to)   return false;
+    if (kind === 'expenses') {
+      if (scope.expenseCategory && data.expenseCategory !== scope.expenseCategory) return false;
+      if (scope.isGstBill && data.isGstBill !== true) return false;
+    }
+    if (scope.paymentMode && data.paymentMode !== scope.paymentMode) return false;
+    return true;
+  });
+}
+
+/** All rows in scope, unindexed, newest first. */
+async function fetchAllUnindexed(
+  kind: LedgerKind,
+  scope: SASLedgerScope,
+  maxScan: number,
+): Promise<QueryDocumentSnapshot<DocumentData>[]> {
+  const dateField = DATE_FIELD[kind];
+  const chunks = chunkScope(scope.projectIds);
+  const perChunk = await Promise.all(chunks.map(chunk => fetchChunkUnindexed(kind, scope, chunk, maxScan)));
+
+  return perChunk.flat().sort((left, right) => {
+    const leftDate = String(left.data()[dateField] ?? '');
+    const rightDate = String(right.data()[dateField] ?? '');
+    if (leftDate !== rightDate) return rightDate.localeCompare(leftDate);
+    return right.id.localeCompare(left.id);
+  });
+}
+
 /**
  * Sum + count for a scope, computed on the server.
  *
@@ -156,18 +277,29 @@ export async function aggregateLedger(kind: LedgerKind, scope: SASLedgerScope): 
 
   const amountField = AMOUNT_FIELD[kind];
 
+  const shape = `${kind}:aggregate`;
+
   const results = await Promise.all(chunks.map(async (chunk) => {
+    // Re-running `base` after a failure would hit the very index that is missing, so the fallback
+    // uses the single-field query shape and does the filtering and adding up locally.
+    const locally = async () => {
+      const docs = await fetchChunkUnindexed(kind, scope, chunk, SAS_MAX_SCAN);
+      return {
+        total: docs.reduce((running, item) => running + ((item.data()[amountField] as number) || 0), 0),
+        count: docs.length,
+      };
+    };
+
+    if (indexKnownMissing(shape)) return locally();
+
     const base = query(collection(db, COLLECTION[kind]), ...scopeConstraints(kind, scope, chunk));
     try {
       const snap = await getAggregateFromServer(base, { total: sum(amountField), rows: count() });
       return { total: snap.data().total ?? 0, count: Number(snap.data().rows ?? 0) };
     } catch (error) {
       if (!isMissingIndex(error)) throw error;
-      const docs = await getDocs(base);
-      return {
-        total: docs.docs.reduce((running, item) => running + ((item.data()[amountField] as number) || 0), 0),
-        count: docs.size,
-      };
+      noteMissingIndex(shape);
+      return locally();
     }
   }));
 
@@ -208,7 +340,24 @@ export async function cumulativeBefore(
   const dateField = DATE_FIELD[kind];
   const amountField = AMOUNT_FIELD[kind];
 
+  const shape = `${kind}:cumulative`;
+
   const totals = await Promise.all(chunks.map(async (chunk) => {
+    // `base` needs the index that is missing, so re-running it would fail the same way. The
+    // exclusive `< before` bound becomes an inclusive `to` on the previous day, which the fallback
+    // applies client-side.
+    const locally = async () => {
+      const docs = await fetchChunkUnindexed(
+        kind,
+        { projectIds: chunk, to: previousDay(before) },
+        chunk,
+        SAS_MAX_SCAN,
+      );
+      return docs.reduce((running, item) => running + ((item.data()[amountField] as number) || 0), 0);
+    };
+
+    if (indexKnownMissing(shape)) return locally();
+
     const constraints: QueryConstraint[] = [];
     if (chunk !== null) {
       constraints.push(chunk.length === 1 ? where('projectId', '==', chunk[0]) : where('projectId', 'in', chunk));
@@ -220,12 +369,20 @@ export async function cumulativeBefore(
       return snap.data().total ?? 0;
     } catch (error) {
       if (!isMissingIndex(error)) throw error;
-      const docs = await getDocs(base);
-      return docs.docs.reduce((running, item) => running + ((item.data()[amountField] as number) || 0), 0);
+      noteMissingIndex(shape);
+      return locally();
     }
   }));
 
   return totals.reduce((running, item) => running + item, 0);
+}
+
+/** The calendar day before a `YYYY-MM-DD` string, so an exclusive bound becomes an inclusive one. */
+function previousDay(date: string): string {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  parsed.setUTCDate(parsed.getUTCDate() - 1);
+  return parsed.toISOString().slice(0, 10);
 }
 
 /**
@@ -249,32 +406,59 @@ export async function fetchLedgerPage<T>(
   const marks = options.cursor?.marks ?? chunks.map(() => null);
   const alreadyDone = new Set(options.cursor?.done ?? []);
 
+  /** Position-based paging over a client-sorted result, for when the index is not available. */
+  async function unindexedPage(offset: number): Promise<SASPage<T>> {
+    const docs = await fetchAllUnindexed(kind, scope, SAS_MAX_SCAN);
+    const slice = docs.slice(offset, offset + pageSize);
+    const hasMore = docs.length > offset + pageSize;
+    return {
+      rows: slice.map(doc => ({ id: doc.id, ...doc.data() } as T)),
+      cursor: hasMore ? makeCursor([], [], offset + pageSize) : null,
+      hasMore,
+    };
+  }
+
+  // Already paging through a fallback result — stay on that path rather than flip-flopping.
+  if (options.cursor?.offset !== undefined) return unindexedPage(options.cursor.offset);
+
+  const shape = `${kind}:page`;
+  if (indexKnownMissing(shape)) return unindexedPage(0);
+
   /** The merge below works on plain records, so each snapshot is carried alongside its sort key. */
   type Carried = OrderedRecord & { snapshot: QueryDocumentSnapshot<DocumentData> };
 
-  const chunkResults: ChunkFetch<Carried>[] = await Promise.all(chunks.map(async (chunk, index) => {
-    // A chunk that ran dry on an earlier page has nothing left to contribute.
-    if (alreadyDone.has(index)) return { rows: [], exhausted: true };
+  let chunkResults: ChunkFetch<Carried>[];
+  try {
+    chunkResults = await Promise.all(chunks.map(async (chunk, index) => {
+      // A chunk that ran dry on an earlier page has nothing left to contribute.
+      if (alreadyDone.has(index)) return { rows: [], exhausted: true };
 
-    const mark = marks[index] ?? null;
-    const constraints = [
-      ...scopeConstraints(kind, scope, chunk),
-      orderBy(dateField, 'desc'),
-      orderBy(documentId(), 'desc'),
-      ...(mark ? [startAfter(mark)] : []),
-      // One extra row tells us whether a further page exists without a second query.
-      limit(pageSize + 1),
-    ];
-    const snap = await getDocs(query(collection(db, COLLECTION[kind]), ...constraints) as Query<DocumentData>);
-    return {
-      rows: snap.docs.map(doc => ({
-        id: doc.id,
-        date: String(doc.data()[dateField] ?? ''),
-        snapshot: doc,
-      })),
-      exhausted: snap.size <= pageSize,
-    };
-  }));
+      const mark = marks[index] ?? null;
+      const constraints = [
+        ...scopeConstraints(kind, scope, chunk),
+        // Firestore appends `__name__` implicitly, in the direction of the last `orderBy`, and
+        // `startAfter(snapshot)` uses it — so ordering on the document id explicitly buys nothing
+        // and only widens the composite index the query demands.
+        orderBy(dateField, 'desc'),
+        ...(mark ? [startAfter(mark)] : []),
+        // One extra row tells us whether a further page exists without a second query.
+        limit(pageSize + 1),
+      ];
+      const snap = await getDocs(query(collection(db, COLLECTION[kind]), ...constraints) as Query<DocumentData>);
+      return {
+        rows: snap.docs.map(doc => ({
+          id: doc.id,
+          date: String(doc.data()[dateField] ?? ''),
+          snapshot: doc,
+        })),
+        exhausted: snap.size <= pageSize,
+      };
+    }));
+  } catch (error) {
+    if (!isMissingIndex(error)) throw error;
+    noteMissingIndex(shape);
+    return unindexedPage(0);
+  }
 
   const previousCarried: (Carried | null)[] = marks.map(mark =>
     mark ? { id: mark.id, date: String(mark.data()[dateField] ?? ''), snapshot: mark } : null
@@ -306,37 +490,60 @@ export async function fetchLedgerAll<T>(
   if (chunks.length === 0) return { rows: [], truncated: false };
 
   const dateField = DATE_FIELD[kind];
+  const shape = `${kind}:scan`;
 
-  const perChunk = await Promise.all(chunks.map(async (chunk) => {
-    const constraints = [
-      ...scopeConstraints(kind, scope, chunk),
-      orderBy(dateField, 'desc'),
-      limit(maxScan + 1),
-    ];
-    const snap = await getDocs(query(collection(db, COLLECTION[kind]), ...constraints) as Query<DocumentData>);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as T));
-  }));
+  let docs: QueryDocumentSnapshot<DocumentData>[];
+  if (indexKnownMissing(shape)) {
+    docs = await fetchAllUnindexed(kind, scope, maxScan);
+  } else {
+    try {
+      const perChunk = await Promise.all(chunks.map(async (chunk) => {
+        const constraints = [
+          ...scopeConstraints(kind, scope, chunk),
+          orderBy(dateField, 'desc'),
+          limit(maxScan + 1),
+        ];
+        const snap = await getDocs(query(collection(db, COLLECTION[kind]), ...constraints) as Query<DocumentData>);
+        return snap.docs;
+      }));
+      docs = perChunk.flat().sort((left, right) => {
+        const leftDate = String(left.data()[dateField] ?? '');
+        const rightDate = String(right.data()[dateField] ?? '');
+        return rightDate.localeCompare(leftDate);
+      });
+    } catch (error) {
+      if (!isMissingIndex(error)) throw error;
+      noteMissingIndex(shape);
+      docs = await fetchAllUnindexed(kind, scope, maxScan);
+    }
+  }
 
-  const rows = perChunk.flat();
-  rows.sort((left, right) => {
-    const leftDate = String((left as Record<string, unknown>)[dateField] ?? '');
-    const rightDate = String((right as Record<string, unknown>)[dateField] ?? '');
-    return rightDate.localeCompare(leftDate);
-  });
-
-  return { rows: rows.slice(0, maxScan), truncated: rows.length > maxScan };
+  return {
+    rows: docs.slice(0, maxScan).map(doc => ({ id: doc.id, ...doc.data() } as T)),
+    truncated: docs.length > maxScan,
+  };
 }
 
 /** Row count for a scope, from the server. */
 export async function countLedger(kind: LedgerKind, scope: SASLedgerScope): Promise<number> {
   const chunks = chunkScope(scope.projectIds);
   if (chunks.length === 0) return 0;
-  const counts = await Promise.all(chunks.map(async (chunk) => {
-    const base = query(collection(db, COLLECTION[kind]), ...scopeConstraints(kind, scope, chunk));
-    const snap = await getCountFromServer(base);
-    return snap.data().count;
-  }));
-  return counts.reduce((running, item) => running + item, 0);
+
+  const shape = `${kind}:count`;
+  if (indexKnownMissing(shape)) return (await fetchAllUnindexed(kind, scope, SAS_MAX_SCAN)).length;
+
+  try {
+    const counts = await Promise.all(chunks.map(async (chunk) => {
+      const base = query(collection(db, COLLECTION[kind]), ...scopeConstraints(kind, scope, chunk));
+      const snap = await getCountFromServer(base);
+      return snap.data().count;
+    }));
+    return counts.reduce((running, item) => running + item, 0);
+  } catch (error) {
+    if (!isMissingIndex(error)) throw error;
+    noteMissingIndex(shape);
+    return (await fetchAllUnindexed(kind, scope, SAS_MAX_SCAN)).length;
+  }
 }
 
 /**
