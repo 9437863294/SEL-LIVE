@@ -7,6 +7,7 @@ import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -46,21 +47,26 @@ export default function ExpenseReportPage() {
 
   useEffect(() => {
     if (!isAuthLoading) void loadAll();
-  }, [isAuthLoading]);
+  // Scope depends on the resolved user and their All-Projects permission, so a late-arriving
+  // profile re-runs the load rather than leaving the page scoped to nothing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthLoading, user?.id, canViewAll]);
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, catSnap, expSnap, paySnap] = await Promise.all([
+      const [pSnap, catSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.expenses), orderBy('expenseDate', 'desc'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
       ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount));
+      const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      setProjects(allProjects.filter(p => p.enabledForSiteAccount));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)));
-      setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
-      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
+      // Scoped to the projects this user may see, on the server — these pages used to pull the
+      // organisation's entire expense and payment collections and filter them in the browser.
+      const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
+      setPayments(ledger.payments);
+      setExpenses(ledger.expenses);
     } finally {
       setLoading(false);
     }

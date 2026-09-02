@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
+import {
+  addDoc, collection, deleteDoc, doc, getCountFromServer, getDocs, orderBy, query,
+  serverTimestamp, updateDoc, where, writeBatch,
+} from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { DEFAULT_EXPENSE_CATEGORIES, SAS_COLLECTIONS, type SASCategory } from '@/lib/site-account-statement';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
@@ -139,8 +142,31 @@ export default function ExpenseCategoriesPage() {
       };
       if (editingRow) {
         await updateDoc(doc(db, SAS_COLLECTIONS.categories, editingRow.id), payload);
-        void log('Edit Expense Category', { name: form.name });
-        toast({ title: 'Updated', description: `"${form.name}" updated.` });
+
+        /*
+         * Expenses and category budgets store the category *name*, not its id.
+         *
+         * Renaming a category therefore used to orphan every record that referenced it: historical
+         * expenses stopped matching the category filter, dropped out of Category Analysis, and
+         * became invisible to the category-budget alert — all silently, with no error and no hint
+         * on this screen that anything had happened. Until those collections are re-keyed by id
+         * (the proper fix), a rename has to carry its own history with it.
+         */
+        const renamedFrom = editingRow.name;
+        const renamedTo   = form.name.trim();
+        if (renamedFrom !== renamedTo) {
+          const migrated = await cascadeCategoryRename(renamedFrom, renamedTo, Boolean(form.parentId));
+          void log('Rename Expense Category', { from: renamedFrom, to: renamedTo, migrated });
+          toast({
+            title: 'Renamed',
+            description: migrated > 0
+              ? `"${renamedFrom}" renamed to "${renamedTo}" — ${migrated} existing record${migrated === 1 ? '' : 's'} updated.`
+              : `"${renamedFrom}" renamed to "${renamedTo}".`,
+          });
+        } else {
+          void log('Edit Expense Category', { name: form.name });
+          toast({ title: 'Updated', description: `"${form.name}" updated.` });
+        }
       } else {
         await addDoc(collection(db, SAS_COLLECTIONS.categories), { ...payload, createdAt: serverTimestamp() });
         void log('Add Expense Category', { name: form.name, parent: parentCat?.name });
@@ -153,6 +179,70 @@ export default function ExpenseCategoriesPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  /**
+   * Rewrites the category name on every record that referenced it.
+   *
+   * A main category appears on expenses as `expenseCategory` and on category budgets as
+   * `categoryName`; a sub-category appears only as an expense's `expenseSubCategory`. Firestore has
+   * no server-side update-by-query, so this reads the matching documents and writes them back in
+   * batches of 400 (the limit is 500 — the margin leaves room for the batch's own overhead).
+   *
+   * Returns how many records moved, so the toast can say.
+   */
+  async function cascadeCategoryRename(from: string, to: string, isSubCategory: boolean): Promise<number> {
+    const nameField = isSubCategory ? 'expenseSubCategory' : 'expenseCategory';
+
+    const targets: { ref: ReturnType<typeof doc>; data: Record<string, string> }[] = [];
+
+    const expenseSnap = await getDocs(query(
+      collection(db, SAS_COLLECTIONS.expenses),
+      where(nameField, '==', from),
+    ));
+    expenseSnap.docs.forEach(d => targets.push({ ref: d.ref, data: { [nameField]: to } }));
+
+    if (!isSubCategory) {
+      const budgetSnap = await getDocs(query(
+        collection(db, SAS_COLLECTIONS.categoryBudgets),
+        where('categoryName', '==', from),
+      ));
+      budgetSnap.docs.forEach(d => targets.push({ ref: d.ref, data: { categoryName: to } }));
+    }
+
+    for (let i = 0; i < targets.length; i += 400) {
+      const batch = writeBatch(db);
+      targets.slice(i, i + 400).forEach(({ ref, data }) => batch.update(ref, data));
+      await batch.commit();
+    }
+
+    // Sub-categories also carry their parent's name on the category document itself.
+    if (!isSubCategory) {
+      const childSnap = await getDocs(query(
+        collection(db, SAS_COLLECTIONS.categories),
+        where('parentName', '==', from),
+      ));
+      if (!childSnap.empty) {
+        const batch = writeBatch(db);
+        childSnap.docs.forEach(d => batch.update(d.ref, { parentName: to }));
+        await batch.commit();
+      }
+    }
+
+    return targets.length;
+  }
+
+  /** How many expenses / category budgets still reference this category. */
+  async function countCategoryUsage(row: SASCategory): Promise<number> {
+    const nameField = row.parentId ? 'expenseSubCategory' : 'expenseCategory';
+    const checks = [
+      getCountFromServer(query(collection(db, SAS_COLLECTIONS.expenses), where(nameField, '==', row.name))),
+      ...(row.parentId ? [] : [
+        getCountFromServer(query(collection(db, SAS_COLLECTIONS.categoryBudgets), where('categoryName', '==', row.name))),
+      ]),
+    ];
+    const results = await Promise.all(checks);
+    return results.reduce((total, snap) => total + snap.data().count, 0);
   }
 
   async function handleDelete(row: SASCategory) {
@@ -168,6 +258,32 @@ export default function ExpenseCategoriesPage() {
         return;
       }
     }
+
+    /*
+     * Deleting a category that expenses still point at leaves those expenses referencing a category
+     * that no longer exists — they vanish from the category filter and from Category Analysis while
+     * still counting towards every total, which is the hardest kind of discrepancy to track down.
+     * Only sub-category ownership was checked before; actual usage was not.
+     */
+    try {
+      const inUse = await countCategoryUsage(row);
+      if (inUse > 0) {
+        toast({
+          title: 'Cannot Delete',
+          description: `"${row.name}" is used by ${inUse} record${inUse === 1 ? '' : 's'}. Deactivate it instead — it will stop appearing in new expense forms while its history stays intact.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+    } catch {
+      toast({
+        title: 'Cannot Delete',
+        description: 'Could not verify whether this category is still in use. Try again in a moment.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       await deleteDoc(doc(db, SAS_COLLECTIONS.categories, row.id));
       void log('Delete Expense Category', { name: row.name });

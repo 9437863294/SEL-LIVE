@@ -61,7 +61,12 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
     const stops = [
       onSnapshot(paymentRef, snapshot => {
         const data = snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as PaymentObligation) : null;
-        setPayment(data?.organizationId === organizationId ? data : null);
+        // `deleted` is checked here as well as in the registers: this page is reachable by direct
+        // URL, and without it a soft-deleted obligation stayed fully openable — editable, and with
+        // "Record payment" still offered — while being invisible in every list and excluded from
+        // every report total. Treated as not found, which is what it is.
+        const visible = data?.organizationId === organizationId && data.deleted !== true;
+        setPayment(visible ? data : null);
         setLoading(false);
       }, () => setLoading(false)),
       onSnapshot(query(collection(paymentRef, RP_COLLECTIONS.transactions), orderBy('createdAt', 'desc')), snapshot => setTransactions(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as PaymentTransaction)))),
@@ -222,7 +227,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
    */
   async function deletePayment() {
     if (!payment || !user || !can('Delete', 'Recurring Payments.Payments')) return;
-    if (Number(payment.paidAmount || payment.settledAmount || 0) > 0)
+    if (Number(payment.settledAmount || payment.paidAmount || 0) > 0)
       return toast({
         title: 'This payment has recorded transactions',
         description: 'Cancel it instead — deleting a settled obligation would remove it from paid totals.',

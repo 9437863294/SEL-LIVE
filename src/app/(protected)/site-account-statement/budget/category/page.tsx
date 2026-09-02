@@ -13,6 +13,7 @@ import {
   type SASExpense,
   type SASProject,
 } from '@/lib/site-account-statement';
+import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { ControlledField } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -91,19 +92,21 @@ export default function CategoryBudgetPage() {
 
   useEffect(() => {
     if (!isAuthLoading) void loadAll();
-  }, [isAuthLoading]);
+  // Scope depends on the resolved user and their All-Projects permission, so a late-arriving
+  // profile re-runs the load rather than leaving the page scoped to nothing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthLoading, user?.id, canViewAll]);
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, cSnap, eSnap, cbSnap] = await Promise.all([
+      const [pSnap, cSnap, cbSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
         getDocs(collection(db, SAS_COLLECTIONS.categoryBudgets)),
       ]);
-      const allProjects = pSnap.docs
-        .map(d => ({ id: d.id, ...d.data() } as SASProject))
+      const everyProject = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      const allProjects = everyProject
         .filter(p => p.enabledForSiteAccount && p.status === 'Active')
         .sort((a, b) => a.projectName.localeCompare(b.projectName));
       setProjects(allProjects);
@@ -113,8 +116,11 @@ export default function CategoryBudgetPage() {
           .filter(c => c.isActive !== false)
           .sort((a, b) => a.name.localeCompare(b.name))
       );
-      setExpenses(eSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
       setCatBudgets(cbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategoryBudget)));
+      // Scoped to the projects this user may see, on the server — this page used to pull the
+      // organisation's entire expense collection and filter it in the browser.
+      const ledger = await loadScopedLedger({ projects: everyProject, userId: user?.id, canViewAll });
+      setExpenses(ledger.expenses);
 
       setSelectedProjectId(prev => {
         if (prev) return prev;

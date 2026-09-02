@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  addDoc, collection, deleteDoc, doc, getDocs, getAggregateFromServer,
-  orderBy, query, serverTimestamp, setDoc, sum, updateDoc, where,
+  addDoc, collection, deleteDoc, doc, getDocs, orderBy, query, serverTimestamp, setDoc, updateDoc,
 } from 'firebase/firestore';
 import {
   deleteObject, getDownloadURL, ref as storageRef, uploadBytesResumable, type UploadTask,
@@ -12,9 +11,13 @@ import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASAttachment, type SASCategory, type SASExpense, type SASPayment, type SASProject,
+  type SASAttachment, type SASCategory, type SASExpense, type SASProject,
 } from '@/lib/site-account-statement';
-import { checkAndFireBudgetAlerts, checkCategoryBudgetAlerts, checkFyBudgetAlerts, checkTotalBudgetAlerts } from '@/lib/sas-budget-alerts';
+import {
+  aggregateLedger, allExpenses as fetchAllExpenses, cumulativeBefore, cumulativeThrough,
+  expensesPage, SAS_PAGE_SIZE, type SASCursor, type SASLedgerScope,
+} from '@/lib/site-account-statement-queries';
+import { resetBudgetAlertState, runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -41,7 +44,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  AlertTriangle, Calendar, Camera, CheckCircle2, ChevronLeft, ChevronRight,
+  AlertTriangle, Calendar, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   Download, ExternalLink, File, FileText, Filter, Image, Loader2,
   Paperclip, Pencil, Plus, Receipt, RotateCw, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
@@ -160,10 +163,18 @@ export default function SiteExpensesPage() {
   const [projects,      setProjects]      = useState<SASProject[]>([]);
   const [categories,    setCategories]    = useState<SASCategory[]>([]);
   const [expenses,      setExpenses]      = useState<SASExpense[]>([]);
-  const [payments,      setPayments]      = useState<SASPayment[]>([]);
   const [loading,              setLoading]              = useState(true);
+  const [loadingMore,          setLoadingMore]          = useState(false);
   const [staticLoaded,         setStaticLoaded]         = useState(false);
-  const [prePeriodExpenseSum,  setPrePeriodExpenseSum]  = useState<number | null>(null);
+  /** Bumped after every write to re-run the scope loader without duplicating its logic. */
+  const [reloadToken,          setReloadToken]          = useState(0);
+  const [pageCursor,           setPageCursor]           = useState<SASCursor | null>(null);
+  /** Server-side sum + count for the whole filtered period — not just the rows on screen. */
+  const [periodTotals,         setPeriodTotals]         = useState<{ total: number; count: number } | null>(null);
+  const [openingBalance,       setOpeningBalance]       = useState<number | null>(null);
+  const [periodReceipts,       setPeriodReceipts]       = useState(0);
+  /** Cumulative project figures through the period end, for the summary strip and the dialog. */
+  const [projectToDate,        setProjectToDate]        = useState<{ received: number; spent: number } | null>(null);
   const [saving,           setSaving]           = useState(false);
   const [exporting,        setExporting]        = useState(false);
   const [dialogOpen,       setDialogOpen]       = useState(false);
@@ -194,53 +205,27 @@ export default function SiteExpensesPage() {
     if (!isAuthLoading) void loadStatic();
   }, [isAuthLoading]);
 
-  // Re-query expenses + payments whenever the date range changes
-  useEffect(() => {
-    if (staticLoaded) void loadPeriodData(filterFrom, filterTo);
-  }, [filterFrom, filterTo, staticLoaded]);
-
   async function loadStatic() {
     setLoading(true);
     try {
-      const [pSnap, catSnap, paySnap] = await Promise.all([
+      const [pSnap, catSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),   // small — load all for opening balance
       ]);
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
-      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
       setStaticLoaded(true);
-    } catch {
+    } catch (e: any) {
+      // Failing silently here rendered an empty, apparently-working page: no projects, no
+      // categories, and no hint that anything had gone wrong.
       setLoading(false);
+      toast({
+        title: 'Could not load projects',
+        description: e?.message || 'Check your connection and reload the page.',
+        variant: 'destructive',
+      });
     }
   }
-
-  async function loadPeriodData(from: string, to: string) {
-    setLoading(true);
-    setPrePeriodExpenseSum(null);
-    try {
-      // Scoped expense fetch — only the visible date window (fast).
-      // Skip whichever bound is empty — an empty `to` means "All Time" (no upper bound), and
-      // a literal where('expenseDate', '<=', '') would match nothing since every real date
-      // string sorts after ''.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const constraints: any[] = [];
-      if (from) constraints.push(where('expenseDate', '>=', from));
-      if (to)   constraints.push(where('expenseDate', '<=', to));
-      const expSnap = await getDocs(query(
-        collection(db, SAS_COLLECTIONS.expenses),
-        ...constraints,
-        orderBy('expenseDate', 'desc'),
-      ));
-      setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
-
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function loadAll() { return loadPeriodData(filterFrom, filterTo); }
 
   const mainCategories    = useMemo(() => categories.filter(c => !c.parentId), [categories]);
   const subCategories     = useMemo(() => categories.filter(c => !!c.parentId), [categories]);
@@ -269,134 +254,177 @@ export default function SiteExpensesPage() {
     [visibleProjects, canViewAll]
   );
 
-  // Alt-user projects allow add/edit even without RBAC permissions
-  const isAltUser = useMemo(
-    () => !canViewAll && visibleProjects.some(p => p.altUserId === user?.id),
-    [canViewAll, visibleProjects, user?.id]
-  );
-  const effectiveCanAdd    = canAdd    || isAltUser;
-  const effectiveCanEdit   = canEdit   || isAltUser;
-  const effectiveCanImport = canImport || isAltUser;
-
-  // Per-project balance (received - expenses)
-  const perProjectBalance = useMemo(() => {
-    const map = new Map<string, { received: number; spent: number; balance: number }>();
-    payments.forEach(p => {
-      const cur = map.get(p.projectId) ?? { received: 0, spent: 0, balance: 0 };
-      cur.received += p.receivedAmount || 0;
-      map.set(p.projectId, cur);
-    });
-    expenses.forEach(e => {
-      const cur = map.get(e.projectId) ?? { received: 0, spent: 0, balance: 0 };
-      cur.spent += e.expenseAmount || 0;
-      map.set(e.projectId, cur);
-    });
-    map.forEach((v, k) => { v.balance = v.received - v.spent; map.set(k, v); });
-    return map;
-  }, [payments, expenses]);
-
-  // Balance for the project currently selected in the form
-  const formProjectBalance = useMemo(
-    () => form.projectId ? perProjectBalance.get(form.projectId) : undefined,
-    [perProjectBalance, form.projectId]
+  /** The project scope every server query is bounded by — `null` only for All-Projects holders. */
+  const scopeProjectIds = useMemo<string[] | null>(
+    () => canViewAll ? null : visibleProjects.map(p => p.id),
+    [canViewAll, visibleProjects]
   );
 
-  // Balance for the project currently being filtered in the list
-  const filterProjectBalance = useMemo(
-    () => filterProject ? perProjectBalance.get(filterProject) : undefined,
-    [perProjectBalance, filterProject]
+  /*
+   * Whether the user may write to a *specific* project.
+   *
+   * This used to be a single page-wide boolean — "am I the alt user on any project at all" — which
+   * was then OR-ed into `canAdd`/`canEdit` for every project in the dropdown. Because that dropdown
+   * also lists projects where the user is only the *viewer*, being alt user on one project silently
+   * granted write access to every project they could see, including read-only ones. Write rights
+   * are now decided per project, from that project's own row.
+   */
+  const canWriteToProject = useMemo(() => (projectId: string): boolean => {
+    if (canViewAll || canAdd || canEdit) return true;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return false;
+    return project.assignedPersonId === user?.id || project.altUserId === user?.id;
+  }, [canViewAll, canAdd, canEdit, projects, user?.id]);
+
+  /** Projects the user may actually record an expense against — what the form's dropdown offers. */
+  const writableProjects = useMemo(
+    () => visibleProjects.filter(p => canWriteToProject(p.id)),
+    [visibleProjects, canWriteToProject]
   );
 
-  // Cumulative expenses for the selected project, through the end of the selected period
-  // (correct figure for the list-view Available Balance below — not a true all-time total).
-  // In period mode: pre-period aggregate + project's expenses within the period.
-  // In all-time mode: expenses state already contains every record, so use filterProjectBalance.spent directly.
-  const filterProjectExpensesToDate = useMemo(() => {
-    if (!filterProject || !filterProjectBalance) return null;
-    if (!filterFrom || prePeriodExpenseSum === null) {
-      // All-time mode — loadPeriodData fetched every record
-      return filterProjectBalance.spent;
-    }
-    const periodForProject = expenses
-      .filter(e => e.projectId === filterProject)
-      .reduce((s, e) => s + (e.expenseAmount || 0), 0);
-    return prePeriodExpenseSum + periodForProject;
-  }, [filterProject, filterProjectBalance, filterFrom, prePeriodExpenseSum, expenses]);
+  // The toolbar buttons only need to know whether *any* project is writable.
+  const effectiveCanAdd    = canAdd    || writableProjects.length > 0;
+  const effectiveCanEdit   = canEdit   || writableProjects.length > 0;
+  const effectiveCanImport = canImport || writableProjects.length > 0;
 
-  // Cumulative receipts for the selected project, through the end of the selected period.
-  // `payments` already holds every payment ever recorded (loaded once, unfiltered), so this
-  // is a simple local filter — no extra Firestore round-trip needed. Falls back to the true
-  // all-time total when no period end is set (the "All Time" view).
-  const filterProjectReceivedToDate = useMemo(() => {
-    if (!filterProject || !filterProjectBalance) return null;
-    if (!filterTo) return filterProjectBalance.received;
-    return payments
-      .filter(p => p.projectId === filterProject && p.receiptDate <= filterTo)
-      .reduce((s, p) => s + (p.receivedAmount || 0), 0);
-  }, [filterProject, filterProjectBalance, filterTo, payments]);
+  // ── Server-side scope ────────────────────────────────────────────────────────
 
-  // ── Opening / closing balance for the filtered period ────────────────────────
+  /*
+   * The scope every server query on this page shares.
+   *
+   * Filters that Firestore can answer with an equality constraint (project, main category, payment
+   * mode, GST flag) are pushed down here, so the paginated rows AND the aggregate totals below them
+   * describe exactly the same set. Sub-category and free-text search stay client-side over the rows
+   * already loaded — they refine what is shown, and the strip is explicit that "Total shown" is the
+   * loaded subset while the period figures come from the server.
+   */
+  const ledgerScope = useMemo<SASLedgerScope>(() => ({
+    projectIds: filterProject ? [filterProject] : scopeProjectIds,
+    from: filterFrom,
+    to: filterTo,
+    expenseCategory: filterCategory || undefined,
+    paymentMode: filterMode || undefined,
+    isGstBill: filterGstOnly || undefined,
+  }), [filterProject, scopeProjectIds, filterFrom, filterTo, filterCategory, filterMode, filterGstOnly]);
 
-  // Reload pre-period expense aggregate whenever the period start, project filter, or user scope changes.
-  // IMPORTANT: must match the same project scope used for receipts in openingBalance below,
-  // otherwise opening balance is wrong when no specific project is selected.
+  /** Stable identity for the scope, so the loader effect fires on real changes only. */
+  const scopeKey = useMemo(() => JSON.stringify({
+    ...ledgerScope,
+    projectIds: ledgerScope.projectIds ? [...ledgerScope.projectIds].sort() : null,
+  }), [ledgerScope]);
+
+  // ── Page + aggregate loading ─────────────────────────────────────────────────
+
   useEffect(() => {
-    if (!staticLoaded || !filterFrom) return;
+    if (!staticLoaded) return;
+    let cancelled = false;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const constraints: any[] = [where('expenseDate', '<', filterFrom)];
-
-    if (filterProject) {
-      // Single project explicitly selected
-      constraints.push(where('projectId', '==', filterProject));
-    } else if (userProjectIds !== null) {
-      // User is scoped to specific projects — restrict aggregate to those only
-      const ids = Array.from(userProjectIds);
-      if (ids.length === 0) {
-        setPrePeriodExpenseSum(0);
-        return;
-      }
-      constraints.push(
-        ids.length === 1
-          ? where('projectId', '==', ids[0])
-          : where('projectId', 'in', ids),
-      );
-    }
-    // else: canViewAll → no project restriction, fetch across all projects
-
-    getAggregateFromServer(
-      query(collection(db, SAS_COLLECTIONS.expenses), ...constraints),
-      { total: sum('expenseAmount') },
-    ).then(snap => setPrePeriodExpenseSum(snap.data().total ?? 0)).catch(async () => {
-      // Composite index not yet deployed — fall back to full doc fetch
+    async function load() {
+      setLoading(true);
       try {
-        const snap = await getDocs(query(collection(db, SAS_COLLECTIONS.expenses), ...constraints));
-        setPrePeriodExpenseSum(snap.docs.reduce((s, d) => s + ((d.data().expenseAmount as number) || 0), 0));
-      } catch {
-        setPrePeriodExpenseSum(0);
+        const receiptScope: SASLedgerScope = {
+          projectIds: ledgerScope.projectIds,
+          from: filterFrom,
+          to: filterTo,
+        };
+
+        // One page of rows, plus every figure the summary strip needs — all computed on the
+        // server, so they stay correct no matter how few rows are actually on screen.
+        const [page, expenseAgg, receiptAgg, priorExpenses, priorReceipts] = await Promise.all([
+          expensesPage(ledgerScope, { pageSize: SAS_PAGE_SIZE }),
+          aggregateLedger('expenses', ledgerScope),
+          aggregateLedger('payments', receiptScope),
+          filterFrom ? cumulativeBefore('expenses', ledgerScope.projectIds, filterFrom) : Promise.resolve(0),
+          filterFrom ? cumulativeBefore('payments', ledgerScope.projectIds, filterFrom) : Promise.resolve(0),
+        ]);
+        if (cancelled) return;
+
+        setExpenses(page.rows);
+        setPageCursor(page.cursor);
+        setPeriodTotals({ total: expenseAgg.total, count: expenseAgg.count });
+        setPeriodReceipts(receiptAgg.total);
+        setOpeningBalance(filterFrom ? priorReceipts - priorExpenses : null);
+      } catch (e: any) {
+        if (cancelled) return;
+        toast({
+          title: 'Could not load expenses',
+          description: e?.message || 'Check your connection and try again.',
+          variant: 'destructive',
+        });
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    });
-  }, [filterFrom, filterProject, staticLoaded, userProjectIds]);
+    }
 
-  const openingBalance = useMemo(() => {
-    if (!filterFrom || prePeriodExpenseSum === null) return null;
-    const inScope = (id: string) => filterProject ? id === filterProject : (!userProjectIds || userProjectIds.has(id));
-    const rec = payments
-      .filter(p => inScope(p.projectId) && p.receiptDate < filterFrom)
-      .reduce((s, p) => s + (p.receivedAmount || 0), 0);
-    return rec - prePeriodExpenseSum;
-  }, [filterFrom, filterProject, payments, prePeriodExpenseSum, userProjectIds]);
+    void load();
+    return () => { cancelled = true; };
+    // `scopeKey` stands in for the scope object, which is rebuilt on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staticLoaded, scopeKey, reloadToken]);
 
-  const periodReceipts = useMemo(() => payments
-    .filter(p => {
-      if (filterProject && p.projectId !== filterProject) return false;
-      if (userProjectIds && !userProjectIds.has(p.projectId)) return false;
-      if (filterFrom && p.receiptDate < filterFrom) return false;
-      if (filterTo   && p.receiptDate > filterTo)   return false;
-      return true;
-    })
-    .reduce((s, p) => s + (p.receivedAmount || 0), 0),
-  [filterFrom, filterTo, filterProject, payments, userProjectIds]);
+  /**
+   * Cumulative received/spent for the selected project through the end of the period.
+   *
+   * These drive the "Available Balance" figures in the summary strip and — critically — in the Add
+   * Expense dialog. They used to be derived from page state, which mixed *all-time* receipts (the
+   * payments collection was loaded unfiltered) against *period-only* expenses (the expense query is
+   * date-scoped, and defaults to the current month). On a project a year old that overstated
+   * available funds by every rupee spent before this month — the exact number a site in-charge
+   * checks before deciding whether they can afford a purchase. Both sides now come from the same
+   * server-side cumulative aggregate over the same window.
+   */
+  /*
+   * Whose cumulative figures to fetch: the project chosen in the open dialog, otherwise the one the
+   * list is filtered to. Gated on `dialogOpen` so a stale `form.projectId` — the form is not
+   * cleared on close — cannot keep overriding the list's own project after the dialog has gone.
+   */
+  const balanceTarget = (dialogOpen && form.projectId) ? form.projectId : filterProject;
+
+  useEffect(() => {
+    if (!staticLoaded || !balanceTarget) { setProjectToDate(null); return; }
+    let cancelled = false;
+
+    Promise.all([
+      cumulativeThrough('payments', [balanceTarget], filterTo || '9999-12-31'),
+      cumulativeThrough('expenses', [balanceTarget], filterTo || '9999-12-31'),
+    ])
+      .then(([received, spent]) => { if (!cancelled) setProjectToDate({ received, spent }); })
+      .catch(() => { if (!cancelled) setProjectToDate(null); });
+
+    return () => { cancelled = true; };
+  }, [staticLoaded, balanceTarget, filterTo, reloadToken]);
+
+  const projectBalance = useMemo(
+    () => projectToDate
+      ? { ...projectToDate, balance: projectToDate.received - projectToDate.spent }
+      : undefined,
+    [projectToDate]
+  );
+
+  /** Shown inside the Add/Edit dialog — only once the figures are for the project it has open. */
+  const formProjectBalance =
+    (dialogOpen && form.projectId && balanceTarget === form.projectId) ? projectBalance : undefined;
+
+  /** Shown in the list's summary strip, whenever a single project is filtered. */
+  const filterProjectBalance =
+    (filterProject && balanceTarget === filterProject) ? projectBalance : undefined;
+
+  async function loadMore() {
+    if (!pageCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await expensesPage(ledgerScope, { cursor: pageCursor, pageSize: SAS_PAGE_SIZE });
+      setExpenses(prev => [...prev, ...page.rows]);
+      setPageCursor(page.cursor);
+    } catch (e: any) {
+      toast({ title: 'Could not load more', description: e?.message, variant: 'destructive' });
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  /** Re-runs the scope effect above — used after any write. */
+  function loadAll() { setReloadToken(token => token + 1); }
 
   // ── Month navigation ─────────────────────────────────────────────────────────
   function shiftMonth(offset: number) {
@@ -472,10 +500,15 @@ export default function SiteExpensesPage() {
     { key: 'remarks',         label: 'Remarks' },
   ], [visibleProjects, mainCategories, subCategories]);
 
+  /** Projects and periods touched by the running import, so alerts can be evaluated once at the end. */
+  const importTouchedRef = useRef<Map<string, { periods: Set<string>; categories: Set<string>; amount: number }>>(new Map());
+
   async function saveExpenseRow(row: Record<string, any>) {
     const projName = String(row.projectName || '').trim();
     const proj = visibleProjects.find(p => p.projectName.toLowerCase() === projName.toLowerCase());
     if (!proj) throw new Error(`Project "${projName}" not found`);
+    // Import went through `visibleProjects`, which includes projects the user can only view.
+    if (!canWriteToProject(proj.id)) throw new Error(`You have read-only access to "${proj.projectName}"`);
 
     const catRaw  = String(row.expenseCategory || '').trim();
     const mainCat = mainCategories.find(c => c.name.toLowerCase() === catRaw.toLowerCase());
@@ -487,27 +520,46 @@ export default function SiteExpensesPage() {
       const subCat = subCategories.find(c =>
         c.parentId === mainCat.id && c.name.toLowerCase() === subCatRaw.toLowerCase()
       );
-      subCatName = subCat?.name || subCatRaw;
+      // Storing the raw text when no sub-category matched used to smuggle unvalidated values into
+      // the ledger, where they match no filter and no category budget. Reject the row instead.
+      if (!subCat) throw new Error(`Sub-category "${subCatRaw}" does not belong to "${mainCat.name}"`);
+      subCatName = subCat.name;
     }
 
     const amount = Number(row.expenseAmount);
     if (!amount || amount <= 0) throw new Error('Amount must be > 0');
     const mode = PAYMENT_MODES.includes(row.paymentMode as any) ? row.paymentMode : 'Cash';
+    const expenseDate = String(row.expenseDate || '').trim();
 
-    await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
+    const record = {
       projectId:          proj.id,
       projectName:        proj.projectName,
       expenseCategory:    mainCat.name,
       expenseSubCategory: subCatName,
       narration:          String(row.narration       || '').trim(),
       expensedBy:         String(row.expensedBy      || '').trim(),
-      expenseDate:        String(row.expenseDate      || '').trim(),
+      expenseDate,
       expenseAmount:      amount,
       paymentMode:        mode,
       vendorPartyName:    String(row.vendorPartyName  || '').trim(),
       billNo:             String(row.billNo           || '').trim(),
       isGstBill:          /^(yes|y|true|1)$/i.test(String(row.isGstBill || '').trim()),
       remarks:            String(row.remarks          || '').trim(),
+    };
+
+    /*
+     * Import used to bypass Field Control entirely, so a spreadsheet could create records the
+     * Add Expense form would have refused — an admin who made "Bill No." mandatory would find
+     * imported rows without one. The same check the form runs is applied to every row.
+     */
+    const missingLabel = validateFieldControlRequirements('expense', {
+      ...record,
+      attachment: '',
+    }, field);
+    if (missingLabel) throw new Error(`${missingLabel} is required`);
+
+    await addDoc(collection(db, SAS_COLLECTIONS.expenses), {
+      ...record,
       attachments:        [],
       createdAt:          serverTimestamp(),
       createdBy:          user?.id   || '',
@@ -516,6 +568,38 @@ export default function SiteExpensesPage() {
       updatedBy:          user?.id   || '',
       updatedByName:      user?.name || '',
     });
+
+    // Remember what changed so alerts run once for the whole import rather than per row.
+    const touched = importTouchedRef.current.get(proj.id)
+      ?? { periods: new Set<string>(), categories: new Set<string>(), amount: 0 };
+    if (expenseDate) touched.periods.add(expenseDate.slice(0, 7));
+    touched.categories.add(mainCat.name);
+    touched.amount += amount;
+    importTouchedRef.current.set(proj.id, touched);
+  }
+
+  /**
+   * Evaluates budget alerts once an import finishes.
+   *
+   * Firing per row would send one email per spreadsheet line; not firing at all — which is what
+   * happened before — meant a 200-row import could blow through every threshold in silence.
+   */
+  async function runImportAlerts() {
+    const touched = importTouchedRef.current;
+    importTouchedRef.current = new Map();
+    for (const [projectId, entry] of touched) {
+      const project = projects.find(p => p.id === projectId);
+      if (!project) continue;
+      await runBudgetAlertChecks({
+        projectId,
+        projectName: project.projectName,
+        periods: [...entry.periods],
+        categoryNames: [...entry.categories],
+        newExpenseAmount: entry.amount,
+        assignedPersonId: project.assignedPersonId,
+        altUserId: project.altUserId,
+      });
+    }
   }
 
   // ── Attachment helpers ────────────────────────────────────────────────────────
@@ -671,7 +755,7 @@ export default function SiteExpensesPage() {
   function setField(key: keyof FormState, value: string) { setForm(f => ({ ...f, [key]: value })); }
 
   function selectProject(id: string) {
-    const proj = visibleProjects.find(p => p.id === id);
+    const proj = writableProjects.find(p => p.id === id);
     setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
   }
 
@@ -710,6 +794,12 @@ export default function SiteExpensesPage() {
     if (!form.expenseDate)      { toast({ title: 'Validation', description: 'Expense date is required.', variant: 'destructive' }); return; }
     const amount = Number(form.expenseAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.',     variant: 'destructive' }); return; }
+
+    // Re-check write access against the project actually chosen, not against a page-wide flag.
+    if (!canWriteToProject(form.projectId)) {
+      toast({ title: 'Not allowed', description: 'You have read-only access to this project.', variant: 'destructive' });
+      return;
+    }
 
     const missingLabel = validateFieldControlRequirements('expense', {
       expenseCategory: form.expenseCategory,
@@ -754,8 +844,66 @@ export default function SiteExpensesPage() {
         await updateDoc(doc(db, SAS_COLLECTIONS.expenses, editingRow.id), {
           ...baseData, attachments: [...existingAttachments, ...uploadedAttachments],
         });
-        void log('Edit SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
+        void log('Edit SAS Expense', {
+          project: form.projectName, category: form.expenseCategory,
+          amount, previousAmount: editingRow.expenseAmount,
+        });
         toast({ title: 'Updated', description: 'Expense updated.' });
+
+        /*
+         * An edit moves the spend total just as surely as a new expense does, but alerts only ever
+         * fired on create — so raising an expense from ₹5,000 to ₹5,00,000 crossed every threshold
+         * in silence. Re-check here too.
+         *
+         * Every period and category the edit touched is re-evaluated, not just the current one: an
+         * expense moved from June to July, or re-categorised, changes the totals on both sides.
+         * When the amount went *down*, or the record left a period entirely, the already-sent
+         * thresholds for the affected scopes are cleared first — otherwise a budget that has been
+         * brought back under its limit could never alert again.
+         */
+        void (async () => {
+          const previousPeriod = (editingRow.expenseDate || '').slice(0, 7);
+          const newPeriod = form.expenseDate.slice(0, 7);
+          const periods = [newPeriod, previousPeriod].filter(Boolean);
+          const categoryNames = [form.expenseCategory, editingRow.expenseCategory].filter(Boolean);
+          const reducesSpend = amount < editingRow.expenseAmount || previousPeriod !== newPeriod
+            || editingRow.projectId !== form.projectId;
+
+          if (reducesSpend) {
+            await Promise.allSettled([
+              ...[...new Set([editingRow.projectId, form.projectId])].map(pid =>
+                resetBudgetAlertState({ projectId: pid })
+              ),
+            ]);
+          }
+
+          const project = projects.find(p => p.id === form.projectId);
+          await runBudgetAlertChecks({
+            projectId: form.projectId,
+            projectName: form.projectName,
+            periods,
+            categoryNames,
+            newExpenseAmount: amount - editingRow.expenseAmount,
+            assignedPersonId: project?.assignedPersonId,
+            altUserId: project?.altUserId,
+          });
+
+          // An expense that moved between projects also changes the old project's totals.
+          if (editingRow.projectId !== form.projectId) {
+            const previous = projects.find(p => p.id === editingRow.projectId);
+            if (previous) {
+              await runBudgetAlertChecks({
+                projectId: previous.id,
+                projectName: previous.projectName,
+                periods: [previousPeriod],
+                categoryNames: [editingRow.expenseCategory].filter(Boolean),
+                newExpenseAmount: -editingRow.expenseAmount,
+                assignedPersonId: previous.assignedPersonId,
+                altUserId: previous.altUserId,
+              });
+            }
+          }
+        })();
       } else {
         // Write under the id the attachments were uploaded against.
         await setDoc(doc(db, SAS_COLLECTIONS.expenses, targetExpenseIdRef.current), {
@@ -768,22 +916,18 @@ export default function SiteExpensesPage() {
         const count = uploadedAttachments.length;
         void log('Add SAS Expense', { project: form.projectName, category: form.expenseCategory, amount });
         toast({ title: 'Added', description: `Expense recorded${count > 0 ? ` with ${count} attachment${count > 1 ? 's' : ''}` : ''}.` });
-        // Fire budget alerts (fire-and-forget, does not block UI)
+        // Fire budget alerts (fire-and-forget, does not block UI). One call now loads the alert
+        // configuration once and runs all four budget scopes against it.
         const project = projects.find(p => p.id === form.projectId);
-        const period = form.expenseDate.slice(0, 7);
-        const alertBase = {
+        void runBudgetAlertChecks({
           projectId: form.projectId,
           projectName: form.projectName,
+          periods: [form.expenseDate.slice(0, 7)],
+          categoryNames: [form.expenseCategory].filter(Boolean),
           newExpenseAmount: amount,
           assignedPersonId: project?.assignedPersonId,
           altUserId: project?.altUserId,
-        };
-        void checkAndFireBudgetAlerts({ ...alertBase, period });
-        void checkFyBudgetAlerts({ ...alertBase, period });
-        void checkTotalBudgetAlerts(alertBase);
-        if (form.expenseCategory) {
-          void checkCategoryBudgetAlerts({ ...alertBase, categoryName: form.expenseCategory, period });
-        }
+        });
       }
 
       // Committed — the uploads now belong to the expense, so don't clean them up.
@@ -798,6 +942,10 @@ export default function SiteExpensesPage() {
   }
 
   async function handleDelete(row: SASExpense) {
+    if (!canDelete && !canWriteToProject(row.projectId)) {
+      toast({ title: 'Not allowed', description: 'You have read-only access to this project.', variant: 'destructive' });
+      return;
+    }
     try {
       // Delete storage files first (best-effort)
       if (row.attachments?.length) {
@@ -806,39 +954,60 @@ export default function SiteExpensesPage() {
         );
       }
       await deleteDoc(doc(db, SAS_COLLECTIONS.expenses, row.id));
-      void log('Delete SAS Expense', { project: row.projectName });
+      void log('Delete SAS Expense', { project: row.projectName, amount: row.expenseAmount });
       toast({ title: 'Deleted', description: 'Expense and attachments deleted.' });
       void loadAll();
+
+      /*
+       * Removing spend can only ever take a budget further *under* its thresholds, so nothing needs
+       * to be sent — but the "already sent" ledger has to be cleared, or a project brought back
+       * under 100% could never raise the 100% alert again when it climbs back over.
+       */
+      void resetBudgetAlertState({ projectId: row.projectId });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
   }
 
-  // ── Filters ───────────────────────────────────────────────────────────────────
-  const filtered = useMemo(() => expenses.filter(e => {
-    if (userProjectIds    && !userProjectIds.has(e.projectId))                         return false;
-    if (filterProject     && e.projectId !== filterProject)                            return false;
-    if (filterCategory    && e.expenseCategory !== filterCategory)                     return false;
-    if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory)       return false;
-    if (filterMode        && e.paymentMode !== filterMode)                             return false;
-    if (filterGstOnly     && e.isGstBill !== true)                                     return false;
-    if (filterFrom        && e.expenseDate < filterFrom)                               return false;
-    if (filterTo          && e.expenseDate > filterTo)                                 return false;
-    if (search &&
-      !(e.projectName        || '').toLowerCase().includes(search.toLowerCase()) &&
-      !(e.expensedBy         || '').toLowerCase().includes(search.toLowerCase()) &&
-      !(e.expenseCategory    || '').toLowerCase().includes(search.toLowerCase()) &&
-      !(e.expenseSubCategory || '').toLowerCase().includes(search.toLowerCase()) &&
-      !(e.narration          || '').toLowerCase().includes(search.toLowerCase()) &&
-      !(e.billNo             || '').toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  }), [expenses, userProjectIds, filterProject, filterCategory, filterSubCategory, filterMode, filterGstOnly, filterFrom, filterTo, search]);
+  // ── Client-side refinement ────────────────────────────────────────────────────
+  /*
+   * Project, date range, main category, payment mode and the GST flag are all applied by the server
+   * (see `ledgerScope`), so re-testing them here would be dead weight. Only the two filters
+   * Firestore cannot index usefully are applied to the loaded rows: sub-category and free text.
+   */
+  const refining = Boolean(filterSubCategory || search.trim());
 
-  const totalFiltered = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
+  const filtered = useMemo(() => {
+    if (!refining) return expenses;
+    const needle = search.trim().toLowerCase();
+    return expenses.filter(e => {
+      if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory) return false;
+      if (needle &&
+        !(e.projectName        || '').toLowerCase().includes(needle) &&
+        !(e.expensedBy         || '').toLowerCase().includes(needle) &&
+        !(e.expenseCategory    || '').toLowerCase().includes(needle) &&
+        !(e.expenseSubCategory || '').toLowerCase().includes(needle) &&
+        !(e.narration          || '').toLowerCase().includes(needle) &&
+        !(e.vendorPartyName    || '').toLowerCase().includes(needle) &&
+        !(e.billNo             || '').toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [expenses, refining, filterSubCategory, search]);
+
+  /** Sum of the rows currently on screen. */
+  const totalShown = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
+
+  /**
+   * The period's true expense total, from the server aggregate — independent of how many rows have
+   * been paged in. When a client-side refinement is active it no longer describes what is listed,
+   * so the strip labels the two figures separately rather than presenting one as the other.
+   */
+  const periodExpenseTotal = periodTotals?.total ?? totalShown;
+  const periodExpenseCount = periodTotals?.count ?? filtered.length;
 
   const closingBalance = useMemo(
-    () => openingBalance === null ? null : openingBalance + periodReceipts - totalFiltered,
-    [openingBalance, periodReceipts, totalFiltered]
+    () => openingBalance === null ? null : openingBalance + periodReceipts - periodExpenseTotal,
+    [openingBalance, periodReceipts, periodExpenseTotal]
   );
 
   // ── Upload gating for the expense dialog ──────────────────────────────────────
@@ -853,21 +1022,39 @@ export default function SiteExpensesPage() {
   async function exportExcel() {
     setExporting(true);
     try {
+      /*
+       * The export covers the whole filtered period, not just the rows paged in on screen — a
+       * spreadsheet that silently stopped at 50 rows would be worse than no export at all.
+       */
+      const { rows: scopeRows, truncated } = await fetchAllExpenses(ledgerScope);
+      const needle = search.trim().toLowerCase();
+      const rows = (filterSubCategory || needle)
+        ? scopeRows.filter(e => {
+            if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory) return false;
+            if (needle &&
+              !(e.projectName        || '').toLowerCase().includes(needle) &&
+              !(e.expensedBy         || '').toLowerCase().includes(needle) &&
+              !(e.expenseCategory    || '').toLowerCase().includes(needle) &&
+              !(e.expenseSubCategory || '').toLowerCase().includes(needle) &&
+              !(e.narration          || '').toLowerCase().includes(needle) &&
+              !(e.vendorPartyName    || '').toLowerCase().includes(needle) &&
+              !(e.billNo             || '').toLowerCase().includes(needle)) return false;
+            return true;
+          })
+        : scopeRows;
+
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Site Expenses');
 
-      // Balance summary rows at top
-      if (openingBalance !== null) {
-        ws.addRow(['Period', filterFrom || '', 'to', filterTo || '']);
-        ws.addRow(['Opening Balance', openingBalance]);
-        ws.addRow(['Receipts (period)', periodReceipts]);
-        ws.addRow(['Expenses (period)', totalFiltered]);
-        ws.addRow(['Closing Balance', closingBalance ?? '']);
-        ws.addRow([]);
-      }
-
-      const headerRow = ws.rowCount + 1;
-      ws.columns = [
+      /*
+       * Column widths are set without `header`, and the header row is written with `addRow`.
+       *
+       * Assigning `ws.columns` with `header` values makes ExcelJS write those headers straight into
+       * row 1 — which used to overwrite the balance summary block added just above it, and left the
+       * `headerRow` bolding pointed at an empty row further down. Declaring widths only, then
+       * adding the header as an ordinary row, puts everything where the code says it goes.
+       */
+      const columns: { header: string; key: string; width: number }[] = [
         { header: 'Project',        key: 'projectName',        width: 28 },
         { header: 'Main Category',  key: 'expenseCategory',    width: 22 },
         { header: 'Sub-Category',   key: 'expenseSubCategory', width: 22 },
@@ -886,23 +1073,46 @@ export default function SiteExpensesPage() {
         { header: 'Updated By',     key: 'updatedByName',      width: 20 },
         { header: 'Updated At',     key: 'updatedAtStr',       width: 22 },
       ];
-      ws.getRow(headerRow).font = { bold: true };
-      filtered.forEach(e => ws.addRow({
-        ...e,
-        expenseSubCategory: e.expenseSubCategory || '',
-        narration:          e.narration          || '',
-        gstBillStr:         e.isGstBill ? 'Yes' : 'No',
-        attachCount:        e.attachments?.length || 0,
-        createdByName:      e.createdByName || '',
-        createdAtStr:       formatTimestamp(e.createdAt),
-        updatedByName:      e.updatedByName || '',
-        updatedAtStr:       timestampMillis(e.updatedAt) !== timestampMillis(e.createdAt)
-                              ? formatTimestamp(e.updatedAt) : '',
-      }));
+      ws.columns = columns.map(({ key, width }) => ({ key, width }));
+
+      if (truncated) {
+        ws.addRow([`NOTE: more than ${scopeRows.length} matching records — this export was truncated. Narrow the date range for a complete file.`]);
+        ws.getRow(ws.rowCount).font = { bold: true, color: { argb: 'FFC00000' } };
+      }
+
+      // Balance summary rows at top
+      if (openingBalance !== null) {
+        ws.addRow(['Period', filterFrom || '', 'to', filterTo || '']);
+        ws.addRow(['Opening Balance', openingBalance]);
+        ws.addRow(['Receipts (period)', periodReceipts]);
+        ws.addRow(['Expenses (period)', periodExpenseTotal]);
+        ws.addRow(['Closing Balance', closingBalance ?? '']);
+        ws.addRow([]);
+      }
+
+      ws.addRow(columns.map(c => c.header)).font = { bold: true };
+
+      rows.forEach(e => ws.addRow(columns.map(({ key }) => {
+        switch (key) {
+          case 'expenseSubCategory': return e.expenseSubCategory || '';
+          case 'narration':          return e.narration || '';
+          case 'gstBillStr':         return e.isGstBill ? 'Yes' : 'No';
+          case 'attachCount':        return e.attachments?.length || 0;
+          case 'createdByName':      return e.createdByName || '';
+          case 'createdAtStr':       return formatTimestamp(e.createdAt);
+          case 'updatedByName':      return e.updatedByName || '';
+          case 'updatedAtStr':       return timestampMillis(e.updatedAt) !== timestampMillis(e.createdAt)
+                                            ? formatTimestamp(e.updatedAt) : '';
+          default:                   return (e as unknown as Record<string, unknown>)[key] ?? '';
+        }
+      })));
+
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
       const a = document.createElement('a'); a.href = url; a.download = 'site-expenses.xlsx'; a.click();
       URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast({ title: 'Export failed', description: e?.message, variant: 'destructive' });
     } finally {
       setExporting(false);
     }
@@ -1054,8 +1264,8 @@ export default function SiteExpensesPage() {
             <div className="flex items-center gap-2.5 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
               <TrendingDown className="h-4 w-4 shrink-0 text-rose-600" />
               <div className="min-w-0">
-                <p className="text-[10px] font-medium text-rose-600 uppercase tracking-wide">Expenses <span className="font-normal opacity-70">(Period)</span> · {filtered.length}</p>
-                <p className="text-sm font-bold text-rose-700 leading-tight">{formatINR(totalFiltered)}</p>
+                <p className="text-[10px] font-medium text-rose-600 uppercase tracking-wide">Expenses <span className="font-normal opacity-70">(Period)</span> · {periodExpenseCount}</p>
+                <p className="text-sm font-bold text-rose-700 leading-tight">{formatINR(periodExpenseTotal)}</p>
               </div>
             </div>
             <div className="flex items-center gap-2.5 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5">
@@ -1076,8 +1286,15 @@ export default function SiteExpensesPage() {
       <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-rose-50 px-4 py-2.5">
         <Receipt className="h-4 w-4 shrink-0 text-rose-600" />
         <span className="text-sm font-medium text-rose-700">
-          Total shown: <strong>{formatINR(totalFiltered)}</strong> — {filtered.length} record{filtered.length !== 1 ? 's' : ''}
+          Period total: <strong>{formatINR(periodExpenseTotal)}</strong> — {periodExpenseCount} record{periodExpenseCount !== 1 ? 's' : ''}
         </span>
+        {/* When a client-side refinement narrows the loaded rows, the two figures genuinely differ,
+            so both are shown rather than one silently standing in for the other. */}
+        {(refining || filtered.length < periodExpenseCount) && (
+          <span className="text-xs text-muted-foreground">
+            Showing {filtered.length} row{filtered.length !== 1 ? 's' : ''} · {formatINR(totalShown)}
+          </span>
+        )}
         {filterProjectBalance !== undefined && (
           <>
             <span className="h-4 w-px bg-rose-200" />
@@ -1085,21 +1302,14 @@ export default function SiteExpensesPage() {
               Project Totals ({filterTo ? `through ${filterTo}` : 'All Time'}):
             </span>
             <span className="text-xs text-blue-600 font-medium">
-              Received: {formatINR(filterProjectReceivedToDate ?? filterProjectBalance.received)}
+              Received: {formatINR(filterProjectBalance.received)}
             </span>
             <span className="text-xs text-rose-600 font-medium">
-              Expenses: {formatINR(filterProjectExpensesToDate ?? filterProjectBalance.spent)}
+              Expenses: {formatINR(filterProjectBalance.spent)}
             </span>
-            {(() => {
-              const received = filterProjectReceivedToDate ?? filterProjectBalance.received;
-              const spent    = filterProjectExpensesToDate ?? filterProjectBalance.spent;
-              const bal = received - spent;
-              return (
-                <span className={`text-xs font-bold ${bal >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
-                  Available Balance: {formatINR(bal)}
-                </span>
-              );
-            })()}
+            <span className={`text-xs font-bold ${filterProjectBalance.balance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+              Available Balance: {formatINR(filterProjectBalance.balance)}
+            </span>
           </>
         )}
       </div>
@@ -1212,12 +1422,35 @@ export default function SiteExpensesPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={5} className="px-4 py-2.5">Total</td>
-                    <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totalFiltered)}</td>
+                    <td colSpan={5} className="px-4 py-2.5">
+                      {refining || pageCursor ? 'Total (shown)' : 'Total'}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totalShown)}</td>
                     <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
                   </tr>
+                  {(refining || pageCursor) && (
+                    <tr className="bg-muted/50 font-semibold">
+                      <td colSpan={5} className="px-4 py-2.5">Period total (all {periodExpenseCount} records)</td>
+                      <td className="px-4 py-2.5 text-right text-rose-800">{formatINR(periodExpenseTotal)}</td>
+                      <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
+                    </tr>
+                  )}
                 </tfoot>
               </table>
+            </div>
+          )}
+
+          {/* Cursor pagination — the table holds one page at a time rather than the whole
+              collection, while the totals above come from the server-side aggregate. */}
+          {pageCursor && (
+            <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
+              <span className="text-xs text-muted-foreground">
+                Showing {expenses.length} of {periodExpenseCount} records
+              </span>
+              <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} className="gap-2">
+                {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                Load {Math.min(SAS_PAGE_SIZE, periodExpenseCount - expenses.length)} more
+              </Button>
             </div>
           )}
         </CardContent>
@@ -1230,7 +1463,11 @@ export default function SiteExpensesPage() {
         title="Import Site Expenses"
         fields={expenseImportFields}
         onSaveRow={saveExpenseRow}
-        onImportComplete={() => { void log('Import SAS Expenses', {}); void loadAll(); }}
+        onImportComplete={() => {
+          void log('Import SAS Expenses', {});
+          void loadAll();
+          void runImportAlerts();
+        }}
       />
 
       {/* Expense Detail Dialog */}
@@ -1406,12 +1643,17 @@ export default function SiteExpensesPage() {
             {/* Project */}
             <div className="col-span-2 space-y-1.5">
               <Label>Project <span className="text-destructive">*</span></Label>
+              {/* Only projects the user may actually write to — a viewer-only project has no
+                  business being selectable in a form that records spend against it. */}
               <Select value={form.projectId} onValueChange={selectProject}>
                 <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                 <SelectContent>
-                  {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                  {writableProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {writableProjects.length === 0 && (
+                <p className="text-xs text-destructive">You have read-only access to every project assigned to you.</p>
+              )}
             </div>
 
             {/* Available balance for selected project */}

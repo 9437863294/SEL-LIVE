@@ -8,6 +8,7 @@ import {
   type SASBudget, type SASBudgetApproval, type SASCategoryBudget,
   type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -143,7 +144,10 @@ export default function BudgetReportsPage() {
   }
 
   // ── Load ───────────────────────────────────────────────────────────────────
-  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading]);
+  // Scope depends on the resolved user and their All-Projects permission, so a late-arriving
+  // profile re-runs the load rather than leaving the page scoped to nothing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading, user?.id, canViewAll]);
 
   // When FY changes, set filterMonth to current month if it's in the new FY, else clear to show all
   useEffect(() => {
@@ -157,16 +161,18 @@ export default function BudgetReportsPage() {
     setLoading(true);
     setCatBudgetErr(false);
     try {
-      const [pSnap, bSnap, eSnap, paySnap] = await Promise.all([
+      const [pSnap, bSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(collection(db, SAS_COLLECTIONS.budgets)),
-        getDocs(collection(db, SAS_COLLECTIONS.expenses)),
-        getDocs(collection(db, SAS_COLLECTIONS.payments)),
       ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount));
+      const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      setProjects(allProjects.filter(p => p.enabledForSiteAccount));
       setBudgets(bSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
-      setExpenses(eSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
-      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
+      // Scoped to the projects this user may see, on the server — this page used to pull the
+      // organisation's entire expense and payment collections and filter them in the browser.
+      const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
+      setExpenses(ledger.expenses);
+      setPayments(ledger.payments);
     } finally {
       setLoading(false);
     }
@@ -765,7 +771,7 @@ export default function BudgetReportsPage() {
                                           catBudgetSum > row.budget ? 'text-destructive' :
                                           catBudgetSum === row.budget ? 'text-teal-600' : 'text-amber-600'
                                         )}>
-                                          {formatINR(catBudgetSum)} alloc'd
+                                          {formatINR(catBudgetSum)} allocated
                                         </p>
                                       )}
                                     </div>

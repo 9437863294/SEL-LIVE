@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   collection, doc, getDocs, query, serverTimestamp, setDoc, where,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import {
   SAS_COLLECTIONS,
   type SASBudgetAlertConfig,
@@ -299,16 +299,28 @@ export default function BudgetAlertsPage() {
     try {
       const now   = new Date();
       const month = now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
-      const res   = await fetch('/api/sas/budget-alert-email', {
+      /*
+       * `isTest` was already being sent and the route ignored it, so a delivery check arrived
+       * looking exactly like a genuine "85% of budget used" alert with a plausible ₹4.25L figure.
+       * The route now renders a test banner and a `[TEST]` subject prefix for it.
+       *
+       * The route is authenticated, so the caller's ID token goes with the request.
+       */
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        toast({ title: 'Session expired', description: 'Sign in again to send a test.', variant: 'destructive' });
+        return;
+      }
+      const res = await fetch('/api/sas/budget-alert-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          projectName:  cfg.projectName,
+          projectName:  cfg.projectName || 'All Projects',
           monthLabel:   month,
           budgetAmount: 500000,
           spentAmount:  425000,
           pctUsed:      85,
-          thresholdPct: cfg.thresholds[0] ?? 80,
+          thresholdPct: cfg.thresholds?.[0] ?? 80,
           recipients:   cfg.recipients,
           link:         window.location.origin + '/site-account-statement/reports/budget',
           isTest:       true,

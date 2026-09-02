@@ -38,6 +38,7 @@
     "typecheck:e-approval": "tsc -p tsconfig.e-approval.json",
     "test:access-control": "node --experimental-strip-types --test tests/access-control-domain.test.mjs",
     "typecheck:access-control": "tsc -p tsconfig.access-control.json",
+    "test:site-account-statement": "node --experimental-strip-types --test tests/site-account-statement-scope.test.mjs",
     "test:greythr": "node --experimental-strip-types --test tests/greythr-domain.test.mjs tests/greythr-linking.test.mjs",
     "typecheck:greythr": "tsc -p tsconfig.greythr.json",
     "firebase:admin-env": "node scripts/set-firebase-admin-env.mjs",

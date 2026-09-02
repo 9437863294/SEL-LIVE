@@ -7,6 +7,7 @@ import {
   formatINR, SAS_COLLECTIONS,
   type SASBudget, type SASExpense, type SASProject, type SASTenderBudget,
 } from '@/lib/site-account-statement';
+import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Badge } from '@/components/ui/badge';
@@ -62,14 +63,21 @@ function ProjectForecast({ project, tb, expenses, budgets }: ProjectForecastProp
   const now        = currentMonthStr();
 
   const rows = useMemo(() => {
+    // A plain loop rather than `map` with a mutated closure variable: the running balance carries
+    // from one row to the next, which `map` can only express by reaching outside its own callback.
+    const built: {
+      m: string; perMonth: number; setBudget: number | null; actual: number;
+      planVariance: number | null; cumBalance: number | null; revisedMonthly: number | null;
+      isFuture: boolean; isCurrent: boolean;
+    }[] = [];
     let cumBalance = tb.tenderAmount;
 
-    return months.map((m, idx) => {
+    months.forEach((m, idx) => {
       const isFuture  = m > now;
       const isCurrent = m === now;
       const actual    = expenses
         .filter(e => e.projectId === project.id && e.expenseDate.startsWith(m))
-        .reduce((s, e) => s + e.expenseAmount, 0);
+        .reduce((s, e) => s + (e.expenseAmount || 0), 0);
 
       const setBudget = budgets.find(
         b => b.projectId === project.id && b.budgetType === 'monthly' && b.period === m
@@ -89,13 +97,25 @@ function ProjectForecast({ project, tb, expenses, budgets }: ProjectForecastProp
       const remainingAfter = totalMonths - idx - 1;
       const revisedMonthly = remainingAfter > 0 ? cumBalance / remainingAfter : null;
 
-      return { m, perMonth, setBudget, actual, planVariance, cumBalance: cumBalanceDisplay, revisedMonthly, isFuture, isCurrent };
+      built.push({ m, perMonth, setBudget, actual, planVariance, cumBalance: cumBalanceDisplay, revisedMonthly, isFuture, isCurrent });
     });
+
+    return built;
   }, [months, totalMonths, perMonth, tb.tenderAmount, expenses, budgets, project.id, now]);
 
+  /*
+   * Spend inside the tender window only.
+   *
+   * This filtered on the start month with no upper bound, so anything booked after the tender ended
+   * still counted towards Total Spent, Balance and % Used — while the month-by-month table below,
+   * which only covers months in the window, did not. The summary and the table could not be
+   * reconciled, and a finished tender kept drifting further "over budget" as later work was booked.
+   */
+  const windowStart = `${tb.startMonth}-01`;
+  const windowEnd   = `${tb.endMonth}-31`;
   const totalSpent = expenses
-    .filter(e => e.projectId === project.id && e.expenseDate >= tb.startMonth.slice(0, 7) + '-01')
-    .reduce((s, e) => s + e.expenseAmount, 0);
+    .filter(e => e.projectId === project.id && e.expenseDate >= windowStart && e.expenseDate <= windowEnd)
+    .reduce((s, e) => s + (e.expenseAmount || 0), 0);
 
   const balance        = tb.tenderAmount - totalSpent;
   const spentPct       = tb.tenderAmount > 0 ? (totalSpent / tb.tenderAmount) * 100 : 0;
@@ -269,21 +289,27 @@ export default function TenderForecastPage() {
   const [expanded,      setExpanded]      = useState<Set<string>>(new Set());
   const [filterStatus,  setFilterStatus]  = useState<'all' | 'active' | 'ended'>('active');
 
-  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading]);
+  // Scope depends on the resolved user and their All-Projects permission, so a late-arriving
+  // profile re-runs the load rather than leaving the page scoped to nothing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading, user?.id, canViewAll]);
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, tbSnap, eSnap, bSnap] = await Promise.all([
+      const [pSnap, tbSnap, bSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(collection(db, SAS_COLLECTIONS.tenderBudgets)),
-        getDocs(collection(db, SAS_COLLECTIONS.expenses)),
         getDocs(collection(db, SAS_COLLECTIONS.budgets)),
       ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
+      const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      setProjects(allProjects.filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setTenderBudgets(tbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASTenderBudget)));
-      setExpenses(eSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
       setBudgets(bSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
+      // Scoped to the projects this user may see, on the server — this page used to pull the
+      // organisation's entire expense collection and filter it in the browser.
+      const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
+      setExpenses(ledger.expenses);
     } finally {
       setLoading(false);
     }

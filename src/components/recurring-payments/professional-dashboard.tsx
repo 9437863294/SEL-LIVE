@@ -201,8 +201,14 @@ export default function ProfessionalRecurringDashboard() {
     [normalized, filters],
   );
 
-  const today = dateOnly(new Date());
-  const inDays = (days: number) => dateOnly(new Date(Date.now() + days * DAY));
+  // Read the clock once per mount, not on every render. Calling `new Date()`/`Date.now()` inline
+  // during render made the dashboard's "due today" and "due this week" boundaries depend on which
+  // render they were evaluated in — so a re-render that straddled midnight silently moved every
+  // bucket, and the server and client could disagree on hydration. React's compiler flags this as
+  // an impure call during render for exactly this reason.
+  const [nowMs] = useState(() => Date.now());
+  const today = dateOnly(new Date(nowMs));
+  const inDays = (days: number) => dateOnly(new Date(nowMs + days * DAY));
   const isOpen = (payment: PaymentObligation) =>
     !closed.includes(payment.status);
   const sum = (items: PaymentObligation[]) =>

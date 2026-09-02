@@ -12,6 +12,8 @@ import {
   type SASBudget, type SASBudgetApproval, type SASCategory, type SASCategoryBudget,
   type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { resetBudgetAlertState } from '@/lib/sas-budget-alerts';
+import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { ControlledField } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -221,25 +223,30 @@ export default function SiteFundBudgetPage() {
   const [filterStatus,  setFilterStatus]  = useState<'all' | 'on-track' | 'warning' | 'over-budget' | 'no-budget'>('all');
   const [filterFY,      setFilterFY]      = useState<string>('all');
 
-  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading]);
+  // Scope depends on the resolved user and their All-Projects permission, so a late-arriving
+  // profile re-runs the load rather than leaving the page scoped to nothing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!isAuthLoading) void loadAll(); }, [isAuthLoading, user?.id, canViewAll]);
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, bSnap, eSnap, paySnap, cSnap, cbSnap] = await Promise.all([
+      const [pSnap, bSnap, cSnap, cbSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.budgets))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories))),
         getDocs(collection(db, SAS_COLLECTIONS.categoryBudgets)),
       ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
+      const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      setProjects(allProjects.filter(p => p.enabledForSiteAccount && p.status === 'Active'));
       setAllBudgets(bSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
-      setAllExpenses(eSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
-      setAllPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
       setCategories(cSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false).sort((a, b) => a.name.localeCompare(b.name)));
       setAllCatBudgets(cbSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategoryBudget)));
+      // Scoped to the projects this user may see, on the server — this page used to pull the
+      // organisation's entire expense and payment collections and filter them in the browser.
+      const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
+      setAllExpenses(ledger.expenses);
+      setAllPayments(ledger.payments);
     } finally {
       setLoading(false);
     }
@@ -257,18 +264,37 @@ export default function SiteFundBudgetPage() {
     [projects, user?.id, canViewAll]
   );
 
-  const isAltUser = useMemo(() => !canViewAll && visibleProjects.some(p => p.altUserId === user?.id), [canViewAll, visibleProjects, user?.id]);
+  /*
+   * Whether the user has a write-bearing assignment on a *specific* project.
+   *
+   * `isAltUser` used to be one page-wide boolean — "am I the alt user on any project" — that was
+   * OR-ed into every budget-type permission. Since `visibleProjects` also contains projects where
+   * the user is only the viewer, being alt user on one project silently granted budget-editing
+   * rights over every project on the page.
+   */
+  const isAssignedTo = useMemo(() => (projectId: string): boolean => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return false;
+    return project.assignedPersonId === user?.id || project.altUserId === user?.id;
+  }, [projects, user?.id]);
 
   // ── Per-budget-type permissions ───────────────────────────────────────────────
   // Role management is granular per budget level (Total / FY / Monthly / Category).
   // Any role that still has the coarse "Budget" permission keeps seeing everything
   // (backward compatible); admins who want to restrict a role to e.g. only Category
   // Budget uncheck "Budget" and tick just the sub-resources that role should see.
-  function typePerm(resource: string) {
+  //
+  // `projectId` narrows the assignment-based grant to the project the row belongs to. Omitting it
+  // answers the page-level question "could this user edit anything at all", which is what the
+  // toolbar buttons need.
+  function typePerm(resource: string, projectId?: string) {
+    const assigned = projectId
+      ? isAssignedTo(projectId)
+      : visibleProjects.some(p => isAssignedTo(p.id));
     return {
       view: canView   || can('View',   `${MODULE}.${resource}`),
-      add:  canAdd    || can('Add',    `${MODULE}.${resource}`) || isAltUser,
-      edit: canEdit   || can('Edit',   `${MODULE}.${resource}`) || isAltUser,
+      add:  canAdd    || can('Add',    `${MODULE}.${resource}`) || assigned,
+      edit: canEdit   || can('Edit',   `${MODULE}.${resource}`) || assigned,
       del:  canDelete || can('Delete', `${MODULE}.${resource}`),
     };
   }
@@ -295,19 +321,39 @@ export default function SiteFundBudgetPage() {
     }
   }, [loading, initialized, visibleProjects]);
 
-  // ── Summary cards (total-budget level only) ───────────────────────────────────
+  /**
+   * A project's overall budget: explicit total → sum of FY budgets → sum of monthly budgets.
+   *
+   * This is the cascade the tree rows have always used. The summary cards and the status filter
+   * below used to sum only the *monthly* rows, so a project with an explicit total budget and no
+   * monthly breakdown showed ₹0 in the header while the row beneath it showed the real figure, and
+   * the "No Budget Set" filter hid projects that plainly had one.
+   */
+  const projectBudgetTotal = useMemo(() => (projectId: string): number => {
+    const explicit = allBudgets.find(b => b.projectId === projectId && b.budgetType === 'total');
+    if (explicit && explicit.budgetAmount > 0) return explicit.budgetAmount;
+    const fySum = allBudgets
+      .filter(b => b.projectId === projectId && b.budgetType === 'fy')
+      .reduce((s, b) => s + (b.budgetAmount || 0), 0);
+    if (fySum > 0) return fySum;
+    return allBudgets
+      .filter(b => b.projectId === projectId && b.budgetType === 'monthly')
+      .reduce((s, b) => s + (b.budgetAmount || 0), 0);
+  }, [allBudgets]);
+
+  // ── Summary cards ─────────────────────────────────────────────────────────────
   const summary = useMemo(() => {
     const ids = new Set(visibleProjects.map(p => p.id));
-    const budget   = allBudgets.filter(b => b.budgetType === 'monthly' && ids.has(b.projectId)).reduce((s, b) => s + b.budgetAmount, 0);
+    const budget   = [...ids].reduce((s, id) => s + projectBudgetTotal(id), 0);
     const spent    = allExpenses.filter(e => ids.has(e.projectId)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
     const received = allPayments.filter(p => ids.has(p.projectId)).reduce((s, p) => s + (p.receivedAmount || 0), 0);
     const overCount = [...ids].filter(id => {
-      const monthSum = allBudgets.filter(b => b.projectId === id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0);
-      const spent = allExpenses.filter(e => e.projectId === id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-      return monthSum > 0 && spent > monthSum;
+      const projectBudget = projectBudgetTotal(id);
+      const projectSpent = allExpenses.filter(e => e.projectId === id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+      return projectBudget > 0 && projectSpent > projectBudget;
     }).length;
     return { budget, spent, received, overCount };
-  }, [visibleProjects, allBudgets, allExpenses, allPayments]);
+  }, [visibleProjects, projectBudgetTotal, allExpenses, allPayments]);
 
   // ── Filter helpers ────────────────────────────────────────────────────────────
   const availableFYs = useMemo(() => {
@@ -329,17 +375,18 @@ export default function SiteFundBudgetPage() {
         if (!hasData) return false;
       }
       if (filterStatus !== 'all') {
-        const monthSum = allBudgets.filter(b => b.projectId === p.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0);
-        const spent    = allExpenses.filter(e => e.projectId === p.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
-        const pct      = monthSum > 0 ? (spent / monthSum) * 100 : 0;
-        if (filterStatus === 'no-budget'    && monthSum > 0) return false;
-        if (filterStatus === 'on-track'     && !(monthSum > 0 && pct < 80)) return false;
-        if (filterStatus === 'warning'      && !(monthSum > 0 && pct >= 80 && spent <= monthSum)) return false;
-        if (filterStatus === 'over-budget'  && !(monthSum > 0 && spent > monthSum)) return false;
+        // Same cascade as the rows themselves, so "No Budget Set" means what it says.
+        const projectBudget = projectBudgetTotal(p.id);
+        const spent = allExpenses.filter(e => e.projectId === p.id).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+        const pct   = projectBudget > 0 ? (spent / projectBudget) * 100 : 0;
+        if (filterStatus === 'no-budget'    && projectBudget > 0) return false;
+        if (filterStatus === 'on-track'     && !(projectBudget > 0 && pct < 80)) return false;
+        if (filterStatus === 'warning'      && !(projectBudget > 0 && pct >= 80 && spent <= projectBudget)) return false;
+        if (filterStatus === 'over-budget'  && !(projectBudget > 0 && spent > projectBudget)) return false;
       }
       return true;
     });
-  }, [visibleProjects, filterSearch, filterFY, filterStatus, allBudgets, allExpenses]);
+  }, [visibleProjects, filterSearch, filterFY, filterStatus, allBudgets, allExpenses, projectBudgetTotal]);
 
   const hasActiveFilters = filterSearch !== '' || filterStatus !== 'all' || filterFY !== 'all';
 
@@ -365,10 +412,24 @@ export default function SiteFundBudgetPage() {
     );
   }
 
-  // Returns sorted list of category names to show under a month
+  /**
+   * Category names to list under a month.
+   *
+   * Only *main* categories. Spend is attributed by `expenseCategory`, which never holds a
+   * sub-category name, so listing sub-categories here produced rows that could never show a rupee
+   * of spend — and, worse, invited an admin to set a budget against one, which then rolled up into
+   * the month's total alongside its parent and double-counted it.
+   *
+   * Names already carried by a stored budget or a recorded expense are still included even if the
+   * category has since been renamed or deactivated, so historical rows do not silently vanish.
+   */
+  const mainCategoryNames = useMemo(
+    () => new Set(categories.filter(c => !c.parentId).map(c => c.name).filter(Boolean)),
+    [categories]
+  );
+
   function getMonthCategories(projectId: string, month: string): string[] {
-    const names = new Set<string>();
-    categories.forEach(c => { if (c.name) names.add(c.name); });
+    const names = new Set<string>(mainCategoryNames);
     allCatBudgets.filter(b => b.projectId === projectId && b.period === month).forEach(b => names.add(b.categoryName));
     allExpenses.filter(e => e.projectId === projectId && e.expenseDate?.startsWith(month)).forEach(e => {
       if (e.expenseCategory) names.add(e.expenseCategory);
@@ -445,6 +506,15 @@ export default function SiteFundBudgetPage() {
       }
       setDialogOpen(false);
       void loadAll();
+      /*
+       * Moving a budget moves every threshold line with it. `sentThresholds` was append-only, so
+       * raising a budget after its 80% alert had fired meant 80% of the *new* budget could never
+       * alert. Clearing this scope re-arms it.
+       */
+      void resetBudgetAlertState({
+        projectId: form.projectId,
+        ...(dialogTab === 'total' ? { scopeType: 'total' as const } : { period, scopeType: dialogTab }),
+      });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
@@ -463,6 +533,9 @@ export default function SiteFundBudgetPage() {
       void log('Delete SAS Budget', { project: budget.projectName, type: budget.budgetType, period: budget.period });
       toast({ title: 'Deleted', description: 'Budget deleted.' });
       void loadAll();
+      // Removing a budget falls the scope back to a rolled-up figure, which sits its thresholds
+      // somewhere new — so the sent ledger for this project is no longer meaningful.
+      void resetBudgetAlertState({ projectId: budget.projectId });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
@@ -487,42 +560,80 @@ export default function SiteFundBudgetPage() {
       toast({ title: 'Not allowed', description: 'You do not have permission to set category budgets.', variant: 'destructive' });
       return;
     }
-    const toSave = categories.filter(cat => {
-      const v = bulkAmounts[cat.name];
-      return v && Number(v) > 0;
+    const bulkCategories = categories.filter(c => !c.parentId);
+
+    /*
+     * A blanked or zeroed field *removes* that category's budget.
+     *
+     * The grid used to save only rows with an amount greater than zero, so clearing a field left
+     * the old value in place and there was no way to undo a budget set by mistake other than
+     * hunting the row down in the tree. The dialog is pre-filled with the stored amounts, so an
+     * emptied field is an unambiguous instruction to remove it.
+     */
+    const toSave = bulkCategories.filter(cat => Number(bulkAmounts[cat.name]) > 0);
+    const toRemove = bulkCategories.filter(cat => {
+      const entered = (bulkAmounts[cat.name] ?? '').trim();
+      const cleared = entered === '' || Number(entered) === 0;
+      const existed = allCatBudgets.some(b =>
+        b.projectId === bulkProject.id && b.period === bulkMonth && b.categoryName === cat.name
+      );
+      return cleared && existed;
     });
-    if (toSave.length === 0) {
+
+    if (toSave.length === 0 && toRemove.length === 0) {
       toast({ title: 'Nothing to save', description: 'Enter a budget amount for at least one category.', variant: 'destructive' });
       return;
     }
+    if (toRemove.length > 0 && !categoryPerm.del) {
+      toast({ title: 'Not allowed', description: 'You do not have permission to remove category budgets.', variant: 'destructive' });
+      return;
+    }
+
     setBulkSaving(true);
     try {
-      await Promise.all(toSave.map(async cat => {
-        const amount = Number(bulkAmounts[cat.name]);
-        const existing = allCatBudgets.find(b =>
-          b.projectId === bulkProject.id && b.period === bulkMonth && b.categoryName === cat.name
-        );
-        if (existing) {
-          await updateDoc(doc(db, SAS_COLLECTIONS.categoryBudgets, existing.id), {
-            budgetAmount: amount, updatedAt: serverTimestamp(),
-          });
-        } else {
-          await addDoc(collection(db, SAS_COLLECTIONS.categoryBudgets), {
-            projectId:    bulkProject.id,
-            projectName:  bulkProject.projectName,
-            period:       bulkMonth,
-            categoryId:   cat.id,
-            categoryName: cat.name,
-            budgetAmount: amount,
-            notes:        '',
-            createdAt:    serverTimestamp(),
-            updatedAt:    serverTimestamp(),
-          });
-        }
-      }));
-      toast({ title: 'Saved', description: `Budgets set for ${toSave.length} categor${toSave.length > 1 ? 'ies' : 'y'} in ${monthLabel(bulkMonth)}.` });
+      await Promise.all([
+        ...toSave.map(async cat => {
+          const amount = Number(bulkAmounts[cat.name]);
+          const existing = allCatBudgets.find(b =>
+            b.projectId === bulkProject.id && b.period === bulkMonth && b.categoryName === cat.name
+          );
+          if (existing) {
+            await updateDoc(doc(db, SAS_COLLECTIONS.categoryBudgets, existing.id), {
+              budgetAmount: amount, updatedAt: serverTimestamp(),
+            });
+          } else {
+            await addDoc(collection(db, SAS_COLLECTIONS.categoryBudgets), {
+              projectId:    bulkProject.id,
+              projectName:  bulkProject.projectName,
+              period:       bulkMonth,
+              categoryId:   cat.id,
+              categoryName: cat.name,
+              budgetAmount: amount,
+              notes:        '',
+              createdAt:    serverTimestamp(),
+              updatedAt:    serverTimestamp(),
+            });
+          }
+        }),
+        ...toRemove.map(async cat => {
+          const existing = allCatBudgets.find(b =>
+            b.projectId === bulkProject.id && b.period === bulkMonth && b.categoryName === cat.name
+          );
+          if (existing) await deleteDoc(doc(db, SAS_COLLECTIONS.categoryBudgets, existing.id));
+        }),
+      ]);
+
+      const savedPart   = toSave.length   ? `${toSave.length} set`      : '';
+      const removedPart = toRemove.length ? `${toRemove.length} removed` : '';
+      toast({
+        title: 'Saved',
+        description: `${[savedPart, removedPart].filter(Boolean).join(', ')} for ${monthLabel(bulkMonth)}.`,
+      });
       setBulkDialogOpen(false);
       void loadAll();
+      // Changing a budget changes where its thresholds sit, so the "already sent" ledger for this
+      // project's category scope has to be cleared or those thresholds can never fire again.
+      void resetBudgetAlertState({ projectId: bulkProject.id, period: bulkMonth, scopeType: 'category' });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
@@ -603,6 +714,7 @@ export default function SiteFundBudgetPage() {
       }
       setCatDialogOpen(false);
       void loadAll();
+      void resetBudgetAlertState({ projectId: catDialogProject.id, period: catDialogMonth, scopeType: 'category' });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
@@ -619,6 +731,7 @@ export default function SiteFundBudgetPage() {
       await deleteDoc(doc(db, SAS_COLLECTIONS.categoryBudgets, budget.id));
       toast({ title: 'Removed', description: 'Category budget removed.' });
       void loadAll();
+      void resetBudgetAlertState({ projectId: budget.projectId, period: budget.period, scopeType: 'category' });
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
@@ -783,6 +896,10 @@ export default function SiteFundBudgetPage() {
       setUploadOpen(false);
       setUploadRows([]);
       void loadAll();
+      // Every project the sheet touched now has different threshold lines.
+      void Promise.allSettled(
+        [...new Set(valid.map(row => row.projectId))].map(projectId => resetBudgetAlertState({ projectId }))
+      );
     } catch (e: any) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
@@ -1116,6 +1233,19 @@ export default function SiteFundBudgetPage() {
                   {(() => {
                     const filterFYStart = filterFY !== 'all' ? parseInt(filterFY) : null;
                     return filteredProjects.map(project => {
+                    /*
+                     * Write rights are evaluated against *this* project, so an assignment on one
+                     * project no longer confers budget-editing rights over a project the user can
+                     * only view. Read rights stay page-level — they are pure RBAC.
+                     */
+                    const totalPerm    = typePerm('Total Budget',    project.id);
+                    const fyPerm       = typePerm('FY Budget',       project.id);
+                    const monthlyPerm  = typePerm('Monthly Budget',  project.id);
+                    const categoryPerm = typePerm('Category Budget', project.id);
+                    // NOTE: the Actions *column* is kept in step with the page-level
+                    // `anyRowActionPerm` used by the header, so every row has the same cell count.
+                    // Only the buttons inside it are gated per project.
+
                     const totalBudget = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'total') ?? null;
                     const pExp    = allExpenses.filter(e => e.projectId === project.id);
                     const pPay    = allPayments.filter(p => p.projectId === project.id);
@@ -1337,7 +1467,7 @@ export default function SiteFundBudgetPage() {
                                               {!mB && <p className="text-[10px] font-normal text-muted-foreground">∑ categories</p>}
                                               {showCatAlloc && (
                                                 <p className={cn('text-[10px] font-normal', catAllocated > mAmt ? 'text-destructive' : 'text-muted-foreground')}>
-                                                  {formatINR(catAllocated)} alloc'd
+                                                  {formatINR(catAllocated)} allocated
                                                 </p>
                                               )}
                                             </div>

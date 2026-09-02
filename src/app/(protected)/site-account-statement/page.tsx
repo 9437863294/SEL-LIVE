@@ -11,7 +11,8 @@ import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
   type SASAttachment, type SASBudget, type SASCategory, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
-import { checkAndFireBudgetAlerts } from '@/lib/sas-budget-alerts';
+import { runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
+import { allExpenses as fetchAllExpenses, allPayments as fetchAllPayments } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -224,11 +225,19 @@ function QuickExpenseDialog({
       resetForm();
       onOpenChange(false);
       onSuccess();
-      // Fire-and-forget — do not await, do not block
-      void checkAndFireBudgetAlerts({
+      /*
+       * Fire-and-forget — do not await, do not block.
+       *
+       * This used to check only the *monthly* budget, so a quick-added expense could take a project
+       * past its FY, total or category budget without anyone hearing about it, while the very same
+       * expense added from the Site Expenses page would have alerted on all four. One call now runs
+       * every scope from a single load of the alert configuration.
+       */
+      void runBudgetAlertChecks({
         projectId: project.id,
         projectName: project.projectName,
-        period: form.expenseDate.slice(0, 7),
+        periods: [form.expenseDate.slice(0, 7)],
+        categoryNames: [form.expenseCategory].filter(Boolean),
         newExpenseAmount: amount,
         assignedPersonId: project.assignedPersonId,
         altUserId: project.altUserId,
@@ -441,10 +450,17 @@ interface MyProjectCardProps {
   categories: SASCategory[];
   currentUserName: string;
   totalBudgetAmount?: number;
+  /** How `totalBudgetAmount` was arrived at, so the card can say so rather than imply an exact figure. */
+  budgetSource?: 'total' | 'fy-sum' | 'month-sum';
+  /** False for viewer-only assignments — the card renders read-only. */
+  canRecordExpense: boolean;
   onRefresh: () => void;
 }
 
-function MyProjectCard({ project, payments, expenses, categories, currentUserName, totalBudgetAmount, onRefresh }: MyProjectCardProps) {
+function MyProjectCard({
+  project, payments, expenses, categories, currentUserName,
+  totalBudgetAmount, budgetSource, canRecordExpense, onRefresh,
+}: MyProjectCardProps) {
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
 
   const projPayments = useMemo(() => payments.filter(p => p.projectId === project.id), [payments, project.id]);
@@ -509,7 +525,15 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
               <div className="flex items-center justify-between gap-2 mb-1">
                 <div className="flex items-center gap-1.5">
                   <Target className="h-3.5 w-3.5 text-emerald-600" />
-                  <p className="text-xs text-emerald-700 font-medium">Total Budget</p>
+                  {/* The label now states which budget this actually is. It previously read
+                      "Total Budget" while showing the sum of every monthly budget row ever
+                      recorded — a different number from the one the summary table called by the
+                      same name two sections below. */}
+                  <p className="text-xs text-emerald-700 font-medium">
+                    {budgetSource === 'total' ? 'Total Budget'
+                      : budgetSource === 'fy-sum' ? 'Total Budget (∑ FY)'
+                      : 'Total Budget (∑ monthly)'}
+                  </p>
                 </div>
                 <span className={cn('text-xs font-semibold', totalExpenses > totalBudgetAmount ? 'text-destructive' : totalExpenses / totalBudgetAmount >= 0.8 ? 'text-amber-600' : 'text-emerald-600')}>
                   {((totalExpenses / totalBudgetAmount) * 100).toFixed(1)}% used
@@ -560,13 +584,20 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
 
           {/* Action buttons */}
           <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
-            <Button
-              size="sm"
-              className="gap-1.5 bg-rose-600 hover:bg-rose-700 text-white"
-              onClick={() => setExpenseDialogOpen(true)}
-            >
-              <Plus className="h-3.5 w-3.5" /> Add Expense
-            </Button>
+            {/* Viewers see the same figures without a way to write to the project. */}
+            {canRecordExpense ? (
+              <Button
+                size="sm"
+                className="gap-1.5 bg-rose-600 hover:bg-rose-700 text-white"
+                onClick={() => setExpenseDialogOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Expense
+              </Button>
+            ) : (
+              <div className="flex items-center justify-center rounded-md border border-dashed border-slate-200 px-2 text-[11px] text-muted-foreground">
+                View only
+              </div>
+            )}
             <Link href={`/site-account-statement/reports/statement?projectId=${project.id}`} className="w-full">
               <Button size="sm" variant="outline" className="w-full gap-1.5">
                 <BookOpen className="h-3.5 w-3.5" /> Statement
@@ -586,6 +617,7 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
         </CardContent>
       </Card>
 
+      {canRecordExpense && (
       <QuickExpenseDialog
         open={expenseDialogOpen}
         onOpenChange={setExpenseDialogOpen}
@@ -597,6 +629,7 @@ function MyProjectCard({ project, payments, expenses, categories, currentUserNam
         projectBalance={balance}
         onSuccess={onRefresh}
       />
+      )}
     </>
   );
 }
@@ -615,45 +648,60 @@ export default function SiteAccountDashboardPage() {
   const [categories, setCategories] = useState<SASCategory[]>([]);
   const [budgets, setBudgets] = useState<SASBudget[]>([]);
   const [loading, setLoading] = useState(true);
+  /** True when the ledger scan hit its cap, so the figures below are incomplete and say so. */
+  const [ledgerTruncated, setLedgerTruncated] = useState(false);
 
   useEffect(() => {
     if (isAuthLoading) return;
     void loadAll();
-  }, [isAuthLoading]);
+    // `user?.id` matters: the ledger scope is derived from it, so a late-resolving profile has to
+    // re-run the load rather than leave the page showing an empty scope.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthLoading, user?.id, canViewAll]);
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, paySnap, expSnap, catSnap, budSnap] = await Promise.all([
+      // Projects first — the ledger reads below are scoped to whichever ones this user may see,
+      // rather than pulling every expense and payment in the organisation and filtering in the
+      // browser.
+      const [pSnap, catSnap, budSnap] = await Promise.all([
         getDocs(query(collection(db, SAS_COLLECTIONS.projects))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.payments), orderBy('receiptDate', 'desc'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.expenses), orderBy('expenseDate', 'desc'))),
         getDocs(query(collection(db, SAS_COLLECTIONS.categories), orderBy('name'))),
         getDocs(collection(db, SAS_COLLECTIONS.budgets)),
       ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)));
-      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
-      setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
+      const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      setProjects(allProjects);
       setCategories(catSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASCategory)).filter(c => c.isActive !== false));
       setBudgets(budSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)));
+
+      const scopeIds = canViewAll
+        ? null
+        : allProjects
+            .filter(p => p.assignedPersonId === user?.id || p.altUserId === user?.id || p.viewerId === user?.id)
+            .map(p => p.id);
+
+      const [expenseResult, paymentResult] = await Promise.all([
+        fetchAllExpenses({ projectIds: scopeIds }),
+        fetchAllPayments({ projectIds: scopeIds }),
+      ]);
+      setExpenses(expenseResult.rows);
+      setPayments(paymentResult.rows);
+      setLedgerTruncated(expenseResult.truncated || paymentResult.truncated);
     } finally {
       setLoading(false);
     }
   }
 
-  // Projects where the current user is primary, alt, or viewer
+  /*
+   * Every project the user is attached to in any role — primary, alt, or viewer.
+   *
+   * The card list used to exclude viewers while the access gate included them, so a viewer-only
+   * user passed the gate and then landed on "No projects assigned" — an empty state for someone who
+   * had been deliberately granted read access. Viewers now get the same cards, minus the write
+   * actions (see `canRecordExpense`).
+   */
   const myProjects = useMemo(
-    () => canViewAll
-      ? []
-      : projects.filter(p =>
-        (p.assignedPersonId === user?.id || p.altUserId === user?.id) &&
-        p.enabledForSiteAccount && p.status === 'Active'
-      ),
-    [projects, user?.id, canViewAll]
-  );
-
-  // Includes viewer-only access (for access gate)
-  const myAccessibleProjects = useMemo(
     () => canViewAll
       ? []
       : projects.filter(p =>
@@ -662,6 +710,38 @@ export default function SiteAccountDashboardPage() {
       ),
     [projects, user?.id, canViewAll]
   );
+
+  const myAccessibleProjects = myProjects;
+
+  /** Recording spend needs a primary or alt assignment — a viewer sees the card read-only. */
+  const canRecordExpenseOn = useMemo(() => (project: SASProject): boolean =>
+    project.assignedPersonId === user?.id || project.altUserId === user?.id,
+    [user?.id]
+  );
+
+  /**
+   * A project's overall budget, using the same cascade as the Site Fund Budget page:
+   * explicit total → sum of FY budgets → sum of monthly budgets.
+   *
+   * The card used to sum only the monthly rows and label the result "Total Budget", which both
+   * ignored an explicit total budget entirely and disagreed with the summary table below — two
+   * different numbers under the same name on one screen.
+   */
+  const budgetForProject = useMemo(() => (projectId: string) => {
+    const explicit = budgets.find(b => b.projectId === projectId && b.budgetType === 'total');
+    if (explicit && explicit.budgetAmount > 0) {
+      return { amount: explicit.budgetAmount, source: 'total' as const };
+    }
+    const fySum = budgets
+      .filter(b => b.projectId === projectId && b.budgetType === 'fy')
+      .reduce((sum, b) => sum + (b.budgetAmount || 0), 0);
+    if (fySum > 0) return { amount: fySum, source: 'fy-sum' as const };
+
+    const monthSum = budgets
+      .filter(b => b.projectId === projectId && b.budgetType === 'monthly')
+      .reduce((sum, b) => sum + (b.budgetAmount || 0), 0);
+    return { amount: monthSum, source: 'month-sum' as const };
+  }, [budgets]);
 
   // All enabled projects for admin overview
   const enabledProjects = useMemo(
@@ -719,9 +799,9 @@ export default function SiteAccountDashboardPage() {
           selectedMonths === null || selectedMonths.includes(e.expenseDate?.slice(0, 7) ?? '')
         ))
         .reduce((sum, expense) => sum + (expense.expenseAmount || 0), 0);
-      const plannedBudget = budgets
-        .filter(b => b.projectId === proj.id && b.budgetType === 'total')
-        .reduce((sum, budget) => sum + (budget.budgetAmount || 0), 0);
+      // Same cascade as the project cards and the Site Fund Budget page, so "Total Planned Budget"
+      // means one thing across the module.
+      const plannedBudget = budgetForProject(proj.id).amount;
       const balanceFund = plannedBudget - cumulativeExpenses;
       return {
         id: proj.id,
@@ -733,7 +813,7 @@ export default function SiteAccountDashboardPage() {
         balanceFundPct: plannedBudget > 0 ? (balanceFund / plannedBudget) * 100 : 0,
       };
     }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [enabledProjects, expenses, budgets, filterFY, filterMonth]);
+  }, [enabledProjects, expenses, budgetForProject, filterFY, filterMonth]);
 
   const filteredProjectStats = useMemo(() => projectStats.filter(stat => {
     if (filterSearch && !stat.name.toLowerCase().includes(filterSearch.toLowerCase())) return false;
@@ -745,10 +825,6 @@ export default function SiteAccountDashboardPage() {
 
   // FY budget total for stat card
   const totalFYBudget = useMemo(() => projectStats.reduce((s, p) => s + p.plannedBudget, 0), [projectStats]);
-
-  const highestExpense = useMemo(() => [...projectStats].sort((a, b) => b.cumulativeExpenses - a.cumulativeExpenses)[0], [projectStats]);
-  const lowBalance = useMemo(() => projectStats.filter(p => p.balanceFund < 10000), [projectStats]);
-  const overBudget = useMemo(() => projectStats.filter(p => p.plannedBudget > 0 && p.cumulativeExpenses > p.plannedBudget), [projectStats]);
 
   if (isAuthLoading || loading) {
     return (
@@ -772,6 +848,18 @@ export default function SiteAccountDashboardPage() {
   return (
     <div className="space-y-6">
 
+      {/* The dashboard totals every record it holds, so it has to say when it could not hold
+          them all rather than present a partial sum as the whole picture. */}
+      {ledgerTruncated && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p className="text-xs text-amber-800">
+            This organisation has more transactions than the dashboard loads at once, so the totals
+            below are based on the most recent records only. Use the reports for exact figures.
+          </p>
+        </div>
+      )}
+
       {/* ── My Projects (assigned person view) ── */}
       {myProjects.length > 0 && (
         <section>
@@ -781,18 +869,23 @@ export default function SiteAccountDashboardPage() {
             <Badge className="bg-emerald-100 text-emerald-700 text-xs">{myProjects.length}</Badge>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {myProjects.map(proj => (
-              <MyProjectCard
-                key={proj.id}
-                project={proj}
-                payments={payments}
-                expenses={expenses}
-                categories={categories}
-                currentUserName={user?.name ?? ''}
-                totalBudgetAmount={budgets.filter(b => b.projectId === proj.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0) || undefined}
-                onRefresh={loadAll}
-              />
-            ))}
+            {myProjects.map(proj => {
+              const projectBudget = budgetForProject(proj.id);
+              return (
+                <MyProjectCard
+                  key={proj.id}
+                  project={proj}
+                  payments={payments}
+                  expenses={expenses}
+                  categories={categories}
+                  currentUserName={user?.name ?? ''}
+                  totalBudgetAmount={projectBudget.amount || undefined}
+                  budgetSource={projectBudget.source}
+                  canRecordExpense={canRecordExpenseOn(proj)}
+                  onRefresh={loadAll}
+                />
+              );
+            })}
           </div>
         </section>
       )}

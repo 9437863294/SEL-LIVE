@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
+import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -49,7 +50,10 @@ export default function AccountStatementPage() {
 
   useEffect(() => {
     if (!isAuthLoading) void loadAll();
-  }, [isAuthLoading]);
+  // Scope depends on the resolved user and their All-Projects permission, so a late-arriving
+  // profile re-runs the load rather than leaving the page scoped to nothing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthLoading, user?.id, canViewAll]);
 
   const visibleProjects = useMemo(
     () => canViewAll ? projects : projects.filter(p =>
@@ -74,18 +78,36 @@ export default function AccountStatementPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [pSnap, paySnap, expSnap] = await Promise.all([
-        getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
-      ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount));
-      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
-      setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
+      const pSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')));
+      const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+      // `status === 'Active'` matches every other page in the module — an inactive project used to
+      // still show up in this report's dropdown.
+      setProjects(allProjects.filter(p => p.enabledForSiteAccount && p.status === 'Active'));
+      // Scoped to the projects this user may see, on the server — these pages used to pull the
+      // organisation's entire expense and payment collections and filter them in the browser.
+      const ledger = await loadScopedLedger({ projects: allProjects, userId: user?.id, canViewAll });
+      setPayments(ledger.payments);
+      setExpenses(ledger.expenses);
     } finally {
       setLoading(false);
     }
   }
+
+  /**
+   * The balance carried into the filtered period — everything for this project dated before
+   * `filterFrom`. Zero when no start date is set, since the statement then begins at inception.
+   */
+  const openingBalance = useMemo(() => {
+    if (!selectedProject || !filterFrom) return 0;
+    if (visibleProjectIds && !visibleProjectIds.has(selectedProject)) return 0;
+    const received = payments
+      .filter(p => p.projectId === selectedProject && p.receiptDate < filterFrom)
+      .reduce((s, p) => s + (p.receivedAmount || 0), 0);
+    const spent = expenses
+      .filter(e => e.projectId === selectedProject && e.expenseDate < filterFrom)
+      .reduce((s, e) => s + (e.expenseAmount || 0), 0);
+    return received - spent;
+  }, [selectedProject, filterFrom, payments, expenses, visibleProjectIds]);
 
   const statement = useMemo<TxLine[]>(() => {
     if (!selectedProject) return [];
@@ -114,20 +136,31 @@ export default function AccountStatementPage() {
       entries.push({ date: e.expenseDate, particulars: `${catLabel}${narrationPart || personPart}${billPart}`, receipt: 0, expense: e.expenseAmount || 0 });
     });
 
-    entries.sort((a, b) => a.date.localeCompare(b.date));
+    // Receipts before expenses on the same date, so a day's funding is on hand before it is spent
+    // and the running balance does not dip negative for purely presentational reasons.
+    entries.sort((a, b) => a.date.localeCompare(b.date) || (b.receipt - b.expense === 0 ? 0 : (b.receipt ? 1 : -1)));
 
-    let balance = 0;
+    /*
+     * The running balance starts from the balance carried into the period, not from zero.
+     *
+     * With a date filter applied, starting at zero made the Balance column show the period's
+     * cumulative *net movement* while labelling it the account balance — on a project that had
+     * been running for a year, a statement filtered to one month reported a balance that had never
+     * been true. This is the report that gets handed to auditors, so it now opens where the account
+     * actually stood.
+     */
+    let balance = openingBalance;
     return entries.map(e => {
       balance += e.receipt - e.expense;
       return { ...e, balance };
     });
-  }, [selectedProject, payments, expenses, filterFrom, filterTo]);
+  }, [selectedProject, payments, expenses, filterFrom, filterTo, openingBalance, visibleProjectIds]);
 
   const totals = useMemo(() => ({
     receipt: statement.reduce((s, l) => s + l.receipt, 0),
     expense: statement.reduce((s, l) => s + l.expense, 0),
-    balance: statement.length ? statement[statement.length - 1].balance : 0,
-  }), [statement]);
+    balance: statement.length ? statement[statement.length - 1].balance : openingBalance,
+  }), [statement, openingBalance]);
 
   const selectedProjectName = projects.find(p => p.id === selectedProject)?.projectName || '';
 
@@ -145,6 +178,9 @@ export default function AccountStatementPage() {
       }
       const headerRow = ws.addRow(['Date', 'Particulars', 'Receipt (₹)', 'Expense (₹)', 'Balance (₹)']);
       headerRow.font = { bold: true };
+      if (filterFrom) {
+        ws.addRow([filterFrom, 'Opening balance brought forward', '', '', openingBalance]).font = { bold: true };
+      }
       statement.forEach(l => ws.addRow([l.date, l.particulars, l.receipt || '', l.expense || '', l.balance]));
       ws.addRow(['', 'Total', totals.receipt, totals.expense, totals.balance]).font = { bold: true };
       ws.columns.forEach(col => { col.width = 22; });
@@ -225,6 +261,19 @@ export default function AccountStatementPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {/* An opening row makes the carried-forward balance explicit, rather than leaving
+                      the first row's balance looking like it appeared from nowhere. */}
+                  {filterFrom && (
+                    <tr className="border-b bg-slate-50 font-medium">
+                      <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">{filterFrom}</td>
+                      <td className="px-4 py-2 text-slate-600 italic">Opening balance brought forward</td>
+                      <td className="px-4 py-2 text-right text-muted-foreground">—</td>
+                      <td className="px-4 py-2 text-right text-muted-foreground">—</td>
+                      <td className={`px-4 py-2 text-right font-semibold ${openingBalance >= 0 ? 'text-emerald-700' : 'text-destructive'}`}>
+                        {formatINR(openingBalance)}
+                      </td>
+                    </tr>
+                  )}
                   {statement.map((line, i) => (
                     <tr key={i} className="border-b hover:bg-muted/20">
                       <td className="px-4 py-2 whitespace-nowrap text-muted-foreground">{line.date}</td>

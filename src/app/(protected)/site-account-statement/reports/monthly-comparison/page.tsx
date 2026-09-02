@@ -7,6 +7,7 @@ import {
   formatINR, SAS_COLLECTIONS,
   type SASBudget, type SASExpense, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -115,67 +116,51 @@ export default function MonthlyComparisonPage() {
     const nextMonthStart = `${shiftMonth(currYM, 1)}-01`;
 
     setLoading(true);
-    void Promise.all([
-      getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-      getDocs(query(
-        collection(db, SAS_COLLECTIONS.expenses),
-        where('expenseDate', '>=', `${startYM}-01`),
-        where('expenseDate', '<', nextMonthStart)
-      )),
-      getDocs(query(
-        collection(db, SAS_COLLECTIONS.payments),
-        where('receiptDate', '>=', `${startYM}-01`),
-        where('receiptDate', '<', nextMonthStart)
-      )),
-      getDocs(query(
-        collection(db, SAS_COLLECTIONS.budgets),
-        where('period', '>=', startYM),
-        where('period', '<=', currYM)
-      )),
-    ])
-      .then(([pSnap, expSnap, paySnap, budSnap]) => {
+
+    void (async () => {
+      try {
+        // Projects first, so the ledger reads below can be bounded to the ones this user may see.
+        // The date window was already server-side here; the project scope was not, so a user
+        // assigned to one project still received every other project's rows for the window.
+        const [pSnap, budSnap] = await Promise.all([
+          getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
+          getDocs(query(
+            collection(db, SAS_COLLECTIONS.budgets),
+            where('period', '>=', startYM),
+            where('period', '<=', currYM)
+          )),
+        ]);
         if (!active) return;
-        setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount));
-        setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
-        setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
+
+        const allProjects = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject));
+        setProjects(allProjects.filter(p => p.enabledForSiteAccount));
         setBudgets(
           budSnap.docs
             .map(d => ({ id: d.id, ...d.data() } as SASBudget))
             .filter(b => b.budgetType === 'monthly')
         );
-      })
-      .catch(err => console.error('[MonthlyComparison] Failed to load report:', err))
-      .finally(() => {
+
+        const ledger = await loadScopedLedger({
+          projects: allProjects,
+          userId: user?.id,
+          canViewAll,
+          from: `${startYM}-01`,
+          to: `${currYM}-31`,
+        });
+        if (!active) return;
+        setExpenses(ledger.expenses);
+        setPayments(ledger.payments);
+      } catch (err) {
+        console.error('[MonthlyComparison] Failed to load report:', err);
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    })();
 
     return () => {
       active = false;
     };
-  }, [canView, currYM, isAuthLoading, prevCount]);
-
-  async function loadAll() {
-    setLoading(true);
-    try {
-      const [pSnap, expSnap, paySnap] = await Promise.all([
-        getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.payments))),
-      ]);
-      setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount));
-      setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
-      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
-    } finally {
-      setLoading(false);
-    }
-    // Load budgets separately — a failure here won't blank the whole report
-    try {
-      const budSnap = await getDocs(collection(db, SAS_COLLECTIONS.budgets));
-      setBudgets(budSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASBudget)).filter(b => b.budgetType === 'monthly'));
-    } catch (err) {
-      console.error('[MonthlyComparison] Failed to load budgets:', err);
-    }
-  }
+  }, [canView, currYM, isAuthLoading, prevCount, user?.id, canViewAll]);
 
   const visibleProjects = useMemo(
     () => canViewAll ? projects : projects.filter(p =>

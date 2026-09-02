@@ -242,7 +242,7 @@ export default function RecurringPaymentRegister() {
    */
   async function softDelete(payment: PaymentObligation) {
     if (!user || !canDelete) return;
-    if (Number(payment.paidAmount || payment.settledAmount || 0) > 0)
+    if (Number(payment.settledAmount || payment.paidAmount || 0) > 0)
       return toast({
         title: "This payment has recorded transactions",
         description:

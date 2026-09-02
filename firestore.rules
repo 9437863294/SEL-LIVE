@@ -1,7 +1,7 @@
 rules_version = '2';
 
 /**
- * Firestore security rules for the access-management collections.
+ * Firestore security rules for the access-management and Site Account Statement collections.
  *
  * ── Read this before deploying ──────────────────────────────────────────────────────────────────
  *
@@ -16,6 +16,13 @@ rules_version = '2';
  *   1. Copy the `accessGrants`, `accessScopeGrants`, `accessTemplates`, `accessAuditLogs` and
  *      `accessBatches` blocks — plus the two helper functions — into the existing console ruleset,
  *      leaving everything else there untouched. This is the recommended route.
+ *
+ *      The same applies to the `siteAccount*` blocks near the bottom of this file. Those are worth
+ *      adopting sooner rather than later: until they are in place, Site Account Statement has no
+ *      server-side authorization at all — the module's pages decide what a user may see and change
+ *      entirely in the browser, which anyone can bypass. Copy them together with their `sas*`
+ *      helper functions, and verify with the rules simulator that a user assigned to one project
+ *      can read that project's expenses and not another's.
  *
  *   2. Export the console's current rules, paste them into this file above the access blocks, add
  *      `"rules": "firestore.rules"` under `"firestore"` in `firebase.json`, and from then on manage
@@ -224,6 +231,196 @@ service cloud.firestore {
     match /greythrLinkAudit/{entryId} {
       allow get, list: if holdsPermission('Settings.User Management', 'View');
       allow write: if false;
+    }
+
+    // ── Site Account Statement ──────────────────────────────────────────────────────────────────
+    //
+    // This module's authorization was, until now, entirely client-side: every page decided what the
+    // user could see in JavaScript *after* downloading the collection. Anyone signed in could read
+    // the whole organisation's site ledger straight from the network tab, and write to any project
+    // they were not assigned to. These rules put the same decisions on the server.
+    //
+    // The client no longer issues unconstrained collection reads (see
+    // `src/lib/site-account-statement-queries.ts`) — every query is bounded by `projectId`, which
+    // is what makes a per-document `list` rule enforceable here rather than merely decorative.
+    //
+    // ── One constraint to respect when changing these ──
+    // The member checks below call `get()` on the row's project document. Firestore permits 20
+    // document-access calls per query, and caches identical paths so the cost is one call per
+    // *distinct* project in the query, plus two for the caller's own user and role documents.
+    // `SAS_IN_CHUNK` in the query module is pinned to 15 to stay inside that budget. Widening the
+    // `in` filter without widening this reasoning would make queries fail for precisely the
+    // project-assigned users these rules exist to serve. Holders of `All Projects` short-circuit on
+    // the first clause and never reach a per-document lookup at all.
+
+    function sasPerm(resource, action) {
+      return holdsPermission('Site Account Statement.' + resource, action);
+    }
+
+    /** Holders of All Projects see and act across every project — the module's administrators. */
+    function sasViewsAllProjects() {
+      return sasPerm('All Projects', 'View');
+    }
+
+    function sasProject(projectId) {
+      return get(/databases/$(database)/documents/siteAccountProjects/$(projectId)).data;
+    }
+
+    /** Assigned person or alternative user — the two roles that may record transactions. */
+    function sasCanWriteProject(projectId) {
+      let project = sasProject(projectId);
+      return signedIn() && (
+        project.assignedPersonId == request.auth.uid
+        || project.altUserId == request.auth.uid
+      );
+    }
+
+    /** Adds the viewer, who may read a project's figures but never change them. */
+    function sasCanReadProject(projectId) {
+      let project = sasProject(projectId);
+      return signedIn() && (
+        project.assignedPersonId == request.auth.uid
+        || project.altUserId == request.auth.uid
+        || project.viewerId == request.auth.uid
+      );
+    }
+
+    /**
+     * Project setup.
+     *
+     * Readable by any signed-in user because every page in the module starts by resolving which
+     * projects the current user is attached to — that question cannot be answered without reading
+     * the assignment rows. The rows carry no financial figures. Writing one changes who can see and
+     * spend against a site, so it stays behind Project Settings.
+     */
+    match /siteAccountProjects/{projectId} {
+      allow get, list: if signedIn();
+      allow create, update: if sasPerm('Project Settings', 'Add') || sasPerm('Project Settings', 'Edit');
+      allow delete: if sasPerm('Project Settings', 'Delete');
+    }
+
+    /**
+     * The ledger: money received from Head Office, and money spent at site.
+     *
+     * Reads are allowed for administrators, for holders of the matching RBAC resource, and for
+     * anyone attached to the project the row belongs to. Writes additionally require a
+     * *write-bearing* assignment — being the viewer on a project is not enough, which is the
+     * server-side half of the per-project check the forms now make.
+     */
+    match /siteAccountPayments/{paymentId} {
+      allow get, list: if sasViewsAllProjects()
+        || sasPerm('Payments', 'View')
+        || (resource != null && sasCanReadProject(resource.data.projectId));
+      allow create: if sasPerm('Payments', 'Add') || sasCanWriteProject(request.resource.data.projectId);
+      allow update: if sasPerm('Payments', 'Edit') || sasCanWriteProject(resource.data.projectId);
+      allow delete: if sasPerm('Payments', 'Delete');
+    }
+
+    match /siteAccountExpenses/{expenseId} {
+      allow get, list: if sasViewsAllProjects()
+        || sasPerm('Expenses', 'View')
+        || (resource != null && sasCanReadProject(resource.data.projectId));
+      allow create: if sasPerm('Expenses', 'Add') || sasCanWriteProject(request.resource.data.projectId);
+      allow update: if sasPerm('Expenses', 'Edit') || sasCanWriteProject(resource.data.projectId);
+      allow delete: if sasPerm('Expenses', 'Delete');
+    }
+
+    /**
+     * Budgets, at all four levels.
+     *
+     * Role management is granular here — Total / FY / Monthly / Category are separate resources —
+     * but the documents live in two collections, and a rule cannot tell which level a role was
+     * granted without reading `budgetType`. The coarse `Budget` permission, or any of the four
+     * specific ones, is accepted; the UI is what presents the right level to the right role.
+     */
+    function sasCanWriteBudget(action) {
+      return sasPerm('Budget', action)
+        || sasPerm('Total Budget', action)
+        || sasPerm('FY Budget', action)
+        || sasPerm('Monthly Budget', action)
+        || sasPerm('Category Budget', action);
+    }
+
+    function sasCanReadBudget() {
+      return sasViewsAllProjects()
+        || sasCanWriteBudget('View')
+        || sasCanWriteBudget('Add')
+        || sasCanWriteBudget('Edit');
+    }
+
+    match /siteAccountBudgets/{budgetId} {
+      allow get, list: if sasCanReadBudget()
+        || (resource != null && sasCanReadProject(resource.data.projectId));
+      allow create: if sasCanWriteBudget('Add') || sasCanWriteProject(request.resource.data.projectId);
+      allow update: if sasCanWriteBudget('Edit') || sasCanWriteProject(resource.data.projectId);
+      allow delete: if sasCanWriteBudget('Delete');
+    }
+
+    match /siteAccountCategoryBudgets/{budgetId} {
+      allow get, list: if sasCanReadBudget()
+        || (resource != null && sasCanReadProject(resource.data.projectId));
+      allow create: if sasCanWriteBudget('Add') || sasCanWriteProject(request.resource.data.projectId);
+      allow update: if sasCanWriteBudget('Edit') || sasCanWriteProject(resource.data.projectId);
+      allow delete: if sasCanWriteBudget('Delete');
+    }
+
+    match /siteAccountTenderBudgets/{budgetId} {
+      allow get, list: if sasViewsAllProjects()
+        || sasPerm('Tender Budget', 'View')
+        || sasPerm('Tender Forecast', 'View')
+        || (resource != null && sasCanReadProject(resource.data.projectId));
+      allow create, update: if sasPerm('Tender Budget', 'Add') || sasPerm('Tender Budget', 'Edit');
+      allow delete: if sasPerm('Tender Budget', 'Delete');
+    }
+
+    /** Scanned monthly budget approvals. Same audience as the monthly budget they evidence. */
+    match /siteAccountBudgetApprovals/{approvalId} {
+      allow get, list: if sasCanReadBudget()
+        || (resource != null && sasCanReadProject(resource.data.projectId));
+      allow create, update: if sasCanWriteBudget('Add') || sasCanWriteBudget('Edit');
+      allow delete: if sasCanWriteBudget('Delete');
+    }
+
+    /**
+     * Expense categories — the module's shared vocabulary.
+     *
+     * Every expense form needs to read them, so reads are open to signed-in users. Renaming one now
+     * rewrites the name across historical expenses and category budgets, which is why writing is
+     * restricted to the Expense Categories resource rather than to anyone who can add an expense.
+     */
+    match /siteAccountCategories/{categoryId} {
+      allow get, list: if signedIn();
+      allow create, update: if sasPerm('Expense Categories', 'Add') || sasPerm('Expense Categories', 'Edit');
+      allow delete: if sasPerm('Expense Categories', 'Delete');
+    }
+
+    /** Module settings, including the Field Control configuration every form subscribes to. */
+    match /siteAccountSettings/{docId} {
+      allow get, list: if signedIn();
+      allow create, update, delete: if sasPerm('Field Control', 'Edit')
+        || sasPerm('Field Control', 'Add')
+        || sasPerm('Project Settings', 'Edit');
+    }
+
+    /** Who gets told when a budget threshold is crossed. */
+    match /siteAccountBudgetAlertConfigs/{configId} {
+      allow get, list: if signedIn();
+      allow create, update: if sasPerm('Budget Alerts', 'Add')
+        || sasPerm('Budget Alerts', 'Edit')
+        || sasPerm('Project Settings', 'Edit');
+      allow delete: if sasPerm('Budget Alerts', 'Delete');
+    }
+
+    /**
+     * Which thresholds have already fired.
+     *
+     * Bookkeeping, not a record anybody reads directly. It has to be writable by whoever is
+     * recording the expense that trips a threshold — the alert runs in their browser — and
+     * deletable by them too, since editing a budget or removing an expense now clears the entries
+     * that a changed threshold line has made meaningless.
+     */
+    match /siteAccountBudgetAlertState/{stateId} {
+      allow get, list, create, update, delete: if signedIn();
     }
 
     /**

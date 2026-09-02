@@ -9,8 +9,12 @@ import { db } from '@/lib/firebase';
 import { storage } from '@/lib/firebase-storage';
 import {
   formatINR, PAYMENT_MODES, SAS_COLLECTIONS,
-  type SASAttachment, type SASExpense, type SASPayment, type SASProject,
+  type SASAttachment, type SASPayment, type SASProject,
 } from '@/lib/site-account-statement';
+import {
+  aggregateLedger, allPayments as fetchAllPayments, cumulativeBefore,
+  paymentsPage, SAS_PAGE_SIZE, type SASCursor, type SASLedgerScope,
+} from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -36,7 +40,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  Camera, Calendar, ChevronLeft, ChevronRight,
+  Camera, Calendar, ChevronDown, ChevronLeft, ChevronRight,
   Download, ExternalLink, File, FileText, Filter, Image, Loader2,
   Paperclip, Pencil, Plus, Receipt, TrendingDown, TrendingUp, Trash2, Upload, Wallet, X,
 } from 'lucide-react';
@@ -128,8 +132,15 @@ export default function PaymentsPage() {
 
   const [projects,  setProjects]  = useState<SASProject[]>([]);
   const [payments,  setPayments]  = useState<SASPayment[]>([]);
-  const [expenses,  setExpenses]  = useState<SASExpense[]>([]);
   const [loading,   setLoading]   = useState(true);
+  const [loadingMore,   setLoadingMore]   = useState(false);
+  const [staticLoaded,  setStaticLoaded]  = useState(false);
+  const [reloadToken,   setReloadToken]   = useState(0);
+  const [pageCursor,    setPageCursor]    = useState<SASCursor | null>(null);
+  /** Server-side figures for the whole filtered period, independent of how many rows are paged in. */
+  const [periodTotals,   setPeriodTotals]   = useState<{ total: number; count: number } | null>(null);
+  const [periodExpenses, setPeriodExpenses] = useState(0);
+  const [openingBalance, setOpeningBalance] = useState<number | null>(null);
   const [saving,           setSaving]           = useState(false);
   const [uploading,        setUploading]        = useState(false);
   const [exporting,        setExporting]        = useState(false);
@@ -152,24 +163,27 @@ export default function PaymentsPage() {
   const [showFilters,   setShowFilters]   = useState(false);
 
   useEffect(() => {
-    if (!isAuthLoading) void loadAll();
+    if (!isAuthLoading) void loadProjects();
   }, [isAuthLoading]);
 
-  async function loadAll() {
+  async function loadProjects() {
     setLoading(true);
     try {
-      const [pSnap, paySnap, expSnap] = await Promise.all([
-        getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.payments), orderBy('receiptDate', 'desc'))),
-        getDocs(query(collection(db, SAS_COLLECTIONS.expenses))),
-      ]);
+      const pSnap = await getDocs(query(collection(db, SAS_COLLECTIONS.projects), orderBy('projectName')));
       setProjects(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASProject)).filter(p => p.enabledForSiteAccount && p.status === 'Active'));
-      setPayments(paySnap.docs.map(d => ({ id: d.id, ...d.data() } as SASPayment)));
-      setExpenses(expSnap.docs.map(d => ({ id: d.id, ...d.data() } as SASExpense)));
-    } finally {
+      setStaticLoaded(true);
+    } catch (e: any) {
       setLoading(false);
+      toast({
+        title: 'Could not load projects',
+        description: e?.message || 'Check your connection and reload the page.',
+        variant: 'destructive',
+      });
     }
   }
+
+  /** Re-runs the scope loader below — used after every write. */
+  function loadAll() { setReloadToken(token => token + 1); }
 
   function openAdd() {
     setEditingRow(null);
@@ -203,7 +217,7 @@ export default function PaymentsPage() {
   }
 
   function selectProject(id: string) {
-    const proj = visibleProjects.find(p => p.id === id);
+    const proj = writableProjects.find(p => p.id === id);
     setForm(f => ({ ...f, projectId: id, projectName: proj?.projectName || '' }));
   }
 
@@ -220,13 +234,33 @@ export default function PaymentsPage() {
     [visibleProjects, canViewAll]
   );
 
-  const isAltUser = useMemo(
-    () => !canViewAll && visibleProjects.some(p => p.altUserId === user?.id),
-    [canViewAll, visibleProjects, user?.id]
+  const scopeProjectIds = useMemo<string[] | null>(
+    () => canViewAll ? null : visibleProjects.map(p => p.id),
+    [canViewAll, visibleProjects]
   );
-  const effectiveCanAdd    = canAdd    || isAltUser;
-  const effectiveCanEdit   = canEdit   || isAltUser;
-  const effectiveCanImport = canImport || isAltUser;
+
+  /*
+   * Write access is decided per project, from that project's own assignment row.
+   *
+   * It used to be a single page-wide "am I the alt user anywhere" flag OR-ed into `canAdd`, which
+   * meant being alt user on one project granted write access to every project in the dropdown —
+   * including ones where the user was deliberately made a read-only viewer.
+   */
+  const canWriteToProject = useMemo(() => (projectId: string): boolean => {
+    if (canViewAll || canAdd || canEdit) return true;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return false;
+    return project.assignedPersonId === user?.id || project.altUserId === user?.id;
+  }, [canViewAll, canAdd, canEdit, projects, user?.id]);
+
+  const writableProjects = useMemo(
+    () => visibleProjects.filter(p => canWriteToProject(p.id)),
+    [visibleProjects, canWriteToProject]
+  );
+
+  const effectiveCanAdd    = canAdd    || writableProjects.length > 0;
+  const effectiveCanEdit   = canEdit   || writableProjects.length > 0;
+  const effectiveCanImport = canImport || writableProjects.length > 0;
 
   // ── Month navigation ─────────────────────────────────────────────────────────
   function shiftMonth(offset: number) {
@@ -247,27 +281,71 @@ export default function PaymentsPage() {
     return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
   }, [filterFrom]);
 
-  // ── Opening / closing balance ────────────────────────────────────────────────
-  const openingBalance = useMemo(() => {
-    if (!filterFrom) return null;
-    const inScope = (id: string) => filterProject ? id === filterProject : (!userProjectIds || userProjectIds.has(id));
-    const rec = payments.filter(p => inScope(p.projectId) && p.receiptDate < filterFrom)
-      .reduce((s, p) => s + (p.receivedAmount || 0), 0);
-    const exp = expenses.filter(e => inScope(e.projectId) && e.expenseDate < filterFrom)
-      .reduce((s, e) => s + (e.expenseAmount || 0), 0);
-    return rec - exp;
-  }, [filterFrom, filterProject, payments, expenses, userProjectIds]);
+  // ── Server-side scope, aggregation and pagination ────────────────────────────
 
-  const periodExpenses = useMemo(() => expenses
-    .filter(e => {
-      if (filterProject && e.projectId !== filterProject) return false;
-      if (userProjectIds && !userProjectIds.has(e.projectId)) return false;
-      if (filterFrom && e.expenseDate < filterFrom) return false;
-      if (filterTo   && e.expenseDate > filterTo)   return false;
-      return true;
-    })
-    .reduce((s, e) => s + (e.expenseAmount || 0), 0),
-  [filterFrom, filterTo, filterProject, expenses, userProjectIds]);
+  const ledgerScope = useMemo<SASLedgerScope>(() => ({
+    projectIds: filterProject ? [filterProject] : scopeProjectIds,
+    from: filterFrom,
+    to: filterTo,
+  }), [filterProject, scopeProjectIds, filterFrom, filterTo]);
+
+  const scopeKey = useMemo(() => JSON.stringify({
+    ...ledgerScope,
+    projectIds: ledgerScope.projectIds ? [...ledgerScope.projectIds].sort() : null,
+  }), [ledgerScope]);
+
+  useEffect(() => {
+    if (!staticLoaded) return;
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      try {
+        /*
+         * The expense side of the cash-flow strip used to be computed by downloading the *entire*
+         * expenses collection on every visit to this page — a page that does not otherwise show a
+         * single expense. Both sides are now server aggregates over the same scope.
+         */
+        const [page, receiptAgg, expenseAgg, priorReceipts, priorExpenses] = await Promise.all([
+          paymentsPage(ledgerScope, { pageSize: SAS_PAGE_SIZE }),
+          aggregateLedger('payments', ledgerScope),
+          aggregateLedger('expenses', ledgerScope),
+          filterFrom ? cumulativeBefore('payments', ledgerScope.projectIds, filterFrom) : Promise.resolve(0),
+          filterFrom ? cumulativeBefore('expenses', ledgerScope.projectIds, filterFrom) : Promise.resolve(0),
+        ]);
+        if (cancelled) return;
+
+        setPayments(page.rows);
+        setPageCursor(page.cursor);
+        setPeriodTotals({ total: receiptAgg.total, count: receiptAgg.count });
+        setPeriodExpenses(expenseAgg.total);
+        setOpeningBalance(filterFrom ? priorReceipts - priorExpenses : null);
+      } catch (e: any) {
+        if (cancelled) return;
+        toast({ title: 'Could not load payments', description: e?.message, variant: 'destructive' });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staticLoaded, scopeKey, reloadToken]);
+
+  async function loadMore() {
+    if (!pageCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await paymentsPage(ledgerScope, { cursor: pageCursor, pageSize: SAS_PAGE_SIZE });
+      setPayments(prev => [...prev, ...page.rows]);
+      setPageCursor(page.cursor);
+    } catch (e: any) {
+      toast({ title: 'Could not load more', description: e?.message, variant: 'destructive' });
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   // ── Import field definitions ──────────────────────────────────────────────────
   const paymentImportFields = useMemo<ImportField[]>(() => [
@@ -311,6 +389,7 @@ export default function PaymentsPage() {
     const projName = String(row.projectName || '').trim();
     const proj = visibleProjects.find(p => p.projectName.toLowerCase() === projName.toLowerCase());
     if (!proj) throw new Error(`Project "${projName}" not found`);
+    if (!canWriteToProject(proj.id)) throw new Error(`You have read-only access to "${proj.projectName}"`);
 
     const amount = Number(row.receivedAmount);
     if (!amount || amount <= 0) throw new Error('Amount must be > 0');
@@ -401,6 +480,11 @@ export default function PaymentsPage() {
       toast({ title: 'Validation', description: 'Enter a valid amount.', variant: 'destructive' });
       return;
     }
+    // Re-check against the project actually chosen, not a page-wide flag.
+    if (!canWriteToProject(form.projectId)) {
+      toast({ title: 'Not allowed', description: 'You have read-only access to this project.', variant: 'destructive' });
+      return;
+    }
     const missingLabel = validateFieldControlRequirements('payment', {
       paymentMode: form.paymentMode,
       referenceNo: form.referenceNo,
@@ -466,6 +550,10 @@ export default function PaymentsPage() {
   }
 
   async function handleDelete(row: SASPayment) {
+    if (!canDelete && !canWriteToProject(row.projectId)) {
+      toast({ title: 'Not allowed', description: 'You have read-only access to this project.', variant: 'destructive' });
+      return;
+    }
     try {
       if (row.attachments?.length) {
         await Promise.allSettled(
@@ -481,42 +569,58 @@ export default function PaymentsPage() {
     }
   }
 
-  const filtered = useMemo(() => payments.filter(p => {
-    if (userProjectIds && !userProjectIds.has(p.projectId))                             return false;
-    if (filterProject && p.projectId !== filterProject)                                 return false;
-    if (filterFrom && p.receiptDate < filterFrom)                                       return false;
-    if (filterTo   && p.receiptDate > filterTo)                                         return false;
-    if (search && !(p.projectName  || '').toLowerCase().includes(search.toLowerCase()) &&
-                  !(p.receivedBy   || '').toLowerCase().includes(search.toLowerCase()) &&
-                  !(p.referenceNo  || '').toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  }), [payments, userProjectIds, filterProject, filterFrom, filterTo, search]);
+  /*
+   * Project and date range are applied by the server (see `ledgerScope`), so only the free-text
+   * search — which Firestore cannot index usefully — is applied to the loaded rows.
+   */
+  const refining = Boolean(search.trim());
 
-  const totalFiltered = useMemo(() => filtered.reduce((s, p) => s + (p.receivedAmount || 0), 0), [filtered]);
+  const filtered = useMemo(() => {
+    if (!refining) return payments;
+    const needle = search.trim().toLowerCase();
+    return payments.filter(p =>
+      (p.projectName || '').toLowerCase().includes(needle) ||
+      (p.receivedBy  || '').toLowerCase().includes(needle) ||
+      (p.referenceNo || '').toLowerCase().includes(needle) ||
+      (p.remarks     || '').toLowerCase().includes(needle)
+    );
+  }, [payments, refining, search]);
+
+  const totalShown = useMemo(() => filtered.reduce((s, p) => s + (p.receivedAmount || 0), 0), [filtered]);
+
+  const periodReceiptTotal = periodTotals?.total ?? totalShown;
+  const periodReceiptCount = periodTotals?.count ?? filtered.length;
 
   const closingBalance = useMemo(
-    () => openingBalance === null ? null : openingBalance + totalFiltered - periodExpenses,
-    [openingBalance, totalFiltered, periodExpenses]
+    () => openingBalance === null ? null : openingBalance + periodReceiptTotal - periodExpenses,
+    [openingBalance, periodReceiptTotal, periodExpenses]
   );
 
   async function exportExcel() {
     setExporting(true);
     try {
+      // Export the whole filtered period, not just the page currently on screen.
+      const { rows: scopeRows, truncated } = await fetchAllPayments(ledgerScope);
+      const needle = search.trim().toLowerCase();
+      const rows = needle
+        ? scopeRows.filter(p =>
+            (p.projectName || '').toLowerCase().includes(needle) ||
+            (p.receivedBy  || '').toLowerCase().includes(needle) ||
+            (p.referenceNo || '').toLowerCase().includes(needle) ||
+            (p.remarks     || '').toLowerCase().includes(needle))
+        : scopeRows;
+
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Payments Received');
 
-      // Balance summary rows at top
-      if (openingBalance !== null) {
-        ws.addRow(['Period', filterFrom || '', 'to', filterTo || '']);
-        ws.addRow(['Opening Balance', openingBalance]);
-        ws.addRow(['Receipts (period)', totalFiltered]);
-        ws.addRow(['Expenses (period)', periodExpenses]);
-        ws.addRow(['Closing Balance', closingBalance ?? '']);
-        ws.addRow([]);
-      }
-
-      const headerRow = ws.rowCount + 1;
-      ws.columns = [
+      /*
+       * Widths are declared on `ws.columns`; the header is written as an ordinary row.
+       *
+       * Assigning `ws.columns` *with* `header` values makes ExcelJS write them into row 1 the
+       * moment it is assigned — which overwrote the balance summary block added above it and left
+       * the bold styling pointed at a blank row.
+       */
+      const columns: { header: string; key: string; width: number }[] = [
         { header: 'Project',       key: 'projectName',    width: 28 },
         { header: 'Receipt Date',  key: 'receiptDate',    width: 14 },
         { header: 'Amount (₹)',    key: 'receivedAmount', width: 14 },
@@ -529,20 +633,43 @@ export default function PaymentsPage() {
         { header: 'Updated By',    key: 'updatedByName',  width: 20 },
         { header: 'Updated At',    key: 'updatedAtStr',   width: 22 },
       ];
-      ws.getRow(headerRow).font = { bold: true };
-      filtered.forEach(p => ws.addRow({
-        ...p,
-        createdByName: p.createdByName || '',
-        createdAtStr:  formatTimestamp(p.createdAt),
-        updatedByName: p.updatedByName || '',
-        updatedAtStr:  timestampMillis(p.updatedAt) !== timestampMillis(p.createdAt)
-                         ? formatTimestamp(p.updatedAt) : '',
-      }));
+      ws.columns = columns.map(({ key, width }) => ({ key, width }));
+
+      if (truncated) {
+        ws.addRow([`NOTE: more than ${scopeRows.length} matching records — this export was truncated. Narrow the date range for a complete file.`]);
+        ws.getRow(ws.rowCount).font = { bold: true, color: { argb: 'FFC00000' } };
+      }
+
+      // Balance summary rows at top
+      if (openingBalance !== null) {
+        ws.addRow(['Period', filterFrom || '', 'to', filterTo || '']);
+        ws.addRow(['Opening Balance', openingBalance]);
+        ws.addRow(['Receipts (period)', periodReceiptTotal]);
+        ws.addRow(['Expenses (period)', periodExpenses]);
+        ws.addRow(['Closing Balance', closingBalance ?? '']);
+        ws.addRow([]);
+      }
+
+      ws.addRow(columns.map(c => c.header)).font = { bold: true };
+
+      rows.forEach(p => ws.addRow(columns.map(({ key }) => {
+        switch (key) {
+          case 'createdByName': return p.createdByName || '';
+          case 'createdAtStr':  return formatTimestamp(p.createdAt);
+          case 'updatedByName': return p.updatedByName || '';
+          case 'updatedAtStr':  return timestampMillis(p.updatedAt) !== timestampMillis(p.createdAt)
+                                       ? formatTimestamp(p.updatedAt) : '';
+          default:              return (p as unknown as Record<string, unknown>)[key] ?? '';
+        }
+      })));
+
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
       const a = document.createElement('a');
       a.href = url; a.download = 'payments-received.xlsx'; a.click();
       URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast({ title: 'Export failed', description: e?.message, variant: 'destructive' });
     } finally {
       setExporting(false);
     }
@@ -654,8 +781,8 @@ export default function PaymentsPage() {
             <div className="flex items-center gap-2.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5">
               <TrendingUp className="h-4 w-4 shrink-0 text-blue-600" />
               <div className="min-w-0">
-                <p className="text-[10px] font-medium text-blue-600 uppercase tracking-wide">Receipts <span className="font-normal opacity-70">(Period)</span> · {filtered.length}</p>
-                <p className="text-sm font-bold text-blue-700 leading-tight">{formatINR(totalFiltered)}</p>
+                <p className="text-[10px] font-medium text-blue-600 uppercase tracking-wide">Receipts <span className="font-normal opacity-70">(Period)</span> · {periodReceiptCount}</p>
+                <p className="text-sm font-bold text-blue-700 leading-tight">{formatINR(periodReceiptTotal)}</p>
               </div>
             </div>
             <div className="flex items-center gap-2.5 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5">
@@ -679,11 +806,16 @@ export default function PaymentsPage() {
       )}
 
       {/* Summary bar */}
-      <div className="flex items-center gap-3 rounded-lg border bg-blue-50 px-4 py-2.5 text-blue-700">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-blue-50 px-4 py-2.5 text-blue-700">
         <TrendingUp className="h-4 w-4 shrink-0" />
         <span className="text-sm font-medium">
-          Total shown: <strong>{formatINR(totalFiltered)}</strong> across {filtered.length} record{filtered.length !== 1 ? 's' : ''}
+          Period total: <strong>{formatINR(periodReceiptTotal)}</strong> across {periodReceiptCount} record{periodReceiptCount !== 1 ? 's' : ''}
         </span>
+        {(refining || filtered.length < periodReceiptCount) && (
+          <span className="text-xs text-blue-600/80">
+            Showing {filtered.length} row{filtered.length !== 1 ? 's' : ''} · {formatINR(totalShown)}
+          </span>
+        )}
       </div>
 
       {/* Table */}
@@ -776,12 +908,32 @@ export default function PaymentsPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={2} className="px-4 py-2.5">Total</td>
-                    <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totalFiltered)}</td>
+                    <td colSpan={2} className="px-4 py-2.5">{refining || pageCursor ? 'Total (shown)' : 'Total'}</td>
+                    <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totalShown)}</td>
                     <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
                   </tr>
+                  {(refining || pageCursor) && (
+                    <tr className="bg-muted/50 font-semibold">
+                      <td colSpan={2} className="px-4 py-2.5">Period total (all {periodReceiptCount})</td>
+                      <td className="px-4 py-2.5 text-right text-blue-800">{formatINR(periodReceiptTotal)}</td>
+                      <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
+                    </tr>
+                  )}
                 </tfoot>
               </table>
+            </div>
+          )}
+
+          {/* Cursor pagination — one page of rows at a time; the totals above are server-side. */}
+          {pageCursor && (
+            <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
+              <span className="text-xs text-muted-foreground">
+                Showing {payments.length} of {periodReceiptCount} records
+              </span>
+              <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} className="gap-2">
+                {loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                Load {Math.min(SAS_PAGE_SIZE, periodReceiptCount - payments.length)} more
+              </Button>
             </div>
           )}
         </CardContent>
@@ -900,12 +1052,17 @@ export default function PaymentsPage() {
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="col-span-2 space-y-1.5">
               <Label>Project <span className="text-destructive">*</span></Label>
+              {/* Only projects the user may write to — a viewer-only project must not be a target
+                  for recording a receipt against. */}
               <Select value={form.projectId} onValueChange={selectProject}>
                 <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                 <SelectContent>
-                  {visibleProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
+                  {writableProjects.map(p => <SelectItem key={p.id} value={p.id}>{p.projectName}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {writableProjects.length === 0 && (
+                <p className="text-xs text-destructive">You have read-only access to every project assigned to you.</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>{field('receiptDate').label} <span className="text-destructive">*</span></Label>
