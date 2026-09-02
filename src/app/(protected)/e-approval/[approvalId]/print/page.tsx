@@ -128,8 +128,20 @@ export default function EApprovalNotePage() {
             </tr>
             {request.amount != null && (
               <tr>
-                <td className="py-1 align-top font-semibold">Amount</td>
-                <td className="py-1 font-semibold">{formatEApprovalAmount(request.amount)}</td>
+                <td className="py-1 align-top font-semibold">
+                  {request.approvedAmount != null && request.approvedAmount !== request.amount
+                    ? 'Amount sanctioned'
+                    : 'Amount'}
+                </td>
+                <td className="py-1 font-semibold">
+                  {formatEApprovalAmount(request.approvedAmount ?? request.amount)}
+                </td>
+              </tr>
+            )}
+            {request.approvedAmount != null && request.approvedAmount !== request.amount && (
+              <tr>
+                <td className="py-1 align-top font-semibold text-muted-foreground">Amount requested</td>
+                <td className="py-1 text-muted-foreground">{formatEApprovalAmount(request.amount)}</td>
               </tr>
             )}
             {request.vendorName && (

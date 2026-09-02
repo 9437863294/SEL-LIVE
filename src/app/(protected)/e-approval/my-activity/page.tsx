@@ -35,7 +35,7 @@ import { EApprovalEmptyState } from '@/components/e-approval/shared';
 import { EApprovalSignaturePad } from '@/components/e-approval/signature-pad';
 import { StatTile } from '@/components/e-approval/dashboard-parts';
 import { PageHeader } from '@/components/e-approval/page-header';
-import { formatEApprovalDateTime, useEApprovalActor } from '@/components/e-approval/hooks';
+import { formatEApprovalAmount, formatEApprovalDateTime, useEApprovalActor } from '@/components/e-approval/hooks';
 
 /**
  * "My Activity" — everything one person has done, across every approval (the user's own request:
@@ -303,6 +303,17 @@ export default function EApprovalMyActivityPage() {
                         </Link>
                       )}
                       <p className="mt-0.5 text-xs text-muted-foreground">{entry.summary}</p>
+                      {entry.approvedAmount != null && (
+                        <p className="mt-0.5 text-xs font-medium text-emerald-700">
+                          Sanctioned {formatEApprovalAmount(entry.approvedAmount)}
+                          {entry.requestedAmount != null && entry.requestedAmount !== entry.approvedAmount && (
+                            <span className="font-normal text-muted-foreground">
+                              {' '}
+                              (requested {formatEApprovalAmount(entry.requestedAmount)})
+                            </span>
+                          )}
+                        </p>
+                      )}
                       {(entry.comment || entry.reason || entry.instruction) && (
                         <p className="mt-0.5 text-xs italic text-muted-foreground">
                           “{entry.comment || entry.reason || entry.instruction}”

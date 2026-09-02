@@ -274,9 +274,16 @@ export default function EApprovalDetailPage() {
                 <EApprovalField label="Department">{request.departmentName || '—'}</EApprovalField>
                 <EApprovalField label="Project / Site">{request.projectName || '—'}</EApprovalField>
                 <EApprovalField label="Your reference">{request.externalRef || '—'}</EApprovalField>
-                <EApprovalField label="Amount">
+                <EApprovalField label="Amount requested">
                   {request.amount == null ? '—' : formatEApprovalAmount(request.amount)}
                 </EApprovalField>
+                {request.approvedAmount != null && request.approvedAmount !== request.amount && (
+                  <EApprovalField label="Amount approved">
+                    <span className="font-semibold text-emerald-700">
+                      {formatEApprovalAmount(request.approvedAmount)}
+                    </span>
+                  </EApprovalField>
+                )}
                 <EApprovalField label="Vendor / party">{request.vendorName || '—'}</EApprovalField>
                 <EApprovalField label="Cost centre">{request.costCentre || '—'}</EApprovalField>
                 <EApprovalField label="Budget head">{request.budgetHead || '—'}</EApprovalField>
@@ -369,6 +376,17 @@ export default function EApprovalDetailPage() {
                         </span>
                         <span className="min-w-0 flex-1 text-xs">
                           <span className="font-medium">{entry.summary}</span>
+                          {entry.approvedAmount != null && (
+                            <span className="block text-[11px] font-medium text-emerald-700">
+                              Sanctioned {formatEApprovalAmount(entry.approvedAmount)}
+                              {entry.requestedAmount != null && entry.requestedAmount !== entry.approvedAmount && (
+                                <span className="font-normal text-muted-foreground">
+                                  {' '}
+                                  (requested {formatEApprovalAmount(entry.requestedAmount)})
+                                </span>
+                              )}
+                            </span>
+                          )}
                           {entry.comment && (
                             <span className="block text-[11px] italic text-muted-foreground">“{entry.comment}”</span>
                           )}

@@ -94,8 +94,8 @@ testable as a table and lets the same function run on the client, in a service c
 | Action | Effect |
 | --- | --- |
 | Submit | Activates the first group. Only the requester, only from Draft. |
-| Approve | Completes the step; advances once its parallel group is satisfied. |
-| Approve & Complete | Approves and skips every remaining step. Only where the stage enables `canFinalise`. |
+| Approve | Completes the step; advances once its parallel group is satisfied. On a financial request, may sanction a different amount than requested — see below. |
+| Approve & Complete | Approves and skips every remaining step. Only where the stage enables `canFinalise`. Same amount option as Approve. |
 | Send for Verification | Creates child step(s); the parent goes to `Awaiting Verification` with its clock paused. |
 | Verify | Verified / Verified With Observation / Not Verified. Pops to the parent. |
 | Request Clarification / Provide Clarification | Same mechanism, `CLARIFICATION` type. |
@@ -114,6 +114,39 @@ testable as a table and lets the same function run on the client, in a service c
 
 Anything the actor is not entitled to do throws `EApprovalRuleError` rather than silently no-oping —
 a swallowed transition on an approval workflow is a file nobody can explain.
+
+## Sanctioning a different amount
+
+An approver's decision on a financial request is not limited to the figure it was raised for — the
+same real thing that happens on a paper note-sheet, where a Director strikes out ₹5,00,000 and writes
+₹4,50,000 above it, without asking Finance to re-sign anything.
+
+- `request.amount` is what was asked for. It never changes after submission — a change here is what
+  `detectEApprovalMaterialChange` exists to catch, and it invalidates approvals already given.
+- `request.approvedAmount` is what the chain has actually sanctioned **so far**. It starts unset, is
+  set by the first Approve or Approve And Complete (defaulting to `amount` if the approver does not
+  change it), and every approver after that sees and can revise the running figure rather than the
+  original ask — so a chain of Manager → Finance → Director can cut ₹5,00,000 down to ₹4,50,000 then
+  ₹4,00,000, and each stage always knows the number the one before it actually agreed to.
+- Each `EApprovalStepRecord` also carries its own `approvedAmount` — what that specific approver
+  sanctioned — so the full history of figures survives even once the request as a whole has moved on.
+
+This is **not** a material change. Nothing is edited and resubmitted, so no approval already given is
+invalidated, no version is created, and the chain simply continues — an approver revising the amount
+downward is part of *making* the decision, not an edit that undoes someone else's. The two mechanisms
+stay genuinely separate: `sanctioning a different amount is not a material change — nothing is
+superseded` is asserted directly in the test suite.
+
+A material-change resubmission *does* clear `request.approvedAmount` — the approvals that produced it
+are themselves being superseded, so the figure they agreed to cannot survive them. A non-material
+resubmission (a typo fix) leaves it exactly as it was, the same way it leaves the earlier approvals
+standing.
+
+Surfaced everywhere the amount already was: the Approve dialog (defaults to the running figure,
+editable, only shown when the request has an amount at all), the Overview tab ("Amount approved"
+next to "Amount requested" when they differ), the workflow timeline and Activity trail (each step
+that sanctioned one shows it), and the printable Approval Note (labelled "Amount sanctioned" once it
+differs from what was requested, so the note a Director signs says what was actually agreed).
 
 ## Return-to-any-step
 

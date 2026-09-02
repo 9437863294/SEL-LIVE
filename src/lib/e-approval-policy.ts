@@ -422,6 +422,12 @@ export interface EApprovalStepRecord {
   assignment: EApprovalAssignment;
   status: EApprovalStepStatus;
   outcome?: EApprovalOutcome | null;
+  /**
+   * The amount this approver actually sanctioned, when the request carries one — not necessarily
+   * the amount requested. Set only on a completed Approve / Approve And Complete step; unset on
+   * every other step type and on a request with no financial dimension.
+   */
+  approvedAmount?: number;
   /** What the requesting approver asked this verifier/clarifier to do. */
   instruction?: string;
   /** What the assignee said when completing the step. */
@@ -497,7 +503,15 @@ export interface EApprovalRequestState {
   projectId?: string;
   approvalTypeId?: string;
   priority: EApprovalPriority;
+  /** What was asked for. Immutable once submitted — a change here is a material change, not an approval decision. */
   amount?: number;
+  /**
+   * What the chain has actually sanctioned so far — set by the first Approve / Approve And
+   * Complete and updated by every one after it. Starts unset; equals `amount` unless an approver
+   * has explicitly approved a different figure. Cleared on a material-change resubmission, along
+   * with the approvals it belonged to, since the chain restarts against a new requested amount.
+   */
+  approvedAmount?: number;
   confidential?: boolean;
   ccUserIds?: string[];
   ccDepartmentIds?: string[];
@@ -1658,6 +1672,14 @@ export interface EApprovalEvent {
   instruction?: string;
   reason?: string;
   version?: number;
+  /**
+   * Set on an Approve / Approve And Complete event when the request carries an amount — the figure
+   * this approver actually sanctioned, which need not equal `requestedAmount`. Left unset on a
+   * request with no financial dimension, so a non-financial approval never grows a spurious zero.
+   */
+  approvedAmount?: number;
+  /** The amount on the request at the moment of this decision — the number `approvedAmount` is judged against. */
+  requestedAmount?: number;
   summary: string;
   /**
    * What this action changed, so it can be put back (spec: recall / reverse).
@@ -1919,6 +1941,12 @@ export interface EApprovalActionInput {
   /** Verify: which of the three verification results. Defaults to 'Verified'. */
   outcome?: EApprovalOutcome;
   reason?: string;
+  /**
+   * Approve / Approve And Complete, on a request that carries an amount: the figure to sanction.
+   * Defaults to whatever is already being tracked (`request.approvedAmount ?? request.amount`) when
+   * omitted, so approving without touching the amount field costs the caller nothing.
+   */
+  approvedAmount?: number;
   /** Add Participant. */
   participantUserIds?: string[];
   /** Resubmit: computed by the caller with `detectEApprovalMaterialChange`. */
@@ -2502,6 +2530,9 @@ export function applyEApprovalAction(
       request.version = supersededVersion + 1;
       request.supersededCount = (request.supersededCount ?? 0) + 1;
       request.materialFingerprint = change.fingerprint;
+      // Every approval that set this is superseded along with it — the figure an approver sanctioned
+      // belonged to the version of the request they saw, not to whatever it has become since.
+      request.approvedAmount = undefined;
 
       // Collected before the restart below, which clears `actedByUserId` off the steps it re-opens.
       // Only those who actually approved something: the approver who *returned* the file asked for
@@ -2753,6 +2784,20 @@ export function applyEApprovalAction(
             candidate.completedAt = now;
           });
       }
+
+      // A financial approval need not sanction the exact amount requested — an approver may cut it
+      // down (or otherwise revise it) as part of the decision itself. This is not a material change:
+      // nothing here is edited and resubmitted, so no approval already given is invalidated. Only
+      // meaningful when the request actually carries an amount; a non-financial approval leaves both
+      // fields untouched rather than growing a spurious zero.
+      let revised = false;
+      if (request.amount != null) {
+        const decidedAmount = input.approvedAmount ?? request.approvedAmount ?? request.amount;
+        step.approvedAmount = decidedAmount;
+        request.approvedAmount = decidedAmount;
+        revised = decidedAmount !== request.amount;
+      }
+
       pushEvent({
         ...onBehalfOf,
         kind: input.kind,
@@ -2761,9 +2806,13 @@ export function applyEApprovalAction(
         stepType: step.type,
         outcome: 'Approved',
         comment: input.comment,
+        approvedAmount: step.approvedAmount,
+        requestedAmount: request.amount,
         summary: `Approved by ${actorLabel(actor)}${
           onBehalfOf.onBehalfOfName ? ` on behalf of ${onBehalfOf.onBehalfOfName}` : ''
-        } at "${step.name}"${input.kind === 'Approve And Complete' ? ' — remaining steps skipped' : ''}`,
+        } at "${step.name}"${input.kind === 'Approve And Complete' ? ' — remaining steps skipped' : ''}${
+          revised ? ' — amount revised' : ''
+        }`,
       });
       completeAndAdvance(request, steps, step, 'Approved', actor, now, input.comment, events, notifications);
       break;

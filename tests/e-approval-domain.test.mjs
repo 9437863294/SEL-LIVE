@@ -332,6 +332,118 @@ test('approve & complete skips the remaining steps, but only where configured', 
   );
 });
 
+/* ── approving a different amount than requested ──────────────────────────────────────────────── */
+
+test('approving without naming an amount sanctions the amount requested', () => {
+  const state = act(submitted(serialChain, { amount: 500000 }), { kind: 'Approve', actor: { userId: 'u-mgr' } });
+  assert.equal(stepNamed(state, 'Manager').approvedAmount, 500000);
+  assert.equal(state.request.approvedAmount, 500000);
+  const event = state.events.find((entry) => entry.kind === 'Approve');
+  assert.equal(event.approvedAmount, 500000);
+  assert.equal(event.requestedAmount, 500000);
+  assert.doesNotMatch(event.summary, /revised/i);
+});
+
+test('an approver can sanction a different amount, which becomes what the next approver sees', () => {
+  let state = act(submitted(serialChain, { amount: 500000 }), {
+    kind: 'Approve',
+    actor: { userId: 'u-mgr' },
+    approvedAmount: 450000,
+  });
+  assert.equal(stepNamed(state, 'Manager').approvedAmount, 450000);
+  assert.equal(state.request.approvedAmount, 450000);
+  assert.equal(state.request.amount, 500000, 'the original request is untouched');
+  const revisedEvent = state.events.find((entry) => entry.kind === 'Approve');
+  assert.match(revisedEvent.summary, /revised/i);
+
+  // Finance approves next with no figure named — defaults to the running total, not the original ask.
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-fin' } });
+  assert.equal(stepNamed(state, 'Finance').approvedAmount, 450000);
+  assert.equal(state.request.approvedAmount, 450000);
+
+  // Director cuts it further still.
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-dir' }, approvedAmount: 400000 });
+  assert.equal(state.request.approvedAmount, 400000);
+});
+
+test('a request with no amount at all never grows an approvedAmount', () => {
+  const state = act(submitted(), { kind: 'Approve', actor: { userId: 'u-mgr' } });
+  assert.equal(stepNamed(state, 'Manager').approvedAmount, undefined);
+  assert.equal(state.request.approvedAmount, undefined);
+  const event = state.events.find((entry) => entry.kind === 'Approve');
+  assert.equal(event.approvedAmount, undefined);
+});
+
+test('approve & complete also supports sanctioning a different amount', () => {
+  const chain = [
+    { id: 't1', name: 'Manager', assignments: [user('u-mgr')], capabilities: { canFinalise: true } },
+    { id: 't2', name: 'Finance', assignments: [user('u-fin')] },
+  ];
+  const state = act(submitted(chain, { amount: 500000 }), {
+    kind: 'Approve And Complete',
+    actor: { userId: 'u-mgr' },
+    approvedAmount: 480000,
+  });
+  assert.equal(state.request.status, 'Approved');
+  assert.equal(state.request.approvedAmount, 480000);
+});
+
+test('sanctioning a different amount is not a material change — nothing is superseded', () => {
+  const before = submitted(serialChain, { amount: 500000 });
+  const after = act(before, { kind: 'Approve', actor: { userId: 'u-mgr' }, approvedAmount: 450000 });
+  assert.equal(after.request.version, 1, 'no version bump');
+  assert.equal(after.request.materialFingerprint, before.request.materialFingerprint);
+  assert.ok(!after.events.some((entry) => entry.kind === 'Superseded'));
+  assert.equal(stepNamed(after, 'Finance').status, 'Active', 'the chain simply moved on');
+});
+
+test('a material-change resubmission clears the running approved amount', () => {
+  let state = submitted(serialChain, { amount: 500000 });
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-mgr' }, approvedAmount: 450000, now: '2026-08-22T10:30:00.000Z' });
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-fin' }, now: '2026-08-22T11:00:00.000Z' });
+  assert.equal(state.request.approvedAmount, 450000);
+  state = act(state, {
+    kind: 'Return',
+    actor: { userId: 'u-dir' },
+    returnTo: 'REQUESTER',
+    reason: 'Revise the quotation.',
+    now: '2026-08-22T11:30:00.000Z',
+  });
+
+  state = act(state, {
+    kind: 'Resubmit',
+    actor: requester,
+    materialChange: {
+      changed: true,
+      fields: ['amount'],
+      fingerprint: 'v2',
+      amountChange: { from: 500000, to: 900000, pct: 80 },
+    },
+    now: '2026-08-22T12:00:00.000Z',
+  });
+  assert.equal(state.request.approvedAmount, undefined, 'the superseded approvals took their sanctioned figure with them');
+});
+
+test('a non-material resubmission leaves the running approved amount exactly as it was', () => {
+  let state = submitted(serialChain, { amount: 500000 });
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-mgr' }, approvedAmount: 450000, now: '2026-08-22T10:30:00.000Z' });
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-fin' }, now: '2026-08-22T11:00:00.000Z' });
+  state = act(state, {
+    kind: 'Return',
+    actor: { userId: 'u-dir' },
+    returnTo: 'REQUESTER',
+    reason: 'Fix a typo in the vendor name.',
+    now: '2026-08-22T11:30:00.000Z',
+  });
+  state = act(state, {
+    kind: 'Resubmit',
+    actor: requester,
+    materialChange: { changed: false, fields: [], fingerprint: 'same' },
+    now: '2026-08-22T12:00:00.000Z',
+  });
+  assert.equal(state.request.approvedAmount, 450000);
+});
+
 /* ── nested verification: the spec's section 31 walkthrough ──────────────────────────────────── */
 
 test('verification nests two deep and returns to the exact step that asked', () => {

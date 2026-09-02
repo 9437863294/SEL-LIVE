@@ -55,7 +55,7 @@ import {
 } from '@/lib/e-approval-service';
 import { AssigneePicker } from './assignee-picker';
 import { eApprovalDialogClass } from './shared';
-import type { EApprovalDirectory } from './hooks';
+import { formatEApprovalAmount, type EApprovalDirectory } from './hooks';
 
 const actionIcons: Partial<Record<EApprovalActionKind, typeof CheckCircle2>> = {
   Approve: CheckCircle2,
@@ -224,8 +224,14 @@ export function ActionPanel({
   const [returnTo, setReturnTo] = useState('');
   const [outcome, setOutcome] = useState<string>('Verified');
   const [slaHours, setSlaHours] = useState('');
+  const [approvedAmount, setApprovedAmount] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+
+  /** The figure this approval will sanction if nobody changes it — the running total, or the amount requested if nothing has revised it yet. */
+  const currentApprovedAmount = request.approvedAmount ?? request.amount;
+  const showAmountField =
+    (dialog?.kind === 'Approve' || dialog?.kind === 'Approve And Complete') && request.amount != null;
 
   const myActiveSteps = useMemo(
     () =>
@@ -304,6 +310,9 @@ export function ActionPanel({
     setReturnTo('');
     setOutcome('Verified');
     setSlaHours('');
+    // Defaults to whatever is already being sanctioned — the running total if an earlier approver
+    // revised it, otherwise the amount requested — so leaving it untouched approves exactly that.
+    setApprovedAmount(currentApprovedAmount != null ? String(currentApprovedAmount) : '');
     setFiles([]);
     setDialog(config);
   };
@@ -338,6 +347,7 @@ export function ActionPanel({
             returnTo: dialog.needsReturnTarget ? returnTo : undefined,
             outcome: dialog.needsOutcome ? outcome : undefined,
             slaHours: slaHours ? Number(slaHours) : undefined,
+            approvedAmount: showAmountField && approvedAmount ? Number(approvedAmount) : undefined,
             participantUserIds: dialog.needsParticipants
               ? targets.map((target) => target.userId).filter(Boolean as unknown as (value: string | undefined) => value is string)
               : undefined,
@@ -366,6 +376,7 @@ export function ActionPanel({
     if (dialog.needsReturnTarget && !returnTo) return false;
     if (dialog.needsTargets && !targets.length) return false;
     if (dialog.needsParticipants && !targets.some((target) => target.userId)) return false;
+    if (showAmountField && !(Number(approvedAmount) > 0)) return false;
     return true;
   })();
 
@@ -460,6 +471,29 @@ export function ActionPanel({
                   </div>
                 );
               })()}
+
+              {showAmountField && (
+                <div>
+                  <Label className="text-xs">
+                    Amount you are approving <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step="0.01"
+                    value={approvedAmount}
+                    onChange={(event) => setApprovedAmount(event.target.value)}
+                    className="mt-1 h-9"
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Requested: {formatEApprovalAmount(request.amount)}
+                    {request.approvedAmount != null && request.approvedAmount !== request.amount && (
+                      <> · already sanctioned at {formatEApprovalAmount(request.approvedAmount)}</>
+                    )}
+                    . Leave as is to approve that amount, or change it to approve a different one.
+                  </p>
+                </div>
+              )}
 
               {dialog.needsOutcome && (
                 <div>

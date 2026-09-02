@@ -113,6 +113,13 @@ export interface EApprovalRequest extends EApprovalAuditFields {
 
   /* Financial information — optional, because most note-sheets are not money */
   amount?: number;
+  /**
+   * What the chain has actually sanctioned so far — set the moment the first approver acts, and
+   * updated by every approver after them. Equals `amount` unless somebody has approved a different
+   * figure. Absent until the first Approve; cleared again by a material-change resubmission, which
+   * invalidates the approvals it came from.
+   */
+  approvedAmount?: number;
   currency?: string;
   vendorId?: string;
   vendorName?: string;

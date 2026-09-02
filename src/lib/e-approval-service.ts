@@ -992,6 +992,8 @@ export interface PerformEApprovalActionInput {
   outcome?: string;
   slaHours?: number;
   participantUserIds?: string[];
+  /** Approve / Approve And Complete on a request with an amount: the figure to sanction, if not the amount requested. */
+  approvedAmount?: number;
 }
 
 /**
@@ -1075,6 +1077,7 @@ export async function performEApprovalAction(
       outcome: input.outcome as EApprovalActionInput['outcome'],
       slaHours: input.slaHours,
       participantUserIds: input.participantUserIds,
+      approvedAmount: input.approvedAmount,
       materialChange,
       now: nowIso(),
       nextId: firestoreIdFactory(),
@@ -1340,6 +1343,7 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
     approvalTypeId: request.approvalTypeId,
     priority: request.priority,
     amount: request.amount,
+    approvedAmount: request.approvedAmount,
     confidential: request.confidential,
     ccUserIds: request.ccUserIds,
     ccDepartmentIds: request.ccDepartmentIds,
@@ -1403,6 +1407,10 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
     pruneUndefined({
       status: transition.request.status,
       version: transition.request.version,
+      // `?? null` rather than left out entirely: a material-change resubmission clears this by
+      // setting it to `undefined`, and the merge write below must carry that null through, or the
+      // old figure survives in Firestore untouched.
+      approvedAmount: transition.request.approvedAmount ?? null,
       currentStepIds: transition.request.currentStepIds ?? [],
       currentAssigneeIds: transition.request.currentAssigneeIds ?? [],
       currentDepartmentIds: transition.request.currentDepartmentIds ?? [],

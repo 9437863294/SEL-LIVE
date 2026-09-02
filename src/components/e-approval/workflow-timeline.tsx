@@ -24,7 +24,7 @@ import {
   type EApprovalTimelineNode,
 } from '@/lib/e-approval';
 import { EApprovalOutcomeBadge, EApprovalSlaBadge } from './shared';
-import { formatEApprovalDateTime } from './hooks';
+import { formatEApprovalAmount, formatEApprovalDateTime } from './hooks';
 
 const statusIcon: Record<EApprovalStepStatus, typeof CheckCircle2> = {
   Pending: CircleDashed,
@@ -180,6 +180,11 @@ function NodeBody({ node, isLast, onSelectStep, now }: NodeProps) {
                 ? `${step.actedByName || 'Acted'} · ${formatEApprovalDateTime(step.completedAt)}`
                 : `Pending since ${formatEApprovalDateTime(step.startedAt)}`}
               {step.onBehalfOfName && ` (on behalf of ${step.onBehalfOfName})`}
+            </p>
+          )}
+          {step.approvedAmount != null && (
+            <p className="mt-0.5 text-[11px] font-medium text-emerald-700">
+              Sanctioned {formatEApprovalAmount(step.approvedAmount)}
             </p>
           )}
 

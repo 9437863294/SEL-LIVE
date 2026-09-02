@@ -365,8 +365,29 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
         ],
       },
       {
-        id: 'verifying',
+        id: 'amount-approved',
         number: '2.3',
+        title: 'Approving a different amount',
+        audience: 'approver',
+        summary: 'You are not limited to the figure you were asked to approve.',
+        blocks: [
+          p(
+            'On a request that carries an amount, Approve and Approve & Complete show it to you as an editable field, not just a number on the screen. Leave it as it is to approve exactly what was asked for. Change it to approve something else — the same thing as striking out a figure on a paper note-sheet and writing a different one above it.',
+          ),
+          note(
+            'If somebody approved before you at a different figure, you see that figure — not the original request — because that is what is actually being carried forward. Change it again and whoever comes after you sees yours.',
+          ),
+          warn(
+            'This does not touch the approvals given before you. Revising the amount is part of your own decision, not an edit to the request — nobody has to re-approve anything because of it. That protection exists for a different situation: the requester changing the proposal itself after it has already been approved. See "If a request comes back to you" in Part 1.',
+          ),
+          p(
+            'Wherever the amount is shown afterwards — the Overview tab, the workflow timeline, the Activity trail, the printed Approval Note — you will see both figures when they differ: what was requested, and what was actually sanctioned.',
+          ),
+        ],
+      },
+      {
+        id: 'verifying',
+        number: '2.4',
         title: 'When you are asked to verify',
         audience: 'approver',
         summary: 'Three possible answers, and what each one does.',
@@ -387,7 +408,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
       },
       {
         id: 'sla',
-        number: '2.4',
+        number: '2.5',
         title: 'Deadlines and reminders',
         audience: 'approver',
         summary: 'How the clock works, and when it stops.',
@@ -405,7 +426,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
       },
       {
         id: 'recall',
-        number: '2.5',
+        number: '2.6',
         title: 'Taking an action back',
         audience: 'approver',
         summary: 'Recall your own dispatch; a supervisor can reverse a decision.',
@@ -429,7 +450,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
       },
       {
         id: 'leave',
-        number: '2.6',
+        number: '2.7',
         title: 'Going on leave',
         audience: 'approver',
         summary: 'Set a substitute so approvals do not stall.',
