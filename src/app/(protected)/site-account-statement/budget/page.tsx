@@ -1222,6 +1222,10 @@ export default function SiteFundBudgetPage() {
                   <tr className="border-b bg-slate-100 shadow-sm">
                     <th className="px-4 py-2.5 text-left font-medium min-w-[220px]">Project / Period</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Budget (₹)</th>
+                    {/* Money actually received from Head Office for the period on this row. Budget
+                        is what was sanctioned; Received is what has landed — a site can be well
+                        inside its budget and still unable to spend, which the other columns hide. */}
+                    <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Received (₹)</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Spent (₹)</th>
                     <th className="px-4 py-2.5 text-right font-medium whitespace-nowrap">Remaining (₹)</th>
                     <th className="px-4 py-2.5 text-left font-medium min-w-[130px]">Usage</th>
@@ -1250,6 +1254,7 @@ export default function SiteFundBudgetPage() {
                     const pExp    = allExpenses.filter(e => e.projectId === project.id);
                     const pPay    = allPayments.filter(p => p.projectId === project.id);
                     const tSpent  = pExp.reduce((s, e) => s + (e.expenseAmount  || 0), 0);
+                    const tRcvd   = pPay.reduce((s, p) => s + (p.receivedAmount || 0), 0);
                     // Cascade: explicit total → sum of FY budgets → sum of all monthly budgets
                     const fyBudgetSumAll = allBudgets
                       .filter(b => b.projectId === project.id && b.budgetType === 'fy')
@@ -1294,6 +1299,9 @@ export default function SiteFundBudgetPage() {
                                 </div>
                               : <span className="text-muted-foreground text-xs">—</span>}
                           </td>
+                          <td className="px-4 py-3 text-right text-blue-700 font-medium">
+                            {totalPerm.view ? formatINR(tRcvd) : <RestrictedCell />}
+                          </td>
                           <td className="px-4 py-3 text-right text-rose-700 font-medium">
                             {totalPerm.view ? formatINR(tSpent) : <RestrictedCell />}
                           </td>
@@ -1337,6 +1345,7 @@ export default function SiteFundBudgetPage() {
                           const r       = fyRange(fyS);
                           const fyB     = allBudgets.find(b => b.projectId === project.id && b.budgetType === 'fy' && b.period === fyLabel(fyS)) ?? null;
                           const fySpent = pExp.filter(e => e.expenseDate >= r.start && e.expenseDate <= r.end).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+                          const fyRcvd  = pPay.filter(p => p.receiptDate >= r.start && p.receiptDate <= r.end).reduce((s, p) => s + (p.receivedAmount || 0), 0);
                           const isCurFY = fyS === curFYStart;
                           const months  = getRelevantMonths(project.id, fyS);
                           // Cascade: explicit FY budget → sum of monthly budgets in this FY
@@ -1372,6 +1381,9 @@ export default function SiteFundBudgetPage() {
                                         {fBudgetSource === 'month-sum' && <p className="text-[10px] font-normal text-muted-foreground">∑ monthly budgets</p>}
                                       </div>
                                     : <span className="text-muted-foreground text-xs">—</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-blue-700">
+                                  {!fyPerm.view ? <RestrictedCell /> : fyRcvd > 0 ? formatINR(fyRcvd) : <span className="text-muted-foreground text-xs">—</span>}
                                 </td>
                                 <td className="px-4 py-2.5 text-right text-rose-700">
                                   {!fyPerm.view ? <RestrictedCell /> : fySpent > 0 ? formatINR(fySpent) : <span className="text-muted-foreground text-xs">—</span>}
@@ -1416,6 +1428,7 @@ export default function SiteFundBudgetPage() {
                                 const approval = allApprovals.find(a => a.projectId === project.id && a.period === m);
                                 const isPdfUploading = pdfUploadingKey === `${project.id}:${m}`;
                                 const mSpent   = pExp.filter(e => e.expenseDate.startsWith(m)).reduce((s, e) => s + (e.expenseAmount || 0), 0);
+                                const mRcvd    = pPay.filter(p => p.receiptDate?.startsWith(m)).reduce((s, p) => s + (p.receivedAmount || 0), 0);
                                 // Roll-up: if no monthly budget, sum category budgets for this month
                                 const catBudgetSum = allCatBudgets
                                   .filter(b => b.projectId === project.id && b.period === m)
@@ -1472,6 +1485,9 @@ export default function SiteFundBudgetPage() {
                                               )}
                                             </div>
                                           : <span className="text-muted-foreground">—</span>}
+                                      </td>
+                                      <td className="px-4 py-2 text-right text-xs text-blue-700">
+                                        {!monthlyPerm.view ? <RestrictedCell /> : mRcvd > 0 ? formatINR(mRcvd) : <span className="text-muted-foreground">—</span>}
                                       </td>
                                       <td className="px-4 py-2 text-right text-xs text-rose-700">
                                         {!monthlyPerm.view ? <RestrictedCell /> : mSpent > 0 ? formatINR(mSpent) : <span className="text-muted-foreground">—</span>}
@@ -1576,6 +1592,10 @@ export default function SiteFundBudgetPage() {
                                           <td className="px-4 py-1.5 text-right text-xs font-medium text-emerald-700">
                                             {!categoryPerm.view ? <RestrictedCell /> : catB ? formatINR(cAmt) : <span className="text-muted-foreground text-xs">—</span>}
                                           </td>
+                                          {/* Receipts arrive from Head Office against the project as
+                                              a whole, never against a category, so there is nothing
+                                              to show here. */}
+                                          <td className="px-4 py-1.5 text-right text-xs text-muted-foreground">—</td>
                                           <td className="px-4 py-1.5 text-right text-xs text-rose-700">
                                             {!categoryPerm.view ? <RestrictedCell /> : cSpent > 0 ? formatINR(cSpent) : <span className="text-muted-foreground text-xs">—</span>}
                                           </td>
