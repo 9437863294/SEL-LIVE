@@ -292,20 +292,18 @@ export default function SiteExpensesPage() {
   /*
    * The scope every server query on this page shares.
    *
-   * Filters that Firestore can answer with an equality constraint (project, main category, payment
-   * mode, GST flag) are pushed down here, so the paginated rows AND the aggregate totals below them
-   * describe exactly the same set. Sub-category and free-text search stay client-side over the rows
-   * already loaded — they refine what is shown, and the strip is explicit that "Total shown" is the
-   * loaded subset while the period figures come from the server.
+   * Project, date range and main category are pushed down, so the paginated rows AND the aggregate
+   * totals below them describe exactly the same set. Payment mode, the GST flag, sub-category and
+   * free-text search are applied to the loaded rows instead — each additional server-side equality
+   * filter doubles the number of composite indexes the module needs, and these four are narrowing
+   * aids rather than figures anyone reads a total off. The summary strip labels the difference.
    */
   const ledgerScope = useMemo<SASLedgerScope>(() => ({
     projectIds: filterProject ? [filterProject] : scopeProjectIds,
     from: filterFrom,
     to: filterTo,
     expenseCategory: filterCategory || undefined,
-    paymentMode: filterMode || undefined,
-    isGstBill: filterGstOnly || undefined,
-  }), [filterProject, scopeProjectIds, filterFrom, filterTo, filterCategory, filterMode, filterGstOnly]);
+  }), [filterProject, scopeProjectIds, filterFrom, filterTo, filterCategory]);
 
   /** Stable identity for the scope, so the loader effect fires on real changes only. */
   const scopeKey = useMemo(() => JSON.stringify({
@@ -971,17 +969,19 @@ export default function SiteExpensesPage() {
 
   // ── Client-side refinement ────────────────────────────────────────────────────
   /*
-   * Project, date range, main category, payment mode and the GST flag are all applied by the server
-   * (see `ledgerScope`), so re-testing them here would be dead weight. Only the two filters
-   * Firestore cannot index usefully are applied to the loaded rows: sub-category and free text.
+   * Project, date range and main category are applied by the server (see `ledgerScope`), so
+   * re-testing them here would be dead weight. Payment mode, the GST flag, sub-category and free
+   * text narrow the loaded rows instead — see `ledgerScope` for why they are not pushed down.
    */
-  const refining = Boolean(filterSubCategory || search.trim());
+  const refining = Boolean(filterSubCategory || filterMode || filterGstOnly || search.trim());
 
   const filtered = useMemo(() => {
     if (!refining) return expenses;
     const needle = search.trim().toLowerCase();
     return expenses.filter(e => {
       if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory) return false;
+      if (filterMode        && e.paymentMode !== filterMode)                       return false;
+      if (filterGstOnly     && e.isGstBill !== true)                               return false;
       if (needle &&
         !(e.projectName        || '').toLowerCase().includes(needle) &&
         !(e.expensedBy         || '').toLowerCase().includes(needle) &&
@@ -992,7 +992,7 @@ export default function SiteExpensesPage() {
         !(e.billNo             || '').toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [expenses, refining, filterSubCategory, search]);
+  }, [expenses, refining, filterSubCategory, filterMode, filterGstOnly, search]);
 
   /** Sum of the rows currently on screen. */
   const totalShown = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
@@ -1028,9 +1028,12 @@ export default function SiteExpensesPage() {
        */
       const { rows: scopeRows, truncated } = await fetchAllExpenses(ledgerScope);
       const needle = search.trim().toLowerCase();
-      const rows = (filterSubCategory || needle)
+      // Mirrors the on-screen refinement exactly, so the file matches what the user is looking at.
+      const rows = refining
         ? scopeRows.filter(e => {
             if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory) return false;
+            if (filterMode        && e.paymentMode !== filterMode)                       return false;
+            if (filterGstOnly     && e.isGstBill !== true)                               return false;
             if (needle &&
               !(e.projectName        || '').toLowerCase().includes(needle) &&
               !(e.expensedBy         || '').toLowerCase().includes(needle) &&
@@ -1286,13 +1289,16 @@ export default function SiteExpensesPage() {
       <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-rose-50 px-4 py-2.5">
         <Receipt className="h-4 w-4 shrink-0 text-rose-600" />
         <span className="text-sm font-medium text-rose-700">
-          Period total: <strong>{formatINR(periodExpenseTotal)}</strong> — {periodExpenseCount} record{periodExpenseCount !== 1 ? 's' : ''}
+          {/* The server total covers project, date range and main category. When a filter the
+              server does not apply is active, the label says so rather than letting the figure
+              look like the total for what is on screen. */}
+          {refining ? 'Period total (before mode / GST / search filters)' : 'Period total'}
+          : <strong>{formatINR(periodExpenseTotal)}</strong> — {periodExpenseCount} record{periodExpenseCount !== 1 ? 's' : ''}
         </span>
-        {/* When a client-side refinement narrows the loaded rows, the two figures genuinely differ,
-            so both are shown rather than one silently standing in for the other. */}
         {(refining || filtered.length < periodExpenseCount) && (
           <span className="text-xs text-muted-foreground">
             Showing {filtered.length} row{filtered.length !== 1 ? 's' : ''} · {formatINR(totalShown)}
+            {pageCursor && ' (of those loaded so far)'}
           </span>
         )}
         {filterProjectBalance !== undefined && (

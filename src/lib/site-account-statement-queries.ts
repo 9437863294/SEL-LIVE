@@ -81,10 +81,22 @@ export interface SASLedgerScope {
   from?: string;
   /** Inclusive upper bound, `YYYY-MM-DD`. Omit or pass '' for no upper bound. */
   to?: string;
-  /** Server-side equality filters that are cheap to index. */
+  /**
+   * Main expense category, pushed into the query.
+   *
+   * This is the *only* optional equality filter that goes to the server, and that is a deliberate
+   * limit rather than an oversight. Every extra equality filter multiplies the set of composite
+   * indexes the module needs: each subset of the filters, crossed with project-scoped vs. not, and
+   * again with pagination vs. aggregation. Three optional filters meant 32 index definitions for
+   * `siteAccountExpenses` alone — more than the whole rest of the application uses — and every one
+   * of them is a separate deploy-and-build before the feature works.
+   *
+   * Category earns its place because "how much did we spend on Material Purchase this month" is a
+   * figure people read off the total, so it has to be a *server* total rather than a sum of
+   * whatever rows happen to be paged in. Payment mode and the GST flag are narrowing aids applied
+   * to the loaded rows instead; the UI labels their totals accordingly.
+   */
   expenseCategory?: string;
-  paymentMode?: string;
-  isGstBill?: boolean;
 }
 
 export interface SASAggregate {
@@ -135,11 +147,9 @@ function scopeConstraints(kind: LedgerKind, scope: SASLedgerScope, chunk: string
   if (chunk !== null) {
     constraints.push(chunk.length === 1 ? where('projectId', '==', chunk[0]) : where('projectId', 'in', chunk));
   }
-  if (kind === 'expenses') {
-    if (scope.expenseCategory) constraints.push(where('expenseCategory', '==', scope.expenseCategory));
-    if (scope.isGstBill)       constraints.push(where('isGstBill', '==', true));
+  if (kind === 'expenses' && scope.expenseCategory) {
+    constraints.push(where('expenseCategory', '==', scope.expenseCategory));
   }
-  if (scope.paymentMode) constraints.push(where('paymentMode', '==', scope.paymentMode));
   // An empty bound means "unbounded". A literal where(date, '<=', '') would match nothing, since
   // every real date string sorts after the empty string.
   if (scope.from) constraints.push(where(dateField, '>=', scope.from));
@@ -238,11 +248,7 @@ async function fetchChunkUnindexed(
     const date = String(data[dateField] ?? '');
     if (scope.from && date < scope.from) return false;
     if (scope.to   && date > scope.to)   return false;
-    if (kind === 'expenses') {
-      if (scope.expenseCategory && data.expenseCategory !== scope.expenseCategory) return false;
-      if (scope.isGstBill && data.isGstBill !== true) return false;
-    }
-    if (scope.paymentMode && data.paymentMode !== scope.paymentMode) return false;
+    if (kind === 'expenses' && scope.expenseCategory && data.expenseCategory !== scope.expenseCategory) return false;
     return true;
   });
 }
