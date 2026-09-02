@@ -81,10 +81,37 @@ async function authorize(req: NextRequest): Promise<{ ok: true; uid: string } | 
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (!token) return { ok: false, status: 401, error: 'Authentication required.' };
 
+  /*
+   * Getting the Admin SDK and verifying the token are separated deliberately.
+   *
+   * `getAdminApp()` throws when the service-account variables are missing, which is the normal
+   * state of a local checkout — `FIREBASE_PRIVATE_KEY` is not in `.env`. Folding that into the
+   * token-verification catch reported a configuration gap as "Your session has expired. Please
+   * sign in again.", sending a developer hunting through auth code for a missing env var.
+   *
+   * There is deliberately no development bypass here. This route sends mail from the company's SMTP
+   * account; before it was authenticated, anyone on the internet could use it to put a branded
+   * message in front of any address. A dev-only skip is exactly the kind of thing that reaches
+   * production by accident, so a misconfigured environment refuses to send instead.
+   */
+  let adminAuth: ReturnType<typeof getFirebaseAdminAuth>;
+  try {
+    adminAuth = getFirebaseAdminAuth();
+  } catch (e) {
+    console.error('[SAS Budget Alert Email] Firebase Admin is not configured:', e);
+    return {
+      ok: false,
+      status: 503,
+      error: 'Budget alert e-mail is unavailable: Firebase Admin credentials are not configured on '
+        + 'the server. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY '
+        + '(see `npm run firebase:admin-check`). In-app budget notifications are unaffected.',
+    };
+  }
+
   let uid: string;
   let email: string | undefined;
   try {
-    const decoded = await getFirebaseAdminAuth().verifyIdToken(token);
+    const decoded = await adminAuth.verifyIdToken(token);
     uid = decoded.uid;
     email = decoded.email;
   } catch {

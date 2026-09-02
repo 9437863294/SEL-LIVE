@@ -185,8 +185,13 @@ export async function sendAlertEmail(payload: Record<string, unknown>): Promise<
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.error(TAG, `email API returned ${res.status}:`, body);
+      const body = await res.json().catch(() => null) as { error?: string } | null;
+      const detail = body?.error || `HTTP ${res.status}`;
+      // 503 means the server cannot send mail at all (Admin credentials missing) rather than that
+      // anything is wrong with this alert. The in-app notification has already gone out either way,
+      // so this is a warning about a degraded channel, not a failed alert.
+      if (res.status === 503) console.warn(TAG, 'e-mail channel unavailable —', detail);
+      else console.error(TAG, `email API returned ${res.status}:`, detail);
       return false;
     }
     trace('email sent successfully');
