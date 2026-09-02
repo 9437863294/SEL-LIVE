@@ -269,8 +269,9 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
         summary: 'Draw or upload your signature once, then stamp it onto any PDF attachment.',
         blocks: [
           p(
-            'Open the Attachments tab and choose Sign on any PDF. The first time, you will be asked to draw your signature with a finger, stylus or mouse, or upload an image of it — it is saved and reused automatically from then on.',
+            'Set your signature up once from My Activity — draw it with a finger, stylus or mouse, or upload an image of it — and it is ready from then on. If you have not set one up yet, opening Sign on a document offers the same drawing screen there and then.',
           ),
+          p('To actually sign a document: open the Attachments tab and choose Sign on any PDF.'),
           steps(
             'Choose which page to sign.',
             'Choose roughly where on the page — one of nine positions (corners, edges or centre) — and how large.',

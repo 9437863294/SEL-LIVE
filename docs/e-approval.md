@@ -249,7 +249,10 @@ How it works:
    uploaded as an image, converted to PNG and (for a drawn one) cropped to its own ink's bounding box
    so a small signature is not stretched to a fixed pad's aspect ratio (`signature-pad.tsx`). Saved
    once, reused every time; replacing it overwrites the old one, because a signature is a personal
-   setting rather than part of any approval's record.
+   setting rather than part of any approval's record. `EApprovalSignaturePad` is mounted in two
+   places — proactively on `/e-approval/my-activity` ("My Signature"), and inline inside the sign
+   dialog for whoever has not set one up yet — so setting it up is never gated behind first finding a
+   document to sign.
 2. **`computeEApprovalSignaturePlacement`** (`e-approval-pdf-signing.ts`, pure, unit-tested) turns a
    page size, one of nine anchors (corners, edges, centre), a width-as-percentage-of-page-width, and
    an optional fine offset into an `{x, y, width, height}` in PDF point-space, clamped fully on the

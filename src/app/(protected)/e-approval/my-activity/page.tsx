@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   CornerDownLeft,
+  FileSignature,
   History,
   MessageSquarePlus,
   Search,
@@ -14,7 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -27,9 +28,11 @@ import {
   summarizeEApprovalMyActivity,
   type EApprovalActivityGroup,
   type EApprovalHistoryEntry,
+  type EApprovalSignatureRecord,
 } from '@/lib/e-approval';
-import { listEApprovalMyActivity } from '@/lib/e-approval-service';
+import { listEApprovalMyActivity, loadEApprovalSignature } from '@/lib/e-approval-service';
 import { EApprovalEmptyState } from '@/components/e-approval/shared';
+import { EApprovalSignaturePad } from '@/components/e-approval/signature-pad';
 import { StatTile } from '@/components/e-approval/dashboard-parts';
 import { PageHeader } from '@/components/e-approval/page-header';
 import { formatEApprovalDateTime, useEApprovalActor } from '@/components/e-approval/hooks';
@@ -100,6 +103,8 @@ export default function EApprovalMyActivityPage() {
   const [search, setSearch] = useState('');
   const [group, setGroup] = useState<EApprovalActivityGroup | 'All'>('All');
   const [period, setPeriod] = useState<(typeof PERIODS)[number]['key']>('all');
+  const [signature, setSignature] = useState<EApprovalSignatureRecord | null>(null);
+  const [signatureLoading, setSignatureLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!serviceActor) return;
@@ -118,6 +123,15 @@ export default function EApprovalMyActivityPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!serviceActor) return;
+    setSignatureLoading(true);
+    loadEApprovalSignature(serviceActor.userId)
+      .then(setSignature)
+      .catch((error) => console.error('[e-approval] Failed to load signature', error))
+      .finally(() => setSignatureLoading(false));
+  }, [serviceActor]);
 
   const summary = useMemo(() => summarizeEApprovalMyActivity(entries), [entries]);
 
@@ -146,6 +160,26 @@ export default function EApprovalMyActivityPage() {
         title="My Activity"
         description="Every action you have taken, across every approval — approved, verified, returned and everything else. This is your own record, drawn from the same trail nothing is ever removed from."
       />
+
+      {/* ── Signature ──────────────────────────────────────────────────────────────────────── */}
+      <Card>
+        <CardHeader className="px-3 py-2.5 sm:px-4">
+          <CardTitle className="flex items-center gap-1.5 text-sm">
+            <FileSignature className="h-4 w-4" /> My Signature
+          </CardTitle>
+          <CardDescription className="text-xs">
+            Set this up once here, and it is ready whenever you sign a PDF attachment on any approval —
+            you will not be asked to draw it again.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-3 pb-3 sm:px-4">
+          {signatureLoading ? (
+            <Skeleton className="h-16 w-full" />
+          ) : (
+            <EApprovalSignaturePad existing={signature} serviceActor={serviceActor} onSaved={setSignature} />
+          )}
+        </CardContent>
+      </Card>
 
       {/* ── Summary ────────────────────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
