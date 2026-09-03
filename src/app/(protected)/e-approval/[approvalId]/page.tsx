@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import {
+  canSignEApprovalDocument,
   canViewEApproval,
   E_APPROVAL_BASE_PATH,
   type EApprovalDetail,
@@ -349,6 +350,8 @@ export default function EApprovalDetailPage() {
                 attachments={attachments}
                 serviceActor={serviceActor}
                 canUpload={permissions.canUpload}
+                canSign={canSignEApprovalDocument(request)}
+                closedStatus={request.status}
                 onChanged={load}
               />
             </CardContent>

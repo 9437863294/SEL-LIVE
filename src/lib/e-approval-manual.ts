@@ -282,6 +282,9 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
             'Signing creates a new, signed copy of the document. The original you uploaded is never changed, and stays on the record exactly as it was.',
           ),
           warn(
+            'Once an approval is closed — approved, rejected or cancelled — nothing on it can be signed any more, by anybody. Sign while the file is still moving. Whatever was signed before it closed stays on the record.',
+          ),
+          warn(
             'This is a visual signature — a scanned mark, the same as signing a paper note-sheet by hand. It is not a certificate-backed digital signature (a DSC). If your organisation needs a legally-binding cryptographic signature, that requires a licensed signing provider and is outside what this module does.',
           ),
         ],

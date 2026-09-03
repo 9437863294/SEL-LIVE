@@ -35,12 +35,18 @@ export function AttachmentList({
   attachments,
   serviceActor,
   canUpload,
+  canSign = true,
+  closedStatus,
   onChanged,
 }: {
   approvalId: string;
   attachments: EApprovalAttachment[];
   serviceActor: EApprovalServiceActor | null;
   canUpload: boolean;
+  /** False once the approval is closed — its documents can no longer be signed (`canSignEApprovalDocument`). */
+  canSign?: boolean;
+  /** The terminal status to name in the explanation, when `canSign` is false because of one. */
+  closedStatus?: string;
   onChanged: () => void;
 }) {
   const { toast } = useToast();
@@ -94,6 +100,13 @@ export function AttachmentList({
         </div>
       )}
 
+      {canUpload && !canSign && attachments.some(isPdf) && (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
+          This approval is {closedStatus ? closedStatus.toLowerCase() : 'closed'}, so its documents can no longer
+          be signed. Anything already signed stays on the record.
+        </p>
+      )}
+
       {byVersion.length === 0 ? (
         <EApprovalEmptyState icon={Paperclip} title="No attachments" description="Supporting documents appear here." />
       ) : (
@@ -133,7 +146,7 @@ export function AttachmentList({
                       <FileSignature className="h-3 w-3" /> Signed
                     </Badge>
                   )}
-                  {canUpload && isPdf(attachment) && (
+                  {canUpload && canSign && isPdf(attachment) && (
                     <Button
                       type="button"
                       size="sm"

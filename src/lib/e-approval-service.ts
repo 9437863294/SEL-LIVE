@@ -31,6 +31,7 @@ import {
   applyEApprovalAction,
   buildEApprovalSteps,
   canRecallEApprovalAction,
+  canSignEApprovalDocument,
   canReverseEApprovalAction,
   eApprovalUndoState,
   resolveDueEApprovalEscalations,
@@ -1861,6 +1862,14 @@ export async function signEApprovalAttachment(
   }
   const request = await getEApprovalRequest(approvalId);
   if (!request) throw new EApprovalServiceError('This approval no longer exists.');
+  // Checked here and not only in the UI: this is the single write path, so it is the only place the
+  // rule cannot be got around. A signature landing on a document after the file was decided is
+  // precisely what the trail exists to make impossible.
+  if (!canSignEApprovalDocument(request)) {
+    throw new EApprovalServiceError(
+      `This approval is ${request.status.toLowerCase()} — its documents can no longer be signed.`,
+    );
+  }
 
   const [{ embedEApprovalSignatureIntoPdf }, pdfResponse, signatureResponse] = await Promise.all([
     import('@/lib/e-approval-pdf-signing'),

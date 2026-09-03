@@ -22,6 +22,7 @@ intended to call this engine rather than each building their own approval logic.
 | `scripts/build-e-approval-manual.mjs` | Renders the same handbook into `.docx`. `npm run manual:e-approval`. |
 | `src/lib/e-approval-pdf-signing.ts` | Pure signature-placement geometry + the `pdf-lib` embedding call. Unit-tested (`tests/e-approval-pdf-signing.test.mjs`). |
 | `src/components/e-approval/signature-pad.tsx`, `sign-attachment-dialog.tsx` | Capturing a signature and burning it into a PDF attachment. |
+| `src/app/api/e-approval/fetch-attachment/route.ts` | Server-side proxy for Storage downloads — the only way to get an attachment's *bytes* into the browser (Storage sends no CORS headers to `fetch()`). |
 
 ## The handbook
 
@@ -292,13 +293,32 @@ How it works:
    page. There is deliberately no live page preview — that would need a PDF-rendering dependency
    (e.g. `pdfjs-dist`) to draw the actual page for drag-and-drop placement. The nine-anchor picker is
    the cheaper, still-real v1; a WYSIWYG placement is the natural upgrade if this proves imprecise.
-3. **`signEApprovalAttachment`** fetches the original PDF and the saved signature (both already
-   reachable client-side via their Storage download URLs — no server round trip), embeds the PNG with
-   `pdf-lib`, and uploads the result as a **new** attachment with `signedFromAttachmentId` pointing at
-   the original. The source PDF is never touched, the same rule every attachment in this module
-   already follows for a revised quotation. A document can be signed more than once — signing an
-   already-signed copy adds a second mark, which is what a note-sheet needing two signatories on one
-   document actually wants.
+3. **`signEApprovalAttachment`** fetches the original PDF and the saved signature, embeds the PNG
+   with `pdf-lib`, and uploads the result as a **new** attachment with `signedFromAttachmentId`
+   pointing at the original. The source PDF is never touched, the same rule every attachment in this
+   module already follows for a revised quotation. A document can be signed more than once — signing
+   an already-signed copy adds a second mark, which is what a note-sheet needing two signatories on
+   one document actually wants.
+
+**A closed approval cannot be signed.** `canSignEApprovalDocument(request)` is false for every
+terminal status — Approved, Rejected, Cancelled, Closed, Superseded — and the Sign button disappears
+with a line saying why. The real enforcement is in `signEApprovalAttachment`, which throws before
+touching Storage: that is the single write path, so it is the only place the rule cannot be got
+around by a stale tab or a hand-made call. A signature landing on a document *after* the file was
+decided is precisely what an audit trail exists to make impossible. A Draft stays signable — a
+requester signing their own declaration before submitting it is ordinary, and nothing has been
+decided yet for a signature to contradict.
+
+**Both fetches go through `/api/e-approval/fetch-attachment`, not straight at Storage.** Fetching a
+Firebase Storage download URL with client-side `fetch()` fails with a bare `Failed to fetch`: the
+download host sends no permissive `Access-Control-Allow-Origin` for a script-initiated cross-origin
+request, only for a full navigation — which is why the `Open` link on an attachment has always worked
+while `fetch()` on the identical URL does not. Configuring bucket CORS (`gsutil cors set`) would fix
+it at the infrastructure level; the proxy fixes it in code, needs no cloud access to deploy, and
+keeps working whatever the bucket's CORS happens to be. The route allow-lists this project's own
+Storage host and bucket before making any request, so it cannot be used to make the server fetch
+arbitrary URLs; it adds no auth check beyond that, because the download URL already carries Storage's
+own per-object token — the same and only authorization an `<a href>` to it relies on today.
 
 ## Reference numbers
 

@@ -1444,6 +1444,22 @@ export function canAssignEApprovalStep(
   return Boolean(actor.isDepartmentHead);
 }
 
+/**
+ * Whether documents on this request may still be signed.
+ *
+ * Closed means closed: once a request is approved, rejected, cancelled, closed or superseded, nobody
+ * signs anything more on it — not the approvers who did act, not an administrator, not the requester.
+ * Signing is an act of authority on a live file, and the whole point of a terminal status is that the
+ * authority to act on it has ended. A signature appearing on a document *after* the file was decided
+ * is exactly the thing an audit trail exists to make impossible.
+ *
+ * A Draft is deliberately still signable: a requester signing their own declaration before sending it
+ * for approval is ordinary, and nothing has been decided yet to contradict.
+ */
+export function canSignEApprovalDocument(request: Pick<EApprovalRequestState, 'status'>): boolean {
+  return !isTerminalEApprovalStatus(request.status);
+}
+
 export const E_APPROVAL_ACTION_KINDS = [
   'Submit',
   'Approve',

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { computeEApprovalSignaturePlacement } from '../src/lib/e-approval-pdf-signing.ts';
+import { canSignEApprovalDocument } from '../src/lib/e-approval-policy.ts';
 
 /* ── signature placement geometry ────────────────────────────────────────────────────────────── */
 
@@ -83,4 +84,31 @@ test('a zero-width source image falls back to a sane aspect ratio instead of div
     widthPct: 20,
   });
   assert.ok(Number.isFinite(placement.height) && placement.height > 0);
+});
+
+/* ── when a document may still be signed ─────────────────────────────────────────────────────── */
+
+test('a closed approval can no longer be signed, whatever closed it', () => {
+  for (const status of ['Approved', 'Rejected', 'Cancelled', 'Closed', 'Superseded']) {
+    assert.equal(canSignEApprovalDocument({ status }), false, status);
+  }
+});
+
+test('a live approval can be signed at any stage it is still moving through', () => {
+  for (const status of [
+    'Submitted',
+    'Pending Approval',
+    'Pending Verification',
+    'Pending Clarification',
+    'Returned',
+    'Resubmitted',
+    'On Hold',
+    'Partially Approved',
+  ]) {
+    assert.equal(canSignEApprovalDocument({ status }), true, status);
+  }
+});
+
+test('a draft is still signable — nothing has been decided to contradict a signature yet', () => {
+  assert.equal(canSignEApprovalDocument({ status: 'Draft' }), true);
 });
