@@ -22,9 +22,16 @@ export default function CreateEApprovalPage() {
   }
 
   return (
-    // One column, one measure. 1024px keeps the two-column field grids inside a step comfortable
-    // without letting the proposal box stretch to a 1600px line on a wide monitor.
-    <div className="mx-auto w-full max-w-5xl space-y-3">
+    /*
+     * Uncapped, like every other screen in the module — the shell owns the page's measure and its
+     * left/right padding, so a page that caps itself is simply narrower than its siblings for no
+     * reason a reader can see.
+     *
+     * What stops the width from emptying the cards out is the form's own two-column layout (steps
+     * plus a summary panel) and fields that fill their cards. Capping the *fields* instead, as an
+     * earlier attempt did, is what left every card a wide rectangle with an input hugging its left.
+     */
+    <div className="min-w-0 space-y-3">
       <PageHeader
         title="New approval"
         description="A note-sheet, routed for approval. Only the first approver has to be named — the rest of the chain is built by whoever holds the file."

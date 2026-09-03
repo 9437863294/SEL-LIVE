@@ -166,7 +166,13 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="relative w-full px-2 py-2 sm:px-6 sm:py-4 lg:px-8">
+    /*
+      Horizontal padding scales with the viewport rather than stopping at `lg`. Every screen in this
+      module fills the width it is given, so on a wide monitor the old fixed 32px left the content
+      looking pressed against the edges of the glass — the margin has to grow with the page for the
+      layout to read as deliberate rather than as overflow.
+    */
+    <div className="relative w-full px-3 py-2 sm:px-6 sm:py-4 lg:px-8 xl:px-12 2xl:px-20">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-3xl bg-gradient-to-br from-sky-50/60 via-white to-indigo-50/60" />
 
       <div className="mb-2 sm:mb-3 lg:hidden">

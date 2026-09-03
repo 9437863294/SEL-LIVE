@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useRouter } from 'next/navigation';
 import {
   ArrowDown,
+  Check,
   ChevronDown,
   ChevronUp,
   FileText,
@@ -344,9 +345,86 @@ export function ApprovalForm({
     ...(showRouteStep ? ['route'] : []),
   ];
   const stepNo = (key: string) => visibleSteps.indexOf(key) + 1;
+  const isLastStep = (key: string) => visibleSteps[visibleSteps.length - 1] === key;
+  /** Which steps have an answer — drives the ticks, the rail's end state and the checklist. */
+  const stepDone: Record<string, boolean> = {
+    subject: subjectFilled,
+    proposal: proposalFilled,
+    type: Boolean(approvalTypeId),
+    amount: amount.trim().length > 0,
+    route: hasRoute,
+  };
+
+  /**
+   * The whole journey, not only the part revealed so far.
+   *
+   * Progress has to count against this rather than `visibleSteps`, which grows as you answer: with a
+   * blank form that read "Step 1 of 1" — technically true of what was on screen, and a plain lie
+   * about how much was left to do.
+   */
+  const plannedSteps: Array<{ key: string; label: string }> = [
+    { key: 'subject', label: 'Subject' },
+    { key: 'proposal', label: 'The proposal' },
+    ...(directory.types.length > 0 ? [{ key: 'type', label: 'Kind of approval' }] : []),
+    ...(moneyRequired ? [{ key: 'amount', label: 'Financial details' }] : []),
+    { key: 'route', label: 'Who approves it' },
+  ];
+  const doneCount = plannedSteps.filter((entry) => stepDone[entry.key]).length;
 
   // Money renders either as a numbered step (type demands an amount) or as an optional add-on, so
   // the fields themselves live in one place.
+  /**
+   * The resolved chain — who this actually reaches, in order.
+   *
+   * Defined once and rendered in two places: the summary panel on wide screens, and inside the
+   * "Who approves it" step below `lg`, where there is no panel to hold it. It answers the question a
+   * requester most wants answered before submitting, and a note-sheet whose route is a surprise is
+   * one that gets withdrawn and raised again.
+   *
+   * A div wrapper, not a paragraph: Badge renders a block element, and a block inside a paragraph is
+   * invalid HTML the browser silently re-nests — a hydration mismatch.
+   */
+  const routePreview = (
+    <div>
+      <div className="mb-2 flex items-center gap-1.5">
+        <Route className="h-3.5 w-3.5 text-sky-700" />
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">It will go to</span>
+        {preview?.source && preview.source !== 'None' && (
+          <Badge variant="outline" className="ml-auto gap-1 text-[10px] font-normal">
+            <Sparkles className="h-2.5 w-2.5" />
+            {preview.source}
+          </Badge>
+        )}
+      </div>
+      {!hasRoute ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs leading-snug text-amber-900">
+          Nobody yet. Pick a person or a department — you can save a draft without one, but not submit.
+        </p>
+      ) : (
+        <ol className="space-y-1.5">
+          {preview?.steps.map((step, index) => (
+            <li
+              key={step.id ?? index}
+              className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5"
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
+                {index + 1}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800">
+                {step.assignments.map(describeEApprovalAssignment).join(step.groupMode === 'Any' ? ' or ' : ' & ')}
+              </span>
+              {settings && (
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                  {eApprovalStepSla(step.slaHours, priority, settings)}h
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+
   const moneyFields = (
     <div className="grid gap-3 sm:grid-cols-2">
       <Field
@@ -463,9 +541,53 @@ export function ApprovalForm({
     // No width cap and no auto-margins here: the *page* owns the measure, so the header, the steps
     // and the action bar all share one column edge. When the form capped itself the page had three
     // different widths stacked on top of each other, which is what made it look accidental.
-    <div className="min-w-0 space-y-3">
+    /*
+     * Two columns on a wide screen: the steps, and a panel that says what is being raised so far.
+     *
+     * Not simply a wider form — a proposal textarea stretched across 1300px is a worse writing
+     * surface, not a better one. The second column is what genuinely earns the width, and it fills
+     * the emptiness a progressive form necessarily has early on, when only one field has appeared.
+     */
+    <div className="grid min-w-0 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="min-w-0 space-y-3">
+        {/*
+          Progress, for viewports too narrow for the summary panel. The panel owns it everywhere
+          else — showing both at once would be the same information twice on one screen.
+        */}
+        {!revising && (
+          <div className="rounded-xl border bg-background px-3 py-2.5 sm:px-4 lg:hidden">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Step {Math.min(doneCount + 1, plannedSteps.length)} of {plannedSteps.length}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {doneCount === plannedSteps.length && hasRoute
+                  ? 'Ready to submit'
+                  : `${doneCount} of ${plannedSteps.length} answered`}
+              </p>
+            </div>
+            <div className="mt-1.5 flex gap-1" role="presentation">
+              {plannedSteps.map((entry) => (
+                <span
+                  key={entry.key}
+                  className={cn(
+                    'h-1.5 flex-1 rounded-full transition-colors',
+                    stepDone[entry.key] ? 'bg-emerald-500' : 'bg-muted',
+                  )}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
       {/* ── Step 1 · Subject ────────────────────────────────────────────────────────────── */}
-      <StepCard step={stepNo('subject')} title="Subject" description="One line naming what is being approved.">
+      <StepCard
+        step={stepNo('subject')}
+        title="Subject"
+        description="One line naming what is being approved."
+        done={stepDone.subject}
+        isLast={isLastStep('subject')}
+      >
         <Input
           value={subject}
           onChange={(event) => setSubject(event.target.value)}
@@ -487,6 +609,8 @@ export function ApprovalForm({
           step={stepNo('proposal')}
           title="The proposal"
           description="This is the text being approved. Editing it after an approval supersedes that approval."
+          done={stepDone.proposal}
+          isLast={isLastStep('proposal')}
         >
           <Textarea
             value={body}
@@ -499,7 +623,7 @@ export function ApprovalForm({
               '3. Rates — as per the approved rate contract dated 12 June 2026.\n' +
               '4. Budget — provided under the project safety head.'
             }
-            className="min-h-[260px] resize-y text-sm leading-relaxed"
+            className="min-h-[240px] resize-y text-sm leading-relaxed"
           />
           <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
             {body.trim().length} characters. Say what is proposed, why, and what it costs.
@@ -513,6 +637,8 @@ export function ApprovalForm({
           step={stepNo('type')}
           title="Kind of approval"
           description="Decides how it routes, and whether an amount is required."
+          done={stepDone.type}
+          isLast={isLastStep('type')}
           aside={
             <Badge variant="outline" className="text-[10px] font-normal">
               Optional
@@ -541,6 +667,8 @@ export function ApprovalForm({
           step={stepNo('amount')}
           title="Financial details"
           description={`${selectedType?.name ?? 'This type'} needs an amount. It is what the approval matrix routes on.`}
+          done={stepDone.amount}
+          isLast={isLastStep('amount')}
         >
           {moneyFields}
         </StepCard>
@@ -552,6 +680,8 @@ export function ApprovalForm({
           step={stepNo('route')}
           title="Who approves it"
           description="Name the first approver. Whoever receives it can verify, add approvers or forward it on."
+          done={stepDone.route}
+          isLast={isLastStep('route')}
         >
           <div className="space-y-2.5">
             {!useConfigured && (
@@ -652,45 +782,15 @@ export function ApprovalForm({
               </Collapsible>
             )}
 
-            <Separator />
-
-            {/* The resolved chain, always visible — a note-sheet whose route is a surprise gets
-                withdrawn and raised again. */}
-            <div>
-              {/* A div wrapper, not a paragraph: Badge renders a block element, and a block inside a
-                  paragraph is invalid HTML the browser silently re-nests — a hydration mismatch. */}
-              <div className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <Route className="h-3 w-3" /> It will go to
-                {preview?.source && preview.source !== 'None' && (
-                  <Badge variant="outline" className="ml-auto gap-1 text-[9px] font-normal normal-case">
-                    <Sparkles className="h-2.5 w-2.5" />
-                    {preview.source}
-                  </Badge>
-                )}
-              </div>
-              {!hasRoute ? (
-                <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-                  Nobody yet. Pick a person or a department above — you can save a draft without one, but not submit.
-                </p>
-              ) : (
-                <ol className="space-y-1">
-                  {preview?.steps.map((step, index) => (
-                    <li key={step.id ?? index} className="flex items-center gap-1.5 text-[11px]">
-                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[9px] font-semibold text-sky-700">
-                        {index + 1}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">
-                        {step.assignments.map(describeEApprovalAssignment).join(step.groupMode === 'Any' ? ' or ' : ' & ')}
-                      </span>
-                      {settings && (
-                        <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {eApprovalStepSla(step.slaHours, priority, settings)}h
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              )}
+            {/*
+              The route itself lives in the summary panel on the right — it is a *result* of the
+              picker above, not another thing to fill in, and repeating it under the field that
+              produces it said the same thing twice on one screen. Below `lg` the panel is not there
+              to hold it, so it falls back to here.
+            */}
+            <div className="lg:hidden">
+              <Separator className="mb-2.5" />
+              {routePreview}
             </div>
           </div>
         </StepCard>
@@ -699,8 +799,10 @@ export function ApprovalForm({
       {/* ── Optional extras, off screen until asked for ─────────────────────────────────── */}
       {showRouteStep && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-dashed bg-muted/20 px-3 py-2.5">
-            <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {/* Outside the numbered rail on purpose: these are not steps, and numbering them would
+              make an optional field read as something still owed. */}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed bg-muted/20 px-3 py-3 sm:px-4">
+            <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Add if needed
             </span>
             <AddOnChip
@@ -880,7 +982,14 @@ export function ApprovalForm({
           thing it submits — and it overlaid whatever a page put after the form. */}
       <div className="sticky bottom-0 z-20 rounded-xl border bg-background/95 px-3 py-2.5 shadow-[0_-4px_16px_-8px_rgba(15,23,42,0.2)] backdrop-blur sm:px-4">
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <p className="mr-auto min-w-0 text-[11px] text-muted-foreground">
+          {/* Says what is still missing, in the same place the buttons are — a disabled Submit with
+              its reason somewhere further up the page is a dead end the reader has to hunt for. */}
+          <p
+            className={cn(
+              'mr-auto min-w-0 text-xs',
+              !valid || !hasRoute ? 'font-medium text-amber-700' : 'text-muted-foreground',
+            )}
+          >
             {!valid
               ? 'A subject and a proposal are required.'
               : !hasRoute
@@ -913,40 +1022,157 @@ export function ApprovalForm({
             Submit for approval
           </Button>
         </div>
+        </div>
       </div>
+
+      {/* ── Summary panel ──────────────────────────────────────────────────────────────────── */}
+      <aside className="hidden lg:sticky lg:top-4 lg:block">
+        <div className="space-y-3">
+          {!revising && (
+            <div className="rounded-xl border bg-background p-3.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Step {Math.min(doneCount + 1, plannedSteps.length)} of {plannedSteps.length}
+              </p>
+              <ol className="mt-2.5 space-y-1.5">
+                {plannedSteps.map((entry) => {
+                  const isDone = stepDone[entry.key];
+                  return (
+                    <li key={entry.key} className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'flex h-4 w-4 shrink-0 items-center justify-center rounded-full',
+                          isDone ? 'bg-emerald-100 text-emerald-700' : 'border border-dashed border-muted-foreground/40',
+                        )}
+                        aria-hidden
+                      >
+                        {isDone && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                      </span>
+                      <span className={cn('text-xs', isDone ? 'text-slate-800' : 'text-muted-foreground')}>
+                        {entry.label}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          )}
+
+          {/* What is actually being raised, as it stands. The blank state is deliberately encouraging
+              rather than a list of dashes — an empty panel on an empty form says nothing worth saying. */}
+          <div className="rounded-xl border bg-background p-3.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Summary</p>
+            {!subjectFilled ? (
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                Start with a subject. As you answer each step this panel fills in, so you can see the whole
+                note-sheet without scrolling back up.
+              </p>
+            ) : (
+              <dl className="mt-2.5 space-y-2.5">
+                <div>
+                  <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Subject</dt>
+                  <dd className="mt-0.5 line-clamp-3 text-sm font-medium leading-snug text-slate-900">{subject}</dd>
+                </div>
+                {selectedType && (
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Type</dt>
+                    <dd className="min-w-0 truncate text-xs font-medium text-slate-800">{selectedType.name}</dd>
+                  </div>
+                )}
+                {amount.trim() && (
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Amount</dt>
+                    <dd className="text-xs font-semibold tabular-nums text-slate-900">
+                      {formatEApprovalAmount(Number(amount) || 0)}
+                    </dd>
+                  </div>
+                )}
+                <div className="flex items-baseline justify-between gap-2">
+                  <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Priority</dt>
+                  <dd className="text-xs font-medium text-slate-800">{priority}</dd>
+                </div>
+                {pendingFiles.length > 0 && (
+                  <div className="flex items-baseline justify-between gap-2">
+                    <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Documents</dt>
+                    <dd className="text-xs font-medium text-slate-800">{pendingFiles.length}</dd>
+                  </div>
+                )}
+              </dl>
+            )}
+          </div>
+
+          {/* The route, in full — moved out of the step that produces it so the picker stays a
+              picker and the answer sits with the rest of the summary. */}
+          <div className="rounded-xl border bg-background p-3.5">{routePreview}</div>
+        </div>
+      </aside>
     </div>
   );
 }
 
-/** One numbered step in the sequence. Reveals with a short slide so the eye follows it down. */
+/**
+ * One numbered step in the sequence.
+ *
+ * The marker sits on a continuous rail rather than inside the card, which is the whole point: five
+ * identical bordered rectangles stacked up read as an arbitrary pile of forms, whereas the same five
+ * threaded onto a line read as one thing with an order and an end. The rail is drawn per card and
+ * deliberately overshoots into the gap below (`-bottom-3`, matching the parent's `space-y-3`) so it
+ * joins up across the gaps; the last step suppresses it, or the line would dangle past the sequence.
+ *
+ * `done` turns the number into a tick and drops the card's emphasis, so at a glance the eye lands on
+ * the step still wanting an answer instead of weighing all five equally.
+ */
 function StepCard({
   step,
   title,
   description,
   aside,
+  done = false,
+  isLast = false,
   children,
 }: {
   step: number;
   title: string;
   description?: string;
   aside?: ReactNode;
+  /** Answered — shows a tick and steps back visually. */
+  done?: boolean;
+  /** Suppresses the rail below, so the sequence ends cleanly. */
+  isLast?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-xl border bg-background shadow-sm animate-in fade-in slide-in-from-top-1 duration-300 motion-reduce:animate-none">
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b px-3 py-2.5 sm:px-4">
-        <div className="flex min-w-0 gap-2.5">
-          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-100 text-[11px] font-bold text-sky-700">
-            {step}
-          </span>
+    <section className="relative pl-9 animate-in fade-in slide-in-from-top-1 duration-300 motion-reduce:animate-none sm:pl-11">
+      {!isLast && (
+        <span
+          className="absolute bottom-[-0.75rem] left-[13px] top-8 w-px bg-gradient-to-b from-border to-border/40 sm:left-[15px]"
+          aria-hidden
+        />
+      )}
+      <span
+        className={cn(
+          'absolute left-0 top-2.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ring-4 ring-background transition-colors sm:h-8 sm:w-8',
+          done ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-600 text-white shadow-sm',
+        )}
+        aria-hidden
+      >
+        {done ? <Check className="h-4 w-4" strokeWidth={3} /> : step}
+      </span>
+
+      <div
+        className={cn(
+          'overflow-hidden rounded-xl border bg-background transition-shadow',
+          done ? 'shadow-none' : 'shadow-sm',
+        )}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-2 border-b bg-muted/20 px-3 py-2.5 sm:px-4">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold tracking-tight text-slate-900">{title}</h2>
-            {description && <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{description}</p>}
+            <h2 className="text-[15px] font-semibold leading-tight tracking-tight text-slate-900">{title}</h2>
+            {description && <p className="mt-1 text-xs leading-snug text-muted-foreground">{description}</p>}
           </div>
+          {aside}
         </div>
-        {aside}
+        <div className="px-3 py-3.5 sm:px-4">{children}</div>
       </div>
-      <div className="px-3 py-3 sm:px-4">{children}</div>
     </section>
   );
 }
@@ -969,15 +1195,15 @@ function AddOnChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors',
+        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
         active
           ? 'border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100'
           : 'border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
-      {active ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-      <Icon className="h-3 w-3" />
+      {active ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+      <Icon className="h-3.5 w-3.5" />
       {label}
     </button>
   );
