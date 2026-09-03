@@ -22,11 +22,17 @@
 export type RecurrenceFrequency = 'Weekly' | 'Monthly' | 'Bi-monthly' | 'Quarterly' | 'Half-yearly' | 'Yearly' | 'Renewable' | 'Custom';
 
 /**
- * When the vendor's bill for a billing period is expected to exist. Utility-style bills arrive
- * after the service period ("End of billing period"), whereas rent and subscriptions are billed
- * up-front ("Start of billing period").
+ * When the vendor's bill for a billing period is expected to exist.
+ *
+ * The rules split by which end of the period the bill hangs off:
+ * - **Arrears** — the service happens, then it is billed: `End of billing period`,
+ *   `Days after period end`, and `Fixed day of month` (which anchors to the period's *last* month,
+ *   so on a multi-month period it lands near the end).
+ * - **Advance / prepaid** — billed for a period yet to come: `Start of billing period`, and
+ *   `Days before period start` for the common case of an invoice raised a week or so ahead of the
+ *   period it covers.
  */
-export type BillDateRule = 'End of billing period' | 'Start of billing period' | 'Fixed day of month' | 'Days after period end';
+export type BillDateRule = 'End of billing period' | 'Start of billing period' | 'Days before period start' | 'Fixed day of month' | 'Days after period end';
 
 /** When payment is due, always measured from the expected bill date. */
 export type DueDateRule = 'Days after bill date' | 'Fixed day of month' | 'Last day of month' | 'Last working day of month' | 'Same as bill date';
@@ -34,7 +40,7 @@ export type DueDateRule = 'Days after bill date' | 'Fixed day of month' | 'Last 
 /** Rule values saved before the schedule was made computable; normalized on read. */
 export type LegacyDueDateRule = 'Days after generation date' | 'Last working day' | 'Custom date logic';
 
-export const BILL_DATE_RULES: BillDateRule[] = ['End of billing period', 'Start of billing period', 'Fixed day of month', 'Days after period end'];
+export const BILL_DATE_RULES: BillDateRule[] = ['End of billing period', 'Days after period end', 'Fixed day of month', 'Start of billing period', 'Days before period start'];
 export const DUE_DATE_RULES: DueDateRule[] = ['Days after bill date', 'Fixed day of month', 'Last day of month', 'Last working day of month', 'Same as bill date'];
 
 /**
@@ -55,7 +61,10 @@ export interface RecurrenceRuleInput {
    */
   periodAnchorDay?: number;
   billDateRule?: BillDateRule;
-  /** Day-of-month for the `Fixed day of month` bill rule, or the day offset for `Days after period end`. */
+  /**
+   * Day-of-month for the `Fixed day of month` bill rule, or the day offset for
+   * `Days after period end` / `Days before period start`.
+   */
   billDayOffset?: number;
   dueDateRule?: DueDateRule | LegacyDueDateRule;
   /** Day-of-month for the `Fixed day of month` due rule, or the day offset for `Days after bill date`. */
@@ -258,6 +267,11 @@ function resolveExpectedBillDate(master: RecurrenceRuleInput, periodStart: Date,
       return periodEnd;
     case 'Days after period end':
       return addDays(periodEnd, Math.max(0, Math.round(offset) || 0));
+    // Prepaid: the invoice lands before the period it covers, so the bill date — and therefore the
+    // due date derived from it — can precede the period start. Nothing downstream assumes the bill
+    // falls inside its own period; the due-date rules all measure from the bill date.
+    case 'Days before period start':
+      return addDays(periodStart, -Math.max(0, Math.round(offset) || 0));
     case 'Fixed day of month': {
       const candidate = dayOfMonth(periodEnd.getFullYear(), periodEnd.getMonth(), offset);
       // A billing day that already passed within this period belongs to the next month.
@@ -452,7 +466,8 @@ export function describeRecurrence(master: RecurrenceRuleInput): string {
   const bill = billRule === 'End of billing period' ? 'bill expected on the last day of each period'
     : billRule === 'Start of billing period' ? 'bill expected on the first day of each period'
       : billRule === 'Days after period end' ? `bill expected ${billOffset} day(s) after each period ends`
-        : `bill expected on day ${billOffset} of the month`;
+        : billRule === 'Days before period start' ? `bill expected ${billOffset} day(s) before each period starts (paid in advance)`
+          : `bill expected on day ${billOffset} of the month`;
   const dueDay = Math.max(0, Math.round(Number(master.dueDay ?? 1)));
   const dueRule = normalizeDueDateRule(master.dueDateRule);
   const due = dueRule === 'Days after bill date' ? `payment due ${dueDay} day(s) after the bill date`

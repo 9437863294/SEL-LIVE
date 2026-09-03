@@ -829,9 +829,9 @@ export default function RecurringMasterFormPage({
                   </SelectContent>
                 </Select>
               </ControlledField>
-              {/* Only the two offset-driven bill rules have a number to configure; the period-anchored
-                  ones would show an input that changes nothing. */}
-              {["Fixed day of month", "Days after period end"].includes(
+              {/* Only the offset-driven bill rules have a number to configure; the two rules that
+                  sit exactly on a period boundary would show an input that changes nothing. */}
+              {["Fixed day of month", "Days after period end", "Days before period start"].includes(
                 draft.billDateRule || "",
               ) && (
                 <ControlledField
@@ -840,8 +840,15 @@ export default function RecurringMasterFormPage({
                     label:
                       draft.billDateRule === "Fixed day of month"
                         ? "Bill day of month"
-                        : "Days after period end",
+                        : draft.billDateRule === "Days before period start"
+                          ? "Days before period starts"
+                          : "Days after period end",
                   }}
+                  help={
+                    draft.billDateRule === "Days before period start"
+                      ? "For anything paid up front — the invoice arrives this many days before the period it covers."
+                      : undefined
+                  }
                 >
                   <Input
                     type="number"

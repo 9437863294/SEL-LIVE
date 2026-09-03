@@ -561,3 +561,73 @@ test('monthly and week/interval frequencies keep their original phasing', () => 
   );
   assert.equal(buildRecurringCycle({ ...utilityMaster, frequency: 'Renewable' }, asOf('2026-09-10')).key, 'R2026-08-18');
 });
+
+/* --- Advance / prepaid billing: paying for a period before it starts. ------ */
+
+test('a prepaid bill lands before the period it covers', () => {
+  // Rent invoiced 5 days ahead of the month it covers. Before this rule existed the earliest
+  // expressible bill date was the period's own first day, so an invoice raised ahead of the period
+  // simply could not be modelled.
+  const rent = {
+    frequency: 'Monthly', startDate: '2026-01-01',
+    billDateRule: 'Days before period start', billDayOffset: 5,
+    dueDateRule: 'Same as bill date', dueDay: 0, generateLeadDays: 3,
+  };
+  const [first, second] = buildRecurringCycleSchedule(rent, { from: asOf('2026-09-20'), count: 2 });
+  assert.equal(first.billingPeriodStart, '2026-06-01');
+  assert.equal(first.expectedBillDate, '2026-05-27');
+  assert.equal(first.dueDate, '2026-05-27');
+  // The bill, and the payment, both fall before the period they pay for.
+  assert.ok(first.expectedBillDate < first.billingPeriodStart);
+  assert.ok(first.dueDate < first.billingPeriodStart);
+  assert.equal(second.expectedBillDate, '2026-06-26');
+});
+
+test('a prepaid due date still derives from the bill date', () => {
+  const quarterly = {
+    frequency: 'Quarterly', startDate: '2026-01-01',
+    billDateRule: 'Days before period start', billDayOffset: 10,
+    dueDateRule: 'Days after bill date', dueDay: 15, generateLeadDays: 7,
+  };
+  // Selected by period rather than taken as the first row: the preview deliberately opens on the
+  // earliest cycle still awaiting generation, which for a prepaid master is an earlier quarter.
+  const cycle = buildRecurringCycleSchedule(quarterly, { from: asOf('2026-04-05'), count: 4 })
+    .find((item) => item.billingPeriodStart === '2026-04-01');
+  assert.ok(cycle, 'expected the Apr–Jun quarter in the schedule');
+  assert.equal(cycle.expectedBillDate, '2026-03-22');
+  assert.equal(cycle.dueDate, '2026-04-06');
+  assert.equal(cycle.generationDate, '2026-03-15');
+});
+
+test('an offset of zero matches the start-of-period rule exactly', () => {
+  const base = { frequency: 'Monthly', startDate: '2026-01-01', dueDateRule: 'Days after bill date', dueDay: 5 };
+  const atStart = buildRecurringCycle({ ...base, billDateRule: 'Start of billing period' }, asOf('2026-06-10'));
+  const zeroAhead = buildRecurringCycle(
+    { ...base, billDateRule: 'Days before period start', billDayOffset: 0 }, asOf('2026-06-10'));
+  assert.equal(zeroAhead.expectedBillDate, atStart.expectedBillDate);
+  assert.equal(zeroAhead.dueDate, atStart.dueDate);
+});
+
+test('arrears rules keep the bill inside or after its own period', () => {
+  // The new rule must not have moved the existing ones.
+  const base = { frequency: 'Monthly', startDate: '2026-01-01', dueDateRule: 'Days after bill date', dueDay: 5 };
+  for (const [billDateRule, billDayOffset] of [['End of billing period', 1], ['Days after period end', 3], ['Start of billing period', 1]]) {
+    const c = buildRecurringCycle({ ...base, billDateRule, billDayOffset }, asOf('2026-06-10'));
+    assert.ok(c.expectedBillDate >= c.billingPeriodStart, `${billDateRule}: bill moved before its period`);
+  }
+});
+
+test('a prepaid first bill predating the master start is created on the start date', () => {
+  // Documented consequence, not an accident: the obligation record is never created before the
+  // master exists, so a master set up *after* its first prepaid invoice was raised gets that cycle
+  // on its start date — visibly already due. The fix for that is the start date, not the schedule.
+  const yearly = {
+    frequency: 'Yearly', startDate: '2026-04-01',
+    billDateRule: 'Days before period start', billDayOffset: 30,
+    dueDateRule: 'Days after bill date', dueDay: 7, generateLeadDays: 14,
+  };
+  const first = buildRecurringCycleSchedule(yearly, { from: asOf('2026-04-05'), count: 1 })[0];
+  assert.equal(first.expectedBillDate, '2026-03-02');
+  assert.equal(first.generationDate, '2026-04-01');
+  assert.ok(first.generationDate >= yearly.startDate);
+});
