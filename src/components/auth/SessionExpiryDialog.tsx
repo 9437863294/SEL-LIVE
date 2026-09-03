@@ -128,11 +128,17 @@ export function SessionExpiryDialog({
     setIsLoading(true);
 
     try {
-      const credential = EmailAuthProvider.credential(user.email, password);
-      
       if (!auth.currentUser) {
         throw new Error('No authenticated user found');
       }
+
+      // The auth account's own email, not the `users` document's — the two can differ, and a
+      // credential for the wrong address fails as `auth/invalid-credential`, which is
+      // indistinguishable from a mistyped password.
+      const credential = EmailAuthProvider.credential(
+        auth.currentUser.email || user.email,
+        password
+      );
 
       await reauthenticateWithCredential(auth.currentUser, credential);
       

@@ -133,10 +133,16 @@ test('legacy due-rule wording maps onto the computable rule set', () => {
 });
 
 test('cycle keys stay stable across frequencies so obligations are not regenerated', () => {
+  // The key is the obligation's Firestore document id, so these must not drift.
   assert.equal(buildRecurringCycle(utilityMaster, asOf('2026-09-10')).key, '2026-09');
+  // Multi-month frequencies are phased from the master's start period (this master starts
+  // 18 Aug), not snapped to an absolute every-third-month grid. The snapped grid put the start
+  // date at the tail of a bucket that predated the master and produced stub first periods — see
+  // the dedicated test below. That re-phasing moved this key from '2026-07-3M' to '2026-08-3M',
+  // the one deliberate key change; Monthly/Weekly/Custom/Renewable are untouched.
   assert.equal(
     buildRecurringCycle({ ...utilityMaster, frequency: 'Quarterly' }, asOf('2026-09-10')).key,
-    '2026-07-3M',
+    '2026-08-3M',
   );
   assert.equal(
     buildRecurringCycle({ ...utilityMaster, frequency: 'Weekly' }, asOf('2026-09-10')).key,
@@ -490,4 +496,68 @@ test('the entry step sets the status its name implies', () => {
   assert.equal(stepStatus({ ...billCollection, name: 'Bill Verification' }), 'Under Verification');
   assert.equal(stepStatus({ ...billCollection, name: 'Payment Approval' }), 'Pending Approval');
   assert.equal(stepStatus(undefined), 'Generated');
+});
+
+test('a multi-month master never opens with a stub period', () => {
+  // The reported "Quarterly frequency" defect. Multi-month buckets used to snap to an absolute
+  // month grid, so a quarterly master starting 1 Jan with a 17th anchor landed at the tail end of
+  // the Oct-17→Jan-16 bucket and its first "quarter" was 1–16 Jan: sixteen days carrying a full
+  // quarter's expected amount, with the bill and due dates derived from that stub.
+  const days = (cycle) =>
+    Math.round(
+      (new Date(`${cycle.billingPeriodEnd}T00:00:00`) - new Date(`${cycle.billingPeriodStart}T00:00:00`))
+        / 86_400_000,
+    ) + 1;
+
+  for (const [frequency, minDays] of [['Bi-monthly', 45], ['Quarterly', 75], ['Half-yearly', 150], ['Yearly', 320]])
+  for (const anchor of [1, 5, 17, 28]) {
+    const master = {
+      frequency, startDate: '2026-01-01', periodAnchorDay: anchor,
+      billDateRule: 'End of billing period', dueDateRule: 'Days after bill date', dueDay: 15,
+    };
+    const cycles = buildRecurringCycleSchedule(master, { from: asOf('2026-01-05'), count: 3 });
+    assert.ok(cycles.length >= 3, `${frequency}/anchor ${anchor}: expected a schedule`);
+    // The first period may legitimately be clamped — a master starting on the 1st when the vendor
+    // bills from the 5th covers only the remainder of the period it joined. What must never happen
+    // is the *second* period being short, which is the signature of the bug: the grid was phased on
+    // a bucket that predated the master, so index 0 was a fragment and the real periods followed.
+    for (const [position, cycle] of cycles.slice(1).entries()) {
+      assert.ok(
+        days(cycle) >= minDays,
+        `${frequency}/anchor ${anchor}: period ${position + 2} is only ${days(cycle)} day(s) (${cycle.billingPeriodStart}..${cycle.billingPeriodEnd})`,
+      );
+    }
+    // And the first period must still reach the end of the period the start date falls inside —
+    // it is never a sliver. Half a period is the floor: the worst case is starting one day after
+    // an anchor, which still leaves nearly all of it.
+    assert.ok(
+      days(cycles[0]) > minDays / 2,
+      `${frequency}/anchor ${anchor}: first period is only ${days(cycles[0])} day(s) (${cycles[0].billingPeriodStart}..${cycles[0].billingPeriodEnd})`,
+    );
+  }
+});
+
+test('multi-month cycles are phased from the master start date, not a calendar grid', () => {
+  // Quarterly from 1 Aug means Aug–Oct, Nov–Jan. Snapping to the absolute grid instead made the
+  // first quarter a two-month stub (Aug–Sep) so it could align to Jul–Sep.
+  const master = {
+    frequency: 'Quarterly', startDate: '2026-08-01', periodAnchorDay: 1,
+    billDateRule: 'End of billing period', dueDateRule: 'Days after bill date', dueDay: 15,
+  };
+  const cycles = buildRecurringCycleSchedule(master, { from: asOf('2026-08-05'), count: 2 });
+  assert.deepEqual(
+    cycles.map((cycle) => [cycle.billingPeriodStart, cycle.billingPeriodEnd]),
+    [['2026-08-01', '2026-10-31'], ['2026-11-01', '2027-01-31']],
+  );
+});
+
+test('monthly and week/interval frequencies keep their original phasing', () => {
+  // The re-phasing above must not touch these: their keys are live document ids.
+  assert.equal(buildRecurringCycle({ ...utilityMaster, frequency: 'Monthly' }, asOf('2026-10-05')).key, '2026-10');
+  assert.equal(buildRecurringCycle({ ...utilityMaster, frequency: 'Weekly' }, asOf('2026-09-10')).key, '2026-W37');
+  assert.equal(
+    buildRecurringCycle({ ...utilityMaster, frequency: 'Custom', customIntervalDays: 30 }, asOf('2026-09-10')).key,
+    'C0001-2026-08-18',
+  );
+  assert.equal(buildRecurringCycle({ ...utilityMaster, frequency: 'Renewable' }, asOf('2026-09-10')).key, 'R2026-08-18');
 });

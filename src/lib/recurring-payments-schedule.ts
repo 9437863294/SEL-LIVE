@@ -189,7 +189,20 @@ function cyclePeriod(master: RecurrenceRuleInput, index: number) {
   }
   const months = monthsPerCycle(master.frequency);
   const anchorDay = anchorDayOf(master);
-  const startBucket = Math.floor(anchoredMonthIndex(masterStart, anchorDay) / months) * months;
+  // The multi-month grid is phased from the master's own first period, not snapped to an absolute
+  // month grid (`floor(monthIndex / months) * months`). Snapping put the phase on a boundary that
+  // means nothing to the user — every third month counted from year zero — and, worse, could place
+  // the master's start date near the *end* of a bucket that began before the master existed. A
+  // quarterly master starting 1 Jan with a 17th anchor then produced a first "quarter" of
+  // 1–16 Jan: sixteen days, carrying a full quarter's expected amount and a bill date derived from
+  // that stub. Phasing from the start date makes the first cycle the period the master actually
+  // joined, and every cycle after it a whole one.
+  //
+  // `months === 1` is unaffected (the snap was already a no-op), so Monthly — along with Weekly,
+  // Custom and Renewable, which never used this branch — keeps byte-identical cycle keys. Only
+  // Bi-monthly/Quarterly/Half-yearly/Yearly re-phase, and only when the start month wasn't already
+  // on the absolute grid.
+  const startBucket = anchoredMonthIndex(masterStart, anchorDay);
   const bucket = startBucket + index * months;
   const nominalStart = dayOfMonth(Math.floor(bucket / 12), bucket % 12, anchorDay);
   // The period runs up to the day before the next one opens, so an anchored cycle ends on the 16th
@@ -222,9 +235,11 @@ function cycleIndexAt(master: RecurrenceRuleInput, date: Date) {
   }
   const months = monthsPerCycle(master.frequency);
   const anchorDay = anchorDayOf(master);
-  const startBucket = Math.floor(anchoredMonthIndex(masterStart, anchorDay) / months) * months;
-  const bucket = Math.floor(anchoredMonthIndex(date, anchorDay) / months) * months;
-  return (bucket - startBucket) / months;
+  // Counted from the master's own first period, matching the phasing in `cyclePeriod`. `Math.floor`
+  // rather than a plain divide so a date before the master starts yields a negative index, which
+  // `buildCycleAtIndex` rejects, instead of a fraction.
+  const elapsed = anchoredMonthIndex(date, anchorDay) - anchoredMonthIndex(masterStart, anchorDay);
+  return Math.floor(elapsed / months);
 }
 
 /**
