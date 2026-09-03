@@ -142,10 +142,28 @@ export function EApprovalRequestTable({
       {filtered.length === 0 ? (
         <EApprovalEmptyState icon={rows.length ? FileSearch : Inbox} title={emptyTitle} description={emptyDescription} />
       ) : (
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/40">
+        /*
+         * One scroll container, not two. `Table` already wraps itself in `overflow-auto`, so the
+         * usual wrapping div with `overflow-x-auto` nests a second scroller inside the first — they
+         * fight over the horizontal scroll, and `position: sticky` on the header resolves against
+         * the inner one, which is why a sticky header does nothing until this is collapsed into a
+         * single container via `containerClassName`.
+         *
+         * Bounding the height is what keeps the rows *inside* the table: the list scrolls within its
+         * own box instead of running down the page, so the header stays put and the filters above
+         * stay reachable however many approvals are loaded.
+         */
+        <Table containerClassName="max-h-[min(65vh,640px)] overflow-auto rounded-lg border">
+          <TableHeader>
+            {/*
+              Sticky goes on the `th` cells, not the `tr` — Tailwind's preflight sets
+              `border-collapse: collapse`, under which a sticky row is simply ignored in Chrome.
+
+              Opaque background, not `bg-muted/40`: rows scrolling underneath would otherwise show
+              through. The inset shadow stands in for the bottom border, which a collapsed border
+              model drops once the cell is taken out of flow.
+            */}
+            <TableRow className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-slate-50 [&_th]:shadow-[inset_0_-1px_0_hsl(var(--border))] hover:bg-transparent">
                 <TableHead className="whitespace-nowrap">
                   <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('reference')}>
                     Reference <ArrowUpDown className="h-3 w-3" />
@@ -220,7 +238,6 @@ export function EApprovalRequestTable({
               ))}
             </TableBody>
           </Table>
-        </div>
       )}
     </div>
   );

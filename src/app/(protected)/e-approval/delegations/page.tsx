@@ -14,13 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import {
+  canManageEApprovalDelegationFor,
   E_APPROVAL_BASE_PATH,
-  E_APPROVAL_COLLECTIONS,
   resolveEApprovalDelegate,
   type EApprovalDelegationRecord,
 } from '@/lib/e-approval';
 import {
-  deleteEApprovalConfigRecord,
+  deleteEApprovalDelegation,
   listEApprovalDelegations,
   saveEApprovalDelegation,
 } from '@/lib/e-approval-service';
@@ -44,6 +44,8 @@ export default function EApprovalDelegationsPage() {
   const { toast } = useToast();
   const { serviceActor } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
+  const canManage = permissions.canManageDelegations;
+  const canManageOthers = permissions.canManageOthersDelegations;
   const { directory } = useEApprovalDirectory();
   const [rows, setRows] = useState<EApprovalDelegationRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -72,9 +74,13 @@ export default function EApprovalDelegationsPage() {
     void load();
   }, [load]);
 
+  // Without the "Manage Others" grant the delegator is always the signed-in person — pinned here as
+  // well as in the form, so it cannot be left stale from a previous open.
   useEffect(() => {
-    if (open && serviceActor && !fromUserId) setFromUserId(serviceActor.userId);
-  }, [open, serviceActor, fromUserId]);
+    if (!open || !serviceActor) return;
+    if (!canManageOthers) setFromUserId(serviceActor.userId);
+    else if (!fromUserId) setFromUserId(serviceActor.userId);
+  }, [open, serviceActor, fromUserId, canManageOthers]);
 
   const engineRows = useMemo(
     () =>
@@ -123,6 +129,7 @@ export default function EApprovalDelegationsPage() {
           active: true,
         },
         serviceActor,
+        { canManageOthers },
       );
       toast({ title: 'Delegation saved' });
       setOpen(false);
@@ -146,7 +153,7 @@ export default function EApprovalDelegationsPage() {
   const remove = async (row: EApprovalDelegationRecord) => {
     if (!serviceActor) return;
     try {
-      await deleteEApprovalConfigRecord(E_APPROVAL_COLLECTIONS.delegations, row.id, serviceActor);
+      await deleteEApprovalDelegation(row, serviceActor, { canManageOthers });
       void load();
     } catch (error) {
       toast({
@@ -157,7 +164,9 @@ export default function EApprovalDelegationsPage() {
     }
   };
 
-  const canManage = permissions.canManageDelegations;
+  /** Whether this row is one the signed-in person may remove — their own, or anybody's with the grant. */
+  const canManageRow = (row: EApprovalDelegationRecord) =>
+    canManage && canManageEApprovalDelegationFor(serviceActor, row.fromUserId, { canManageOthers });
 
   return (
     <div className="space-y-3">
@@ -246,15 +255,17 @@ export default function EApprovalDelegationsPage() {
                         </TableCell>
                         {canManage && (
                           <TableCell>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 w-7 p-0 text-destructive"
-                              onClick={() => void remove(row)}
-                              aria-label="Remove delegation"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            {canManageRow(row) && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-destructive"
+                                onClick={() => void remove(row)}
+                                aria-label="Remove delegation"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </TableCell>
                         )}
                       </TableRow>
@@ -278,18 +289,35 @@ export default function EApprovalDelegationsPage() {
           <div className={eApprovalDialogClass.body}>
             <div>
               <Label className="text-xs">Delegate approvals of</Label>
-              <Select value={fromUserId} onValueChange={setFromUserId}>
-                <SelectTrigger className="mt-1 h-9">
-                  <SelectValue placeholder="Select a person" />
-                </SelectTrigger>
-                <SelectContent>
-                  {directory.users.map((row) => (
-                    <SelectItem key={row.id} value={row.id}>
-                      {row.name} {row.id === serviceActor?.userId ? '(me)' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {canManageOthers ? (
+                <>
+                  <Select value={fromUserId} onValueChange={setFromUserId}>
+                    <SelectTrigger className="mt-1 h-9">
+                      <SelectValue placeholder="Select a person" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {directory.users.map((row) => (
+                        <SelectItem key={row.id} value={row.id}>
+                          {row.name} {row.id === serviceActor?.userId ? '(me)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    You can arrange cover for anybody. Most people can only delegate their own approvals.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="mt-1 flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm">
+                    {serviceActor?.userName || 'You'}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    You can delegate your own approvals. Arranging cover for somebody else needs the &quot;Manage
+                    Others&quot; permission.
+                  </p>
+                </>
+              )}
             </div>
             <div>
               <Label className="text-xs">To</Label>

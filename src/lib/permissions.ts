@@ -53,7 +53,11 @@ export const permissionModules = {
     // the one place in this module where a role permission genuinely decides.
     Reversals: ["Reverse Any"],
     Reports: ["View", "Export"],
-    Delegations: ["View", "Add", "Edit", "Delete"],
+    // "Add"/"Edit"/"Delete" cover a person's *own* delegations — arranging cover for their own
+    // approvals. "Manage Others" is the separate, higher grant that lets an administrator set up or
+    // remove a delegation on somebody else's behalf. Without that split, anyone able to add a
+    // delegation could route another person's approvals to themselves.
+    Delegations: ["View", "Add", "Edit", "Delete", "Manage Others"],
     // Renamed from "Administration" in favour of the name the rest of the app uses for the same
     // thing. `useAuthorization`'s alias map keeps roles granted under the old path working.
     Settings: {

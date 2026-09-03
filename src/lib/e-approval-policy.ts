@@ -1460,6 +1460,27 @@ export function canSignEApprovalDocument(request: Pick<EApprovalRequestState, 's
   return !isTerminalEApprovalStatus(request.status);
 }
 
+/**
+ * Whether `actor` may create or remove a delegation of `fromUserId`'s approvals.
+ *
+ * Your own, always — arranging cover before leave is nobody else's business to approve. Somebody
+ * else's, only with `Delegations → Manage Others`, because a delegation is a transfer of approval
+ * authority: without this split, anyone who could add a delegation could quietly route the Director's
+ * approvals to themselves, which is a privilege escalation dressed up as an out-of-office setting.
+ *
+ * `canManageOthers` is passed in rather than read here — the engine has no notion of roles, the same
+ * way `canReverseEApprovalAction` takes its permission from the caller.
+ */
+export function canManageEApprovalDelegationFor(
+  actor: Pick<EApprovalActor, 'userId'> | null | undefined,
+  fromUserId: string | null | undefined,
+  options: { canManageOthers?: boolean } = {},
+): boolean {
+  if (!actor?.userId || !fromUserId) return false;
+  if (fromUserId === actor.userId) return true;
+  return Boolean(options.canManageOthers);
+}
+
 export const E_APPROVAL_ACTION_KINDS = [
   'Submit',
   'Approve',

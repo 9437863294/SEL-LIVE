@@ -344,6 +344,8 @@ export function useEApprovalPermissions() {
       canReverse: can('Reverse Any', `${resource}.Reversals`),
       canViewReports: can('View', `${resource}.Reports`),
       canManageDelegations: can('Add', `${resource}.Delegations`) || can('Edit', `${resource}.Delegations`),
+      /** Setting up or removing a delegation of *somebody else's* approvals, not just your own. */
+      canManageOthersDelegations: can('Manage Others', `${resource}.Delegations`),
       canViewDelegations: can('View', `${resource}.Delegations`) || can('Add', `${resource}.Delegations`),
       canManageSettings:
         can('View', `${resource}.Settings`) ||

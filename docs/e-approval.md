@@ -193,6 +193,22 @@ Role permissions (`permissions.ts` → `"E-Approval"`) therefore gate *raising*,
 `canViewEApproval`: participants always see their own file; `View All` / `View Department` open it to
 others; a confidential file additionally needs `View Confidential`.
 
+**Delegating is the one place a role permission does gate authority**, because a delegation *is* a
+transfer of approval authority rather than an action on a file. `canManageEApprovalDelegationFor`
+splits it in two: your own approvals, always — arranging cover before leave is nobody's business to
+approve — and anybody else's, only with `Delegations → Manage Others`. Without that split, everyone
+who could add a delegation could route the Director's approvals to themselves, which is privilege
+escalation wearing an out-of-office setting as a disguise. It gates creating *and* removing, since
+deleting somebody's cover is the same authority as granting it.
+
+The permission reaches the write path the way `canReverse` does — as a flag the caller passes to
+`saveEApprovalDelegation` / `deleteEApprovalDelegation`, because the service has no access to the role
+resolver (a React hook). That is the module's existing trust model rather than a stronger one: it
+stops the ordinary path and any accidental misuse, and keeps one definition of the rule that the
+screen and the write agree on. Anyone deploying this module behind real Firestore rules should mirror
+the check there too; see the note at the top of `firestore.rules` about this repo's ruleset not being
+the deployed one.
+
 ## Department steps
 
 The codebase has no user→department field (department scope is expressed through permission scopes,

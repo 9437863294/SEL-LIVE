@@ -462,12 +462,18 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
           steps(
             'Open Delegations.',
             'Choose New delegation.',
-            'Pick whose approvals are being delegated, and to whom.',
+            'Choose who is covering for you.',
             'Set the dates. Leaving the end date blank makes it open-ended.',
             'Optionally restrict it to one approval type.',
           ),
           note(
             'A delegation is a dated window and expires on its own. Every action the substitute takes is recorded as "on behalf of" you — the authority is delegated, the accountability is not.',
+          ),
+          p(
+            'You are always the one being covered for — you can delegate your own approvals, and only your own. Removing a delegation follows the same rule.',
+          ),
+          note(
+            'Administrators holding "Delegations → Manage Others" can additionally arrange or remove cover on anybody’s behalf — for the colleague who went on leave without setting one up. Everyone can see the full list either way, so it is always clear who is covering for whom.',
           ),
           p('Delegation resolves one level only: if A delegates to B and B delegates to C, A’s files go to B.'),
         ],
@@ -641,7 +647,11 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
               ['Audit Trail', 'The Activity tab.'],
               ['Reversals → Reverse Any', 'Undoing somebody else’s completed action.'],
               ['Reports', 'The analytics pages, and exporting them.'],
-              ['Delegations', 'Setting up substitute approvers.'],
+              ['Delegations', 'Setting up substitute approvers for yourself.'],
+              [
+                'Delegations → Manage Others',
+                'Arranging or removing cover on somebody else’s behalf. Without it a person can only delegate their own approvals.',
+              ],
               ['Settings → …', 'Each configuration page separately.'],
             ],
           ),

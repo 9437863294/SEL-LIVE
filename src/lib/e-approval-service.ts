@@ -30,6 +30,7 @@ import { dispatchNotification } from '@/lib/notifications';
 import {
   applyEApprovalAction,
   buildEApprovalSteps,
+  canManageEApprovalDelegationFor,
   canRecallEApprovalAction,
   canSignEApprovalDocument,
   canReverseEApprovalAction,
@@ -270,8 +271,52 @@ export const saveEApprovalTemplate = (record: Partial<EApprovalTemplateRecord>, 
 export const saveEApprovalRule = (record: Partial<EApprovalRuleRecord>, actor: EApprovalServiceActor) =>
   upsertConfigRecord(E_APPROVAL_COLLECTIONS.rules, record as EApprovalRuleRecord, actor, 'Save Approval Matrix Rule');
 
-export const saveEApprovalDelegation = (record: Partial<EApprovalDelegationRecord>, actor: EApprovalServiceActor) =>
-  upsertConfigRecord(E_APPROVAL_COLLECTIONS.delegations, record as EApprovalDelegationRecord, actor, 'Save Delegation');
+/**
+ * Saves a delegation, refusing one that hands away somebody else's approvals unless the actor holds
+ * `Delegations → Manage Others`.
+ *
+ * The permission arrives as a flag from the caller, the same way `undoEApprovalAction` takes
+ * `canReverse` — the service layer has no access to the role resolver, which is a React hook. That
+ * makes this the same trust model the rest of the module already runs on, not a stronger one: it
+ * stops the ordinary path and any accidental misuse, and puts the rule in one place both the screen
+ * and the write agree on.
+ */
+export async function saveEApprovalDelegation(
+  record: Partial<EApprovalDelegationRecord>,
+  actor: EApprovalServiceActor,
+  options: { canManageOthers?: boolean } = {},
+): Promise<void> {
+  const who = requireActor(actor);
+  if (!canManageEApprovalDelegationFor(who, record.fromUserId, options)) {
+    throw new EApprovalServiceError(
+      'You can only delegate your own approvals. Delegating somebody else’s needs the "Manage Others" permission.',
+    );
+  }
+  if (record.fromUserId && record.fromUserId === record.toUserId) {
+    throw new EApprovalServiceError('A delegation has to be to somebody else.');
+  }
+  await upsertConfigRecord(
+    E_APPROVAL_COLLECTIONS.delegations,
+    record as EApprovalDelegationRecord,
+    who,
+    'Save Delegation',
+  );
+}
+
+/** Removing a delegation is the same authority as creating one — see `saveEApprovalDelegation`. */
+export async function deleteEApprovalDelegation(
+  record: EApprovalDelegationRecord,
+  actor: EApprovalServiceActor,
+  options: { canManageOthers?: boolean } = {},
+): Promise<void> {
+  const who = requireActor(actor);
+  if (!canManageEApprovalDelegationFor(who, record.fromUserId, options)) {
+    throw new EApprovalServiceError(
+      'You can only remove delegations of your own approvals. Removing somebody else’s needs the "Manage Others" permission.',
+    );
+  }
+  await deleteEApprovalConfigRecord(E_APPROVAL_COLLECTIONS.delegations, record.id, who);
+}
 
 /** Department routing is keyed by department id, so it upserts rather than appending. */
 export async function saveEApprovalDepartmentRouting(

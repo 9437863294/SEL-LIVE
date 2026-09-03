@@ -8,6 +8,7 @@ import {
   buildEApprovalSteps,
   canActOnEApprovalStep,
   canAssignEApprovalStep,
+  canManageEApprovalDelegationFor,
   canTakeEApprovalOwnership,
   canRecallEApprovalAction,
   canReverseEApprovalAction,
@@ -1858,4 +1859,29 @@ test('an undo of a nested verification only unwinds one level', () => {
 test('undoing needs a recorded snapshot', () => {
   const state = submitted();
   assert.throws(() => act(state, { kind: 'Recall', actor: { userId: 'u-mgr' } }), /nothing recorded to undo/i);
+});
+
+/* ── who may delegate whose approvals ────────────────────────────────────────────────────────── */
+
+test('anyone may delegate their own approvals, with or without the grant', () => {
+  const me = { userId: 'u-me' };
+  assert.equal(canManageEApprovalDelegationFor(me, 'u-me'), true);
+  assert.equal(canManageEApprovalDelegationFor(me, 'u-me', { canManageOthers: false }), true);
+});
+
+test("delegating somebody else's approvals needs the Manage Others grant", () => {
+  const me = { userId: 'u-me' };
+  assert.equal(
+    canManageEApprovalDelegationFor(me, 'u-director'),
+    false,
+    'without it, routing the Director’s approvals elsewhere is refused',
+  );
+  assert.equal(canManageEApprovalDelegationFor(me, 'u-director', { canManageOthers: false }), false);
+  assert.equal(canManageEApprovalDelegationFor(me, 'u-director', { canManageOthers: true }), true);
+});
+
+test('a missing actor or delegator is refused rather than treated as a match', () => {
+  assert.equal(canManageEApprovalDelegationFor(null, 'u-me'), false);
+  assert.equal(canManageEApprovalDelegationFor({ userId: 'u-me' }, ''), false);
+  assert.equal(canManageEApprovalDelegationFor({ userId: 'u-me' }, undefined, { canManageOthers: true }), false);
 });
