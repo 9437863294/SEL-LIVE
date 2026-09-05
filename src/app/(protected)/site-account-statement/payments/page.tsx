@@ -571,29 +571,59 @@ export default function PaymentsPage() {
 
   /*
    * Project and date range are applied by the server (see `ledgerScope`), so only the free-text
-   * search — which Firestore cannot index usefully — is applied to the loaded rows.
+   * search — which Firestore cannot index usefully — is applied here.
+   *
+   * As on the Site Expenses page, searching pulls the whole period rather than filtering the page
+   * on screen: a reference number that happens to sit on page 2 must not come back as "no results".
    */
   const refining = Boolean(search.trim());
+
+  const [scopeCache, setScopeCache] = useState<{ key: string; rows: SASPayment[]; truncated: boolean } | null>(null);
+  const [scopeLoading, setScopeLoading] = useState(false);
+  const scopeCacheKey = `${scopeKey}#${reloadToken}`;
+
+  useEffect(() => {
+    if (!staticLoaded || !refining) return;
+    if (scopeCache?.key === scopeCacheKey) return;
+    let cancelled = false;
+
+    setScopeLoading(true);
+    fetchAllPayments(ledgerScope)
+      .then(({ rows, truncated }) => {
+        if (!cancelled) setScopeCache({ key: scopeCacheKey, rows, truncated });
+      })
+      .catch((e: any) => {
+        if (!cancelled) toast({ title: 'Could not search this period', description: e?.message, variant: 'destructive' });
+      })
+      .finally(() => { if (!cancelled) setScopeLoading(false); });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staticLoaded, refining, scopeCacheKey, scopeCache?.key]);
+
+  const refinementComplete = refining && scopeCache?.key === scopeCacheKey;
+  const refinementSource = refinementComplete ? scopeCache!.rows : payments;
 
   const filtered = useMemo(() => {
     if (!refining) return payments;
     const needle = search.trim().toLowerCase();
-    return payments.filter(p =>
+    return refinementSource.filter(p =>
       (p.projectName || '').toLowerCase().includes(needle) ||
       (p.receivedBy  || '').toLowerCase().includes(needle) ||
       (p.referenceNo || '').toLowerCase().includes(needle) ||
       (p.remarks     || '').toLowerCase().includes(needle)
     );
-  }, [payments, refining, search]);
+  }, [payments, refinementSource, refining, search]);
 
   const totalShown = useMemo(() => filtered.reduce((s, p) => s + (p.receivedAmount || 0), 0), [filtered]);
 
-  const periodReceiptTotal = periodTotals?.total ?? totalShown;
-  const periodReceiptCount = periodTotals?.count ?? filtered.length;
+  const periodReceiptTotal = refinementComplete ? totalShown : (periodTotals?.total ?? totalShown);
+  const periodReceiptCount = refinementComplete ? filtered.length : (periodTotals?.count ?? filtered.length);
 
+  // Closing balance always describes the whole period, never the searched subset.
   const closingBalance = useMemo(
-    () => openingBalance === null ? null : openingBalance + periodReceiptTotal - periodExpenses,
-    [openingBalance, periodReceiptTotal, periodExpenses]
+    () => openingBalance === null ? null : openingBalance + (periodTotals?.total ?? totalShown) - periodExpenses,
+    [openingBalance, periodTotals?.total, totalShown, periodExpenses]
   );
 
   async function exportExcel() {
@@ -809,11 +839,13 @@ export default function PaymentsPage() {
       <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-blue-50 px-4 py-2.5 text-blue-700">
         <TrendingUp className="h-4 w-4 shrink-0" />
         <span className="text-sm font-medium">
-          Period total: <strong>{formatINR(periodReceiptTotal)}</strong> across {periodReceiptCount} record{periodReceiptCount !== 1 ? 's' : ''}
+          {refining ? 'Filtered total' : 'Period total'}
+          : <strong>{formatINR(periodReceiptTotal)}</strong> across {periodReceiptCount} record{periodReceiptCount !== 1 ? 's' : ''}
+          {refining && scopeLoading && <span className="ml-1 text-xs font-normal text-blue-600/70">(searching…)</span>}
         </span>
-        {(refining || filtered.length < periodReceiptCount) && (
+        {refining && (
           <span className="text-xs text-blue-600/80">
-            Showing {filtered.length} row{filtered.length !== 1 ? 's' : ''} · {formatINR(totalShown)}
+            of {formatINR(periodTotals?.total ?? 0)} across {periodTotals?.count ?? 0} in {monthLabel}
           </span>
         )}
       </div>
@@ -908,11 +940,15 @@ export default function PaymentsPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-muted/30 font-semibold">
-                    <td colSpan={2} className="px-4 py-2.5">{refining || pageCursor ? 'Total (shown)' : 'Total'}</td>
+                    <td colSpan={2} className="px-4 py-2.5">
+                      {refining ? `Filtered total (${filtered.length} of ${periodTotals?.count ?? filtered.length})`
+                        : pageCursor ? 'Total (loaded so far)'
+                        : 'Total'}
+                    </td>
                     <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totalShown)}</td>
                     <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
                   </tr>
-                  {(refining || pageCursor) && (
+                  {!refining && pageCursor && (
                     <tr className="bg-muted/50 font-semibold">
                       <td colSpan={2} className="px-4 py-2.5">Period total (all {periodReceiptCount})</td>
                       <td className="px-4 py-2.5 text-right text-blue-800">{formatINR(periodReceiptTotal)}</td>
@@ -924,8 +960,9 @@ export default function PaymentsPage() {
             </div>
           )}
 
-          {/* Cursor pagination — one page of rows at a time; the totals above are server-side. */}
-          {pageCursor && (
+          {/* Cursor pagination — one page of rows at a time; the totals above are server-side.
+              Hidden while searching, since the search has already loaded the whole period. */}
+          {pageCursor && !refining && (
             <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
               <span className="text-xs text-muted-foreground">
                 Showing {payments.length} of {periodReceiptCount} records

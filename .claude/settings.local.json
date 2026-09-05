@@ -72,7 +72,14 @@
       "Bash(nslookup www.seltech.store)",
       "Bash(grep -n \"Settings.Policies\\\\|Settings\\\\`\\)\" src/components/e-approval/hooks.ts)",
       "Read(//tmp/**)",
-      "Bash(NODE_PATH=\"d:/Application Dev/SEL Live/node_modules\" node \"C:/Users/Ashish/AppData/Local/Temp/claude/d--Application-Dev-SEL-Live/28874b21-8baf-41f6-8aed-d8f7b6560b62/scratchpad/diag-employees.js\")"
+      "Bash(NODE_PATH=\"d:/Application Dev/SEL Live/node_modules\" node \"C:/Users/Ashish/AppData/Local/Temp/claude/d--Application-Dev-SEL-Live/28874b21-8baf-41f6-8aed-d8f7b6560b62/scratchpad/diag-employees.js\")",
+      "Bash(export GIT_TERMINAL_PROMPT=0)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(export GH=/c/Users/Ashish/gh/bin/gh.exe)",
+      "Bash(/c/Users/Ashish/gh/bin/gh.exe workflow *)",
+      "Bash(/c/Users/Ashish/gh/bin/gh.exe run *)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

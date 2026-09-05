@@ -311,6 +311,9 @@ export default function SiteExpensesPage() {
     projectIds: ledgerScope.projectIds ? [...ledgerScope.projectIds].sort() : null,
   }), [ledgerScope]);
 
+  /** Cache identity — a write bumps `reloadToken`, which must invalidate a cached full scope. */
+  const scopeCacheKey = `${scopeKey}#${reloadToken}`;
+
   // ── Page + aggregate loading ─────────────────────────────────────────────────
 
   useEffect(() => {
@@ -971,14 +974,55 @@ export default function SiteExpensesPage() {
   /*
    * Project, date range and main category are applied by the server (see `ledgerScope`), so
    * re-testing them here would be dead weight. Payment mode, the GST flag, sub-category and free
-   * text narrow the loaded rows instead — see `ledgerScope` for why they are not pushed down.
+   * text narrow the rows here instead — see `ledgerScope` for why they are not pushed down.
    */
   const refining = Boolean(filterSubCategory || filterMode || filterGstOnly || search.trim());
+
+  /*
+   * The whole scope, loaded on demand so that a refinement filters *everything* in the period
+   * rather than only the page on screen.
+   *
+   * Paginating and then filtering the page is the wrong order of operations: searching for a bill
+   * number would report "no matches" whenever the row happened to sit on page 2, which is worse
+   * than useless — it is a confident wrong answer. So the moment a client-side filter is switched
+   * on, the full scope is fetched (bounded by `SAS_MAX_SCAN`) and the filter runs across all of it.
+   *
+   * The unfiltered view keeps its pagination, which is where it earns its keep — that is the view
+   * someone opens on "All Time" against a five-year-old project. The scope is cached per
+   * scope+reload, so toggling between filters inside one period does not refetch.
+   */
+  const [scopeCache, setScopeCache] = useState<{ key: string; rows: SASExpense[]; truncated: boolean } | null>(null);
+  const [scopeLoading, setScopeLoading] = useState(false);
+
+  useEffect(() => {
+    if (!staticLoaded || !refining) return;
+    if (scopeCache?.key === scopeCacheKey) return;   // already held for this scope
+    let cancelled = false;
+
+    setScopeLoading(true);
+    fetchAllExpenses(ledgerScope)
+      .then(({ rows, truncated }) => {
+        if (!cancelled) setScopeCache({ key: scopeCacheKey, rows, truncated });
+      })
+      .catch((e: any) => {
+        if (!cancelled) toast({ title: 'Could not search this period', description: e?.message, variant: 'destructive' });
+      })
+      .finally(() => { if (!cancelled) setScopeLoading(false); });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staticLoaded, refining, scopeCacheKey, scopeCache?.key]);
+
+  /** True once the refinement is running against the whole period rather than one page. */
+  const refinementComplete = refining && scopeCache?.key === scopeCacheKey;
+
+  /** Rows the filters run over: the whole scope when refining, otherwise the loaded page(s). */
+  const refinementSource = refinementComplete ? scopeCache!.rows : expenses;
 
   const filtered = useMemo(() => {
     if (!refining) return expenses;
     const needle = search.trim().toLowerCase();
-    return expenses.filter(e => {
+    return refinementSource.filter(e => {
       if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory) return false;
       if (filterMode        && e.paymentMode !== filterMode)                       return false;
       if (filterGstOnly     && e.isGstBill !== true)                               return false;
@@ -992,22 +1036,29 @@ export default function SiteExpensesPage() {
         !(e.billNo             || '').toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [expenses, refining, filterSubCategory, filterMode, filterGstOnly, search]);
+  }, [expenses, refinementSource, refining, filterSubCategory, filterMode, filterGstOnly, search]);
 
   /** Sum of the rows currently on screen. */
   const totalShown = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
 
   /**
-   * The period's true expense total, from the server aggregate — independent of how many rows have
-   * been paged in. When a client-side refinement is active it no longer describes what is listed,
-   * so the strip labels the two figures separately rather than presenting one as the other.
+   * The headline expense figure for the period.
+   *
+   * Unfiltered, it is the server aggregate — correct regardless of how few rows have been paged in.
+   * Once a client-side refinement is running against the whole scope, `filtered` *is* the complete
+   * answer for what the user asked, so the total describes the filtered set instead of quietly
+   * reporting a period total next to a filtered list.
    */
-  const periodExpenseTotal = periodTotals?.total ?? totalShown;
-  const periodExpenseCount = periodTotals?.count ?? filtered.length;
+  const periodExpenseTotal = refinementComplete ? totalShown : (periodTotals?.total ?? totalShown);
+  const periodExpenseCount = refinementComplete ? filtered.length : (periodTotals?.count ?? filtered.length);
 
+  /**
+   * Closing balance always reflects the *whole* period, never the filtered subset — narrowing the
+   * list to one vendor must not make the site look like it has more cash than it does.
+   */
   const closingBalance = useMemo(
-    () => openingBalance === null ? null : openingBalance + periodReceipts - periodExpenseTotal,
-    [openingBalance, periodReceipts, periodExpenseTotal]
+    () => openingBalance === null ? null : openingBalance + periodReceipts - (periodTotals?.total ?? totalShown),
+    [openingBalance, periodReceipts, periodTotals?.total, totalShown]
   );
 
   // ── Upload gating for the expense dialog ──────────────────────────────────────
@@ -1289,16 +1340,19 @@ export default function SiteExpensesPage() {
       <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-rose-50 px-4 py-2.5">
         <Receipt className="h-4 w-4 shrink-0 text-rose-600" />
         <span className="text-sm font-medium text-rose-700">
-          {/* The server total covers project, date range and main category. When a filter the
-              server does not apply is active, the label says so rather than letting the figure
-              look like the total for what is on screen. */}
-          {refining ? 'Period total (before mode / GST / search filters)' : 'Period total'}
+          {refining ? 'Filtered total' : 'Period total'}
           : <strong>{formatINR(periodExpenseTotal)}</strong> — {periodExpenseCount} record{periodExpenseCount !== 1 ? 's' : ''}
+          {refining && scopeLoading && <span className="ml-1 text-xs font-normal text-muted-foreground">(searching…)</span>}
         </span>
-        {(refining || filtered.length < periodExpenseCount) && (
+        {refining && (
           <span className="text-xs text-muted-foreground">
-            Showing {filtered.length} row{filtered.length !== 1 ? 's' : ''} · {formatINR(totalShown)}
-            {pageCursor && ' (of those loaded so far)'}
+            of {formatINR(periodTotals?.total ?? 0)} across {periodTotals?.count ?? 0} in {monthLabel}
+          </span>
+        )}
+        {scopeCache?.truncated && refinementComplete && (
+          <span className="flex items-center gap-1 text-xs text-amber-700">
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            Period too large to search in full — narrow the date range.
           </span>
         )}
         {filterProjectBalance !== undefined && (
@@ -1325,8 +1379,16 @@ export default function SiteExpensesPage() {
         <CardContent className="p-0">
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Receipt className="h-10 w-10 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">{expenses.length === 0 ? 'No expenses recorded yet.' : 'No expenses match filters.'}</p>
+              {refining && scopeLoading
+                ? <Loader2 className="h-10 w-10 animate-spin text-muted-foreground/40" />
+                : <Receipt className="h-10 w-10 text-muted-foreground/40" />}
+              <p className="text-sm text-muted-foreground">
+                {/* "No match" is only trustworthy once the whole period has been searched — saying
+                    it while the scope is still loading would be a confident wrong answer. */}
+                {refining && scopeLoading ? `Searching all of ${monthLabel}…`
+                  : refining ? `No expenses in ${monthLabel} match these filters.`
+                  : 'No expenses recorded for this period.'}
+              </p>
             </div>
           ) : (
             <div className="overflow-auto max-h-[60vh]">
@@ -1429,12 +1491,16 @@ export default function SiteExpensesPage() {
                 <tfoot>
                   <tr className="bg-muted/30 font-semibold">
                     <td colSpan={5} className="px-4 py-2.5">
-                      {refining || pageCursor ? 'Total (shown)' : 'Total'}
+                      {refining ? `Filtered total (${filtered.length} of ${periodTotals?.count ?? filtered.length})`
+                        : pageCursor ? 'Total (loaded so far)'
+                        : 'Total'}
                     </td>
                     <td className="px-4 py-2.5 text-right text-rose-700">{formatINR(totalShown)}</td>
                     <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
                   </tr>
-                  {(refining || pageCursor) && (
+                  {/* Only meaningful while the list is a partial view of the period. Once a
+                      refinement covers the whole scope, the row above already is the answer. */}
+                  {!refining && pageCursor && (
                     <tr className="bg-muted/50 font-semibold">
                       <td colSpan={5} className="px-4 py-2.5">Period total (all {periodExpenseCount} records)</td>
                       <td className="px-4 py-2.5 text-right text-rose-800">{formatINR(periodExpenseTotal)}</td>
@@ -1447,8 +1513,9 @@ export default function SiteExpensesPage() {
           )}
 
           {/* Cursor pagination — the table holds one page at a time rather than the whole
-              collection, while the totals above come from the server-side aggregate. */}
-          {pageCursor && (
+              collection, while the totals above come from the server-side aggregate. Hidden while
+              refining, because the filter has already loaded and searched the entire period. */}
+          {pageCursor && !refining && (
             <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
               <span className="text-xs text-muted-foreground">
                 Showing {expenses.length} of {periodExpenseCount} records
