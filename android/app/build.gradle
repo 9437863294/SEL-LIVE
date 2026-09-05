@@ -26,7 +26,10 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Overridable from CI (`-PversionCodeOverride=… -PversionNameOverride=…`) so a release can be
         // cut without a commit, while a local build keeps the checked-in values.
-        versionCode (project.findProperty('versionCodeOverride') ?: '2') as Integer
+        // Parse explicitly: `versionCode (x ?: '2') as Integer` reads as
+        // `(versionCode(x ?: '2')) as Integer`, so the cast lands on the call's
+        // return value and versionCode is handed a String it rejects.
+        versionCode Integer.parseInt((project.findProperty('versionCodeOverride') ?: '2').toString())
         versionName project.findProperty('versionNameOverride') ?: "1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
