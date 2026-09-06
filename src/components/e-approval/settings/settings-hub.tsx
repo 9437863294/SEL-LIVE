@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronRight, GitBranch, Building2, FileStack, Loader2, Settings, ShieldCheck, UserCheck, Workflow } from 'lucide-react';
+import { ChevronRight, GitBranch, Building2, FileStack, HardHat, Loader2, Settings, ShieldCheck, UserCheck, Workflow } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { E_APPROVAL_BASE_PATH, E_APPROVAL_PERMISSION_RESOURCE } from '@/lib/e-approval';
@@ -34,7 +34,8 @@ const SECTIONS = [
     icon: Workflow,
     text: 'Workflows',
     href: `${E_APPROVAL_BASE_PATH}/settings/workflows`,
-    description: 'Named chains of stages, their approvers, parallel groups, and what each stage may do.',
+    description:
+      'Chains of stages and sub-workflows, with per-project and per-department approvers on any stage.',
     gradient: 'from-indigo-500 to-violet-600',
     bg: 'bg-indigo-50',
     iconColor: 'text-indigo-600',
@@ -59,6 +60,17 @@ const SECTIONS = [
     bg: 'bg-amber-50',
     iconColor: 'text-amber-600',
     node: 'Department Routing',
+  },
+  {
+    icon: HardHat,
+    text: 'Project Routing',
+    href: `${E_APPROVAL_BASE_PATH}/settings/projects`,
+    description:
+      'Who holds which post on each project — what a stage addressed to “Project Manager” resolves to.',
+    gradient: 'from-lime-500 to-green-600',
+    bg: 'bg-lime-50',
+    iconColor: 'text-lime-600',
+    node: 'Project Routing',
   },
   {
     icon: ShieldCheck,

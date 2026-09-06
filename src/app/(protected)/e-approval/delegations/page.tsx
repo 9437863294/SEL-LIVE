@@ -24,7 +24,7 @@ import {
   listEApprovalDelegations,
   saveEApprovalDelegation,
 } from '@/lib/e-approval-service';
-import { eApprovalDialogClass, EApprovalEmptyState } from '@/components/e-approval/shared';
+import { eApprovalDialogClass, eApprovalDialogGuard, EApprovalEmptyState } from '@/components/e-approval/shared';
 import { PageHeader } from '@/components/e-approval/page-header';
 import {
   formatEApprovalDate,
@@ -279,7 +279,18 @@ export default function EApprovalDelegationsPage() {
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className={eApprovalDialogClass.content}>
+        <DialogContent
+          className={eApprovalDialogClass.content}
+          {...eApprovalDialogGuard(
+            busy ||
+              fromUserId !== '' ||
+              toUserId !== '' ||
+              fromDate !== '' ||
+              toDate !== '' ||
+              reason.trim() !== '' ||
+              approvalTypeId !== 'ALL',
+          )}
+        >
           <DialogHeader className={eApprovalDialogClass.header}>
             <DialogTitle>New delegation</DialogTitle>
             <DialogDescription className="text-xs">

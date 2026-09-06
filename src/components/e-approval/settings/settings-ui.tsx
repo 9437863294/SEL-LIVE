@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { eApprovalDialogClass as settingsDialogClass } from '../shared';
+import { eApprovalDialogClass as settingsDialogClass, eApprovalDialogGuard } from '../shared';
 
 /**
  * Shared furniture for the settings sub-pages.
@@ -202,6 +202,7 @@ export function SettingsFormDialog({
   busy,
   canSave = true,
   saveLabel = 'Save',
+  dirty = true,
   onSave,
   children,
 }: {
@@ -213,12 +214,21 @@ export function SettingsFormDialog({
   busy?: boolean;
   canSave?: boolean;
   saveLabel?: string;
+  /**
+   * Whether there is unsaved work. Governs whether Escape may dismiss the dialog; a click outside
+   * never does either way. Defaults to `true` so a caller that has not thought about it gets the
+   * protective behaviour rather than the lossy one.
+   */
+  dirty?: boolean;
   onSave: () => void;
   children: ReactNode;
 }) {
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent className={wide ? settingsDialogClass.contentWide : settingsDialogClass.content}>
+      <DialogContent
+        className={wide ? settingsDialogClass.contentWide : settingsDialogClass.content}
+        {...eApprovalDialogGuard(Boolean(busy) || dirty)}
+      >
         <DialogHeader className={settingsDialogClass.header}>
           <DialogTitle className="text-base">{title}</DialogTitle>
           {description && <DialogDescription className="text-xs">{description}</DialogDescription>}
@@ -256,17 +266,35 @@ export function matchesSearch(term: string, ...fields: Array<string | undefined 
   return fields.filter(Boolean).join(' ').toLowerCase().includes(needle);
 }
 
-/** Small hook for the dialog-plus-draft pattern all four CRUD pages share. */
+/**
+ * Small hook for the dialog-plus-draft pattern all the CRUD pages share.
+ *
+ * Tracks the draft as it was opened alongside the draft as it stands, so `isDirty` can answer "is
+ * there anything here worth protecting?" — which is what decides whether Escape may dismiss the
+ * dialog (see `eApprovalDialogGuard`). Compared by serialisation rather than by reference because
+ * `patch` replaces the object on every keystroke, so reference equality would report every opened
+ * dialog as dirty; and against the *opened* value rather than against emptiness, because an edit form
+ * starts full and is only dirty once somebody changes something.
+ */
 export function useSettingsDraft<T>() {
   const [draft, setDraft] = useState<T | null>(null);
+  const [initial, setInitial] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const open = (next: T | null) => {
+    setDraft(next);
+    setInitial(next === null ? null : JSON.stringify(next));
+  };
+
   return {
     draft,
-    setDraft,
+    setDraft: open,
     busy,
     setBusy,
     open: draft !== null,
-    close: () => setDraft(null),
+    close: () => open(null),
     patch: (changes: Partial<T>) => setDraft((current) => (current ? { ...current, ...changes } : current)),
+    /** Whether the draft has been changed since the dialog was opened. */
+    isDirty: draft !== null && initial !== null && JSON.stringify(draft) !== initial,
   };
 }

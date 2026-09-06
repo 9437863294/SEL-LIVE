@@ -221,6 +221,7 @@ export function DepartmentRoutingPanel({
         title={draftDepartmentName ? `Routing — ${draftDepartmentName}` : 'Department routing'}
         description="Who a step addressed to this department reaches, and the code it contributes to reference numbers."
         busy={form.busy}
+        dirty={form.isDirty}
         onSave={() => void save()}
       >
         <Field label="How steps behave">

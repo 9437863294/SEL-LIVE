@@ -11,7 +11,7 @@ export default function EApprovalWorkflowsAdminPage() {
   return (
     <SettingsSection
       title="Workflows"
-      description="Named chains of stages. A stage can hold one approver or several in parallel, and each one carries its own SLA and its own set of powers."
+      description="Named chains of stages and sub-workflows. A stage can hold one approver or several in parallel, carry its own SLA and powers, run only in certain conditions, and name a different person on each project."
       node="Workflow Templates"
     >
       {(canEdit) => (

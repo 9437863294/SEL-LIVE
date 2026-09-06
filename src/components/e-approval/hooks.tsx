@@ -9,6 +9,7 @@ import type { Department, Project, User } from '@/lib/types';
 import {
   E_APPROVAL_PERMISSION_RESOURCE,
   type EApprovalActor,
+  type EApprovalProjectRouting,
   type EApprovalRequest,
   type EApprovalSettingsRecord,
   type EApprovalType,
@@ -16,6 +17,7 @@ import {
 import {
   loadEApprovalActorContext,
   loadEApprovalSettings,
+  listEApprovalProjectRouting,
   listEApprovalTypes,
   subscribeEApprovalWorkload,
   type EApprovalServiceActor,
@@ -75,6 +77,7 @@ export function useEApprovalActorStandalone(enabled = true) {
           userName: serviceActor.userName,
           role: serviceActor.role,
           departmentIds: [],
+          projectIds: [],
           delegations: [],
         });
       }
@@ -131,8 +134,20 @@ export interface EApprovalDirectory {
   projects: Project[];
   roles: string[];
   types: EApprovalType[];
+  /**
+   * Who holds which post on which project.
+   *
+   * In the shared directory rather than fetched per screen because four things need it at once: the
+   * assignee picker (to suggest post names), the workflow preview (to resolve them), the routing
+   * screen (to edit them) and the timeline (to explain why a stage shows a name). It is one small
+   * collection — one document per project — so loading it with the department and project lists costs
+   * a round trip nothing else was going to save.
+   */
+  projectRouting: EApprovalProjectRouting[];
   userById: Map<string, User>;
   departmentById: Map<string, Department>;
+  projectById: Map<string, Project>;
+  projectRoutingById: Map<string, EApprovalProjectRouting>;
 }
 
 /**
@@ -147,17 +162,19 @@ export function useEApprovalDirectoryStandalone(enabled = true) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [roles, setRoles] = useState<string[]>([]);
   const [types, setTypes] = useState<EApprovalType[]>([]);
+  const [projectRouting, setProjectRouting] = useState<EApprovalProjectRouting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
     setIsLoading(true);
     try {
-      const [departmentSnap, projectSnap, roleSnap, typeRows] = await Promise.all([
+      const [departmentSnap, projectSnap, roleSnap, typeRows, routingRows] = await Promise.all([
         getDocs(collection(db, 'departments')),
         getDocs(collection(db, 'projects')),
         getDocs(collection(db, 'roles')),
         listEApprovalTypes(user?.organizationId),
+        listEApprovalProjectRouting(user?.organizationId),
       ]);
       setDepartments(
         departmentSnap.docs
@@ -177,6 +194,7 @@ export function useEApprovalDirectoryStandalone(enabled = true) {
           .sort((a, b) => a.localeCompare(b)),
       );
       setTypes(typeRows.filter((row) => row.active !== false));
+      setProjectRouting(routingRows);
     } catch (error) {
       console.error('[e-approval] Failed to load directory', error);
     } finally {
@@ -200,10 +218,13 @@ export function useEApprovalDirectoryStandalone(enabled = true) {
       projects,
       roles,
       types,
+      projectRouting,
       userById: new Map(activeUsers.map((row) => [row.id, row])),
       departmentById: new Map(departments.map((row) => [row.id, row])),
+      projectById: new Map(projects.map((row) => [row.id, row])),
+      projectRoutingById: new Map(projectRouting.map((row) => [row.projectId, row])),
     }),
-    [activeUsers, departments, projects, roles, types],
+    [activeUsers, departments, projects, roles, types, projectRouting],
   );
 
   return { directory, isLoading, refreshDirectory: refresh };
@@ -352,7 +373,8 @@ export function useEApprovalPermissions() {
         can('Edit', `${resource}.Settings.Policies`) ||
         can('View', `${resource}.Settings.Approval Types`) ||
         can('View', `${resource}.Settings.Workflow Templates`) ||
-        can('View', `${resource}.Settings.Approval Matrix`),
+        can('View', `${resource}.Settings.Approval Matrix`) ||
+        can('View', `${resource}.Settings.Project Routing`),
       can,
     }),
     [can, isLoading, resource],

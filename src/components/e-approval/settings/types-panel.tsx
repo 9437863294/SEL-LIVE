@@ -198,6 +198,7 @@ export function ApprovalTypesPanel({
         description="Types are what the approval matrix routes on, and what decides whether the money fields appear at all."
         busy={form.busy}
         canSave={Boolean(form.draft?.name?.trim())}
+        dirty={form.isDirty}
         onSave={() => void save()}
       >
         <Field label="Name" required>

@@ -45,6 +45,8 @@ import {
   eApprovalMaterialFingerprint,
   eApprovalReference,
   eApprovalStepSla,
+  eApprovalWorkflowBlockingIssues,
+  expandEApprovalWorkflow,
   financialYearForEApprovalDate,
   isOpenEApprovalStatus,
   isTerminalEApprovalStatus,
@@ -65,6 +67,7 @@ import {
   type EApprovalMaterialSnapshot,
   type EApprovalNotificationIntent,
   type EApprovalPriority,
+  type EApprovalProjectRouting,
   type EApprovalRequest,
   type EApprovalRequestDraft,
   type EApprovalRequestState,
@@ -79,6 +82,9 @@ import {
   type EApprovalType,
   type EApprovalUndoEligibility,
   type EApprovalVersionRecord,
+  type EApprovalWorkflowContext,
+  type EApprovalWorkflowLibrary,
+  type EApprovalWorkflowNote,
 } from '@/lib/e-approval';
 import type { EApprovalSignaturePosition } from '@/lib/e-approval-pdf-signing';
 
@@ -239,6 +245,9 @@ export const listEApprovalRules = (organizationId?: string) =>
 export const listEApprovalDepartmentRouting = (organizationId?: string) =>
   listCollection<EApprovalDepartmentRouting>(E_APPROVAL_COLLECTIONS.departmentRouting, organizationId);
 
+export const listEApprovalProjectRouting = (organizationId?: string) =>
+  listCollection<EApprovalProjectRouting>(E_APPROVAL_COLLECTIONS.projectRouting, organizationId);
+
 export const listEApprovalDelegations = (organizationId?: string) =>
   listCollection<EApprovalDelegationRecord>(E_APPROVAL_COLLECTIONS.delegations, organizationId);
 
@@ -338,6 +347,37 @@ export async function saveEApprovalDepartmentRouting(
   await logEApprovalActivity(who, 'Save Department Routing', { departmentId: record.departmentId });
 }
 
+/** Project routing is keyed by project id, so it upserts rather than appending. */
+export async function saveEApprovalProjectRouting(
+  record: EApprovalProjectRouting,
+  actor: EApprovalServiceActor,
+): Promise<void> {
+  const who = requireActor(actor);
+  if (!record.projectId) throw new EApprovalServiceError('Choose a project.');
+  const roleHolders = (record.roleHolders ?? []).filter((entry) => entry.role?.trim() && entry.userId);
+  const duplicate = roleHolders.find(
+    (entry, index) =>
+      roleHolders.findIndex((other) => other.role.trim().toLowerCase() === entry.role.trim().toLowerCase()) !== index,
+  );
+  // A post held by two people is not a parallel approval, it is an unanswerable question about which
+  // of them a stage means — so it is refused here rather than resolved arbitrarily at build time.
+  if (duplicate) {
+    throw new EApprovalServiceError(`“${duplicate.role.trim()}” is listed twice — each post can have one holder.`);
+  }
+  await setDoc(
+    doc(db, E_APPROVAL_COLLECTIONS.projectRouting, record.projectId),
+    pruneUndefined({
+      ...record,
+      id: record.projectId,
+      roleHolders: roleHolders.map((entry) => ({ ...entry, role: entry.role.trim() })),
+      organizationId: who.organizationId,
+      ...withUpdateAudit(who),
+    } as Record<string, unknown>),
+    { merge: true },
+  );
+  await logEApprovalActivity(who, 'Save Project Routing', { projectId: record.projectId });
+}
+
 export async function deleteEApprovalConfigRecord(
   collectionName: string,
   id: string,
@@ -348,27 +388,51 @@ export async function deleteEApprovalConfigRecord(
   await logEApprovalActivity(who, 'Delete Configuration', { collection: collectionName, id }, { recordId: id });
 }
 
-/** Writes the three seed templates of spec section 12, for a new organisation. */
+/**
+ * Writes the seed workflows of spec section 12, for a new organisation.
+ *
+ * Two passes, because the seeds reference each other: a sub-workflow node holds the *seed* id of the
+ * workflow it calls, which only becomes a real document id once that workflow has been written. The
+ * first pass allocates a document reference for every seed, the second rewrites the references and
+ * commits — so Purchase Approval lands already pointing at the Finance Clearance beside it rather
+ * than at a string that means nothing. A seed whose sub-workflow was skipped as already-present is
+ * pointed at the existing one, by name.
+ */
 export async function seedEApprovalTemplates(actor: EApprovalServiceActor): Promise<number> {
   const who = requireActor(actor);
   const existing = await listEApprovalTemplates(who.organizationId);
-  const existingNames = new Set(existing.map((template) => template.name));
+  const existingByName = new Map(existing.map((template) => [template.name, template]));
+
+  const planned = SEED_E_APPROVAL_TEMPLATES.filter((template) => !existingByName.has(template.name)).map(
+    (template) => ({ template, ref: doc(collection(db, E_APPROVAL_COLLECTIONS.templates)) }),
+  );
+  if (!planned.length) return 0;
+
+  const idBySeedId = new Map<string, string>();
+  for (const seed of SEED_E_APPROVAL_TEMPLATES) {
+    const plannedEntry = planned.find((entry) => entry.template.id === seed.id);
+    const resolvedId = plannedEntry?.ref.id ?? existingByName.get(seed.name)?.id;
+    if (resolvedId) idBySeedId.set(seed.id, resolvedId);
+  }
+
   const batch = writeBatch(db);
-  let written = 0;
-  for (const template of SEED_E_APPROVAL_TEMPLATES) {
-    if (existingNames.has(template.name)) continue;
-    batch.set(doc(collection(db, E_APPROVAL_COLLECTIONS.templates)), {
+  for (const { template, ref } of planned) {
+    batch.set(ref, {
       name: template.name,
-      description: template.description,
-      steps: template.steps,
+      description: template.description ?? null,
+      isSubWorkflow: template.isSubWorkflow ?? false,
+      steps: template.steps.map((step) =>
+        step.subWorkflowId
+          ? { ...step, subWorkflowId: idBySeedId.get(step.subWorkflowId) ?? step.subWorkflowId }
+          : step,
+      ),
       active: true,
       organizationId: who.organizationId ?? null,
       ...withCreateAudit(who),
     });
-    written += 1;
   }
-  if (written) await batch.commit();
-  return written;
+  await batch.commit();
+  return planned.length;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -387,13 +451,23 @@ export async function loadEApprovalActorContext(
   actor: EApprovalServiceActor,
 ): Promise<EApprovalActor> {
   const who = requireActor(actor);
-  const [routing, delegations, departments] = await Promise.all([
+  const [routing, projectRouting, delegations, departments] = await Promise.all([
     listEApprovalDepartmentRouting(who.organizationId),
+    listEApprovalProjectRouting(who.organizationId),
     listEApprovalDelegations(who.organizationId),
     getDocs(collection(db, 'departments')),
   ]);
   const mine = routing.filter(
     (row) => row.active !== false && (row.headUserId === who.userId || (row.memberUserIds ?? []).includes(who.userId)),
+  );
+  // Holding a named post on a project counts as membership: a Site In-Charge is on the project
+  // whether or not somebody also remembered to list them under members.
+  const myProjects = projectRouting.filter(
+    (row) =>
+      row.active !== false &&
+      (row.headUserId === who.userId ||
+        (row.memberUserIds ?? []).includes(who.userId) ||
+        (row.roleHolders ?? []).some((holder) => holder.userId === who.userId)),
   );
   // Fallback: departments this user heads according to the organisation's own department master.
   // Without it, a request addressed to a department reaches nobody until an administrator has
@@ -415,6 +489,8 @@ export async function loadEApprovalActorContext(
     ),
     role: who.role,
     isDepartmentHead: mine.some((row) => row.headUserId === who.userId) || headedByMe.length > 0,
+    projectIds: Array.from(new Set(myProjects.map((row) => row.projectId).filter(Boolean))),
+    isProjectHead: myProjects.some((row) => row.headUserId === who.userId),
     delegations: delegations
       .filter((row) => row.active !== false)
       .map(
@@ -458,6 +534,34 @@ async function resolveDepartmentUserIds(departmentIds: string[]): Promise<string
       const department = await getDoc(doc(db, 'departments', departmentId));
       const head = (department.data() as { head?: string } | undefined)?.head;
       return head ? [head] : [];
+    }),
+  );
+  return Array.from(new Set(rows.flat()));
+}
+
+/**
+ * Concrete users behind a project assignment, for notification delivery.
+ *
+ * Named post-holders are included alongside the head and the listed members, because a stage
+ * addressed to the project as a whole is exactly the case where "who is actually on this site" means
+ * everybody the routing document knows about — leaving the Site In-Charge off a project-wide notice
+ * because they happen to be listed under `roleHolders` rather than `memberUserIds` is a distinction
+ * only this codebase makes.
+ */
+async function resolveProjectUserIds(projectIds: string[]): Promise<string[]> {
+  if (!projectIds.length) return [];
+  const rows = await Promise.all(
+    projectIds.map(async (projectId) => {
+      const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.projectRouting, projectId));
+      if (!snapshot.exists()) return [];
+      const routing = snapshot.data() as EApprovalProjectRouting;
+      if (routing.active === false) return [];
+      if (routing.mode === 'Head') return [routing.headUserId].filter(Boolean) as string[];
+      return [
+        routing.headUserId,
+        ...(routing.memberUserIds ?? []),
+        ...(routing.roleHolders ?? []).map((holder) => holder.userId),
+      ].filter(Boolean) as string[];
     }),
   );
   return Array.from(new Set(rows.flat()));
@@ -513,11 +617,35 @@ export async function allocateEApprovalReference(
  * ---------------------------------------------------------------------------------------------- */
 
 export interface ResolvedEApprovalRouting {
+  /** The chain as it will actually run: sub-workflows expanded, dynamic approvers bound. */
   steps: EApprovalTemplateStep[];
+  /** The same chain before expansion, for a builder that wants to show what was configured. */
+  configuredSteps?: EApprovalTemplateStep[];
   templateId?: string;
   ruleId?: string;
   source: 'Ad-hoc' | 'Template' | 'Matrix Rule' | 'Approval Type Default' | 'None';
   ruleName?: string;
+  /** Why the chain looks the way it does — expansions, skipped stages, unresolved approvers. */
+  notes?: EApprovalWorkflowNote[];
+  /** Sub-workflows that contributed stages. */
+  subWorkflowIds?: string[];
+}
+
+/**
+ * The other workflows and the project routing an expansion resolves against.
+ *
+ * Loaded once and threaded through, because the create form previews a chain on every keystroke that
+ * changes the amount — re-reading the whole template collection each time is the difference between a
+ * preview that keeps up and one that lags a character behind.
+ */
+export async function loadEApprovalWorkflowLibrary(
+  organizationId?: string,
+): Promise<EApprovalWorkflowLibrary & { templates: EApprovalTemplateRecord[] }> {
+  const [templates, projectRouting] = await Promise.all([
+    listEApprovalTemplates(organizationId),
+    listEApprovalProjectRouting(organizationId),
+  ]);
+  return { templates, projectRouting };
 }
 
 /**
@@ -530,22 +658,52 @@ export interface ResolvedEApprovalRouting {
  * form can preview the chain before anybody commits to it.
  */
 export async function resolveEApprovalRoutingForDraft(
-  draft: Pick<EApprovalRequestDraft, 'adHocSteps' | 'templateId' | 'approvalTypeId' | 'departmentId' | 'projectId' | 'amount'>,
+  draft: Pick<
+    EApprovalRequestDraft,
+    'adHocSteps' | 'templateId' | 'approvalTypeId' | 'departmentId' | 'projectId' | 'amount'
+  > & { departmentName?: string; projectName?: string; priority?: EApprovalPriority },
   organizationId?: string,
+  preloaded?: { library?: EApprovalWorkflowLibrary & { templates: EApprovalTemplateRecord[] }; rules?: EApprovalRuleRecord[]; types?: EApprovalType[] },
 ): Promise<ResolvedEApprovalRouting> {
-  if (draft.adHocSteps?.length) {
-    return { steps: draft.adHocSteps, source: 'Ad-hoc' };
-  }
-  const [templates, rules, types] = await Promise.all([
-    listEApprovalTemplates(organizationId),
-    listEApprovalRules(organizationId),
-    listEApprovalTypes(organizationId),
+  const context: EApprovalWorkflowContext = {
+    approvalTypeId: draft.approvalTypeId,
+    departmentId: draft.departmentId,
+    departmentName: draft.departmentName,
+    projectId: draft.projectId,
+    projectName: draft.projectName,
+    amount: draft.amount,
+    priority: draft.priority,
+  };
+  const library = preloaded?.library ?? (await loadEApprovalWorkflowLibrary(organizationId));
+
+  // Expansion runs on every branch, ad-hoc included: an approver named on the form can be "the
+  // Project Manager" just as legitimately as one named in a template, and a chain that resolved
+  // dynamic approvers only when it came from a template would be a rule with an arbitrary exception.
+  const expand = (
+    steps: EApprovalTemplateStep[],
+    rest: Omit<ResolvedEApprovalRouting, 'steps' | 'configuredSteps' | 'notes' | 'subWorkflowIds'>,
+  ): ResolvedEApprovalRouting => {
+    const expanded = expandEApprovalWorkflow(steps, context, library);
+    return {
+      ...rest,
+      steps: expanded.steps,
+      configuredSteps: steps,
+      notes: expanded.notes,
+      subWorkflowIds: expanded.subWorkflowIds,
+    };
+  };
+
+  if (draft.adHocSteps?.length) return expand(draft.adHocSteps, { source: 'Ad-hoc' });
+
+  const [rules, types] = await Promise.all([
+    preloaded?.rules ? Promise.resolve(preloaded.rules) : listEApprovalRules(organizationId),
+    preloaded?.types ? Promise.resolve(preloaded.types) : listEApprovalTypes(organizationId),
   ]);
-  const templateById = new Map(templates.map((template) => [template.id, template]));
+  const templateById = new Map(library.templates.map((template) => [template.id, template]));
 
   if (draft.templateId && templateById.has(draft.templateId)) {
     const template = templateById.get(draft.templateId) as EApprovalTemplateRecord;
-    return { steps: template.steps ?? [], templateId: template.id, source: 'Template' };
+    return expand(template.steps ?? [], { templateId: template.id, source: 'Template' });
   }
 
   const rule = resolveEApprovalRouting(
@@ -561,22 +719,40 @@ export async function resolveEApprovalRoutingForDraft(
     const fromTemplate = rule.templateId ? templateById.get(rule.templateId) : undefined;
     const steps = rule.steps?.length ? rule.steps : (fromTemplate?.steps ?? []);
     if (steps.length) {
-      return {
-        steps,
+      return expand(steps, {
         templateId: fromTemplate?.id,
         ruleId: rule.id,
         ruleName: rule.name || fromTemplate?.name,
         source: 'Matrix Rule',
-      };
+      });
     }
   }
 
   const type = types.find((row) => row.id === draft.approvalTypeId);
   const defaultTemplate = type?.defaultTemplateId ? templateById.get(type.defaultTemplateId) : undefined;
   if (defaultTemplate?.steps?.length) {
-    return { steps: defaultTemplate.steps, templateId: defaultTemplate.id, source: 'Approval Type Default' };
+    return expand(defaultTemplate.steps, { templateId: defaultTemplate.id, source: 'Approval Type Default' });
   }
-  return { steps: [], source: 'None' };
+  return { steps: [], configuredSteps: [], source: 'None', notes: [], subWorkflowIds: [] };
+}
+
+/**
+ * The chain a given set of stages would produce for a given project, department, type and amount —
+ * without saving anything.
+ *
+ * This is what the workflow builder's tester calls. An approval matrix's mistakes are invisible until
+ * a real note-sheet takes the wrong route, and stage overrides and sub-workflows multiply the ways a
+ * configuration can be subtly wrong; being able to enter "Ranchi Metro, ₹6,00,000" and watch the
+ * expanded chain appear turns "I think this is right" into "this is what will happen".
+ */
+export async function previewEApprovalWorkflow(
+  steps: EApprovalTemplateStep[],
+  context: EApprovalWorkflowContext,
+  organizationId?: string,
+  preloaded?: EApprovalWorkflowLibrary & { templates: EApprovalTemplateRecord[] },
+): Promise<ReturnType<typeof expandEApprovalWorkflow>> {
+  const library = preloaded ?? (await loadEApprovalWorkflowLibrary(organizationId));
+  return expandEApprovalWorkflow(steps, context, library);
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -959,8 +1135,11 @@ export async function submitEApproval(
       templateId: request.templateId,
       approvalTypeId: request.approvalTypeId,
       departmentId: request.departmentId,
+      departmentName: request.departmentName,
       projectId: request.projectId,
+      projectName: request.projectName,
       amount: request.amount,
+      priority: request.priority,
     },
     who.organizationId,
   );
@@ -969,6 +1148,20 @@ export async function submitEApproval(
     throw new EApprovalServiceError(
       'No approver could be determined. Choose an approver on the form, or ask an administrator to configure a workflow for this approval type.',
     );
+  }
+  // A stage that resolves to nobody strands the file there with no way forward but an administrator.
+  // Caught here, where the requester can be told which stage and why, rather than discovered days
+  // later by whoever is waiting on an approval that was never going to arrive. Only checked for a
+  // freshly built chain — a request already carrying steps has been through this once.
+  if (!existingSteps.length) {
+    const blocking = eApprovalWorkflowBlockingIssues(routing);
+    if (blocking.length) {
+      throw new EApprovalServiceError(
+        `This workflow cannot run as configured: ${blocking.join(' ')} Ask an administrator to set an approver${
+          request.projectName ? ` for ${request.projectName}` : ''
+        }, or name the approvers on the form.`,
+      );
+    }
   }
 
   const attachments = await getDocs(
@@ -1570,8 +1763,13 @@ async function deliverEApprovalNotifications(
   approvalId: string,
 ): Promise<void> {
   for (const intent of intents) {
-    const departmentUserIds = await resolveDepartmentUserIds(intent.departmentIds ?? []);
-    const userIds = Array.from(new Set([...(intent.userIds ?? []), ...departmentUserIds])).filter(Boolean);
+    const [departmentUserIds, projectUserIds] = await Promise.all([
+      resolveDepartmentUserIds(intent.departmentIds ?? []),
+      resolveProjectUserIds(intent.projectIds ?? []),
+    ]);
+    const userIds = Array.from(
+      new Set([...(intent.userIds ?? []), ...departmentUserIds, ...projectUserIds]),
+    ).filter(Boolean);
     if (!userIds.length && !intent.roles?.length) continue;
     await dispatchNotification(
       { userIds, roles: intent.roles },
@@ -2039,6 +2237,9 @@ export async function runEApprovalEscalations(
       ]);
       if (step.assignment.kind === 'Department' && step.assignment.departmentId) {
         (await resolveDepartmentUserIds([step.assignment.departmentId])).forEach((userId) => recipients.add(userId));
+      }
+      if (step.assignment.kind === 'Project' && step.assignment.projectId) {
+        (await resolveProjectUserIds([step.assignment.projectId])).forEach((userId) => recipients.add(userId));
       }
       if (!recipients.size && !step.assignment.role) continue;
 

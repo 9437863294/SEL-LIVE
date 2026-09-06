@@ -316,6 +316,7 @@ export function ApprovalMatrixPanel({
         description="Unset criteria match everything. The most specific rule wins; between two equally specific ones, the narrower amount band does."
         busy={form.busy}
         canSave={Boolean(form.draft?.templateId)}
+        dirty={form.isDirty}
         onSave={() => void save()}
       >
         <Field label="Rule name" hint="Shown in the list and in the routing preview on the create form.">
@@ -334,7 +335,9 @@ export function ApprovalMatrixPanel({
             </SelectTrigger>
             <SelectContent>
               {templates
-                .filter((template) => template.active !== false)
+                // Sub-workflows are building blocks, not routes: pointing a matrix rule at "Finance
+                // Clearance" would approve a purchase with Accounts and nobody above them.
+                .filter((template) => template.active !== false && template.isSubWorkflow !== true)
                 .map((template) => (
                   <SelectItem key={template.id} value={template.id}>
                     {template.name} · {(template.steps ?? []).length} stages

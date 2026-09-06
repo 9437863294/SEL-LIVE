@@ -66,6 +66,10 @@ export const permissionModules = {
       "Workflow Templates": ["View", "Add", "Edit", "Delete"],
       "Approval Matrix": ["View", "Add", "Edit", "Delete"],
       "Department Routing": ["View", "Edit"],
+      // Who holds which post on which project. Separate from Department Routing because the people
+      // who know that — planning, project control — are rarely the people who administer departments,
+      // and a workflow stage addressed to "Project Manager" is only as right as this list is.
+      "Project Routing": ["View", "Edit"],
       // Change control, approver powers, recall/reverse, reminders and numbering are one settings
       // record and one screen, so they are one permission. The former "SLA & Escalation",
       // "Numbering" and "Notification Rules" nodes were never enforced anywhere — a permission that

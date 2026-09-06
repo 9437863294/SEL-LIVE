@@ -310,10 +310,21 @@ export const eApprovalOutcomeStyles: Record<EApprovalOutcome, string> = {
  * Assignment (spec section 11 — a step is assigned to a person, a department or a role)
  * ---------------------------------------------------------------------------------------------- */
 
-export type EApprovalAssigneeKind = 'User' | 'Department' | 'Role' | 'Requester';
+export type EApprovalAssigneeKind = 'User' | 'Department' | 'Role' | 'Requester' | 'Project';
 
 /** How a department-assigned step is picked up. Modes A, B and C of spec section 11. */
 export type EApprovalDepartmentMode = 'Anyone' | 'Head' | 'Queue';
+
+/**
+ * How a project-assigned step is picked up.
+ *
+ * The same three modes a department has, plus 'Role' — the one that matters. A stage set to
+ * `Role: Project Manager` with no project id binds to *the project the request names*, so one
+ * workflow reaches Kolkata's project manager on a Kolkata file and Ranchi's on a Ranchi file. The
+ * alternative — one workflow per project — is how an organisation ends up with fourteen copies of
+ * the same chain, thirteen of which are a revision behind.
+ */
+export type EApprovalProjectMode = 'Anyone' | 'Head' | 'Queue' | 'Role';
 
 export interface EApprovalAssignment {
   kind: EApprovalAssigneeKind;
@@ -322,10 +333,29 @@ export interface EApprovalAssignment {
    * without a user lookup — and so history still reads correctly after somebody is deactivated. */
   userName?: string;
   designation?: string;
+  /**
+   * The department this step is addressed to.
+   *
+   * Deliberately optional on a `Department` assignment: **unset means the request's own
+   * department**, resolved when the chain is built. That is what lets a single "Department HOD"
+   * stage serve every department rather than needing one workflow each.
+   */
   departmentId?: string;
   departmentName?: string;
   role?: string;
   departmentMode?: EApprovalDepartmentMode;
+  /** As `departmentId`: unset on a `Project` assignment means the request's own project. */
+  projectId?: string;
+  projectName?: string;
+  projectMode?: EApprovalProjectMode;
+  /** For `projectMode: 'Role'` — which named post inside the project, e.g. "Project Manager". */
+  projectRole?: string;
+  /**
+   * Set once a dynamic assignment has been bound to a concrete person or place, naming what it was
+   * resolved from. Kept for the timeline, which otherwise cannot explain why a stage configured as
+   * "Project Manager" shows a name.
+   */
+  resolvedFrom?: string;
 }
 
 /** "Sarika Palo (Finance Manager)", "Finance Department", "Role: Director", "Requester". */
@@ -339,10 +369,18 @@ export function describeEApprovalAssignment(
         ? `${assignment.userName || 'User'} (${assignment.designation})`
         : assignment.userName || 'User';
     case 'Department': {
-      const name = assignment.departmentName || 'Department';
+      const name = assignment.departmentName || (assignment.departmentId ? 'Department' : 'Own department');
       if (assignment.departmentMode === 'Head') return `${name} (HOD)`;
       if (assignment.departmentMode === 'Queue') return `${name} Queue`;
       return name;
+    }
+    case 'Project': {
+      const name = assignment.projectName || (assignment.projectId ? 'Project' : 'This project');
+      const mode = assignment.projectMode ?? 'Head';
+      if (mode === 'Role') return `${assignment.projectRole || 'Project role'} — ${name}`;
+      if (mode === 'Head') return `${name} (Project Head)`;
+      if (mode === 'Queue') return `${name} Queue`;
+      return `${name} Team`;
     }
     case 'Role':
       return assignment.role ? `Role: ${assignment.role}` : 'Role';
@@ -879,9 +917,59 @@ export function resolveEApprovalDelegate(
  * Templates, routing rules and step construction (spec sections 12, 13, 27, 28)
  * ---------------------------------------------------------------------------------------------- */
 
+/**
+ * What a node in a workflow is: an ordinary stage, or a call out to another workflow.
+ *
+ * A sub-workflow node is expanded in place when the chain is built, so "Finance Clearance" can be
+ * written once and used inside Purchase Approval, Site Expense and Capex Approval. Change it once and
+ * all three change — which is the entire point, and the reason it is a reference rather than a copy.
+ */
+export type EApprovalNodeType = 'Stage' | 'SubWorkflow';
+
+/**
+ * When a stage, a sub-workflow or an override applies.
+ *
+ * Every list is an OR within itself and an AND between fields, and an empty list matches everything —
+ * so `{ projectIds: ['p1','p2'] }` reads "on these two projects" and `{}` reads "always". Amounts are
+ * inclusive at both ends, matching how the approval matrix bands are written.
+ */
+export interface EApprovalStepCondition {
+  projectIds?: string[];
+  departmentIds?: string[];
+  approvalTypeIds?: string[];
+  minAmount?: number | null;
+  maxAmount?: number | null;
+  priorities?: EApprovalPriority[];
+}
+
+/**
+ * A per-scope variation of one stage (spec section 13, applied at stage level).
+ *
+ * This is the answer to "the same workflow, but a different person on each project". Rather than
+ * duplicating a five-stage chain per project — which drifts the moment somebody edits one copy — the
+ * stage carries a list of overrides, and the most specific matching one supplies the approvers.
+ */
+export interface EApprovalStepOverride extends EApprovalStepCondition {
+  id: string;
+  /** Shown in the builder and the preview, so a list of overrides can be read at a glance. */
+  label?: string;
+  /** Replaces the stage's approvers when this override wins. Empty leaves them untouched. */
+  assignments?: EApprovalAssignment[];
+  groupMode?: EApprovalGroupMode;
+  groupRequiredCount?: number;
+  slaHours?: number;
+  /** Drops the stage entirely in this scope — "Legal review, but not on internal projects". */
+  skip?: boolean;
+  /** Breaks a tie between equally specific overrides; higher wins. */
+  priority?: number;
+  active?: boolean;
+}
+
 export interface EApprovalTemplateStep {
   id: string;
   name: string;
+  /** 'Stage' unless this node calls another workflow. Absent means 'Stage', for older records. */
+  nodeType?: EApprovalNodeType;
   type?: EApprovalStepType;
   /** More than one assignment makes the step a parallel group. */
   assignments: EApprovalAssignment[];
@@ -891,6 +979,28 @@ export interface EApprovalTemplateStep {
   mandatory?: boolean;
   capabilities?: EApprovalStepCapabilities;
   description?: string;
+  /** The stage is included only when this matches the request. Unset means always. */
+  condition?: EApprovalStepCondition;
+  /** Per-project / per-department variations of the approvers. Most specific wins. */
+  overrides?: EApprovalStepOverride[];
+
+  /* ── Sub-workflow nodes ─────────────────────────────────────────────────────────────────────── */
+
+  /** The workflow expanded in place here, when `nodeType` is 'SubWorkflow'. */
+  subWorkflowId?: string;
+  /** Whether the sub-workflow's stage names are prefixed with this node's name. Default true. */
+  prefixSubWorkflowNames?: boolean;
+
+  /**
+   * Set only on an *expanded* step: the id of the node in the workflow being expanded that produced
+   * it — always a top-level node, so a stage pulled in from a sub-workflow is attributed to the node
+   * that called it rather than to itself.
+   *
+   * Exists so the builder can show each authoring node what it actually produces for a given project
+   * and amount, right on that node. Never configured by hand and never persisted: `buildEApprovalSteps`
+   * copies named fields onto step records and this is not one of them.
+   */
+  sourceStepId?: string;
 }
 
 export interface EApprovalTemplate {
@@ -898,8 +1008,18 @@ export interface EApprovalTemplate {
   name: string;
   approvalTypeId?: string;
   departmentId?: string;
+  /** Restricts where the workflow is offered, alongside type and department. */
+  projectId?: string;
   description?: string;
   steps: EApprovalTemplateStep[];
+  /**
+   * A building block rather than a whole chain.
+   *
+   * A sub-workflow is hidden from the request form and from the matrix — offering "Finance
+   * Clearance" as a complete approval route, when it is three stages meant to sit inside one, is how
+   * a purchase gets approved by Accounts and nobody else.
+   */
+  isSubWorkflow?: boolean;
   active?: boolean;
   organizationId?: string;
 }
@@ -983,6 +1103,621 @@ export function resolveEApprovalRouting(
     return bandWidth(a) - bandWidth(b);
   });
   return matches[0];
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Project routing and workflow expansion (spec sections 11, 12, 13 — project dimension)
+ *
+ * Three problems this section exists to solve, all of them the same problem seen from different
+ * sides: an organisation running two sites has two project managers, two site accountants and two
+ * store in-charges, and every one of them signs the same five-stage chain.
+ *
+ *   1. **Dynamic assignment.** A stage says "Project Manager", not "Rahul". Which Rahul is decided by
+ *      the project the request names, at the moment the chain is built.
+ *   2. **Stage overrides.** Where a project genuinely routes differently — a joint-venture site whose
+ *      approvals also go to the partner's representative — the *stage* varies, not the workflow.
+ *   3. **Sub-workflows.** "Finance Clearance" is written once and referenced by every chain that
+ *      needs it, rather than copied into each and drifting.
+ *
+ * All three are resolved here, purely, before any step document is written — so what an approver
+ * sees in the timeline is a concrete chain of named people, and the preview in the workflow builder
+ * shows exactly what a real submission would produce.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** One named post inside a project — the thing a `projectMode: 'Role'` stage binds to. */
+export interface EApprovalProjectRoleHolder {
+  role: string;
+  userId: string;
+  userName?: string;
+  designation?: string;
+}
+
+/**
+ * Who a project-assigned step actually reaches.
+ *
+ * The project counterpart of `EApprovalDepartmentRouting`, and configured for the same reason: this
+ * codebase has no user→project field, so "who is the Project Manager of Ranchi" has to be a stated
+ * fact an administrator owns rather than an inference from a job title.
+ */
+export interface EApprovalProjectRoutingLike {
+  projectId: string;
+  projectName?: string;
+  mode?: EApprovalProjectMode;
+  headUserId?: string;
+  headUserName?: string;
+  headDesignation?: string;
+  memberUserIds?: string[];
+  roleHolders?: EApprovalProjectRoleHolder[];
+  /** The department this project is administered under, for department-assigned stages. */
+  departmentId?: string;
+  active?: boolean;
+}
+
+/** Everything about the request that a condition, an override or a dynamic assignment can read. */
+export interface EApprovalWorkflowContext {
+  approvalTypeId?: string;
+  departmentId?: string;
+  departmentName?: string;
+  projectId?: string;
+  projectName?: string;
+  amount?: number;
+  priority?: EApprovalPriority;
+  requesterId?: string;
+}
+
+/** The configuration the expander resolves against — other workflows, and project routing. */
+export interface EApprovalWorkflowLibrary {
+  templates?: Array<Pick<EApprovalTemplate, 'id' | 'name' | 'steps' | 'active' | 'isSubWorkflow'>>;
+  projectRouting?: EApprovalProjectRoutingLike[];
+  /** How deep sub-workflows may nest. Defaults to `DEFAULT_E_APPROVAL_SUB_WORKFLOW_DEPTH`. */
+  maxSubWorkflowDepth?: number;
+}
+
+/**
+ * Nesting cap for sub-workflows.
+ *
+ * Three, not unlimited: a chain assembled from four levels of indirection cannot be read by the
+ * person configuring it, and an approval nobody can read the route of is an approval nobody can
+ * audit. The cycle guard already prevents infinite expansion; this prevents unintelligible expansion.
+ */
+export const DEFAULT_E_APPROVAL_SUB_WORKFLOW_DEPTH = 3;
+
+export type EApprovalWorkflowNoteKind =
+  | 'SubWorkflowExpanded'
+  | 'SubWorkflowMissing'
+  | 'SubWorkflowInactive'
+  | 'SubWorkflowEmpty'
+  | 'SubWorkflowCycle'
+  | 'SubWorkflowTooDeep'
+  | 'StageSkippedByCondition'
+  | 'StageSkippedByOverride'
+  | 'OverrideApplied'
+  | 'AssignmentBound'
+  | 'AssignmentUnresolved'
+  | 'StageUnassigned';
+
+/** One line of the "why does the chain look like this?" explanation the builder's preview shows. */
+export interface EApprovalWorkflowNote {
+  kind: EApprovalWorkflowNoteKind;
+  severity: 'info' | 'warning';
+  stepId?: string;
+  stepName?: string;
+  /** The top-level node this note belongs to — see `EApprovalTemplateStep.sourceStepId`. */
+  sourceStepId?: string;
+  message: string;
+}
+
+export interface ExpandedEApprovalWorkflow {
+  /** Flat, resolved, ready for `buildEApprovalSteps`. */
+  steps: EApprovalTemplateStep[];
+  notes: EApprovalWorkflowNote[];
+  /** Ids of every sub-workflow that contributed, so a change to one can name what it affects. */
+  subWorkflowIds: string[];
+}
+
+const inList = (list: string[] | undefined, value: string | undefined): boolean => {
+  const wanted = (list ?? []).filter(Boolean);
+  if (!wanted.length) return true;
+  return Boolean(value) && wanted.includes(value as string);
+};
+
+/**
+ * Whether a condition applies to this request.
+ *
+ * Empty means "always" for every field, so an override written as `{ projectIds: ['p-ranchi'] }` says
+ * what it looks like it says and nothing more. An unspecified request field fails a pinned condition
+ * rather than passing it: a stage restricted to two projects must not fire on a request with no
+ * project, which is the failure that would quietly add an approver to every unrelated note-sheet.
+ */
+export function matchesEApprovalCondition(
+  condition: EApprovalStepCondition | null | undefined,
+  context: EApprovalWorkflowContext,
+): boolean {
+  if (!condition) return true;
+  if (!inList(condition.projectIds, context.projectId)) return false;
+  if (!inList(condition.departmentIds, context.departmentId)) return false;
+  if (!inList(condition.approvalTypeIds, context.approvalTypeId)) return false;
+  if (condition.priorities?.length && !condition.priorities.includes(context.priority ?? 'Normal')) return false;
+  const amount = Number(context.amount ?? 0);
+  if (condition.minAmount != null && amount < condition.minAmount) return false;
+  if (condition.maxAmount != null && amount > condition.maxAmount) return false;
+  return true;
+}
+
+/**
+ * How tightly a condition is pinned down — the score that decides between two matching overrides.
+ *
+ * Project is weighted above department, the reverse of `routingRuleSpecificity`, and deliberately:
+ * that function chooses a whole workflow, where the approval *type* is the defining question, while
+ * a stage override exists almost entirely to say "on this site, somebody else signs". An override
+ * naming a project should beat one naming the department that project sits in.
+ */
+export function eApprovalConditionSpecificity(
+  condition: EApprovalStepCondition | null | undefined,
+): number {
+  if (!condition) return 0;
+  let score = 0;
+  if (condition.projectIds?.length) score += 8;
+  if (condition.departmentIds?.length) score += 4;
+  if (condition.approvalTypeIds?.length) score += 2;
+  if (condition.priorities?.length) score += 1;
+  if (condition.minAmount != null || condition.maxAmount != null) score += 1;
+  return score;
+}
+
+/** "On Ranchi Metro · above ₹5,00,000" — the override's scope as one readable line. */
+export function describeEApprovalCondition(
+  condition: EApprovalStepCondition | null | undefined,
+  names: {
+    project?: (id: string) => string | undefined;
+    department?: (id: string) => string | undefined;
+    approvalType?: (id: string) => string | undefined;
+  } = {},
+): string {
+  if (!condition) return 'Always';
+  const parts: string[] = [];
+  const label = (ids: string[] | undefined, resolve?: (id: string) => string | undefined) =>
+    (ids ?? []).map((id) => resolve?.(id) || id).join(', ');
+  if (condition.projectIds?.length) parts.push(label(condition.projectIds, names.project));
+  if (condition.departmentIds?.length) parts.push(label(condition.departmentIds, names.department));
+  if (condition.approvalTypeIds?.length) parts.push(label(condition.approvalTypeIds, names.approvalType));
+  if (condition.priorities?.length) parts.push(condition.priorities.join('/'));
+  if (condition.minAmount != null && condition.maxAmount != null) {
+    parts.push(`${condition.minAmount}–${condition.maxAmount}`);
+  } else if (condition.minAmount != null) {
+    parts.push(`≥ ${condition.minAmount}`);
+  } else if (condition.maxAmount != null) {
+    parts.push(`≤ ${condition.maxAmount}`);
+  }
+  return parts.length ? parts.join(' · ') : 'Always';
+}
+
+/**
+ * The override that applies to a stage, or null.
+ *
+ * Most specific wins, then explicit `priority`, then declaration order — the same ladder the approval
+ * matrix uses, so an administrator who has learned one has learned both.
+ */
+export function resolveEApprovalStepOverride(
+  step: Pick<EApprovalTemplateStep, 'overrides'>,
+  context: EApprovalWorkflowContext,
+): EApprovalStepOverride | null {
+  const matches = (step.overrides ?? []).filter(
+    (override) => override.active !== false && matchesEApprovalCondition(override, context),
+  );
+  if (!matches.length) return null;
+  const ordered = matches
+    .map((override, index) => ({ override, index }))
+    .sort((a, b) => {
+      const specificity = eApprovalConditionSpecificity(b.override) - eApprovalConditionSpecificity(a.override);
+      if (specificity !== 0) return specificity;
+      const priority = (b.override.priority ?? 0) - (a.override.priority ?? 0);
+      if (priority !== 0) return priority;
+      return a.index - b.index;
+    });
+  return ordered[0].override;
+}
+
+const projectRoutingFor = (
+  library: EApprovalWorkflowLibrary,
+  projectId: string | undefined,
+): EApprovalProjectRoutingLike | undefined =>
+  projectId
+    ? (library.projectRouting ?? []).find((row) => row.projectId === projectId && row.active !== false)
+    : undefined;
+
+export interface BoundEApprovalAssignment {
+  assignment: EApprovalAssignment | null;
+  note?: EApprovalWorkflowNote;
+}
+
+/**
+ * Binds one configured assignment to the request in front of it.
+ *
+ * Three kinds pass straight through — a named person, a designation and the requester are already
+ * concrete. The two that bind are `Department` and `Project` with no id, which mean *this request's*
+ * department and project; and a `Project` assignment in 'Role' mode, which becomes the person holding
+ * that post on that project.
+ *
+ * When a post has no holder the stage keeps its project assignment rather than being dropped, and the
+ * caller is told. A missing approver is a configuration gap somebody has to see and fix — silently
+ * removing the stage would remove a signature from the chain, which is the one failure this module
+ * exists to make impossible.
+ */
+export function bindEApprovalAssignment(
+  assignment: EApprovalAssignment,
+  context: EApprovalWorkflowContext,
+  library: EApprovalWorkflowLibrary = {},
+  stepName?: string,
+): BoundEApprovalAssignment {
+  if (assignment.kind === 'Department') {
+    if (assignment.departmentId) return { assignment };
+    if (!context.departmentId) {
+      return {
+        assignment,
+        note: {
+          kind: 'AssignmentUnresolved',
+          severity: 'warning',
+          stepName,
+          message: `“${stepName ?? 'A stage'}” is addressed to the request's own department, and this request names none.`,
+        },
+      };
+    }
+    return {
+      assignment: {
+        ...assignment,
+        departmentId: context.departmentId,
+        departmentName: context.departmentName ?? assignment.departmentName,
+        resolvedFrom: 'Request department',
+      },
+    };
+  }
+
+  if (assignment.kind !== 'Project') return { assignment };
+
+  const projectId = assignment.projectId || context.projectId;
+  if (!projectId) {
+    return {
+      assignment,
+      note: {
+        kind: 'AssignmentUnresolved',
+        severity: 'warning',
+        stepName,
+        message: `“${stepName ?? 'A stage'}” is addressed to the request's own project, and this request names none.`,
+      },
+    };
+  }
+  const routing = projectRoutingFor(library, projectId);
+  const projectName = routing?.projectName || assignment.projectName || context.projectName;
+  const bound: EApprovalAssignment = { ...assignment, projectId, projectName };
+  const mode = assignment.projectMode ?? routing?.mode ?? 'Head';
+
+  if (mode === 'Role') {
+    const wanted = (assignment.projectRole ?? '').trim().toLowerCase();
+    const holder = (routing?.roleHolders ?? []).find(
+      (entry) => entry.role.trim().toLowerCase() === wanted && entry.userId,
+    );
+    if (holder) {
+      return {
+        assignment: {
+          kind: 'User',
+          userId: holder.userId,
+          userName: holder.userName,
+          designation: holder.designation || assignment.projectRole,
+          resolvedFrom: `${assignment.projectRole} on ${projectName || 'this project'}`,
+        },
+      };
+    }
+    // Falling back to the project head keeps the file moving; not saying so would hide the gap.
+    if (routing?.headUserId) {
+      return {
+        assignment: {
+          kind: 'User',
+          userId: routing.headUserId,
+          userName: routing.headUserName,
+          designation: routing.headDesignation,
+          resolvedFrom: `Project head of ${projectName || 'this project'} (no ${assignment.projectRole} configured)`,
+        },
+        note: {
+          kind: 'AssignmentUnresolved',
+          severity: 'warning',
+          stepName,
+          message: `No “${assignment.projectRole}” is configured on ${projectName || 'this project'} — the stage falls back to its project head.`,
+        },
+      };
+    }
+    return {
+      assignment: bound,
+      note: {
+        kind: 'AssignmentUnresolved',
+        severity: 'warning',
+        stepName,
+        message: `No “${assignment.projectRole}” and no head are configured on ${projectName || 'this project'}, so “${stepName ?? 'this stage'}” reaches nobody.`,
+      },
+    };
+  }
+
+  if (mode === 'Head') {
+    if (routing?.headUserId) {
+      return {
+        assignment: {
+          kind: 'User',
+          userId: routing.headUserId,
+          userName: routing.headUserName,
+          designation: routing.headDesignation,
+          resolvedFrom: `Project head of ${projectName || 'this project'}`,
+        },
+      };
+    }
+    return {
+      assignment: { ...bound, projectMode: 'Head' },
+      note: {
+        kind: 'AssignmentUnresolved',
+        severity: 'warning',
+        stepName,
+        message: `${projectName || 'This project'} has no head configured, so “${stepName ?? 'this stage'}” reaches nobody.`,
+      },
+    };
+  }
+
+  // 'Anyone' and 'Queue' stay project-addressed: who picks them up is decided when the step is live,
+  // exactly as a department queue is, so the engine's ownership rules apply unchanged.
+  const members = [routing?.headUserId, ...(routing?.memberUserIds ?? [])].filter(Boolean);
+  return {
+    assignment: { ...bound, projectMode: mode },
+    note: members.length
+      ? undefined
+      : {
+          kind: 'AssignmentUnresolved',
+          severity: 'warning',
+          stepName,
+          message: `${projectName || 'This project'} has nobody listed, so “${stepName ?? 'this stage'}” reaches nobody.`,
+        },
+  };
+}
+
+/**
+ * Turns a configured workflow into the concrete chain a request will actually run.
+ *
+ * Sub-workflows are expanded in place, conditions decide which stages survive, overrides supply the
+ * approvers for the project or department in hand, and every dynamic assignment is bound to a real
+ * person. What comes out is an ordinary flat `EApprovalTemplateStep[]` — which is the point: nothing
+ * downstream of this function (`buildEApprovalSteps`, the engine, the step documents, the timeline)
+ * knows that sub-workflows or overrides exist, so none of it had to change to support them.
+ *
+ * Pure, so the workflow builder can render the same expansion as a preview without writing anything.
+ */
+export function expandEApprovalWorkflow(
+  steps: EApprovalTemplateStep[] | null | undefined,
+  context: EApprovalWorkflowContext = {},
+  library: EApprovalWorkflowLibrary = {},
+): ExpandedEApprovalWorkflow {
+  const notes: EApprovalWorkflowNote[] = [];
+  const subWorkflowIds: string[] = [];
+  const templateById = new Map((library.templates ?? []).map((template) => [template.id, template]));
+  const maxDepth = library.maxSubWorkflowDepth ?? DEFAULT_E_APPROVAL_SUB_WORKFLOW_DEPTH;
+  const usedIds = new Set<string>();
+  const output: EApprovalTemplateStep[] = [];
+
+  const uniqueId = (id: string): string => {
+    if (!usedIds.has(id)) {
+      usedIds.add(id);
+      return id;
+    }
+    let suffix = 2;
+    while (usedIds.has(`${id}~${suffix}`)) suffix += 1;
+    const next = `${id}~${suffix}`;
+    usedIds.add(next);
+    return next;
+  };
+
+  const walk = (
+    nodes: EApprovalTemplateStep[],
+    depth: number,
+    path: string[],
+    namePrefix: string,
+    inheritedSla: number | undefined,
+    /** The top-level node this branch of the walk descends from; unset at the top level itself. */
+    rootId?: string,
+  ) => {
+    for (const node of nodes) {
+      const name = namePrefix ? `${namePrefix} › ${node.name}` : node.name;
+      const source = rootId ?? node.id;
+
+      if (!matchesEApprovalCondition(node.condition, context)) {
+        notes.push({
+          kind: 'StageSkippedByCondition',
+          severity: 'info',
+          stepId: node.id,
+          sourceStepId: source,
+          stepName: name,
+          message: `“${name}” does not apply here and is left out.`,
+        });
+        continue;
+      }
+
+      if (node.nodeType === 'SubWorkflow' || node.subWorkflowId) {
+        const targetId = node.subWorkflowId;
+        const target = targetId ? templateById.get(targetId) : undefined;
+        if (!targetId || !target) {
+          notes.push({
+            kind: 'SubWorkflowMissing',
+            severity: 'warning',
+            stepId: node.id,
+            sourceStepId: source,
+            stepName: name,
+            message: `“${name}” points at a workflow that no longer exists — its stages are missing from the chain.`,
+          });
+          continue;
+        }
+        if (target.active === false) {
+          notes.push({
+            kind: 'SubWorkflowInactive',
+            severity: 'warning',
+            stepId: node.id,
+            sourceStepId: source,
+            stepName: name,
+            message: `“${target.name}” is inactive, so “${name}” contributes no stages.`,
+          });
+          continue;
+        }
+        if (path.includes(targetId)) {
+          notes.push({
+            kind: 'SubWorkflowCycle',
+            severity: 'warning',
+            stepId: node.id,
+            sourceStepId: source,
+            stepName: name,
+            message: `“${target.name}” already appears further up this chain — expanding it again would never end, so it is left out.`,
+          });
+          continue;
+        }
+        if (depth >= maxDepth) {
+          notes.push({
+            kind: 'SubWorkflowTooDeep',
+            severity: 'warning',
+            stepId: node.id,
+            sourceStepId: source,
+            stepName: name,
+            message: `“${target.name}” is nested more than ${maxDepth} levels deep and is left out.`,
+          });
+          continue;
+        }
+        if (!(target.steps ?? []).length) {
+          notes.push({
+            kind: 'SubWorkflowEmpty',
+            severity: 'warning',
+            stepId: node.id,
+            sourceStepId: source,
+            stepName: name,
+            message: `“${target.name}” has no stages, so “${name}” adds nothing to the chain.`,
+          });
+          continue;
+        }
+        subWorkflowIds.push(targetId);
+        const before = output.length;
+        walk(
+          target.steps ?? [],
+          depth + 1,
+          [...path, targetId],
+          node.prefixSubWorkflowNames === false ? namePrefix : name,
+          node.slaHours ?? inheritedSla,
+          source,
+        );
+        notes.push({
+          kind: 'SubWorkflowExpanded',
+          severity: 'info',
+          stepId: node.id,
+          sourceStepId: source,
+          stepName: name,
+          message: `“${target.name}” contributed ${output.length - before} stage${output.length - before === 1 ? '' : 's'}.`,
+        });
+        continue;
+      }
+
+      const override = resolveEApprovalStepOverride(node, context);
+      if (override?.skip) {
+        notes.push({
+          kind: 'StageSkippedByOverride',
+          severity: 'info',
+          stepId: node.id,
+          sourceStepId: source,
+          stepName: name,
+          message: `“${name}” is skipped by ${override.label ? `“${override.label}”` : 'an override'}.`,
+        });
+        continue;
+      }
+
+      const configured = override?.assignments?.length ? override.assignments : (node.assignments ?? []);
+      const assignments: EApprovalAssignment[] = [];
+      for (const assignment of configured) {
+        const bound = bindEApprovalAssignment(assignment, context, library, name);
+        if (bound.note) notes.push({ ...bound.note, stepId: node.id, sourceStepId: source });
+        if (bound.assignment) assignments.push(bound.assignment);
+      }
+
+      if (override) {
+        notes.push({
+          kind: 'OverrideApplied',
+          severity: 'info',
+          stepId: node.id,
+          sourceStepId: source,
+          stepName: name,
+          message: `“${name}” uses ${override.label ? `“${override.label}”` : 'an override'}${
+            override.assignments?.length ? ` — ${assignments.map(describeEApprovalAssignment).join(', ')}` : ''
+          }.`,
+        });
+      }
+
+      if (!assignments.length) {
+        notes.push({
+          kind: 'StageUnassigned',
+          severity: 'warning',
+          stepId: node.id,
+          sourceStepId: source,
+          stepName: name,
+          message: `“${name}” has no approver and will reach nobody.`,
+        });
+      }
+
+      const groupMode = override?.groupMode ?? node.groupMode;
+      output.push({
+        ...node,
+        id: uniqueId(node.id),
+        name,
+        sourceStepId: source,
+        nodeType: 'Stage',
+        assignments,
+        groupMode: groupMode ?? (assignments.length > 1 ? 'All' : undefined),
+        groupRequiredCount: override?.groupRequiredCount ?? node.groupRequiredCount,
+        slaHours: override?.slaHours ?? node.slaHours ?? inheritedSla,
+        // The chain is now concrete; carrying the rules that produced it onto every request would
+        // only invite somebody to edit a live file's routing after the fact.
+        condition: undefined,
+        overrides: undefined,
+        subWorkflowId: undefined,
+      });
+    }
+  };
+
+  walk(steps ?? [], 0, [], '', undefined);
+  return { steps: output, notes, subWorkflowIds: Array.from(new Set(subWorkflowIds)) };
+}
+
+/**
+ * The problems in an expanded chain that should stop a submission rather than warn about it.
+ *
+ * A stage nobody can act on strands the file at that stage with no way forward but an administrator —
+ * so it is caught at submission, where the requester can be told which stage and why, rather than
+ * discovered three days later by the person waiting on an approval that never arrived.
+ */
+export function eApprovalWorkflowBlockingIssues(
+  expanded: Pick<ExpandedEApprovalWorkflow, 'steps'>,
+): string[] {
+  const issues: string[] = [];
+  for (const step of expanded.steps) {
+    const reachable = step.assignments.some((assignment) => {
+      switch (assignment.kind) {
+        case 'User':
+          return Boolean(assignment.userId);
+        case 'Department':
+          return Boolean(assignment.departmentId);
+        // A project assignment still in 'Role' mode after expansion is precisely the failure case:
+        // binding turns a held post into a `User`, so one that survived means neither a holder nor a
+        // project head was configured, and `isEApprovalStepAssignee` will match nobody against it.
+        case 'Project':
+          return Boolean(assignment.projectId) && (assignment.projectMode ?? 'Head') !== 'Role';
+        case 'Role':
+          return Boolean(assignment.role);
+        case 'Requester':
+          return true;
+        default:
+          return false;
+      }
+    });
+    if (!reachable) issues.push(`“${step.name}” has no approver.`);
+  }
+  return issues;
 }
 
 export interface BuildEApprovalStepsOptions {
@@ -1346,12 +2081,19 @@ export interface EApprovalActor {
   role?: string;
   /** Whether the user heads the department they are acting for — mode B of spec section 11. */
   isDepartmentHead?: boolean;
+  /** Projects this user is listed on, so a project-addressed step can reach them. */
+  projectIds?: string[];
+  /** Whether the user heads any project they belong to — the project counterpart of `isDepartmentHead`. */
+  isProjectHead?: boolean;
   /** Delegations in force, so a substitute can act in the assignee's place. */
   delegations?: EApprovalDelegation[];
 }
 
 const actorDepartments = (actor: EApprovalActor): string[] =>
   Array.from(new Set([actor.departmentId, ...(actor.departmentIds ?? [])].filter(Boolean) as string[]));
+
+const actorProjects = (actor: EApprovalActor): string[] =>
+  Array.from(new Set((actor.projectIds ?? []).filter(Boolean)));
 
 /**
  * Whether `actor` may act on `step`.
@@ -1391,6 +2133,20 @@ export function isEApprovalStepAssignee(
       if (mode === 'Queue') return Boolean(actor.isDepartmentHead);
       return true;
     }
+    // A project-addressed step behaves exactly as a department-addressed one — the same three modes,
+    // the same claim-once rule — because the question is the same: a named group holds this step, and
+    // whoever picks it up owns it until they act. 'Role' never reaches here: it is bound to a person
+    // when the chain is built, so a step still addressed to a role has no holder to check against.
+    case 'Project': {
+      const projects = actorProjects(actor);
+      if (!step.assignment.projectId || !projects.includes(step.assignment.projectId)) return false;
+      const mode = step.assignment.projectMode ?? 'Head';
+      if (mode === 'Role') return false;
+      if (mode === 'Head') return Boolean(actor.isProjectHead);
+      if (step.ownedByUserId) return step.ownedByUserId === actor.userId;
+      if (mode === 'Queue') return Boolean(actor.isProjectHead);
+      return true;
+    }
     case 'Role':
       return Boolean(step.assignment.role && actor.role === step.assignment.role);
     case 'Requester':
@@ -1420,8 +2176,15 @@ export function canTakeEApprovalOwnership(
   actor: EApprovalActor | null | undefined,
 ): boolean {
   if (!actor?.userId || step.status !== 'Active') return false;
-  if (step.assignment.kind !== 'Department') return false;
   if (step.ownedByUserId) return false;
+  if (step.assignment.kind === 'Project') {
+    const mode = step.assignment.projectMode ?? 'Head';
+    if (mode === 'Head' || mode === 'Role') return false;
+    if (!step.assignment.projectId || !actorProjects(actor).includes(step.assignment.projectId)) return false;
+    if (mode === 'Queue') return Boolean(actor.isProjectHead);
+    return true;
+  }
+  if (step.assignment.kind !== 'Department') return false;
   const mode = step.assignment.departmentMode ?? 'Anyone';
   if (mode === 'Head') return false;
   if (!step.assignment.departmentId || !actorDepartments(actor).includes(step.assignment.departmentId)) return false;
@@ -1439,6 +2202,10 @@ export function canAssignEApprovalStep(
   actor: EApprovalActor | null | undefined,
 ): boolean {
   if (!actor?.userId || step.status !== 'Active') return false;
+  if (step.assignment.kind === 'Project') {
+    if (!step.assignment.projectId || !actorProjects(actor).includes(step.assignment.projectId)) return false;
+    return Boolean(actor.isProjectHead);
+  }
   if (step.assignment.kind !== 'Department') return false;
   if (!step.assignment.departmentId || !actorDepartments(actor).includes(step.assignment.departmentId)) return false;
   return Boolean(actor.isDepartmentHead);
@@ -1656,6 +2423,9 @@ export function canViewEApproval(
         (step.assignment.kind === 'Department' &&
           step.assignment.departmentId &&
           actorDepartments(viewer).includes(step.assignment.departmentId)) ||
+        (step.assignment.kind === 'Project' &&
+          step.assignment.projectId &&
+          actorProjects(viewer).includes(step.assignment.projectId)) ||
         (step.assignment.kind === 'Role' && step.assignment.role === viewer.role),
     );
 
@@ -1936,6 +2706,8 @@ export interface EApprovalNotificationIntent {
   kind: EApprovalNotificationKind;
   userIds?: string[];
   departmentIds?: string[];
+  /** Projects whose listed people should be told — the counterpart of `departmentIds`. */
+  projectIds?: string[];
   roles?: string[];
   title: string;
   body: string;
@@ -2104,9 +2876,16 @@ function refreshPointers(request: EApprovalRequestState, steps: EApprovalStepRec
 
 const assignmentRecipients = (
   assignments: EApprovalAssignment[],
-): Pick<EApprovalNotificationIntent, 'userIds' | 'departmentIds' | 'roles'> => ({
+): Pick<EApprovalNotificationIntent, 'userIds' | 'departmentIds' | 'projectIds' | 'roles'> => ({
   userIds: assignments.map((assignment) => assignment.userId).filter(Boolean) as string[],
-  departmentIds: assignments.map((assignment) => assignment.departmentId).filter(Boolean) as string[],
+  departmentIds: assignments
+    .filter((assignment) => assignment.kind === 'Department')
+    .map((assignment) => assignment.departmentId)
+    .filter(Boolean) as string[],
+  projectIds: assignments
+    .filter((assignment) => assignment.kind === 'Project')
+    .map((assignment) => assignment.projectId)
+    .filter(Boolean) as string[],
   roles: assignments.map((assignment) => assignment.role).filter(Boolean) as string[],
 });
 
@@ -3899,25 +4678,61 @@ export function summarizeEApprovalMyActivity(
  * ---------------------------------------------------------------------------------------------- */
 
 /**
- * The three example chains from the spec, shipped as seeds so a new organisation has something to
- * route against before anyone opens the workflow builder. Assignments are left as roles rather than
- * user ids — a seed that names people would be wrong in every organisation but the one it was
- * written in.
+ * The example chains from the spec, shipped as seeds so a new organisation has something to route
+ * against before anyone opens the workflow builder. Assignments are left as roles, project posts and
+ * the request's own department rather than user ids — a seed that names people would be wrong in
+ * every organisation but the one it was written in.
+ *
+ * Two of them show the shapes an administrator would otherwise have to discover: **Finance
+ * Clearance** is a sub-workflow, referenced by Purchase Approval rather than copied into it; and
+ * **Site Expense** addresses its first two stages to *posts on the request's project*, so one chain
+ * reaches the right site in-charge on every site instead of needing one chain per site.
+ *
+ * `subWorkflowId` here holds the *seed* id of the workflow it points at; `seedEApprovalTemplates`
+ * rewrites it to the real document id once the sub-workflow has been written.
  */
 export const SEED_E_APPROVAL_TEMPLATES: EApprovalTemplate[] = [
   {
-    id: 'seed-purchase',
-    name: 'Purchase Approval',
-    description: 'Department HOD → Purchase → Finance verification → Director → ED',
+    id: 'seed-finance-clearance',
+    name: 'Finance Clearance',
+    description: 'Accounts verification then Finance sign-off — used inside other workflows.',
+    isSubWorkflow: true,
     steps: [
-      { id: 's1', name: 'Department HOD', assignments: [{ kind: 'Role', role: 'HOD' }], slaHours: 24 },
-      { id: 's2', name: 'Purchase', assignments: [{ kind: 'Role', role: 'Purchase Head' }], slaHours: 24 },
       {
-        id: 's3',
-        name: 'Finance Verification',
+        id: 's1',
+        name: 'Accounts',
+        type: 'REVIEW',
+        assignments: [{ kind: 'Role', role: 'Accounts Executive' }],
+        slaHours: 24,
+      },
+      {
+        id: 's2',
+        name: 'Finance Manager',
         type: 'REVIEW',
         assignments: [{ kind: 'Role', role: 'Finance Manager' }],
         slaHours: 24,
+      },
+    ],
+  },
+  {
+    id: 'seed-purchase',
+    name: 'Purchase Approval',
+    description: 'Department HOD → Purchase → Finance Clearance → Director → ED',
+    steps: [
+      {
+        id: 's1',
+        name: 'Department HOD',
+        // No department id: the stage binds to whichever department raised the request.
+        assignments: [{ kind: 'Department', departmentMode: 'Head' }],
+        slaHours: 24,
+      },
+      { id: 's2', name: 'Purchase', assignments: [{ kind: 'Role', role: 'Purchase Head' }], slaHours: 24 },
+      {
+        id: 's3',
+        name: 'Finance Clearance',
+        nodeType: 'SubWorkflow',
+        subWorkflowId: 'seed-finance-clearance',
+        assignments: [],
       },
       { id: 's4', name: 'Director', assignments: [{ kind: 'Role', role: 'Director' }], slaHours: 48 },
       {
@@ -3925,6 +4740,8 @@ export const SEED_E_APPROVAL_TEMPLATES: EApprovalTemplate[] = [
         name: 'ED',
         assignments: [{ kind: 'Role', role: 'ED' }],
         slaHours: 48,
+        // Small purchases stop at the Director; only the large ones travel to the ED.
+        condition: { minAmount: 500000 },
         capabilities: { canFinalise: true },
       },
     ],
@@ -3948,17 +4765,26 @@ export const SEED_E_APPROVAL_TEMPLATES: EApprovalTemplate[] = [
   {
     id: 'seed-site-expense',
     name: 'Site Expense',
-    description: 'Site In-Charge → Project Manager → Accounts → Finance',
+    description: "Site In-Charge → Project Manager → Finance Clearance, resolved per the request's project",
     steps: [
-      { id: 's1', name: 'Site In-Charge', assignments: [{ kind: 'Role', role: 'Site In-Charge' }], slaHours: 24 },
-      { id: 's2', name: 'Project Manager', assignments: [{ kind: 'Role', role: 'Project Manager' }], slaHours: 24 },
-      { id: 's3', name: 'Accounts', assignments: [{ kind: 'Role', role: 'Accounts Executive' }], slaHours: 24 },
       {
-        id: 's4',
-        name: 'Finance',
-        assignments: [{ kind: 'Role', role: 'Finance Manager' }],
+        id: 's1',
+        name: 'Site In-Charge',
+        assignments: [{ kind: 'Project', projectMode: 'Role', projectRole: 'Site In-Charge' }],
         slaHours: 24,
-        capabilities: { canFinalise: true },
+      },
+      {
+        id: 's2',
+        name: 'Project Manager',
+        assignments: [{ kind: 'Project', projectMode: 'Role', projectRole: 'Project Manager' }],
+        slaHours: 24,
+      },
+      {
+        id: 's3',
+        name: 'Finance Clearance',
+        nodeType: 'SubWorkflow',
+        subWorkflowId: 'seed-finance-clearance',
+        assignments: [],
       },
     ],
   },

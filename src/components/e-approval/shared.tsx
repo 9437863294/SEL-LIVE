@@ -188,3 +188,34 @@ export const eApprovalDialogClass = {
   body: 'hr-dialog-body min-h-0 flex-1 space-y-3 overflow-y-auto',
   footer: 'hr-dialog-footer shrink-0',
 } as const;
+
+/**
+ * Props that stop a dialog throwing away typed work.
+ *
+ * Spread onto a `DialogContent`. Two different rules, because the two ways out are not equally
+ * deliberate:
+ *
+ *   - **A click outside never closes the dialog**, whether anything has been typed or not. On the
+ *     wide forms in this module — the workflow builder, the approval matrix rule — the backdrop is
+ *     most of the screen, and a click that lands on it is essentially always a misclick: reaching for
+ *     a scrollbar, dismissing a native autocomplete, or just missing the dialog. Nobody closes a form
+ *     they are filling in by aiming at the grey. Cancel and the corner X are still right there, so
+ *     nothing becomes unclosable.
+ *   - **Escape closes only an untouched dialog.** It is the keyboard's dismissal and the behaviour
+ *     assistive technology expects, so it keeps working for the ordinary "opened this by accident"
+ *     case. Once there is something to lose it is held back too — a single keystroke should not
+ *     discard a half-written rejection reason.
+ *
+ * Applied per dialog rather than by changing `components/ui/dialog.tsx`, which every other module in
+ * the app shares: this is a decision about *this* module's forms, and quietly re-fitting the app-wide
+ * primitive to suit one module is how an unrelated screen changes behaviour with nobody deciding it
+ * should.
+ */
+export function eApprovalDialogGuard(dirty: boolean) {
+  return {
+    onInteractOutside: (event: Event) => event.preventDefault(),
+    onEscapeKeyDown: (event: KeyboardEvent) => {
+      if (dirty) event.preventDefault();
+    },
+  };
+}

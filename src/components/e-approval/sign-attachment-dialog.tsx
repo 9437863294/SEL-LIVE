@@ -30,7 +30,7 @@ import {
   getEApprovalPdfPageCount,
   type EApprovalSignaturePosition,
 } from '@/lib/e-approval-pdf-signing';
-import { eApprovalDialogClass } from './shared';
+import { eApprovalDialogClass, eApprovalDialogGuard } from './shared';
 import { EApprovalSignaturePad } from './signature-pad';
 
 /**
@@ -127,7 +127,14 @@ export function EApprovalSignAttachmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !signing && onOpenChange(next)}>
-      <DialogContent className={eApprovalDialogClass.content}>
+      {/* Dirty as soon as the placement has been moved off its defaults — picking a page and nudging
+          the offsets is the work here, and it is fiddly enough to be worth not losing. */}
+      <DialogContent
+        className={eApprovalDialogClass.content}
+        {...eApprovalDialogGuard(
+          signing || pageIndex !== 0 || position !== 'bottom-right' || widthPct !== 20 || offsetX !== 0 || offsetY !== 0,
+        )}
+      >
         <DialogHeader className={eApprovalDialogClass.header}>
           <DialogTitle className="flex items-center gap-1.5">
             <FileSignature className="h-4 w-4" /> Sign document

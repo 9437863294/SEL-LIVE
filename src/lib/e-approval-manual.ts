@@ -365,6 +365,9 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
           note(
             'Verification and forwarding are often confused. Verification borrows somebody briefly and returns; forwarding gives the approval away. If you want an opinion, verify. If it is not your decision to make, forward.',
           ),
+          note(
+            'Every action opens a dialog, and clicking outside it will not close it — so a reason or a comment you have typed cannot be lost to a stray click. Use Cancel, or the cross in the corner, when you do want to abandon it.',
+          ),
         ],
       },
       {
@@ -502,12 +505,13 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
           steps(
             'Roles — grant E-Approval permissions in Settings → Role Management. Nobody sees the module until you do.',
             'Approval Types — add the kinds of request your organisation raises.',
-            'Workflows — use "Samples" to seed three example chains, then assign real approvers.',
-            'Approval Matrix — amount bands per type, each pointing at a workflow. Use the tester before trusting it.',
+            'Project Routing — name the head and the post holders on every project. Do this before the workflows: a stage addressed to "Project Manager" is only as right as this list.',
             'Department Routing — for every department that will receive department-addressed steps.',
+            'Workflows — use "Samples" to seed four example chains, then assign real approvers.',
+            'Approval Matrix — amount bands per type, each pointing at a workflow. Use the tester before trusting it.',
             'Policies — change control, approver powers, recall and reverse windows, reminders, numbering.',
             'Deploy the Firestore indexes (firebase deploy --only firestore:indexes).',
-            'Schedule the reminder sweep (see 3.8).',
+            'Schedule the reminder sweep (see 3.9).',
           ),
           note(
             'The module works before any of this is configured: an employee can name their own approvers on the form. Configuration is what removes that decision from them.',
@@ -536,23 +540,57 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
         number: '3.3',
         title: 'Workflows',
         audience: 'administrator',
-        summary: 'Named chains of stages.',
+        summary: 'Chains of stages and sub-workflows, with different approvers per project.',
         route: '/e-approval/settings/workflows',
         blocks: [
           p(
-            'A workflow is an ordered list of stages. A stage with more than one approver runs them in parallel, and you choose how it is satisfied: all must approve, any one, or a set number of them.',
+            'A workflow is an ordered list of nodes. A node is either a stage — one or more approvers, its own SLA, its own powers — or a sub-workflow, which runs another workflow in place.',
           ),
-          p('Each stage carries its own SLA and its own set of powers — what that approver may do:'),
+          p(
+            'A stage with more than one approver runs them in parallel, and you choose how it is satisfied: all must approve, any one, or a set number of them.',
+          ),
+          p('Each stage carries its own set of powers — what that approver may do:'),
           bullets(
             'send for verification, request clarification;',
             'return, forward, delegate, add an approver, escalate;',
             'reject, hold;',
             'approve & complete (off by default — it ends the workflow early).',
           ),
-          warn(
-            'A stage with no approver assigned is skipped when the chain is built, and the request goes through one signature short. The list flags these in amber.',
+          p(
+            'Three things let one workflow cover cases that would otherwise need a copy each. Reach for them in this order:',
           ),
-          note('Duplicate is useful for building a variant of an existing chain without retyping it.'),
+          table(
+            ['Use', 'When', 'Where'],
+            [
+              [
+                'A post instead of a person',
+                'The stage is the same everywhere but the person differs by project — two sites, two project managers.',
+                'Add the approver, choose Project, then "A named post". Set the holders under Project Routing.',
+              ],
+              [
+                'Different people here',
+                'One project or department genuinely routes elsewhere, or skips the stage entirely.',
+                'The panel on each stage. Add a variation, pick the projects it covers, name the approvers.',
+              ],
+              [
+                'When it runs',
+                'The stage only applies above an amount, on certain projects, or for a priority.',
+                'The panel on each stage. Empty means always.',
+              ],
+            ],
+          ),
+          p(
+            'A sub-workflow is a run of stages written once and called from several chains — "Finance Clearance", "Safety Sign-off". It lives on its own tab, is never offered as a route on the request form, and is a reference rather than a copy: edit it once and every chain that calls it changes with it.',
+          ),
+          warn(
+            'Use the tester inside the editor before trusting a workflow. Pick a project and an amount and it shows the chain that will actually be built — sub-workflows expanded, conditions applied, posts resolved to real names. With sub-workflows and per-project approvers, what a workflow does is no longer visible from what it says.',
+          ),
+          warn(
+            'A stage that resolves to nobody is flagged in amber, and a submission against it is refused with the stage named. Nothing is silently skipped — a missing approver is a gap to fix, not a signature to drop.',
+          ),
+          note(
+            'Duplicate is useful for building a variant of an existing chain without retyping it — but prefer a stage variation to a duplicate workflow. Two copies of a chain stop matching the first time somebody edits one.',
+          ),
         ],
       },
       {
@@ -602,8 +640,45 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
         ],
       },
       {
-        id: 'policies',
+        id: 'projects',
         number: '3.6',
+        title: 'Project routing',
+        audience: 'administrator',
+        summary: 'Who holds which post on each project — what makes one workflow serve every site.',
+        route: '/e-approval/settings/projects',
+        blocks: [
+          p(
+            'Two sites means two project managers, two site accountants and two store in-charges, all signing the same chain. Rather than a copy of the workflow per site, the workflow names the post and this page says who holds it where.',
+          ),
+          steps(
+            'Open a project and set its head — the fallback for any post with no holder.',
+            'Add the posts that sign approvals here: Project Manager, Site In-Charge, Site Accountant, and so on.',
+            'Name the person holding each. Suggestions cover the usual ones; you can add your own.',
+            'In a workflow, add an approver, choose Project, pick "A named post", and type the same name.',
+          ),
+          warn(
+            'Post names are matched exactly. "Project manager" is not "Project Manager". Pick from the suggestions in the workflow builder wherever you can — it offers every post name any project has configured.',
+          ),
+          table(
+            ['Mode', 'Behaviour'],
+            [
+              ['A named post', 'Stages name a post; each resolves to whoever holds it on the request’s project.'],
+              ['Project head', 'Goes straight to the project head.'],
+              ['Anyone on the team', 'Any listed member can take it. Claiming it locks it to that person.'],
+              ['Queue', 'Held for the project head, who assigns it. Members cannot claim it themselves.'],
+            ],
+          ),
+          warn(
+            'A post with no holder falls back to the project head, and the preview says so. With no head either, the stage reaches nobody and the submission is refused — so an unconfigured project is visible before a request is raised, not after it stalls.',
+          ),
+          note(
+            'Holding a post counts as being on the project: post holders can act on their own stages whether or not they also appear in the team list.',
+          ),
+        ],
+      },
+      {
+        id: 'policies',
+        number: '3.7',
         title: 'Policies',
         audience: 'administrator',
         summary: 'Change control, approver powers, recall, reminders and numbering.',
@@ -631,7 +706,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
       },
       {
         id: 'permissions',
-        number: '3.7',
+        number: '3.8',
         title: 'Permissions',
         audience: 'administrator',
         summary: 'What the role tree governs — and what it deliberately does not.',
@@ -662,7 +737,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
       },
       {
         id: 'reminders-cron',
-        number: '3.8',
+        number: '3.9',
         title: 'Scheduling the reminder sweep',
         audience: 'administrator',
         summary: 'Reminders and escalations need a scheduler.',
@@ -678,7 +753,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
       },
       {
         id: 'reports',
-        number: '3.9',
+        number: '3.10',
         title: 'Reports',
         audience: 'administrator',
         summary: 'Six analytics areas, with a shared filter and Excel export.',
@@ -708,7 +783,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
       },
       {
         id: 'known-gaps',
-        number: '3.10',
+        number: '3.11',
         title: 'Known gaps',
         audience: 'administrator',
         summary: 'Stated plainly, so nobody hunts for them.',

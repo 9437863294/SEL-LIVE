@@ -40,6 +40,8 @@ import {
   type EApprovalPriority,
   type EApprovalRequest,
   type EApprovalRequestDraft,
+  type EApprovalRuleRecord,
+  type EApprovalTemplateRecord,
   type EApprovalTemplateStep,
 } from '@/lib/e-approval';
 import {
@@ -112,6 +114,17 @@ export function ApprovalForm({
   const [useConfigured, setUseConfigured] = useState(Boolean(existing?.templateId));
   const [configuredExists, setConfiguredExists] = useState(false);
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; steps: EApprovalTemplateStep[] }>>([]);
+  /**
+   * The full template and rule rows, kept so the route preview resolves from memory.
+   *
+   * The preview re-runs whenever the project, department, type, priority or amount changes, and each
+   * run has to expand sub-workflows and resolve project posts. Re-reading the template and rule
+   * collections for every one of those turns a preview that keeps up into one that lags a change
+   * behind — and none of it changes while the form is open.
+   */
+  const [config, setConfig] = useState<{ templates: EApprovalTemplateRecord[]; rules: EApprovalRuleRecord[] } | null>(
+    null,
+  );
   const [preview, setPreview] = useState<ResolvedEApprovalRouting | null>(null);
 
   // Revising an existing request skips the progression entirely — see the component doc.
@@ -163,8 +176,13 @@ export function ApprovalForm({
       listEApprovalRules(serviceActor?.organizationId),
     ]).then(([templateRows, ruleRows]) => {
       if (cancelled) return;
-      const active = templateRows.filter((row) => row.active !== false);
+      // Sub-workflows are building blocks called from other chains, never a route in their own
+      // right — offering "Finance Clearance" here is a purchase approved by Accounts and nobody else.
+      const active = templateRows.filter((row) => row.active !== false && row.isSubWorkflow !== true);
       setTemplates(active.map((row) => ({ id: row.id, name: row.name, steps: row.steps ?? [] })));
+      // Every template, sub-workflows included: they are not offered as a route but they still have
+      // to be expandable when a chosen chain calls one.
+      setConfig({ templates: templateRows, rules: ruleRows });
       setConfiguredExists(active.length > 0 || ruleRows.some((row) => row.active !== false));
     });
     return () => {
@@ -235,10 +253,17 @@ export function ApprovalForm({
   );
 
   /** The resolved chain, refreshed whenever anything that decides it changes. */
-  const routingKey = `${useConfigured}|${templateId}|${approvalTypeId}|${departmentId}|${projectId}|${amount}|${chain.length}`;
+  // Priority is in the key because a stage can be conditioned on it — an "Urgent" file may take a
+  // shorter chain — so a change of priority genuinely changes the route.
+  const routingKey = `${useConfigured}|${templateId}|${approvalTypeId}|${departmentId}|${projectId}|${amount}|${priority}|${chain.length}`;
   useEffect(() => {
+    if (!config) return;
     let cancelled = false;
-    void resolveEApprovalRoutingForDraft(draft, serviceActor?.organizationId)
+    void resolveEApprovalRoutingForDraft(draft, serviceActor?.organizationId, {
+      library: { templates: config.templates, projectRouting: directory.projectRouting },
+      rules: config.rules,
+      types: directory.types,
+    })
       .then((resolved) => {
         if (!cancelled) setPreview(resolved);
       })
@@ -251,7 +276,7 @@ export function ApprovalForm({
     // Deliberately keyed on the routing inputs rather than the whole draft — the proposal text
     // changing should not re-resolve the chain on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routingKey, serviceActor?.organizationId]);
+  }, [routingKey, serviceActor?.organizationId, config, directory.projectRouting, directory.types]);
 
   const valid = subject.trim().length > 0 && body.trim().length > 0;
   const amountMissing = Boolean(selectedType?.requiresAmount) && !amount;
@@ -402,26 +427,49 @@ export function ApprovalForm({
         </p>
       ) : (
         <ol className="space-y-1.5">
-          {preview?.steps.map((step, index) => (
-            <li
-              key={step.id ?? index}
-              className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5"
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
-                {index + 1}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-xs font-medium text-slate-800">
-                {step.assignments.map(describeEApprovalAssignment).join(step.groupMode === 'Any' ? ' or ' : ' & ')}
-              </span>
-              {settings && (
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
-                  {eApprovalStepSla(step.slaHours, priority, settings)}h
+          {preview?.steps.map((step, index) => {
+            const who = step.assignments
+              .map(describeEApprovalAssignment)
+              .join(step.groupMode === 'Any' ? ' or ' : ' & ');
+            // On a configured chain the stage name is what the requester recognises ("Finance
+            // Clearance › Accounts"); on an ad-hoc one the stage name *is* the person, so showing
+            // both would print the same thing twice.
+            const named = preview.source !== 'Ad-hoc' && step.name && step.name !== who;
+            return (
+              <li
+                key={step.id ?? index}
+                className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
+                  {index + 1}
                 </span>
-              )}
-            </li>
-          ))}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-medium text-slate-800">{named ? step.name : who}</span>
+                  {named && <span className="block truncate text-[10px] text-muted-foreground">{who}</span>}
+                </span>
+                {settings && (
+                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                    {eApprovalStepSla(step.slaHours, priority, settings)}h
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ol>
       )}
+
+      {/* Configuration gaps the requester cannot fix but must know about before submitting — a stage
+          whose project post has no holder is the file that arrives nowhere. */}
+      {preview?.notes
+        ?.filter((note) => note.severity === 'warning')
+        .map((note, index) => (
+          <p
+            key={`${note.kind}-${index}`}
+            className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] leading-snug text-amber-900"
+          >
+            {note.message}
+          </p>
+        ))}
     </div>
   );
 

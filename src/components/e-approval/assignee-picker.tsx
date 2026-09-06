@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Building2, Check, Plus, Shield, User as UserIcon, X } from 'lucide-react';
+import { Building2, Check, HardHat, Plus, Shield, User as UserIcon, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,16 +13,22 @@ import {
   describeEApprovalAssignment,
   type EApprovalAssignment,
   type EApprovalDepartmentMode,
+  type EApprovalProjectMode,
 } from '@/lib/e-approval';
 import type { EApprovalDirectory } from './hooks';
 
 /**
- * Builds the `EApprovalAssignment` list every routing decision needs — a person, a department or a
- * role (spec section 11).
+ * Builds the `EApprovalAssignment` list every routing decision needs — a person, a department, a
+ * project post or a role (spec section 11).
  *
  * Names are captured alongside ids at selection time, because the engine denormalises them onto the
  * step: history has to still read "Approved by Sarika Palo (Finance Manager)" after that user is
  * deactivated, and a step that stored only an id would render as a blank.
+ *
+ * Two entries in each of the Department and Project lists carry **no id on purpose** — "the request's
+ * own department", "the request's own project". Those are the ones that make a workflow reusable: a
+ * stage bound to the project in front of it reaches the right site in-charge on every site, where a
+ * stage naming a person reaches the same person regardless of where the work is.
  */
 export function AssigneePicker({
   directory,
@@ -33,6 +39,9 @@ export function AssigneePicker({
   allowDepartment = true,
   allowRole = true,
   allowRequester = false,
+  allowProject = true,
+  /** Off on the request form, where the request's own project is already known and picked. */
+  allowDynamic = true,
   disabled,
 }: {
   directory: EApprovalDirectory;
@@ -43,14 +52,30 @@ export function AssigneePicker({
   allowDepartment?: boolean;
   allowRole?: boolean;
   allowRequester?: boolean;
+  allowProject?: boolean;
+  allowDynamic?: boolean;
   disabled?: boolean;
 }) {
   const [kind, setKind] = useState<EApprovalAssignment['kind']>('User');
   const [search, setSearch] = useState('');
   const [departmentMode, setDepartmentMode] = useState<EApprovalDepartmentMode>('Anyone');
+  const [projectMode, setProjectMode] = useState<EApprovalProjectMode>('Role');
+  const [projectRole, setProjectRole] = useState('');
 
-  const keyOf = (entry: EApprovalAssignment) =>
-    `${entry.kind}:${entry.userId ?? entry.departmentId ?? entry.role ?? 'requester'}`;
+  const keyOf = (entry: EApprovalAssignment) => {
+    switch (entry.kind) {
+      case 'User':
+        return `User:${entry.userId ?? ''}`;
+      case 'Department':
+        return `Department:${entry.departmentId ?? 'SELF'}:${entry.departmentMode ?? 'Anyone'}`;
+      case 'Project':
+        return `Project:${entry.projectId ?? 'SELF'}:${entry.projectMode ?? 'Head'}:${(entry.projectRole ?? '').toLowerCase()}`;
+      case 'Role':
+        return `Role:${entry.role ?? ''}`;
+      default:
+        return 'Requester';
+    }
+  };
 
   const chosenKeys = useMemo(() => new Set(value.map(keyOf)), [value]);
 
@@ -85,10 +110,57 @@ export function AssigneePicker({
     return term ? directory.roles.filter((row) => row.toLowerCase().includes(term)) : directory.roles;
   }, [directory.roles, search]);
 
+  const filteredProjects = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return term
+      ? directory.projects.filter((row) => row.projectName?.toLowerCase().includes(term))
+      : directory.projects;
+  }, [directory.projects, search]);
+
+  /**
+   * Every post name any project has configured.
+   *
+   * Offered as suggestions rather than a closed list, because a post is matched by name at build time
+   * and typing "Project manager" where the routing says "Project Manager" would silently miss — the
+   * suggestions exist to stop that, not to stop somebody adding the first "QA/QC Head".
+   */
+  const knownProjectRoles = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          directory.projectRouting.flatMap((row) => (row.roleHolders ?? []).map((holder) => holder.role.trim())),
+        ),
+      )
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    [directory.projectRouting],
+  );
+
   const nothingMatches =
     (kind === 'User' && !filteredUsers.length) ||
-    (kind === 'Department' && !filteredDepartments.length) ||
+    (kind === 'Department' && !filteredDepartments.length && !allowDynamic) ||
+    (kind === 'Project' && !filteredProjects.length && !allowDynamic) ||
     (kind === 'Role' && !filteredRoles.length);
+
+  const iconFor = (assignment: EApprovalAssignment) =>
+    assignment.kind === 'User' ? (
+      <UserIcon className="h-3 w-3" />
+    ) : assignment.kind === 'Department' ? (
+      <Building2 className="h-3 w-3" />
+    ) : assignment.kind === 'Project' ? (
+      <HardHat className="h-3 w-3" />
+    ) : (
+      <Shield className="h-3 w-3" />
+    );
+
+  const addProject = (projectId?: string, projectName?: string) =>
+    add({
+      kind: 'Project',
+      projectId,
+      projectName,
+      projectMode,
+      projectRole: projectMode === 'Role' ? projectRole.trim() : undefined,
+    });
 
   return (
     <div className="space-y-2">
@@ -101,13 +173,7 @@ export function AssigneePicker({
         <div className="flex flex-wrap gap-1.5">
           {value.map((assignment, index) => (
             <Badge key={`${keyOf(assignment)}-${index}`} variant="secondary" className="gap-1 py-1 pl-2 pr-1">
-              {assignment.kind === 'User' ? (
-                <UserIcon className="h-3 w-3" />
-              ) : assignment.kind === 'Department' ? (
-                <Building2 className="h-3 w-3" />
-              ) : (
-                <Shield className="h-3 w-3" />
-              )}
+              {iconFor(assignment)}
               <span className="max-w-[180px] truncate">{describeEApprovalAssignment(assignment)}</span>
               {!disabled && (
                 <button
@@ -145,6 +211,17 @@ export function AssigneePicker({
                 onClick={() => setKind('Department')}
               >
                 <Building2 className="h-3.5 w-3.5" /> Department
+              </Button>
+            )}
+            {allowProject && (
+              <Button
+                type="button"
+                size="sm"
+                variant={kind === 'Project' ? 'default' : 'outline'}
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={() => setKind('Project')}
+              >
+                <HardHat className="h-3.5 w-3.5" /> Project
               </Button>
             )}
             {allowRole && (
@@ -192,6 +269,53 @@ export function AssigneePicker({
             </div>
           )}
 
+          {kind === 'Project' && (
+            <div className="mt-2 space-y-2">
+              <div>
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Who on the project this reaches
+                </Label>
+                <Select value={projectMode} onValueChange={(next) => setProjectMode(next as EApprovalProjectMode)}>
+                  <SelectTrigger className="mt-1 h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Role">A named post — different person on each project</SelectItem>
+                    <SelectItem value="Head">The project head</SelectItem>
+                    <SelectItem value="Anyone">Anyone on the project team</SelectItem>
+                    <SelectItem value="Queue">Queued for the project head to assign</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {projectMode === 'Role' && (
+                <div>
+                  <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Which post
+                  </Label>
+                  <Input
+                    value={projectRole}
+                    onChange={(event) => setProjectRole(event.target.value)}
+                    placeholder="Project Manager"
+                    list="e-approval-project-roles"
+                    className="mt-1 h-8 text-xs"
+                  />
+                  <datalist id="e-approval-project-roles">
+                    {knownProjectRoles.map((role) => (
+                      <option key={role} value={role} />
+                    ))}
+                  </datalist>
+                  {projectRole.trim() && !knownProjectRoles.some((role) => role.toLowerCase() === projectRole.trim().toLowerCase()) && (
+                    <p className="mt-1 text-[10px] text-amber-700">
+                      No project has a “{projectRole.trim()}” configured yet — set one under Settings → Project
+                      Routing, or the stage will fall back to the project head.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -200,7 +324,9 @@ export function AssigneePicker({
                 ? 'Search people…'
                 : kind === 'Department'
                   ? 'Search departments…'
-                  : 'Search designations…'
+                  : kind === 'Project'
+                    ? 'Search projects…'
+                    : 'Search designations…'
             }
             className="mt-2 h-8 text-xs"
           />
@@ -229,9 +355,89 @@ export function AssigneePicker({
                   );
                 })}
 
+              {/* The dynamic entry sits first because it is the right answer more often than any one
+                  named department is: it is what makes a workflow reusable across all of them. */}
+              {kind === 'Department' && allowDynamic && !search.trim() && (
+                <button
+                  type="button"
+                  onClick={() => add({ kind: 'Department', departmentMode })}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 rounded border border-dashed border-sky-300 bg-sky-50/60 px-2 py-1.5 text-left text-xs hover:bg-sky-100/60',
+                    chosenKeys.has(`Department:SELF:${departmentMode}`) && 'opacity-50',
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-sky-900">The request&rsquo;s own department</span>
+                    <span className="block truncate text-[10px] text-sky-700">
+                      Resolved when the approval is raised — one workflow serves every department
+                    </span>
+                  </span>
+                  {chosenKeys.has(`Department:SELF:${departmentMode}`) && (
+                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  )}
+                </button>
+              )}
+
+              {kind === 'Project' && allowDynamic && !search.trim() && (
+                <button
+                  type="button"
+                  onClick={() => addProject()}
+                  disabled={projectMode === 'Role' && !projectRole.trim()}
+                  className={cn(
+                    'flex w-full items-center justify-between gap-2 rounded border border-dashed border-sky-300 bg-sky-50/60 px-2 py-1.5 text-left text-xs hover:bg-sky-100/60 disabled:opacity-40',
+                    chosenKeys.has(
+                      `Project:SELF:${projectMode}:${projectRole.trim().toLowerCase()}`,
+                    ) && 'opacity-50',
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-sky-900">
+                      {projectMode === 'Role'
+                        ? `${projectRole.trim() || 'The post'} on the request’s project`
+                        : 'The request’s own project'}
+                    </span>
+                    <span className="block truncate text-[10px] text-sky-700">
+                      {projectMode === 'Role'
+                        ? 'A different person on each project — this is the reusable option'
+                        : 'Resolved when the approval is raised'}
+                    </span>
+                  </span>
+                  {chosenKeys.has(`Project:SELF:${projectMode}:${projectRole.trim().toLowerCase()}`) && (
+                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  )}
+                </button>
+              )}
+
+              {kind === 'Project' &&
+                filteredProjects.map((row) => {
+                  const key = `Project:${row.id}:${projectMode}:${projectRole.trim().toLowerCase()}`;
+                  const chosen = chosenKeys.has(key);
+                  const configured = directory.projectRouting.find((entry) => entry.projectId === row.id);
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() => addProject(row.id, row.projectName)}
+                      disabled={projectMode === 'Role' && !projectRole.trim()}
+                      className={cn(
+                        'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-40',
+                        chosen && 'opacity-50',
+                      )}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{row.projectName}</span>
+                        {!configured && (
+                          <span className="block truncate text-[10px] text-amber-700">No routing configured</span>
+                        )}
+                      </span>
+                      {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                    </button>
+                  );
+                })}
+
               {kind === 'Department' &&
                 filteredDepartments.map((row) => {
-                  const chosen = chosenKeys.has(`Department:${row.id}`);
+                  const chosen = chosenKeys.has(`Department:${row.id}:${departmentMode}`);
                   return (
                     <button
                       key={row.id}

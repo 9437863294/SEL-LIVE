@@ -54,7 +54,7 @@ import {
   type EApprovalServiceActor,
 } from '@/lib/e-approval-service';
 import { AssigneePicker } from './assignee-picker';
-import { eApprovalDialogClass } from './shared';
+import { eApprovalDialogClass, eApprovalDialogGuard } from './shared';
 import { formatEApprovalAmount, type EApprovalDirectory } from './hooks';
 
 const actionIcons: Partial<Record<EApprovalActionKind, typeof CheckCircle2>> = {
@@ -317,6 +317,26 @@ export function ActionPanel({
     setDialog(config);
   };
 
+  /**
+   * Whether anything has been entered since the dialog opened.
+   *
+   * Compared against the defaults `openDialog` sets rather than against emptiness, because two of
+   * them are not empty: the outcome starts at 'Verified' and the approved amount is pre-filled with
+   * whatever is already being sanctioned. An approver who has typed a rejection reason and reached
+   * for the scrollbar must not lose it, but one who opened the wrong dialog and pressed Escape should
+   * simply get out.
+   */
+  const dialogDirty =
+    comment.trim() !== '' ||
+    reason.trim() !== '' ||
+    instruction.trim() !== '' ||
+    targets.length > 0 ||
+    returnTo !== '' ||
+    slaHours !== '' ||
+    files.length > 0 ||
+    outcome !== 'Verified' ||
+    approvedAmount !== (currentApprovedAmount != null ? String(currentApprovedAmount) : '');
+
   const submit = async () => {
     if (!serviceActor || !dialog) return;
     setBusy(true);
@@ -448,7 +468,7 @@ export function ActionPanel({
       </Card>
 
       <Dialog open={Boolean(dialog)} onOpenChange={(open) => !open && setDialog(null)}>
-        <DialogContent className={eApprovalDialogClass.content}>
+        <DialogContent className={eApprovalDialogClass.content} {...eApprovalDialogGuard(dialogDirty)}>
           <DialogHeader className={eApprovalDialogClass.header}>
             <DialogTitle>{dialog ? E_APPROVAL_ACTION_LABELS[dialog.kind] : ''}</DialogTitle>
             <DialogDescription className="text-xs">{dialog?.description}</DialogDescription>

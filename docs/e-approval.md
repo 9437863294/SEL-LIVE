@@ -9,13 +9,14 @@ intended to call this engine rather than each building their own approval logic.
 
 | File | Responsibility |
 | --- | --- |
-| `src/lib/e-approval-policy.ts` | **The engine.** Pure, dependency-free, unit-tested. Every rule: the verification stack, return-to-any-step, supersede-on-material-change, the approval matrix, parallel groups, SLA and escalation. |
+| `src/lib/e-approval-policy.ts` | **The engine.** Pure, dependency-free, unit-tested. Every rule: the verification stack, return-to-any-step, supersede-on-material-change, the approval matrix, workflow expansion (sub-workflows, stage conditions and per-project overrides), parallel groups, SLA and escalation. |
 | `src/lib/e-approval.ts` | Firestore data model + collection names. Re-exports the policy module so consumers import from one place. |
 | `src/lib/e-approval-service.ts` | Firestore reads and writes. Loads state, calls the engine, persists the result atomically, delivers notifications. |
 | `src/components/e-approval/*` | Screens and shared UI. `admin/*` holds the configuration panels. |
 | `src/app/(protected)/e-approval/*` | Routes. |
 | `src/app/api/e-approval/escalations/route.ts` | Admin-SDK reminder/escalation sweep, for a scheduler. |
-| `tests/e-approval-domain.test.mjs` | 89 engine tests. `npm run test:e-approval`. |
+| `tests/e-approval-domain.test.mjs` | Engine tests — actions, verification stack, change control, SLA. `npm run test:e-approval`. |
+| `tests/e-approval-workflow.test.mjs` | Workflow-expansion tests — sub-workflows, cycles, conditions, stage overrides, project post binding, who may act on a project step. |
 | `tsconfig.e-approval.json` | Module-scoped typecheck. `npm run typecheck:e-approval`. |
 | `src/lib/e-approval-manual.ts` | **The handbook, as data.** The single source for both the in-app Guide and the Word manual. |
 | `src/app/(protected)/e-approval/help/page.tsx` | The Guide screen — renders the handbook with an audience filter and full-text search. |
@@ -223,6 +224,88 @@ mode:
 With no routing document configured, a department step can only reach that department's head. That is
 the safe failure, not a silent one.
 
+A department assignment with **no department id** means *the request's own department*, bound when the
+chain is built. That is what lets a single "Department HOD" stage serve every department instead of
+needing one workflow each.
+
+## Project steps, and one workflow for every site
+
+The problem this solves: an organisation running two sites has two project managers, two site
+accountants and two store in-charges, and every one of them signs the same five-stage chain. Copying
+the workflow per project is the obvious answer and the wrong one — the copies stop matching the first
+time anybody edits one.
+
+Three mechanisms, all resolved by `expandEApprovalWorkflow` before a single step document is written:
+
+**1. Dynamic assignment.** A stage is addressed to a *post* — `Project Manager` — rather than a
+person. `eApprovalProjectRouting`, one document per project, says who holds each post there:
+
+```
+eApprovalProjectRouting/p-ranchi
+  mode: 'Role'
+  headUserId: u-ranchi-head
+  roleHolders: [ { role: 'Project Manager', userId: u-ranchi-pm },
+                 { role: 'Site In-Charge',  userId: u-ranchi-sic } ]
+```
+
+A request naming Ranchi Metro binds that stage to `u-ranchi-pm`; the same workflow on Kolkata Flyover
+binds it to Kolkata's manager. Modes `Head`, `Anyone` and `Queue` behave exactly as their department
+counterparts, including the claim-once rule. As with departments, **no project id means the request's
+own project**.
+
+Where a post has no holder the stage falls back to the project head *and says so*; where there is no
+head either, the stage keeps its project assignment, the preview warns, and `submitEApproval` refuses
+the submission naming the stage. A stage that reaches nobody is never silently dropped — dropping it
+would remove a signature from the chain, which is the one failure this module exists to prevent.
+
+**2. Stage overrides.** Where a project genuinely routes differently, the *stage* varies rather than
+the workflow. Each stage carries a list of overrides, each scoped by project, department, approval
+type, priority and/or amount band, supplying different approvers, a different SLA, or `skip`. The most
+specific match wins, then explicit `priority`, then declaration order — the same ladder the approval
+matrix uses. Project is weighted *above* department here, the reverse of the matrix's weighting,
+because a stage override naming a project should beat one naming the department that project sits in.
+
+**3. Sub-workflows.** A node whose `nodeType` is `SubWorkflow` expands another workflow in place, so
+"Finance Clearance" is written once and referenced by every chain that needs it. It is a reference,
+not a copy: edit it once and all of them change. Guarded by a cycle check (a workflow already on the
+path is left out with a note) and a depth cap of `DEFAULT_E_APPROVAL_SUB_WORKFLOW_DEPTH` = 3 — a chain
+assembled from four levels of indirection cannot be read by the person configuring it, and an approval
+whose route nobody can read is an approval nobody can audit. A workflow marked `isSubWorkflow` is
+hidden from the request form and the approval matrix.
+
+Stages can also carry a plain `condition` — "only above ₹5,00,000", "only on these two projects" — and
+are left out of the chain when it does not match.
+
+**Nothing downstream knows any of this exists.** `expandEApprovalWorkflow` returns a flat
+`EApprovalTemplateStep[]` with the routing rules stripped off, which `buildEApprovalSteps` consumes
+unchanged. The engine, the step documents, the inbox and the timeline needed no changes at all, and a
+live request cannot have its routing rewritten after the fact. The expansion is pure, so the workflow
+builder renders the same result as a preview without writing anything — enter a project and an amount
+and watch the resolved chain appear, every stage with a real name against it.
+
+## Dialogs never discard typed work
+
+Every data-entry dialog in the module spreads `eApprovalDialogGuard(dirty)` (in
+`components/e-approval/shared.tsx`) onto its `DialogContent`. Two rules, because the two ways out are
+not equally deliberate:
+
+- **A click outside never closes it**, dirty or not. On the wide forms here — the workflow builder, a
+  matrix rule — the backdrop is most of the screen, and a click landing on it is a misclick: reaching
+  for a scrollbar, dismissing a native autocomplete, or just missing. Cancel and the corner X are
+  always present, so nothing becomes unclosable.
+- **Escape closes only an untouched dialog.** It stays the keyboard dismissal for "opened this by
+  accident", and is held back once there is something to lose.
+
+`useSettingsDraft` supplies `isDirty` for the settings forms by comparing the draft against a
+serialised snapshot of how it was opened — against the *opened* value, not against emptiness, because
+an edit form starts full and is only dirty once something changes. The other four dialogs compute it
+from their own fields against the defaults they reset to on open (`action-panel`'s outcome starts at
+'Verified' and its approved amount is pre-filled, so neither can be compared to `''`).
+
+Applied per dialog rather than in `components/ui/dialog.tsx`, which every other module shares — this
+is a decision about *this* module's forms, and re-fitting the app-wide primitive to suit one module is
+how an unrelated screen changes behaviour with nobody deciding it should.
+
 ## Firestore collections
 
 ```
@@ -233,9 +316,10 @@ eApprovalAttachments     never overwritten; grouped by request version
 eApprovalHistory         append-only audit trail
 eApprovalVersions        superseded content snapshots
 eApprovalTypes           purchase / leave exception / site expense …
-eApprovalTemplates       named chains of stages
+eApprovalTemplates       named chains of stages; isSubWorkflow marks a reusable building block
 eApprovalRules           the approval matrix (amount bands etc.)
 eApprovalDepartmentRouting
+eApprovalProjectRouting  who holds which post on each project — one document per project
 eApprovalDelegations     substitute approvers, dated
 eApprovalSettings        one document per organisation
 eApprovalCounters        reference-number sequences, per FY and department
@@ -356,16 +440,25 @@ from Settings → Policies → **Run now**.
 ## Setting it up
 
 1. **Settings → Approval Types** — add the types your organisation raises note-sheets for.
-2. **Workflows** — *Add samples* seeds the three chains from the spec (Purchase, Leave Exception,
-   Site Expense) with role-based stages; assign real people or roles to them.
-3. **Approval Matrix** — amount bands per type/department, each pointing at a workflow. Use the tester
-   at the bottom to confirm a given type and amount routes where you expect.
-4. **Department Routing** — for every department that will receive department-addressed steps.
-5. **Policies** — change-control fields, approver powers, recall/reverse windows, reminder ladder, numbering.
-6. **Module Hub** — add a module titled `E-Approval` with icon `Stamp`; the card links to
+2. **Project Routing** — for every project, name the head and who holds each post ("Project Manager",
+   "Site In-Charge"). Do this *before* the workflows: a stage addressed to a post is only as right as
+   this list is, and the picker suggests the post names it finds here.
+3. **Department Routing** — for every department that will receive department-addressed steps.
+4. **Workflows** — *Add samples* seeds four chains, two of which show the shapes worth copying: a
+   shared **Finance Clearance** sub-workflow, and a **Site Expense** chain whose first two stages are
+   bound to posts on the request's own project. Build the rest on the **Sub-workflows** tab for the
+   runs of stages that repeat, then the workflows that call them. Use the tester inside the editor —
+   pick a project and an amount and confirm the expanded chain names the people you expect.
+5. **Approval Matrix** — amount bands per type/department/project, each pointing at a workflow. Use
+   the tester at the bottom to confirm a given type and amount routes where you expect. Reach for a
+   matrix rule when the whole *chain* differs; for the same chain with different people on it, use a
+   stage override instead.
+6. **Policies** — change-control fields, approver powers, recall/reverse windows, reminder ladder, numbering.
+7. **Module Hub** — add a module titled `E-Approval` with icon `Stamp`; the card links to
    `/e-approval` automatically.
-7. **Roles** — grant `E-Approval` permissions. Remember there is no "Approve" permission by design.
-8. Deploy the new Firestore indexes (`firebase deploy --only firestore:indexes`).
+8. **Roles** — grant `E-Approval` permissions, including the `Settings → Project Routing` node.
+   Remember there is no "Approve" permission by design.
+9. Deploy the new Firestore indexes (`firebase deploy --only firestore:indexes`).
 
 ## Not built
 
@@ -375,7 +468,11 @@ Stated plainly so nobody hunts for them:
   notification system already fans out to). No WhatsApp integration.
 - **Voice-note comments** — spec section 7 lists these as "later if required".
 - **Drag-and-drop visual workflow canvas** — the builder is a structured list editor with ordering,
-  parallel groups and per-stage capabilities, not a node graph.
+  parallel groups, per-stage capabilities, sub-workflow nodes and per-project overrides, not a node
+  graph. Reordering is up/down buttons, not dragging.
+- **Branching that rejoins** — a stage's condition can add it or leave it out, but there is no
+  if/else with two arms that merge again. Two conditions that partition the same question express it,
+  and the tester shows which one fires.
 - **Per-approval-type notification rule editor** — the ladder is organisation-wide with an optional
   `approvalTypeId` on each rule; there is no per-type UI for it yet.
 - **Other modules calling the engine** — the engine is ready for it (`submitEApproval` +
@@ -444,9 +541,10 @@ Settings, so it is called that here too.
 | Section | Route | Answers |
 | --- | --- | --- |
 | **Approval Types** | `settings/types` | what can people raise? |
-| **Workflows** | `settings/workflows` | what chains exist? |
+| **Workflows** | `settings/workflows` | what chains and sub-workflows exist, and who signs each stage on which project? |
 | **Approval Matrix** | `settings/matrix` | which chain does a request take? |
 | **Department Routing** | `settings/departments` | who does a department step actually reach? |
+| **Project Routing** | `settings/projects` | who holds which post on each project? |
 | **Policies** | `settings/policies` | change control · approver powers · recall & reverse · reminders · numbering |
 | **Delegations** | `/e-approval/delegations` | substitute approvers (surfaced here, lives outside settings) |
 

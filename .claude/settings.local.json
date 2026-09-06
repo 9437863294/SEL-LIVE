@@ -79,7 +79,9 @@
       "Bash(git push *)",
       "Bash(export GH=/c/Users/Ashish/gh/bin/gh.exe)",
       "Bash(/c/Users/Ashish/gh/bin/gh.exe workflow *)",
-      "Bash(/c/Users/Ashish/gh/bin/gh.exe run *)"
+      "Bash(/c/Users/Ashish/gh/bin/gh.exe run *)",
+      "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1)",
+      "PowerShell(npm run test:e-approval 2>&1)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

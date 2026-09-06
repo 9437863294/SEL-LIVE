@@ -7,6 +7,8 @@ import {
   type EApprovalEvent,
   type EApprovalMaterialSnapshot,
   type EApprovalPriority,
+  type EApprovalProjectMode,
+  type EApprovalProjectRoleHolder,
   type EApprovalSettings,
   type EApprovalStatus,
   type EApprovalStepRecord,
@@ -68,6 +70,7 @@ export const E_APPROVAL_COLLECTIONS = {
   delegations: 'eApprovalDelegations',
 
   departmentRouting: 'eApprovalDepartmentRouting',
+  projectRouting: 'eApprovalProjectRouting',
   settings: 'eApprovalSettings',
   counters: 'eApprovalCounters',
   signatures: 'eApprovalSignatures',
@@ -364,8 +367,17 @@ export interface EApprovalTemplateRecord extends EApprovalAuditFields {
   name: string;
   approvalTypeId?: string;
   departmentId?: string;
+  /** Restricts where the workflow is offered, alongside type and department. */
+  projectId?: string;
   description?: string;
   steps: EApprovalTemplateStep[];
+  /**
+   * A reusable building block rather than a whole route.
+   *
+   * Hidden from the request form and the approval matrix — a three-stage "Finance Clearance" offered
+   * as a complete approval route is a purchase approved by Accounts and nobody above them.
+   */
+  isSubWorkflow?: boolean;
   active?: boolean;
 }
 
@@ -405,6 +417,35 @@ export interface EApprovalDepartmentRouting extends EApprovalAuditFields {
   headUserId?: string;
   headUserName?: string;
   memberUserIds?: string[];
+  active?: boolean;
+}
+
+/**
+ * Who a project-assigned step actually reaches (the project counterpart of the routing above).
+ *
+ * This is what makes one workflow serve every site. A stage configured as `Project Manager` carries
+ * no user id; when a request naming Ranchi Metro is submitted, the chain is built against *this*
+ * document for Ranchi Metro and the stage becomes that project's manager. The alternative an
+ * administrator reaches for otherwise — one copy of the workflow per project — is the same chain
+ * maintained N times, and N−1 of those copies are always a revision behind.
+ *
+ * The document id is the project id, so a lookup is a get rather than a query.
+ */
+export interface EApprovalProjectRouting extends EApprovalAuditFields {
+  id: string;
+  organizationId?: string;
+  projectId: string;
+  projectName?: string;
+  /** How a step addressed to the project as a whole is picked up. Per-stage settings override it. */
+  mode: EApprovalProjectMode;
+  headUserId?: string;
+  headUserName?: string;
+  headDesignation?: string;
+  memberUserIds?: string[];
+  /** Named posts on this project — "Project Manager", "Site In-Charge", "Site Accountant". */
+  roleHolders?: EApprovalProjectRoleHolder[];
+  /** The department this project is administered under, for reporting and department stages. */
+  departmentId?: string;
   active?: boolean;
 }
 

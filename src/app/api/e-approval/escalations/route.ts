@@ -8,6 +8,7 @@ import {
   E_APPROVAL_COLLECTIONS,
   resolveDueEApprovalEscalations,
   type EApprovalDepartmentRouting,
+  type EApprovalProjectRouting,
   type EApprovalEscalationRule,
   type EApprovalRequest,
   type EApprovalSettingsRecord,
@@ -95,6 +96,36 @@ export async function GET(request: Request) {
     return resolved;
   };
 
+  /**
+   * Project members, for a step addressed to a project rather than a person.
+   *
+   * Post holders count as members here for the same reason they do in the client service: a reminder
+   * about a project-wide step that skips the Site In-Charge because they are listed under
+   * `roleHolders` rather than `memberUserIds` is a distinction only this codebase makes. A step
+   * addressed to a *named post* has already been bound to a `User` when the chain was built, so it
+   * never reaches this function.
+   */
+  const projectCache = new Map<string, string[]>();
+  const usersForProject = async (projectId: string, headOnly: boolean): Promise<string[]> => {
+    const key = `${projectId}:${headOnly ? 'head' : 'all'}`;
+    const cached = projectCache.get(key);
+    if (cached) return cached;
+    const snapshot = await db.collection(E_APPROVAL_COLLECTIONS.projectRouting).doc(projectId).get();
+    const routing = snapshot.data() as EApprovalProjectRouting | undefined;
+    const resolved =
+      routing && routing.active !== false
+        ? headOnly || routing.mode === 'Head'
+          ? [routing.headUserId].filter(Boolean as unknown as (value?: string) => value is string)
+          : [
+              routing.headUserId,
+              ...(routing.memberUserIds || []),
+              ...(routing.roleHolders || []).map((holder) => holder.userId),
+            ].filter(Boolean as unknown as (value?: string) => value is string)
+        : [];
+    projectCache.set(key, Array.from(new Set(resolved)));
+    return projectCache.get(key) as string[];
+  };
+
   const roleCache = new Map<string, string[]>();
   const usersForRole = async (role: string): Promise<string[]> => {
     const cached = roleCache.get(role);
@@ -173,6 +204,11 @@ export async function GET(request: Request) {
           (userId) => recipients.add(userId),
         );
       }
+      if (step.assignment.kind === 'Project' && step.assignment.projectId) {
+        (await usersForProject(step.assignment.projectId, step.assignment.projectMode === 'Head')).forEach((userId) =>
+          recipients.add(userId),
+        );
+      }
       if (step.assignment.kind === 'Role' && step.assignment.role) {
         (await usersForRole(step.assignment.role)).forEach((userId) => recipients.add(userId));
       }
@@ -182,6 +218,11 @@ export async function GET(request: Request) {
       // to HOD" is a reminder with a grander name. The holder's department head is the default: the
       // head of the department the step is addressed to, else the head of the request's department.
       if (entry.rule.kind === 'Escalation' && !entry.rule.targets?.length) {
+        // A project-addressed step escalates to its project head, not to a department head who may
+        // have no involvement in that site at all.
+        if (step.assignment.kind === 'Project' && step.assignment.projectId) {
+          (await usersForProject(step.assignment.projectId, true)).forEach((userId) => recipients.add(userId));
+        }
         const escalateTo =
           step.assignment.kind === 'Department' && step.assignment.departmentId
             ? step.assignment.departmentId
