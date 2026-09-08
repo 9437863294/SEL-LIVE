@@ -1,13 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
+import { Loader2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { E_APPROVAL_BASE_PATH, type EApprovalAttachment, type EApprovalRequest } from '@/lib/e-approval';
-import { loadEApprovalDetail } from '@/lib/e-approval-service';
+import { useToast } from '@/hooks/use-toast';
+import {
+  canEditEApprovalRequest,
+  E_APPROVAL_BASE_PATH,
+  type EApprovalAttachment,
+  type EApprovalRequest,
+} from '@/lib/e-approval';
+import { deleteEApprovalDraft, loadEApprovalDetail } from '@/lib/e-approval-service';
 import { ApprovalForm } from '@/components/e-approval/approval-form';
 import { AttachmentList } from '@/components/e-approval/attachment-list';
 import { FormSection, PageHeader } from '@/components/e-approval/page-header';
@@ -24,11 +31,14 @@ import { useEApprovalActor, useEApprovalPermissions } from '@/components/e-appro
 export default function EditEApprovalPage() {
   const params = useParams<{ approvalId: string }>();
   const approvalId = String(params?.approvalId ?? '');
+  const router = useRouter();
+  const { toast } = useToast();
   const { serviceActor } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
   const [request, setRequest] = useState<EApprovalRequest | null>(null);
   const [attachments, setAttachments] = useState<EApprovalAttachment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!approvalId) return;
@@ -64,17 +74,21 @@ export default function EditEApprovalPage() {
   }
 
   const mine = request.requesterId === serviceActor?.userId;
-  const editable = mine && (request.status === 'Draft' || request.status === 'Returned');
+  const isDraft = request.status === 'Draft';
+  // A draft needs no Edit grant — see `canEditEApprovalRequest`.
+  const editable = canEditEApprovalRequest(request, serviceActor, { canEdit: permissions.canEdit });
 
-  if (!editable || !permissions.canEdit) {
+  if (!editable) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Not editable</CardTitle>
           <CardDescription>
-            {mine
-              ? `A ${request.status.toLowerCase()} approval cannot be edited. Only drafts and returned requests can.`
-              : 'Only the requester can edit this approval.'}
+            {!mine
+              ? 'Only the requester can edit this approval.'
+              : request.status === 'Returned'
+                ? 'Correcting a returned request needs the Edit permission.'
+                : `A ${request.status.toLowerCase()} approval cannot be edited. Only drafts and returned requests can.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -86,8 +100,26 @@ export default function EditEApprovalPage() {
     );
   }
 
+  const removeDraft = async () => {
+    if (!serviceActor) return;
+    setDeleting(true);
+    try {
+      await deleteEApprovalDraft(request.id, serviceActor);
+      toast({ title: 'Draft deleted' });
+      router.push(`${E_APPROVAL_BASE_PATH}/drafts`);
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not delete the draft',
+        description: error instanceof Error ? error.message : 'Something went wrong.',
+      });
+      setDeleting(false);
+    }
+  };
+
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-3">
+    // Uncapped, like every other screen in the module — the shell owns the measure.
+    <div className="min-w-0 space-y-3">
       <PageHeader
         title={request.status === 'Returned' ? 'Correct and resubmit' : 'Edit draft'}
         description={
@@ -102,6 +134,27 @@ export default function EditEApprovalPage() {
           { label: 'Status', value: <EApprovalStatusBadge status={request.status} /> },
           { label: 'Version', value: request.version },
         ]}
+        actions={
+          // Only a draft can be deleted — anything submitted is cancelled, not removed, because the
+          // record of it existing is itself part of the trail. The service enforces the same rule.
+          isDraft && permissions.canDeleteDraft ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 gap-1.5 text-destructive"
+              disabled={deleting}
+              onClick={() => {
+                if (window.confirm('Delete this draft? It has not been submitted, so nothing has seen it — this cannot be undone.')) {
+                  void removeDraft();
+                }
+              }}
+            >
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Delete draft
+            </Button>
+          ) : undefined
+        }
       />
 
       {request.status === 'Returned' && request.returnReason && (

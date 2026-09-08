@@ -8,6 +8,7 @@ import {
   buildEApprovalSteps,
   canActOnEApprovalStep,
   canAssignEApprovalStep,
+  canEditEApprovalRequest,
   canManageEApprovalDelegationFor,
   canTakeEApprovalOwnership,
   canRecallEApprovalAction,
@@ -1884,4 +1885,38 @@ test('a missing actor or delegator is refused rather than treated as a match', (
   assert.equal(canManageEApprovalDelegationFor(null, 'u-me'), false);
   assert.equal(canManageEApprovalDelegationFor({ userId: 'u-me' }, ''), false);
   assert.equal(canManageEApprovalDelegationFor({ userId: 'u-me' }, undefined, { canManageOthers: true }), false);
+});
+
+/* ── who may edit a request's content ────────────────────────────────────────────────────────── */
+
+test('a draft is fully editable by its author, with no Edit permission needed', () => {
+  const draft = { status: 'Draft', requesterId: 'u-me' };
+  assert.equal(canEditEApprovalRequest(draft, { userId: 'u-me' }), true);
+  assert.equal(
+    canEditEApprovalRequest(draft, { userId: 'u-me' }, { canEdit: false }),
+    true,
+    'creating it was the authority to change it — nobody else has seen it',
+  );
+});
+
+test('a returned request still needs the Edit permission to correct', () => {
+  const returned = { status: 'Returned', requesterId: 'u-me' };
+  assert.equal(canEditEApprovalRequest(returned, { userId: 'u-me' }), false);
+  assert.equal(canEditEApprovalRequest(returned, { userId: 'u-me' }, { canEdit: true }), true);
+});
+
+test('a live or closed request is never editable, permission or not', () => {
+  for (const status of ['Submitted', 'Pending Approval', 'On Hold', 'Approved', 'Rejected', 'Cancelled']) {
+    assert.equal(
+      canEditEApprovalRequest({ status, requesterId: 'u-me' }, { userId: 'u-me' }, { canEdit: true }),
+      false,
+      status,
+    );
+  }
+});
+
+test('somebody else never edits your draft, whatever they hold', () => {
+  const draft = { status: 'Draft', requesterId: 'u-me' };
+  assert.equal(canEditEApprovalRequest(draft, { userId: 'u-other' }, { canEdit: true }), false);
+  assert.equal(canEditEApprovalRequest(draft, null), false);
 });

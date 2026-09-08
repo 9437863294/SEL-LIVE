@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import {
+  canEditEApprovalRequest,
   canSignEApprovalDocument,
   canViewEApproval,
   E_APPROVAL_BASE_PATH,
@@ -147,8 +148,9 @@ export default function EApprovalDetailPage() {
   }
 
   const { request, steps, history, comments, attachments, versions } = detail;
-  const isRequester = request.requesterId === serviceActor?.userId;
-  const editable = isRequester && (request.status === 'Draft' || request.status === 'Returned');
+  // One rule, shared with the edit page itself, so the button and the screen it opens cannot
+  // disagree — a visible Edit that lands on "Not editable" is worse than no button.
+  const editable = canEditEApprovalRequest(request, serviceActor, { canEdit: permissions.canEdit });
   const supersededVersions = versions.filter((version) => version.version < request.version);
 
   return (
@@ -184,7 +186,7 @@ export default function EApprovalDetailPage() {
             <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => void load()} aria-label="Refresh">
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
-            {editable && permissions.canEdit && (
+            {editable && (
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5">
                 <Link href={`${E_APPROVAL_BASE_PATH}/${request.id}/edit`}>
                   <Pencil className="h-3.5 w-3.5" /> Edit

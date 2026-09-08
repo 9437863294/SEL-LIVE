@@ -1053,7 +1053,7 @@ export function ApprovalForm({
               className="text-muted-foreground"
               onClick={() => router.push(`${E_APPROVAL_BASE_PATH}/${existing.id}`)}
             >
-              Discard
+              Cancel
             </Button>
           )}
           <Button type="button" variant="outline" className="gap-1.5" onClick={() => void save(false)} disabled={busy !== null}>

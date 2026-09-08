@@ -2228,6 +2228,34 @@ export function canSignEApprovalDocument(request: Pick<EApprovalRequestState, 's
 }
 
 /**
+ * Whether `actor` may edit the content of this request.
+ *
+ * A **draft** is its author's own unsubmitted working copy: nobody else has seen it, no approval
+ * depends on it, and it carries no reference number. The act of creating it *was* the authority to
+ * change it, so this returns true for the requester with no permission check at all — requiring a
+ * separate `Edit` grant to alter a note-sheet you have not even sent yet is how somebody ends up
+ * unable to fix their own typo, on their own document, in their own drafts list.
+ *
+ * A **returned** request is different: it has been through approvers and is being corrected at their
+ * request, against a record that already exists. That stays behind the `Edit` permission, passed in
+ * by the caller the way the other role-gated rules here take theirs.
+ *
+ * Anything else — live, closed, somebody else's — is not editable, and deliberately has no override.
+ * Editing a live request would change the proposal under an approver mid-approval; editing a closed
+ * one would rewrite what was approved.
+ */
+export function canEditEApprovalRequest(
+  request: Pick<EApprovalRequestState, 'status' | 'requesterId'>,
+  actor: Pick<EApprovalActor, 'userId'> | null | undefined,
+  options: { canEdit?: boolean } = {},
+): boolean {
+  if (!actor?.userId || request.requesterId !== actor.userId) return false;
+  if (request.status === 'Draft') return true;
+  if (request.status === 'Returned') return Boolean(options.canEdit);
+  return false;
+}
+
+/**
  * Whether `actor` may create or remove a delegation of `fromUserId`'s approvals.
  *
  * Your own, always — arranging cover before leave is nobody else's business to approve. Somebody
