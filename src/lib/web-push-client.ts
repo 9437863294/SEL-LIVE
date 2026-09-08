@@ -96,7 +96,20 @@ export async function registerWebPushDevice(): Promise<string | null> {
       method: 'POST',
       body: JSON.stringify({ token, platform: 'web' }),
     });
-    if (!response.ok) throw new Error(`Web push registration failed (${response.status}).`);
+    if (!response.ok) {
+      /*
+       * 503 means the server cannot register anyone — Firebase Admin credentials are missing —
+       * rather than anything being wrong with this browser or this user. That is the normal state
+       * of a local checkout, so it is reported as the configuration note it is instead of as a
+       * failure the developer is expected to debug.
+       */
+      const detail = await response.json().catch(() => null) as { error?: string } | null;
+      if (response.status === 503) {
+        console.info('[push] Not registering this browser —', detail?.error ?? 'push service unavailable.');
+        return null;
+      }
+      throw new Error(detail?.error ?? `Web push registration failed (${response.status}).`);
+    }
 
     localStorage.setItem(STORED_TOKEN_KEY, token);
     return token;

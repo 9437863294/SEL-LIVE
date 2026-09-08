@@ -18,12 +18,71 @@ function deviceDocumentId(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * The server cannot check credentials at all — as opposed to the caller's being bad.
+ *
+ * Distinguished from an authentication failure because the two need opposite responses: one is
+ * "sign in again", the other is "an environment variable is missing on the server". Collapsing them
+ * into a single 401 sent developers hunting through auth code for a config problem.
+ */
+class AdminUnavailableError extends Error {}
+
 async function authenticate(request: Request) {
   const bearerToken = getBearerToken(request);
   if (!bearerToken) throw new Error('Missing authorization token.');
-  const decodedToken = await getFirebaseAdminAuth().verifyIdToken(bearerToken);
+
+  // Getting the Admin SDK is separated from verifying the token: `getAdminApp()` throws when the
+  // service-account variables are missing, which is the normal state of a local checkout.
+  let adminAuth: ReturnType<typeof getFirebaseAdminAuth>;
+  try {
+    adminAuth = getFirebaseAdminAuth();
+  } catch (error) {
+    throw new AdminUnavailableError(
+      error instanceof Error ? error.message : 'Firebase Admin is not configured.',
+    );
+  }
+
+  const decodedToken = await adminAuth.verifyIdToken(bearerToken);
   const userId = await resolveAuthenticatedAppUserId(decodedToken);
   return { decodedToken, userId };
+}
+
+/**
+ * Whether the "Admin is not configured" notice has already been printed this process.
+ *
+ * Every page load attempts a push registration, so without this a local checkout prints a
+ * stack-traced error on every navigation for a condition that is static, expected, and already
+ * understood. It is a configuration state, not an incident — worth saying once, not forty times.
+ */
+let warnedAdminUnavailable = false;
+
+/** Shared failure response, so POST and DELETE cannot drift apart on what a status code means. */
+function deviceErrorResponse(error: unknown, action: 'registration' | 'removal') {
+  if (error instanceof AdminUnavailableError) {
+    if (!warnedAdminUnavailable) {
+      warnedAdminUnavailable = true;
+      console.warn(
+        '[push] Firebase Admin credentials are not configured — push device registration is '
+          + 'disabled. Run `npm run firebase:admin-check`, then '
+          + '`npm run firebase:admin-env <service-account.json>`. Nothing else is affected.',
+      );
+    }
+    return NextResponse.json(
+      {
+        error: 'Push notifications are unavailable: Firebase Admin credentials are not configured '
+          + 'on the server. Run `npm run firebase:admin-check` to see what is missing, then '
+          + '`npm run firebase:admin-env <service-account.json>` to set it. Nothing else is affected.',
+      },
+      { status: 503 },
+    );
+  }
+
+  // A genuine failure still gets the full stack — that one does need debugging.
+  console.error(`Push device ${action} failed:`, error);
+  return NextResponse.json(
+    { error: `Unauthorized or invalid device ${action}.` },
+    { status: 401 },
+  );
 }
 
 export async function POST(request: Request) {
@@ -60,8 +119,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Push device registration failed:', error);
-    return NextResponse.json({ error: 'Unauthorized or invalid device registration.' }, { status: 401 });
+    return deviceErrorResponse(error, 'registration');
   }
 }
 
@@ -81,8 +139,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Push device removal failed:', error);
-    return NextResponse.json({ error: 'Unauthorized device removal.' }, { status: 401 });
+    return deviceErrorResponse(error, 'removal');
   }
 }
 
