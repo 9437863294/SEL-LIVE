@@ -812,6 +812,12 @@ export const permissionModules = {
     "Project Settings": ["View", "Add", "Edit", "Delete"],
     "Budget Alerts": ["View", "Edit"],
     "Field Control": ["View", "Edit"],
+    // Who may configure how far back a transaction can be dated.
+    "Date Control": ["View", "Edit"],
+    // Lifts that window for the holder. Deliberately separate from Expenses/Payments "Add": a site
+    // clerk should be able to record today's spend without also being able to reopen a month that
+    // has already been reported on.
+    "Backdated Entry": ["Add", "Edit"],
     Reports: ["View", "Export"],
   },
   Settings: {

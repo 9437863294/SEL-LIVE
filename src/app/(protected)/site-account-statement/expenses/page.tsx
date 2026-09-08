@@ -19,6 +19,7 @@ import {
 } from '@/lib/site-account-statement-queries';
 import { resetBudgetAlertState, runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { useDateControl } from '@/components/site-account-statement/use-date-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -44,7 +45,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
-  AlertTriangle, Calendar, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  AlertTriangle, Calendar, CalendarClock, Camera, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   Download, ExternalLink, File, FileText, Filter, Image, Loader2,
   Paperclip, Pencil, Plus, Receipt, RotateCw, Trash2, TrendingDown, TrendingUp, Upload, Wallet, X,
 } from 'lucide-react';
@@ -146,6 +147,7 @@ export default function SiteExpensesPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { field } = useFieldControl('expense');
+  const dateControl = useDateControl('expense');
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   // Expense id the attachments upload under — the row's own id when editing, a
@@ -477,8 +479,15 @@ export default function SiteExpensesPage() {
     { key: 'expensedBy', label: 'Expensed By', required: true, hint: 'Name of person who spent the amount' },
     {
       key: 'expenseDate', label: 'Expense Date', required: true,
-      hint: 'YYYY-MM-DD  e.g. 2024-07-15',
-      validate: (v) => /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? null : 'Date must be in YYYY-MM-DD format',
+      hint: dateControl.hint
+        ? `YYYY-MM-DD — allowed range: ${dateControl.hint}`
+        : 'YYYY-MM-DD  e.g. 2024-07-15',
+      validate: (v) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return 'Date must be in YYYY-MM-DD format';
+        // Flagged during preview so the operator fixes the sheet before committing 200 rows.
+        const check = dateControl.check(v.trim());
+        return check.ok ? null : check.reason ?? 'Date not allowed';
+      },
     },
     {
       key: 'expenseAmount', label: 'Amount (₹)', required: true, type: 'number',
@@ -499,7 +508,7 @@ export default function SiteExpensesPage() {
         ? null : 'Must be Yes or No',
     },
     { key: 'remarks',         label: 'Remarks' },
-  ], [visibleProjects, mainCategories, subCategories]);
+  ], [visibleProjects, mainCategories, subCategories, dateControl]);
 
   /** Projects and periods touched by the running import, so alerts can be evaluated once at the end. */
   const importTouchedRef = useRef<Map<string, { periods: Set<string>; categories: Set<string>; amount: number }>>(new Map());
@@ -531,6 +540,11 @@ export default function SiteExpensesPage() {
     if (!amount || amount <= 0) throw new Error('Amount must be > 0');
     const mode = PAYMENT_MODES.includes(row.paymentMode as any) ? row.paymentMode : 'Cash';
     const expenseDate = String(row.expenseDate || '').trim();
+
+    // The date window binds on import too. A spreadsheet is the easiest way to file a hundred
+    // back-dated rows into a closed period, so it is the last place the rule should be optional.
+    const importDateCheck = dateControl.check(expenseDate);
+    if (!importDateCheck.ok) throw new Error(importDateCheck.reason);
 
     const record = {
       projectId:          proj.id,
@@ -793,6 +807,14 @@ export default function SiteExpensesPage() {
     // (including the document upload) follows the Field Control settings.
     if (!form.projectId)        { toast({ title: 'Validation', description: 'Select a project.',         variant: 'destructive' }); return; }
     if (!form.expenseDate)      { toast({ title: 'Validation', description: 'Expense date is required.', variant: 'destructive' }); return; }
+
+    // `min`/`max` on the date input is a hint the browser enforces loosely and a determined user can
+    // walk straight past, so the window is re-checked here where it actually binds.
+    const dateCheck = dateControl.check(form.expenseDate);
+    if (!dateCheck.ok) {
+      toast({ title: 'Date not allowed', description: dateCheck.reason, variant: 'destructive' });
+      return;
+    }
     const amount = Number(form.expenseAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.',     variant: 'destructive' }); return; }
 
@@ -1059,6 +1081,17 @@ export default function SiteExpensesPage() {
   const closingBalance = useMemo(
     () => openingBalance === null ? null : openingBalance + periodReceipts - (periodTotals?.total ?? totalShown),
     [openingBalance, periodReceipts, periodTotals?.total, totalShown]
+  );
+
+  /**
+   * Live complaint about the date currently in the form, or null when it is fine.
+   *
+   * Drives the inline message, the red border, and the disabled Save button — so an out-of-range
+   * date cannot be submitted no matter how it got into the field.
+   */
+  const dateIssue = useMemo(
+    () => (form.expenseDate ? dateControl.check(form.expenseDate).reason ?? null : null),
+    [form.expenseDate, dateControl],
   );
 
   // ── Upload gating for the expense dialog ──────────────────────────────────────
@@ -1797,7 +1830,29 @@ export default function SiteExpensesPage() {
             {/* Date */}
             <div className="space-y-1.5">
               <Label>{field('expenseDate').label} <span className="text-destructive">*</span></Label>
-              <Input type="date" value={form.expenseDate} onChange={e => setField('expenseDate', e.target.value)} />
+              <Input
+                type="date"
+                value={form.expenseDate}
+                onChange={e => setField('expenseDate', e.target.value)}
+                min={dateControl.window.min ?? undefined}
+                max={dateControl.window.max ?? undefined}
+                aria-invalid={Boolean(dateIssue)}
+                className={cn(dateIssue && 'border-destructive focus-visible:ring-destructive')}
+              />
+              {/* `min`/`max` grey the days out in the picker, but a date typed straight into the
+                  field walks past them. Showing the problem here, as it is typed, beats letting
+                  someone fill in the whole form and only learn at Save. */}
+              {dateIssue ? (
+                <p className="flex items-start gap-1 text-[11px] text-destructive">
+                  <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+                  {dateIssue}
+                </p>
+              ) : dateControl.hint && (
+                <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <CalendarClock className="h-3 w-3 shrink-0" />
+                  {dateControl.hint}
+                </p>
+              )}
             </div>
 
             {/* Amount */}
@@ -2013,7 +2068,7 @@ export default function SiteExpensesPage() {
             <Button variant="outline" onClick={closeDialog} disabled={saving}>Cancel</Button>
             <Button
               onClick={handleSubmit}
-              disabled={saving || isUploading || failedUploads.length > 0}
+              disabled={saving || isUploading || failedUploads.length > 0 || Boolean(dateIssue)}
               className="bg-rose-600 hover:bg-rose-700 min-w-[130px]"
             >
               {isUploading && <><Loader2 className="h-4 w-4 animate-spin mr-2" />Uploading {overallProgress}%</>}

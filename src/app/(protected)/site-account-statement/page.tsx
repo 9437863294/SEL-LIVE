@@ -14,6 +14,7 @@ import {
 import { runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
 import { allExpenses as fetchAllExpenses, allPayments as fetchAllPayments } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { useDateControl } from '@/components/site-account-statement/use-date-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useActivityLogger } from '@/hooks/useActivityLogger';
@@ -110,6 +111,7 @@ function QuickExpenseDialog({
   const { toast } = useToast();
   const { log } = useActivityLogger(MODULE);
   const { field } = useFieldControl('expense');
+  const dateControl = useDateControl('expense');
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -139,6 +141,9 @@ function QuickExpenseDialog({
   );
 
   function setF(key: string, value: string) { setForm(f => ({ ...f, [key]: value })); }
+
+  /** Live complaint about the date in the form — see the Site Expenses form for the reasoning. */
+  const dateIssue = form.expenseDate ? dateControl.check(form.expenseDate).reason ?? null : null;
 
   function handleMainCategoryChange(catId: string) {
     if (catId === '_none_') { setForm(f => ({ ...f, expenseCategoryId: '', expenseCategory: '', expenseSubCategory: '' })); return; }
@@ -173,6 +178,9 @@ function QuickExpenseDialog({
 
   async function submit() {
     if (!form.expenseDate) { toast({ title: 'Validation', description: 'Date is required.', variant: 'destructive' }); return; }
+    // Same window as the Site Expenses form — the quick-add is a shortcut, not an exemption.
+    const dateCheck = dateControl.check(form.expenseDate);
+    if (!dateCheck.ok) { toast({ title: 'Date not allowed', description: dateCheck.reason, variant: 'destructive' }); return; }
     const amount = Number(form.expenseAmount);
     if (!amount || amount <= 0) { toast({ title: 'Validation', description: 'Enter a valid amount.', variant: 'destructive' }); return; }
     const missingLabel = validateFieldControlRequirements('expense', {
@@ -331,7 +339,20 @@ function QuickExpenseDialog({
           )}
           <div className="space-y-1.5">
             <Label>{field('expenseDate').label} <span className="text-destructive">*</span></Label>
-            <Input type="date" value={form.expenseDate} onChange={e => setF('expenseDate', e.target.value)} />
+            <Input
+              type="date"
+              value={form.expenseDate}
+              onChange={e => setF('expenseDate', e.target.value)}
+              min={dateControl.window.min ?? undefined}
+              max={dateControl.window.max ?? undefined}
+              aria-invalid={Boolean(dateIssue)}
+              className={cn(dateIssue && 'border-destructive focus-visible:ring-destructive')}
+            />
+            {dateIssue ? (
+              <p className="text-[11px] text-destructive">{dateIssue}</p>
+            ) : dateControl.hint && (
+              <p className="text-[11px] text-muted-foreground">{dateControl.hint}</p>
+            )}
           </div>
 
           {/* Amount + Mode */}
@@ -431,7 +452,7 @@ function QuickExpenseDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={submit} disabled={saving} className="bg-rose-600 hover:bg-rose-700">
+          <Button onClick={submit} disabled={saving || Boolean(dateIssue)} className="bg-rose-600 hover:bg-rose-700">
             {saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             {saving && pendingFiles.length > 0 ? 'Uploading…' : 'Save Expense'}
           </Button>

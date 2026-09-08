@@ -122,7 +122,7 @@ export default function SiteAccountStatementShell({ children }: { children: Reac
   function canAccessSection(item: typeof sections[0]): boolean {
     // Settings: requires explicit Settings-family RBAC
     if (item.href === '/site-account-statement/settings') {
-      return ['Project Settings', 'Expense Categories', 'Budget Alerts', 'Tender Budget', 'Field Control'].some(r =>
+      return ['Project Settings', 'Expense Categories', 'Budget Alerts', 'Tender Budget', 'Field Control', 'Date Control'].some(r =>
         can('View', `${MODULE}.${r}`) || can('Add', `${MODULE}.${r}`) || can('Edit', `${MODULE}.${r}`)
       );
     }

@@ -16,6 +16,17 @@ export const SAS_COLLECTIONS = {
 // mandatory-vs-optional field control configuration.
 export const SAS_FIELD_CONTROL_DOC_ID = 'fieldControl';
 
+// Doc id (inside SAS_COLLECTIONS.settings) holding how far back a transaction may be dated.
+export const SAS_DATE_CONTROL_DOC_ID = 'dateControl';
+
+// The back-dating settings shape and its defaults live with the policy that interprets them, in
+// site-account-statement-date-policy.ts — an import-free module so `node --test` can load the rules
+// directly. Re-exported here so call sites can keep reaching for the module's domain file.
+export {
+  DEFAULT_DATE_CONTROL,
+  type SASDateControlSettings,
+} from './site-account-statement-date-policy';
+
 export interface SASProject {
   id: string;
   centralProjectId: string;

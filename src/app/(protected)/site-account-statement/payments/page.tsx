@@ -16,6 +16,7 @@ import {
   paymentsPage, SAS_PAGE_SIZE, type SASCursor, type SASLedgerScope,
 } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
+import { useDateControl } from '@/components/site-account-statement/use-date-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -120,6 +121,7 @@ export default function PaymentsPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { field } = useFieldControl('payment');
+  const dateControl = useDateControl('payment');
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -363,8 +365,14 @@ export default function PaymentsPage() {
       key: 'receiptDate',
       label: 'Receipt Date',
       required: true,
-      hint: 'YYYY-MM-DD  e.g. 2024-07-15',
-      validate: (v) => /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? null : 'Date must be in YYYY-MM-DD format',
+      hint: dateControl.hint
+        ? `YYYY-MM-DD — allowed range: ${dateControl.hint}`
+        : 'YYYY-MM-DD  e.g. 2024-07-15',
+      validate: (v) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return 'Date must be in YYYY-MM-DD format';
+        const check = dateControl.check(v.trim());
+        return check.ok ? null : check.reason ?? 'Date not allowed';
+      },
     },
     {
       key: 'receivedAmount',
@@ -383,7 +391,7 @@ export default function PaymentsPage() {
     { key: 'referenceNo', label: 'Reference No.',  hint: 'Transaction / UTR / Cheque number' },
     { key: 'receivedBy',  label: 'Received By',    hint: 'Name of person who received' },
     { key: 'remarks',     label: 'Remarks' },
-  ], [visibleProjects]);
+  ], [visibleProjects, dateControl]);
 
   async function savePaymentRow(row: Record<string, any>) {
     const projName = String(row.projectName || '').trim();
@@ -395,6 +403,10 @@ export default function PaymentsPage() {
     if (!amount || amount <= 0) throw new Error('Amount must be > 0');
 
     const mode = PAYMENT_MODES.includes(row.paymentMode as any) ? row.paymentMode : 'Cash';
+
+    // The window binds on import too — a spreadsheet is the easiest way to file back-dated rows.
+    const importDateCheck = dateControl.check(String(row.receiptDate || '').trim());
+    if (!importDateCheck.ok) throw new Error(importDateCheck.reason);
 
     await addDoc(collection(db, SAS_COLLECTIONS.payments), {
       projectId:      proj.id,
@@ -473,6 +485,12 @@ export default function PaymentsPage() {
     }
     if (!form.receiptDate) {
       toast({ title: 'Validation', description: 'Receipt date is required.', variant: 'destructive' });
+      return;
+    }
+    // `min`/`max` on the input is only a hint; the window binds here.
+    const dateCheck = dateControl.check(form.receiptDate);
+    if (!dateCheck.ok) {
+      toast({ title: 'Date not allowed', description: dateCheck.reason, variant: 'destructive' });
       return;
     }
     const amount = Number(form.receivedAmount);
@@ -624,6 +642,17 @@ export default function PaymentsPage() {
   const closingBalance = useMemo(
     () => openingBalance === null ? null : openingBalance + (periodTotals?.total ?? totalShown) - periodExpenses,
     [openingBalance, periodTotals?.total, totalShown, periodExpenses]
+  );
+
+  /**
+   * Live complaint about the receipt date currently in the form, or null when it is fine.
+   *
+   * Drives the inline message, the red border and the disabled Save button, so an out-of-range date
+   * cannot be submitted however it got into the field — `min`/`max` only constrain the picker.
+   */
+  const dateIssue = useMemo(
+    () => (form.receiptDate ? dateControl.check(form.receiptDate).reason ?? null : null),
+    [form.receiptDate, dateControl],
   );
 
   async function exportExcel() {
@@ -1103,7 +1132,21 @@ export default function PaymentsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>{field('receiptDate').label} <span className="text-destructive">*</span></Label>
-              <Input type="date" value={form.receiptDate} onChange={e => setField('receiptDate', e.target.value)} />
+              <Input
+                type="date"
+                value={form.receiptDate}
+                onChange={e => setField('receiptDate', e.target.value)}
+                min={dateControl.window.min ?? undefined}
+                max={dateControl.window.max ?? undefined}
+                aria-invalid={Boolean(dateIssue)}
+                className={cn(dateIssue && 'border-destructive focus-visible:ring-destructive')}
+              />
+              {/* A typed date walks past the picker's min/max, so the complaint belongs here. */}
+              {dateIssue ? (
+                <p className="text-[11px] text-destructive">{dateIssue}</p>
+              ) : dateControl.hint && (
+                <p className="text-[11px] text-muted-foreground">{dateControl.hint}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>{field('receivedAmount').label} (₹) <span className="text-destructive">*</span></Label>
@@ -1230,7 +1273,7 @@ export default function PaymentsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 min-w-[130px]">
+            <Button onClick={handleSubmit} disabled={saving || Boolean(dateIssue)} className="bg-emerald-600 hover:bg-emerald-700 min-w-[130px]">
               {saving && (
                 uploading
                   ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Uploading…</>

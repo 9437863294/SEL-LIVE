@@ -156,7 +156,7 @@ export default function SiteAccountFieldControlSettings() {
           <div>
             <h1 className="text-xl font-bold">Field Control</h1>
             <p className="text-sm text-muted-foreground">
-              Choose which fields appear, whether they're required, and what they're called — per form.
+              Choose which fields appear, whether they&apos;re required, and what they&apos;re called — per form.
             </p>
           </div>
         </div>
@@ -170,7 +170,7 @@ export default function SiteAccountFieldControlSettings() {
 
       {!canEdit && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          You have view-only access to Field Control. Ask your administrator for "Edit" permission on Field Control to make changes.
+          You have view-only access to Field Control. Ask your administrator for &quot;Edit&quot; permission on Field Control to make changes.
         </div>
       )}
 
@@ -262,8 +262,8 @@ export default function SiteAccountFieldControlSettings() {
         </CardContent>
       </Card>
       <p className="text-xs text-muted-foreground">
-        Locked fields are required by the form's own logic — for example, a record's own project/date/amount, or an
-        entity's own name — so they can't be hidden or made optional here, but their label can still be renamed.
+        Locked fields are required by the form&apos;s own logic — for example, a record&apos;s own project/date/amount, or an
+        entity&apos;s own name — so they can&apos;t be hidden or made optional here, but their label can still be renamed.
         Changes apply to everyone using this module.
       </p>
     </div>

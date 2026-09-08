@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import {
+  CalendarClock,
   ChevronRight,
   ClipboardList,
   Loader2,
@@ -68,6 +69,28 @@ const SETTINGS_ITEMS = [
     iconColor: 'text-slate-600',
     resource: 'Field Control',
   },
+  {
+    icon: CalendarClock,
+    text: 'Date Control',
+    href: '/site-account-statement/settings/date-control',
+    description: 'Limit how far back expenses and receipts can be dated, with a permission that lifts it.',
+    gradient: 'from-indigo-500 to-violet-600',
+    bg: 'bg-indigo-50',
+    iconColor: 'text-indigo-600',
+    resource: 'Date Control',
+    /*
+     * `Date Control` did not exist when the current role documents were written, so nothing grants
+     * it and this card would be invisible to everyone — administrators included — until somebody
+     * edited a role they could not discover they needed to edit.
+     *
+     * Whoever already administers Field Control administers this: the two sit in the same family
+     * (both change how the module's forms behave, neither touches financial data). The fallback is
+     * one-directional on purpose — granting Date Control must never imply Field Control, which is
+     * why this is declared here rather than in `resourceAliasMap`, whose entries resolve both ways
+     * and are meant for renames.
+     */
+    fallbackResource: 'Field Control',
+  },
 ] as const;
 
 export default function SiteAccountStatementSettingsHub() {
@@ -75,6 +98,11 @@ export default function SiteAccountStatementSettingsHub() {
 
   function canAccess(resource: string) {
     return can('View', `${MODULE}.${resource}`) || can('Add', `${MODULE}.${resource}`) || can('Edit', `${MODULE}.${resource}`);
+  }
+
+  /** A card shows for its own resource, or for the fallback a newly-added section declares. */
+  function canAccessItem(item: { resource: string; fallbackResource?: string }) {
+    return canAccess(item.resource) || (item.fallbackResource ? canAccess(item.fallbackResource) : false);
   }
 
   if (isLoading) {
@@ -85,7 +113,7 @@ export default function SiteAccountStatementSettingsHub() {
     );
   }
 
-  const visibleItems = SETTINGS_ITEMS.filter((item) => canAccess(item.resource));
+  const visibleItems = SETTINGS_ITEMS.filter(canAccessItem);
 
   return (
     <div className="space-y-5">
