@@ -9,6 +9,7 @@ import {
   CircleDashed,
   Clock,
   CornerDownLeft,
+  CornerUpRight,
   HelpCircle,
   MinusCircle,
   PauseCircle,
@@ -18,7 +19,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
+  describeEApprovalAssignment,
   eApprovalTimeline,
+  type EApprovalReassignment,
   type EApprovalStepRecord,
   type EApprovalStepStatus,
   type EApprovalTimelineNode,
@@ -50,6 +53,13 @@ const statusRing: Record<EApprovalStepStatus, string> = {
   Skipped: 'bg-slate-100 text-slate-400 ring-slate-200',
   Cancelled: 'bg-slate-100 text-slate-400 ring-slate-200',
   Superseded: 'bg-stone-100 text-stone-500 ring-stone-200',
+};
+
+const reassignmentVerb: Record<EApprovalReassignment['kind'], string> = {
+  Forward: 'Forwarded',
+  Delegate: 'Delegated',
+  Escalate: 'Escalated',
+  Reassign: 'Reassigned',
 };
 
 /**
@@ -173,6 +183,13 @@ function NodeBody({ node, isLast, onSelectStep, now }: NodeProps) {
             {step.ownedByName && ` · taken by ${step.ownedByName}`}
             {step.delegatedToName && ` · delegated to ${step.delegatedToName}`}
           </p>
+          {/* Why a stage configured as "Project Manager" is showing a person's name. Without it the
+              chain names somebody the workflow never mentions, and there is nothing to read it by. */}
+          {step.assignment?.resolvedFrom && (
+            <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+              Resolved from {step.assignment.resolvedFrom}
+            </p>
+          )}
 
           {(step.startedAt || step.completedAt) && (
             <p className="mt-0.5 text-[11px] text-muted-foreground/80">
@@ -199,6 +216,33 @@ function NodeBody({ node, isLast, onSelectStep, now }: NodeProps) {
             </p>
           )}
         </button>
+
+        {/*
+          Forward and escalate move a step by overwriting `step.assignment` in place, and its name was
+          fixed when the chain was built — so a forwarded stage renders as one person's name above a
+          different person's, with nothing between them. That reads as a stage that went to the wrong
+          desk, or as a stage that disappeared and was replaced. The trail is the only record of what
+          actually happened, and it belongs here rather than only in the activity log: the workflow tab
+          is where somebody goes to ask why the file is where it is.
+        */}
+        {(step.reassignments ?? []).length > 0 && (
+          <ol className="mt-1 space-y-0.5 px-2">
+            {(step.reassignments ?? []).map((move, index) => (
+              <li
+                key={`${move.at}-${index}`}
+                className="flex items-start gap-1 text-[11px] text-muted-foreground"
+              >
+                <CornerUpRight className="mt-0.5 h-3 w-3 shrink-0 text-orange-500" aria-hidden />
+                <span>
+                  <span className="font-medium text-foreground/80">{reassignmentVerb[move.kind]}</span> from{' '}
+                  {describeEApprovalAssignment(move.from)} to {describeEApprovalAssignment(move.to)}
+                  {move.byName && ` by ${move.byName}`} · {formatEApprovalDateTime(move.at)}
+                  {move.reason && ` — ${move.reason}`}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
 
         {hasChildren && (
           <div className="mt-1">

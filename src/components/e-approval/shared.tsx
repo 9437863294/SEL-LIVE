@@ -1,10 +1,13 @@
 'use client';
 
-import { AlertTriangle, Clock, Lock, PauseCircle } from 'lucide-react';
+import { AlertTriangle, Clock, Lock, PanelsTopLeft, PauseCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   describeEApprovalAssignment,
+  describeEApprovalSource,
+  isMirroredEApproval,
+  type EApprovalSourceLink,
   eApprovalOutcomeStyles,
   eApprovalSlaState,
   eApprovalStatusStyles,
@@ -62,6 +65,30 @@ export function EApprovalConfidentialBadge({ confidential }: { confidential?: bo
   return (
     <Badge variant="outline" className="gap-1 border-stone-300 bg-stone-100 text-[10px] text-stone-700">
       <Lock className="h-3 w-3" /> Confidential
+    </Badge>
+  );
+}
+
+/**
+ * Marks a row that mirrors another module's workflow.
+ *
+ * Worth a badge in the register rather than only on the detail screen: these requests behave
+ * slightly differently — some of their stages are completed elsewhere — and an approver scanning a
+ * list of forty should be able to see which ones before opening them.
+ */
+export function EApprovalSourceBadge({ source }: { source?: EApprovalSourceLink | null }) {
+  if (!source?.recordId) return null;
+  const live = isMirroredEApproval(source);
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'gap-1 text-[10px]',
+        live ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-dashed text-muted-foreground',
+      )}
+      title={live ? describeEApprovalSource(source) : `Unlinked from ${source.module}`}
+    >
+      <PanelsTopLeft className="h-3 w-3" /> {source.module}
     </Badge>
   );
 }

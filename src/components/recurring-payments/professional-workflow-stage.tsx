@@ -27,9 +27,9 @@ import {
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
   loadWorkingCalendar,
+  mergeRecurringPaymentSettings,
   PAYMENT_MODES,
-  resolveAssignees,
-  stepStatus,
+  routeRecurringWorkflow,
   type PaymentMode,
   type PaymentObligation,
   type RecurringPaymentSettings,
@@ -58,6 +58,8 @@ import ModuleTableCard from './module-table-card';
 import { useFieldControl, validateFieldControlRequirements, type RPFieldSetting } from './use-field-control';
 import { dispatchNotification } from '@/lib/notifications';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import { syncRecurringPaymentApprovalInBackground } from '@/lib/recurring-payments-e-approval-service';
+import { PaymentEApprovalCard } from './e-approval-link-card';
 
 const FORWARD_ACTIONS = ['Submit Bill', 'Verify', 'Approve', 'Record Payment', 'Close', 'Create Expense Request'];
 const COMMENT_REQUIRED = ['Return for Correction', 'Reject', 'Dispute', 'On Hold', 'Payment Failed'];
@@ -119,15 +121,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       }, () => setLoading(false));
       stopSettings = onSnapshot(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')), snapshot => {
         if (!snapshot.exists()) return;
-        const data = snapshot.data() as Partial<RecurringPaymentSettings>;
-        setSettings({
-          ...DEFAULT_RECURRING_PAYMENT_SETTINGS,
-          ...data,
-          organizationId,
-          notifications: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.notifications, ...data.notifications },
-          automation: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.automation, ...data.automation },
-          controls: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.controls, ...data.controls },
-        });
+        setSettings(mergeRecurringPaymentSettings(snapshot.data() as Partial<RecurringPaymentSettings>, organizationId));
       });
     })();
     return () => { stopPayments(); stopSettings(); };
@@ -337,85 +331,31 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           });
         }
 
-        let target: RecurringWorkflowStep | undefined;
-        let workflowStatus: PaymentObligation['workflowStatus'] = 'In Progress';
-        let status = (patch.status || current.status) as PaymentObligation['status'];
-        let currentStepId: string | null = stage.id;
-        let assignees = current.assignees || [];
-        let currentApprovalLevel = Number(current.currentApprovalLevel || 1);
-        let approvalCompletedBy = current.approvalCompletedBy || [];
-
-        const isApproval = stage.name.toLowerCase().includes('approval') && action === 'Approve' && current.approvalLevels?.length;
-        if (isApproval && current.approvalMode === 'Sequential' && currentApprovalLevel < current.approvalLevels!.length) {
-          currentApprovalLevel += 1;
-          assignees = [current.approvalLevels![currentApprovalLevel - 1]];
-          approvalCompletedBy = [...new Set([...approvalCompletedBy, user.id])];
-          destination = `${stage.name} · Level ${currentApprovalLevel}`;
-          notify = assignees;
-          advance = false;
-        } else if (isApproval && current.approvalMode === 'Parallel') {
-          approvalCompletedBy = [...new Set([...approvalCompletedBy, user.id])];
-          assignees = current.approvalLevels!.filter(id => !approvalCompletedBy.includes(id));
-          advance = assignees.length === 0;
-          if (!advance) {
-            destination = `${stage.name} · ${assignees.length} approval(s) remaining`;
-            notify = assignees;
-          }
-        }
-
-        if (advance) {
-          target = workflow[workflow.findIndex(item => item.id === stage.id) + 1];
-          if (action === 'Record Payment' && target && (target.name.toLowerCase().includes('receipt') || target.name.toLowerCase().includes('closure')) && current.finalAccountsVerification === false) target = undefined;
-          if (target) {
-            currentStepId = target.id;
-            const nextPayment = { ...current, ...patch, billAmount, currentApprovalLevel, approvalCompletedBy } as PaymentObligation;
-            assignees = resolveAssignees(target, nextPayment);
-            if (!assignees.length) throw new Error(`No assignee is configured for ${target.name}.`);
-            status = stepStatus(target);
-            destination = target.name;
-            destinationStepId = target.id;
-            notify = assignees;
-          } else {
-            workflowStatus = 'Completed';
-            status = 'Closed';
-            currentStepId = null;
-            assignees = [];
-            destination = 'Completed';
-            destinationStepId = '';
-          }
-        } else if (action === 'Return for Correction') {
-          target = workflow[Math.max(0, workflow.findIndex(item => item.id === stage.id) - 1)];
-          currentStepId = target.id;
-          const returningToApproval = target.name.toLowerCase().includes('approval');
-          if (returningToApproval) {
-            currentApprovalLevel = 1;
-            approvalCompletedBy = [];
-          }
-          assignees = resolveAssignees(target, { ...current, currentApprovalLevel, approvalCompletedBy });
-          if (!assignees.length) throw new Error(`No assignee is configured for ${target.name}.`);
-          status = stepStatus(target);
-          destination = target.name;
-          destinationStepId = target.id;
-          notify = assignees;
-        } else if (action === 'Reject') {
-          workflowStatus = 'Rejected';
-          status = 'Rejected';
-          currentStepId = null;
-          assignees = [];
-          destination = 'Rejected';
-          destinationStepId = '';
-        } else if (!FORWARD_ACTIONS.includes(action)) {
-          status = action === 'Dispute' ? 'Disputed' : action === 'Payment Failed' ? 'Payment Failed' : 'On Hold';
-        }
+        // Where the payment goes next, and who holds it — decided by the shared, unit-tested router
+        // in `recurring-payments-workflow.ts` rather than inline here, because the E-Approval mirror
+        // has to move a payment on exactly the same rules when an approver acts from that module.
+        const routed = routeRecurringWorkflow({
+          workflow,
+          step: stage,
+          action,
+          actorId: user.id,
+          advance,
+          baseStatus: (patch.status || current.status) as PaymentObligation['status'],
+          payment: { ...current, ...patch, billAmount } as PaymentObligation,
+        });
+        const { target } = routed;
+        destination = routed.stage;
+        destinationStepId = routed.destinationStepId;
+        notify = routed.notify;
 
         Object.assign(patch, {
-          workflowStatus,
-          status,
-          stage: destination,
-          currentStepId,
-          assignees,
-          currentApprovalLevel,
-          approvalCompletedBy,
+          workflowStatus: routed.workflowStatus,
+          status: routed.status,
+          stage: routed.stage,
+          currentStepId: routed.currentStepId,
+          assignees: routed.assignees,
+          currentApprovalLevel: routed.currentApprovalLevel,
+          approvalCompletedBy: routed.approvalCompletedBy,
           stepEnteredAt: Timestamp.now(),
           // Accounts for the org's configured working hours and holidays, not raw calendar time.
           workflowDeadline: target ? Timestamp.fromMillis(addBusinessHours(new Date(), Math.max(1, target.tat), workingHours, holidays).getTime()) : current.workflowDeadline || null,
@@ -449,6 +389,10 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           link: destinationStepId ? `/recurring-payments/stage/${destinationStepId}` : '/recurring-payments/payments',
         },
       );
+      // Brings the mirrored approval into line — raising it if the bridge has only just been turned
+      // on, otherwise recording this step against it. A no-op when the bridge is off, and never a
+      // reason for the action above to be reported as failed: it is already committed.
+      syncRecurringPaymentApprovalInBackground(selected.id, user);
       toast({
         title: action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created` : `${action} completed`,
         description: destination === stage.name ? 'The item remains in your queue for the next action.' : `Moved to ${destination}.`,
@@ -504,6 +448,7 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
   const outstanding = Math.max(0, (payment.billAmount || payment.expectedAmount) - (payment.settledAmount || payment.paidAmount || 0));
   return <Dialog open onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{payment.title}</DialogTitle><DialogDescription>{payment.vendorName} · {stage.name}</DialogDescription></DialogHeader>
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Summary label="Expected" value={currency(payment.expectedAmount)} /><Summary label="Bill" value={currency(payment.billAmount || 0)} /><Summary label="Outstanding" value={currency(outstanding)} /><Summary label="Status" value={payment.status} /></div>
+    <PaymentEApprovalCard payment={payment} compact />
     {payment.varianceWarning && <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-5 w-5 shrink-0" /><div><p className="font-semibold">Amount variance requires review</p><p>{Number(payment.variancePercent || 0).toFixed(1)}% against baseline {currency(payment.varianceBaseline || payment.expectedAmount)}{payment.amountLimitExceeded&&payment.maximumAmount?` and above the ${currency(payment.maximumAmount)} master limit`:''}. Verification and approval comments are mandatory.</p></div></div>}
     <div><Label>Workflow history</Label><div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{(payment.workflowHistory || []).map((item, index) => <div key={index} className="flex gap-3 rounded-lg border p-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 text-indigo-500" /><div><p className="font-medium">{item.action} · {item.stepName}</p><p className="text-xs text-muted-foreground">{item.userName}{item.comment ? ` — ${item.comment}` : ''} · {formatTimestamp(item.timestamp)}</p></div></div>)}{!(payment.workflowHistory || []).length && <p className="text-sm text-muted-foreground">Workflow has just started.</p>}</div></div>
     {canAct && (!action ? <div className="flex flex-wrap gap-2 border-t pt-4">{stage.actions.map(item => <Button key={item} variant={['Reject', 'Payment Failed'].includes(item) ? 'destructive' : 'default'} onClick={() => onAction(item)}>{item}</Button>)}</div> : <form onSubmit={onSubmit} className="space-y-4 border-t pt-4"><p className="font-semibold">Action: {action}</p>

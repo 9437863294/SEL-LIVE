@@ -28,7 +28,6 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
@@ -55,7 +54,9 @@ import {
   type EApprovalServiceActor,
   type ResolvedEApprovalRouting,
 } from '@/lib/e-approval-service';
+import { eApprovalHtmlToText, plainTextToEApprovalHtml } from '@/lib/e-approval-rich-text';
 import { AssigneePicker } from './assignee-picker';
+import { EApprovalRichTextEditor } from './rich-text-editor';
 import { Field, FormSection } from './page-header';
 import { useEApprovalDirectory, useEApprovalSettings, formatEApprovalAmount } from './hooks';
 
@@ -91,7 +92,13 @@ export function ApprovalForm({
   const { settings } = useEApprovalSettings();
 
   const [subject, setSubject] = useState(existing?.subject ?? '');
-  const [body, setBody] = useState(existing?.body ?? '');
+  /**
+   * The proposal, as markup. Seeded from a pre-rich-text request's plain `body` by wrapping its
+   * paragraphs, so opening an old draft shows its text rather than an empty editor.
+   */
+  const [bodyHtml, setBodyHtml] = useState(
+    existing?.bodyHtml ?? (existing?.body ? plainTextToEApprovalHtml(existing.body) : ''),
+  );
   const [approvalTypeId, setApprovalTypeId] = useState(existing?.approvalTypeId ?? '');
   const [departmentId, setDepartmentId] = useState(existing?.departmentId ?? '');
   const [projectId, setProjectId] = useState(existing?.projectId ?? '');
@@ -163,7 +170,13 @@ export function ApprovalForm({
   // Each step appears once the one before it has been answered. A step already carrying data stays
   // put, so clearing an earlier field never yanks away something being edited.
   const subjectFilled = subject.trim().length > 0;
-  const proposalFilled = body.trim().length > 0;
+  /**
+   * The proposal's text, derived from its markup — what gets stored as `body`, what the character
+   * count reports, and what decides whether the step is answered. Asking the markup would call an
+   * emptied editor's leftover `<p><br></p>` a filled-in proposal.
+   */
+  const proposalText = useMemo(() => eApprovalHtmlToText(bodyHtml), [bodyHtml]);
+  const proposalFilled = proposalText.length > 0;
   const showProposalStep = revising || subjectFilled || proposalFilled;
   // Only worth asking when types are actually configured; otherwise it's a select with one option.
   const showTypeStep = directory.types.length > 0 && (revising || proposalFilled || Boolean(approvalTypeId));
@@ -205,7 +218,10 @@ export function ApprovalForm({
   const draft: EApprovalRequestDraft = useMemo(
     () => ({
       subject,
-      body,
+      // Both: the service derives the canonical text from the markup, and a reader that has
+      // never heard of rich text still finds a proposal in `body`.
+      body: proposalText,
+      bodyHtml,
       approvalTypeId: approvalTypeId || undefined,
       approvalTypeName: selectedType?.name,
       departmentId: departmentId || undefined,
@@ -230,7 +246,8 @@ export function ApprovalForm({
     }),
     [
       subject,
-      body,
+      proposalText,
+      bodyHtml,
       approvalTypeId,
       selectedType,
       departmentId,
@@ -278,7 +295,7 @@ export function ApprovalForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routingKey, serviceActor?.organizationId, config, directory.projectRouting, directory.types]);
 
-  const valid = subject.trim().length > 0 && body.trim().length > 0;
+  const valid = subject.trim().length > 0 && proposalFilled;
   const amountMissing = Boolean(selectedType?.requiresAmount) && !amount;
   const hasRoute = (preview?.steps.length ?? 0) > 0;
 
@@ -660,21 +677,13 @@ export function ApprovalForm({
           done={stepDone.proposal}
           isLast={isLastStep('proposal')}
         >
-          <Textarea
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            rows={14}
-            placeholder={
-              'Approval is requested for the procurement of safety equipment for the Rayagada project.\n\n' +
-              '1. Requirement — 120 helmets, 120 safety harnesses and 40 pairs of safety shoes.\n' +
-              '2. Justification — current stock is exhausted; the site has 180 workers on two shifts.\n' +
-              '3. Rates — as per the approved rate contract dated 12 June 2026.\n' +
-              '4. Budget — provided under the project safety head.'
-            }
-            className="min-h-[240px] resize-y text-sm leading-relaxed"
+          <EApprovalRichTextEditor
+            value={bodyHtml}
+            onChange={setBodyHtml}
+            placeholder="Say what is proposed, why, and what it costs. Paste a comparative statement or rate table straight from Excel — it keeps its formatting."
           />
-          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-            {body.trim().length} characters. Say what is proposed, why, and what it costs.
+          <p className="mt-1.5 text-xs leading-snug text-muted-foreground">
+            {proposalText.length} characters.
           </p>
         </StepCard>
       )}

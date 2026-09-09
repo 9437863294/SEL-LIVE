@@ -18,6 +18,7 @@ import {
 } from '@/lib/e-approval';
 import {
   EApprovalConfidentialBadge,
+  EApprovalSourceBadge,
   EApprovalDueBadge,
   EApprovalEmptyState,
   EApprovalPriorityBadge,
@@ -202,6 +203,7 @@ export function EApprovalRequestTable({
                     <span className="mt-0.5 flex flex-wrap items-center gap-1">
                       <EApprovalPriorityBadge priority={row.priority} />
                       <EApprovalConfidentialBadge confidential={row.confidential} />
+                      <EApprovalSourceBadge source={row.source} />
                       {(row.version ?? 1) > 1 && (
                         <span className="text-[10px] text-muted-foreground">v{row.version}</span>
                       )}
@@ -283,6 +285,7 @@ export function EApprovalActionList({
                   <span className="font-mono text-[11px] text-muted-foreground">{row.referenceNo}</span>
                   <EApprovalPriorityBadge priority={row.priority} />
                   <EApprovalConfidentialBadge confidential={row.confidential} />
+                  <EApprovalSourceBadge source={row.source} />
                 </div>
                 <p className="line-clamp-1 text-sm font-medium">{row.subject}</p>
                 <p className="truncate text-[11px] text-muted-foreground">

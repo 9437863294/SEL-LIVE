@@ -74,6 +74,7 @@ import {
   type EApprovalRuleRecord,
   type EApprovalSettingsRecord,
   type EApprovalSignatureRecord,
+  type EApprovalSourceLink,
   type EApprovalStatus,
   type EApprovalStep,
   type EApprovalStepRecord,
@@ -87,6 +88,11 @@ import {
   type EApprovalWorkflowNote,
 } from '@/lib/e-approval';
 import type { EApprovalSignaturePosition } from '@/lib/e-approval-pdf-signing';
+import {
+  eApprovalHtmlIsEmpty,
+  eApprovalHtmlToText,
+  eApprovalHtmlWithinLimit,
+} from '@/lib/e-approval-rich-text';
 
 /**
  * Write-side service for the E-Approval module.
@@ -1028,20 +1034,51 @@ const attachmentsFingerprintOf = (attachments: EApprovalAttachment[], version: n
     .sort()
     .join('|');
 
+/**
+ * Keeps the proposal's two representations in step on the way to Firestore.
+ *
+ * `bodyHtml` carries the formatting and `body` is its plain-text rendition — and `body` is what
+ * `eApprovalMaterialFingerprint` hashes, so the two drifting apart would mean change control
+ * comparing a stale sentence against a live document. Rather than trust every caller to send a
+ * matching pair, whenever HTML is present the text is derived from it here. One source of truth, at
+ * the last point before the write.
+ *
+ * Returns only the keys it actually decides, so it can be spread over a partial draft without
+ * inventing fields the caller never mentioned.
+ */
+function reconcileEApprovalProposal(
+  draft: Partial<Pick<EApprovalRequestDraft, 'body' | 'bodyHtml'>>,
+): { body?: string; bodyHtml?: string } {
+  if (draft.bodyHtml != null) {
+    if (!eApprovalHtmlWithinLimit(draft.bodyHtml)) {
+      throw new EApprovalServiceError(
+        'The proposal is too large to store. Paste it in parts, or attach the document and summarise it here.',
+      );
+    }
+    // An editor left empty still reports markup (`<p><br></p>`), which would store as a proposal
+    // that looks present and reads blank.
+    if (eApprovalHtmlIsEmpty(draft.bodyHtml)) return { body: '', bodyHtml: '' };
+    return { body: eApprovalHtmlToText(draft.bodyHtml), bodyHtml: draft.bodyHtml };
+  }
+  if (draft.body != null) return { body: draft.body.trim() };
+  return {};
+}
+
 export async function createEApprovalDraft(
   draft: EApprovalRequestDraft,
   actor: EApprovalServiceActor,
 ): Promise<string> {
   const who = requireActor(actor);
   if (!draft.subject?.trim()) throw new EApprovalServiceError('A subject is required.');
-  if (!draft.body?.trim()) throw new EApprovalServiceError('A proposal is required.');
+  const proposal = reconcileEApprovalProposal(draft);
+  if (!proposal.body) throw new EApprovalServiceError('A proposal is required.');
 
   const created = await addDoc(
     collection(db, E_APPROVAL_COLLECTIONS.requests),
     pruneUndefined({
       ...draft,
+      ...proposal,
       subject: draft.subject.trim(),
-      body: draft.body.trim(),
       priority: draft.priority ?? ('Normal' as EApprovalPriority),
       status: 'Draft' as EApprovalStatus,
       version: 1,
@@ -1078,7 +1115,11 @@ export async function updateEApprovalDraft(
   }
   await updateDoc(
     doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId),
-    pruneUndefined({ ...draft, ...withUpdateAudit(who) } as Record<string, unknown>),
+    pruneUndefined({
+      ...draft,
+      ...reconcileEApprovalProposal(draft),
+      ...withUpdateAudit(who),
+    } as Record<string, unknown>),
   );
   await logEApprovalActivity(who, 'Edit Request', { status: request.status }, {
     recordId: approvalId,
@@ -1216,6 +1257,135 @@ export async function submitEApproval(
   });
 }
 
+export interface CreateMirroredEApprovalInput {
+  source: EApprovalSourceLink;
+  subject: string;
+  body: string;
+  /** The chain, already resolved by the source module against its own workflow and assignees. */
+  steps: EApprovalTemplateStep[];
+  /** Per-step mirror pointers, applied to the built records in chain order. */
+  decorateSteps?: (records: EApprovalStepRecord[]) => EApprovalStepRecord[];
+  approvalTypeId?: string;
+  approvalTypeName?: string;
+  departmentId?: string;
+  departmentName?: string;
+  projectId?: string;
+  projectName?: string;
+  externalRef?: string;
+  priority?: EApprovalPriority;
+  requiredBy?: string | null;
+  amount?: number;
+  vendorName?: string;
+  costCentre?: string;
+  budgetHead?: string;
+  confidential?: boolean;
+  /** The person the approval is raised on behalf of — the payment's owner, not whoever tripped the sync. */
+  requester: { userId: string; userName?: string };
+  ccUserIds?: string[];
+}
+
+/**
+ * Raises a request that mirrors another module's workflow, already submitted and running.
+ *
+ * Deliberately not `createEApprovalDraft` + `submitEApproval`. Those two exist for a person filling
+ * in a form: they resolve the chain from E-Approval's own templates and approval matrix, and they
+ * refuse a submission from anybody but the requester. Neither is right here. The chain has already
+ * been decided — by the source module's own configuration, which is the whole point of a mirror —
+ * and the caller is a background reconcile, not the requester. Routing it through the form's path
+ * would either overwrite the source module's chain with an unrelated one or fail on the requester
+ * check, depending on how the organization happens to have E-Approval configured.
+ *
+ * There is no draft state: the payment is already in somebody's queue, so an approval sitting in
+ * Drafts would be a second, invisible copy of work that has visibly started.
+ */
+export async function createMirroredEApproval(
+  input: CreateMirroredEApprovalInput,
+  actor: EApprovalServiceActor,
+): Promise<{ approvalId: string; referenceNo: string }> {
+  const who = requireActor(actor);
+  if (!input.steps.length) throw new EApprovalServiceError('A mirrored approval needs at least one stage.');
+
+  const settings = await loadEApprovalSettings(who.organizationId);
+  const referenceNo = await allocateEApprovalReference(who.organizationId, input.departmentName, settings);
+  const priority = input.priority ?? 'Normal';
+  const nextId = firestoreIdFactory();
+
+  const requestRef = doc(collection(db, E_APPROVAL_COLLECTIONS.requests));
+  const built = buildEApprovalSteps(input.steps, { priority, settings, version: 1, nextId });
+  const steps = (input.decorateSteps ? input.decorateSteps(built) : built) as EApprovalStep[];
+
+  const request: EApprovalRequest = {
+    id: requestRef.id,
+    organizationId: who.organizationId,
+    referenceNo,
+    subject: input.subject,
+    body: input.body,
+    approvalTypeId: input.approvalTypeId,
+    approvalTypeName: input.approvalTypeName,
+    departmentId: input.departmentId,
+    departmentName: input.departmentName,
+    projectId: input.projectId,
+    projectName: input.projectName,
+    externalRef: input.externalRef,
+    priority,
+    requiredBy: input.requiredBy ?? null,
+    amount: input.amount,
+    vendorName: input.vendorName,
+    costCentre: input.costCentre,
+    budgetHead: input.budgetHead,
+    requesterId: input.requester.userId,
+    requesterName: input.requester.userName,
+    confidential: input.confidential,
+    ccUserIds: input.ccUserIds ?? [],
+    participantUserIds: input.ccUserIds ?? [],
+    status: 'Draft',
+    version: 1,
+    attachmentCount: 0,
+    commentCount: 0,
+    source: input.source,
+  };
+
+  // Written before the transition so the batch below merges onto a document that exists; the
+  // transition immediately overwrites `status` with whatever the engine produces.
+  await setDoc(
+    requestRef,
+    pruneUndefined({ ...request, ...withCreateAudit(who) } as unknown as Record<string, unknown>),
+  );
+
+  await commitEApprovalTransition({
+    request,
+    steps,
+    actor: who,
+    settings,
+    input: {
+      kind: 'Submit',
+      // The requester submits their own file, even though a reconcile is what triggered it: the
+      // engine's Submit refuses anybody else, and rightly — this approval is raised *for* them.
+      actor: { userId: input.requester.userId, userName: input.requester.userName },
+      now: nowIso(),
+      nextId,
+      settings,
+      materialChange: { changed: false, fields: [], fingerprint: '' },
+    },
+    extraRequestFields: { source: pruneUndefined(input.source as unknown as Record<string, unknown>) },
+    activityAction: 'Submit',
+  });
+
+  return { approvalId: requestRef.id, referenceNo };
+}
+
+/** Refreshes the denormalised source pointer — the label, the path, which stage is current. */
+export async function updateEApprovalSourceLink(
+  approvalId: string,
+  source: EApprovalSourceLink,
+  actor: EApprovalServiceActor,
+): Promise<void> {
+  await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId), {
+    source: pruneUndefined(source as unknown as Record<string, unknown>),
+    ...withUpdateAudit(requireActor(actor)),
+  });
+}
+
 /* ------------------------------------------------------------------------------------------------
  * Actions
  * ---------------------------------------------------------------------------------------------- */
@@ -1326,6 +1496,84 @@ export async function performEApprovalAction(
     versionSnapshot,
     activityAction: input.kind,
   });
+
+  await propagateToSource(request, who);
+}
+
+/**
+ * Pushes a decision taken here back to the module whose workflow this request mirrors.
+ *
+ * Imported dynamically, and only when a request actually carries a source link. Statically, this
+ * would make the approval engine depend on every module that ever mirrors into it — the wrong way
+ * round, and a cycle: the bridge imports this file. Loading it on demand keeps E-Approval ignorant
+ * of what a payment obligation is until the moment a payment obligation is in front of it.
+ *
+ * Failures are swallowed on purpose. The approver's decision is committed; refusing to acknowledge
+ * it because the other module could not be updated would be the wrong trade, and the bridge is
+ * idempotent — the next reconcile from either side picks it up, and the error is recorded on the
+ * source record meanwhile.
+ */
+async function propagateToSource(request: EApprovalRequest, actor: EApprovalServiceActor): Promise<void> {
+  const source = request.source;
+  if (!source?.recordId || source.detachedAt) return;
+  if (source.module !== 'Recurring Payments') return;
+  try {
+    const bridge = await import('@/lib/recurring-payments-e-approval-service');
+    await bridge.syncRecurringPaymentApproval(source.recordId, actor);
+  } catch {
+    // Deliberately silent — see above.
+  }
+}
+
+/**
+ * Applies an action to a *mirrored* request on behalf of whoever completed the equivalent step in
+ * the source module (see `e-approval-link.ts`).
+ *
+ * Exists because the two chains can drift. A mirrored stage is built from the source module's own
+ * assignee resolution, so the person who acts there is normally the person the stage names here —
+ * but not always: an amount-based assignment re-resolves when the bill comes in at three times the
+ * estimate, a backup approver covers for the primary, an administrator edits the workflow mid-flight.
+ * When that happens the engine is right to refuse the action, and swallowing the refusal would leave
+ * the approval permanently one stage behind the payment.
+ *
+ * So the stage is moved to the person who actually acted, with a reassignment recorded, *before* the
+ * action is applied — which is what happened. The alternative, passing the assignee as the actor,
+ * would write "approved by Nandini" into an approval Ravi gave, and an approval trail that names the
+ * wrong person is worse than no approval trail.
+ */
+export async function applyMirroredEApprovalAction(
+  approvalId: string,
+  input: PerformEApprovalActionInput & { stepId: string },
+  actor: EApprovalServiceActor,
+  onBehalfOfNote?: string,
+): Promise<void> {
+  const who = requireActor(actor);
+  const steps = await listEApprovalSteps(approvalId);
+  const step = steps.find((candidate) => candidate.id === input.stepId);
+  if (!step) throw new EApprovalServiceError('That approval stage no longer exists.');
+
+  const alreadyTheirs =
+    step.assignment.kind === 'User' && step.assignment.userId === who.userId;
+  if (!alreadyTheirs) {
+    const to: EApprovalAssignment = { kind: 'User', userId: who.userId, userName: who.userName };
+    await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.steps, step.id), {
+      assignment: pruneUndefined(to as unknown as Record<string, unknown>),
+      reassignments: [
+        ...(step.reassignments ?? []),
+        {
+          at: nowIso(),
+          kind: 'Reassign' as const,
+          byUserId: who.userId,
+          byName: who.userName,
+          from: step.assignment,
+          to,
+          reason: onBehalfOfNote || 'Actioned in the source module by this user.',
+        },
+      ],
+      ...withUpdateAudit(who),
+    });
+  }
+  await performEApprovalAction(approvalId, input, who);
 }
 
 /* ------------------------------------------------------------------------------------------------

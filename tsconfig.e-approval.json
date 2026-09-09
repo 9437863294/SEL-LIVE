@@ -12,9 +12,13 @@
     "src/components/e-approval/**/*.tsx",
     "src/lib/e-approval-policy.ts",
     "src/lib/e-approval-analytics.ts",
+    "src/lib/e-approval-link.ts",
     "src/lib/e-approval.ts",
     "src/lib/e-approval-service.ts",
-    "src/lib/e-approval-pdf-signing.ts"
+    "src/lib/e-approval-pdf-signing.ts",
+    "src/lib/e-approval-rich-text.ts",
+    "src/lib/recurring-payments-e-approval.ts",
+    "src/lib/recurring-payments-e-approval-service.ts"
   ],
   "exclude": [
     "node_modules"

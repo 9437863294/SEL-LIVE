@@ -262,6 +262,22 @@ export function EApprovalSettingsPanel({
             </label>
             <label className="flex items-start gap-1.5 text-xs">
               <Checkbox
+                checked={draft.skipSelfApprovalSteps}
+                onCheckedChange={(checked) => setDraft({ ...draft, skipSelfApprovalSteps: checked === true })}
+                disabled={!canEdit}
+                className="mt-0.5"
+              />
+              <span>
+                Skip self-approval stages
+                <span className="block text-[11px] text-muted-foreground">
+                  A stage that lands on the requester is signed off automatically, with the reason on the record, and
+                  the chain moves on. A stage that is genuinely their own work still waits for them, and so does a
+                  clarification asked of them.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-1.5 text-xs">
+              <Checkbox
                 checked={draft.allowApproveAndComplete}
                 onCheckedChange={(checked) => setDraft({ ...draft, allowApproveAndComplete: checked === true })}
                 disabled={!canEdit}

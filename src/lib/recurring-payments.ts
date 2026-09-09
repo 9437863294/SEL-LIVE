@@ -27,12 +27,20 @@ export {
 // recurring-payments-workflow.ts) so it can be unit-tested, but stays reachable from here.
 export {
   isWorkflowActivationDue,
+  RECURRING_DATA_ENTRY_ACTIONS,
+  RECURRING_FORWARD_ACTIONS,
+  recurringMirrorAction,
+  recurringMirrorMode,
   resolveAssignees,
   resolveEntryAssignees,
   resolveWorkflowActivation,
+  routeRecurringWorkflow,
   stepStatus,
   type ActivationTimingPayment,
   type AssigneeResolutionPayment,
+  type RouteRecurringWorkflowInput,
+  type RouteRecurringWorkflowResult,
+  type RoutingPayment,
   type WorkflowActivation,
 } from './recurring-payments-workflow';
 
@@ -171,7 +179,45 @@ export interface RecurringPaymentSettings {
     allowAuthorizedReopen: boolean;
     varianceWarningPercent: number;
   };
+  eApproval: RecurringEApprovalSettings;
 }
+
+/**
+ * Whether — and how — a payment's workflow is mirrored into the E-Approval module.
+ *
+ * Off by default, and every field below only matters once it is on: with `enabled: false` nothing in
+ * this module reads or writes an approval request, and E-Approval never sees a payment. That is the
+ * point. The two modules were built to stand alone and must keep standing alone, so the bridge is an
+ * addition an organization opts into rather than a coupling it inherits.
+ */
+export interface RecurringEApprovalSettings {
+  enabled: boolean;
+  /**
+   * Which steps raise a mirrored stage. 'All' mirrors the whole workflow, so a payment is one file in
+   * E-Approval from bill collection to closure; 'Decision' mirrors only the steps that can actually
+   * be decided there (see `recurringMirrorMode`), leaving data-entry steps out of the chain entirely.
+   */
+  scope: 'All' | 'Decision';
+  /** Raise nothing below this figure — small recurring bills do not need a note-sheet. 0 mirrors everything. */
+  minAmount: number;
+  /** The E-Approval type mirrored requests are raised under. Blank raises them under no type. */
+  approvalTypeId: string;
+  approvalTypeName: string;
+  /**
+   * Mark mirrored requests confidential, so only their participants and users with confidential
+   * access can open them — for organizations that treat vendor pricing that way.
+   */
+  confidential: boolean;
+}
+
+export const DEFAULT_RECURRING_E_APPROVAL_SETTINGS: RecurringEApprovalSettings = {
+  enabled: false,
+  scope: 'All',
+  minAmount: 0,
+  approvalTypeId: '',
+  approvalTypeName: '',
+  confidential: false,
+};
 
 export const DEFAULT_RECURRING_PAYMENT_SETTINGS: RecurringPaymentSettings = {
   organizationId: 'default',
@@ -187,7 +233,31 @@ export const DEFAULT_RECURRING_PAYMENT_SETTINGS: RecurringPaymentSettings = {
     requireTransactionReference: true, allowAuthorizedReopen: false,
     varianceWarningPercent: 20,
   },
+  eApproval: DEFAULT_RECURRING_E_APPROVAL_SETTINGS,
 };
+
+/**
+ * A stored settings document merged over the defaults, field group by field group.
+ *
+ * Not a plain spread: a document saved before an option existed must resolve that option to its
+ * default rather than to `undefined`, and a shallow merge would replace a whole nested group with
+ * whatever partial version happens to be stored. Every screen that reads these settings goes through
+ * here, so a new group cannot be added to the defaults and then silently missed by three of them.
+ */
+export function mergeRecurringPaymentSettings(
+  data: Partial<RecurringPaymentSettings> | undefined,
+  organizationId: string,
+): RecurringPaymentSettings {
+  return {
+    ...DEFAULT_RECURRING_PAYMENT_SETTINGS,
+    ...(data || {}),
+    organizationId,
+    notifications: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.notifications, ...data?.notifications },
+    automation: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.automation, ...data?.automation },
+    controls: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.controls, ...data?.controls },
+    eApproval: { ...DEFAULT_RECURRING_E_APPROVAL_SETTINGS, ...data?.eApproval },
+  };
+}
 
 export const DEFAULT_PAYMENT_CATEGORIES = [
   'Office / Site Rent', 'Electricity', 'Credit Card', 'Mobile / Telephone',
@@ -257,6 +327,43 @@ export interface RecurringPaymentMaster extends RecurrenceRuleInput {
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   deleted?: boolean;
+}
+
+/**
+ * The obligation's half of the mirror (E-Approval's half is `EApprovalRequest.source`).
+ *
+ * Everything here is denormalised from the approval request so the payment screens can show who the
+ * file is with, and link to it, without reading a collection in another module on every row.
+ * Refreshed on each sync, so a stale reference is a bug rather than an expected state.
+ */
+export interface PaymentEApprovalMirror {
+  requestId: string;
+  referenceNo?: string;
+  /** The approval's own status — 'Pending Approval', 'Approved', 'Rejected', … */
+  status?: string;
+  /**
+   * Name of the workflow step the mirror is currently sitting on — "Bill Verification".
+   *
+   * Kept alongside `status` because the two answer different questions and the payment screens want
+   * the second one. E-Approval's status is a statement about the *approval* ('Pending Verification',
+   * and 'Approved' the moment its last stage clears); a payment's own vocabulary is the step it is
+   * at, and 'Completed' only when the workflow has actually finished. Rendering the approval's word
+   * on a payment row reads as though a five-step obligation were done after its first step.
+   */
+  stageName?: string;
+  /** Whether the current stage can be decided in E-Approval, or only viewed there. */
+  mode?: 'Decision' | 'Visibility';
+  /** Readable "pending with" line, mirrored so a payment row can show it without a join. */
+  pendingLabel?: string;
+  raisedBy?: string;
+  raisedByName?: string;
+  raisedAt?: Timestamp;
+  syncedAt?: Timestamp;
+  /** Set when the mirror was deliberately broken; the payment then runs on its own workflow again. */
+  detachedAt?: Timestamp;
+  detachedReason?: string;
+  /** Last sync failure, kept so a silently-stuck mirror is visible on the payment rather than only in a console. */
+  lastError?: string;
 }
 
 export interface PaymentObligation {
@@ -332,6 +439,11 @@ export interface PaymentObligation {
   stepEnteredAt?: Timestamp;
   documentReferences?: Array<{ stepId: string; action: string; reference: string; addedBy: string; addedAt: Timestamp; category?: string; fileType?: string; version?: number }>;
   workflowHistory?: RecurringWorkflowHistoryEntry[];
+  /**
+   * The E-Approval request mirroring this obligation's workflow, when the bridge is on. Absent on
+   * every obligation generated with it off — which is what keeps the module working alone.
+   */
+  eApproval?: PaymentEApprovalMirror;
   /**
    * Soft-delete marker. An obligation carries financial history — transactions, approvals, an audit
    * trail — so "Delete" hides the record and leaves all of it intact and reportable, exactly as

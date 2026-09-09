@@ -491,6 +491,22 @@ export interface EApprovalStepRecord {
   pausedMs?: number;
   mandatory?: boolean;
   capabilities?: EApprovalStepCapabilities;
+  /**
+   * This stage is *work to be performed*, not a judgement on the proposal — so `skipSelfApprovalSteps`
+   * leaves it alone even when it lands on the requester.
+   *
+   * Two kinds of stage need it, and without it that setting is too blunt to tell either from an
+   * ordinary approval: they all look identical to the engine — assigned to the requester, sitting in
+   * the primary chain.
+   *
+   *   - The requester's own task: uploading the signed copy, collecting the vendor's bill. "Don't
+   *     make somebody approve their own file" and "don't make somebody do the job they were given"
+   *     are opposite instructions.
+   *   - Any stage mirroring another module's workflow (see `e-approval-link.ts`). Skipping one of
+   *     those does not just tick a box here — the reconciler carries the source record through the
+   *     matching step there, past controls that step exists to enforce.
+   */
+  requesterMustAct?: boolean;
   /** True once this step has been re-opened by a return, so the timeline can mark it. */
   reopened?: boolean;
   /** Which step sent it back, for the "Returned to Me" inbox and the reason line. */
@@ -502,6 +518,23 @@ export interface EApprovalStepRecord {
   supersededInVersion?: number;
   /** Reassignment trail — forward, delegate and escalate all move ownership in place. */
   reassignments?: EApprovalReassignment[];
+
+  /* ── Mirrored steps (a chain standing in for another module's workflow) ─────────────────────── */
+
+  /**
+   * The step of the *source module's* workflow this stage stands for, when the request mirrors one
+   * (see `e-approval-link.ts`). The engine never reads it — it is carried so the bridge can line the
+   * two chains up without keeping a separate map that would drift the first time a step is inserted.
+   */
+  mirrorStepId?: string;
+  /** The action to apply in the source module when this stage is approved — "Approve", "Verify", … */
+  mirrorAction?: string;
+  /**
+   * Which decision *within* the source step this stage is, when one source step collects several in
+   * sequence (a payment approval with three amount-based levels is one step there and three stages
+   * here). 1-based; absent when the source step takes a single decision.
+   */
+  mirrorLevel?: number;
 }
 
 export interface EApprovalReassignment {
@@ -613,6 +646,21 @@ export interface EApprovalSettings {
   maxVerificationDepth: number;
   /** Whether an approver may return to any earlier step, or only to the requester. */
   allowReturnToAnyStep: boolean;
+  /**
+   * Whether a primary-chain stage that lands on the requester themselves is completed automatically
+   * rather than parked in their own inbox.
+   *
+   * Nobody approves their own note-sheet. Where the chain nonetheless names them — a site accountant
+   * raising a payment whose first stage is "Site Accountant", a manager submitting under a matrix
+   * rule that routes through their own post — the honest reading is that the stage is already
+   * satisfied, and the alternative is a file that sits waiting for its own author to rubber-stamp it.
+   * The step is recorded as Approved with the reason on it, so the trail still shows the stage
+   * existed and why it did not require a decision; it is not silently dropped.
+   *
+   * Only the primary chain. A clarification or verification *addressed* to the requester is a
+   * deliberate question to them and must still be answered.
+   */
+  skipSelfApprovalSteps: boolean;
   escalationLadder: EApprovalEscalationRule[];
   /** Roles that may see confidential files without being a participant. */
   confidentialRoles: string[];
@@ -648,6 +696,7 @@ export const DEFAULT_E_APPROVAL_SETTINGS: EApprovalSettings = {
   allowNestedVerification: true,
   maxVerificationDepth: 4,
   allowReturnToAnyStep: true,
+  skipSelfApprovalSteps: true,
   escalationLadder: [],
   confidentialRoles: [],
   allowRecall: true,
@@ -2926,12 +2975,22 @@ const stepRecipients = (step: EApprovalStepRecord, requesterId?: string) =>
 
 const actorLabel = (actor: EApprovalActor) => actor.userName || actor.userId;
 
+/** Whether a stage is addressed to the person who raised the request, and is theirs to skip. */
+const isSelfApprovalStep = (step: EApprovalStepRecord, requesterId: string): boolean =>
+  !step.requesterMustAct &&
+  (step.assignment.kind === 'Requester' ||
+    (step.assignment.kind === 'User' && step.assignment.userId === requesterId));
+
 /**
  * Activates the next primary group, or finishes the request when the chain is exhausted.
  *
  * The "next" group is the lowest sequence still pending — not `current + 1` — which is what lets a
  * return re-open three steps and have them run again in their original order without any special
  * case here.
+ *
+ * Loops rather than recurses so `skipSelfApprovalSteps` can consume a run of consecutive stages that
+ * all land on the requester without growing the stack — a five-stage chain of which the requester
+ * holds four is a real configuration, not a pathological one.
  */
 function advancePrimaryChain(
   request: EApprovalRequestState,
@@ -2940,38 +2999,91 @@ function advancePrimaryChain(
   events: EApprovalEvent[],
   notifications: EApprovalNotificationIntent[],
   actor: EApprovalActor,
+  options: { skipSelfApproval?: boolean } = {},
 ): void {
-  const pending = primaryEApprovalSteps(steps).filter((step) => step.status === 'Pending');
-  if (!pending.length) {
-    request.status = 'Approved';
-    request.completedAt = now;
-    events.push({
-      at: now,
-      actorId: actor.userId,
-      actorName: actor.userName,
-      kind: 'Approve',
-      summary: `${request.referenceNo || 'Request'} fully approved`,
-    });
+  for (;;) {
+    const pending = primaryEApprovalSteps(steps).filter((step) => step.status === 'Pending');
+    if (!pending.length) {
+      request.status = 'Approved';
+      request.completedAt = now;
+      events.push({
+        at: now,
+        actorId: actor.userId,
+        actorName: actor.userName,
+        kind: 'Approve',
+        summary: `${request.referenceNo || 'Request'} fully approved`,
+      });
+      notifications.push({
+        kind: 'Approved',
+        userIds: [request.requesterId],
+        title: 'Approval completed',
+        body: `${describeEApprovalSubject(request)} has been fully approved.`,
+      });
+      return;
+    }
+    const nextSequence = Math.min(...pending.map((step) => step.sequence));
+    const group = pending.filter((step) => step.sequence === nextSequence);
+    group.forEach((step) => activateStep(step, now, step.slaHours));
+
+    // Nobody approves their own file. A stage that names the requester is recorded as approved by
+    // them, with the reason on the step, and the chain carries on — rather than stalling in the
+    // inbox of the one person who has already said yes by submitting it. Completed *after*
+    // activation so the step keeps its normal started/completed stamps and reads like any other.
+    if (options.skipSelfApproval) {
+      const mine = group.filter((step) => isSelfApprovalStep(step, request.requesterId));
+      if (mine.length) {
+        const requesterActor: EApprovalActor = {
+          userId: request.requesterId,
+          userName: request.requesterName,
+        };
+        mine.forEach((step) => {
+          completeStep(step, 'Approved', requesterActor, now, 'Auto-approved — raised by this approver.');
+          // `completeStep` reads a differing assignee as a delegate acting for somebody else; here
+          // the assignee *is* the actor in every sense that matters, so clear the stamp it left.
+          step.onBehalfOfUserId = undefined;
+          step.onBehalfOfName = undefined;
+          events.push({
+            at: now,
+            actorId: request.requesterId,
+            actorName: request.requesterName,
+            kind: 'Approve',
+            stepId: step.id,
+            stepName: step.name,
+            stepType: step.type,
+            outcome: 'Approved',
+            summary: `"${step.name}" auto-approved — ${
+              request.requesterName || 'the requester'
+            } raised this request`,
+          });
+        });
+        // Only move on if skipping actually satisfied the stage. A group of three that the requester
+        // is one of still needs the other two, and must sit with them.
+        if (eApprovalGroupState(steps, group[0]).satisfied) {
+          group
+            .filter((step) => isOpenEApprovalStepStatus(step.status))
+            .forEach((step) => {
+              step.status = 'Skipped';
+              step.outcome = 'Skipped';
+              step.completedAt = now;
+            });
+          continue;
+        }
+      }
+    }
+
+    const waiting = group.filter((step) => isOpenEApprovalStepStatus(step.status));
+    if (!waiting.length) continue;
     notifications.push({
-      kind: 'Approved',
-      userIds: [request.requesterId],
-      title: 'Approval completed',
-      body: `${describeEApprovalSubject(request)} has been fully approved.`,
+      kind: 'Assigned',
+      ...assignmentRecipients(waiting.map((step) => step.assignment)),
+      title: `Approval required: ${waiting[0].name}`,
+      // Names the requester: an approver deciding what to open first goes by who is waiting on them.
+      body: `${describeEApprovalSubject(request)}${
+        request.requesterName ? `, raised by ${request.requesterName}` : ''
+      }, is pending your approval.`,
     });
     return;
   }
-  const nextSequence = Math.min(...pending.map((step) => step.sequence));
-  const group = pending.filter((step) => step.sequence === nextSequence);
-  group.forEach((step) => activateStep(step, now, step.slaHours));
-  notifications.push({
-    kind: 'Assigned',
-    ...assignmentRecipients(group.map((step) => step.assignment)),
-    title: `Approval required: ${group[0].name}`,
-    // Names the requester: an approver deciding what to open first goes by who is waiting on them.
-    body: `${describeEApprovalSubject(request)}${
-      request.requesterName ? `, raised by ${request.requesterName}` : ''
-    }, is pending your approval.`,
-  });
 }
 
 /**
@@ -2991,6 +3103,7 @@ function completeAndAdvance(
   comment: string | undefined,
   events: EApprovalEvent[],
   notifications: EApprovalNotificationIntent[],
+  options: { skipSelfApproval?: boolean } = {},
 ): void {
   completeStep(step, outcome, actor, now, comment);
 
@@ -3083,7 +3196,7 @@ function completeAndAdvance(
       member.completedAt = now;
     });
 
-  advancePrimaryChain(request, steps, now, events, notifications, actor);
+  advancePrimaryChain(request, steps, now, events, notifications, actor, options);
   if (!isTerminalEApprovalStatus(request.status)) {
     request.status = deriveEApprovalStatus(steps) ?? request.status;
   }
@@ -3148,6 +3261,8 @@ export function applyEApprovalAction(
   const nextId = input.nextId ?? defaultNextId;
   const actor = input.actor;
   if (!actor?.userId) throw new EApprovalRuleError('You must be signed in to act on an approval.');
+  /** Passed to every chain advance, so the "don't ask the requester" rule cannot apply on some paths and not others. */
+  const selfSkip = { skipSelfApproval: settings.skipSelfApprovalSteps };
 
   const request: EApprovalRequestState = { ...requestState };
   const steps = stepRecords.map(cloneStep);
@@ -3242,7 +3357,7 @@ export function applyEApprovalAction(
     request.status = 'Submitted';
     request.materialFingerprint = input.materialChange?.fingerprint ?? request.materialFingerprint;
     pushEvent({ kind: 'Submit', comment: input.comment, summary: `Submitted by ${actorLabel(actor)}` });
-    advancePrimaryChain(request, steps, now, events, notifications, actor);
+    advancePrimaryChain(request, steps, now, events, notifications, actor, selfSkip);
     if (!isTerminalEApprovalStatus(request.status)) {
       request.status = deriveEApprovalStatus(steps) ?? 'Pending Approval';
     }
@@ -3425,7 +3540,7 @@ export function applyEApprovalAction(
         severity: 'WARNING',
       });
       request.status = 'Resubmitted';
-      advancePrimaryChain(request, steps, now, events, notifications, actor);
+      advancePrimaryChain(request, steps, now, events, notifications, actor, selfSkip);
     } else {
       // Nothing material changed: the file goes straight back to whoever returned it.
       const resume =
@@ -3658,7 +3773,7 @@ export function applyEApprovalAction(
           revised ? ' — amount revised' : ''
         }`,
       });
-      completeAndAdvance(request, steps, step, 'Approved', actor, now, input.comment, events, notifications);
+      completeAndAdvance(request, steps, step, 'Approved', actor, now, input.comment, events, notifications, selfSkip);
       break;
     }
 
@@ -3679,7 +3794,7 @@ export function applyEApprovalAction(
         comment: input.comment,
         summary: `${outcome} by ${actorLabel(actor)} at "${step.name}"`,
       });
-      completeAndAdvance(request, steps, step, outcome, actor, now, input.comment, events, notifications);
+      completeAndAdvance(request, steps, step, outcome, actor, now, input.comment, events, notifications, selfSkip);
       break;
     }
 

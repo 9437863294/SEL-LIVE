@@ -24,6 +24,8 @@ intended to call this engine rather than each building their own approval logic.
 | `src/lib/e-approval-pdf-signing.ts` | Pure signature-placement geometry + the `pdf-lib` embedding call. Unit-tested (`tests/e-approval-pdf-signing.test.mjs`). |
 | `src/components/e-approval/signature-pad.tsx`, `sign-attachment-dialog.tsx` | Capturing a signature and burning it into a PDF attachment. |
 | `src/app/api/e-approval/fetch-attachment/route.ts` | Server-side proxy for Storage downloads — the only way to get an attachment's *bytes* into the browser (Storage sends no CORS headers to `fetch()`). |
+| `src/lib/e-approval-rich-text.ts` | The proposal's two representations: HTML→text (pure, feeds the fingerprint) and the DOMPurify allowlist. Unit-tested (`tests/e-approval-rich-text.test.mjs`). |
+| `src/components/e-approval/rich-text-editor.tsx` | The proposal editor and the read-only renderer — paste from Word/Excel with tables intact. |
 
 ## The handbook
 
@@ -366,6 +368,58 @@ Deliberately excludes two things that would otherwise leak in: the cron's own `E
 entries (`actorId: 'system'`, never matches a real user) and actions a delegate took on *this*
 person's steps (`onBehalfOfUserId === them`, `actorId` is the delegate) — that is what the delegate
 did, correctly attributed to the delegate's own log, not to the person they were covering for.
+
+## The proposal is rich text
+
+The proposal body is a mail-compose field, not a textarea: a comparative statement pasted from Excel
+or a formatted justification pasted from Word arrives with its tables, lists and emphasis intact. That
+was the point — as plain text, pasting a rate table produced a wall of tab-separated characters, so
+people attached the spreadsheet and wrote "please see attached", which is the note-sheet this module
+exists to replace.
+
+**Two fields, and the reason matters.** `bodyHtml` holds the markup; `body` stays its plain-text
+rendition, derived by `eApprovalHtmlToText` at every write (`reconcileEApprovalProposal`, so the two
+can never drift apart regardless of what a caller sends).
+
+`body` is a **material field** — `eApprovalMaterialFingerprint` hashes it. Keeping the fingerprint on
+the text rather than the markup is what makes change control mean "the words changed":
+
+- emboldening a word, or re-pasting the same sentence from a different editor (which silently rewrites
+  the span soup around it), leaves the text identical → **no approval is superseded**;
+- changing ₹5,00,000 to ₹9,00,000, or "helmets" to "vehicles", changes the text → **approvals are
+  superseded**, exactly as before.
+
+Cell boundaries survive into the text as tabs and rows as newlines, so two genuinely different tables
+cannot flatten to the same string and hash alike. `tests/e-approval-rich-text.test.mjs` asserts both
+directions of this.
+
+**Sanitisation is not optional, and happens twice.** Stored HTML that other people's browsers render
+is a stored-XSS surface, and an unusually attractive one: anybody who can raise an approval reaches
+every approver, verifier and administrator who opens the file. So the markup is sanitised on the way
+in (paste and save) *and* again on the way out (`EApprovalRichText`) — the second pass is what
+protects rows already in Firestore, written before a given version of the allowlist or by a path that
+skipped the editor. Nothing renders until the sanitiser has returned; showing the raw string for one
+frame is the whole vulnerability.
+
+DOMPurify does that work rather than a hand-rolled allowlist. This module is dependency-light by
+preference, not by principle, and a sanitiser is the wrong place to spend that preference — mXSS lives
+in exactly the parser quirks, namespace confusion and re-parse mutations a regex over tag names cannot
+see. `style` *is* allowed, deliberately: without it a pasted table loses its borders and widths and
+looks nothing like what was copied, and DOMPurify re-serialises the CSS rather than passing it through.
+
+Other notes:
+
+- `E_APPROVAL_RICH_TEXT_MAX_LENGTH` caps stored markup at 200 KB. A pasted Word page can carry tens of
+  kilobytes of `mso-` soup around one paragraph, and a Firestore document is capped near 1 MB — a
+  proposal that quietly exceeded it would fail the whole write and take the request with it.
+- The toolbar uses `document.execCommand`, which is deprecated with no replacement short of adopting
+  a full editor framework. The trade is deliberate and the comment in `rich-text-editor.tsx` states
+  it; the paste path — the part that actually matters — does not depend on it.
+- `.ea-rich-text` in `globals.css` styles the editor and the read-only renderer from one definition,
+  including print rules that keep tables whole across a page break, so the proposal looks the same
+  being written, being approved, and on the signed Approval Note.
+- A request raised before rich text existed has no `bodyHtml` and renders from `body` exactly as it
+  always did. Opening one to edit seeds the editor via `plainTextToEApprovalHtml`.
 
 ## Signing an attachment
 

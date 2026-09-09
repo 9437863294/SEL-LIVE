@@ -89,6 +89,17 @@ export default function EApprovalLayoutShell({ children }: { children: React.Rea
  */
 function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
+  /**
+   * A print route gets the page to itself — no nav, no gradient, no padding grid.
+   *
+   * `AppShell` already does exactly this for the app-level header, but this is a *nested* layout, so
+   * it kept wrapping the Approval Note in the module's own chrome. Hiding the pieces individually
+   * with `print:hidden` would not have been enough either: the mobile header is `lg:hidden`, and
+   * print lays out at paper width (~816px), which is *below* `lg` — so the bar nobody sees on a
+   * desktop screen un-hid itself in the printout. Removing the chrome outright is both the smaller
+   * change and the one that cannot spring the same leak again from a different element.
+   */
+  const isPrintRoute = pathname.includes('/print');
   const permissions = useEApprovalPermissions();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -148,6 +159,9 @@ function EApprovalLayoutShellInner({ children }: { children: React.ReactNode }) 
       );
     });
   };
+
+  // Before the access check, so a print route never renders module chrome at all.
+  if (isPrintRoute) return <>{children}</>;
 
   if (!permissions.isLoading && !permissions.canViewModule) {
     return (

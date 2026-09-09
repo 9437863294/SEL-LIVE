@@ -1,11 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
   ArrowUpRight,
   CheckCheck,
   CheckCircle2,
   CornerDownLeft,
+  ExternalLink,
   HandMetal,
   HelpCircle,
   Loader2,
@@ -279,8 +281,26 @@ export function ActionPanel({
       )
     : false;
 
+  /**
+   * A mirrored stage whose completion needs data only the source module's own form collects — a
+   * bill number, a bank reference. See `e-approval-link.ts`.
+   *
+   * Recognised by carrying no `mirrorAction`: that field holds the decision to apply back to the
+   * source record, and its absence is precisely "there is no decision that can be taken from here".
+   *
+   * The forward actions are withdrawn rather than left to fail: approving here would either move the
+   * source record on without the figures its own controls require, or be refused on write-back and
+   * leave the two sides disagreeing. The stage still shows, and can still be commented on and
+   * returned or rejected — an approver who thinks the whole thing is wrong should not have to go to
+   * another module to say so.
+   */
+  const completeAtSource = Boolean(
+    activeStep?.mirrorStepId && !activeStep.mirrorAction && request.source?.recordId && !request.source.detachedAt,
+  );
+
   const stepActions: EApprovalActionKind[] = activeStep
     ? availableEApprovalActions(request, activeStep, { settings: settings ?? undefined, hasRemainingSteps: remainingAhead })
+        .filter((kind) => !completeAtSource || !['Approve', 'Approve And Complete', 'Verify'].includes(kind))
     : [];
 
   const isRequester = request.requesterId === serviceActor?.userId;
@@ -401,7 +421,8 @@ export function ActionPanel({
   })();
 
   const nothingToDo =
-    !stepActions.length && !requesterActions.length && !heldByMe.length && !claimable.length && !assignable.length;
+    !stepActions.length && !requesterActions.length && !heldByMe.length && !claimable.length && !assignable.length
+    && !completeAtSource;
 
   if (nothingToDo) return null;
 
@@ -446,6 +467,14 @@ export function ActionPanel({
           )}
         </CardHeader>
         <CardContent className="flex flex-wrap gap-1.5 px-3 pb-3 sm:px-4">
+          {completeAtSource && request.source?.recordPath && (
+            <Button asChild size="sm" className="h-9 gap-1.5">
+              <Link href={request.source.recordPath}>
+                <ExternalLink className="h-4 w-4" />
+                Complete in {request.source.module}
+              </Link>
+            </Button>
+          )}
           {stepActions.map(renderButton)}
           {heldByMe.length > 0 && !stepActions.includes('Resume') && renderButton('Resume')}
           {claimable.length > 0 && renderButton('Take Ownership')}

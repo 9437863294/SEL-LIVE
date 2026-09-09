@@ -1005,3 +1005,164 @@ main {
   flex: 0 0 15rem;
   min-width: 15rem;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * E-Approval rich text (the proposal body)
+ *
+ * One definition shared by the editor and the read-only renderer, so a proposal looks the same
+ * being written as it does being approved. Tailwind's preflight strips list markers and heading
+ * sizes, which is right for UI chrome and wrong for a document body — these put them back, scoped
+ * so nothing else on the page inherits them.
+ *
+ * Pasted markup carries its own inline styles and the sanitiser keeps them; these rules are the
+ * floor for content that arrives with none (typed, or pasted from a plain editor).
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+.ea-rich-text > *:first-child {
+  margin-top: 0;
+}
+.ea-rich-text > *:last-child {
+  margin-bottom: 0;
+}
+.ea-rich-text p,
+.ea-rich-text div {
+  margin: 0 0 0.5rem;
+}
+.ea-rich-text h1,
+.ea-rich-text h2,
+.ea-rich-text h3,
+.ea-rich-text h4,
+.ea-rich-text h5,
+.ea-rich-text h6 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0.9rem 0 0.4rem;
+}
+.ea-rich-text h1 { font-size: 1.25rem; }
+.ea-rich-text h2 { font-size: 1.125rem; }
+.ea-rich-text h3 { font-size: 1rem; }
+.ea-rich-text h4,
+.ea-rich-text h5,
+.ea-rich-text h6 { font-size: 0.9375rem; }
+.ea-rich-text strong,
+.ea-rich-text b { font-weight: 600; }
+.ea-rich-text em,
+.ea-rich-text i { font-style: italic; }
+.ea-rich-text u { text-decoration: underline; }
+.ea-rich-text s,
+.ea-rich-text strike,
+.ea-rich-text del { text-decoration: line-through; }
+
+.ea-rich-text ul,
+.ea-rich-text ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.5rem;
+}
+.ea-rich-text ul { list-style: disc outside; }
+.ea-rich-text ol { list-style: decimal outside; }
+.ea-rich-text li { margin: 0.15rem 0; }
+.ea-rich-text ul ul { list-style: circle outside; }
+.ea-rich-text ol ol { list-style: lower-alpha outside; }
+
+.ea-rich-text a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ea-rich-text blockquote {
+  border-left: 3px solid hsl(var(--border));
+  margin: 0 0 0.5rem;
+  padding: 0.125rem 0 0.125rem 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+.ea-rich-text pre,
+.ea-rich-text code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+}
+.ea-rich-text pre {
+  background: hsl(var(--muted));
+  border-radius: 0.375rem;
+  margin: 0 0 0.5rem;
+  overflow-x: auto;
+  padding: 0.625rem 0.75rem;
+  white-space: pre-wrap;
+}
+.ea-rich-text hr {
+  border: 0;
+  border-top: 1px solid hsl(var(--border));
+  margin: 0.75rem 0;
+}
+
+/*
+ * Tables. A pasted Excel range usually brings its own borders; a table built with the toolbar or
+ * pasted from somewhere plainer brings none, and an unbordered grid of numbers is unreadable — so
+ * borders are asserted here and inline styles from the clipboard simply override them.
+ */
+.ea-rich-text table {
+  border-collapse: collapse;
+  margin: 0 0 0.625rem;
+  max-width: 100%;
+}
+.ea-rich-text th,
+.ea-rich-text td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+.ea-rich-text th {
+  background: hsl(var(--muted));
+  font-weight: 600;
+}
+.ea-rich-text caption {
+  caption-side: top;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  padding-bottom: 0.25rem;
+  text-align: left;
+}
+
+/* Word and Gmail leave images in the clipboard; the sanitiser drops <img>, but a stored proposal
+   written before that may still carry one, and an unconstrained image can be metres wide. */
+.ea-rich-text img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* The proposal is a document, so it prints as one: no scroll containers, no clipped tables. */
+@media print {
+  .ea-rich-text,
+  .ea-rich-text table {
+    overflow: visible !important;
+  }
+  .ea-rich-text tr,
+  .ea-rich-text td,
+  .ea-rich-text th {
+    page-break-inside: avoid;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * The printed Approval Note
+ *
+ * The note is the document that gets signed and filed, so it prints as a document: no rounded
+ * card, no shadow, and nothing split across a page break that has to be read as one unit. Rows of
+ * the approval history and individual remarks each stay whole — a signature line orphaned onto the
+ * next page is the sort of thing that gets a note-sheet queried.
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+@media print {
+  .ea-approval-note {
+    border: 0 !important;
+    box-shadow: none !important;
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .ea-approval-note tr,
+  .ea-approval-note li {
+    page-break-inside: avoid;
+  }
+  .ea-approval-note thead {
+    display: table-header-group;
+  }
+}

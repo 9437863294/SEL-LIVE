@@ -19,13 +19,16 @@ import {
   currency,
   isObligationEditable,
   maskAccount,
+  mergeRecurringPaymentSettings,
   type PaymentMode,
   type PaymentObligation,
   type PaymentTransaction,
   type RecurringPaymentAuditLog,
   type RecurringPaymentSettings,
 } from '@/lib/recurring-payments';
+import { syncRecurringPaymentApprovalInBackground } from '@/lib/recurring-payments-e-approval-service';
 import PaymentPrintNote from './payment-print-note';
+import { PaymentEApprovalCard } from './e-approval-link-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -75,15 +78,19 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       onSnapshot(query(collection(db, RP_COLLECTIONS.notificationQueue), where('paymentId', '==', paymentId)), snapshot => setNotifications(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as NotificationRecord)))),
       onSnapshot(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')), snapshot => {
         if (!snapshot.exists()) return;
-        const data = snapshot.data() as Partial<RecurringPaymentSettings>;
-        setSettings({
-          ...DEFAULT_RECURRING_PAYMENT_SETTINGS, ...data, organizationId,
-          controls: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.controls, ...data.controls },
-        });
+        setSettings(mergeRecurringPaymentSettings(snapshot.data() as Partial<RecurringPaymentSettings>, organizationId));
       }),
     ];
     return () => stops.forEach(stop => stop());
   }, [organizationId, paymentId]);
+
+  // A reconcile on open, so a decision taken in E-Approval shows here even if the write-back that
+  // followed it failed — a browser closed mid-action, an offline moment. Idempotent and silent: it
+  // does nothing when the two sides already agree, and nothing at all when the bridge is off. This
+  // is the backstop that keeps a mirror from quietly drifting rather than the main path.
+  useEffect(() => {
+    syncRecurringPaymentApprovalInBackground(paymentId, user);
+  }, [paymentId, user]);
 
   // Editing a recorded transaction mutates financial history, so it's locked exactly where the
   // org has already said closed payments should be locked — reusing the existing control rather
@@ -258,6 +265,7 @@ export default function RecurringPaymentDetailPage({ paymentId }: { paymentId: s
       />
     </div>
     <div className="space-y-5 rp-print-hide"><Card className="border-0 bg-gradient-to-r from-slate-950 via-indigo-950 to-violet-900 text-white"><CardContent className="space-y-4 p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div className="flex gap-3"><Button variant="secondary" size="icon" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></Button><div><div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold">{payment.title}</h1><Badge className="bg-white/15 text-white hover:bg-white/20">{payment.status}</Badge><Badge variant="outline" className="border-white/30 text-white">{payment.priority || 'Normal'}</Badge></div><p className="mt-1 text-sm text-indigo-100">Payment ID {payment.id} · {payment.vendorName} · {payment.sourceType || 'Recurring'}</p><p className={`mt-1 text-sm ${days < 0 ? 'text-red-300' : 'text-indigo-200'}`}>{days < 0 ? `${Math.abs(days)} day(s) overdue` : days === 0 ? 'Due today' : `Due in ${days} day(s)`}</p></div></div><div className="flex flex-wrap gap-2 print:hidden"><Button variant="secondary" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" />Print note</Button>{can('Edit', 'Recurring Payments.Payments') && isObligationEditable(payment) && <Link href={`/recurring-payments/payments/${payment.id}/edit`}><Button variant="secondary"><Pencil className="mr-2 h-4 w-4" />Edit</Button></Link>}{can('Delete', 'Recurring Payments.Payments') && <Button variant="destructive" onClick={deletePayment}><Trash2 className="mr-2 h-4 w-4" />Delete</Button>}{canAct && <Link href={`/recurring-payments/stage/${payment.currentStepId}`}><Button className="bg-white text-indigo-800 hover:bg-indigo-50"><ExternalLink className="mr-2 h-4 w-4" />Open assigned action</Button></Link>}{can('Record Payment', 'Recurring Payments.Payments') && ['Approved', 'Payment Processing', 'Partially Paid'].includes(payment.status) && <Link href={`/recurring-payments/payments/${payment.id}/record-payment`}><Button className="bg-emerald-500 hover:bg-emerald-400"><WalletCards className="mr-2 h-4 w-4" />Record payment</Button></Link>}{can('Cancel', 'Recurring Payments.Payments') && !['Closed', 'Cancelled'].includes(payment.status) && <Button variant="destructive" onClick={cancelPayment}>Cancel</Button>}</div></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><HeaderInfo label="Organization" value={user?.organizationName || organizationId} /><HeaderInfo label="Branch / project" value={payment.projectName || payment.branchName || 'Organization-wide'} /><HeaderInfo label="Due date" value={payment.dueDate} /><HeaderInfo label="Owner" value={userName(payment.assignedTo, users)} /><HeaderInfo label="Current stage" value={payment.stage || '—'} /></div></CardContent></Card>
+    <PaymentEApprovalCard payment={payment} />
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-6"><Metric label="Expected" value={currency(payment.expectedAmount)} /><Metric label="Bill" value={currency(payment.billAmount || 0)} /><Metric label="Approved" value={currency(payment.approvedAmount || payment.netPayableAmount || payment.billAmount || 0)} /><Metric label="Paid" value={currency(payment.paidAmount || 0)} /><Metric label="Balance" value={currency(outstanding)} /><Metric label="Variance" value={`${Number(payment.variancePercent || 0).toFixed(1)}%`} alert={payment.varianceWarning} /></div>
     <Tabs defaultValue="overview"><TabsList className="flex h-auto flex-wrap"><TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="bill">Bill Details</TabsTrigger><TabsTrigger value="approval">Approval Workflow</TabsTrigger><TabsTrigger value="transactions">Transactions</TabsTrigger><TabsTrigger value="documents">Documents</TabsTrigger><TabsTrigger value="comments">Comments</TabsTrigger><TabsTrigger value="notifications">Notifications</TabsTrigger><TabsTrigger value="audit">Audit Log</TabsTrigger></TabsList>
       <TabsContent value="overview"><Card><CardContent className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3"><Info label="Billing period" value={`${payment.billingPeriodStart} to ${payment.billingPeriodEnd}`} /><Info label="Bill number" value={payment.billNumber || 'Not received'} /><Info label="Bill date" value={payment.billDate || payment.billReceivedDate || '—'} /><Info label="Category" value={payment.category} /><Info label="Vendor" value={payment.vendorName} /><Info label="Account reference" value={maskAccount(payment.accountNumber) || '—'} /><Info label="Cost centre" value={payment.costCentre || '—'} /><Info label="General ledger" value={payment.ledger || '—'} /><Info label="Description" value={payment.description || '—'} />{payment.expenseRequestNo && <Info label="Expense request no." value={payment.expenseRequestNo} />}</CardContent></Card></TabsContent>

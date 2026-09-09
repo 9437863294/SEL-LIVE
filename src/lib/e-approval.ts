@@ -1,4 +1,5 @@
 import type { Timestamp } from 'firebase/firestore';
+import type { EApprovalSourceLink } from './e-approval-link';
 import {
   DEFAULT_E_APPROVAL_ESCALATION_LADDER,
   DEFAULT_E_APPROVAL_SETTINGS,
@@ -55,6 +56,7 @@ import {
  */
 
 export * from './e-approval-policy';
+export * from './e-approval-link';
 
 export const E_APPROVAL_COLLECTIONS = {
   requests: 'eApprovalRequests',
@@ -102,7 +104,21 @@ export interface EApprovalRequest extends EApprovalAuditFields {
 
   /* Basic information (spec section 15) */
   subject: string;
+  /**
+   * The proposal, as plain text.
+   *
+   * Stays the canonical text even when `bodyHtml` carries the formatting, because this is the field
+   * `eApprovalMaterialFingerprint` hashes: change control has to fire on the words changing, not on
+   * a word being emboldened or on a clipboard rewriting its own span soup. Also what notifications
+   * and anything reading a request on a lock screen use.
+   */
   body: string;
+  /**
+   * The proposal with its formatting — pasted tables, lists, emphasis — sanitised against the
+   * allowlist in `e-approval-rich-text.ts`. Absent on requests raised before rich text existed,
+   * which render from `body` exactly as they always did.
+   */
+  bodyHtml?: string;
   approvalTypeId?: string;
   approvalTypeName?: string;
   departmentId?: string;
@@ -176,6 +192,13 @@ export interface EApprovalRequest extends EApprovalAuditFields {
   attachmentCount?: number;
   commentCount?: number;
   isDeleted?: boolean;
+
+  /**
+   * Set when this request mirrors another module's workflow rather than standing on its own — see
+   * `e-approval-link.ts`. Absent on an ordinary note-sheet, which is every request until a module
+   * opts in, so nothing about a standalone approval changes because this field exists.
+   */
+  source?: EApprovalSourceLink;
 }
 
 /** The fields a create/edit form owns. Everything else is the engine's. */
@@ -183,6 +206,7 @@ export type EApprovalRequestDraft = Pick<
   EApprovalRequest,
   | 'subject'
   | 'body'
+  | 'bodyHtml'
   | 'approvalTypeId'
   | 'approvalTypeName'
   | 'departmentId'

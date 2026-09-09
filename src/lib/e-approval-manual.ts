@@ -152,7 +152,7 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
           ),
           steps(
             'Subject — one line naming what is being approved. For example, "Approval for purchase of safety equipment".',
-            'The proposal — the full text being approved. Say what is proposed, why, and what it costs. This is the wording an approver signs.',
+            'The proposal — the full text being approved. Say what is proposed, why, and what it costs. This is the wording an approver signs. It is a formatted box like an email body: paste a rate table or comparative statement straight from Excel or Word and it keeps its layout.',
             'Kind of approval — the approval type, if your organisation has configured any. It decides how the request routes and whether an amount is required.',
             'Financial details — appears as a required step only when the chosen type needs an amount. Otherwise it is optional and hidden.',
             'Who approves it — name the first approver. One is enough.',
