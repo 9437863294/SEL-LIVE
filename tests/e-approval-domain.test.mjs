@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 // types that only resolve inside the bundler.
 import {
   applyEApprovalAction,
+  E_APPROVAL_REASSIGNMENT_VERBS,
   availableEApprovalActions,
   buildEApprovalSteps,
   canActOnEApprovalStep,
@@ -1951,4 +1952,17 @@ test('only the author removes from a draft, and an absent actor never does', () 
   assert.equal(canRemoveEApprovalAttachment(draft, { userId: 'u-other' }), false);
   assert.equal(canRemoveEApprovalAttachment(draft, null), false);
   assert.equal(canRemoveEApprovalAttachment(draft, { userId: '' }), false);
+});
+
+/*
+ * The printed approval note words a movement using the same map the workflow timeline does. A new
+ * kind added to EApprovalReassignment without a verb would render as "undefined from … to …" on
+ * both, and on the note that is the document somebody signs.
+ */
+test('every kind of reassignment has a verb for the timeline and the printed note', () => {
+  for (const kind of ['Forward', 'Delegate', 'Escalate', 'Reassign']) {
+    assert.equal(typeof E_APPROVAL_REASSIGNMENT_VERBS[kind], 'string', kind + ' needs a verb');
+    assert.ok(E_APPROVAL_REASSIGNMENT_VERBS[kind].length > 0);
+  }
+  assert.equal(Object.keys(E_APPROVAL_REASSIGNMENT_VERBS).length, 4, 'a new kind needs a verb adding');
 });

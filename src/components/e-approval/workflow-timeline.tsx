@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 import {
   describeEApprovalAssignment,
   eApprovalTimeline,
-  type EApprovalReassignment,
+  E_APPROVAL_REASSIGNMENT_VERBS,
   type EApprovalStepRecord,
   type EApprovalStepStatus,
   type EApprovalTimelineNode,
@@ -53,13 +53,6 @@ const statusRing: Record<EApprovalStepStatus, string> = {
   Skipped: 'bg-slate-100 text-slate-400 ring-slate-200',
   Cancelled: 'bg-slate-100 text-slate-400 ring-slate-200',
   Superseded: 'bg-stone-100 text-stone-500 ring-stone-200',
-};
-
-const reassignmentVerb: Record<EApprovalReassignment['kind'], string> = {
-  Forward: 'Forwarded',
-  Delegate: 'Delegated',
-  Escalate: 'Escalated',
-  Reassign: 'Reassigned',
 };
 
 /**
@@ -234,7 +227,7 @@ function NodeBody({ node, isLast, onSelectStep, now }: NodeProps) {
               >
                 <CornerUpRight className="mt-0.5 h-3 w-3 shrink-0 text-orange-500" aria-hidden />
                 <span>
-                  <span className="font-medium text-foreground/80">{reassignmentVerb[move.kind]}</span> from{' '}
+                  <span className="font-medium text-foreground/80">{E_APPROVAL_REASSIGNMENT_VERBS[move.kind]}</span> from{' '}
                   {describeEApprovalAssignment(move.from)} to {describeEApprovalAssignment(move.to)}
                   {move.byName && ` by ${move.byName}`} · {formatEApprovalDateTime(move.at)}
                   {move.reason && ` — ${move.reason}`}

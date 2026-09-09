@@ -326,25 +326,149 @@ function inlineDeclarationsOf(style: CSSStyleDeclaration): string {
   return style.cssText.trim().replace(/;$/, '');
 }
 
+/** A length attribute (`width="120"`, `width="50%"`) as a CSS length. */
+const attributeLength = (value: string): string | null => {
+  const trimmed = value.trim();
+  if (/^\d+(\.\d+)?%$/.test(trimmed)) return trimmed;
+  if (/^\d+(\.\d+)?$/.test(trimmed)) return `${trimmed}px`;
+  return null;
+};
+
+/** `<font size="1">` … `size="7"`, in the sizes the HTML specification assigns them. */
+const FONT_SIZE_KEYWORDS = ['x-small', 'small', 'medium', 'large', 'x-large', 'xx-large', 'xxx-large'];
+
 /**
- * Resolves any `<style>` blocks in a pasted fragment into inline `style` attributes.
+ * The presentational attributes of a pasted document, restated as CSS.
  *
- * Declarations are applied in source order and the element's own inline style is appended last, so
- * the ordinary cascade holds: a later rule beats an earlier one, an inline declaration beats both,
- * and an `!important` in the stylesheet still outranks a plain inline declaration. Selector
- * specificity is not modelled — for the single-class selectors these applications emit it never
- * arises, and approximating it would cost more than it could ever recover.
+ * This is the other reason a pasted table "would not hold its alignment", and it is not a
+ * sanitiser problem at all — `align` and `valign` were reaching the page intact. They are
+ * *presentational hints*, and CSS gives those zero specificity at the very start of the author
+ * origin, so **every** author rule outranks them. `.ea-rich-text td { text-align: left;
+ * vertical-align: top }` in `globals.css` therefore won against `align="center"` every single time,
+ * and a centred, middle-aligned header cell rendered flush top-left. The same rule beat `nowrap`,
+ * the cell padding a `cellpadding` asked for, and — via `.ea-rich-text th { background: … }` — the
+ * fill colour on a pasted header row.
  *
- * Returns the input untouched off the browser, on a fragment with no stylesheet, or if anything
+ * Restating them as inline declarations is what settles it: an inline style outranks any class
+ * selector, so the pasted document wins and the module's defaults go back to being defaults, which
+ * apply only where the clipboard said nothing.
+ *
+ * Returned per element rather than written straight onto it, because these are the *weakest* layer:
+ * a `<style>` rule saying `text-align:left` genuinely should beat `align="center"`, exactly as it
+ * would in the application the content was copied from.
+ */
+function presentationalHintsOf(doc: Document): Map<Element, string> {
+  const hints = new Map<Element, string>();
+  // One scratch element, reused: assigning through `.style` makes the engine validate every value,
+  // so an `align="middle"` or a `bgcolor="garbage"` is discarded rather than written out as CSS.
+  const scratch = doc.createElement('div');
+
+  const collect = (element: Element, apply: (style: CSSStyleDeclaration) => void) => {
+    scratch.removeAttribute('style');
+    apply(scratch.style);
+    const declarations = scratch.style.cssText.trim().replace(/;$/, '');
+    if (!declarations) return;
+    const existing = hints.get(element);
+    hints.set(element, existing ? `${existing};${declarations}` : declarations);
+  };
+
+  for (const element of Array.from(doc.querySelectorAll<HTMLElement>('[align],[valign],[bgcolor],[nowrap],[width],[height]'))) {
+    const tag = element.tagName.toLowerCase();
+    const align = element.getAttribute('align');
+    if (align) {
+      // `align` on a table is not text alignment, it is where the table itself sits. Only the
+      // centred case is honoured; `left`/`right` mean float, which has no place in a note-sheet.
+      if (tag === 'table') {
+        if (align.toLowerCase() === 'center') {
+          collect(element, (style) => {
+            style.marginLeft = 'auto';
+            style.marginRight = 'auto';
+          });
+        }
+      } else {
+        collect(element, (style) => {
+          style.textAlign = align;
+        });
+      }
+    }
+    const valign = element.getAttribute('valign');
+    if (valign) collect(element, (style) => { style.verticalAlign = valign; });
+
+    const bgcolor = element.getAttribute('bgcolor');
+    if (bgcolor) collect(element, (style) => { style.backgroundColor = bgcolor; });
+
+    if (element.hasAttribute('nowrap')) collect(element, (style) => { style.whiteSpace = 'nowrap'; });
+
+    const width = attributeLength(element.getAttribute('width') ?? '');
+    if (width) collect(element, (style) => { style.width = width; });
+    const height = attributeLength(element.getAttribute('height') ?? '');
+    if (height) collect(element, (style) => { style.height = height; });
+  }
+
+  for (const element of Array.from(doc.querySelectorAll<HTMLElement>('font'))) {
+    const color = element.getAttribute('color');
+    if (color) collect(element, (style) => { style.color = color; });
+    const face = element.getAttribute('face');
+    if (face) collect(element, (style) => { style.fontFamily = face; });
+    const size = Number(element.getAttribute('size'));
+    if (Number.isInteger(size) && size >= 1 && size <= 7) {
+      collect(element, (style) => { style.fontSize = FONT_SIZE_KEYWORDS[size - 1]; });
+    }
+  }
+
+  /*
+   * `cellpadding` and `cellspacing` describe the cells, not the table, so they are pushed down onto
+   * the cells the way the browser's own presentational-hint machinery would. Without this the
+   * module's fixed `padding: 0.375rem 0.5rem` silently replaced whatever spacing the pasted table
+   * was built with.
+   */
+  for (const table of Array.from(doc.querySelectorAll<HTMLElement>('table[cellpadding],table[cellspacing]'))) {
+    const padding = attributeLength(table.getAttribute('cellpadding') ?? '');
+    if (padding) {
+      for (const cell of Array.from(table.querySelectorAll<HTMLElement>('td,th'))) {
+        collect(cell, (style) => { style.padding = padding; });
+      }
+    }
+    const spacing = attributeLength(table.getAttribute('cellspacing') ?? '');
+    // Only when it asks for actual space: the module collapses borders by default, and `cellspacing="0"`
+    // is asking for exactly that.
+    if (spacing && !/^0(px|%)?$/.test(spacing)) {
+      collect(table, (style) => {
+        style.borderCollapse = 'separate';
+        style.borderSpacing = spacing;
+      });
+    }
+  }
+
+  return hints;
+}
+
+/**
+ * Resolves a pasted fragment's `<style>` blocks and presentational attributes into inline styles.
+ *
+ * Three layers are merged, weakest first, which is the order the cascade would have applied them in
+ * the application the content came from:
+ *
+ *   1. presentational attributes (`align`, `bgcolor`, `cellpadding`, `<font color>`) — see above;
+ *   2. the clipboard's own stylesheet, in source order, so a later rule beats an earlier one;
+ *   3. whatever inline `style` the element already carried, which beats both.
+ *
+ * An `!important` anywhere still outranks a plain declaration, since that is preserved in the text.
+ * Selector specificity is not modelled — for the single-class selectors these applications emit it
+ * never arises, and approximating it would cost more than it could ever recover.
+ *
+ * Returns the input untouched off the browser, on a fragment with nothing to resolve, or if anything
  * about the parse fails: this improves fidelity and must never be able to lose content.
  */
 export function normalizeEApprovalPastedStyles(html: string): string {
   if (typeof window === 'undefined' || typeof DOMParser === 'undefined') return html;
   const hasStyleBlock = /<style[\s>]/i.test(html);
   const hasCssUrl = /url\s*\(/i.test(html);
-  // Nothing to resolve and nothing to strip — the overwhelmingly common case on the render path,
-  // where the stored markup has already been through here once.
-  if (!hasStyleBlock && !hasCssUrl) return html;
+  const hasHints = /\s(?:align|valign|bgcolor|nowrap|width|height|cellpadding|cellspacing)\s*=/i.test(html)
+    || /<font[\s>]/i.test(html);
+  // Nothing to resolve and nothing to strip — the common case on the render path, where the stored
+  // markup has already been through here once.
+  if (!hasStyleBlock && !hasCssUrl && !hasHints) return html;
 
   let doc: Document;
   try {
@@ -354,13 +478,19 @@ export function normalizeEApprovalPastedStyles(html: string): string {
     return html;
   }
 
+  const hints = hasHints ? presentationalHintsOf(doc) : new Map<Element, string>();
+
+  const ownStyle = new Map<Element, string>();
+  const applied = new Map<Element, string[]>();
+  const remember = (element: Element) => {
+    if (!ownStyle.has(element)) ownStyle.set(element, element.getAttribute('style') ?? '');
+  };
+  for (const element of hints.keys()) remember(element);
+
   if (hasStyleBlock) {
     const styleElements = Array.from(doc.querySelectorAll('style'));
     const css = styleElements.map((element) => element.textContent ?? '').join('\n');
     styleElements.forEach((element) => element.remove());
-
-    const ownStyle = new Map<Element, string>();
-    const applied = new Map<Element, string[]>();
 
     for (const rule of readClipboardStyleRules(css)) {
       const declarations = inlineDeclarationsOf(rule.style);
@@ -373,20 +503,20 @@ export function normalizeEApprovalPastedStyles(html: string): string {
         continue;
       }
       for (const element of matches) {
-        if (!ownStyle.has(element)) ownStyle.set(element, element.getAttribute('style') ?? '');
+        remember(element);
         const list = applied.get(element);
         if (list) list.push(declarations);
         else applied.set(element, [declarations]);
       }
     }
+  }
 
-    for (const [element, declarations] of applied) {
-      const merged = [...declarations, ownStyle.get(element) ?? '']
-        .map((part) => part.trim().replace(/;+$/, ''))
-        .filter(Boolean)
-        .join(';');
-      if (merged) element.setAttribute('style', merged);
-    }
+  for (const element of ownStyle.keys()) {
+    const merged = [hints.get(element) ?? '', ...(applied.get(element) ?? []), ownStyle.get(element) ?? '']
+      .map((part) => part.trim().replace(/;+$/, ''))
+      .filter(Boolean)
+      .join(';');
+    if (merged) element.setAttribute('style', merged);
   }
 
   /*

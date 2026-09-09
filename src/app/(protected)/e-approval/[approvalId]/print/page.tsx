@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,8 +10,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   describeEApprovalAssignment,
   E_APPROVAL_BASE_PATH,
+  E_APPROVAL_REASSIGNMENT_VERBS,
   isPositiveEApprovalOutcome,
   type EApprovalDetail,
+  type EApprovalStep,
 } from '@/lib/e-approval';
 import { loadEApprovalDetail } from '@/lib/e-approval-service';
 import { EApprovalRichText } from '@/components/e-approval/rich-text-editor';
@@ -21,6 +23,44 @@ import {
   formatEApprovalDateTime,
   useEApprovalPermissions,
 } from '@/components/e-approval/hooks';
+
+/**
+ * How a stage came to be where it is: every forward, delegation and escalation it went through.
+ *
+ * This is on the workflow tab and was missing from the note entirely, and the omission was worse
+ * than a missing detail. Forwarding is how a file is actually routed here — and the covering
+ * sentence a person writes when they forward it ("Dear Sir, please approve Rs 1,429 towards the
+ * electricity bill…") is carried as the *reason* on the move, not as the stage's comment. A stage
+ * that has been forwarded twice and not yet acted on therefore printed as one line naming its
+ * current holder, with the entire substance of the request left on screen.
+ *
+ * Rendered for outstanding stages as much as for completed ones, for that reason: an unacted stage
+ * is exactly the case where the trail is the only thing on the row worth reading.
+ */
+function StepMovements({ step, columns }: { step: EApprovalStep; columns: number }) {
+  const moves = step.reassignments ?? [];
+  if (!moves.length && !step.instruction) return null;
+  return (
+    <tr className="border-b border-slate-100">
+      <td colSpan={columns} className="py-1 pl-4 text-xs text-slate-600">
+        {step.instruction && (
+          <p className="mb-0.5">
+            <span className="font-medium text-slate-700">Instruction:</span> {step.instruction}
+          </p>
+        )}
+        {moves.map((move, index) => (
+          <p key={`${move.at}-${index}`} className="mb-0.5 last:mb-0">
+            <span className="text-slate-400">↳ </span>
+            <span className="font-medium text-slate-700">{E_APPROVAL_REASSIGNMENT_VERBS[move.kind]}</span> from{' '}
+            {describeEApprovalAssignment(move.from)} to {describeEApprovalAssignment(move.to)}
+            {move.byName && ` by ${move.byName}`} · {formatEApprovalDateTime(move.at)}
+            {move.reason && ` — ${move.reason}`}
+          </p>
+        ))}
+      </td>
+    </tr>
+  );
+}
 
 /**
  * The final approval note of spec section 25.
@@ -250,45 +290,84 @@ export default function EApprovalNotePage() {
             </thead>
             <tbody>
               {acted.map((step) => (
-                <tr key={step.id} className="border-b border-slate-100 align-top">
-                  <td className={step.depth > 0 ? 'py-1 pl-4 text-slate-600' : 'py-1 font-medium'}>
-                    {step.depth > 0 && <span className="mr-1 text-slate-400">↳</span>}
-                    {step.name}
-                  </td>
-                  <td className="py-1">
-                    {step.actedByName || describeEApprovalAssignment(step.assignment)}
-                    {step.onBehalfOfName && (
-                      <span className="block text-xs text-slate-500">on behalf of {step.onBehalfOfName}</span>
-                    )}
-                  </td>
-                  <td className={isPositiveEApprovalOutcome(step.outcome) ? 'py-1 font-medium' : 'py-1'}>
-                    {step.outcome}
-                    {step.comment && <span className="block text-xs italic text-slate-500">“{step.comment}”</span>}
-                  </td>
-                  <td className="whitespace-nowrap py-1 text-xs">{formatEApprovalDateTime(step.completedAt)}</td>
-                </tr>
+                <Fragment key={step.id}>
+                  <tr className="border-b border-slate-100 align-top">
+                    <td className={step.depth > 0 ? 'py-1 pl-4 text-slate-600' : 'py-1 font-medium'}>
+                      {step.depth > 0 && <span className="mr-1 text-slate-400">↳</span>}
+                      {step.name}
+                      {/* Why a stage configured as "Project Manager" prints a person's name. */}
+                      {step.assignment?.resolvedFrom && (
+                        <span className="block text-xs font-normal text-slate-500">
+                          resolved from {step.assignment.resolvedFrom}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1">
+                      {step.actedByName || describeEApprovalAssignment(step.assignment)}
+                      {step.onBehalfOfName && (
+                        <span className="block text-xs text-slate-500">on behalf of {step.onBehalfOfName}</span>
+                      )}
+                      {step.delegatedToName && (
+                        <span className="block text-xs text-slate-500">delegated to {step.delegatedToName}</span>
+                      )}
+                      {step.ownedByName && step.ownedByName !== step.actedByName && (
+                        <span className="block text-xs text-slate-500">taken by {step.ownedByName}</span>
+                      )}
+                    </td>
+                    <td className={isPositiveEApprovalOutcome(step.outcome) ? 'py-1 font-medium' : 'py-1'}>
+                      {step.outcome}
+                      {/* What this desk actually sanctioned, which can differ from the figure asked for
+                          and from what a later desk settled on. The screen shows it per stage; the note
+                          showed only the request-level total, so a part-sanction printed as unanimous. */}
+                      {step.approvedAmount != null && (
+                        <span className="block text-xs font-medium">
+                          sanctioned {formatEApprovalAmount(step.approvedAmount)}
+                        </span>
+                      )}
+                      {step.comment && <span className="block text-xs italic text-slate-500">“{step.comment}”</span>}
+                    </td>
+                    <td className="whitespace-nowrap py-1 text-xs">{formatEApprovalDateTime(step.completedAt)}</td>
+                  </tr>
+                  <StepMovements step={step} columns={4} />
+                </Fragment>
               ))}
               {outstanding.map((step) => (
-                <tr key={step.id} className="border-b border-slate-100 align-top text-slate-500">
-                  <td className={step.depth > 0 ? 'py-1 pl-4' : 'py-1 font-medium'}>
-                    {step.depth > 0 && <span className="mr-1 text-slate-400">↳</span>}
-                    {step.name}
-                  </td>
-                  <td className="py-1">{describeEApprovalAssignment(step.assignment)}</td>
-                  <td className="py-1 italic">
-                    {step.status === 'Active' ? 'Awaiting action' : step.status}
-                    {step.groupMode && step.groupMode !== 'Single' && (
-                      <span className="block text-xs">
-                        {step.groupMode === 'All'
-                          ? 'all must approve'
-                          : step.groupMode === 'Any'
-                            ? 'any one may approve'
-                            : `${step.groupRequiredCount ?? 2} of the group must approve`}
-                      </span>
-                    )}
-                  </td>
-                  <td className="whitespace-nowrap py-1 text-xs">—</td>
-                </tr>
+                <Fragment key={step.id}>
+                  <tr className="border-b border-slate-100 align-top text-slate-500">
+                    <td className={step.depth > 0 ? 'py-1 pl-4' : 'py-1 font-medium'}>
+                      {step.depth > 0 && <span className="mr-1 text-slate-400">↳</span>}
+                      {step.name}
+                      {step.assignment?.resolvedFrom && (
+                        <span className="block text-xs font-normal">resolved from {step.assignment.resolvedFrom}</span>
+                      )}
+                    </td>
+                    <td className="py-1">
+                      {describeEApprovalAssignment(step.assignment)}
+                      {step.delegatedToName && (
+                        <span className="block text-xs">delegated to {step.delegatedToName}</span>
+                      )}
+                      {step.ownedByName && <span className="block text-xs">taken by {step.ownedByName}</span>}
+                    </td>
+                    <td className="py-1 italic">
+                      {step.status === 'Active' ? 'Awaiting action' : step.status}
+                      {step.groupMode && step.groupMode !== 'Single' && (
+                        <span className="block text-xs">
+                          {step.groupMode === 'All'
+                            ? 'all must approve'
+                            : step.groupMode === 'Any'
+                              ? 'any one may approve'
+                              : `${step.groupRequiredCount ?? 2} of the group must approve`}
+                        </span>
+                      )}
+                    </td>
+                    {/* "Pending since", not a dash. On a note-sheet in circulation the age of the
+                        stage it is sitting at is the whole question being asked of the printout. */}
+                    <td className="whitespace-nowrap py-1 text-xs">
+                      {step.startedAt ? `since ${formatEApprovalDateTime(step.startedAt)}` : '—'}
+                    </td>
+                  </tr>
+                  <StepMovements step={step} columns={4} />
+                </Fragment>
               ))}
               {acted.length === 0 && outstanding.length === 0 && (
                 <tr>

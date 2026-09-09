@@ -547,6 +547,20 @@ export interface EApprovalReassignment {
   reason?: string;
 }
 
+/**
+ * How each kind of move is worded.
+ *
+ * Here rather than in the timeline component because the printed approval note has to word it the
+ * same way the screen does — the note is the document that gets signed and filed, and a movement
+ * described as "Forwarded" on screen and "Reassigned" on paper is two accounts of one event.
+ */
+export const E_APPROVAL_REASSIGNMENT_VERBS: Record<EApprovalReassignment['kind'], string> = {
+  Forward: 'Forwarded',
+  Delegate: 'Delegated',
+  Escalate: 'Escalated',
+  Reassign: 'Reassigned',
+};
+
 /* ------------------------------------------------------------------------------------------------
  * Request state
  * ---------------------------------------------------------------------------------------------- */
