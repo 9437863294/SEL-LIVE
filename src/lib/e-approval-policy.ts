@@ -2138,11 +2138,39 @@ export interface EApprovalActor {
   delegations?: EApprovalDelegation[];
 }
 
-const actorDepartments = (actor: EApprovalActor): string[] =>
-  Array.from(new Set([actor.departmentId, ...(actor.departmentIds ?? [])].filter(Boolean) as string[]));
+/**
+ * The departments and projects an actor stands for, derived once per actor object.
+ *
+ * Both were recomputed on every call — each one building a `Set` and then an `Array` from it — and
+ * both are called *per row*, from `rowIsWithActor`, `canViewEApproval` and the assignee checks. On a
+ * register of a few hundred approvals that is a few thousand throwaway allocations for a list of two
+ * or three strings that cannot have changed: an `EApprovalActor` is built once by
+ * `loadEApprovalActorContext` and never mutated afterwards (the engine copies rather than edits it),
+ * so the derivation is a pure function of an immutable object.
+ *
+ * A `WeakMap` rather than a `Map`, so holding the cache never holds the actor alive — the entry goes
+ * when the actor does, which for the browser is on every context refresh.
+ */
+const actorDepartmentCache = new WeakMap<EApprovalActor, string[]>();
+const actorProjectCache = new WeakMap<EApprovalActor, string[]>();
 
-const actorProjects = (actor: EApprovalActor): string[] =>
-  Array.from(new Set((actor.projectIds ?? []).filter(Boolean)));
+const actorDepartments = (actor: EApprovalActor): string[] => {
+  const cached = actorDepartmentCache.get(actor);
+  if (cached) return cached;
+  const value = Array.from(
+    new Set([actor.departmentId, ...(actor.departmentIds ?? [])].filter(Boolean) as string[]),
+  );
+  actorDepartmentCache.set(actor, value);
+  return value;
+};
+
+const actorProjects = (actor: EApprovalActor): string[] => {
+  const cached = actorProjectCache.get(actor);
+  if (cached) return cached;
+  const value = Array.from(new Set((actor.projectIds ?? []).filter(Boolean)));
+  actorProjectCache.set(actor, value);
+  return value;
+};
 
 /**
  * Whether `actor` may act on `step`.
@@ -4461,10 +4489,50 @@ export function eApprovalWorkQueue<T extends EApprovalWorkRow>(
   now: string | Date = new Date(),
 ): EApprovalWorkQueue<T> {
   const at = parseEApprovalDate(now) ?? new Date();
+  /*
+   * Sorted on keys read off each row once, rather than by calling `compareEApprovalUrgency` from
+   * inside the comparator.
+   *
+   * The comparator parses `now` and both rows' `currentDueAt` and `submittedAt` every time it runs,
+   * and a sort runs its comparator O(n log n) times — so ordering three hundred approvals meant
+   * several thousand date parses to answer questions about thirty distinct dates. The ordering is
+   * unchanged: the block below is `compareEApprovalUrgency` with its inputs hoisted, including the
+   * "only when both are set" guard on the due comparison, and `compareEApprovalUrgency` itself stays
+   * exported for callers that compare two rows on their own.
+   */
+  const atMs = at.getTime();
   const mine = rows
     .filter((row) => isOpenEApprovalStatus(row.status))
     .filter((row) => rowIsWithActor(row, actor))
-    .sort((a, b) => compareEApprovalUrgency(a, b, at));
+    .map((row) => {
+      const due = millis(row.currentDueAt);
+      return {
+        row,
+        band: E_APPROVAL_URGENCIES.indexOf(
+          due == null
+            ? 'No Clock'
+            : due - atMs < 0
+              ? 'Overdue'
+              : due - atMs <= DAY
+                ? 'Due Today'
+                : due - atMs <= 3 * DAY
+                  ? 'Due Soon'
+                  : 'On Track',
+        ),
+        due,
+        priority: priorityRank[row.priority ?? 'Normal'] ?? 2,
+        amount: row.amount ?? 0,
+        age: millis(row.submittedAt) ?? Number.MAX_SAFE_INTEGER,
+      };
+    })
+    .sort((a, b) => {
+      if (a.band !== b.band) return a.band - b.band;
+      if (a.due != null && b.due != null && a.due !== b.due) return a.due - b.due;
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      if (a.amount !== b.amount) return b.amount - a.amount;
+      return a.age - b.age;
+    })
+    .map((entry) => entry.row);
   const byUrgency: Record<EApprovalUrgency, number> = { Overdue: 0, 'Due Today': 0, 'Due Soon': 0, 'On Track': 0, 'No Clock': 0 };
   const byKind: Record<EApprovalWorkKind, number> = { Approval: 0, Verification: 0, Clarification: 0, Correction: 0 };
   let valuePending = 0;

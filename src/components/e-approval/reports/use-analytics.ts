@@ -49,11 +49,19 @@ export function useEApprovalAnalytics(filter: EApprovalAnalyticsFilter = {}): An
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const reload = useCallback(async () => {
+  /**
+   * `force` decides whether the shared analytics cache is consulted.
+   *
+   * Mounting a report page reuses whatever the last one fetched — the seven report screens read the
+   * same corpus, and re-fetching up to 18,000 documents each time somebody moves between them is
+   * most of why the reports section felt slow. Refresh is the user saying "not that, the current
+   * numbers", so it bypasses.
+   */
+  const load = useCallback(async (force: boolean) => {
     if (!serviceActor) return;
     setIsLoading(true);
     try {
-      const loaded = await loadEApprovalAnalyticsData(serviceActor.organizationId);
+      const loaded = await loadEApprovalAnalyticsData(serviceActor.organizationId, { force });
       setData({
         requests: loaded.requests as unknown as AnalyticsRequestRow[],
         steps: loaded.steps as unknown as AnalyticsStepRow[],
@@ -68,9 +76,11 @@ export function useEApprovalAnalytics(filter: EApprovalAnalyticsFilter = {}): An
     }
   }, [serviceActor]);
 
+  const reload = useCallback(() => load(true), [load]);
+
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    void load(false);
+  }, [load]);
 
   // Serialised, so a caller passing a fresh object literal each render does not refilter every frame.
   const filterKey = JSON.stringify(filter);

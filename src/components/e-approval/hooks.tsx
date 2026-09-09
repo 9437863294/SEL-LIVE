@@ -1,8 +1,6 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import type { Department, Project, User } from '@/lib/types';
@@ -17,7 +15,10 @@ import {
 import {
   loadEApprovalActorContext,
   loadEApprovalSettings,
+  listEApprovalDepartmentMaster,
+  listEApprovalProjectMaster,
   listEApprovalProjectRouting,
+  listEApprovalRoleMaster,
   listEApprovalTypes,
   subscribeEApprovalWorkload,
   type EApprovalServiceActor,
@@ -56,7 +57,7 @@ export function useEApprovalActorStandalone(enabled = true) {
     [user],
   );
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (force = false) => {
     if (!enabled) return;
     if (!serviceActor) {
       setEngineActor(null);
@@ -65,7 +66,7 @@ export function useEApprovalActorStandalone(enabled = true) {
     }
     setContextLoading(true);
     try {
-      const context = await loadEApprovalActorContext(serviceActor);
+      const context = await loadEApprovalActorContext(serviceActor, { force });
       if (mounted.current) setEngineActor(context);
     } catch (error) {
       console.error('[e-approval] Failed to load actor context', error);
@@ -94,13 +95,25 @@ export function useEApprovalActorStandalone(enabled = true) {
     };
   }, [refresh]);
 
-  return {
-    user,
-    serviceActor,
-    engineActor,
-    isLoading: loading || contextLoading,
-    refreshActor: refresh,
-  };
+  /**
+   * Memoised, and every hook below does the same.
+   *
+   * `EApprovalModuleProvider` builds its context value from the three objects these hooks return, so
+   * a fresh object literal here means a fresh context value on every provider render — and a fresh
+   * context value re-renders *every* consumer in the module, on a subtree that includes the register
+   * table, the workflow timeline and half a dozen Recharts surfaces. Returning a stable object turns
+   * the provider's own `useMemo` from decoration into the thing that actually holds.
+   */
+  return useMemo(
+    () => ({
+      user,
+      serviceActor,
+      engineActor,
+      isLoading: loading || contextLoading,
+      refreshActor: refresh,
+    }),
+    [user, serviceActor, engineActor, loading, contextLoading, refresh],
+  );
 }
 
 /** Module settings, loaded once per screen. */
@@ -125,7 +138,11 @@ export function useEApprovalSettingsStandalone(enabled = true) {
     void refresh();
   }, [refresh]);
 
-  return { settings, isLoading, refreshSettings: refresh };
+  // Stable identity — see the note on `useEApprovalActorStandalone`'s return.
+  return useMemo(
+    () => ({ settings, isLoading, refreshSettings: refresh }),
+    [settings, isLoading, refresh],
+  );
 }
 
 export interface EApprovalDirectory {
@@ -165,32 +182,38 @@ export function useEApprovalDirectoryStandalone(enabled = true) {
   const [projectRouting, setProjectRouting] = useState<EApprovalProjectRouting[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
+  /**
+   * The five lists go through the service's cached readers rather than `getDocs` here.
+   *
+   * `departments` and `eApprovalProjectRouting` are also read by `loadEApprovalActorContext`, which
+   * runs in the same tick on mount — so as written this fetched both collections a second time on
+   * every entry into the module. Sharing the readers collapses those into one round trip each, and
+   * costs nothing: the cache hands out a fresh array, so the sorts below still only reorder our copy.
+   */
+  const refresh = useCallback(async (force = false) => {
     if (!enabled) return;
     setIsLoading(true);
     try {
-      const [departmentSnap, projectSnap, roleSnap, typeRows, routingRows] = await Promise.all([
-        getDocs(collection(db, 'departments')),
-        getDocs(collection(db, 'projects')),
-        getDocs(collection(db, 'roles')),
+      const [departmentRows, projectRows, roleRows, typeRows, routingRows] = await Promise.all([
+        listEApprovalDepartmentMaster(force),
+        listEApprovalProjectMaster(force),
+        listEApprovalRoleMaster(force),
         listEApprovalTypes(user?.organizationId),
         listEApprovalProjectRouting(user?.organizationId),
       ]);
       setDepartments(
-        departmentSnap.docs
-          .map((entry) => ({ id: entry.id, ...entry.data() }) as Department)
+        (departmentRows as unknown as Department[])
           .filter((row) => row.status !== 'Inactive')
           .sort((a, b) => String(a.name).localeCompare(String(b.name))),
       );
       setProjects(
-        projectSnap.docs
-          .map((entry) => ({ id: entry.id, ...entry.data() }) as Project)
+        (projectRows as unknown as Project[])
           .filter((row) => row.status !== 'Inactive')
           .sort((a, b) => String(a.projectName).localeCompare(String(b.projectName))),
       );
       setRoles(
-        roleSnap.docs
-          .map((entry) => String((entry.data() as { name?: string }).name || entry.id))
+        roleRows
+          .map((entry) => String((entry as { name?: string }).name || entry.id))
           .sort((a, b) => a.localeCompare(b)),
       );
       setTypes(typeRows.filter((row) => row.active !== false));
@@ -227,7 +250,11 @@ export function useEApprovalDirectoryStandalone(enabled = true) {
     [activeUsers, departments, projects, roles, types, projectRouting],
   );
 
-  return { directory, isLoading, refreshDirectory: refresh };
+  // Stable identity — see the note on `useEApprovalActorStandalone`'s return.
+  return useMemo(
+    () => ({ directory, isLoading, refreshDirectory: refresh }),
+    [directory, isLoading, refresh],
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------

@@ -54,6 +54,22 @@ import { stopNativeAndroidUserLocation } from '@/lib/native-user-location';
 /** Upper bound on how long the app shell waits for the first permissions read. */
 const ROLE_SNAPSHOT_TIMEOUT_MS = 5000;
 
+/**
+ * How often ordinary pointer/keyboard activity is allowed to refresh the session.
+ *
+ * The activity listeners below include `mousemove` and `scroll`, which fire at the display's refresh
+ * rate. Each one ran `extendSession`, and `extendSession` writes to `localStorage` — a *synchronous*
+ * call that blocks the main thread — then clears and re-arms two timers. At 60Hz that is sixty
+ * blocking storage writes and two hundred and forty timer operations per second of mouse movement,
+ * on every screen in the application. It is felt most on the pages that are already doing work while
+ * you scroll them, which is how a long approval register comes to stutter.
+ *
+ * Thirty seconds is far finer than the session needs: the timeout is an hour, so the worst effect of
+ * the throttle is that a session expires up to thirty seconds earlier than the last twitch of the
+ * mouse. Activity while the expiry warning is actually on screen bypasses it entirely.
+ */
+const ACTIVITY_THROTTLE_MS = 30_000;
+
 /* ---------------- types ---------------- */
 
 interface AuthContextType {
@@ -536,17 +552,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     resetTimeouts();
 
+    let lastBump = Date.now();
+    const onActivity = () => {
+      const now = Date.now();
+      // While the warning dialog is up, any movement dismisses it immediately — that was the
+      // behaviour before the throttle, and it is the one moment where responding at once matters.
+      if (!isSessionExpired && now - lastBump < ACTIVITY_THROTTLE_MS) return;
+      lastBump = now;
+      extendSession();
+    };
+
     const events = ['mousemove', 'keydown', 'click', 'scroll'];
-    events.forEach((e) => window.addEventListener(e, extendSession));
+    // Passive: none of these handlers calls `preventDefault`, and saying so lets the browser scroll
+    // without first waiting to find out.
+    events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (warningTimeoutRef.current) clearTimeout(warningTimeoutRef.current);
-      events.forEach((e) =>
-        window.removeEventListener(e, extendSession)
-      );
+      events.forEach((e) => window.removeEventListener(e, onActivity));
     };
-  }, [user, extendSession, resetTimeouts]);
+  }, [user, extendSession, resetTimeouts, isSessionExpired]);
 
   /* ---------- additive access layer ---------- */
 
@@ -668,24 +694,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /* ---------- context value ---------- */
 
-  const value: AuthContextType = {
-    user,
-    users,
-    permissions,
-    effectiveAccess,
-    loading,
-    isImpersonating,
-    originalUser,
-    refreshUserData,
-    isSessionExpired,
-    setIsSessionExpired,
-    extendSession,
-    handleSignOut,
-    savedUsers,
-    setShouldRemember,
-    clearSavedUsers,
-    loadSavedUsers,
-  };
+  /**
+   * Memoised, because this is the most widely consumed context in the application.
+   *
+   * As a plain object literal it was a new value on every render of this provider — and therefore a
+   * re-render of every `useAuth()` consumer in the tree, no matter that none of the fields had
+   * changed. That is several hundred components, and it happened on each of the ten-or-so state
+   * updates the sign-in sequence makes and on every session-activity bump thereafter. The fields are
+   * either state or `useCallback`s, so the dependency list holds.
+   */
+  const value = useMemo<AuthContextType>(
+    () => ({
+      user,
+      users,
+      permissions,
+      effectiveAccess,
+      loading,
+      isImpersonating,
+      originalUser,
+      refreshUserData,
+      isSessionExpired,
+      setIsSessionExpired,
+      extendSession,
+      handleSignOut,
+      savedUsers,
+      setShouldRemember,
+      clearSavedUsers,
+      loadSavedUsers,
+    }),
+    [
+      user,
+      users,
+      permissions,
+      effectiveAccess,
+      loading,
+      isImpersonating,
+      originalUser,
+      refreshUserData,
+      isSessionExpired,
+      extendSession,
+      handleSignOut,
+      savedUsers,
+      clearSavedUsers,
+      loadSavedUsers,
+    ],
+  );
 
   return (
     <AuthContext.Provider value={value}>

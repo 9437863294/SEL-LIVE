@@ -49,6 +49,21 @@ import {
 
 const TOOLBAR_BUTTON = 'h-7 w-7 p-0 text-muted-foreground hover:text-foreground';
 
+/**
+ * How long typing has to pause before the proposal is sanitised and reported upward.
+ *
+ * Publishing on every `input` event meant that each keystroke serialised the whole editor to a
+ * string, ran DOMPurify over it — which parses the markup into a document and walks every node — and
+ * pushed a new value into React, which then re-derived the plain text with ten regex passes and
+ * rebuilt the draft object. On a proposal with a pasted Excel table that is tens of milliseconds of
+ * work per character, and it is why typing into a long proposal fell behind the keyboard.
+ *
+ * 200ms is below the threshold at which a pause reads as lag, and every path where the value is
+ * actually *needed* — blur, paste, a toolbar command, unmount — flushes immediately rather than
+ * waiting for it, so nothing can be saved a few characters behind what is on screen.
+ */
+const PUBLISH_DEBOUNCE_MS = 200;
+
 export function EApprovalRichTextEditor({
   value,
   onChange,
@@ -67,6 +82,9 @@ export function EApprovalRichTextEditor({
   const editorRef = useRef<HTMLDivElement>(null);
   /** What we last wrote into or read out of the element, so the effect below can tell "changed elsewhere" from "the user is typing". */
   const lastHtml = useRef<string>('');
+  /** The markup we last sanitised, so an unchanged document is never sanitised twice. */
+  const lastRaw = useRef<string>('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tooLong, setTooLong] = useState(false);
 
   useEffect(() => {
@@ -75,6 +93,7 @@ export function EApprovalRichTextEditor({
     if (value === lastHtml.current) return;
     element.innerHTML = value ?? '';
     lastHtml.current = value ?? '';
+    lastRaw.current = element.innerHTML;
   }, [value]);
 
   /** Reads the element's own content back out, sanitises it, and reports it. */
@@ -87,10 +106,55 @@ export function EApprovalRichTextEditor({
       return;
     }
     setTooLong(false);
+    // A blur straight after the debounce has already fired — the ordinary "type, then click away"
+    // sequence — would otherwise sanitise an identical document a second time for nothing.
+    if (raw === lastRaw.current) return;
+    lastRaw.current = raw;
     const clean = hardenEApprovalHtmlLinks(await sanitizeEApprovalHtml(raw));
     lastHtml.current = clean;
     onChange(clean);
   }, [onChange]);
+
+  /**
+   * The latest `publish`, reachable from a timer.
+   *
+   * A debounce scheduled under one render must not call that render's closure once `onChange` has
+   * changed identity — it would report the proposal to a stale handler.
+   */
+  const publishRef = useRef(publish);
+  useEffect(() => {
+    publishRef.current = publish;
+  }, [publish]);
+
+  /** Cancels any pending debounce and publishes now. Every path but typing uses this. */
+  const publishNow = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    void publishRef.current();
+  }, []);
+
+  /** Typing: coalesce a burst of keystrokes into one sanitise-and-report. */
+  const publishSoon = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      void publishRef.current();
+    }, PUBLISH_DEBOUNCE_MS);
+  }, []);
+
+  // Flushed rather than dropped: a proposal typed and then navigated away from without blurring
+  // would otherwise lose whatever was written since the last debounce fired.
+  useEffect(
+    () => () => {
+      if (!debounceRef.current) return;
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+      void publishRef.current();
+    },
+    [],
+  );
 
   /**
    * Paste, sanitised, with the formatting kept.
@@ -114,15 +178,15 @@ export function EApprovalRichTextEditor({
       }
       const clean = hardenEApprovalHtmlLinks(await sanitizeEApprovalHtml(html));
       document.execCommand('insertHTML', false, clean);
-      void publish();
+      publishNow();
     },
-    [publish],
+    [publishNow],
   );
 
   const exec = (command: string, argument?: string) => {
     editorRef.current?.focus();
     document.execCommand(command, false, argument);
-    void publish();
+    publishNow();
   };
 
   const insertLink = () => {
@@ -213,8 +277,8 @@ export function EApprovalRichTextEditor({
         aria-multiline="true"
         aria-label={ariaLabel}
         data-placeholder={placeholder}
-        onInput={() => void publish()}
-        onBlur={() => void publish()}
+        onInput={publishSoon}
+        onBlur={publishNow}
         onPaste={(event) => void handlePaste(event)}
         className={cn(
           'ea-rich-text min-h-[240px] w-full overflow-x-auto rounded-b-md border bg-background px-3 py-2.5 text-sm leading-relaxed',

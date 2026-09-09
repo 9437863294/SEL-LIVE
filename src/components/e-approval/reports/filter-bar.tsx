@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarRange, Filter, RotateCcw, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,44 @@ export function EApprovalFilterBar({
   const [open, setOpen] = useState(false);
 
   const set = (patch: Partial<EApprovalAnalyticsFilter>) => onChange({ ...value, ...patch });
+
+  /**
+   * The search box types locally and reports upward on a pause.
+   *
+   * Reporting on every keystroke re-ran the filter over the whole reporting corpus — up to 2,000
+   * requests plus 8,000 steps plus 8,000 history rows — and, because that produces three new arrays,
+   * re-rendered every Recharts surface on the page with it. The result was a search field that
+   * dropped characters on any organisation with real data in it.
+   *
+   * The controlled `value.search` still wins whenever it changes from outside (the Clear button, a
+   * preset, a page that seeds an initial filter), so this stays a controlled input in every sense
+   * that matters — it just does not make the page re-derive itself mid-word.
+   */
+  const [searchDraft, setSearchDraft] = useState(value.search ?? '');
+  const searchRef = useRef(value.search ?? '');
+  const onChangeRef = useRef(onChange);
+  const valueRef = useRef(value);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    valueRef.current = value;
+  });
+
+  useEffect(() => {
+    const incoming = value.search ?? '';
+    if (incoming === searchRef.current) return;
+    searchRef.current = incoming;
+    setSearchDraft(incoming);
+  }, [value.search]);
+
+  useEffect(() => {
+    if (searchDraft === searchRef.current) return;
+    const timer = setTimeout(() => {
+      searchRef.current = searchDraft;
+      onChangeRef.current({ ...valueRef.current, search: searchDraft });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchDraft]);
+
   const one = (list: string[] | undefined) => (list?.length === 1 ? list[0] : 'ALL');
   const pick = (next: string): string[] | undefined => (next === 'ALL' ? undefined : [next]);
 
@@ -262,15 +300,19 @@ export function EApprovalFilterBar({
               <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Search</Label>
               <div className="relative mt-1">
                 <Input
-                  value={value.search ?? ''}
-                  onChange={(event) => set({ search: event.target.value })}
+                  value={searchDraft}
+                  onChange={(event) => setSearchDraft(event.target.value)}
                   placeholder="Reference, subject, requester, pending-with…"
                   className="h-8 pr-7 text-xs"
                 />
-                {value.search && (
+                {searchDraft && (
                   <button
                     type="button"
-                    onClick={() => set({ search: '' })}
+                    onClick={() => {
+                      setSearchDraft('');
+                      searchRef.current = '';
+                      set({ search: '' });
+                    }}
                     className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted"
                     aria-label="Clear search"
                   >

@@ -192,6 +192,109 @@ const scopeQuery = (organizationId?: string) =>
   organizationId ? [where('organizationId', '==', organizationId)] : [];
 
 /* ------------------------------------------------------------------------------------------------
+ * Configuration read cache
+ *
+ * Everything in this section is *configuration* — approval types, workflow templates, the matrix,
+ * department and project routing, delegations, the settings document and the organisation's
+ * department/project/role masters. All of it is read constantly and changes perhaps weekly.
+ *
+ * Before this cache existed the module re-read it continuously and visibly:
+ *
+ *   - Opening the module read `departments` twice and `eApprovalProjectRouting` twice, because the
+ *     actor context and the directory each fetched their own copy of both.
+ *   - **Every approve/reject/forward** re-read four whole collections before it could write, because
+ *     `performEApprovalAction` rebuilds the actor context from scratch — so clearing ten files from
+ *     the inbox cost forty collection reads nobody had asked for.
+ *   - Every report page re-read up to 18,000 documents on mount, so moving between the seven report
+ *     screens re-fetched the entire reporting corpus each time.
+ *
+ * Two properties make this safe rather than merely fast:
+ *
+ *   1. **Every write through this service clears it.** `invalidateEApprovalCache()` is called by each
+ *     config write below, so a screen that saves and reloads always sees its own change. The window
+ *     of staleness is only ever against *another* user's edit.
+ *   2. **A failed read is never cached.** The entry is dropped on rejection, so one offline moment
+ *     does not pin an error for the next half minute.
+ *
+ * The TTL is deliberately short. Thirty seconds is long enough to collapse the burst of reads a
+ * screen makes on mount — and every action makes while the user works through an inbox — and short
+ * enough that an administrator's routing change reaches everybody else within one screen refresh.
+ * ---------------------------------------------------------------------------------------------- */
+
+const E_APPROVAL_CACHE_TTL_MS = 30_000;
+
+/** The reporting corpus is far more expensive to fetch and far less sensitive to being a minute old. */
+const E_APPROVAL_ANALYTICS_TTL_MS = 60_000;
+
+const configCache = new Map<string, { at: number; value: Promise<unknown> }>();
+
+/**
+ * One in-flight read per key, reused for `ttlMs` after it resolves.
+ *
+ * The promise is cached rather than its result, so ten callers that ask at once share a single round
+ * trip instead of starting ten — which is the case that matters on mount, where the actor context,
+ * the directory and the first screen all ask for the same collections in the same tick.
+ */
+function cachedRead<T>(
+  key: string,
+  load: () => Promise<T>,
+  options: { ttlMs?: number; force?: boolean } = {},
+): Promise<T> {
+  const ttlMs = options.ttlMs ?? E_APPROVAL_CACHE_TTL_MS;
+  const existing = configCache.get(key);
+  if (!options.force && existing && Date.now() - existing.at < ttlMs) return existing.value as Promise<T>;
+  const value = load().catch((error) => {
+    // A rejection must not be served for the rest of the window — see property 2 above.
+    if (configCache.get(key)?.value === value) configCache.delete(key);
+    throw error;
+  });
+  configCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+/**
+ * Drops cached configuration.
+ *
+ * Called with no argument by every config write in this file. Clearing everything rather than the
+ * one key that changed is deliberate: config writes happen on administration screens a few times a
+ * week, and "which of the eleven keys does saving a project routing invalidate?" is precisely the
+ * question a cache should not make anybody answer. Exported so a caller that writes one of these
+ * collections by another route can say so.
+ */
+export function invalidateEApprovalCache(keyPrefix?: string): void {
+  if (!keyPrefix) {
+    configCache.clear();
+    return;
+  }
+  for (const key of Array.from(configCache.keys())) {
+    if (key.startsWith(keyPrefix)) configCache.delete(key);
+  }
+}
+
+/** Every document in a collection, id included. Used for the org-wide masters this module reads. */
+const readWholeCollection = async (name: string): Promise<Array<Record<string, unknown> & { id: string }>> => {
+  const snapshot = await getDocs(collection(db, name));
+  return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+};
+
+/**
+ * The organisation's department / project / role masters.
+ *
+ * Exposed from the service — rather than each screen calling `getDocs(collection(db, 'departments'))`
+ * itself — so the module reads each of them once per window instead of once per caller. A fresh array
+ * is handed out every time because callers sort and filter what they are given, and an in-place
+ * `sort` on the cached array would quietly reorder it for everybody else.
+ */
+export const listEApprovalDepartmentMaster = (force = false) =>
+  cachedRead('master:departments', () => readWholeCollection('departments'), { force }).then((rows) => rows.slice());
+
+export const listEApprovalProjectMaster = (force = false) =>
+  cachedRead('master:projects', () => readWholeCollection('projects'), { force }).then((rows) => rows.slice());
+
+export const listEApprovalRoleMaster = (force = false) =>
+  cachedRead('master:roles', () => readWholeCollection('roles'), { force }).then((rows) => rows.slice());
+
+/* ------------------------------------------------------------------------------------------------
  * Settings, types, templates, rules, routing, delegations
  * ---------------------------------------------------------------------------------------------- */
 
@@ -204,18 +307,20 @@ const scopeQuery = (organizationId?: string) =>
  */
 export async function loadEApprovalSettings(organizationId?: string): Promise<EApprovalSettingsRecord> {
   const key = organizationId || 'default';
-  const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.settings, key));
-  const saved = snapshot.exists() ? (snapshot.data() as Partial<EApprovalSettingsRecord>) : {};
-  const base = DEFAULT_E_APPROVAL_SETTINGS_RECORD;
-  return {
-    ...base,
-    ...saved,
-    organizationId,
-    numbering: { ...base.numbering, ...(saved.numbering || {}) },
-    materialFields: saved.materialFields?.length ? saved.materialFields : base.materialFields,
-    escalationLadder: saved.escalationLadder?.length ? saved.escalationLadder : base.escalationLadder,
-    confidentialRoles: saved.confidentialRoles ?? base.confidentialRoles,
-  };
+  return cachedRead(`settings:${key}`, async () => {
+    const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.settings, key));
+    const saved = snapshot.exists() ? (snapshot.data() as Partial<EApprovalSettingsRecord>) : {};
+    const base = DEFAULT_E_APPROVAL_SETTINGS_RECORD;
+    return {
+      ...base,
+      ...saved,
+      organizationId,
+      numbering: { ...base.numbering, ...(saved.numbering || {}) },
+      materialFields: saved.materialFields?.length ? saved.materialFields : base.materialFields,
+      escalationLadder: saved.escalationLadder?.length ? saved.escalationLadder : base.escalationLadder,
+      confidentialRoles: saved.confidentialRoles ?? base.confidentialRoles,
+    };
+  });
 }
 
 export async function saveEApprovalSettings(
@@ -229,12 +334,23 @@ export async function saveEApprovalSettings(
     pruneUndefined({ ...settings, organizationId: who.organizationId, ...withUpdateAudit(who) }),
     { merge: true },
   );
+  invalidateEApprovalCache();
   await logEApprovalActivity(who, 'Update Settings', {}, { recordId: key });
 }
 
+/**
+ * A scoped configuration collection, cached.
+ *
+ * Handed out as a fresh array on every call: `listEApprovalTypes` below sorts what it is given, and
+ * both the matrix and template panels sort their rows in place — an in-place `sort` on the cached
+ * array would reorder it under every other caller.
+ */
 const listCollection = async <T>(name: string, organizationId?: string): Promise<T[]> => {
-  const snapshot = await getDocs(query(collection(db, name), ...scopeQuery(organizationId)));
-  return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as T);
+  const rows = await cachedRead(`list:${name}:${organizationId ?? ''}`, async () => {
+    const snapshot = await getDocs(query(collection(db, name), ...scopeQuery(organizationId)));
+    return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as T);
+  });
+  return rows.slice();
 };
 
 export const listEApprovalTypes = (organizationId?: string) =>
@@ -269,10 +385,12 @@ async function upsertConfigRecord<T extends { id?: string }>(
   const payload = pruneUndefined({ ...rest, organizationId: who.organizationId } as Record<string, unknown>);
   if (id) {
     await setDoc(doc(db, collectionName, id), { ...payload, ...withUpdateAudit(who) }, { merge: true });
+    invalidateEApprovalCache();
     await logEApprovalActivity(who, action, { id }, { recordId: id });
     return id;
   }
   const created = await addDoc(collection(db, collectionName), { ...payload, ...withCreateAudit(who) });
+  invalidateEApprovalCache();
   await logEApprovalActivity(who, action, { id: created.id }, { recordId: created.id });
   return created.id;
 }
@@ -350,6 +468,7 @@ export async function saveEApprovalDepartmentRouting(
     } as Record<string, unknown>),
     { merge: true },
   );
+  invalidateEApprovalCache();
   await logEApprovalActivity(who, 'Save Department Routing', { departmentId: record.departmentId });
 }
 
@@ -381,6 +500,7 @@ export async function saveEApprovalProjectRouting(
     } as Record<string, unknown>),
     { merge: true },
   );
+  invalidateEApprovalCache();
   await logEApprovalActivity(who, 'Save Project Routing', { projectId: record.projectId });
 }
 
@@ -391,6 +511,7 @@ export async function deleteEApprovalConfigRecord(
 ): Promise<void> {
   const who = requireActor(actor);
   await deleteDoc(doc(db, collectionName, id));
+  invalidateEApprovalCache();
   await logEApprovalActivity(who, 'Delete Configuration', { collection: collectionName, id }, { recordId: id });
 }
 
@@ -438,6 +559,7 @@ export async function seedEApprovalTemplates(actor: EApprovalServiceActor): Prom
     });
   }
   await batch.commit();
+  invalidateEApprovalCache();
   return planned.length;
 }
 
@@ -455,13 +577,23 @@ export async function seedEApprovalTemplates(actor: EApprovalServiceActor): Prom
  */
 export async function loadEApprovalActorContext(
   actor: EApprovalServiceActor,
+  options: { force?: boolean } = {},
 ): Promise<EApprovalActor> {
   const who = requireActor(actor);
+  return cachedRead(
+    `actor:${who.userId}:${who.organizationId ?? ''}:${who.departmentId ?? ''}:${who.role ?? ''}`,
+    () => buildEApprovalActorContext(who),
+    { force: options.force },
+  );
+}
+
+/** The uncached body of `loadEApprovalActorContext`. */
+async function buildEApprovalActorContext(who: EApprovalServiceActor): Promise<EApprovalActor> {
   const [routing, projectRouting, delegations, departments] = await Promise.all([
     listEApprovalDepartmentRouting(who.organizationId),
     listEApprovalProjectRouting(who.organizationId),
     listEApprovalDelegations(who.organizationId),
-    getDocs(collection(db, 'departments')),
+    listEApprovalDepartmentMaster(),
   ]);
   const mine = routing.filter(
     (row) => row.active !== false && (row.headUserId === who.userId || (row.memberUserIds ?? []).includes(who.userId)),
@@ -479,8 +611,8 @@ export async function loadEApprovalActorContext(
   // Without it, a request addressed to a department reaches nobody until an administrator has
   // configured routing — and "send it to Finance" has to work on day one, before anybody has
   // configured anything. A configured routing document still wins; this only fills the gap.
-  const headedByMe = departments.docs
-    .filter((entry) => (entry.data() as { head?: string }).head === who.userId)
+  const headedByMe = departments
+    .filter((entry) => (entry as { head?: string }).head === who.userId)
     .map((entry) => entry.id);
 
   return {
@@ -526,21 +658,26 @@ export async function loadEApprovalActorContext(
 async function resolveDepartmentUserIds(departmentIds: string[]): Promise<string[]> {
   if (!departmentIds.length) return [];
   const rows = await Promise.all(
-    departmentIds.map(async (departmentId) => {
-      const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.departmentRouting, departmentId));
-      if (snapshot.exists()) {
-        const routing = snapshot.data() as EApprovalDepartmentRouting;
-        const members =
-          // A 'Head' step notifies only the head; other modes notify everybody who could pick it up.
-          routing.mode === 'Head'
-            ? ([routing.headUserId].filter(Boolean) as string[])
-            : ([routing.headUserId, ...(routing.memberUserIds ?? [])].filter(Boolean) as string[]);
-        if (members.length) return members;
-      }
-      const department = await getDoc(doc(db, 'departments', departmentId));
-      const head = (department.data() as { head?: string } | undefined)?.head;
-      return head ? [head] : [];
-    }),
+    // Cached like the rest of the routing configuration: an approver clearing a queue of files that
+    // all sit with the same department otherwise re-read that department's routing document — and
+    // sometimes the department master behind it — once per file.
+    departmentIds.map((departmentId) =>
+      cachedRead(`deptRecipients:${departmentId}`, async () => {
+        const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.departmentRouting, departmentId));
+        if (snapshot.exists()) {
+          const routing = snapshot.data() as EApprovalDepartmentRouting;
+          const members =
+            // A 'Head' step notifies only the head; other modes notify everybody who could pick it up.
+            routing.mode === 'Head'
+              ? ([routing.headUserId].filter(Boolean) as string[])
+              : ([routing.headUserId, ...(routing.memberUserIds ?? [])].filter(Boolean) as string[]);
+          if (members.length) return members;
+        }
+        const department = await getDoc(doc(db, 'departments', departmentId));
+        const head = (department.data() as { head?: string } | undefined)?.head;
+        return head ? [head] : [];
+      }),
+    ),
   );
   return Array.from(new Set(rows.flat()));
 }
@@ -557,18 +694,21 @@ async function resolveDepartmentUserIds(departmentIds: string[]): Promise<string
 async function resolveProjectUserIds(projectIds: string[]): Promise<string[]> {
   if (!projectIds.length) return [];
   const rows = await Promise.all(
-    projectIds.map(async (projectId) => {
-      const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.projectRouting, projectId));
-      if (!snapshot.exists()) return [];
-      const routing = snapshot.data() as EApprovalProjectRouting;
-      if (routing.active === false) return [];
-      if (routing.mode === 'Head') return [routing.headUserId].filter(Boolean) as string[];
-      return [
-        routing.headUserId,
-        ...(routing.memberUserIds ?? []),
-        ...(routing.roleHolders ?? []).map((holder) => holder.userId),
-      ].filter(Boolean) as string[];
-    }),
+    // Cached for the same reason as `resolveDepartmentUserIds` above.
+    projectIds.map((projectId) =>
+      cachedRead(`projectRecipients:${projectId}`, async () => {
+        const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.projectRouting, projectId));
+        if (!snapshot.exists()) return [] as string[];
+        const routing = snapshot.data() as EApprovalProjectRouting;
+        if (routing.active === false) return [] as string[];
+        if (routing.mode === 'Head') return [routing.headUserId].filter(Boolean) as string[];
+        return [
+          routing.headUserId,
+          ...(routing.memberUserIds ?? []),
+          ...(routing.roleHolders ?? []).map((holder) => holder.userId),
+        ].filter(Boolean) as string[];
+      }),
+    ),
   );
   return Array.from(new Set(rows.flat()));
 }
@@ -1602,11 +1742,37 @@ export interface EApprovalAnalyticsData {
  */
 export async function loadEApprovalAnalyticsData(
   organizationId?: string,
-  options: { requestLimit?: number; stepLimit?: number; eventLimit?: number; includeEvents?: boolean } = {},
+  options: {
+    requestLimit?: number;
+    stepLimit?: number;
+    eventLimit?: number;
+    includeEvents?: boolean;
+    /** Bypass the cache — what a report page's Refresh button asks for. */
+    force?: boolean;
+  } = {},
 ): Promise<EApprovalAnalyticsData> {
   const requestLimit = options.requestLimit ?? 2000;
   const stepLimit = options.stepLimit ?? 8000;
   const eventLimit = options.eventLimit ?? 8000;
+
+  // Keyed on the caps as well as the organisation, so a caller asking for a narrower slice is never
+  // handed a wider one that happens to be in the cache under the same organisation.
+  return cachedRead(
+    `analytics:${organizationId ?? ''}:${requestLimit}:${stepLimit}:${eventLimit}:${options.includeEvents === false ? 'norefs' : 'events'}`,
+    () => fetchEApprovalAnalyticsData({ organizationId, requestLimit, stepLimit, eventLimit, includeEvents: options.includeEvents }),
+    { ttlMs: E_APPROVAL_ANALYTICS_TTL_MS, force: options.force },
+  );
+}
+
+/** The uncached body of `loadEApprovalAnalyticsData`. */
+async function fetchEApprovalAnalyticsData(options: {
+  organizationId?: string;
+  requestLimit: number;
+  stepLimit: number;
+  eventLimit: number;
+  includeEvents?: boolean;
+}): Promise<EApprovalAnalyticsData> {
+  const { organizationId, requestLimit, stepLimit, eventLimit } = options;
 
   const [requestSnap, stepSnap, eventSnap] = await Promise.all([
     getDocs(
@@ -2010,31 +2176,38 @@ async function deliverEApprovalNotifications(
   referenceNo: string | undefined,
   approvalId: string,
 ): Promise<void> {
-  for (const intent of intents) {
-    const [departmentUserIds, projectUserIds] = await Promise.all([
-      resolveDepartmentUserIds(intent.departmentIds ?? []),
-      resolveProjectUserIds(intent.projectIds ?? []),
-    ]);
-    const userIds = Array.from(
-      new Set([...(intent.userIds ?? []), ...departmentUserIds, ...projectUserIds]),
-    ).filter(Boolean);
-    if (!userIds.length && !intent.roles?.length) continue;
-    await dispatchNotification(
-      { userIds, roles: intent.roles },
-      {
-        // 'Moved' is the requester being kept informed, not somebody being asked to act, so it does
-        // not carry the type the bell renders as a call to action.
-        type: intent.kind === 'Moved' ? 'record_assigned' : 'approval_required',
-        title: intent.title,
-        body: intent.body,
-        module: ACTIVITY_MODULES.E_APPROVAL,
-        severity: intent.severity ?? 'INFO',
-        itemId: approvalId,
-        itemRef: referenceNo,
-        link: `${E_APPROVAL_BASE_PATH}/${approvalId}`,
-      },
-    );
-  }
+  // In parallel, not one intent at a time. A single transition routinely produces three or four
+  // intents — the new assignee, the requester, a CC list, an escalation — and each carries its own
+  // membership resolution and dispatch. Run serially they add up in front of the approver, who is
+  // waiting on this before their screen refreshes; they are independent of one another, so nothing
+  // is gained by making the second wait for the first.
+  await Promise.all(
+    intents.map(async (intent) => {
+      const [departmentUserIds, projectUserIds] = await Promise.all([
+        resolveDepartmentUserIds(intent.departmentIds ?? []),
+        resolveProjectUserIds(intent.projectIds ?? []),
+      ]);
+      const userIds = Array.from(
+        new Set([...(intent.userIds ?? []), ...departmentUserIds, ...projectUserIds]),
+      ).filter(Boolean);
+      if (!userIds.length && !intent.roles?.length) return;
+      await dispatchNotification(
+        { userIds, roles: intent.roles },
+        {
+          // 'Moved' is the requester being kept informed, not somebody being asked to act, so it does
+          // not carry the type the bell renders as a call to action.
+          type: intent.kind === 'Moved' ? 'record_assigned' : 'approval_required',
+          title: intent.title,
+          body: intent.body,
+          module: ACTIVITY_MODULES.E_APPROVAL,
+          severity: intent.severity ?? 'INFO',
+          itemId: approvalId,
+          itemRef: referenceNo,
+          link: `${E_APPROVAL_BASE_PATH}/${approvalId}`,
+        },
+      );
+    }),
+  );
 }
 
 async function logEApprovalActivity(

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowUpDown, CheckCircle2, FileSearch, Inbox, Loader2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,12 +55,27 @@ export function EApprovalRequestTable({
   showStatusFilter?: boolean;
 }) {
   const [search, setSearch] = useState('');
+  /**
+   * The term the list is actually filtered by, a beat behind what is being typed.
+   *
+   * The register renders every row it is given — the full-register screen loads four hundred, each
+   * one nine cells with badges and two links — and filtering on each keystroke re-rendered all of
+   * them per character. Holding the committed term separately means the input stays immediate while
+   * the table redraws once the typing pauses, which is the only moment the results are being read.
+   */
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [status, setStatus] = useState<'All' | EApprovalStatus>('All');
   const [sortKey, setSortKey] = useState<SortKey>('created');
   const [ascending, setAscending] = useState(false);
 
+  useEffect(() => {
+    if (search === appliedSearch) return;
+    const timer = setTimeout(() => setAppliedSearch(search), 200);
+    return () => clearTimeout(timer);
+  }, [search, appliedSearch]);
+
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = appliedSearch.trim().toLowerCase();
     let list = rows;
     if (term) {
       list = list.filter(
@@ -88,7 +103,7 @@ export function EApprovalRequestTable({
       const right = b.createdAt?.toMillis() ?? 0;
       return (left - right) * direction;
     });
-  }, [rows, search, status, sortKey, ascending]);
+  }, [rows, appliedSearch, status, sortKey, ascending]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setAscending((value) => !value);
