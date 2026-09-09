@@ -305,7 +305,6 @@ export default function PurchaseOrderRegisterPage() {
           description="List, BOQ items, calendar, Gantt & reports"
           icon={ShoppingCart}
           gradient="from-emerald-500 to-teal-600"
-          tint="from-emerald-500/10 to-teal-500/5"
         />
 
         <div className="min-w-0 flex-1 space-y-4">

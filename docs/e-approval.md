@@ -156,15 +156,26 @@ differs from what was requested, so the note a Director signs says what was actu
 
 Returning to step *T* from step *C*:
 
-- *T* becomes Active again, with `returnedFromStepId = C`.
-- Every primary step between them is **re-opened** (`Pending`, `reopened: true`), so the chain runs
+- *T* is **re-opened** and marked `returnedFromStepId = C`.
+- Every primary step between them is re-opened too (`Pending`, `reopened: true`), so the chain runs
   forward in its original order rather than jumping back to the returner.
 - *C* waits its turn again.
 - Verification hanging off any re-opened step is cancelled.
 
-Returning to the **requester** parks the whole chain instead: earlier approvals stand, the returning
-step is recorded as `Returned`, and `returnResumeStepId` remembers where to resume. A `Resubmit` with
-no material change goes straight back to whoever returned it — a typo does not cost three signatures.
+**Every return travels back through the requester** (`returnViaRequester`, default on). The whole
+chain parks, the request goes to `Returned`, and `returnResumeStepId` holds *T* — so the requester
+corrects the proposal, resubmits, and the file resumes at exactly the step the returner chose.
+
+The reason is that the two halves of a return did not previously meet: a return asks for a change to
+the proposal, and `canEditEApprovalRequest` gives that power to the requester and to nobody else. A
+file handed straight back to an earlier approver therefore arrived with somebody who could read the
+objection and do nothing about it — their only moves were to approve it unchanged or return it again
+to the author, which is the trip this now makes directly. Turn `returnViaRequester` off to re-activate
+*T* immediately instead, which is how the module originally behaved.
+
+Returning to the **requester** explicitly behaves the same way, with `returnResumeStepId` set to the
+returning step: earlier approvals stand, and a `Resubmit` with no material change goes straight back
+to whoever returned it — a typo does not cost three signatures.
 
 ## Change control (the most important audit rule)
 
@@ -178,7 +189,10 @@ On a material change at resubmission:
 1. Every completed step is marked `Superseded` with the old version number.
 2. `version` is bumped and the old content is snapshotted into `eApprovalVersions`, together with the
    approvals that had been given against it.
-3. The chain restarts per `restartOnMaterialChange` (default: the first step).
+3. The chain restarts per `restartOnMaterialChange` (default: **the returning step**). The approvals
+   before it are still void — they were given against content that no longer exists — but the file
+   does not go back to stage one, so a correction the fourth approver asked for does not cost the
+   three signatures before it. Set it to `First Step` where full re-approval is required.
 4. Everyone whose **positive** decision was superseded is notified. The approver who *returned* the
    file is not — they asked for the change.
 

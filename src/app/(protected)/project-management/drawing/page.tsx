@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   CheckCircle2,
+  ChevronRight,
   ClipboardCheck,
   Download,
   FolderOpen,
@@ -16,6 +16,7 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
+  ShoppingCart,
   Truck,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs, serverTimestamp, updateDoc } from "firebase/firestore";
@@ -61,10 +62,15 @@ import {
   mdlDrawingStageStyles,
   mdlOutlineNo,
   type MdlDrawing,
+  type MdlPoRef,
   type MdlSubDrawing,
 } from "@/lib/mdl";
 import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
+import {
+  JMC_MAIN_CLASS,
+  JmcPageHeader as PmPageHeader,
+} from "@/components/jmc/jmc-page-shell";
 
 const PERMISSION_RESOURCE = "Project Management.Drawing";
 
@@ -264,6 +270,80 @@ export default function DrawingPage() {
     [boqItems, drawings, poInfoByBoqItemId],
   );
 
+  // Purchase-order groups start closed, so each tab opens as a list of orders rather than every
+  // drawing at once. Keyed on the PO alone, not on the tab, so a PO opened under Outstanding is
+  // still open under Collected — it is the same order either way.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  /**
+   * PO-wise grouping for collection rows.
+   *
+   * Deliberately not `groupMdlRowsByPo`: that assumes one row per BOQ item (a register line),
+   * whereas a row here is one *sub-drawing*, so a single item contributes several. Every other
+   * rule is kept identical to the shared grouper on purpose — cancelled POs skipped, newest PO
+   * first, and an item appearing on two live POs listed under both, because a drawing owed under
+   * two orders is genuinely owed under both.
+   */
+  const groupRowsByPo = useCallback(
+    (rows: CollectionRow[]) => {
+      const rowsByItemId = new Map<string, CollectionRow[]>();
+      for (const row of rows) {
+        const list = rowsByItemId.get(row.item.id) ?? [];
+        list.push(row);
+        rowsByItemId.set(row.item.id, list);
+      }
+
+      const groupedItemIds = new Set<string>();
+      const groups: { po: MdlPoRef; rows: CollectionRow[] }[] = [];
+
+      for (const po of purchaseOrders) {
+        if (po.status === "Cancelled") continue;
+        const seen = new Set<string>();
+        const poRows: CollectionRow[] = [];
+        for (const line of po.items ?? []) {
+          const itemId = line.boqItemId;
+          // A PO can list the same BOQ item on several lines; its drawings are still one set.
+          if (!itemId || seen.has(itemId)) continue;
+          const itemRows = rowsByItemId.get(itemId);
+          if (!itemRows) continue;
+          seen.add(itemId);
+          poRows.push(...itemRows);
+          groupedItemIds.add(itemId);
+        }
+        if (!poRows.length) continue;
+        groups.push({
+          po: {
+            poId: po.id,
+            poNumber: po.poNumber,
+            poDate: po.poDate,
+            vendorName: po.vendorName ?? "",
+          },
+          rows: poRows,
+        });
+      }
+
+      groups.sort(
+        (a, b) =>
+          (b.po.poDate || "").localeCompare(a.po.poDate || "") ||
+          a.po.poNumber.localeCompare(b.po.poNumber),
+      );
+
+      // Every row on this page already has a live PO, so this should stay empty. It is rendered
+      // anyway if it ever fills, because a row silently vanishing is worse than an odd group.
+      return { groups, ungrouped: rows.filter((row) => !groupedItemIds.has(row.item.id)) };
+    },
+    [purchaseOrders],
+  );
+
   // Collected but not yet sent to the client — the handover back to the MDL register.
   const awaitingReviewCount = useMemo(
     () =>
@@ -413,114 +493,280 @@ export default function DrawingPage() {
     );
   }
 
-  const renderTable = (rows: CollectionRow[], mode: "pending" | "collected") => (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-16">SL NO</TableHead>
-            <TableHead>BOQ SL No</TableHead>
-            <TableHead className="min-w-[240px]">Item / Drawing</TableHead>
-            <TableHead>Vendor</TableHead>
-            <TableHead>PO Number</TableHead>
-            <TableHead>PO Date</TableHead>
-            <TableHead>{mode === "pending" ? "Planned End" : "Received On"}</TableHead>
-            <TableHead>Stage</TableHead>
-            <TableHead className="w-28" />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row, index) => {
-            const { item, sub } = row;
-            const stage = computeMdlDrawingStage(sub, true);
-            // Being the drawing's assignee is itself the authority to collect it, the same rule
-            // the MDL register uses for editing it.
-            const canCollectThis = canEditMdlSubDrawing(sub, user?.id, canCollect);
-            return (
-              <TableRow key={`${item.id}-${sub.id}`}>
-                <TableCell className="font-medium">{mdlOutlineNo(index)}.</TableCell>
-                <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
-                <TableCell className="max-w-xs">
-                  <p className="truncate text-sm font-medium" title={sub.title}>{sub.title || "Untitled drawing"}</p>
-                  <p className="truncate text-[11px] text-muted-foreground" title={String(item.Description ?? "")}>
-                    {String(item.Description ?? "—")}
-                    {sub.assignedToName ? ` · ${sub.assignedToName}` : ""}
-                  </p>
-                  {sub.recollectionRequested && (
-                    <p className="mt-0.5 text-[11px] text-rose-700">
-                      <RotateCcw className="mr-1 inline h-3 w-3" />
-                      Replacement requested {formatMdlDate(sub.recollectionRequested.requestedOn)}
-                      {sub.recollectionRequested.afterRound ? ` after ${sub.recollectionRequested.afterRound}` : ""}
-                      {sub.recollectionRequested.reason ? ` — ${sub.recollectionRequested.reason}` : ""}
-                    </p>
-                  )}
-                </TableCell>
-                <TableCell className="max-w-[160px] truncate text-xs text-muted-foreground" title={row.vendorNames.join(", ")}>
-                  {sub.collection?.vendorName || row.vendorNames.join(", ") || "—"}
-                </TableCell>
-                <TableCell className="whitespace-nowrap text-xs">{row.poNumbers.join(", ")}</TableCell>
-                <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(row.latestPoDate)}</TableCell>
-                <TableCell className="whitespace-nowrap text-sm">
-                  {mode === "pending" ? formatMdlDate(sub.plannedEndDate) : formatMdlDate(sub.collection?.receivedOn)}
-                </TableCell>
-                <TableCell>
-                  <span className={cn("whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium", mdlDrawingStageStyles[stage])}>
-                    {stage}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center justify-end gap-1">
-                    {sub.collection?.fileUrl && (
-                      <Button variant="ghost" size="icon" asChild title="Open vendor drawing">
-                        <a href={sub.collection.fileUrl} target="_blank" rel="noreferrer" aria-label={`Open vendor drawing for ${sub.title}`}>
-                          <Download className="h-4 w-4" />
-                        </a>
-                      </Button>
-                    )}
-                    <Button
-                      variant={mode === "pending" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => openCollectDialog(row)}
-                      disabled={!canCollectThis}
-                    >
-                      {mode === "collected" ? "Update" : sub.recollectionRequested ? "Re-collect" : "Collect"}
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
-  );
+  // Vendor, PO number and PO date used to be columns on every row; grouping by purchase order
+  // states them once on the group row instead. What is left is one line per drawing, with the
+  // item description, assignee and replacement notice — previously stacked three deep inside the
+  // description cell — each in a column of its own.
+  const DRAWING_COLUMN_COUNT = 10;
 
-  return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 shadow-sm">
-            <PenTool className="h-5 w-5 text-white" />
+  // Compacted here rather than in components/ui/table.tsx, which every other table in the app
+  // shares. `[&_td]` beats a cell's own `py-*`, so cells no longer set vertical padding at all.
+  const DRAWING_TABLE_DENSITY =
+    "[&_th]:h-8 [&_th]:whitespace-nowrap [&_th]:px-2 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1";
+
+  const drawingRows = (rows: CollectionRow[], prefix: number[], mode: "pending" | "collected") =>
+    rows.map((row, index) => {
+      const { item, sub } = row;
+      const stage = computeMdlDrawingStage(sub, true);
+      // Being the drawing's assignee is itself the authority to collect it, the same rule
+      // the MDL register uses for editing it.
+      const canCollectThis = canEditMdlSubDrawing(sub, user?.id, canCollect);
+      const redo = sub.recollectionRequested;
+      const redoDetail = redo
+        ? `Requested ${formatMdlDate(redo.requestedOn)}${
+            redo.afterRound ? ` after ${redo.afterRound}` : ""
+          }${redo.reason ? ` — ${redo.reason}` : ""}`
+        : "";
+      return (
+        <TableRow key={`${item.id}-${sub.id}`}>
+          <TableCell className="whitespace-nowrap font-medium">
+            {mdlOutlineNo(...prefix, index)}.
+          </TableCell>
+          <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
+          <TableCell className="max-w-[200px] truncate text-sm font-medium" title={sub.title}>
+            {sub.title || "Untitled drawing"}
+          </TableCell>
+          <TableCell
+            className="max-w-[200px] truncate text-xs text-muted-foreground"
+            title={String(item.Description ?? "")}
+          >
+            {String(item.Description ?? "—")}
+          </TableCell>
+          <TableCell className="max-w-[140px] truncate text-xs" title={sub.assignedToName}>
+            {sub.assignedToName || <span className="text-muted-foreground">Unassigned</span>}
+          </TableCell>
+          <TableCell className="max-w-[180px] whitespace-nowrap">
+            {redo ? (
+              <span
+                className="flex items-center gap-1 truncate text-[11px] text-rose-700"
+                title={redoDetail}
+              >
+                <RotateCcw className="h-3 w-3 shrink-0" />
+                <span className="truncate">{redoDetail}</span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </TableCell>
+          <TableCell className="whitespace-nowrap text-sm">
+            {mode === "pending"
+              ? formatMdlDate(sub.plannedEndDate)
+              : formatMdlDate(sub.collection?.receivedOn)}
+          </TableCell>
+          {/* The PO's vendor is on the group row; this is who actually sent the drawing, which is
+              not always the same party and is only known once it has been collected. */}
+          <TableCell
+            className="max-w-[140px] truncate text-xs text-muted-foreground"
+            title={sub.collection?.vendorName}
+          >
+            {sub.collection?.vendorName || "—"}
+          </TableCell>
+          <TableCell>
+            <span
+              className={cn(
+                "whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium",
+                mdlDrawingStageStyles[stage],
+              )}
+            >
+              {stage}
+            </span>
+          </TableCell>
+          <TableCell>
+            <div className="flex items-center justify-end gap-1">
+              {sub.collection?.fileUrl && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  asChild
+                  title="Open vendor drawing"
+                >
+                  <a
+                    href={sub.collection.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open vendor drawing for ${sub.title}`}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </a>
+                </Button>
+              )}
+              <Button
+                variant={mode === "pending" ? "default" : "outline"}
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={() => openCollectDialog(row)}
+                disabled={!canCollectThis}
+              >
+                {mode === "collected" ? "Update" : sub.recollectionRequested ? "Re-collect" : "Collect"}
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
+      );
+    });
+
+  /** One collapsible purchase-order row, plus its drawings when open. */
+  const drawingGroupRow = (
+    key: string,
+    outlineIndex: number,
+    rows: CollectionRow[],
+    mode: "pending" | "collected",
+    po?: MdlPoRef,
+  ) => {
+    const isOpen = expandedGroups.has(key);
+    const awaitingRedo = rows.filter((row) => row.sub.recollectionRequested).length;
+    return [
+      <TableRow
+        key={key}
+        className={cn("cursor-pointer bg-muted/40 hover:bg-muted/70", isOpen && "border-b-0")}
+        onClick={() => toggleGroup(key)}
+      >
+        <TableCell colSpan={DRAWING_COLUMN_COUNT}>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <ChevronRight
+              aria-hidden
+              className={cn("h-4 w-4 shrink-0 transition-transform", isOpen && "rotate-90")}
+            />
+            <span className="text-xs font-medium tabular-nums text-muted-foreground">
+              {mdlOutlineNo(outlineIndex)}.
+            </span>
+            {po ? (
+              <>
+                <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600" />
+                {/* The PO number is a link, so it must not also toggle the row. */}
+                <Link
+                  href={`/project-management/purchase-orders/${po.poId}?project=${encodeURIComponent(mappingId)}`}
+                  className="font-semibold hover:underline"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {po.poNumber}
+                </Link>
+                {po.vendorName && (
+                  <span className="text-sm text-muted-foreground">{po.vendorName}</span>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  Ordered {formatMdlDate(po.poDate)}
+                </span>
+              </>
+            ) : (
+              <>
+                <FolderOpen className="h-4 w-4 shrink-0 text-slate-500" />
+                <span className="font-semibold">Other drawings</span>
+              </>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              {awaitingRedo > 0 && (
+                <span className="flex items-center gap-1 whitespace-nowrap rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">
+                  <RotateCcw className="h-3 w-3" />
+                  {awaitingRedo} replacement{awaitingRedo === 1 ? "" : "s"}
+                </span>
+              )}
+              <span className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                {rows.length} drawing{rows.length === 1 ? "" : "s"}
+              </span>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">Drawing</h1>
-            <p className="text-sm text-muted-foreground">
-              Collect vendor drawings for every MDL item under purchase order in {mapping.projectName}.
-            </p>
+        </TableCell>
+      </TableRow>,
+      ...(isOpen ? drawingRows(rows, [outlineIndex], mode) : []),
+    ];
+  };
+
+  const renderTable = (rows: CollectionRow[], mode: "pending" | "collected") => {
+    const { groups, ungrouped } = groupRowsByPo(rows);
+    const groupKeys = [
+      ...groups.map((group) => `po:${group.po.poId}`),
+      ...(ungrouped.length ? ["other"] : []),
+    ];
+    return (
+      <>
+        {/* This bar carries the table's own title as well as its controls. The card used to add a
+            CardHeader above it repeating what the sidebar already says, so the screen titled the
+            same table three times over — page header, sidebar, card — before any data. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {mode === "pending" ? (
+              <Truck className="h-3.5 w-3.5 shrink-0 text-orange-600" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            )}
+            <span className="font-medium text-foreground">
+              {mode === "pending" ? "To collect from vendor" : "Collected from vendor"}
+            </span>
+            · {rows.length} drawing{rows.length === 1 ? "" : "s"} across {groups.length} purchase
+            order{groups.length === 1 ? "" : "s"}
+          </p>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setExpandedGroups(new Set(groupKeys))}
+              // Checked per key, not by size: the two tabs share this state, so a size match
+              // could be satisfied by groups belonging to the other tab.
+              disabled={groupKeys.every((key) => expandedGroups.has(key))}
+            >
+              Expand all
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setExpandedGroups(new Set())}
+              disabled={expandedGroups.size === 0}
+            >
+              Collapse all
+            </Button>
           </div>
         </div>
-        <Button variant="outline" asChild>
-          <Link href={`/project-management/documents?project=${encodeURIComponent(mappingId)}&category=Drawing`}>
-            <FolderOpen className="mr-2 h-4 w-4" />
-            Document Library
-          </Link>
-        </Button>
-      </div>
+        <div className="overflow-x-auto">
+          <Table className={DRAWING_TABLE_DENSITY}>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-16">SL NO</TableHead>
+                <TableHead>BOQ SL No</TableHead>
+                <TableHead className="min-w-[180px]">Drawing</TableHead>
+                <TableHead className="min-w-[160px]">Item Description</TableHead>
+                <TableHead>Assigned To</TableHead>
+                <TableHead>Replacement</TableHead>
+                <TableHead>{mode === "pending" ? "Planned End" : "Received On"}</TableHead>
+                <TableHead>Collected From</TableHead>
+                <TableHead>Stage</TableHead>
+                <TableHead className="w-24" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groups.map((group, groupIndex) =>
+                drawingGroupRow(`po:${group.po.poId}`, groupIndex, group.rows, mode, group.po),
+              )}
+              {ungrouped.length > 0 &&
+                drawingGroupRow("other", groups.length, ungrouped, mode)}
+            </TableBody>
+          </Table>
+        </div>
+      </>
+    );
+  };
+
+  return (
+    <main className={JMC_MAIN_CLASS}>
+      <PmPageHeader
+        title="Drawing"
+        subtitle={`Collect vendor drawings for every MDL item under purchase order in ${mapping.projectName}.`}
+        icon={PenTool}
+        backHref={`/project-management/supply?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Supply"
+        gradient="from-slate-500 to-slate-700"
+        actions={
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/project-management/documents?project=${encodeURIComponent(mappingId)}&category=Drawing`}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Document Library
+            </Link>
+          </Button>
+        }
+      />
 
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
         <SidebarTabsList
@@ -534,7 +780,6 @@ export default function DrawingPage() {
           description="Vendor handover, then review on MDL"
           icon={PenTool}
           gradient="from-slate-500 to-slate-700"
-          tint="from-slate-500/10 to-slate-600/5"
         />
 
         <div className="min-w-0 flex-1 space-y-4">
@@ -583,16 +828,8 @@ export default function DrawingPage() {
           )}
 
           {activeTab === "collected" ? (
-            <Card className="border-border/60">
+            <Card className="overflow-hidden border-border/60">
               <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <CheckCircle2 className="h-4 w-4" /> Collected from Vendor
-                </CardTitle>
-                <CardDescription>
-                  Drawings the vendor has handed over. Review and submit them to the client on the MDL register.
-                </CardDescription>
-              </CardHeader>
               <CardContent className="p-0">
                 {collectedRows.length ? (
                   renderTable(collectedRows, "collected")
@@ -607,16 +844,8 @@ export default function DrawingPage() {
               </CardContent>
             </Card>
           ) : (
-            <Card className="border-border/60">
+            <Card className="overflow-hidden border-border/60">
               <div className="h-1 w-full bg-gradient-to-r from-orange-500 to-amber-600" />
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Truck className="h-4 w-4" /> To Collect from Vendor
-                </CardTitle>
-                <CardDescription>
-                  A purchase order has been placed for these items, so the vendor owes us these drawings.
-                </CardDescription>
-              </CardHeader>
               <CardContent className="p-0">
                 {pendingRows.length ? (
                   renderTable(pendingRows, "pending")

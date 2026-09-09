@@ -657,6 +657,8 @@ test('returning to an earlier step re-opens everything between it and the return
     actor: { userId: 'u-ed', userName: 'ED' },
     returnTo: stepNamed(state, 'Finance').id,
     reason: 'Figures do not match the purchase order.',
+    // The direct hand-back, which is no longer the default — see the test below.
+    settings: { returnViaRequester: false },
     now: '2026-08-22T12:00:00.000Z',
   });
 
@@ -675,6 +677,35 @@ test('returning to an earlier step re-opens everything between it and the return
   assert.equal(onlyActive(state).name, 'ED');
   state = act(state, { kind: 'Approve', actor: { userId: 'u-ed' }, now: '2026-08-22T14:00:00.000Z' });
   assert.equal(state.request.status, 'Approved');
+});
+
+test('by default a return to an earlier step travels back through the requester', () => {
+  let state = submitted();
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-mgr' }, now: '2026-08-22T10:30:00.000Z' });
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-fin' }, now: '2026-08-22T11:00:00.000Z' });
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-dir' }, now: '2026-08-22T11:30:00.000Z' });
+
+  state = act(state, {
+    kind: 'Return',
+    actor: { userId: 'u-ed', userName: 'ED' },
+    returnTo: stepNamed(state, 'Finance').id,
+    reason: 'Figures do not match the purchase order.',
+    now: '2026-08-22T12:00:00.000Z',
+  });
+
+  // The correction asked for is to the proposal, and only the requester may make it.
+  assert.equal(state.request.status, 'Returned');
+  assert.equal(activeSteps(state).length, 0, 'the whole chain waits on the requester');
+  assert.equal(state.request.returnResumeStepId, stepNamed(state, 'Finance').id, 'it resumes where the returner said');
+  assert.equal(stepNamed(state, 'Manager').status, 'Completed', 'approvals before the target still stand');
+  const notice = state.notifications.find((intent) => intent.kind === 'Returned');
+  assert.deepEqual(notice.userIds, [state.request.requesterId], 'the requester is the one told to act');
+  assert.match(notice.body, /resumes at "Finance"/);
+
+  // Corrected and resubmitted with nothing material changed, it goes to the step that was chosen —
+  // not back to the returner, and not to the first step.
+  state = act(state, { kind: 'Resubmit', actor: requester, now: '2026-08-22T13:00:00.000Z' });
+  assert.equal(onlyActive(state).name, 'Finance');
 });
 
 test('returning needs a reason and a valid target', () => {
@@ -831,6 +862,8 @@ test('resubmitting after a material change supersedes every approval and restart
       fingerprint: 'v2',
       amountChange: { from: 500000, to: 900000, pct: 80 },
     },
+    // Full re-approval, which is no longer the default — see the test below it.
+    settings: { restartOnMaterialChange: 'First Step' },
     now: '2026-08-22T12:00:00.000Z',
   });
   assert.equal(state.request.version, 2);
@@ -853,17 +886,22 @@ test('resubmitting after a material change supersedes every approval and restart
   );
 });
 
-test('the restart point is configurable', () => {
+/*
+ * The default. A material change voids every approval given against the old content — that part is
+ * not negotiable — but the file resumes at the step that returned it rather than at stage one, so a
+ * correction the fourth approver asked for does not cost the three signatures before it.
+ */
+test('by default a material change supersedes every approval but resumes at the returning step', () => {
   let state = returnedToRequester();
   state = act(state, {
     kind: 'Resubmit',
     actor: requester,
     materialChange: { changed: true, fields: ['amount'], fingerprint: 'v2' },
-    settings: { restartOnMaterialChange: 'Returning Step' },
     now: '2026-08-22T12:00:00.000Z',
   });
   assert.equal(onlyActive(state).name, 'Director');
   assert.equal(stepNamed(state, 'Manager').status, 'Superseded', 'the earlier approvals are still void');
+  assert.equal(state.request.version, 2);
 });
 
 test('only the requester can resubmit, and only a returned request', () => {

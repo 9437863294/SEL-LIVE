@@ -32,7 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 /** The rhythm every Project Management screen uses. */
-export const JMC_MAIN_CLASS = "min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6";
+export const JMC_MAIN_CLASS = "min-h-[calc(100dvh-4rem)] space-y-4 p-4 sm:p-6";
 const JMC_MAIN_FLAT_CLASS = "min-h-[calc(100dvh-4rem)] p-4 sm:p-6";
 
 /**
@@ -42,7 +42,19 @@ const JMC_MAIN_FLAT_CLASS = "min-h-[calc(100dvh-4rem)] p-4 sm:p-6";
 export const JMC_GRADIENT = "from-emerald-500 to-green-600";
 export const JMC_SETTINGS_GRADIENT = "from-slate-500 to-slate-700";
 
-/** Back-arrow + gradient icon chip + title + subtitle, exactly as MDCC/GRN/MVAC render it. */
+/**
+ * Back-arrow + gradient icon chip + title + subtitle, on **one line**.
+ *
+ * These are dense data screens — a register, a queue, a workflow stage — and the header is not the
+ * content. It used to stack a 40px chip beside a `text-2xl` title with a full sentence beneath,
+ * which cost roughly seventy vertical pixels before the first row of data, on every screen in the
+ * module. Laying the subtitle alongside the title instead of under it halves that without losing
+ * anything: the title still leads, and the subtitle is still there to explain the screen.
+ *
+ * The subtitle is hidden below `md` and truncated above it. It is supporting prose, so on a narrow
+ * screen the title and the actions are worth more than a wrapped second line, and on a wide one
+ * a truncated sentence with the full text on hover beats one that pushes the table down.
+ */
 export function JmcPageHeader({
   title,
   subtitle,
@@ -61,27 +73,30 @@ export function JmcPageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href={backHref} aria-label={backLabel}>
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-        </Button>
-        <div
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm",
-            gradient,
-          )}
-        >
-          <Icon className="h-5 w-5 text-white" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="truncate text-2xl font-bold">{title}</h1>
-          {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
-        </div>
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild>
+        <Link href={backHref} aria-label={backLabel}>
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+      </Button>
+      <div
+        className={cn(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br shadow-sm",
+          gradient,
+        )}
+      >
+        <Icon className="h-4 w-4 text-white" />
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      <h1 className="truncate text-lg font-semibold tracking-tight">{title}</h1>
+      {subtitle ? (
+        <p
+          className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground md:block"
+          title={typeof subtitle === "string" ? subtitle : undefined}
+        >
+          {subtitle}
+        </p>
+      ) : null}
+      {actions ? <div className="ml-auto flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   );
 }

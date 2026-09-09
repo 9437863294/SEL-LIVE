@@ -661,6 +661,24 @@ export interface EApprovalSettings {
   /** Whether an approver may return to any earlier step, or only to the requester. */
   allowReturnToAnyStep: boolean;
   /**
+   * Whether a return travels back through the requester before it resumes.
+   *
+   * A return is a request for a correction, and the proposal is the requester's to correct —
+   * `canEditEApprovalRequest` gives nobody else that power, so a file returned straight to an earlier
+   * approver arrived with somebody who could read the objection but not act on it. They would
+   * approve it unchanged or return it again to the author, which is the trip this setting makes
+   * directly.
+   *
+   * On (the default), a return of either kind parks the whole chain with the requester and remembers
+   * the chosen step in `returnResumeStepId`. The requester revises, resubmits, and the file resumes
+   * at exactly the step the returner chose — so "return to Finance" still means Finance sees it next,
+   * with the correction Finance asked for already made.
+   *
+   * Off, a return to an earlier step re-activates that step immediately, which is the behaviour the
+   * module shipped with. Returning to the requester parks the chain either way.
+   */
+  returnViaRequester: boolean;
+  /**
    * Whether a primary-chain stage that lands on the requester themselves is completed automatically
    * rather than parked in their own inbox.
    *
@@ -704,12 +722,17 @@ export const DEFAULT_E_APPROVAL_SETTINGS: EApprovalSettings = {
   // approved — an approver who signed "purchase 10 helmets" has not approved "purchase 10 vehicles".
   materialFields: ['subject', 'body', 'amount', 'departmentId', 'projectId', 'attachmentsFingerprint'],
   amountTolerancePct: 0,
-  restartOnMaterialChange: 'First Step',
+  // The step that returned the file, not the first one. A material change does void every approval
+  // given against the old content — that part is not negotiable and still happens — but sending the
+  // file back to stage one afterwards means a correction the fourth approver asked for costs the
+  // three signatures before it, every time. Set to 'First Step' where full re-approval is required.
+  restartOnMaterialChange: 'Returning Step',
   defaultSlaHours: 24,
   allowApproveAndComplete: true,
   allowNestedVerification: true,
   maxVerificationDepth: 4,
   allowReturnToAnyStep: true,
+  returnViaRequester: true,
   skipSelfApprovalSteps: true,
   escalationLadder: [],
   confidentialRoles: [],
@@ -4005,8 +4028,8 @@ export function applyEApprovalAction(
         throw new EApprovalRuleError(`"${target.name}" is not a step this approval can be returned to.`);
       }
 
-      // The target acts again now; everything between it and the returning step is re-opened so the
-      // chain runs forward in its original order rather than jumping back to the returner.
+      // Everything between the target and the returning step is re-opened either way, so the chain
+      // runs forward in its original order rather than jumping back to the returner.
       primaryEApprovalSteps(steps)
         .filter((candidate) => candidate.sequence > target.sequence && candidate.sequence <= step.sequence)
         .forEach((candidate) => {
@@ -4015,17 +4038,59 @@ export function applyEApprovalAction(
           reopenStep(candidate);
         });
       if (step.depth === 0) reopenStep(step);
-      if (target.depth === 0) {
-        reopenStep(target);
-        activateStep(target, now, target.slaHours);
-      } else {
-        unpauseStep(target, now);
-      }
+      if (target.depth === 0) reopenStep(target);
+      else unpauseStep(target, now);
       target.returnedFromStepId = step.id;
       target.reopened = true;
-      request.status = 'Returned';
       request.returnedByStepId = step.id;
       request.returnReason = input.reason ?? input.comment;
+      request.status = 'Returned';
+
+      /*
+       * Via the requester, unless the organisation has turned that off.
+       *
+       * The correction being asked for is to the proposal, and the proposal is the requester's alone
+       * to change — so handing the file straight back to an earlier approver gave it to somebody who
+       * could read the objection and do nothing about it. See `returnViaRequester`.
+       */
+      if (settings.returnViaRequester !== false) {
+        primaryEApprovalSteps(steps)
+          .filter((candidate) => isOpenEApprovalStepStatus(candidate.status))
+          .forEach((candidate) => {
+            candidate.status = 'Pending';
+            candidate.startedAt = null;
+            candidate.dueAt = null;
+          });
+        // Where it picks up once the requester resubmits — the step the returner actually chose.
+        request.returnResumeStepId = target.depth === 0 ? target.id : null;
+        pushEvent({
+          ...onBehalfOf,
+          kind: 'Return',
+          stepId: step.id,
+          stepName: step.name,
+          stepType: step.type,
+          targetStepId: target.id,
+          targetStepName: target.name,
+          outcome: 'Returned',
+          reason: input.reason,
+          comment: input.comment,
+          summary: `Returned to the requester by ${actorLabel(actor)} for correction, to resume at "${
+            target.name
+          }" — ${input.reason || input.comment}`,
+        });
+        notifications.push({
+          kind: 'Returned',
+          userIds: [request.requesterId],
+          title: 'Approval returned',
+          body: `${describeEApprovalSubject(request)} was returned by ${actorLabel(actor)} for correction: ${
+            input.reason || input.comment || 'see comments'
+          }. Once you resubmit it, it resumes at "${target.name}".`,
+          severity: 'WARNING',
+        });
+        break;
+      }
+
+      if (target.depth === 0) activateStep(target, now, target.slaHours);
       pushEvent({
         ...onBehalfOf,
         kind: 'Return',

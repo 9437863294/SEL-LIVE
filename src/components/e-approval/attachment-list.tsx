@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { Download, FileSignature, FileText, Loader2, Paperclip, Trash2, Upload } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Download, FileSignature, FileText, History, Loader2, Paperclip, Trash2, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 import type { EApprovalAttachment } from '@/lib/e-approval';
 import {
   deleteEApprovalDraftAttachment,
@@ -41,6 +42,7 @@ export function AttachmentList({
   canUpload,
   canSign = true,
   canRemove = false,
+  canRevise = false,
   closedStatus,
   onChanged,
 }: {
@@ -55,6 +57,11 @@ export function AttachmentList({
    * attachment is superseded by a revision rather than removed.
    */
   canRemove?: boolean;
+  /**
+   * Whether a document may be replaced by a newer version of itself. False once the approval has
+   * come to rest — a closed approval's documents are the record of what was approved.
+   */
+  canRevise?: boolean;
   /** The terminal status to name in the explanation, when `canSign` is false because of one. */
   closedStatus?: string;
   onChanged: () => void;
@@ -63,6 +70,15 @@ export function AttachmentList({
   const [busy, setBusy] = useState(false);
   const [signing, setSigning] = useState<EApprovalAttachment | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [revisingId, setRevisingId] = useState<string | null>(null);
+  /**
+   * One hidden picker, pointed at whichever document is being replaced.
+   *
+   * The target is held in a ref rather than in state because `click()` is called in the same tick as
+   * the choice is made — a state write would not have landed by the time the change handler runs.
+   */
+  const revisionInput = useRef<HTMLInputElement>(null);
+  const revisionTarget = useRef<EApprovalAttachment | null>(null);
 
   const byVersion = useMemo(() => {
     const groups = new Map<number, EApprovalAttachment[]>();
@@ -72,6 +88,21 @@ export function AttachmentList({
     });
     return Array.from(groups.entries()).sort((a, b) => b[0] - a[0]);
   }, [attachments]);
+
+  /** Documents that a later upload has replaced, so the stale one is not opened by mistake. */
+  const supersededIds = useMemo(
+    () =>
+      new Set(
+        attachments
+          .map((attachment) => attachment.supersedesAttachmentId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    [attachments],
+  );
+  const nameById = useMemo(
+    () => new Map(attachments.map((attachment) => [attachment.id, attachment.name])),
+    [attachments],
+  );
 
   const upload = async (files: FileList | null) => {
     if (!serviceActor || !files?.length) return;
@@ -90,6 +121,48 @@ export function AttachmentList({
     } finally {
       setBusy(false);
     }
+  };
+
+  /**
+   * Attaches a newer version of one document — the "add another version of the upload" of §8.
+   *
+   * Never a delete-and-re-upload. Past Draft the attachment set is evidence: `eApprovalVersions`
+   * snapshots an `attachmentsFingerprint` for every superseded version, and each approval was given
+   * against the documents on the file at that moment, so removing one would leave a snapshot naming
+   * a document that no longer exists and an approver's decision pointing at nothing. Both files stay;
+   * the newer one records what it replaced, and the changed attachment set is a material change, so
+   * the approvals already given are superseded at resubmission exactly as an edited proposal would be.
+   */
+  const attachRevision = async (files: FileList | null) => {
+    const target = revisionTarget.current;
+    revisionTarget.current = null;
+    if (revisionInput.current) revisionInput.current.value = '';
+    if (!serviceActor || !target || !files?.length) return;
+    setRevisingId(target.id);
+    try {
+      await uploadEApprovalAttachment(approvalId, files[0], serviceActor, {
+        supersedesAttachmentId: target.id,
+        description: `Replaces “${target.name}”`,
+      });
+      toast({
+        title: 'New version attached',
+        description: `“${target.name}” stays on the record and is marked superseded.`,
+      });
+      onChanged();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not attach the new version',
+        description: error instanceof Error ? error.message : 'Something went wrong.',
+      });
+    } finally {
+      setRevisingId(null);
+    }
+  };
+
+  const startRevision = (attachment: EApprovalAttachment) => {
+    revisionTarget.current = attachment;
+    revisionInput.current?.click();
   };
 
   const remove = async (attachment: EApprovalAttachment) => {
@@ -127,11 +200,19 @@ export function AttachmentList({
               off again, and saying otherwise is what made a mis-dropped document look permanent. */}
           <p className="text-[11px] text-muted-foreground">
             {canRemove
-              ? 'While this is a draft you can remove a file and attach another. Once submitted, uploads are added and never replaced.'
-              : 'Uploads are added, never replaced — the original file always stays on the record.'}
+              ? 'While this is a draft you can remove a file and attach another. Once submitted, a document is replaced by attaching a new version of it.'
+              : 'Nothing is ever deleted. To correct a document, use New version on it — both files stay on the record.'}
           </p>
         </div>
       )}
+
+      {/* Shared by every row's New version button — see `startRevision`. */}
+      <input
+        ref={revisionInput}
+        type="file"
+        className="hidden"
+        onChange={(event) => void attachRevision(event.target.files)}
+      />
 
       {canUpload && !canSign && attachments.some(isPdf) && (
         <p className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600">
@@ -149,11 +230,23 @@ export function AttachmentList({
               Version {version}
             </p>
             <div className="divide-y rounded-lg border">
-              {rows.map((attachment) => (
-                <div key={attachment.id} className="flex items-center gap-2.5 px-2.5 py-2">
-                  <FileText className="h-4 w-4 shrink-0 text-sky-600" />
+              {rows.map((attachment) => {
+                const superseded = supersededIds.has(attachment.id);
+                return (
+                <div
+                  key={attachment.id}
+                  className={cn('flex items-center gap-2.5 px-2.5 py-2', superseded && 'bg-muted/30')}
+                >
+                  <FileText className={cn('h-4 w-4 shrink-0', superseded ? 'text-slate-400' : 'text-sky-600')} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{attachment.name}</p>
+                    <p className={cn('truncate text-sm font-medium', superseded && 'text-muted-foreground line-through')}>
+                      {attachment.name}
+                    </p>
+                    {attachment.supersedesAttachmentId && (
+                      <p className="truncate text-[11px] text-amber-700">
+                        Replaces “{nameById.get(attachment.supersedesAttachmentId) ?? 'an earlier document'}”
+                      </p>
+                    )}
                     <p className="truncate text-[11px] text-muted-foreground">
                       {attachment.uploadedByName || 'Uploaded'} · {formatEApprovalDateTime(attachment.uploadedAt)}
                       {attachment.size ? ` · ${prettySize(attachment.size)}` : ''}
@@ -170,8 +263,13 @@ export function AttachmentList({
                     )}
                   </div>
                   {attachment.supersedesAttachmentId && (
-                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                    <Badge variant="outline" className="shrink-0 border-amber-200 bg-amber-50 text-[10px] text-amber-800">
                       Revision
+                    </Badge>
+                  )}
+                  {superseded && (
+                    <Badge variant="outline" className="shrink-0 text-[10px] text-muted-foreground">
+                      Superseded
                     </Badge>
                   )}
                   {attachment.signedByName && (
@@ -188,6 +286,27 @@ export function AttachmentList({
                       onClick={() => setSigning(attachment)}
                     >
                       <FileSignature className="h-3.5 w-3.5" /> Sign
+                    </Button>
+                  )}
+                  {/* Only on the current document: replacing one that has already been replaced
+                      would fork the lineage, and "which of these two is the live quotation?" is the
+                      question the whole revision chain exists to answer. */}
+                  {canUpload && canRevise && !superseded && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 shrink-0 gap-1 px-2 text-xs"
+                      disabled={revisingId !== null || busy}
+                      title={`Attach a newer version of ${attachment.name}`}
+                      onClick={() => startRevision(attachment)}
+                    >
+                      {revisingId === attachment.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <History className="h-3.5 w-3.5" />
+                      )}
+                      New version
                     </Button>
                   )}
                   <Button asChild size="sm" variant="ghost" className="h-8 shrink-0 gap-1 px-2 text-xs">
@@ -218,7 +337,8 @@ export function AttachmentList({
                     </Button>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))

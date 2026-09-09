@@ -168,7 +168,7 @@ export default function EditEApprovalPage() {
 
       <FormSection
         title="Attachments"
-        description="Files are added, never replaced. Changing the attachment set counts as a material change."
+        description="A document is corrected by attaching a new version of it — both files stay on the record. Changing the attachment set counts as a material change."
       >
         <AttachmentList
           approvalId={request.id}
@@ -176,6 +176,9 @@ export default function EditEApprovalPage() {
           serviceActor={serviceActor}
           canUpload={permissions.canUpload}
           canRemove={canRemoveEApprovalAttachment(request, serviceActor)}
+          // This screen only opens on a draft or a returned request, so a document here is always
+          // still correctable — which is the whole reason the requester was sent back here.
+          canRevise
           onChanged={load}
         />
       </FormSection>

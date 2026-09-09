@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowUpDown,
   CalendarDays,
   CheckCircle2,
@@ -133,6 +132,10 @@ import MdlReports from "@/components/project-management/mdl-reports";
 import MdlGanttChart from "@/components/project-management/mdl-gantt";
 import MdlPendingTasks from "@/components/project-management/mdl-pending-tasks";
 import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
+import {
+  JMC_MAIN_CLASS,
+  JmcPageHeader as PmPageHeader,
+} from "@/components/jmc/jmc-page-shell";
 
 type ProjectMapping = {
   id: string;
@@ -241,6 +244,10 @@ export default function MdlPage() {
   const [pendingFiles, setPendingFiles] = useState<Partial<Record<MdlRevisionRound, File>>>({});
   const [visibleRounds, setVisibleRounds] = useState(1);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  // Purchase-order / scope groups start closed, so the register opens as a list of orders rather
+  // than every drawing on the project at once. Keyed `po:{id}` / `scope:{name}` so the two
+  // namespaces cannot collide.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [subToDelete, setSubToDelete] = useState<SubDrawingRef | null>(null);
   const [isDeletingSub, setIsDeletingSub] = useState(false);
   const [itemToRemove, setItemToRemove] = useState<BoqItem | null>(null);
@@ -408,6 +415,16 @@ export default function MdlPage() {
     return Array.from(map.entries());
   }, [unorderedRows]);
 
+  // Every collapsible group key, so Expand all can open them in one state write and the buttons
+  // know when they are already at their limit.
+  const allGroupKeys = useMemo(
+    () => [
+      ...poGroups.map((group) => `po:${group.po.poId}`),
+      ...scopeGroups.map(([scope]) => `scope:${scope}`),
+    ],
+    [poGroups, scopeGroups],
+  );
+
   // Which BOQ items have an active (non-cancelled) purchase order placed against them —
   // that's the trigger for a drawing becoming a "pending task".
   const poInfoByBoqItemId = useMemo(() => {
@@ -437,6 +454,15 @@ export default function MdlPage() {
       const next = new Set(current);
       if (next.has(itemId)) next.delete(itemId);
       else next.add(itemId);
+      return next;
+    });
+  };
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
@@ -767,283 +793,327 @@ export default function MdlPage() {
     }
   };
 
+  // The register is one table, not one per group: a purchase order is a single collapsible row,
+  // so twenty POs read as twenty lines rather than twenty stacked tables, and the item columns
+  // stay aligned across every group.
+  // Every cell holds one line. What used to sit stacked under the description — the drawing
+  // roll-up bar, and a sub-drawing's assignee and vendor link — now has its own column, so a row
+  // is one line tall and the eye can scan down a column instead of re-reading a block per row.
+  const REGISTER_COLUMN_COUNT = 16;
+
+  // Compacted here rather than in components/ui/table.tsx, which every other table in the app
+  // shares. `[&_td]` beats a cell's own `py-*`, so cells no longer set vertical padding at all.
+  const REGISTER_TABLE_DENSITY =
+    "[&_th]:h-8 [&_th]:whitespace-nowrap [&_th]:px-2 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1";
+
+  const registerHead = (
+    <TableHeader>
+      <TableRow>
+        <TableHead className="w-16">SL NO</TableHead>
+        <TableHead>BOQ SL No</TableHead>
+        <TableHead className="min-w-[200px]">Item Description</TableHead>
+        <TableHead>Drawings</TableHead>
+        <TableHead>Stage</TableHead>
+        <TableHead>Assigned To</TableHead>
+        <TableHead>Doc No.</TableHead>
+        <TableHead>Drawing No.</TableHead>
+        <TableHead>Planned Start</TableHead>
+        <TableHead>Planned End</TableHead>
+        {/* Was "Current Stage", which collided with the new drawing-stage column. It has always
+            shown the revision round and its status, so it is named for that. */}
+        <TableHead>Revision</TableHead>
+        <TableHead>Cycle Age</TableHead>
+        <TableHead>Approve Date</TableHead>
+        <TableHead>Status</TableHead>
+        <TableHead>Remark</TableHead>
+        <TableHead className="w-24" />
+      </TableRow>
+    </TableHeader>
+  );
+
   // Shared by the purchase-order groups and the Scope 1 groups beneath them: the rows are
   // identical, only the outline numbering differs. `prefix` carries the enclosing group’s index
   // so a PO’s items read 1.1, 1.2 and their sub-drawings 1.1.1, 1.1.2.
-  const registerTable = (rows: MdlItemRow[], prefix: number[]) => (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-20">SL NO</TableHead>
-                          <TableHead>BOQ SL No</TableHead>
-                          <TableHead className="min-w-[240px]">Item Description</TableHead>
-                          <TableHead>Doc No.</TableHead>
-                          <TableHead>Drawing No.</TableHead>
-                          <TableHead>Planned Start</TableHead>
-                          <TableHead>Planned End</TableHead>
-                          <TableHead>Current Stage</TableHead>
-                          <TableHead>Cycle Age</TableHead>
-                          <TableHead>Approve Date</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Remark</TableHead>
-                          <TableHead className="w-32" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rows.map(({ item, drawing }, index) => {
-                          // Everything on the parent row reads from the roll-up, so an item with
-                          // sub-drawings summarises them instead of showing an empty container.
-                          const rollup = getMdlRollup(drawing);
-                          const latest = getLatestRevisionAcrossItem(drawing);
-                          const overdue = rollup.overdue;
-                          const cycleAgeDays = computeMdlCycleAgeDays(rollup);
-                          const subDrawings = getMdlSubDrawings(drawing);
-                          const isExpanded = expandedItems.has(item.id);
-                          const approvedPct = rollup.subTotal
-                            ? Math.round((rollup.subApproved / rollup.subTotal) * 100)
-                            : 0;
-                          const collectedPct = rollup.subTotal
-                            ? Math.round((rollup.subCollected / rollup.subTotal) * 100)
-                            : 0;
-                          return [
-                            <TableRow
-                              key={item.id}
-                              className={cn(
-                                subDrawings.length && "cursor-pointer",
-                                subDrawings.length && isExpanded && "border-b-0 bg-muted/30",
-                              )}
-                              // Clicking anywhere on an item with sub-drawings opens its list; the
-                              // action buttons stop propagation so they still do their own thing.
-                              onClick={subDrawings.length ? () => toggleExpanded(item.id) : undefined}
-                            >
-                              <TableCell className="font-medium">{mdlOutlineNo(...prefix, index)}.</TableCell>
-                              <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
-                              <TableCell className="max-w-xs">
-                                <div className="flex items-center gap-1">
-                                  {subDrawings.length ? (
-                                    <ChevronRight
-                                      aria-hidden
-                                      className={cn("h-4 w-4 shrink-0 transition-transform", isExpanded && "rotate-90")}
-                                    />
-                                  ) : (
-                                    <span className="w-4 shrink-0" />
-                                  )}
-                                  <span className="truncate" title={String(item.Description ?? "")}>
-                                    {String(item.Description ?? "—")}
-                                  </span>
-                                </div>
-                                {subDrawings.length > 0 && (
-                                  <div className="mt-1 flex items-center gap-2 pl-5">
-                                    <div
-                                      className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted"
-                                      role="img"
-                                      aria-label={`${rollup.subApproved} of ${rollup.subTotal} drawings approved, ${rollup.subCollected} collected`}
-                                    >
-                                      {/* Collected sits behind approved, so the bar reads as
-                                          progress along the vendor → client chain. */}
-                                      <div className="relative h-full w-full">
-                                        <div className="absolute inset-y-0 left-0 bg-sky-300" style={{ width: `${collectedPct}%` }} />
-                                        <div className="absolute inset-y-0 left-0 bg-emerald-500" style={{ width: `${approvedPct}%` }} />
-                                      </div>
-                                    </div>
-                                    <span className="flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
-                                      <Layers className="h-2.5 w-2.5" />
-                                      {rollup.subApproved}/{rollup.subTotal} approved
-                                      {rollup.subCollected > rollup.subApproved && ` · ${rollup.subCollected} collected`}
-                                    </span>
-                                  </div>
-                                )}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap">{drawing?.docNo || "—"}</TableCell>
-                              <TableCell className="max-w-xs truncate" title={drawing?.drawingNo}>{drawing?.drawingNo || "—"}</TableCell>
-                              <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.plannedStartDate)}</TableCell>
-                              <TableCell className="whitespace-nowrap">
-                                <span className={overdue ? "font-medium text-red-600" : ""}>
-                                  {formatMdlDate(rollup.plannedEndDate)}
-                                </span>
-                                {overdue && (
-                                  <span
-                                    className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
-                                    title={
-                                      rollup.subTotal
-                                        ? "This item has a drawing past its planned end date — expand to see which"
-                                        : undefined
-                                    }
-                                  >
-                                    Overdue
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap">
-                                {latest ? (
-                                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${latest.status ? mdlRevisionStatusStyles[latest.status] : "bg-muted text-muted-foreground"}`}>
-                                    {latest.round}{latest.status ? ` · ${latest.status}` : ""}
-                                  </span>
-                                ) : "—"}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap">
-                                {cycleAgeDays != null ? (
-                                  <span className={cycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>
-                                    {cycleAgeDays}d
-                                  </span>
-                                ) : "—"}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.approveDate)}</TableCell>
-                              <TableCell>
-                                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[rollup.status]}`}>
-                                  {rollup.status}
-                                </span>
-                              </TableCell>
-                              <TableCell className="max-w-xs truncate" title={drawing?.remark}>{drawing?.remark || "—"}</TableCell>
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <div className="flex items-center">
-                                  <Button variant="ghost" size="icon" onClick={() => openDrawingDialog(item, null)} disabled={!canEdit} aria-label={`Edit ${item.Description}`}>
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                  {canEdit && (
-                                    <>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => openNewSubDrawing(item)}
-                                        aria-label={`Add a sub-drawing to ${item.Description}`}
-                                        title="Add sub-drawing"
-                                      >
-                                        <Plus className="h-4 w-4" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => setItemToRemove(item)}
-                                        aria-label={`Remove ${item.Description} from the MDL register`}
-                                        title="Remove from MDL register"
-                                      >
-                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                      </Button>
-                                    </>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>,
-                            ...(isExpanded
-                              ? subDrawings.map((sub, subIndex) => {
-                                  const subLatest = getLatestRevision(sub.revisions ?? []);
-                                  const subOverdue = isMdlOverdue(sub);
-                                  const subCycleAgeDays = computeMdlCycleAgeDays(sub);
-                                  const subStage = computeMdlDrawingStage(sub, poInfoByBoqItemId.has(item.id));
-                                  // Being the assignee is itself the authority to edit this
-                                  // drawing, whether or not the role carries Edit on the register.
-                                  const canEditThisSub = canEditMdlSubDrawing(sub, user?.id, canEdit);
-                                  return (
-                                    <TableRow key={`${item.id}-${sub.id}`} className="border-b-0 last:border-b">
-                                      <TableCell className="pl-6 text-xs tabular-nums text-muted-foreground">
-                                        {mdlOutlineNo(...prefix, index, subIndex)}.
-                                      </TableCell>
-                                      <TableCell />
-                                      <TableCell className="max-w-xs">
-                                        <div className="flex items-center gap-1.5 border-l-2 border-muted pl-4">
-                                          {isMdlApproved(sub.status) && (
-                                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                                          )}
-                                          <span className="truncate text-sm" title={sub.title}>
-                                            {sub.title || "Untitled drawing"}
-                                          </span>
-                                          <span
-                                            className={cn(
-                                              "shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                                              mdlDrawingStageStyles[subStage],
-                                            )}
-                                          >
-                                            {subStage}
-                                          </span>
-                                        </div>
-                                        <p className="truncate pl-4 text-[11px] text-muted-foreground">
-                                          {sub.assignedToName ? `Assigned to ${sub.assignedToName}` : "Unassigned"}
-                                          {sub.collection?.fileUrl && (
-                                            <>
-                                              {" · "}
-                                              <a
-                                                href={sub.collection.fileUrl}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="text-primary underline underline-offset-2"
-                                              >
-                                                Vendor drawing
-                                              </a>
-                                            </>
-                                          )}
-                                        </p>
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap text-sm">{sub.docNo || "—"}</TableCell>
-                                      <TableCell className="max-w-xs truncate text-sm" title={sub.drawingNo}>{sub.drawingNo || "—"}</TableCell>
-                                      <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(sub.plannedStartDate)}</TableCell>
-                                      <TableCell className="whitespace-nowrap text-sm">
-                                        <span className={subOverdue ? "font-medium text-red-600" : ""}>
-                                          {formatMdlDate(sub.plannedEndDate)}
-                                        </span>
-                                        {subOverdue && (
-                                          <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
-                                            Overdue
-                                          </span>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap">
-                                        {subLatest ? (
-                                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${subLatest.status ? mdlRevisionStatusStyles[subLatest.status] : "bg-muted text-muted-foreground"}`}>
-                                            {subLatest.round}{subLatest.status ? ` · ${subLatest.status}` : ""}
-                                          </span>
-                                        ) : "—"}
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap text-sm">
-                                        {subCycleAgeDays != null ? (
-                                          <span className={subCycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>
-                                            {subCycleAgeDays}d
-                                          </span>
-                                        ) : "—"}
-                                      </TableCell>
-                                      <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(sub.approveDate)}</TableCell>
-                                      <TableCell>
-                                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${mdlOverallStatusStyles[sub.status]}`}>
-                                          {sub.status}
-                                        </span>
-                                      </TableCell>
-                                      <TableCell className="max-w-xs truncate text-sm" title={sub.remark}>{sub.remark || "—"}</TableCell>
-                                      <TableCell>
-                                        <div className="flex items-center">
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => openDrawingDialog(item, sub)}
-                                            disabled={!canEditThisSub}
-                                            aria-label={`Edit sub-drawing ${sub.title || "untitled"}`}
-                                          >
-                                            <Pencil className="h-3.5 w-3.5" />
-                                          </Button>
-                                          {canEdit && (
-                                            <Button
-                                              variant="ghost"
-                                              size="icon"
-                                              onClick={() => setSubToDelete({ item, sub })}
-                                              aria-label={`Remove sub-drawing ${sub.title || "untitled"}`}
-                                              title="Remove sub-drawing"
-                                            >
-                                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })
-                              : []),
-                          ];
-                        })}
-                      </TableBody>
-                    </Table>
+  const itemRows = (rows: MdlItemRow[], prefix: number[]) =>
+    rows.map(({ item, drawing }, index) => {
+      // Everything on the parent row reads from the roll-up, so an item with
+      // sub-drawings summarises them instead of showing an empty container.
+      const rollup = getMdlRollup(drawing);
+      const latest = getLatestRevisionAcrossItem(drawing);
+      const overdue = rollup.overdue;
+      const cycleAgeDays = computeMdlCycleAgeDays(rollup);
+      const subDrawings = getMdlSubDrawings(drawing);
+      const isExpanded = expandedItems.has(item.id);
+      const approvedPct = rollup.subTotal
+        ? Math.round((rollup.subApproved / rollup.subTotal) * 100)
+        : 0;
+      const collectedPct = rollup.subTotal
+        ? Math.round((rollup.subCollected / rollup.subTotal) * 100)
+        : 0;
+      return [
+        <TableRow
+          key={item.id}
+          className={cn(
+            subDrawings.length && "cursor-pointer",
+            subDrawings.length && isExpanded && "border-b-0 bg-muted/30",
+          )}
+          // Clicking anywhere on an item with sub-drawings opens its list; the
+          // action buttons stop propagation so they still do their own thing.
+          onClick={subDrawings.length ? () => toggleExpanded(item.id) : undefined}
+        >
+          <TableCell className="whitespace-nowrap font-medium">{mdlOutlineNo(...prefix, index)}.</TableCell>
+          <TableCell className="whitespace-nowrap">{String(item["BOQ SL No"] ?? "—")}</TableCell>
+          <TableCell className="max-w-[220px]">
+            <div className="flex items-center gap-1">
+              {subDrawings.length ? (
+                <ChevronRight
+                  aria-hidden
+                  className={cn("h-4 w-4 shrink-0 transition-transform", isExpanded && "rotate-90")}
+                />
+              ) : (
+                <span className="w-4 shrink-0" />
+              )}
+              <span className="truncate" title={String(item.Description ?? "")}>
+                {String(item.Description ?? "—")}
+              </span>
+            </div>
+          </TableCell>
+          <TableCell className="whitespace-nowrap">
+            {subDrawings.length > 0 ? (
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-muted"
+                  role="img"
+                  aria-label={`${rollup.subApproved} of ${rollup.subTotal} drawings approved, ${rollup.subCollected} collected`}
+                >
+                  {/* Collected sits behind approved, so the bar reads as
+                      progress along the vendor → client chain. */}
+                  <div className="relative h-full w-full">
+                    <div className="absolute inset-y-0 left-0 bg-sky-300" style={{ width: `${collectedPct}%` }} />
+                    <div className="absolute inset-y-0 left-0 bg-emerald-500" style={{ width: `${approvedPct}%` }} />
                   </div>
-  );
+                </div>
+                <span className="flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+                  <Layers className="h-2.5 w-2.5" />
+                  {rollup.subApproved}/{rollup.subTotal}
+                  {rollup.subCollected > rollup.subApproved && ` · ${rollup.subCollected}c`}
+                </span>
+              </div>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </TableCell>
+          <TableCell className="whitespace-nowrap">
+            {/* An item with sub-drawings has no single stage of its own — each sub-drawing carries
+                one, and they show on the expanded rows. */}
+            {subDrawings.length === 0 && drawing ? (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                  mdlDrawingStageStyles[computeMdlDrawingStage(drawing, poInfoByBoqItemId.has(item.id))],
+                )}
+              >
+                {computeMdlDrawingStage(drawing, poInfoByBoqItemId.has(item.id))}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </TableCell>
+          {/* Assignment is a property of a sub-drawing, not of the BOQ item's own record, so this
+              column is only ever filled on the expanded rows. */}
+          <TableCell className="text-muted-foreground">—</TableCell>
+          <TableCell className="whitespace-nowrap">{drawing?.docNo || "—"}</TableCell>
+          <TableCell className="max-w-xs truncate" title={drawing?.drawingNo}>{drawing?.drawingNo || "—"}</TableCell>
+          <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.plannedStartDate)}</TableCell>
+          <TableCell className="whitespace-nowrap">
+            <span className={overdue ? "font-medium text-red-600" : ""}>
+              {formatMdlDate(rollup.plannedEndDate)}
+            </span>
+            {overdue && (
+              <span
+                className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700"
+                title={
+                  rollup.subTotal
+                    ? "This item has a drawing past its planned end date — expand to see which"
+                    : undefined
+                }
+              >
+                Overdue
+              </span>
+            )}
+          </TableCell>
+          <TableCell className="whitespace-nowrap">
+            {latest ? (
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${latest.status ? mdlRevisionStatusStyles[latest.status] : "bg-muted text-muted-foreground"}`}>
+                {latest.round}{latest.status ? ` · ${latest.status}` : ""}
+              </span>
+            ) : "—"}
+          </TableCell>
+          <TableCell className="whitespace-nowrap">
+            {cycleAgeDays != null ? (
+              <span className={cycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>
+                {cycleAgeDays}d
+              </span>
+            ) : "—"}
+          </TableCell>
+          <TableCell className="whitespace-nowrap">{formatMdlDate(rollup.approveDate)}</TableCell>
+          <TableCell>
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${mdlOverallStatusStyles[rollup.status]}`}>
+              {rollup.status}
+            </span>
+          </TableCell>
+          <TableCell className="max-w-xs truncate" title={drawing?.remark}>{drawing?.remark || "—"}</TableCell>
+          <TableCell onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center">
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openDrawingDialog(item, null)} disabled={!canEdit} aria-label={`Edit ${item.Description}`}>
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+              {canEdit && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon" className="h-7 w-7"
+                    onClick={() => openNewSubDrawing(item)}
+                    aria-label={`Add a sub-drawing to ${item.Description}`}
+                    title="Add sub-drawing"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon" className="h-7 w-7"
+                    onClick={() => setItemToRemove(item)}
+                    aria-label={`Remove ${item.Description} from the MDL register`}
+                    title="Remove from MDL register"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                  </Button>
+                </>
+              )}
+            </div>
+          </TableCell>
+        </TableRow>,
+        ...(isExpanded
+          ? subDrawings.map((sub, subIndex) => {
+              const subLatest = getLatestRevision(sub.revisions ?? []);
+              const subOverdue = isMdlOverdue(sub);
+              const subCycleAgeDays = computeMdlCycleAgeDays(sub);
+              const subStage = computeMdlDrawingStage(sub, poInfoByBoqItemId.has(item.id));
+              // Being the assignee is itself the authority to edit this
+              // drawing, whether or not the role carries Edit on the register.
+              const canEditThisSub = canEditMdlSubDrawing(sub, user?.id, canEdit);
+              return (
+                <TableRow key={`${item.id}-${sub.id}`} className="border-b-0 last:border-b">
+                  <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                    {/* Indent lives on an inner span: the table's `[&_td]:px-2` would override a
+                        `pl-*` set on the cell itself. */}
+                    <span className="pl-3">{mdlOutlineNo(...prefix, index, subIndex)}.</span>
+                  </TableCell>
+                  <TableCell />
+                  <TableCell className="max-w-[220px]">
+                    <div className="flex items-center gap-1.5 border-l-2 border-muted pl-3">
+                      {isMdlApproved(sub.status) && (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                      )}
+                      <span className="truncate text-sm" title={sub.title}>
+                        {sub.title || "Untitled drawing"}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">—</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                        mdlDrawingStageStyles[subStage],
+                      )}
+                    >
+                      {subStage}
+                    </span>
+                  </TableCell>
+                  <TableCell className="max-w-[140px] whitespace-nowrap">
+                    <span className="flex items-center gap-1 truncate text-xs">
+                      <span className={cn("truncate", !sub.assignedToName && "text-muted-foreground")}>
+                        {sub.assignedToName || "Unassigned"}
+                      </span>
+                      {sub.collection?.fileUrl && (
+                        <a
+                          href={sub.collection.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="shrink-0 text-primary underline underline-offset-2"
+                          title="Open the drawing collected from the vendor"
+                        >
+                          · Vendor
+                        </a>
+                      )}
+                    </span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-sm">{sub.docNo || "—"}</TableCell>
+                  <TableCell className="max-w-xs truncate text-sm" title={sub.drawingNo}>{sub.drawingNo || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(sub.plannedStartDate)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-sm">
+                    <span className={subOverdue ? "font-medium text-red-600" : ""}>
+                      {formatMdlDate(sub.plannedEndDate)}
+                    </span>
+                    {subOverdue && (
+                      <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                        Overdue
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {subLatest ? (
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${subLatest.status ? mdlRevisionStatusStyles[subLatest.status] : "bg-muted text-muted-foreground"}`}>
+                        {subLatest.round}{subLatest.status ? ` · ${subLatest.status}` : ""}
+                      </span>
+                    ) : "—"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-sm">
+                    {subCycleAgeDays != null ? (
+                      <span className={subCycleAgeDays > 30 ? "font-medium text-amber-600" : ""}>
+                        {subCycleAgeDays}d
+                      </span>
+                    ) : "—"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-sm">{formatMdlDate(sub.approveDate)}</TableCell>
+                  <TableCell>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${mdlOverallStatusStyles[sub.status]}`}>
+                      {sub.status}
+                    </span>
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate text-sm" title={sub.remark}>{sub.remark || "—"}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center">
+                      <Button
+                        variant="ghost"
+                        size="icon" className="h-7 w-7"
+                        onClick={() => openDrawingDialog(item, sub)}
+                        disabled={!canEditThisSub}
+                        aria-label={`Edit sub-drawing ${sub.title || "untitled"}`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon" className="h-7 w-7"
+                          onClick={() => setSubToDelete({ item, sub })}
+                          aria-label={`Remove sub-drawing ${sub.title || "untitled"}`}
+                          title="Remove sub-drawing"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          : []),
+      ];
+    });
 
   if (isAuthLoading || isLoading) {
     return (
@@ -1087,30 +1157,24 @@ export default function MdlPage() {
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Project Management">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-sm">
-            <FileStack className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">Design &amp; Engineering</h1>
-            <p className="text-sm text-muted-foreground">
-              Tracks drawing submission &amp; approval for every BOQ item marked MDL = Yes in {mapping.projectName}.
-            </p>
-          </div>
-        </div>
-        {canEdit && (
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <ListPlus className="mr-2 h-4 w-4" /> Add BOQ Item
-          </Button>
-        )}
-      </div>
+    <main className={JMC_MAIN_CLASS}>
+      {/* The shared Project Management header — the module's own furniture, which happens to live
+          in jmc-page-shell.tsx because that is where it was first factored out. */}
+      <PmPageHeader
+        title="Design & Engineering"
+        subtitle={`Drawing submission and approval for every BOQ item marked MDL = Yes in ${mapping.projectName}.`}
+        icon={FileStack}
+        backHref={`/project-management?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Project Management"
+        gradient="from-sky-500 to-blue-600"
+        actions={
+          canEdit ? (
+            <Button size="sm" onClick={() => setIsAddDialogOpen(true)}>
+              <ListPlus className="mr-2 h-4 w-4" /> Add BOQ Item
+            </Button>
+          ) : undefined
+        }
+      />
 
       <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
         <SidebarTabsList
@@ -1127,7 +1191,6 @@ export default function MdlPage() {
           description="Pending tasks, register, calendar, Gantt & reports"
           icon={FileStack}
           gradient="from-sky-500 to-blue-600"
-          tint="from-sky-500/10 to-blue-500/5"
         />
 
         <div className="min-w-0 flex-1 space-y-4">
@@ -1143,50 +1206,153 @@ export default function MdlPage() {
 
         <TabsContent value="register" className="mt-0 space-y-5">
           {poGroups.length || scopeGroups.length ? (
-            <>
-              {poGroups.map((group, groupIndex) => {
-                const summary = summariseMdlRows(group.rows);
-                return (
-                  <Card key={group.po.poId} className="overflow-hidden border-border/60">
-                    <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                        <span className="text-muted-foreground">{mdlOutlineNo(groupIndex)}.</span>
-                        <ShoppingCart className="h-4 w-4 text-emerald-600" />
-                        <Link
-                          href={`/project-management/purchase-orders/${group.po.poId}?project=${encodeURIComponent(mappingId)}`}
-                          className="hover:underline"
-                        >
-                          {group.po.poNumber}
-                        </Link>
-                        {group.po.vendorName && (
-                          <span className="text-sm font-normal text-muted-foreground">{group.po.vendorName}</span>
-                        )}
-                      </CardTitle>
-                      <CardDescription>
-                        Ordered {formatMdlDate(group.po.poDate)} · {group.rows.length} item
-                        {group.rows.length === 1 ? "" : "s"} · {summary.approved}/{summary.drawings} drawing
-                        {summary.drawings === 1 ? "" : "s"} approved
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-0">{registerTable(group.rows, [groupIndex])}</CardContent>
-                  </Card>
-                );
-              })}
+            <Card className="overflow-hidden border-border/60">
+              <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
+              {/* With every group closed by default, there has to be a way back to the full view
+                  in one action rather than N clicks. */}
+              <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5">
+                <p className="text-xs text-muted-foreground">
+                  {poGroups.length} purchase order{poGroups.length === 1 ? "" : "s"}
+                  {scopeGroups.length
+                    ? ` · ${scopeGroups.length} group${scopeGroups.length === 1 ? "" : "s"} not yet ordered`
+                    : ""}
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setExpandedGroups(new Set(allGroupKeys))}
+                    // Checked per key, not by size: a reload that removes a PO would otherwise
+                    // leave a stale key making the count match while a group is still closed.
+                    disabled={allGroupKeys.every((key) => expandedGroups.has(key))}
+                  >
+                    Expand all
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setExpandedGroups(new Set())}
+                    disabled={expandedGroups.size === 0}
+                  >
+                    Collapse all
+                  </Button>
+                </div>
+              </div>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <Table className={REGISTER_TABLE_DENSITY}>
+                    {registerHead}
+                    <TableBody>
+                      {poGroups.map((group, groupIndex) => {
+                        const summary = summariseMdlRows(group.rows);
+                        const key = `po:${group.po.poId}`;
+                        const isOpen = expandedGroups.has(key);
+                        const approvedPct = summary.drawings
+                          ? Math.round((summary.approved / summary.drawings) * 100)
+                          : 0;
+                        return [
+                          <TableRow
+                            key={key}
+                            className={cn(
+                              "cursor-pointer bg-muted/40 hover:bg-muted/70",
+                              isOpen && "border-b-0",
+                            )}
+                            onClick={() => toggleGroup(key)}
+                          >
+                            <TableCell colSpan={REGISTER_COLUMN_COUNT}>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <ChevronRight
+                                  aria-hidden
+                                  className={cn(
+                                    "h-4 w-4 shrink-0 transition-transform",
+                                    isOpen && "rotate-90",
+                                  )}
+                                />
+                                <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                  {mdlOutlineNo(groupIndex)}.
+                                </span>
+                                <ShoppingCart className="h-4 w-4 shrink-0 text-emerald-600" />
+                                {/* The PO number is a link, so it must not also toggle the row. */}
+                                <Link
+                                  href={`/project-management/purchase-orders/${group.po.poId}?project=${encodeURIComponent(mappingId)}`}
+                                  className="font-semibold hover:underline"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  {group.po.poNumber}
+                                </Link>
+                                {group.po.vendorName && (
+                                  <span className="text-sm text-muted-foreground">
+                                    {group.po.vendorName}
+                                  </span>
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                  Ordered {formatMdlDate(group.po.poDate)}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {group.rows.length} item{group.rows.length === 1 ? "" : "s"}
+                                </span>
+                                <div className="ml-auto flex items-center gap-2">
+                                  <div
+                                    className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-muted"
+                                    role="img"
+                                    aria-label={`${summary.approved} of ${summary.drawings} drawings approved`}
+                                  >
+                                    <div
+                                      className="h-full bg-emerald-500"
+                                      style={{ width: `${approvedPct}%` }}
+                                    />
+                                  </div>
+                                  <span className="whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+                                    {summary.approved}/{summary.drawings} approved
+                                  </span>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>,
+                          ...(isOpen ? itemRows(group.rows, [groupIndex]) : []),
+                        ];
+                      })}
 
-              {scopeGroups.map(([scope, rows]) => (
-                <Card key={scope} className="overflow-hidden border-border/60">
-                  <div className="h-1 w-full bg-gradient-to-r from-sky-500 to-blue-600" />
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">{scope}</CardTitle>
-                    <CardDescription>
-                      Not on a purchase order yet · {rows.length} item{rows.length === 1 ? "" : "s"}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-0">{registerTable(rows, [])}</CardContent>
-                </Card>
-              ))}
-            </>
+                      {scopeGroups.map(([scope, rows]) => {
+                        const key = `scope:${scope}`;
+                        const isOpen = expandedGroups.has(key);
+                        return [
+                          <TableRow
+                            key={key}
+                            className={cn(
+                              "cursor-pointer bg-muted/40 hover:bg-muted/70",
+                              isOpen && "border-b-0",
+                            )}
+                            onClick={() => toggleGroup(key)}
+                          >
+                            <TableCell colSpan={REGISTER_COLUMN_COUNT}>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <ChevronRight
+                                  aria-hidden
+                                  className={cn(
+                                    "h-4 w-4 shrink-0 transition-transform",
+                                    isOpen && "rotate-90",
+                                  )}
+                                />
+                                <Layers className="h-4 w-4 shrink-0 text-sky-600" />
+                                <span className="font-semibold">{scope}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  Not on a purchase order yet · {rows.length} item
+                                  {rows.length === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>,
+                          ...(isOpen ? itemRows(rows, []) : []),
+                        ];
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
           ) : (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center gap-3 p-8 text-center">

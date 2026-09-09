@@ -262,6 +262,22 @@ export function EApprovalSettingsPanel({
             </label>
             <label className="flex items-start gap-1.5 text-xs">
               <Checkbox
+                checked={draft.returnViaRequester !== false}
+                onCheckedChange={(checked) => setDraft({ ...draft, returnViaRequester: checked === true })}
+                disabled={!canEdit}
+                className="mt-0.5"
+              />
+              <span>
+                A return goes back through the requester
+                <span className="block text-[11px] text-muted-foreground">
+                  On, the file parks with the requester to be corrected and then resumes at the step the approver
+                  chose. Off, that step is re-activated straight away — which hands it to somebody who can read the
+                  objection but cannot change the proposal.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-1.5 text-xs">
+              <Checkbox
                 checked={draft.skipSelfApprovalSteps}
                 onCheckedChange={(checked) => setDraft({ ...draft, skipSelfApprovalSteps: checked === true })}
                 disabled={!canEdit}

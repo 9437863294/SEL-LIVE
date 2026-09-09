@@ -27,6 +27,7 @@ import {
   canSignEApprovalDocument,
   canViewEApproval,
   E_APPROVAL_BASE_PATH,
+  isTerminalEApprovalStatus,
   type EApprovalDetail,
 } from '@/lib/e-approval';
 import { loadEApprovalDetail } from '@/lib/e-approval-service';
@@ -379,6 +380,12 @@ export default function EApprovalDetailPage() {
                 canUpload={permissions.canUpload}
                 canSign={canSignEApprovalDocument(request)}
                 canRemove={canRemoveEApprovalAttachment(request, serviceActor)}
+                // Anyone who may attach to a live approval may also attach a newer version of a
+                // document already on it — a verifier who obtains a corrected quotation should not
+                // have to send the file back to the requester just to get it onto the record. Once
+                // the approval has come to rest its documents are the record of what was approved,
+                // so the lineage stops there.
+                canRevise={!isTerminalEApprovalStatus(request.status)}
                 closedStatus={request.status}
                 onChanged={load}
               />
