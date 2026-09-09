@@ -2305,6 +2305,33 @@ export function canSignEApprovalDocument(request: Pick<EApprovalRequestState, 's
 }
 
 /**
+ * Whether an attachment may be removed from this request outright.
+ *
+ * **Draft only, and only by its author.** A draft is unsubmitted and unseen: no approver has read the
+ * file, no decision rests on it, and it has no reference number. Attaching the wrong quotation there
+ * is a slip to undo, not a fact to preserve — and "attachments are never removed" turning a
+ * mis-drop into a permanent fixture of a note-sheet nobody has even sent is the rule being applied
+ * past the point where it protects anything.
+ *
+ * Everything past Draft keeps the existing behaviour, and deliberately:
+ *
+ *   - On a **returned** request the intended path is a revision, not a deletion —
+ *     `supersedesAttachmentId` exists for exactly that, and puts the new file beside the original so
+ *     the record still shows what the approvers actually saw.
+ *   - Hard-deleting a file an approver has seen would also leave the version snapshot's
+ *     `attachmentsFingerprint` naming a document that no longer exists, which is an audit trail
+ *     pointing at nothing.
+ *   - On a live or closed request it is the trail itself, and not the requester's to edit.
+ */
+export function canRemoveEApprovalAttachment(
+  request: Pick<EApprovalRequestState, 'status' | 'requesterId'>,
+  actor: Pick<EApprovalActor, 'userId'> | null | undefined,
+): boolean {
+  if (!actor?.userId || request.requesterId !== actor.userId) return false;
+  return request.status === 'Draft';
+}
+
+/**
  * Whether `actor` may edit the content of this request.
  *
  * A **draft** is its author's own unsubmitted working copy: nobody else has seen it, no approval

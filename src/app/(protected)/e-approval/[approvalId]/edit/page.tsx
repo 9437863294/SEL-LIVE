@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import {
   canEditEApprovalRequest,
+  canRemoveEApprovalAttachment,
   E_APPROVAL_BASE_PATH,
   type EApprovalAttachment,
   type EApprovalRequest,
@@ -174,6 +175,7 @@ export default function EditEApprovalPage() {
           attachments={attachments}
           serviceActor={serviceActor}
           canUpload={permissions.canUpload}
+          canRemove={canRemoveEApprovalAttachment(request, serviceActor)}
           onChanged={load}
         />
       </FormSection>

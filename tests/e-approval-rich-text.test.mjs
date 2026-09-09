@@ -5,7 +5,10 @@ import {
   eApprovalHtmlToText,
   eApprovalHtmlWithinLimit,
   hardenEApprovalHtmlLinks,
+  E_APPROVAL_RICH_TEXT_ATTRS,
   E_APPROVAL_RICH_TEXT_MAX_LENGTH,
+  E_APPROVAL_RICH_TEXT_RAW_MAX_LENGTH,
+  E_APPROVAL_RICH_TEXT_URI_SAFE_ATTRS,
 } from '../src/lib/e-approval-rich-text.ts';
 
 /* ── the plain-text rendition, which is what the fingerprint hashes ──────────────────────────── */
@@ -117,4 +120,37 @@ test('a pasted target or rel is replaced, not appended to', () => {
 
 test('an anchor with no href is left alone — it is not a link', () => {
   assert.equal(hardenEApprovalHtmlLinks('<a name="top">x</a>'), '<a name="top">x</a>');
+});
+
+/* ── the allowlist a pasted table depends on ─────────────────────────────────────────────────
+ *
+ * The sanitiser itself needs a DOM, so it is exercised against a real browser rather than here.
+ * What *can* be pinned in plain Node is the shape of the configuration it is handed — and that is
+ * where the bug lived: every one of these attributes was on the allowlist and still being stripped,
+ * because DOMPurify measures an attribute's value against `ALLOWED_URI_REGEXP` unless the attribute
+ * is declared URI-safe. `colspan="3"` is not a URL, so a merged cell lost its merge.
+ * ------------------------------------------------------------------------------------------- */
+
+test('every attribute a pasted table needs is on the allowlist', () => {
+  for (const attribute of ['colspan', 'rowspan', 'align', 'valign', 'width', 'height', 'bgcolor', 'border', 'cellpadding', 'cellspacing']) {
+    assert.ok(E_APPROVAL_RICH_TEXT_ATTRS.includes(attribute), `${attribute} must be allowed`);
+  }
+});
+
+test('allowlisted attributes are declared URI-safe, or DOMPurify silently drops them', () => {
+  for (const attribute of E_APPROVAL_RICH_TEXT_ATTRS) {
+    if (attribute === 'href') continue;
+    assert.ok(
+      E_APPROVAL_RICH_TEXT_URI_SAFE_ATTRS.includes(attribute),
+      `${attribute} is allowed but not URI-safe, so its value would be tested as a URL and removed`,
+    );
+  }
+});
+
+test('href is never marked URI-safe — it is the one attribute that must face the URI test', () => {
+  assert.ok(!E_APPROVAL_RICH_TEXT_URI_SAFE_ATTRS.includes('href'));
+});
+
+test('the raw ceiling is looser than the storage limit, so a verbose paste is judged after cleaning', () => {
+  assert.ok(E_APPROVAL_RICH_TEXT_RAW_MAX_LENGTH > E_APPROVAL_RICH_TEXT_MAX_LENGTH);
 });

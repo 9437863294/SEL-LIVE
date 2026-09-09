@@ -314,7 +314,7 @@ how an unrelated screen changes behaviour with nobody deciding it should.
 eApprovalRequests        the note-sheet
 eApprovalSteps           one document per workflow step (the "tasks")
 eApprovalComments        discussion; edits append to editHistory, never overwrite
-eApprovalAttachments     never overwritten; grouped by request version
+eApprovalAttachments     grouped by request version; removable only on a Draft, superseded after
 eApprovalHistory         append-only audit trail
 eApprovalVersions        superseded content snapshots
 eApprovalTypes           purchase / leave exception / site expense …
@@ -420,6 +420,33 @@ Other notes:
   being written, being approved, and on the signed Approval Note.
 - A request raised before rich text existed has no `bodyHtml` and renders from `body` exactly as it
   always did. Opening one to edit seeds the editor via `plainTextToEApprovalHtml`.
+
+## Removing an attachment
+
+A file dropped in by mistake can be taken off again — but only while the request is a **Draft**, and
+only by the person who raised it. `canRemoveEApprovalAttachment` is that whole rule, and
+`deleteEApprovalDraftAttachment` calls it before touching anything.
+
+The cut-off is at Draft rather than at Returned, which is the tempting place to put it, because the
+moment a request is submitted its attachment set is *evidence*. `eApprovalVersions` snapshots an
+`attachmentsFingerprint` for every superseded version, and each approval was given against the
+documents on the file at that moment. Hard-deleting one afterwards would leave a snapshot naming a
+document that no longer exists, and an approver's decision pointing at nothing. So a returned request
+— where the author *is* meant to correct things — replaces a document by uploading the new one with
+`supersedesAttachmentId` set: both files stay, the list marks the newer one `Revision`, and the change
+counts as material, superseding the approvals already given. That is the honest record of "the
+quotation changed", which a silent deletion is not.
+
+Consequences worth knowing:
+
+- The Storage object is deleted best-effort and the Firestore document authoritatively. A Storage
+  delete that fails (already gone, transient) does not block removing the record — an orphaned blob
+  nobody can reach is a smaller problem than a list row pointing at a file that is gone.
+- The removal is written to `eApprovalHistory` as `Remove Attachment`. Nothing outside the draft ever
+  saw the file, but the author's own activity log should still be able to account for it.
+- Before Save draft, pending files were always removable client-side; the gap this closed was
+  everything *after* — `save()` uploads and redirects to the detail screen, where the list had no
+  remove control at all, so a mis-attached document looked permanent the instant it was saved.
 
 ## Signing an attachment
 

@@ -36,14 +36,18 @@
 export const E_APPROVAL_RICH_TEXT_TAGS = [
   // text and structure
   'p', 'br', 'div', 'span', 'strong', 'b', 'em', 'i', 'u', 's', 'strike', 'del', 'ins',
-  'sub', 'sup', 'small', 'mark', 'blockquote', 'pre', 'code', 'hr',
+  'sub', 'sup', 'small', 'mark', 'blockquote', 'pre', 'code', 'hr', 'wbr',
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  // Presentational elements that carry formatting rather than meaning. They are deprecated HTML and
+  // this codebase would never emit them — but Gmail, Outlook and Word all still do, and unwrapping a
+  // `<font color="#c00000">` keeps the words while throwing away the fact that they were red.
+  'font', 'center', 'big', 'tt',
   // lists
-  'ul', 'ol', 'li',
+  'ul', 'ol', 'li', 'dl', 'dt', 'dd',
   // tables — the point of the exercise: a pasted Excel range has to survive
   'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'colgroup', 'col',
   // links
-  'a',
+  'a', 'abbr',
 ] as const;
 
 /**
@@ -51,12 +55,46 @@ export const E_APPROVAL_RICH_TEXT_TAGS = [
  *
  * `style` is allowed deliberately. Without it a pasted table arrives with no borders, widths or
  * alignment and looks nothing like what the requester copied — which defeats the purpose. DOMPurify
- * parses and re-serialises the CSS rather than passing the string through, so the historic
- * style-attribute vectors (`expression()`, `url(javascript:…)`, behaviours) do not survive it.
+ * does *not* inspect the CSS inside it: `style` is one of its default URI-safe attributes, so the
+ * value is passed through verbatim. `normalizeEApprovalPastedStyles` is what re-parses it and drops
+ * anything carrying a `url(…)`.
+ *
+ * The presentational attributes below matter for the same reason, and their absence was the visible
+ * half of "the paste lost its colours". Every mail client and every version of Word still expresses
+ * table fills as `bgcolor` and table chrome as `border`/`cellpadding`/`cellspacing` rather than as
+ * CSS; dropping them left a merged, shaded header row rendering as plain white cells. `start` and
+ * `type` are here so a list pasted mid-document keeps its numbering, and `span` so a `<colgroup>`
+ * keeps the column widths it was carrying.
+ *
+ * `class` and `id` remain excluded. Pasted Word markup carries hundreds of them, they collide with
+ * the application's own utility classes, and — now that `normalizeEApprovalPastedStyles` resolves a
+ * clipboard stylesheet into inline declarations before this runs — nothing is lost by removing them.
  */
 export const E_APPROVAL_RICH_TEXT_ATTRS = [
   'style', 'colspan', 'rowspan', 'align', 'valign', 'width', 'height', 'href', 'target', 'rel', 'title',
+  'bgcolor', 'border', 'cellpadding', 'cellspacing', 'nowrap', 'span', 'dir', 'start', 'type',
+  'color', 'face', 'size',
 ] as const;
+
+/**
+ * Attributes DOMPurify must not judge as though they were URLs.
+ *
+ * This is not a nicety, it is the other half of why a pasted table arrived stripped. DOMPurify
+ * validates *every* attribute value against `ALLOWED_URI_REGEXP` unless the attribute's name is
+ * marked URI-safe — and only a fixed default set (`alt`, `class`, `id`, `title`, `style`, …) is.
+ * With this module's deliberately narrow `^(?:https?:|mailto:|tel:|#)` that meant `colspan="3"` was
+ * measured against a URL pattern, failed it, and was silently removed. So were `rowspan`, `align`,
+ * `valign`, `width` and `height` — every presentational attribute the allowlist above claimed to
+ * permit, and exactly the ones a merged, aligned, sized table depends on. `bgcolor="#eeeeee"`
+ * survived only by accident, because a hex colour happens to begin with `#`.
+ *
+ * Everything here is a keyword, a number or a colour; none of them can carry a URL. `href` is the
+ * one attribute in the list above that genuinely holds one, so it is the one left out — it must keep
+ * facing the URI test.
+ */
+export const E_APPROVAL_RICH_TEXT_URI_SAFE_ATTRS = E_APPROVAL_RICH_TEXT_ATTRS.filter(
+  (attribute) => attribute !== 'href',
+);
 
 /**
  * Cap on the stored markup, in characters.
@@ -67,6 +105,22 @@ export const E_APPROVAL_RICH_TEXT_ATTRS = [
  * still leaves the rest of the document ample room.
  */
 export const E_APPROVAL_RICH_TEXT_MAX_LENGTH = 200_000;
+
+/**
+ * A cheap ceiling on *unsanitised* markup, checked before anything is cleaned.
+ *
+ * The limit above is on what gets stored, and what gets stored is the sanitised markup — but the
+ * clipboard's own HTML is far larger than that. Word wraps a one-page table in a stylesheet, a
+ * `<o:p>` per paragraph and an `mso-` declaration on every run; ten kilobytes of actual content
+ * routinely arrives as several hundred. Judging the raw string against the storage limit therefore
+ * refused pastes that would have cleaned down to a fraction of it, which is most of what "it will
+ * not keep my formatting" turned out to mean.
+ *
+ * So the raw string is only checked against this much looser bound — enough to stop a genuinely
+ * enormous paste before the work of cleaning it becomes the stall — and the real limit is applied to
+ * the cleaned result, which is the thing that actually has to fit in the document.
+ */
+export const E_APPROVAL_RICH_TEXT_RAW_MAX_LENGTH = E_APPROVAL_RICH_TEXT_MAX_LENGTH * 12;
 
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&',
@@ -181,6 +235,179 @@ export function plainTextToEApprovalHtml(text: string | null | undefined): strin
     .join('');
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Clipboard stylesheets
+ *
+ * Excel, Google Sheets, Word and Google Docs do not put a table's colours on the cells. They emit a
+ * `<style>` block — `.xl67 { background:#FFFF00; border-top:1px solid #000; }` — and put
+ * `class="xl67"` on each `<td>`. The sanitiser drops both (`<style>` is forbidden outright, `class`
+ * is not on the attribute allowlist), so every fill, border and alignment that lived in that block
+ * was thrown away, and a shaded, merged, ruled table arrived as a bare grid of text. The merge
+ * itself survived — `colspan`/`rowspan` were always allowed — which is why the result read as
+ * "the formatting is gone" rather than "the table is gone".
+ *
+ * Rather than allow `class` through and let pasted class names collide with the application's own
+ * styles, the stylesheet is *resolved* first: each rule is matched against the pasted fragment and
+ * its declarations are written onto the elements as inline `style`. That is what a mail client does
+ * with a pasted document, and it is why a table pasted into Gmail keeps its shading.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** `CSSRule.STYLE_RULE`. Read from the numeric constant so no live `CSSRule` global is needed. */
+const CSS_STYLE_RULE = 1;
+
+/**
+ * A ceiling on how much of a clipboard stylesheet is honoured.
+ *
+ * Excel writes one rule per distinct cell format, so a large sheet can arrive with thousands. Each
+ * one costs a `querySelectorAll` over the pasted fragment, and past a point the formatting being
+ * recovered is not worth making the paste itself feel slow.
+ */
+const MAX_INLINED_RULES = 2000;
+
+/** The rules of a stylesheet, flattened out of any `@media` / `@supports` wrappers. */
+function readClipboardStyleRules(css: string): CSSStyleRule[] {
+  const collected: CSSStyleRule[] = [];
+
+  const visit = (rules: CSSRuleList) => {
+    for (let index = 0; index < rules.length; index += 1) {
+      if (collected.length >= MAX_INLINED_RULES) return;
+      const rule = rules[index];
+      if (rule.type === CSS_STYLE_RULE) collected.push(rule as CSSStyleRule);
+      // Word and Outlook both wrap parts of their output in `@media`; the rules inside are ordinary.
+      else if ('cssRules' in rule) visit((rule as CSSGroupingRule).cssRules);
+    }
+  };
+
+  try {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(css);
+    visit(sheet.cssRules);
+    return collected;
+  } catch {
+    // No constructable stylesheet — fall through to parsing it with a real element.
+  }
+
+  // `media="not all"` is parsed by the engine but matches nothing, so the page this is attached to
+  // for the duration of the read is never actually styled by the clipboard's CSS.
+  const element = document.createElement('style');
+  element.media = 'not all';
+  element.textContent = css;
+  document.head.appendChild(element);
+  try {
+    if (element.sheet) visit(element.sheet.cssRules);
+  } catch {
+    // Unreadable rules — keep whatever was collected before the failure.
+  } finally {
+    element.remove();
+  }
+  return collected;
+}
+
+/**
+ * A rule's declarations, serialised for an inline `style` attribute.
+ *
+ * `url(…)` values are dropped. A note-sheet's formatting never needs one, and keeping them would let
+ * a pasted document quietly fetch a remote background — a tracking pixel by another name — from
+ * every approver's browser. The CSS parser has already discarded Word's `mso-*` properties and
+ * anything else it could not understand, so what comes back here is valid, normalised CSS.
+ */
+function inlineDeclarationsOf(style: CSSStyleDeclaration): string {
+  // Snapshot the names first: removing a property renumbers the collection being walked.
+  const properties: string[] = [];
+  for (let index = 0; index < style.length; index += 1) properties.push(style.item(index));
+  for (const property of properties) {
+    if (/url\s*\(/i.test(style.getPropertyValue(property))) style.removeProperty(property);
+  }
+  // `cssText` rather than a property-by-property rebuild, because the engine re-collapses longhands
+  // back into the shorthand they came from. Reassembling by hand turned one `background:#FFFF00`
+  // into eight `background-*` declarations, seven of them `initial` — which on a sheet with a few
+  // hundred formatted cells is the difference between a paste that fits in the document and one
+  // that trips the size limit on nothing but its own verbosity.
+  return style.cssText.trim().replace(/;$/, '');
+}
+
+/**
+ * Resolves any `<style>` blocks in a pasted fragment into inline `style` attributes.
+ *
+ * Declarations are applied in source order and the element's own inline style is appended last, so
+ * the ordinary cascade holds: a later rule beats an earlier one, an inline declaration beats both,
+ * and an `!important` in the stylesheet still outranks a plain inline declaration. Selector
+ * specificity is not modelled — for the single-class selectors these applications emit it never
+ * arises, and approximating it would cost more than it could ever recover.
+ *
+ * Returns the input untouched off the browser, on a fragment with no stylesheet, or if anything
+ * about the parse fails: this improves fidelity and must never be able to lose content.
+ */
+export function normalizeEApprovalPastedStyles(html: string): string {
+  if (typeof window === 'undefined' || typeof DOMParser === 'undefined') return html;
+  const hasStyleBlock = /<style[\s>]/i.test(html);
+  const hasCssUrl = /url\s*\(/i.test(html);
+  // Nothing to resolve and nothing to strip — the overwhelmingly common case on the render path,
+  // where the stored markup has already been through here once.
+  if (!hasStyleBlock && !hasCssUrl) return html;
+
+  let doc: Document;
+  try {
+    // Inert: a document from `DOMParser` has no browsing context, so nothing here runs or loads.
+    doc = new DOMParser().parseFromString(html, 'text/html');
+  } catch {
+    return html;
+  }
+
+  if (hasStyleBlock) {
+    const styleElements = Array.from(doc.querySelectorAll('style'));
+    const css = styleElements.map((element) => element.textContent ?? '').join('\n');
+    styleElements.forEach((element) => element.remove());
+
+    const ownStyle = new Map<Element, string>();
+    const applied = new Map<Element, string[]>();
+
+    for (const rule of readClipboardStyleRules(css)) {
+      const declarations = inlineDeclarationsOf(rule.style);
+      if (!declarations) continue;
+      let matches: Element[];
+      try {
+        matches = Array.from(doc.querySelectorAll(rule.selectorText));
+      } catch {
+        // Word emits selectors no engine will match — `@list l0:level1` and friends. Skip them.
+        continue;
+      }
+      for (const element of matches) {
+        if (!ownStyle.has(element)) ownStyle.set(element, element.getAttribute('style') ?? '');
+        const list = applied.get(element);
+        if (list) list.push(declarations);
+        else applied.set(element, [declarations]);
+      }
+    }
+
+    for (const [element, declarations] of applied) {
+      const merged = [...declarations, ownStyle.get(element) ?? '']
+        .map((part) => part.trim().replace(/;+$/, ''))
+        .filter(Boolean)
+        .join(';');
+      if (merged) element.setAttribute('style', merged);
+    }
+  }
+
+  /*
+   * Inline `style` attributes get the same `url(…)` treatment as the stylesheet did.
+   *
+   * DOMPurify will not do this: `style` is one of its default URI-safe attributes, so its value is
+   * never measured against `ALLOWED_URI_REGEXP` and a pasted `background:url(https://…)` reaches
+   * Firestore intact, then fetches from every approver who opens the file. Re-reading the attribute
+   * through the element's own `style` object re-parses it with the engine's CSS parser, which is
+   * also what discards Word's `mso-*` leftovers.
+   */
+  for (const element of Array.from(doc.querySelectorAll<HTMLElement>('[style]'))) {
+    if (!/url\s*\(/i.test(element.getAttribute('style') ?? '')) continue;
+    const cleaned = inlineDeclarationsOf(element.style);
+    if (cleaned) element.setAttribute('style', cleaned);
+    else element.removeAttribute('style');
+  }
+
+  return doc.body.innerHTML;
+}
+
 /**
  * Sanitises proposal HTML against the allowlist above.
  *
@@ -188,18 +415,25 @@ export function plainTextToEApprovalHtml(text: string | null | undefined): strin
  * touches this module for `eApprovalHtmlToText`. Off the browser it returns the *text* rendition
  * rather than the markup: falling back to returning the input unchanged would mean an unsanitised
  * string in the one situation where nothing can sanitise it.
+ *
+ * The clipboard's own stylesheet is resolved into inline declarations on the way in — see
+ * `normalizeEApprovalPastedStyles`. That happens before sanitisation, never after, so everything it
+ * produces is still subject to the allowlist below.
  */
 export async function sanitizeEApprovalHtml(html: string | null | undefined): Promise<string> {
   if (!html) return '';
   if (typeof window === 'undefined') return eApprovalHtmlToText(html);
 
   const { default: DOMPurify } = await import('dompurify');
-  return DOMPurify.sanitize(String(html), {
+  return DOMPurify.sanitize(normalizeEApprovalPastedStyles(String(html)), {
     ALLOWED_TAGS: [...E_APPROVAL_RICH_TEXT_TAGS],
     ALLOWED_ATTR: [...E_APPROVAL_RICH_TEXT_ATTRS],
     // No `data-*`, and no `id`/`class` — pasted Word markup carries hundreds of them and they only
     // ever collide with the app's own styles.
     ALLOW_DATA_ATTR: false,
+    // Without this, the narrow `ALLOWED_URI_REGEXP` below is applied to every attribute value in the
+    // document, not just the ones that hold URLs — see `E_APPROVAL_RICH_TEXT_URI_SAFE_ATTRS`.
+    ADD_URI_SAFE_ATTR: [...E_APPROVAL_RICH_TEXT_URI_SAFE_ATTRS],
     // Keep the words when a tag is not allowed; dropping the subtree would silently eat content the
     // requester can see in their clipboard.
     KEEP_CONTENT: true,

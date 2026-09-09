@@ -9,6 +9,7 @@ import {
   canActOnEApprovalStep,
   canAssignEApprovalStep,
   canEditEApprovalRequest,
+  canRemoveEApprovalAttachment,
   canManageEApprovalDelegationFor,
   canTakeEApprovalOwnership,
   canRecallEApprovalAction,
@@ -1919,4 +1920,35 @@ test('somebody else never edits your draft, whatever they hold', () => {
   const draft = { status: 'Draft', requesterId: 'u-me' };
   assert.equal(canEditEApprovalRequest(draft, { userId: 'u-other' }, { canEdit: true }), false);
   assert.equal(canEditEApprovalRequest(draft, null), false);
+});
+
+/* ── who may take an attachment off again ────────────────────────────────────────────────────── */
+
+test('an attachment on your own draft can be removed and replaced', () => {
+  assert.equal(canRemoveEApprovalAttachment({ status: 'Draft', requesterId: 'u-me' }, { userId: 'u-me' }), true);
+});
+
+test('a returned request takes a revision, not a removal', () => {
+  assert.equal(
+    canRemoveEApprovalAttachment({ status: 'Returned', requesterId: 'u-me' }, { userId: 'u-me' }),
+    false,
+    'an approver has already seen the file — the version snapshot fingerprints it, so it stays',
+  );
+});
+
+test('nothing past Draft ever loses an attachment', () => {
+  for (const status of ['Submitted', 'Pending Approval', 'On Hold', 'Approved', 'Rejected', 'Cancelled']) {
+    assert.equal(
+      canRemoveEApprovalAttachment({ status, requesterId: 'u-me' }, { userId: 'u-me' }),
+      false,
+      status,
+    );
+  }
+});
+
+test('only the author removes from a draft, and an absent actor never does', () => {
+  const draft = { status: 'Draft', requesterId: 'u-me' };
+  assert.equal(canRemoveEApprovalAttachment(draft, { userId: 'u-other' }), false);
+  assert.equal(canRemoveEApprovalAttachment(draft, null), false);
+  assert.equal(canRemoveEApprovalAttachment(draft, { userId: '' }), false);
 });

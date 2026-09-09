@@ -18,6 +18,7 @@ import {
   hardenEApprovalHtmlLinks,
   sanitizeEApprovalHtml,
   E_APPROVAL_RICH_TEXT_MAX_LENGTH,
+  E_APPROVAL_RICH_TEXT_RAW_MAX_LENGTH,
 } from '@/lib/e-approval-rich-text';
 
 /**
@@ -101,16 +102,22 @@ export function EApprovalRichTextEditor({
     const element = editorRef.current;
     if (!element) return;
     const raw = element.innerHTML;
-    if (!eApprovalHtmlWithinLimit(raw)) {
-      setTooLong(true);
-      return;
-    }
-    setTooLong(false);
     // A blur straight after the debounce has already fired — the ordinary "type, then click away"
     // sequence — would otherwise sanitise an identical document a second time for nothing.
     if (raw === lastRaw.current) return;
     lastRaw.current = raw;
+    // The storage limit is judged on the *cleaned* markup below, not on this; all that is checked
+    // here is that the document has not grown so large that cleaning it would itself be the stall.
+    if (raw.length > E_APPROVAL_RICH_TEXT_RAW_MAX_LENGTH) {
+      setTooLong(true);
+      return;
+    }
     const clean = hardenEApprovalHtmlLinks(await sanitizeEApprovalHtml(raw));
+    if (!eApprovalHtmlWithinLimit(clean)) {
+      setTooLong(true);
+      return;
+    }
+    setTooLong(false);
     lastHtml.current = clean;
     onChange(clean);
   }, [onChange]);
@@ -172,11 +179,19 @@ export function EApprovalRichTextEditor({
       const html = event.clipboardData.getData('text/html');
       if (!html) return; // plain text — let the browser handle it
       event.preventDefault();
-      if (!eApprovalHtmlWithinLimit(html)) {
+      // Measured after cleaning, not before. Word's clipboard HTML for a single table runs to
+      // hundreds of kilobytes of `mso-` declarations that the sanitiser removes entirely, so judging
+      // the raw string against the storage limit rejected pastes that comfortably fit once cleaned.
+      if (html.length > E_APPROVAL_RICH_TEXT_RAW_MAX_LENGTH) {
         setTooLong(true);
         return;
       }
       const clean = hardenEApprovalHtmlLinks(await sanitizeEApprovalHtml(html));
+      if (!eApprovalHtmlWithinLimit(clean)) {
+        setTooLong(true);
+        return;
+      }
+      setTooLong(false);
       document.execCommand('insertHTML', false, clean);
       publishNow();
     },
@@ -289,8 +304,8 @@ export function EApprovalRichTextEditor({
 
       {tooLong && (
         <p className="mt-1 text-xs font-medium text-amber-700">
-          That paste is too large to store ({Math.round(E_APPROVAL_RICH_TEXT_MAX_LENGTH / 1000)} KB of formatting is
-          the limit). Paste it in parts, or attach the document instead and summarise it here.
+          Still too large once the formatting was tidied up ({Math.round(E_APPROVAL_RICH_TEXT_MAX_LENGTH / 1000)} KB
+          is the limit). Paste it in parts, or attach the document instead and summarise it here.
         </p>
       )}
     </div>

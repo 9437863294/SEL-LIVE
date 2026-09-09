@@ -1,13 +1,17 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Download, FileSignature, FileText, Loader2, Paperclip, Upload } from 'lucide-react';
+import { Download, FileSignature, FileText, Loader2, Paperclip, Trash2, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import type { EApprovalAttachment } from '@/lib/e-approval';
-import { uploadEApprovalAttachment, type EApprovalServiceActor } from '@/lib/e-approval-service';
+import {
+  deleteEApprovalDraftAttachment,
+  uploadEApprovalAttachment,
+  type EApprovalServiceActor,
+} from '@/lib/e-approval-service';
 import { EApprovalEmptyState } from './shared';
 import { formatEApprovalDateTime } from './hooks';
 import { EApprovalSignAttachmentDialog } from './sign-attachment-dialog';
@@ -36,6 +40,7 @@ export function AttachmentList({
   serviceActor,
   canUpload,
   canSign = true,
+  canRemove = false,
   closedStatus,
   onChanged,
 }: {
@@ -45,6 +50,11 @@ export function AttachmentList({
   canUpload: boolean;
   /** False once the approval is closed — its documents can no longer be signed (`canSignEApprovalDocument`). */
   canSign?: boolean;
+  /**
+   * True only on the author own unsubmitted draft (`canRemoveEApprovalAttachment`). Past Draft an
+   * attachment is superseded by a revision rather than removed.
+   */
+  canRemove?: boolean;
   /** The terminal status to name in the explanation, when `canSign` is false because of one. */
   closedStatus?: string;
   onChanged: () => void;
@@ -52,6 +62,7 @@ export function AttachmentList({
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   const [signing, setSigning] = useState<EApprovalAttachment | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const byVersion = useMemo(() => {
     const groups = new Map<number, EApprovalAttachment[]>();
@@ -81,6 +92,24 @@ export function AttachmentList({
     }
   };
 
+  const remove = async (attachment: EApprovalAttachment) => {
+    if (!serviceActor) return;
+    setRemovingId(attachment.id);
+    try {
+      await deleteEApprovalDraftAttachment(approvalId, attachment, serviceActor);
+      toast({ title: 'Attachment removed' });
+      onChanged();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not remove it',
+        description: error instanceof Error ? error.message : 'Something went wrong.',
+      });
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {canUpload && (
@@ -94,8 +123,12 @@ export function AttachmentList({
             onChange={(event) => void upload(event.target.files)}
           />
           {busy && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          {/* The wording follows the rule that is actually in force: on a draft a file can be taken
+              off again, and saying otherwise is what made a mis-dropped document look permanent. */}
           <p className="text-[11px] text-muted-foreground">
-            Uploads are added, never replaced — the original file always stays on the record.
+            {canRemove
+              ? 'While this is a draft you can remove a file and attach another. Once submitted, uploads are added and never replaced.'
+              : 'Uploads are added, never replaced — the original file always stays on the record.'}
           </p>
         </div>
       )}
@@ -162,6 +195,28 @@ export function AttachmentList({
                       <Download className="h-3.5 w-3.5" /> Open
                     </a>
                   </Button>
+                  {canRemove && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 p-0 text-destructive"
+                      disabled={removingId !== null}
+                      aria-label={`Remove ${attachment.name}`}
+                      title="Remove this file"
+                      onClick={() => {
+                        if (window.confirm(`Remove "${attachment.name}"? It has not been submitted, so nothing has seen it.`)) {
+                          void remove(attachment);
+                        }
+                      }}
+                    >
+                      {removingId === attachment.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

@@ -254,10 +254,14 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
             'A comment can be edited, but the previous text is kept and the comment is marked as edited.',
             'A comment can be retracted — it is struck through, not removed.',
             'Attachments can be added at any point: when raising, when approving, when verifying, when returning.',
-            'An attachment is never overwritten. Uploading a revision adds a second file beside the original.',
+            'While the approval is still your draft, you can remove a file you attached by mistake and attach the right one instead. Use the bin button on the file.',
+            'Once submitted, an attachment is never overwritten. Uploading a corrected document adds a second file beside the original, marked Revision.',
           ),
           note(
-            'Nothing on an approval can be deleted once posted. That is what makes the file usable as evidence months later.',
+            'The removal window closes the moment you submit. After that an approver may have read the document, so replacing it has to leave both versions on the file — otherwise an approval given on page 3 of a quotation would end up pointing at a quotation nobody can produce.',
+          ),
+          note(
+            'Nothing else on an approval can be deleted once posted. That is what makes the file usable as evidence months later.',
           ),
         ],
       },

@@ -31,6 +31,7 @@ import {
   applyEApprovalAction,
   buildEApprovalSteps,
   canManageEApprovalDelegationFor,
+  canRemoveEApprovalAttachment,
   canRecallEApprovalAction,
   canSignEApprovalDocument,
   canReverseEApprovalAction,
@@ -2432,6 +2433,58 @@ export async function uploadEApprovalAttachment(
     recordRef: request.referenceNo,
   });
   return { id: created.id, ...(record as unknown as Omit<EApprovalAttachment, 'id'>) };
+}
+
+/**
+ * Removes an attachment from a draft — the one place an attachment is deleted rather than superseded.
+ *
+ * Guarded by `canRemoveEApprovalAttachment`, which allows this only on the author's own unsubmitted
+ * draft; see that function for why nothing past Draft is removable. Checked here as well as in the UI
+ * because this is the single write path, so it is the only place the rule cannot be got around.
+ *
+ * The Storage object goes too, not just the Firestore row. A draft is where wrong files are dropped
+ * and re-dropped, and orphaning every one of them leaves a bucket accruing cost for documents no
+ * record refers to. That delete is best-effort: if the object is already gone the row must still go,
+ * or a half-failed removal leaves an attachment that cannot be opened and cannot be removed either.
+ */
+export async function deleteEApprovalDraftAttachment(
+  approvalId: string,
+  attachment: EApprovalAttachment,
+  actor: EApprovalServiceActor,
+): Promise<void> {
+  const who = requireActor(actor);
+  const request = await getEApprovalRequest(approvalId);
+  if (!request) throw new EApprovalServiceError('This approval no longer exists.');
+  if (!canRemoveEApprovalAttachment(request, who)) {
+    throw new EApprovalServiceError(
+      request.requesterId !== who.userId
+        ? 'Only the requester can remove an attachment.'
+        : `A ${request.status.toLowerCase()} approval keeps its attachments. Upload a revision instead — it is added beside the original.`,
+    );
+  }
+
+  if (attachment.storagePath) {
+    try {
+      const [{ storage }, { deleteObject, ref }] = await Promise.all([
+        import('@/lib/firebase-storage'),
+        import('firebase/storage'),
+      ]);
+      await deleteObject(ref(storage, attachment.storagePath));
+    } catch (error) {
+      // Already deleted, or never landed. Either way the row below is what the app reads.
+      console.warn('[e-approval] could not delete the stored file; removing the record anyway', error);
+    }
+  }
+
+  await deleteDoc(doc(db, E_APPROVAL_COLLECTIONS.attachments, attachment.id));
+  await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId), {
+    attachmentCount: Math.max(0, (request.attachmentCount ?? 1) - 1),
+    ...withUpdateAudit(who),
+  });
+  await logEApprovalActivity(who, 'Remove Attachment', { name: attachment.name }, {
+    recordId: approvalId,
+    recordRef: request.referenceNo,
+  });
 }
 
 /* ------------------------------------------------------------------------------------------------

@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import {
   canEditEApprovalRequest,
+  canRemoveEApprovalAttachment,
   canSignEApprovalDocument,
   canViewEApproval,
   E_APPROVAL_BASE_PATH,
@@ -377,6 +378,7 @@ export default function EApprovalDetailPage() {
                 serviceActor={serviceActor}
                 canUpload={permissions.canUpload}
                 canSign={canSignEApprovalDocument(request)}
+                canRemove={canRemoveEApprovalAttachment(request, serviceActor)}
                 closedStatus={request.status}
                 onChanged={load}
               />
