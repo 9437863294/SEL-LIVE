@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowDown,
@@ -61,6 +61,19 @@ import { Field, FormSection } from './page-header';
 import { useEApprovalDirectory, useEApprovalSettings, formatEApprovalAmount } from './hooks';
 
 /**
+ * How long typing has to pause before the draft writes itself.
+ *
+ * Two seconds rather than a fixed interval, so the write lands in the gaps a person naturally leaves
+ * — between a sentence and the next one, or when they stop to look something up — instead of
+ * arriving mid-thought. The proposal editor is debounced on its own before this, so a burst of
+ * typing produces one write, not one per field it touched.
+ */
+const AUTO_DRAFT_IDLE_MS = 2000;
+
+/** "Draft saved 12:40 pm" — the same short time the rest of the module uses. */
+const savedAtLabel = (at: Date) => at.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+
+/**
  * The create/edit screen (spec section 15), as a form that asks one thing at a time.
  *
  * **Only what is needed is on screen.** Raising an approval genuinely requires three things: a
@@ -88,7 +101,7 @@ export function ApprovalForm({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const { directory } = useEApprovalDirectory();
+  const { directory, isLoading: directoryLoading } = useEApprovalDirectory();
   const { settings } = useEApprovalSettings();
 
   const [subject, setSubject] = useState(existing?.subject ?? '');
@@ -299,6 +312,158 @@ export function ApprovalForm({
   const amountMissing = Boolean(selectedType?.requiresAmount) && !amount;
   const hasRoute = (preview?.steps.length ?? 0) > 0;
 
+  /* ── Auto-draft ─────────────────────────────────────────────────────────────────────────────
+   *
+   * The form saves itself, the way a mail client's compose window does: a pause in typing writes
+   * the draft, and the id it comes back with is what every later save updates. Before this, a
+   * note-sheet existed only in the browser until somebody remembered to press Save — and the
+   * proposal is the long part, routinely composed over several interruptions.
+   *
+   * Four things it deliberately does not do:
+   *
+   *   1. **It never navigates and never toasts.** Both belong to the explicit Save and Submit,
+   *      which are a decision the user made; an autosave is bookkeeping and says so quietly in the
+   *      footer instead.
+   *   2. **It only ever writes a Draft.** A returned request is live in the workflow — its approvers
+   *      can open it — so silently persisting each pause in typing to one is a different act from
+   *      saving a draft. Correcting a returned request stays on the explicit Save, as its footer
+   *      hint already says.
+   *   3. **It waits for a subject and a proposal.** `createEApprovalDraft` refuses anything less, so
+   *      there is nothing to write until both exist.
+   *   4. **It does not upload staged attachments.** Those are uploaded once, immediately before
+   *      submission, so the material fingerprint covers them — see `save` below.
+   * ------------------------------------------------------------------------------------------ */
+
+  /**
+   * The record this form is bound to.
+   *
+   * Seeded from `existing`, then filled in by whichever save creates the draft first. Everything
+   * that writes reads *this* rather than `existing?.id`, which is what stops an autosave and a
+   * subsequent Save draft from filing the same note-sheet twice.
+   */
+  const [draftId, setDraftId] = useState<string | undefined>(existing?.id);
+  const [autoSavedAt, setAutoSavedAt] = useState<Date | null>(null);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
+
+  const autoDraftEnabled = Boolean(serviceActor) && (!existing || existing.status === 'Draft');
+
+  /** The form as one comparable string, so an autosave is skipped when nothing actually changed. */
+  const snapshot = useMemo(() => JSON.stringify(draft), [draft]);
+
+  const draftRef = useRef(draft);
+  const snapshotRef = useRef(snapshot);
+  const draftIdRef = useRef(draftId);
+  const validRef = useRef(valid);
+  /** What is already in Firestore. `null` until seeded — see the effect below. */
+  const savedSnapshot = useRef<string | null>(null);
+  const autoSaveInFlight = useRef(false);
+  /** Set once the record has been saved or submitted deliberately, to stand the autosave down. */
+  const finished = useRef(false);
+  useEffect(() => {
+    draftRef.current = draft;
+    snapshotRef.current = snapshot;
+    draftIdRef.current = draftId;
+    validRef.current = valid;
+  });
+
+  /**
+   * Seeded once the directory has resolved, not on mount.
+   *
+   * `draft` carries the department and project *names*, looked up from the directory — before it
+   * lands they are undefined, so a snapshot taken on mount differs from the one a moment later and
+   * opening an existing draft would write it straight back to Firestore having changed nothing.
+   */
+  useEffect(() => {
+    if (directoryLoading || savedSnapshot.current !== null) return;
+    savedSnapshot.current = snapshot;
+  }, [directoryLoading, snapshot]);
+
+  const autoSave = useCallback(async () => {
+    if (!serviceActor || autoSaveInFlight.current || finished.current) return;
+    // Both captured in the same tick, before any await. Reading the draft later would write content
+    // newer than the snapshot recorded as saved, and the difference would schedule a pointless
+    // second save of something already in Firestore.
+    const payload = draftRef.current;
+    const pending = snapshotRef.current;
+    autoSaveInFlight.current = true;
+    setAutoSaving(true);
+    try {
+      const id = draftIdRef.current;
+      if (id) {
+        await updateEApprovalDraft(id, payload, serviceActor);
+      } else {
+        const created = await createEApprovalDraft(payload, serviceActor);
+        // Written to the ref as well as to state: a second autosave can be scheduled before React
+        // has re-rendered, and reading a stale `undefined` there would raise a duplicate note-sheet.
+        draftIdRef.current = created;
+        setDraftId(created);
+      }
+      savedSnapshot.current = pending;
+      setAutoSavedAt(new Date());
+      setAutoSaveError(null);
+    } catch (error) {
+      // Reported in the footer, never as a toast: the user did not ask for this save, so it must not
+      // interrupt them. The explicit Save is still there and still says what went wrong loudly.
+      setAutoSaveError(error instanceof Error ? error.message : 'Could not save the draft.');
+    } finally {
+      autoSaveInFlight.current = false;
+      setAutoSaving(false);
+    }
+  }, [serviceActor]);
+
+  /** A pause in typing, not a keystroke: the proposal editor is debounced too, so this sits on top. */
+  useEffect(() => {
+    if (!autoDraftEnabled || finished.current) return;
+    if (savedSnapshot.current === null) return;
+    if (snapshot === savedSnapshot.current) return;
+    // An explicit Save or Submit owns the record while it runs.
+    if (busy !== null) return;
+    if (!valid) return;
+    const timer = setTimeout(() => void autoSave(), AUTO_DRAFT_IDLE_MS);
+    return () => clearTimeout(timer);
+  }, [snapshot, autoDraftEnabled, busy, valid, autoSave]);
+
+  /**
+   * Leaving the page mid-pause still saves.
+   *
+   * Without this, closing the tab inside the idle window loses exactly the edits the feature exists
+   * to protect. Fire-and-forget: there is nothing left to render the result into.
+   */
+  const autoDraftEnabledRef = useRef(autoDraftEnabled);
+  const autoSaveRef = useRef(autoSave);
+  useEffect(() => {
+    autoDraftEnabledRef.current = autoDraftEnabled;
+    autoSaveRef.current = autoSave;
+  });
+  // Empty deps and reached through a ref, so this fires on an actual unmount rather than every time
+  // `autoSave` is rebuilt — a cleanup that runs on a dependency change is not somebody leaving.
+  useEffect(
+    () => () => {
+      if (!autoDraftEnabledRef.current || finished.current) return;
+      if (savedSnapshot.current === null || snapshotRef.current === savedSnapshot.current) return;
+      if (!validRef.current) return;
+      void autoSaveRef.current();
+    },
+    [],
+  );
+
+  /**
+   * The browser's own "leave site?" prompt, for the case nothing here can save through: a closed
+   * tab. Only raised when there is genuinely unsaved work — including work too incomplete to store,
+   * which is the case a silent autosave cannot cover.
+   */
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (finished.current || savedSnapshot.current === null) return;
+      if (snapshotRef.current === savedSnapshot.current) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
   const save = useCallback(
     async (thenSubmit: boolean) => {
       if (!serviceActor) return;
@@ -320,9 +485,16 @@ export function ApprovalForm({
       }
       setBusy(thenSubmit ? 'submit' : 'draft');
       try {
-        let approvalId = existing?.id;
+        // `draftIdRef`, not `existing?.id`: the autosave may already have created this note-sheet,
+        // and creating it again here would file the same request twice — with two reference numbers
+        // allotted the moment both were submitted.
+        let approvalId = draftIdRef.current;
         if (approvalId) await updateEApprovalDraft(approvalId, draft, serviceActor);
-        else approvalId = await createEApprovalDraft(draft, serviceActor);
+        else {
+          approvalId = await createEApprovalDraft(draft, serviceActor);
+          draftIdRef.current = approvalId;
+          setDraftId(approvalId);
+        }
 
         // Uploaded *before* submitting, never after. `submitEApproval` fingerprints the material
         // fields — the attachment set included — and that fingerprint is what a later resubmission is
@@ -354,6 +526,11 @@ export function ApprovalForm({
             description: staged ? `${staged} document${staged > 1 ? 's' : ''} attached.` : undefined,
           });
         }
+        // Stands the autosave down: the record is where the user asked for it to be, and the unmount
+        // flush that follows this navigation must not write over it — or, after a submission, try to
+        // edit a request the engine has already moved out of Draft.
+        finished.current = true;
+        savedSnapshot.current = snapshotRef.current;
         onSaved?.(approvalId);
         router.push(`${E_APPROVAL_BASE_PATH}/${approvalId}`);
       } catch (error) {
@@ -366,7 +543,7 @@ export function ApprovalForm({
         setBusy(null);
       }
     },
-    [serviceActor, valid, amountMissing, hasRoute, selectedType, existing, draft, pendingFiles, onSaved, router, toast],
+    [serviceActor, valid, amountMissing, hasRoute, selectedType, draft, pendingFiles, onSaved, router, toast],
   );
 
   const moveChain = (index: number, delta: number) => {
@@ -1055,6 +1232,34 @@ export function ApprovalForm({
                   ? 'Save, then resubmit from the approval screen.'
                   : 'Reference number is allotted on submission.'}
           </p>
+          {/*
+            The autosave's whole visible presence. Beside the buttons rather than at the top of the
+            form, because "has my work been kept?" is asked at the moment of leaving, and this is
+            where the eye already is.
+          */}
+          {autoDraftEnabled && (
+            <span
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1.5 text-xs',
+                autoSaveError ? 'font-medium text-rose-700' : 'text-muted-foreground',
+              )}
+              aria-live="polite"
+            >
+              {autoSaving ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
+                </>
+              ) : autoSaveError ? (
+                <>Not saved — {autoSaveError}</>
+              ) : autoSavedAt ? (
+                <>
+                  <Check className="h-3.5 w-3.5 text-emerald-600" /> Draft saved {savedAtLabel(autoSavedAt)}
+                </>
+              ) : valid ? (
+                <>Saves itself as you type</>
+              ) : null}
+            </span>
+          )}
           {existing?.id && (
             <Button
               type="button"
