@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { PackageSearch, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatCurrency, formatQuantity, toNumber } from "@/lib/purchase-orders";
 import type { PoBoqItemLite } from "@/components/project-management/po-reports";
@@ -30,23 +30,29 @@ export default function PoBoqItemsTable({
   }, [items, search]);
 
   return (
-    <Card className="border-border/60">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">BOQ Items — Supply</CardTitle>
-        <CardDescription>Scope 2 = Supply BOQ items, with quantities already indented or ordered.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="relative max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+    <Card className="overflow-hidden border-border/60">
+      {/* The sidebar already names this view, so the title and its search sit on one bar rather
+          than a CardHeader stacked above a separate search row. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <PackageSearch className="h-3.5 w-3.5 shrink-0 text-cyan-600" />
+          <span className="font-medium text-foreground">BOQ items — Supply</span>
+          · {filteredItems.length} item{filteredItems.length === 1 ? "" : "s"} with quantities indented or ordered
+        </p>
+        <div className="relative w-full max-w-xs">
+          <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search ERP SL No, BOQ SL No or description..."
-            className="pl-8"
+            aria-label="Search BOQ items"
+            className="h-7 pl-8 text-xs"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="max-h-[70vh] overflow-auto rounded-lg border">
-          <Table>
+      </div>
+      <CardContent className="p-0">
+        <div className="max-h-[70vh] overflow-auto">
+          <Table className="[&_th]:h-8 [&_th]:whitespace-nowrap [&_th]:px-2 [&_th]:text-xs [&_td]:px-2 [&_td]:py-1">
             <TableHeader>
               <TableRow>
                 <TableHead>ERP SL No</TableHead>

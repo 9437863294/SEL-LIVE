@@ -2,9 +2,8 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   CalendarClock,
   CalendarDays,
   ChevronDown,
@@ -12,11 +11,11 @@ import {
   ClipboardList,
   Download,
   FilePlus2,
-  IndianRupee,
   ListChecks,
   Loader2,
   Plus,
   SendHorizontal,
+  Settings,
   Trash2,
 } from "lucide-react";
 import { collection, deleteDoc, doc, getDoc, getDocs } from "firebase/firestore";
@@ -25,13 +24,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
 import { exportWorkbook } from "@/lib/report-excel";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +52,7 @@ import { submitIndentForApproval } from "@/lib/project-management-indent-entries
 import {
   DEFAULT_INDENT_STEPS,
   INDENT_PERMISSION_RESOURCE as PERMISSION_RESOURCE,
+  INDENT_STATUSES,
   INDENT_WORKFLOW_DOC_ID,
   indentReservesQuantity,
   indentStatusStyles,
@@ -67,15 +61,22 @@ import {
   type IndentWorkflowFields,
 } from "@/lib/project-management-indent-workflow";
 import { useProjectManagementIndentContext } from "@/components/indent/use-indent-host-context";
-import { IndentNav } from "@/components/indent/indent-nav";
 import {
   INDENT_GRADIENT,
   IndentAccessDenied,
   IndentLoadingState,
-  IndentPageHeader,
-  IndentPageShell,
   IndentProjectNotFound,
 } from "@/components/indent/indent-page-shell";
+import {
+  PM_TABLE_CLASS,
+  PmContent,
+  PmSectionHead,
+  PmShell,
+  PmSidebar,
+  PmTableFoot,
+  PmTopbar,
+  pmAccent,
+} from "@/components/project-management/pm-shell";
 import type { WorkflowStep } from "@/lib/types";
 
 type ProjectMapping = {
@@ -224,7 +225,17 @@ function normalizeIndentDoc(
   };
 }
 
+/** One icon per indent status, so a status reads the same in the sidebar as in the table. */
+const STATUS_ICONS: Partial<Record<IndentStatus, typeof ListChecks>> = {
+  Draft: FilePlus2,
+  Submitted: SendHorizontal,
+  Approved: ClipboardList,
+  Rejected: Trash2,
+  Cancelled: Trash2,
+};
+
 export default function ProjectIndentRegisterPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
@@ -323,17 +334,51 @@ export default function ProjectIndentRegisterPage() {
     void loadData();
   }, [canView, isAuthLoading, loadData]);
 
+  /**
+   * Status is this register's navigation.
+   *
+   * The screen had no filtering at all — every indent in one list, whatever its state, so "what is
+   * waiting on me to approve" meant reading the Status column down the page. The statuses are the
+   * natural views here, and each one carries its count, so the sidebar answers that question
+   * without opening anything. Kept in `?view=` so a refresh or a shared link keeps the filter.
+   */
+  const activeTab = searchParams?.get("view") || "all";
+  const setActiveTab = (value: string) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value === "all") params.delete("view");
+    else params.set("view", value);
+    // Path from the same helper every other link here uses, so it cannot drift from the route.
+    const path = context.indentHref("register").split("?")[0];
+    const query = params.toString();
+    router.replace(query ? `${path}?${query}` : path);
+  };
+
+  const countsByStatus = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const indent of indents) {
+      counts.set(indent.status, (counts.get(indent.status) ?? 0) + 1);
+    }
+    return counts;
+  }, [indents]);
+
+  const filteredIndents = useMemo(
+    () => (activeTab === "all" ? indents : indents.filter((indent) => indent.status === activeTab)),
+    [indents, activeTab],
+  );
+
+  // Figures follow the filter, so they describe what is actually on screen rather than the whole
+  // register — a total that ignores the active filter is a total nobody can reconcile.
   const totalRequestedQty = useMemo(
     () =>
-      indents.reduce(
+      filteredIndents.reduce(
         (total, indent) => total + indent.items.reduce((sum, item) => sum + toNumber(item.requestedQty), 0),
         0,
       ),
-    [indents],
+    [filteredIndents],
   );
   const totalIndentValue = useMemo(
-    () => indents.reduce((total, indent) => total + toNumber(indent.totalAmount), 0),
-    [indents],
+    () => filteredIndents.reduce((total, indent) => total + toNumber(indent.totalAmount), 0),
+    [filteredIndents],
   );
 
   const exportIndents = async () => {
@@ -466,74 +511,116 @@ export default function ProjectIndentRegisterPage() {
   }
 
   return (
-    <IndentPageShell>
-      <IndentPageHeader
+    <PmShell
+      sidebar={
+        <PmSidebar
+          title="Indent Register"
+          subtitle={mapping.projectName}
+          icon={ListChecks}
+          gradient={INDENT_GRADIENT}
+          activeValue={activeTab}
+          onChange={setActiveTab}
+          groups={[
+            {
+              label: "Status",
+              views: [
+                { value: "all", label: "All indents", icon: ListChecks, color: "text-slate-600", bg: "bg-slate-100", count: indents.length },
+                ...INDENT_STATUSES.map((status, index) => {
+                  const accent = pmAccent(index);
+                  return {
+                    value: status,
+                    label: status,
+                    icon: STATUS_ICONS[status] ?? ListChecks,
+                    color: accent.color,
+                    bg: accent.bg,
+                    count: countsByStatus.get(status) ?? 0,
+                  };
+                }),
+              ],
+            },
+          ]}
+          // Neither is reachable from the topbar: the back button goes to the Indent hub, and the
+          // primary action goes to the new-indent form.
+          footerLinks={[
+            {
+              href: `/project-management/requirement-planner?project=${encodeURIComponent(mappingId)}`,
+              label: "Requirement planner",
+              icon: CalendarClock,
+              color: "text-cyan-600",
+              bg: "bg-cyan-100",
+            },
+            {
+              href: context.indentHref("settings/workflow-configuration"),
+              label: "Workflow configuration",
+              icon: Settings,
+              color: "text-slate-600",
+              bg: "bg-slate-100",
+            },
+          ]}
+        />
+      }
+    >
+      <PmTopbar
         title="Indent Register"
-        subtitle={`Multi-item material indents against BOQ items for ${mapping.projectName}.`}
-        icon={ListChecks}
+        breadcrumbs={[
+          { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },
+          { label: "Indent", href: context.indentHref() },
+        ]}
         backHref={context.indentHref()}
         backLabel="Back to Indent"
-        gradient={INDENT_GRADIENT}
         actions={
           <>
-            <Button variant="outline" asChild>
-              <Link href={`/project-management/requirement-planner?project=${encodeURIComponent(mappingId)}`}>
-                <CalendarClock className="mr-2 h-4 w-4" /> Requirement Planner
-              </Link>
-            </Button>
             {indents.length > 0 && (
-              <Button variant="outline" onClick={exportIndents}>
+              <Button variant="outline" size="sm" onClick={exportIndents}>
                 <Download className="mr-2 h-4 w-4" /> Export
               </Button>
             )}
-            {canAdd && boqItems.length ? (
-              <Button asChild>
-                <Link href={context.indentHref("new")}>
-                  <Plus className="mr-2 h-4 w-4" /> New Indent
-                </Link>
-              </Button>
-            ) : (
-              <Button disabled>
-                <Plus className="mr-2 h-4 w-4" /> New Indent
-              </Button>
-            )}
+            <Button size="sm" asChild disabled={!canAdd || !boqItems.length}>
+              <Link href={context.indentHref("new")}>
+                <Plus className="mr-2 h-4 w-4" /> New indent
+              </Link>
+            </Button>
           </>
         }
       />
 
-      <IndentNav context={context} active="register" />
+      <PmContent>
+        {!canAdd && (
+          <p className="mb-3 text-xs text-destructive">
+            You don&apos;t have permission to add indents. Ask an admin to grant &quot;Add&quot; under Project Management &rsaquo; Indent in Role Management.
+          </p>
+        )}
+        {canAdd && !boqItems.length && (
+          <p className="mb-3 text-xs text-muted-foreground">
+            No BOQ items found for this project. Import the BOQ first.
+          </p>
+        )}
 
-      {!canAdd && (
-        <p className="text-xs text-destructive">
-          You don&apos;t have permission to add indents. Ask an admin to grant &quot;Add&quot; under Project Management &rsaquo; Indent in Role Management.
-        </p>
-      )}
-      {canAdd && !boqItems.length && (
-        <p className="text-xs text-muted-foreground">
-          No BOQ items found for this project. Import the BOQ first.
-        </p>
-      )}
+        {/* The four stat cards this replaces cost about ninety vertical pixels to say what fits on
+            one line beside the heading. */}
+        <PmSectionHead
+          title={activeTab === "all" ? "Indents" : `${activeTab} indents`}
+          stats={[
+            { label: filteredIndents.length === 1 ? "indent" : "indents", value: String(filteredIndents.length) },
+            { label: "requested qty", value: formatQuantity(totalRequestedQty) },
+            { label: "indent value", value: formatCurrency(totalIndentValue) },
+            { label: "BOQ items available", value: String(boqItems.length) },
+          ]}
+        />
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Card><CardContent className="flex items-center gap-3 p-4"><ClipboardList className="h-8 w-8 text-blue-600" /><div><p className="text-2xl font-bold">{boqItems.length}</p><p className="text-xs text-muted-foreground">BOQ Items</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4"><ListChecks className="h-8 w-8 text-amber-600" /><div><p className="text-2xl font-bold">{indents.length}</p><p className="text-xs text-muted-foreground">Total Indents</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4"><FilePlus2 className="h-8 w-8 text-emerald-600" /><div><p className="text-2xl font-bold">{formatQuantity(totalRequestedQty)}</p><p className="text-xs text-muted-foreground">Total Requested Qty</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4"><IndianRupee className="h-8 w-8 text-violet-600" /><div><p className="text-2xl font-bold">{formatCurrency(totalIndentValue)}</p><p className="text-xs text-muted-foreground">Total Indent Value</p></div></CardContent></Card>
-      </div>
+      {/* The card's title said "Indents" directly under a heading that already says it. What was
+          worth keeping is the rule about reservation, which is not obvious from the table. */}
+      <p className="mb-3 max-w-4xl text-[13px] text-muted-foreground">
+        Each indent can contain multiple BOQ items. Only approved indents reserve quantity from
+        their linked BOQ items — submit a draft to send it for approval. Indents raised before the
+        workflow existed are marked <span className="font-medium text-foreground">Legacy</span> and
+        keep their reservation.
+      </p>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Indents</CardTitle>
-          <CardDescription>
-            Each indent can contain multiple BOQ items. Only approved indents reserve quantity from
-            their linked BOQ items — submit a draft to send it for approval. Indents raised before
-            the workflow existed are marked <span className="font-medium">Legacy</span> and keep
-            their reservation.
-          </CardDescription>
-        </CardHeader>
+      <Card className="overflow-hidden border-border/60">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className={PM_TABLE_CLASS}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10" />
@@ -548,7 +635,7 @@ export default function ProjectIndentRegisterPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {indents.length ? indents.map((indent) => {
+                {filteredIndents.length ? filteredIndents.map((indent) => {
                   const isExpanded = expandedIds.has(indent.id);
                   const totalQty = indent.items.reduce((sum, item) => sum + toNumber(item.requestedQty), 0);
 
@@ -657,14 +744,26 @@ export default function ProjectIndentRegisterPage() {
                   <TableRow>
                     <TableCell colSpan={9} className="h-36 text-center">
                       <ListChecks className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">No indents created</p>
-                      <p className="text-sm text-muted-foreground">Create the first indent against one or more BOQ items.</p>
+                      <p className="font-medium">
+                        {indents.length ? `No ${activeTab} indents` : "No indents created"}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {indents.length
+                          ? "Pick another status in the sidebar to see the rest of the register."
+                          : "Create the first indent against one or more BOQ items."}
+                      </p>
                     </TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
           </div>
+          {filteredIndents.length > 0 && (
+            <PmTableFoot
+              left={<>Showing <b className="font-semibold tabular-nums text-foreground">{filteredIndents.length}</b> of <b className="font-semibold tabular-nums text-foreground">{indents.length}</b> indents</>}
+              right={<>Indent value <b className="font-semibold tabular-nums text-foreground">{formatCurrency(totalIndentValue)}</b></>}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -677,6 +776,7 @@ export default function ProjectIndentRegisterPage() {
           </CardContent>
         </Card>
       )}
-    </IndentPageShell>
+      </PmContent>
+    </PmShell>
   );
 }

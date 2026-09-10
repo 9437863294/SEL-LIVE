@@ -4,13 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowRight,
   CalendarDays,
   FileBarChart2,
   GanttChart,
   PackageSearch,
   Plus,
+  Settings,
   ShoppingCart,
   Table2,
 } from "lucide-react";
@@ -22,9 +22,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Select,
@@ -57,7 +54,15 @@ import PoWorkplanCalendar from "@/components/project-management/po-calendar";
 import PoReports, { type PoBoqItemLite } from "@/components/project-management/po-reports";
 import PoGanttChart from "@/components/project-management/po-gantt";
 import PoBoqItemsTable from "@/components/project-management/po-boq-items";
-import SidebarTabsList from "@/components/project-management/sidebar-tabs-list";
+import {
+  PM_TABLE_CLASS,
+  PmContent,
+  PmSectionHead,
+  PmShell,
+  PmSidebar,
+  PmTableFoot,
+  PmTopbar,
+} from "@/components/project-management/pm-shell";
 import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
 import {
@@ -69,13 +74,9 @@ import {
   type PoLike,
 } from "@/lib/project-management-po-workflow";
 import { useProjectManagementPoContext } from "@/components/po/use-po-host-context";
-import { PoNav } from "@/components/po/po-nav";
 import {
-  PO_GRADIENT,
   PoAccessDenied,
   PoLoadingState,
-  PoPageHeader,
-  PoPageShell,
   PoProjectNotFound,
 } from "@/components/po/po-page-shell";
 
@@ -127,12 +128,21 @@ export default function PurchaseOrderRegisterPage() {
 
   // The active view is kept in the URL (`?view=`) so refreshing, sharing a link, or navigating
   // back doesn't silently reset you to "List" — same pattern as MDL's tabs.
+  //
+  // The path comes from `context.poHref("register")`, the same helper every other link on this
+  // screen uses, rather than being written out again. Written out, it pointed at the Purchase
+  // Orders hub instead of the register, so switching view navigated off this page entirely and
+  // dropped the view on the way.
   const activeTab = searchParams?.get("view") || "list";
   const setActiveTab = (value: string) => {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
     if (value === "list") params.delete("view");
     else params.set("view", value);
-    router.replace(`/project-management/purchase-orders?${params.toString()}`);
+    // poHref already carries `?project=`, so its own query is dropped in favour of `params`,
+    // which was seeded from the current URL and therefore still holds it.
+    const path = context.poHref("register").split("?")[0];
+    const query = params.toString();
+    router.replace(query ? `${path}?${query}` : path);
   };
 
   const loadData = useCallback(async () => {
@@ -253,130 +263,168 @@ export default function PurchaseOrderRegisterPage() {
     );
   }
 
+  // Every cell holds one line. The issue-approval request and the legacy marker used to sit
+  // stacked under the status badge; both now have a column of their own.
+  const PO_COLUMN_COUNT = 9;
+
+  const registerTotal = filteredOrders.reduce((sum, po) => sum + (po.totalAmount ?? 0), 0);
+  const awaitingReview = filteredOrders.filter((po) =>
+    Boolean(openIssueRequestForPo(issueApprovals, po.id)),
+  ).length;
+
   return (
-    <PoPageShell className="space-y-4">
-      <PoPageHeader
+    <PmShell
+      sidebar={
+        <PmSidebar
+          title="PO Register"
+          subtitle={mapping.projectName}
+          icon={ShoppingCart}
+          gradient="from-emerald-500 to-teal-600"
+          activeValue={activeTab}
+          onChange={setActiveTab}
+          groups={[
+            {
+              label: "Views",
+              views: [
+                { value: "list", label: "List", icon: Table2, color: "text-emerald-600", bg: "bg-emerald-100", count: openOrderCount },
+                { value: "boq-items", label: "BOQ items", icon: PackageSearch, color: "text-cyan-600", bg: "bg-cyan-100" },
+                { value: "calendar", label: "Workplan calendar", icon: CalendarDays, color: "text-violet-600", bg: "bg-violet-100" },
+                { value: "gantt", label: "Gantt chart", icon: GanttChart, color: "text-orange-600", bg: "bg-orange-100" },
+                { value: "reports", label: "Reports", icon: FileBarChart2, color: "text-blue-600", bg: "bg-blue-100" },
+              ],
+            },
+          ]}
+          // Only Settings: the hub is already the back button and a breadcrumb, New PO is already
+          // the topbar's primary action, and this screen does not need a link to itself.
+          footerLinks={[
+            { href: context.poHref("settings"), label: "Settings", icon: Settings, color: "text-slate-600", bg: "bg-slate-100" },
+          ]}
+        />
+      }
+    >
+      <PmTopbar
         title="PO Register"
-        subtitle={`Purchase orders raised against vendors for ${mapping.projectName}.`}
-        icon={ShoppingCart}
+        breadcrumbs={[
+          { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },
+          { label: "Purchase Orders", href: context.poHref() },
+        ]}
         backHref={context.poHref()}
         backLabel="Back to Purchase Orders"
-        gradient={PO_GRADIENT}
         actions={
-          <>
-            <Select value={statusFilter} onValueChange={(value: "all" | POStatus) => setStatusFilter(value)}>
-              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {PO_STATUSES.map((status) => (
-                  <SelectItem key={status} value={status}>{status}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {canAdd && (
-              <Button asChild>
-                <Link href={context.poHref("new")}>
-                  <Plus className="mr-2 h-4 w-4" /> New Purchase Order
-                </Link>
-              </Button>
-            )}
-          </>
+          canAdd ? (
+            <Button size="sm" asChild>
+              <Link href={context.poHref("new")}>
+                <Plus className="mr-2 h-4 w-4" /> New purchase order
+              </Link>
+            </Button>
+          ) : undefined
         }
       />
 
-      <PoNav context={context} active="register" />
+      <SupplyGateNav
+        mappingId={mappingId}
+        active="purchase-orders"
+        // Only this gate's register is loaded on this page, so only its count is passed. The rest
+        // render without a number rather than a misleading zero.
+        counts={{ "purchase-orders": purchaseOrders.length }}
+      />
 
-      <div className="mb-4">
-        <SupplyGateNav mappingId={mappingId} active="purchase-orders" />
-      </div>
-
-      <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
-        <SidebarTabsList
-          items={[
-            { value: "list", label: "List", icon: Table2, color: "text-emerald-600", bg: "bg-emerald-100", count: openOrderCount },
-            { value: "boq-items", label: "BOQ Items", icon: PackageSearch, color: "text-cyan-600", bg: "bg-cyan-100" },
-            { value: "calendar", label: "Workplan Calendar", icon: CalendarDays, color: "text-violet-600", bg: "bg-violet-100" },
-            { value: "gantt", label: "Gantt Chart", icon: GanttChart, color: "text-orange-600", bg: "bg-orange-100" },
-            { value: "reports", label: "Reports", icon: FileBarChart2, color: "text-blue-600", bg: "bg-blue-100" },
-          ]}
-          activeValue={activeTab}
-          onChange={setActiveTab}
-          title="Purchase Order Views"
-          description="List, BOQ items, calendar, Gantt & reports"
-          icon={ShoppingCart}
-          gradient="from-emerald-500 to-teal-600"
-        />
-
-        <div className="min-w-0 flex-1 space-y-4">
+      <PmContent>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsContent value="list" className="mt-0">
+          {/* The heading carries the register's figures beside it, rather than a card header
+              repeating a title the sidebar already shows. */}
+          <PmSectionHead
+            title="All purchase orders"
+            stats={[
+              { label: filteredOrders.length === 1 ? "order" : "orders", value: String(filteredOrders.length) },
+              { label: "total value", value: formatCurrency(registerTotal) },
+              ...(awaitingReview
+                ? [{ label: "awaiting commercial review", value: String(awaitingReview), tone: "flag" as const }]
+                : []),
+            ]}
+            actions={
+              <Select value={statusFilter} onValueChange={(value: "all" | POStatus) => setStatusFilter(value)}>
+                <SelectTrigger className="h-8 w-[150px] text-[13px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {PO_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>{status}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            }
+          />
           <Card className="overflow-hidden border-border/60">
-            <div className="h-1 w-full bg-gradient-to-r from-emerald-500 to-teal-600" />
-            <CardHeader>
-              <CardTitle className="text-lg">All Purchase Orders</CardTitle>
-              <CardDescription>{filteredOrders.length} order{filteredOrders.length === 1 ? "" : "s"} shown.</CardDescription>
-            </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <Table>
+                <Table className={PM_TABLE_CLASS}>
                   <TableHeader>
                     <TableRow>
                       <TableHead>PO Number</TableHead>
                       <TableHead>PO Date</TableHead>
                       <TableHead>Vendor</TableHead>
                       <TableHead>Source RFQ</TableHead>
-                      <TableHead>Items</TableHead>
-                      <TableHead>Total Amount</TableHead>
+                      <TableHead className="text-right">Items</TableHead>
+                      <TableHead className="text-right">Total Amount</TableHead>
                       <TableHead>Status</TableHead>
+                      {/* Was stacked under Status: the open issue-approval request, and the
+                          legacy marker for POs raised before that approval existed. */}
+                      <TableHead>Issue Approval</TableHead>
                       <TableHead className="w-10" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredOrders.length ? filteredOrders.map((po) => (
+                    {filteredOrders.length ? filteredOrders.map((po) => {
+                      const openRequest = openIssueRequestForPo(issueApprovals, po.id);
+                      const legacy = isLegacyPo(po as PoLike);
+                      return (
                       <TableRow key={po.id} className="cursor-pointer" onClick={() => goToPo(po.id)}>
-                        <TableCell className="font-medium">{po.poNumber}</TableCell>
+                        <TableCell className="whitespace-nowrap font-medium">{po.poNumber}</TableCell>
                         <TableCell className="whitespace-nowrap">{formatDate(po.poDate)}</TableCell>
-                        <TableCell>{po.vendorName}</TableCell>
-                        <TableCell>{po.sourceRfqNumbers?.length ? po.sourceRfqNumbers.join(", ") : "—"}</TableCell>
-                        <TableCell>{po.items?.length ?? 0}</TableCell>
-                        <TableCell className="whitespace-nowrap font-medium">{formatCurrency(po.totalAmount)}</TableCell>
-                        <TableCell>
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${poStatusStyles[po.status]}`}>
+                        <TableCell className="max-w-[180px] truncate" title={po.vendorName}>{po.vendorName}</TableCell>
+                        <TableCell
+                          className="max-w-[140px] truncate"
+                          title={po.sourceRfqNumbers?.join(", ")}
+                        >
+                          {po.sourceRfqNumbers?.length ? po.sourceRfqNumbers.join(", ") : "—"}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{po.items?.length ?? 0}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">{formatCurrency(po.totalAmount)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${poStatusStyles[po.status]}`}>
                             {po.status}
                           </span>
-                          {(() => {
-                            const openRequest = openIssueRequestForPo(issueApprovals, po.id);
-                            return (
-                              <div className="mt-1 space-y-0.5">
-                                {openRequest && (
-                                  <p className="text-xs text-muted-foreground">
-                                    <span
-                                      className={`rounded px-1.5 py-0.5 ${poIssueStatusStyles[openRequest.status]}`}
-                                    >
-                                      {openRequest.status}
-                                    </span>
-                                    {openRequest.currentStepName ? ` · ${openRequest.currentStepName}` : ""}
-                                  </p>
-                                )}
-                                {isLegacyPo(po as PoLike) && (
-                                  <p
-                                    className="text-xs text-muted-foreground"
-                                    title="Raised before issue approval existed — this PO can be issued directly."
-                                  >
-                                    Legacy
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })()}
+                        </TableCell>
+                        <TableCell className="max-w-[200px] whitespace-nowrap">
+                          {openRequest ? (
+                            <span className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                              <span className={`shrink-0 rounded px-1.5 py-0.5 ${poIssueStatusStyles[openRequest.status]}`}>
+                                {openRequest.status}
+                              </span>
+                              {openRequest.currentStepName && (
+                                <span className="truncate">· {openRequest.currentStepName}</span>
+                              )}
+                            </span>
+                          ) : legacy ? (
+                            <span
+                              className="text-xs text-muted-foreground"
+                              title="Raised before issue approval existed — this PO can be issued directly."
+                            >
+                              Legacy
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <ArrowRight className="h-4 w-4 text-muted-foreground" />
                         </TableCell>
                       </TableRow>
-                    )) : (
+                      );
+                    }) : (
                       <TableRow>
-                        <TableCell colSpan={8} className="h-32 text-center">
+                        <TableCell colSpan={PO_COLUMN_COUNT} className="h-32 text-center">
                           <p className="font-medium">No purchase orders found</p>
                           <p className="mt-1 text-sm text-muted-foreground">Create one directly, or award RFQ items to a vendor.</p>
                         </TableCell>
@@ -385,6 +433,22 @@ export default function PurchaseOrderRegisterPage() {
                   </TableBody>
                 </Table>
               </div>
+              {filteredOrders.length > 0 && (
+                <PmTableFoot
+                  left={
+                    <>
+                      Showing <b className="font-semibold tabular-nums text-foreground">{filteredOrders.length}</b> of{" "}
+                      <b className="font-semibold tabular-nums text-foreground">{purchaseOrders.length}</b> purchase orders
+                    </>
+                  }
+                  right={
+                    <>
+                      Register total{" "}
+                      <b className="font-semibold tabular-nums text-foreground">{formatCurrency(registerTotal)}</b>
+                    </>
+                  }
+                />
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -411,12 +475,17 @@ export default function PurchaseOrderRegisterPage() {
         </TabsContent>
 
         <TabsContent value="gantt" className="mt-0">
-          <Card className="border-border/60">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Purchase Order Gantt Chart</CardTitle>
-              <CardDescription>Each row is a purchase order; the bar spans its start to end date.</CardDescription>
-            </CardHeader>
-            <CardContent>
+          <Card className="overflow-hidden border-border/60">
+            {/* The sidebar already names this view, so the bar keeps only the part that explains
+                how to read the chart. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <GanttChart className="h-3.5 w-3.5 shrink-0 text-orange-600" />
+                <span className="font-medium text-foreground">Purchase order schedule</span>
+                · each row is a purchase order; the bar spans its start to end date
+              </p>
+            </div>
+            <CardContent className="pt-4">
               <PoGanttChart purchaseOrders={purchaseOrders} onSelectPo={goToPo} />
             </CardContent>
           </Card>
@@ -426,8 +495,7 @@ export default function PurchaseOrderRegisterPage() {
           <PoReports purchaseOrders={purchaseOrders} boqItemsById={boqItemsById} onSelectPo={goToPo} />
         </TabsContent>
         </Tabs>
-        </div>
-      </div>
-    </PoPageShell>
+      </PmContent>
+    </PmShell>
   );
 }

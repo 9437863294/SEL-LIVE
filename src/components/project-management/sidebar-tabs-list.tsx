@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight, Menu, type LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,26 @@ export type SidebarTabItem = {
 };
 
 /**
+ * A route the sidebar navigates to, rather than a view it switches between.
+ *
+ * Lets a screen's own navigation live in the sidebar instead of a separate pill bar above the
+ * content — which is a full bar of vertical space, on a page whose point is a dense table.
+ */
+export type SidebarLinkItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  color: string;
+  bg: string;
+  count?: number;
+  /** Marks the screen you are already on. */
+  active?: boolean;
+  /** Rendered dimmed and unclickable rather than hidden, so the list keeps a stable shape
+   *  between users — the same choice `PoNav` makes with its `hidden` prop. */
+  disabled?: boolean;
+};
+
+/**
  * A view-switcher sidebar for one page's own sub-views (e.g. MDL's Pending Tasks / Register /
  * Calendar / Gantt / Reports), driven purely by `activeValue`/`onChange` so the caller keeps
  * owning the state — typically synced to a `?view=` URL param.
@@ -58,6 +79,9 @@ export default function SidebarTabsList({
   description,
   icon: HeaderIcon,
   gradient,
+  itemsLabel = "Views",
+  links,
+  linksLabel = "Screens",
 }: {
   items: SidebarTabItem[];
   activeValue: string;
@@ -67,16 +91,89 @@ export default function SidebarTabsList({
   icon: LucideIcon;
   /** Solid gradient classes, e.g. `"from-emerald-500 to-teal-600"` — the active row's background. */
   gradient: string;
+  /** Group heading above the views. Only shown when `links` are present — with one group there
+   *  is nothing to tell apart, and a lone heading is just another line of chrome. */
+  itemsLabel?: string;
+  /** Routes this screen navigates to, rendered as a second group beneath the views. */
+  links?: SidebarLinkItem[];
+  linksLabel?: string;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
   const current = items.find((item) => item.value === activeValue);
+  const hasGroups = Boolean(links?.length);
 
-  /** One row. `expanded` is passed rather than read from state so the mobile sheet — which is
-   *  always expanded — can reuse it unchanged. */
+  /** The shared row shell. Both the view buttons and the screen links render through it, so a
+   *  route and a view are indistinguishable to look at — which is the point of moving the screen
+   *  nav in here rather than leaving it as a separate bar. */
+  const rowClass = (isActive: boolean, expanded: boolean, disabled = false) =>
+    cn(
+      "group relative flex w-full items-center rounded-lg transition-all duration-200",
+      expanded ? "gap-2.5 px-2 py-1.5" : "justify-center p-1.5",
+      disabled
+        ? "cursor-not-allowed opacity-50"
+        : isActive
+          ? cn("cursor-pointer bg-gradient-to-r text-white shadow-sm", gradient)
+          : "cursor-pointer hover:bg-muted/40",
+    );
+
+  const rowInner = (
+    entry: { label: string; icon: LucideIcon; color: string; bg: string; count?: number },
+    isActive: boolean,
+    expanded: boolean,
+  ) => (
+    <>
+      <span
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200",
+          isActive ? "bg-white/25" : cn(entry.bg, "group-hover:scale-105"),
+        )}
+      >
+        <entry.icon
+          className={cn(
+            "h-3.5 w-3.5 transition-transform",
+            isActive ? "scale-110 text-white" : entry.color,
+          )}
+        />
+      </span>
+
+      {expanded && (
+        <span
+          className={cn(
+            "flex-1 truncate text-left text-sm",
+            isActive ? "font-semibold" : "font-medium text-foreground/80",
+          )}
+        >
+          {entry.label}
+        </span>
+      )}
+
+      {Boolean(entry.count) &&
+        (expanded ? (
+          <Badge
+            variant="secondary"
+            className={cn("shrink-0 px-1.5 text-[10px]", isActive && "bg-white/20 text-white")}
+          >
+            {entry.count}
+          </Badge>
+        ) : (
+          // Collapsed to a rail there is no room for a number, so the count becomes a dot —
+          // still says "something here needs attention" without widening the rail.
+          <span
+            aria-hidden
+            className={cn(
+              "absolute right-1 top-1 h-1.5 w-1.5 rounded-full",
+              isActive ? "bg-white" : "bg-primary",
+            )}
+          />
+        ))}
+    </>
+  );
+
+  /** One view row. `expanded` is passed rather than read from state so the mobile sheet — which
+   *  is always expanded — can reuse it unchanged. */
   const navRow = (item: SidebarTabItem, expanded: boolean, onNavigate?: () => void) => {
     const isActive = item.value === activeValue;
-    const Icon = item.icon;
     return (
       <button
         key={item.value}
@@ -86,61 +183,62 @@ export default function SidebarTabsList({
           onNavigate?.();
         }}
         aria-current={isActive ? "page" : undefined}
-        className={cn(
-          "group relative flex w-full cursor-pointer items-center rounded-lg transition-all duration-200",
-          expanded ? "gap-2.5 px-2 py-1.5" : "justify-center p-1.5",
-          isActive
-            ? cn("bg-gradient-to-r text-white shadow-sm", gradient)
-            : "hover:bg-muted/40",
-        )}
+        className={rowClass(isActive, expanded)}
       >
-        <span
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200",
-            isActive ? "bg-white/25" : cn(item.bg, "group-hover:scale-105"),
-          )}
-        >
-          <Icon
-            className={cn(
-              "h-3.5 w-3.5 transition-transform",
-              isActive ? "scale-110 text-white" : item.color,
-            )}
-          />
-        </span>
-
-        {expanded && (
-          <span
-            className={cn(
-              "flex-1 truncate text-left text-sm",
-              isActive ? "font-semibold" : "font-medium text-foreground/80",
-            )}
-          >
-            {item.label}
-          </span>
-        )}
-
-        {Boolean(item.count) &&
-          (expanded ? (
-            <Badge
-              variant="secondary"
-              className={cn("shrink-0 px-1.5 text-[10px]", isActive && "bg-white/20 text-white")}
-            >
-              {item.count}
-            </Badge>
-          ) : (
-            // Collapsed to a rail there is no room for a number, so the count becomes a dot —
-            // still says "something here needs attention" without widening the rail.
-            <span
-              aria-hidden
-              className={cn(
-                "absolute right-1 top-1 h-1.5 w-1.5 rounded-full",
-                isActive ? "bg-white" : "bg-primary",
-              )}
-            />
-          ))}
+        {rowInner(item, isActive, expanded)}
       </button>
     );
   };
+
+  /** One screen row. A link, not a button, so it opens in a new tab and shows its target on hover
+   *  like any other navigation. */
+  const navLink = (link: SidebarLinkItem, expanded: boolean, onNavigate?: () => void) => {
+    const isActive = Boolean(link.active);
+    if (link.disabled) {
+      return (
+        <span
+          key={link.href}
+          aria-disabled
+          className={rowClass(false, expanded, true)}
+          title={`${link.label} — you do not have permission to open this`}
+        >
+          {rowInner(link, false, expanded)}
+        </span>
+      );
+    }
+    return (
+      <Link
+        key={link.href}
+        href={link.href}
+        aria-current={isActive ? "page" : undefined}
+        onClick={onNavigate}
+        className={rowClass(isActive, expanded)}
+      >
+        {rowInner(link, isActive, expanded)}
+      </Link>
+    );
+  };
+
+  /** Uppercase group heading, matching the Settings sidebar. Collapsed to a rail there is no room
+   *  for a word, so the groups are separated by a hairline instead. */
+  const groupLabel = (label: string, expanded: boolean, first: boolean) =>
+    expanded ? (
+      <p className="mb-1 mt-2 px-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 first:mt-0">
+        {label}
+      </p>
+    ) : first ? null : (
+      <div aria-hidden className="mx-1 my-1 h-px bg-border/40" />
+    );
+
+  /** The whole nav, shared by the desktop panel and the mobile sheet. */
+  const navBody = (expanded: boolean, onNavigate?: () => void) => (
+    <>
+      {hasGroups && groupLabel(itemsLabel, expanded, true)}
+      {items.map((item) => navRow(item, expanded, onNavigate))}
+      {hasGroups && groupLabel(linksLabel, expanded, false)}
+      {links?.map((link) => navLink(link, expanded, onNavigate))}
+    </>
+  );
 
   return (
     <>
@@ -167,7 +265,7 @@ export default function SidebarTabsList({
               </SheetDescription>
             </SheetHeader>
             <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-3">
-              {items.map((item) => navRow(item, true, () => setMobileOpen(false)))}
+              {navBody(true, () => setMobileOpen(false))}
             </nav>
           </SheetContent>
         </Sheet>
@@ -200,18 +298,30 @@ export default function SidebarTabsList({
 
         <TooltipProvider delayDuration={0}>
           <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2">
-            {items.map((item) =>
-              isExpanded ? (
-                navRow(item, true)
-              ) : (
-                <Tooltip key={item.value}>
-                  <TooltipTrigger asChild>{navRow(item, false)}</TooltipTrigger>
-                  <TooltipContent side="right" className="text-xs font-medium">
-                    {item.label}
-                    {Boolean(item.count) && ` · ${item.count}`}
-                  </TooltipContent>
-                </Tooltip>
-              ),
+            {isExpanded ? (
+              navBody(true)
+            ) : (
+              <>
+                {items.map((item) => (
+                  <Tooltip key={item.value}>
+                    <TooltipTrigger asChild>{navRow(item, false)}</TooltipTrigger>
+                    <TooltipContent side="right" className="text-xs font-medium">
+                      {item.label}
+                      {Boolean(item.count) && ` · ${item.count}`}
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+                {hasGroups && groupLabel(linksLabel, false, false)}
+                {links?.map((link) => (
+                  <Tooltip key={link.href}>
+                    <TooltipTrigger asChild>{navLink(link, false)}</TooltipTrigger>
+                    <TooltipContent side="right" className="text-xs font-medium">
+                      {link.label}
+                      {link.disabled && " — no permission"}
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </>
             )}
           </nav>
         </TooltipProvider>

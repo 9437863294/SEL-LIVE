@@ -17,6 +17,7 @@ import {
   Clock,
   GitMerge,
   Loader2,
+  Settings,
 } from "lucide-react";
 import Link from "next/link";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
@@ -41,15 +42,22 @@ import {
   type PoIssueApproval,
 } from "@/lib/project-management-po-workflow";
 import { useProjectManagementPoContext } from "@/components/po/use-po-host-context";
-import { PoNav } from "@/components/po/po-nav";
 import {
-  PO_GRADIENT,
   PoAccessDenied,
   PoLoadingState,
-  PoPageHeader,
-  PoPageShell,
   PoProjectNotFound,
 } from "@/components/po/po-page-shell";
+import {
+  PM_TABLE_CLASS,
+  PmContent,
+  PmSectionHead,
+  PmShell,
+  PmSidebar,
+  PmTopbar,
+  pmAccent,
+  type PmSidebarLink,
+} from "@/components/project-management/pm-shell";
+import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -178,6 +186,57 @@ export default function PoIssueStagePage() {
     [approvals, stageId, steps],
   );
 
+  /**
+   * The stages themselves are this screen's navigation — an approver's question is "what is
+   * waiting at each step", so the sidebar lists every stage with its pending count and lets them
+   * move between them. Built for both the found and not-found branches, so a deleted stage still
+   * leaves a way out.
+   */
+  const stageSidebar = useMemo(() => {
+    const links: PmSidebarLink[] = steps.map((candidate, index) => {
+      const accent = pmAccent(index);
+      return {
+        href: context.poHref(`stage/${candidate.id}`),
+        label: candidate.name,
+        icon: GitMerge,
+        color: accent.color,
+        bg: accent.bg,
+        count: poIssuesForStep(approvals, String(candidate.id), steps).length,
+        active: String(candidate.id) === stageId,
+      };
+    });
+
+    return (
+      <PmSidebar
+        title="Issue approval"
+        subtitle={projectName || undefined}
+        icon={GitMerge}
+        gradient="from-emerald-500 to-teal-600"
+        groups={[{ label: "Stages", links }]}
+        // Where the stages themselves are defined. Nothing else on the page reaches it.
+        footerLinks={[
+          {
+            href: context.poHref("settings/workflow-configuration"),
+            label: "Workflow configuration",
+            icon: Settings,
+            color: "text-slate-600",
+            bg: "bg-slate-100",
+          },
+        ]}
+      />
+    );
+  }, [steps, approvals, stageId, context, projectName]);
+
+  const poBreadcrumbs = useMemo(
+    () => [
+      ...(projectName
+        ? [{ label: projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` }]
+        : []),
+      { label: "Purchase Orders", href: context.poHref() },
+    ],
+    [projectName, mappingId, context],
+  );
+
   const allowedActions = useMemo<PoIssueAction[]>(() => {
     if (!step) return [];
     const configured = (step.actions ?? []).map((action) =>
@@ -276,53 +335,71 @@ export default function PoIssueStagePage() {
 
   if (!step) {
     return (
-      <PoPageShell>
-        <PoPageHeader
+      <PmShell sidebar={stageSidebar}>
+        <PmTopbar
           title="Stage not found"
-          subtitle="This stage is no longer part of the issue approval workflow."
-          icon={GitMerge}
+          breadcrumbs={poBreadcrumbs}
           backHref={context.poHref()}
           backLabel="Back to Purchase Orders"
-          gradient={PO_GRADIENT}
         />
-        <PoNav context={context} active="hub" />
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle>Stage removed</CardTitle>
-            <CardDescription>
-              It may have been deleted in Workflow Configuration. Open the Purchase Orders hub to see
-              the current stages.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </PoPageShell>
+        <PmContent>
+          <Card className="border-border/60">
+            <CardHeader>
+              <CardTitle className="text-base">Stage removed</CardTitle>
+              <CardDescription>
+                It may have been deleted in Workflow Configuration. Pick a stage from the sidebar,
+                or open the Purchase Orders hub to see the current ones.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </PmContent>
+      </PmShell>
     );
   }
 
   const isFinalStep = steps[steps.length - 1]?.id === step.id;
 
   return (
-    <PoPageShell>
-      <PoPageHeader
+    <PmShell sidebar={stageSidebar}>
+      <PmTopbar
         title={step.name}
-        subtitle={
-          step.description ||
-          (projectName
-            ? `Purchase orders awaiting ${step.name} for ${projectName}.`
-            : `Purchase orders awaiting ${step.name}.`)
-        }
-        icon={GitMerge}
+        breadcrumbs={poBreadcrumbs}
         backHref={context.poHref()}
         backLabel="Back to Purchase Orders"
-        gradient={PO_GRADIENT}
       />
 
-      <PoNav context={context} active="hub" />
+      {/* Where PO issue approval sits in the overall supply flow. Only this gate's own register is
+          loaded here, so only its count is passed — see SupplyGateNav. */}
+      <SupplyGateNav mappingId={mappingId} active="purchase-orders" />
 
-      <Card>
+      <PmContent>
+        <PmSectionHead
+          title={step.name}
+          stats={[
+            {
+              label: stageApprovals.length === 1 ? "order awaiting" : "orders awaiting",
+              value: String(stageApprovals.length),
+            },
+          ]}
+        />
+        {/* Prose, not a figure — a stat with no number would render an empty slot before its
+            label. Approving the last step is what issues the order, so it is worth saying. */}
+        {(step.description || isFinalStep) && (
+          <p className="mb-3 max-w-3xl text-[13px] text-muted-foreground">
+            {step.description}
+            {step.description && isFinalStep && " "}
+            {isFinalStep && (
+              <span className="font-medium text-amber-700">
+                This is the final stage — approving here issues the purchase order.
+              </span>
+            )}
+          </p>
+        )}
+
+      <Card className="overflow-hidden border-border/60">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className={PM_TABLE_CLASS}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10" />
@@ -491,6 +568,7 @@ export default function PoIssueStagePage() {
           </div>
         </CardContent>
       </Card>
+      </PmContent>
 
       <Dialog open={Boolean(pending)} onOpenChange={(open) => !open && setPending(null)}>
         <DialogContent>
@@ -547,6 +625,6 @@ export default function PoIssueStagePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PoPageShell>
+    </PmShell>
   );
 }
