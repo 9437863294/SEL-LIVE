@@ -11,7 +11,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronRight, Clock, GitMerge, Loader2, TrendingUp } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, GitMerge, Loader2, Settings, TrendingUp } from "lucide-react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { WorkflowStep } from "@/lib/types";
@@ -35,15 +35,22 @@ import {
   type RfqAwardApproval,
 } from "@/lib/project-management-rfq-workflow";
 import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
-import { RfqNav } from "@/components/rfq/rfq-nav";
 import {
   RFQ_GRADIENT,
   RfqAccessDenied,
   RfqLoadingState,
-  RfqPageHeader,
-  RfqPageShell,
   RfqProjectNotFound,
 } from "@/components/rfq/rfq-page-shell";
+import {
+  PM_TABLE_CLASS,
+  PmContent,
+  PmSectionHead,
+  PmShell,
+  PmSidebar,
+  PmTopbar,
+  pmAccent,
+  type PmSidebarLink,
+} from "@/components/project-management/pm-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -159,6 +166,53 @@ export default function RfqAwardStagePage() {
     [steps, stageId],
   );
 
+  /**
+   * The stages are this screen's navigation: an approver wants to see what is waiting at each
+   * step and move between them. Built for both branches, so a deleted stage still leaves a way out.
+   */
+  const stageSidebar = useMemo(() => {
+    const links: PmSidebarLink[] = steps.map((candidate, index) => {
+      const accent = pmAccent(index);
+      return {
+        href: context.rfqHref(`stage/${candidate.id}`),
+        label: candidate.name,
+        icon: GitMerge,
+        color: accent.color,
+        bg: accent.bg,
+        count: rfqAwardsForStep(approvals, String(candidate.id), steps).length,
+        active: String(candidate.id) === stageId,
+      };
+    });
+    return (
+      <PmSidebar
+        title="Award approval"
+        subtitle={projectName || undefined}
+        icon={GitMerge}
+        gradient={RFQ_GRADIENT}
+        groups={[{ label: "Stages", links }]}
+        footerLinks={[
+          {
+            href: context.rfqHref("settings/workflow-configuration"),
+            label: "Workflow configuration",
+            icon: Settings,
+            color: "text-slate-600",
+            bg: "bg-slate-100",
+          },
+        ]}
+      />
+    );
+  }, [steps, approvals, stageId, context, projectName]);
+
+  const rfqBreadcrumbs = useMemo(
+    () => [
+      ...(projectName
+        ? [{ label: projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` }]
+        : []),
+      { label: "RFQ", href: context.rfqHref() },
+    ],
+    [projectName, mappingId, context],
+  );
+
   const stageApprovals = useMemo(
     () => rfqAwardsForStep(approvals, stageId, steps),
     [approvals, stageId, steps],
@@ -265,53 +319,66 @@ export default function RfqAwardStagePage() {
 
   if (!step) {
     return (
-      <RfqPageShell>
-        <RfqPageHeader
+      <PmShell sidebar={stageSidebar}>
+        <PmTopbar
           title="Stage not found"
-          subtitle="This stage is no longer part of the award approval workflow."
-          icon={GitMerge}
+          breadcrumbs={rfqBreadcrumbs}
           backHref={context.rfqHref()}
           backLabel="Back to RFQ"
-          gradient={RFQ_GRADIENT}
         />
-        <RfqNav context={context} active="hub" />
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle>Stage removed</CardTitle>
-            <CardDescription>
-              It may have been deleted in Workflow Configuration. Open the RFQ hub to see the
-              current stages.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </RfqPageShell>
+        <PmContent>
+          <Card className="border-border/60">
+            <CardHeader>
+              <CardTitle className="text-base">Stage removed</CardTitle>
+              <CardDescription>
+                It may have been deleted in Workflow Configuration. Pick a stage from the sidebar,
+                or open the RFQ hub to see the current ones.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </PmContent>
+      </PmShell>
     );
   }
 
   const isFinalStep = steps[steps.length - 1]?.id === step.id;
 
   return (
-    <RfqPageShell>
-      <RfqPageHeader
+    <PmShell sidebar={stageSidebar}>
+      <PmTopbar
         title={step.name}
-        subtitle={
-          step.description ||
-          (projectName
-            ? `Award requests awaiting ${step.name} for ${projectName}.`
-            : `Award requests awaiting ${step.name}.`)
-        }
-        icon={GitMerge}
+        breadcrumbs={rfqBreadcrumbs}
         backHref={context.rfqHref()}
         backLabel="Back to RFQ"
-        gradient={RFQ_GRADIENT}
       />
 
-      <RfqNav context={context} active="hub" />
+      <PmContent>
+        <PmSectionHead
+          title={step.name}
+          stats={[
+            {
+              label: stageApprovals.length === 1 ? "award awaiting" : "awards awaiting",
+              value: String(stageApprovals.length),
+            },
+          ]}
+        />
+        {/* Prose, not a figure. Approving the last stage is what raises the purchase order. */}
+        {(step.description || isFinalStep) && (
+          <p className="mb-3 max-w-3xl text-[13px] text-muted-foreground">
+            {step.description}
+            {step.description && isFinalStep && " "}
+            {isFinalStep && (
+              <span className="font-medium text-amber-700">
+                This is the final stage — approving here raises the purchase order.
+              </span>
+            )}
+          </p>
+        )}
 
-      <Card>
+      <Card className="overflow-hidden border-border/60">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className={PM_TABLE_CLASS}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10" />
@@ -485,6 +552,7 @@ export default function RfqAwardStagePage() {
           </div>
         </CardContent>
       </Card>
+      </PmContent>
 
       <Dialog open={Boolean(pending)} onOpenChange={(open) => !open && setPending(null)}>
         <DialogContent>
@@ -541,6 +609,6 @@ export default function RfqAwardStagePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </RfqPageShell>
+    </PmShell>
   );
 }

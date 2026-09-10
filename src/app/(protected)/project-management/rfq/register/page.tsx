@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ChevronDown,
@@ -12,6 +12,7 @@ import {
   FileSearch,
   Loader2,
   Plus,
+  Settings,
   Trash2,
   Users,
 } from "lucide-react";
@@ -60,21 +61,29 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import {
   RFQ_COLLECTION,
   RFQ_PERMISSION_RESOURCE,
+  RFQ_STATUSES,
   formatDate,
   rfqStatusStyles,
   type Rfq,
 } from "@/lib/rfq";
 import { isLegacyRfq, type RfqLike } from "@/lib/project-management-rfq-workflow";
 import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
-import { RfqNav } from "@/components/rfq/rfq-nav";
 import {
   RFQ_GRADIENT,
   RfqAccessDenied,
   RfqLoadingState,
-  RfqPageHeader,
-  RfqPageShell,
   RfqProjectNotFound,
 } from "@/components/rfq/rfq-page-shell";
+import {
+  PM_TABLE_CLASS,
+  PmContent,
+  PmSectionHead,
+  PmShell,
+  PmSidebar,
+  PmTableFoot,
+  PmTopbar,
+  pmAccent,
+} from "@/components/project-management/pm-shell";
 
 type ProjectMapping = {
   id: string;
@@ -84,6 +93,7 @@ type ProjectMapping = {
 };
 
 export default function RfqRegisterPage() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const mappingId = searchParams?.get("project") ?? "";
   const { toast } = useToast();
@@ -152,6 +162,38 @@ export default function RfqRegisterPage() {
   const totalOpen = useMemo(
     () => rfqs.filter((rfq) => !["Closed", "Cancelled"].includes(rfq.status)).length,
     [rfqs],
+  );
+
+  /**
+   * Status is this register's navigation, the same as Indent's — the screen had no filtering, so
+   * "which RFQs are still out with vendors" meant reading the Status column down the page.
+   * Kept in `?view=` so a refresh or a shared link keeps the filter.
+   */
+  const activeTab = searchParams?.get("view") || "all";
+  const setActiveTab = (value: string) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value === "all") params.delete("view");
+    else params.set("view", value);
+    // Path from the same helper every other link here uses, so it cannot drift from the route.
+    const path = context.rfqHref("register").split("?")[0];
+    const query = params.toString();
+    router.replace(query ? `${path}?${query}` : path);
+  };
+
+  const countsByStatus = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const rfq of rfqs) counts.set(rfq.status, (counts.get(rfq.status) ?? 0) + 1);
+    return counts;
+  }, [rfqs]);
+
+  const filteredRfqs = useMemo(
+    () => (activeTab === "all" ? rfqs : rfqs.filter((rfq) => rfq.status === activeTab)),
+    [rfqs, activeTab],
+  );
+
+  const vendorInvitations = useMemo(
+    () => filteredRfqs.reduce((sum, rfq) => sum + (rfq.vendorIds?.length ?? 0), 0),
+    [filteredRfqs],
   );
 
   // Draft-only, matching Indent/PO's own delete lifecycle — a Draft RFQ has never been sent, so
@@ -225,23 +267,65 @@ export default function RfqRegisterPage() {
   }
 
   return (
-    <RfqPageShell>
-      <RfqPageHeader
+    <PmShell
+      sidebar={
+        <PmSidebar
+          title="RFQ Register"
+          subtitle={mapping.projectName}
+          icon={FileSearch}
+          gradient={RFQ_GRADIENT}
+          activeValue={activeTab}
+          onChange={setActiveTab}
+          groups={[
+            {
+              label: "Status",
+              views: [
+                { value: "all", label: "All RFQs", icon: FileSearch, color: "text-slate-600", bg: "bg-slate-100", count: rfqs.length },
+                ...RFQ_STATUSES.map((status, index) => {
+                  const accent = pmAccent(index);
+                  return {
+                    value: status,
+                    label: status,
+                    icon: FileSearch,
+                    color: accent.color,
+                    bg: accent.bg,
+                    count: countsByStatus.get(status) ?? 0,
+                  };
+                }),
+              ],
+            },
+          ]}
+          // Neither is reachable from the topbar: the back button goes to the RFQ hub and the
+          // primary action goes to the new-RFQ form.
+          footerLinks={[
+            {
+              href: context.rfqHref("settings/workflow-configuration"),
+              label: "Workflow configuration",
+              icon: Settings,
+              color: "text-slate-600",
+              bg: "bg-slate-100",
+            },
+          ]}
+        />
+      }
+    >
+      <PmTopbar
         title="RFQ Register"
-        subtitle={`Request quotations from vendors for ${mapping.projectName}.`}
-        icon={FileSearch}
+        breadcrumbs={[
+          { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },
+          { label: "RFQ", href: context.rfqHref() },
+        ]}
         backHref={context.rfqHref()}
         backLabel="Back to RFQ"
-        gradient={RFQ_GRADIENT}
         actions={
           <>
             {rfqs.length > 0 && (
-              <Button variant="outline" onClick={exportRfqs}>
+              <Button variant="outline" size="sm" onClick={exportRfqs}>
                 <Download className="mr-2 h-4 w-4" /> Export
               </Button>
             )}
             {canAdd && (
-              <Button asChild>
+              <Button size="sm" asChild>
                 <Link href={context.rfqHref("new")}>
                   <Plus className="mr-2 h-4 w-4" /> New RFQ
                 </Link>
@@ -251,22 +335,26 @@ export default function RfqRegisterPage() {
         }
       />
 
-      <RfqNav context={context} active="register" />
+      <PmContent>
+        {/* Three stat cards replaced by one line beside the heading. */}
+        <PmSectionHead
+          title={activeTab === "all" ? "RFQs" : `${activeTab} RFQs`}
+          stats={[
+            { label: filteredRfqs.length === 1 ? "RFQ" : "RFQs", value: String(filteredRfqs.length) },
+            { label: "open", value: String(totalOpen) },
+            { label: "vendor invitations sent", value: String(vendorInvitations) },
+          ]}
+        />
+        {/* The card title said "RFQs" under a heading already saying it; the part worth keeping is
+            what an RFQ actually bundles, which the table does not show. */}
+        <p className="mb-3 max-w-4xl text-[13px] text-muted-foreground">
+          Each RFQ can bundle items from multiple indents and go out to multiple vendors.
+        </p>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card><CardContent className="flex items-center gap-3 p-4"><FileSearch className="h-8 w-8 text-violet-600" /><div><p className="text-2xl font-bold">{rfqs.length}</p><p className="text-xs text-muted-foreground">Total RFQs</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4"><ClipboardList className="h-8 w-8 text-blue-600" /><div><p className="text-2xl font-bold">{totalOpen}</p><p className="text-xs text-muted-foreground">Open RFQs</p></div></CardContent></Card>
-        <Card><CardContent className="flex items-center gap-3 p-4"><Users className="h-8 w-8 text-emerald-600" /><div><p className="text-2xl font-bold">{rfqs.reduce((sum, rfq) => sum + (rfq.vendorIds?.length ?? 0), 0)}</p><p className="text-xs text-muted-foreground">Vendor Invitations Sent</p></div></CardContent></Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>RFQs</CardTitle>
-          <CardDescription>Each RFQ can bundle items from multiple indents and go out to multiple vendors.</CardDescription>
-        </CardHeader>
+      <Card className="overflow-hidden border-border/60">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className={PM_TABLE_CLASS}>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10" />
@@ -280,7 +368,7 @@ export default function RfqRegisterPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rfqs.length ? rfqs.map((rfq) => {
+                {filteredRfqs.length ? filteredRfqs.map((rfq) => {
                   const isExpanded = expandedIds.has(rfq.id);
                   return (
                     <Fragment key={rfq.id}>
@@ -385,8 +473,15 @@ export default function RfqRegisterPage() {
               </TableBody>
             </Table>
           </div>
+          {filteredRfqs.length > 0 && (
+            <PmTableFoot
+              left={<>Showing <b className="font-semibold tabular-nums text-foreground">{filteredRfqs.length}</b> of <b className="font-semibold tabular-nums text-foreground">{rfqs.length}</b> RFQs</>}
+              right={<>Open <b className="font-semibold tabular-nums text-foreground">{totalOpen}</b></>}
+            />
+          )}
         </CardContent>
       </Card>
-    </RfqPageShell>
+      </PmContent>
+    </PmShell>
   );
 }

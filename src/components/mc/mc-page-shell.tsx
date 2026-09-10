@@ -21,5 +21,9 @@ export {
 
 /** The MC accent — matching the Manufacturing Clearance tile on the Supply hub. */
 export const MC_GRADIENT = "from-lime-500 to-green-600";
+/** Raising a clearance — the module's primary action, so it takes the warmest accent. */
+export const MC_NEW_GRADIENT = "from-emerald-500 to-teal-600";
+/** The clearance-document register, distinct from the per-item gate register. */
+export const MC_DOCUMENTS_GRADIENT = "from-sky-500 to-blue-600";
 /** Settings screens use the slate accent Project Management gives every settings surface. */
 export const MC_SETTINGS_GRADIENT = "from-slate-500 to-slate-700";

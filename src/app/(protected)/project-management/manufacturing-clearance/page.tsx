@@ -9,7 +9,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Factory, GitMerge, type LucideIcon, Settings, Table2 } from "lucide-react";
+import {
+  Factory,
+  FileStack,
+  GitMerge,
+  type LucideIcon,
+  Plus,
+  Settings,
+  Table2,
+} from "lucide-react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { WorkflowStep } from "@/lib/types";
@@ -20,7 +28,9 @@ import { MC_COLLECTION } from "@/lib/supply-gates";
 import { useProjectManagementMcContext } from "@/components/mc/use-mc-host-context";
 import { McNav } from "@/components/mc/mc-nav";
 import {
+  MC_DOCUMENTS_GRADIENT,
   MC_GRADIENT,
+  MC_NEW_GRADIENT,
   MC_SETTINGS_GRADIENT,
   McAccessDenied,
   McCardGridLoadingState,
@@ -71,6 +81,8 @@ export default function ManufacturingClearanceHubPage() {
 
   const canViewModule = safeCan("View");
   const canViewSettings = safeCan("View Settings");
+  /** Raising a clearance is the Clear permission — it is the act of opening the gate. */
+  const canClearModule = safeCan("Clear") || safeCan("Add");
 
   const globalProjectId = context.globalProjectId;
 
@@ -135,6 +147,24 @@ export default function ManufacturingClearanceHubPage() {
 
     const head: McItem[] = [
       {
+        icon: Plus,
+        text: "New MC",
+        href: context.mcHref("new"),
+        description:
+          "Clear a vendor to begin production against quantity on one or more purchase order lines.",
+        disabled: !canClearModule || !mappingId,
+        gradient: MC_NEW_GRADIENT,
+      },
+      {
+        icon: FileStack,
+        text: "MC Documents",
+        href: context.mcHref("documents"),
+        description:
+          "Every clearance raised, the purchase order lines it covers and the quantity cleared on each.",
+        disabled: !canViewModule || !mappingId,
+        gradient: MC_DOCUMENTS_GRADIENT,
+      },
+      {
         icon: Table2,
         text: "MC Register",
         href: context.mcHref("register"),
@@ -180,6 +210,7 @@ export default function ManufacturingClearanceHubPage() {
     pendingGateCount,
     canViewModule,
     canViewSettings,
+    canClearModule,
   ]);
 
   if (authIsLoading || isResolving || isWorkflowLoading) {

@@ -64,6 +64,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   PO_COLLECTION,
   PO_PERMISSION_RESOURCE,
+  ensurePoLineIds,
   formatCurrency,
   formatQuantity,
   generatePoNumber,
@@ -605,7 +606,14 @@ export default function NewProjectPurchaseOrderPage() {
         amount: manualLineAmount(row),
       }));
 
-      const items = [...rfqSourcedItems, ...indentSourcedItems, ...boqSourcedItems, ...manualItems];
+      // Stamped once over all four sources rather than in each mapper, so a new source cannot ship
+      // without line ids. Manufacturing Clearance keys its quantity ledger on these.
+      const items = ensurePoLineIds([
+        ...rfqSourcedItems,
+        ...indentSourcedItems,
+        ...boqSourcedItems,
+        ...manualItems,
+      ]);
       const computedTotal = items.reduce((sum, item) => sum + item.amount, 0);
       const involvedRfqIds = Array.from(new Set(rfqSourcedItems.map((item) => item.sourceRfqId!)));
       const involvedRfqNumbers = Array.from(new Set(rfqSourcedItems.map((item) => item.sourceRfqNumber!)));

@@ -5,17 +5,19 @@ import { useSearchParams } from "next/navigation";
 import { GitMerge, Settings2 } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
-import { RfqNav } from "@/components/rfq/rfq-nav";
 import {
   RFQ_SETTINGS_GRADIENT,
   RfqAccessDenied,
   RfqCardGridLoadingState,
   RfqNavCard,
   RfqNavCardGrid,
-  RfqPageHeader,
-  RfqPageShell,
   RfqProjectNotFound,
 } from "@/components/rfq/rfq-page-shell";
+import {
+  PmContent,
+  PmShell,
+  PmTopbar,
+} from "@/components/project-management/pm-shell";
 
 export default function RfqSettingsPage() {
   const searchParams = useSearchParams();
@@ -50,31 +52,30 @@ export default function RfqSettingsPage() {
   }
 
   return (
-    <RfqPageShell>
-      <RfqPageHeader
+    <PmShell>
+      <PmTopbar
         title="RFQ Settings"
-        subtitle={
-          projectName
-            ? `Configure how RFQ awards are approved for ${projectName}.`
-            : "Configure how RFQ awards are approved on this project."
-        }
-        icon={Settings2}
+        breadcrumbs={[
+          ...(projectName
+            ? [{ label: projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` }]
+            : []),
+          { label: "RFQ", href: context.rfqHref() },
+        ]}
         backHref={context.rfqHref()}
         backLabel="Back to RFQ"
-        gradient={RFQ_SETTINGS_GRADIENT}
       />
 
-      <RfqNav context={context} active="settings" />
-
-      <RfqNavCardGrid>
-        <RfqNavCard
-          title="Award Workflow"
-          description="Set up the approval stages an award must pass before a PO is raised."
-          href={context.rfqHref("settings/workflow-configuration")}
-          icon={GitMerge}
-          gradient={RFQ_SETTINGS_GRADIENT}
-        />
-      </RfqNavCardGrid>
-    </RfqPageShell>
+      <PmContent>
+        <RfqNavCardGrid>
+          <RfqNavCard
+            title="Award Workflow"
+            description="Set up the approval stages an award must pass before a PO is raised."
+            href={context.rfqHref("settings/workflow-configuration")}
+            icon={GitMerge}
+            gradient={RFQ_SETTINGS_GRADIENT}
+          />
+        </RfqNavCardGrid>
+      </PmContent>
+    </PmShell>
   );
 }

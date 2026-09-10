@@ -19,6 +19,7 @@ import { db } from "@/lib/firebase";
 import {
   PO_COLLECTION,
   generatePoNumber,
+  newPoLineId,
   type PurchaseOrderItem,
 } from "@/lib/purchase-orders";
 import { markRfqItemsAwarded, type RfqAwardEntry } from "@/lib/rfq";
@@ -83,7 +84,10 @@ export async function createPurchaseOrdersForAwards({
   for (const group of groups) {
     if (!group.items.length) continue;
 
-    const poItems: PurchaseOrderItem[] = group.items.map((item) => ({
+    const poItems: PurchaseOrderItem[] = group.items.map((item, index) => ({
+      // Minted here and never regenerated — Manufacturing Clearance accumulates against this id,
+      // and the same material can appear on a PO twice.
+      poLineId: newPoLineId(index),
       description: item.description,
       unit: item.unit,
       qty: item.qty,

@@ -6,11 +6,26 @@ export const PO_STATUSES = ["Draft", "Issued", "Received", "Cancelled"] as const
 export type POStatus = (typeof PO_STATUSES)[number];
 
 export interface PurchaseOrderItem {
+  /**
+   * Stable identity for this line, minted once when the line is added and never reused.
+   *
+   * A PO may legitimately list the same material twice — two delivery lots of the same
+   * conductor, or one BOQ item split across two rates — so neither `description` nor
+   * `boqItemId` identifies a line, and the array index changes the moment a line above it is
+   * removed. Anything that accumulates against a line over time (Manufacturing Clearance
+   * quantity above all, see `project-management-mc-quantity.ts`) has to key on this.
+   *
+   * Optional only so a record written before the field existed still parses; read it through
+   * `resolvePoLineId`, never directly.
+   */
+  poLineId?: string;
   description: string;
   unit: string;
   qty: number;
   rate: number;
   amount: number;
+  /** Quantity cancelled against this line. Reduces what may ever be cleared or received. */
+  cancelledQty?: number;
   rfqItemId?: string;
   sourceRfqId?: string;
   sourceRfqNumber?: string;
@@ -19,6 +34,33 @@ export interface PurchaseOrderItem {
   boqItemId?: string;
   boqQty?: number;
   indentQty?: number;
+}
+
+/**
+ * Mints a PO line id. Called once per line when the PO is drafted, then persisted with it.
+ *
+ * `Date.now()` plus the index matches how `workflow-configuration-editor.tsx` mints stable step
+ * ids; the random suffix covers two lines added in the same millisecond from different tabs.
+ */
+export const newPoLineId = (index: number = 0): string =>
+  `pol_${Date.now().toString(36)}${index.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+/**
+ * The identity of a PO line, falling back to its position for records written before
+ * `poLineId` existed.
+ *
+ * The fallback is honest rather than safe: for a legacy line the array position genuinely is
+ * its only identity, so reordering such a PO would re-home whatever accumulated against it.
+ * That is why `ensurePoLineIds` should stamp real ids on any PO opened for editing.
+ */
+export const resolvePoLineId = (item: Pick<PurchaseOrderItem, "poLineId">, index: number): string =>
+  item.poLineId?.trim() || `idx_${index}`;
+
+/** Stamps ids on any line missing one, leaving existing ids alone. */
+export function ensurePoLineIds(items: readonly PurchaseOrderItem[]): PurchaseOrderItem[] {
+  return items.map((item, index) =>
+    item.poLineId?.trim() ? item : { ...item, poLineId: newPoLineId(index) },
+  );
 }
 
 export interface PurchaseOrder {

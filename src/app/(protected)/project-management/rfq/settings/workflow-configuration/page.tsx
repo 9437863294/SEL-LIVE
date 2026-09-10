@@ -18,15 +18,17 @@ import {
   RFQ_AWARD_WORKFLOW_DOC_ID,
 } from "@/lib/project-management-rfq-workflow";
 import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
-import { RfqNav } from "@/components/rfq/rfq-nav";
 import {
   RFQ_SETTINGS_GRADIENT,
   RfqAccessDenied,
   RfqLoadingState,
-  RfqPageHeader,
-  RfqPageShell,
   RfqProjectNotFound,
 } from "@/components/rfq/rfq-page-shell";
+import {
+  PmContent,
+  PmShell,
+  PmTopbar,
+} from "@/components/project-management/pm-shell";
 import { WorkflowConfigurationEditor } from "@/components/workflow/workflow-configuration-editor";
 
 export default function RfqAwardWorkflowConfigurationPage() {
@@ -68,19 +70,19 @@ export default function RfqAwardWorkflowConfigurationPage() {
   }
 
   return (
-    <RfqPageShell>
-      <RfqPageHeader
+    <PmShell>
+      <PmTopbar
         title="Award Workflow"
-        subtitle="Stages an award passes before a purchase order is raised."
-        icon={GitMerge}
+        breadcrumbs={[
+          { label: "RFQ", href: context.rfqHref() },
+          { label: "Settings", href: context.rfqHref("settings") },
+        ]}
         backHref={context.rfqHref("settings")}
         backLabel="Back to RFQ Settings"
-        gradient={RFQ_SETTINGS_GRADIENT}
       />
 
-      <RfqNav context={context} active="settings" />
-
-      <WorkflowConfigurationEditor
+      <PmContent>
+        <WorkflowConfigurationEditor
         workflowDocId={RFQ_AWARD_WORKFLOW_DOC_ID}
         defaultSteps={DEFAULT_RFQ_AWARD_STEPS}
         allowedActions={RFQ_AWARD_ACTIONS}
@@ -90,8 +92,9 @@ export default function RfqAwardWorkflowConfigurationPage() {
         projectName={projectName}
         subjectNoun="award"
         behaviourDescription="Confirming awards on an RFQ opens an approval request per vendor, which enters at the first stage. Each Approve moves it on; approving the last stage creates the purchase order. Reject closes the request, and Needs Correction sends the recommendation back to the buyer. With no stages configured, confirming awards creates the purchase order immediately. RFQs raised before this workflow existed always award directly, so nothing mid-negotiation is blocked."
-        emptyStateDescription="Confirming awards creates the purchase order immediately. Add a stage to require approval of the vendor and rate first."
-      />
-    </RfqPageShell>
+          emptyStateDescription="Confirming awards creates the purchase order immediately. Add a stage to require approval of the vendor and rate first."
+        />
+      </PmContent>
+    </PmShell>
   );
 }

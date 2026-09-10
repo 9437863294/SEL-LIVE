@@ -7,12 +7,14 @@
  * Links are built through the host context, so every one carries the `?project=` handle forward.
  */
 
-import { LayoutGrid, Settings, Table2 } from "lucide-react";
+import { FileStack, LayoutGrid, Plus, Settings, Table2 } from "lucide-react";
 import { PillNav } from "@/components/shared/pill-nav";
 import type { PmMcContext } from "@/lib/project-management-mc-workflow";
 
 const SCREENS = [
   { key: "hub", suffix: undefined, label: "Manufacturing Clearance", icon: LayoutGrid },
+  { key: "documents", suffix: "documents", label: "MC Documents", icon: FileStack },
+  { key: "new", suffix: "new", label: "New MC", icon: Plus },
   { key: "register", suffix: "register", label: "MC Register", icon: Table2 },
   { key: "settings", suffix: "settings", label: "Settings", icon: Settings },
 ] as const;

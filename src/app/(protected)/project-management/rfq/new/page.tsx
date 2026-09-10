@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
   FileSearch,
   Loader2,
   Save,
@@ -28,6 +28,11 @@ import { useToast } from "@/hooks/use-toast";
 import { ControlledField } from "@/components/project-management/controlled-field";
 import { useFieldControl, validateFieldControlRequirements } from "@/components/project-management/use-field-control";
 import { Button } from "@/components/ui/button";
+import {
+  PmContent,
+  PmShell,
+  PmTopbar,
+} from "@/components/project-management/pm-shell";
 import {
   Card,
   CardContent,
@@ -367,26 +372,28 @@ export default function NewRfqPage() {
   }
 
   return (
-    <main className="w-full space-y-5 px-4 py-4 sm:px-6 sm:py-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href={`/project-management/rfq?project=${encodeURIComponent(mappingId)}`} aria-label="Back to RFQs">
-            <ArrowLeft className="h-6 w-6" />
-          </Link>
-        </Button>
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm">
-          <FileSearch className="h-4 w-4 text-white" />
-        </div>
-        <h1 className="text-xl font-bold">Create RFQ</h1>
-      </div>
+    // No sidebar: a create form has no views, and a nav rail would compete with the form.
+    <PmShell>
+      <PmTopbar
+        title="Create RFQ"
+        breadcrumbs={[
+          { label: "RFQ", href: `/project-management/rfq?project=${encodeURIComponent(mappingId)}` },
+        ]}
+        backHref={`/project-management/rfq?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to RFQs"
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>RFQ Details</CardTitle>
-          <CardDescription>Set the RFQ date and the deadline for vendors to respond.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+      <PmContent className="space-y-4">
+      <Card className="overflow-hidden border-border/60">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <FileSearch className="h-3.5 w-3.5 shrink-0 text-violet-600" />
+            <span className="font-medium text-foreground">RFQ details</span>
+            · the RFQ date and the deadline for vendors to respond
+          </p>
+        </div>
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <ControlledField setting={fieldControl("rfqDate")} className="space-y-2">
               <Input id="rfq-date" type="date" value={rfqDate} max={dueDate || undefined} onChange={(e) => setRfqDate(e.target.value)} />
             </ControlledField>
@@ -400,12 +407,18 @@ export default function NewRfqPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Select Items ({selectedCount} selected)</CardTitle>
-          <CardDescription>Choose whole indents or individual items across one or more indents.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <Card className="overflow-hidden border-border/60">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <ClipboardList className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+            <span className="font-medium text-foreground">Select items</span>
+            · whole indents or individual items across several
+          </p>
+          <span className="ml-auto rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-violet-700">
+            {selectedCount} selected
+          </span>
+        </div>
+        <CardContent className="space-y-3 p-4">
           {indents.length ? indents.map((indent) => {
             const allSelected = indent.items.every((item) => selectedItemKeys.has(itemKey(indent.id, item.boqItemId)));
             const someSelected = !allSelected && indent.items.some((item) => selectedItemKeys.has(itemKey(indent.id, item.boqItemId)));
@@ -496,6 +509,7 @@ export default function NewRfqPage() {
           </Button>
         )}
       </div>
-    </main>
+      </PmContent>
+    </PmShell>
   );
 }

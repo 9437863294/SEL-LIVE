@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Library, ListChecks, Loader2, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
+import { Library, ListChecks, Loader2, Plus, Save, ShieldAlert, Trash2 } from "lucide-react";
 import {
   collection,
   doc,
@@ -27,9 +27,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  PM_TABLE_CLASS,
+  PmContent,
+  PmShell,
+  PmTableFoot,
+  PmTopbar,
+} from "@/components/project-management/pm-shell";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -440,64 +446,75 @@ export default function NewIndentPage() {
   }
 
   return (
-    <main className="w-full space-y-5 px-4 py-4 sm:px-6 sm:py-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management/indent?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Indents">
-              <ArrowLeft className="h-6 w-6" />
-            </Link>
+    // No sidebar: a create form has no views, and a nav rail beside it would compete with the
+    // thing you came here to fill in.
+    <PmShell>
+      <PmTopbar
+        title="Create indent"
+        breadcrumbs={[
+          { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },
+          { label: "Indent", href: `/project-management/indent?project=${encodeURIComponent(mappingId)}` },
+        ]}
+        backHref={`/project-management/indent?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to Indents"
+        actions={
+          <Button size="sm" onClick={() => void handleSave()} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Save indent
           </Button>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-sm">
-            <ListChecks className="h-4 w-4 text-white" />
-          </div>
-          <h1 className="text-xl font-bold">Create Indent</h1>
-        </div>
-        <Button onClick={() => void handleSave()} disabled={isSaving}>
-          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Save Entry
-        </Button>
-      </div>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Indent Details</CardTitle>
-          <CardDescription>Provide the main details for this indent.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-            <div className="space-y-2">
-              <Label htmlFor="project">Project</Label>
-              <Input id="project" value={mapping.projectName} readOnly className="bg-muted/50" />
-            </div>
-            <ControlledField setting={fieldControl("indentDate")} className="space-y-2">
-              <Input id="indent-date" type="date" value={indentDate} max={requiredDate || undefined} onChange={(e) => setIndentDate(e.target.value)} />
-            </ControlledField>
-            <ControlledField setting={fieldControl("requiredDate")} className="space-y-2">
-              <Input id="required-date" type="date" value={requiredDate} min={indentDate || undefined} onChange={(e) => setRequiredDate(e.target.value)} />
-            </ControlledField>
-            <ControlledField setting={fieldControl("remarks")} className="space-y-2">
-              <Input id="remarks" placeholder="Optional" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-            </ControlledField>
+      <PmContent className="space-y-4">
+        {/* Both cards used to carry a CardHeader with a title and a sentence of instruction —
+            about 130px between them to label two sections whose fields say what they are. */}
+        <Card className="overflow-hidden border-border/60">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ListChecks className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <span className="font-medium text-foreground">Indent details</span>
+            </p>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Indent Items</CardTitle>
-              <CardDescription>Add one or more BOQ items required under this indent.</CardDescription>
+          <CardContent className="p-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="project" className="text-xs">Project</Label>
+                <Input id="project" value={mapping.projectName} readOnly className="h-9 bg-muted/50" />
+              </div>
+              <ControlledField setting={fieldControl("indentDate")} className="space-y-1.5">
+                <Input id="indent-date" type="date" className="h-9" value={indentDate} max={requiredDate || undefined} onChange={(e) => setIndentDate(e.target.value)} />
+              </ControlledField>
+              <ControlledField setting={fieldControl("requiredDate")} className="space-y-1.5">
+                <Input id="required-date" type="date" className="h-9" value={requiredDate} min={indentDate || undefined} onChange={(e) => setRequiredDate(e.target.value)} />
+              </ControlledField>
+              <ControlledField setting={fieldControl("remarks")} className="space-y-1.5">
+                <Input id="remarks" placeholder="Optional" className="h-9" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              </ControlledField>
             </div>
-            <Button variant="outline" onClick={() => setIsMultiSelectOpen(true)}>
-              <Library className="mr-2 h-4 w-4" /> Add Items from BOQ
+          </CardContent>
+        </Card>
+
+      <Card className="overflow-hidden border-border/60">
+        {/* Title, both add-actions and the running totals on one bar, so the totals are visible
+            while you type quantities rather than only after scrolling past the last row. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border/60 px-4 py-2.5">
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Library className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            <span className="font-medium text-foreground">Indent items</span>
+            · {rows.length} row{rows.length === 1 ? "" : "s"}
+          </p>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={addRow}>
+              <Plus className="mr-1.5 h-3.5 w-3.5" /> Add row
+            </Button>
+            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setIsMultiSelectOpen(true)}>
+              <Library className="mr-1.5 h-3.5 w-3.5" /> Add from BOQ
             </Button>
           </div>
-        </CardHeader>
-        <CardContent>
+        </div>
+        <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className={PM_TABLE_CLASS}>
               <TableHeader>
                 <TableRow>
                   <TableHead>BOQ Sl. No.</TableHead>
@@ -571,18 +588,23 @@ export default function NewIndentPage() {
               </TableBody>
             </Table>
           </div>
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <Button variant="outline" onClick={addRow}>
-              <Plus className="mr-2 h-4 w-4" /> Add Item
-            </Button>
-            <div className="flex items-center gap-6 text-sm">
-              <span className="text-muted-foreground">Total Qty: <span className="font-medium text-foreground">{formatQuantity(totals.qty)}</span></span>
-              <span className="text-muted-foreground">Total Amount: <span className="font-semibold text-foreground">{formatCurrency(totals.amount)}</span></span>
-            </div>
-          </div>
+          <PmTableFoot
+            left={
+              <>
+                Total qty{" "}
+                <b className="font-semibold tabular-nums text-foreground">{formatQuantity(totals.qty)}</b>
+              </>
+            }
+            right={
+              <>
+                Total amount{" "}
+                <b className="font-semibold tabular-nums text-foreground">{formatCurrency(totals.amount)}</b>
+              </>
+            }
+          />
         </CardContent>
       </Card>
+      </PmContent>
 
       <BoqMultiSelectDialog
         isOpen={isMultiSelectOpen}
@@ -591,6 +613,6 @@ export default function NewIndentPage() {
         onConfirm={handleMultiBoqSelect}
         alreadyAddedItems={rows.filter((row) => row.boqItemId).map((row) => ({ id: row.boqItemId }))}
       />
-    </main>
+    </PmShell>
   );
 }

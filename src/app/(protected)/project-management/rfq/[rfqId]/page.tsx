@@ -27,6 +27,13 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
+  PM_TABLE_CLASS,
+  PmContent,
+  PmSectionHead,
+  PmShell,
+  PmTopbar,
+} from "@/components/project-management/pm-shell";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -575,39 +582,50 @@ export default function RfqDetailPage() {
   }
 
   return (
-    <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
-            <Link href={`/project-management/rfq?project=${encodeURIComponent(mappingId)}`} aria-label="Back to RFQs">
-              <ArrowLeft className="h-5 w-5" />
-            </Link>
-          </Button>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-sm">
-            <FileSearch className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">{rfq.rfqNumber}</h1>
-            <p className="text-sm text-muted-foreground">{mapping.projectName} · Due {formatDate(rfq.dueDate)}</p>
-          </div>
-          <span className={`ml-2 rounded-full px-3 py-1 text-xs font-medium ${rfqStatusStyles[rfq.status]}`}>{rfq.status}</span>
-        </div>
-        {rfq.status === "Draft" && canSend && (
-          <Button onClick={() => void handleSendToVendors()} disabled={isSending}>
-            {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-            Send to Vendors
-          </Button>
-        )}
-      </div>
+    // No sidebar: a single record's detail has no views to switch between.
+    <PmShell>
+      <PmTopbar
+        title={rfq.rfqNumber}
+        breadcrumbs={[
+          { label: mapping.projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` },
+          { label: "RFQ", href: `/project-management/rfq?project=${encodeURIComponent(mappingId)}` },
+        ]}
+        backHref={`/project-management/rfq?project=${encodeURIComponent(mappingId)}`}
+        backLabel="Back to RFQs"
+        actions={
+          <>
+            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${rfqStatusStyles[rfq.status]}`}>
+              {rfq.status}
+            </span>
+            {rfq.status === "Draft" && canSend && (
+              <Button size="sm" onClick={() => void handleSendToVendors()} disabled={isSending}>
+                {isSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Send to vendors
+              </Button>
+            )}
+          </>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Items</CardTitle>
-          <CardDescription>{rfq.items.length} item(s) from {new Set(rfq.items.map((i) => i.sourceIndentId)).size} indent(s).</CardDescription>
-        </CardHeader>
+      <PmContent className="space-y-4">
+        {/* The due date and the item/indent counts were split between a header subtitle and a card
+            description; both are figures, so both belong on the heading line. */}
+        <PmSectionHead
+          title="Items"
+          stats={[
+            { label: rfq.items.length === 1 ? "item" : "items", value: String(rfq.items.length) },
+            {
+              label: "source indents",
+              value: String(new Set(rfq.items.map((i) => i.sourceIndentId)).size),
+            },
+            { label: "due", value: formatDate(rfq.dueDate) },
+          ]}
+        />
+
+      <Card className="overflow-hidden border-border/60">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className={PM_TABLE_CLASS}>
               <TableHeader>
                 <TableRow>
                   <TableHead>BOQ SL No</TableHead>
@@ -823,6 +841,7 @@ export default function RfqDetailPage() {
           </CardContent>
         </Card>
       )}
+      </PmContent>
 
       <Dialog open={!!quoteDialogVendorId} onOpenChange={(open) => !open && setQuoteDialogVendorId(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -934,6 +953,6 @@ export default function RfqDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </PmShell>
   );
 }

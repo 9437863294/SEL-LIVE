@@ -24,7 +24,6 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { useProjectManagementRfqContext } from "@/components/rfq/use-rfq-host-context";
-import { RfqNav } from "@/components/rfq/rfq-nav";
 import {
   RFQ_GRADIENT,
   RFQ_SETTINGS_GRADIENT,
@@ -32,10 +31,13 @@ import {
   RfqCardGridLoadingState,
   RfqNavCard,
   RfqNavCardGrid,
-  RfqPageHeader,
-  RfqPageShell,
   RfqProjectNotFound,
 } from "@/components/rfq/rfq-page-shell";
+import {
+  PmContent,
+  PmShell,
+  PmTopbar,
+} from "@/components/project-management/pm-shell";
 import {
   DEFAULT_RFQ_AWARD_STEPS,
   RFQ_AWARD_APPROVAL_COLLECTION,
@@ -205,22 +207,24 @@ export default function RfqHubPage() {
   }
 
   return (
-    <RfqPageShell>
-      <RfqPageHeader
+    // No sidebar: this screen is itself a launcher, so a rail listing the same destinations as
+    // the cards below it would say everything twice.
+    <PmShell>
+      <PmTopbar
         title="RFQ"
-        subtitle={
+        breadcrumbs={
           projectName
-            ? `Request quotations for ${projectName}, review awards, and raise purchase orders.`
-            : "Request quotations, review awards, and raise purchase orders."
+            ? [{ label: projectName, href: `/project-management?project=${encodeURIComponent(mappingId)}` }]
+            : []
         }
-        icon={FileSearch}
         backHref={context.parentHref}
-        gradient={RFQ_GRADIENT}
+        backLabel="Back to Supply"
       />
 
-      <RfqNav context={context} active="hub" />
-
-      {workflowError ? (
+      <PmContent className="space-y-4">
+        {/* The RfqNav pill bar is gone: on the hub it linked to exactly the screens the cards
+            below already offer. */}
+        {workflowError ? (
         <Card className="border-border/60">
           <CardHeader>
             <CardTitle>Workflow unavailable</CardTitle>
@@ -241,7 +245,8 @@ export default function RfqHubPage() {
             />
           ))}
         </RfqNavCardGrid>
-      )}
-    </RfqPageShell>
+        )}
+      </PmContent>
+    </PmShell>
   );
 }

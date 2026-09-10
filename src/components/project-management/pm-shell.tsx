@@ -406,7 +406,18 @@ export function PmSidebar({
  * edge and the topbar's border runs the full width without any margin trickery. Padding is applied
  * inside, by `PmTopbar` and `PmContent`.
  */
-export function PmShell({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
+export function PmShell({
+  sidebar,
+  children,
+}: {
+  /**
+   * Omit on a focused create/edit form. A form has no views to switch between, and a nav rail
+   * beside it is navigation competing with the thing you came to fill in — so those screens run
+   * full width, with the breadcrumb and the save action carrying the wayfinding instead.
+   */
+  sidebar?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div className="flex min-h-[calc(100dvh-3.5rem)] md:min-h-[calc(100dvh-4rem)]">
       {sidebar}
