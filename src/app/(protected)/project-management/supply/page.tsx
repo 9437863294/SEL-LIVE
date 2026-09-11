@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  BarChart3,
   CalendarClock,
   ClipboardCheck,
   ClipboardList,
@@ -221,6 +222,17 @@ export default function SupplyPage() {
         : "Joint verification & acceptance with the client — the trigger for supply billing.",
       icon: FileCheck2,
       gradient: "from-teal-500 to-cyan-600",
+    },
+    {
+      // Reads every gate at once, so it is the one tile that is not a stage of the chain.
+      show: canView,
+      href: `/project-management/supply/reports?project=${encodeURIComponent(mappingId)}`,
+      title: "Reports",
+      description: mapping
+        ? `Pipeline, bottlenecks, cycle time and vendor performance for ${mapping.projectName}.`
+        : "Where value is stuck, which step is slowest, and how vendors are performing.",
+      icon: BarChart3,
+      gradient: "from-indigo-500 to-blue-600",
     },
   ].filter((link) => link.show);
 

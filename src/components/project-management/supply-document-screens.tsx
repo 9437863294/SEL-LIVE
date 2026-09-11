@@ -39,6 +39,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
+import { cn } from "@/lib/utils";
 import { formatQuantity, toNumber } from "@/lib/purchase-orders";
 import { PUNCH_SEVERITIES, type PunchItem, type PunchSeverity } from "@/lib/supply-gates";
 import {
@@ -926,6 +927,30 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
     [decisionLines, decisionByItemId, stage],
   );
 
+  /** Running totals for the decision dialog's footer. A document routinely covers several PO lines,
+   * and the per-line figures never add themselves up — this is what the document will commit. */
+  const decisionTotals = useMemo(() => {
+    let presented = 0;
+    let accepted = 0;
+    for (const item of decisionLines) {
+      const linePresented = toNumber(item.presentedQty);
+      presented += linePresented;
+      accepted += Math.min(toNumber(decisionByItemId[item.id]?.acceptedQty), linePresented);
+    }
+    const round = (value: number) => Math.round(value * 1000) / 1000;
+    return {
+      presented: round(presented),
+      accepted: round(accepted),
+      notAccepted: round(Math.max(0, presented - accepted)),
+    };
+  }, [decisionLines, decisionByItemId]);
+
+  /** The document being decided, for the dialog's header context. */
+  const decisionDoc = useMemo(
+    () => state?.docs.find((entry) => entry.id === decisionDocId) ?? null,
+    [state, decisionDocId],
+  );
+
   const handleRecord = async () => {
     if (!globalProjectId || !user || !decisionDocId) return;
     if (decisionErrors.length) {
@@ -1420,15 +1445,19 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
         open={Boolean(decisionDocId)}
         onOpenChange={(open) => !open && setDecisionDocId("")}
       >
-        {/* The breakpoint prefix is load-bearing: DialogContent defaults to size="full", whose
-            `sm:max-w-[1800px]` an unprefixed `max-w-*` cannot override. */}
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader className="pr-8">
-            <DialogTitle>
-              Record {definition.label} outcome
-              {state?.docs.find((entry) => entry.id === decisionDocId)?.docNumber
-                ? ` — ${state.docs.find((entry) => entry.id === decisionDocId)!.docNumber}`
-                : ""}
+        {/* `size="xl"` rather than a `max-w-*` class: DialogContent defaults to size="full", whose
+            `sm:max-w-[1800px]` an unprefixed `max-w-*` cannot override — tailwind-merge only
+            resolves conflicts within the same variant. The preset also brings `max-h-[90vh]`, so
+            the shell's `flex flex-col` lets the line list own the scroll and the footer stay put. */}
+        <DialogContent size="xl" className="gap-4">
+          <DialogHeader className="space-y-1.5 pr-8">
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              <span>Record {definition.label} outcome</span>
+              {decisionDoc?.docNumber && (
+                <Badge variant="outline" className="font-mono text-xs font-normal">
+                  {decisionDoc.docNumber}
+                </Badge>
+              )}
             </DialogTitle>
             <DialogDescription>
               {definition.acceptedLabel} quantity flows to the next stage. Anything short of the{" "}
@@ -1436,29 +1465,37 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          {/* Who decided and when — one panel, visually separate from the per-line work below. */}
+          <div className="grid shrink-0 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
             <div className="space-y-1.5">
-              <Label htmlFor="decision-date">Date</Label>
+              <Label htmlFor="decision-date" className="text-xs">
+                Date
+              </Label>
               <Input
                 id="decision-date"
                 type="date"
-                className="h-9"
+                className="h-9 bg-background"
                 value={decidedDate}
                 onChange={(event) => setDecidedDate(event.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="decision-party">{chrome.counterpartyLabel}</Label>
+              <Label htmlFor="decision-party" className="text-xs">
+                {chrome.counterpartyLabel}
+              </Label>
               <Input
                 id="decision-party"
-                className="h-9"
+                className="h-9 bg-background"
+                placeholder={chrome.counterpartyLabel}
                 value={counterparty}
                 onChange={(event) => setCounterparty(event.target.value)}
               />
             </div>
           </div>
 
-          <div className="max-h-[45vh] space-y-3 overflow-y-auto pr-1">
+          {/* The lines own the remaining height rather than a fixed 45vh, so a two-line document is
+              not padded out and a ten-line one uses the whole dialog. */}
+          <div className="-mx-1 min-h-0 flex-1 space-y-3 overflow-y-auto px-1">
             {decisionLines.map((item) => {
               const draft = decisionByItemId[item.id];
               const presented = toNumber(item.presentedQty);
@@ -1470,26 +1507,61 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                   ...current,
                   [item.id]: { ...current[item.id], ...patch },
                 }));
+              // Preview of the outcome this input produces, so the verdict is visible while the
+              // quantity is being typed rather than only after the document is committed.
+              const outcome =
+                accepted <= 0
+                  ? "Rejected"
+                  : notAccepted > 0
+                    ? "Partially accepted"
+                    : "Accepted";
+              const outcomeStyle =
+                outcome === "Partially accepted"
+                  ? "bg-amber-100 text-amber-800"
+                  : supplyItemStatusStyles[outcome];
               return (
-                <Card key={item.id} className={error ? "border-red-300" : "border-border/60"}>
-                  <CardContent className="space-y-3 py-3">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="text-sm font-medium">{item.itemDescription}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {item.poNumber} · {definition.presentedLabel.toLowerCase()}{" "}
-                        {formatQuantity(presented)} {item.unit}
-                      </span>
+                <Card
+                  key={item.id}
+                  className={cn(
+                    "overflow-hidden",
+                    error ? "border-red-300 bg-red-50/40" : "border-border/60",
+                  )}
+                >
+                  <CardContent className="space-y-3 p-4">
+                    {/* What is being judged, and the verdict this input currently produces. */}
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium leading-snug">{item.itemDescription}</p>
+                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                          {item.poNumber}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className={cn("shrink-0", outcomeStyle)}>
+                        {outcome}
+                      </Badge>
                     </div>
 
-                    <div
-                      className={
-                        stage === "grn"
-                          ? "grid gap-3 sm:grid-cols-[7rem_7rem_7rem_1fr]"
-                          : "grid gap-3 sm:grid-cols-[8rem_1fr_9rem]"
-                      }
-                    >
-                      <div className="space-y-1">
-                        <Label htmlFor={`acc-${item.id}`} className="text-xs">
+                    {/* The quantity decision, as the arithmetic it actually is: presented is fixed,
+                        accepted is the only input, the shortfall falls out of the two. Showing all
+                        three together is what stops a mis-keyed figure going unnoticed. */}
+                    <div className="grid grid-cols-3 items-end gap-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {definition.presentedLabel}
+                        </p>
+                        <p className="mt-1 truncate text-base font-semibold tabular-nums">
+                          {formatQuantity(presented)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {item.unit}
+                          </span>
+                        </p>
+                      </div>
+
+                      <div className="min-w-0 space-y-1">
+                        <Label
+                          htmlFor={`acc-${item.id}`}
+                          className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                        >
                           {definition.acceptedLabel}
                         </Label>
                         <Input
@@ -1498,53 +1570,82 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                           min={0}
                           step="any"
                           inputMode="decimal"
-                          className="h-8 text-right tabular-nums"
+                          className="h-9 bg-background text-right text-base font-semibold tabular-nums"
                           value={draft?.acceptedQty ?? ""}
                           onChange={(event) => update({ acceptedQty: event.target.value })}
                           aria-invalid={Boolean(error)}
                         />
                       </div>
 
-                      {stage === "grn" && (
-                        <>
-                          <div className="space-y-1">
-                            <Label htmlFor={`short-${item.id}`} className="text-xs">
-                              Short
-                            </Label>
-                            <Input
-                              id={`short-${item.id}`}
-                              type="number"
-                              min={0}
-                              step="any"
-                              className="h-8 text-right tabular-nums"
-                              value={draft?.shortQty ?? ""}
-                              onChange={(event) => update({ shortQty: event.target.value })}
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label htmlFor={`dmg-${item.id}`} className="text-xs">
-                              Damaged
-                            </Label>
-                            <Input
-                              id={`dmg-${item.id}`}
-                              type="number"
-                              min={0}
-                              step="any"
-                              className="h-8 text-right tabular-nums"
-                              value={draft?.damagedQty ?? ""}
-                              onChange={(event) => update({ damagedQty: event.target.value })}
-                            />
-                          </div>
-                        </>
-                      )}
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Not accepted
+                        </p>
+                        <p
+                          className={cn(
+                            "mt-1 truncate text-base font-semibold tabular-nums",
+                            notAccepted > 0 ? "text-red-700" : "text-muted-foreground",
+                          )}
+                        >
+                          {formatQuantity(notAccepted)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {item.unit}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
 
+                    {/* GRN alone splits the shortfall into its causes — the two are a breakdown of
+                        "not accepted" above, not extra quantities on top of it. */}
+                    {stage === "grn" && (
+                      <div className="grid grid-cols-2 gap-3 sm:max-w-sm">
+                        <div className="space-y-1">
+                          <Label htmlFor={`short-${item.id}`} className="text-xs">
+                            Short
+                          </Label>
+                          <Input
+                            id={`short-${item.id}`}
+                            type="number"
+                            min={0}
+                            step="any"
+                            inputMode="decimal"
+                            className="h-9 text-right tabular-nums"
+                            value={draft?.shortQty ?? ""}
+                            onChange={(event) => update({ shortQty: event.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`dmg-${item.id}`} className="text-xs">
+                            Damaged
+                          </Label>
+                          <Input
+                            id={`dmg-${item.id}`}
+                            type="number"
+                            min={0}
+                            step="any"
+                            inputMode="decimal"
+                            className="h-9 text-right tabular-nums"
+                            value={draft?.damagedQty ?? ""}
+                            onChange={(event) => update({ damagedQty: event.target.value })}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Secondary to the quantity: an observation only matters once something passed. */}
+                    <div
+                      className={cn(
+                        "grid gap-3",
+                        stage !== "grn" && "sm:grid-cols-[minmax(0,1fr)_10rem]",
+                      )}
+                    >
                       <div className="space-y-1">
                         <Label htmlFor={`obs-${item.id}`} className="text-xs">
-                          Observation (optional)
+                          Observation <span className="text-muted-foreground">(optional)</span>
                         </Label>
                         <Input
                           id={`obs-${item.id}`}
-                          className="h-8"
+                          className="h-9"
                           placeholder="To be closed out"
                           value={draft?.observation ?? ""}
                           onChange={(event) => update({ observation: event.target.value })}
@@ -1557,8 +1658,11 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                           <Select
                             value={draft?.severity ?? "Minor"}
                             onValueChange={(value) => update({ severity: value as PunchSeverity })}
+                            // A severity with nothing to describe is noise; the field only becomes
+                            // meaningful once an observation has been written.
+                            disabled={!draft?.observation?.trim()}
                           >
-                            <SelectTrigger className="h-8">
+                            <SelectTrigger className="h-9">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1573,27 +1677,61 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                      {notAccepted > 0 && (
-                        <span className="text-red-700">
-                          {formatQuantity(notAccepted)} {item.unit} not accepted, returns to the
-                          balance
-                        </span>
-                      )}
-                      {error && <span className="text-red-700">{error.message}</span>}
-                    </div>
+                    {(notAccepted > 0 || error) && (
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                        {notAccepted > 0 && !error && (
+                          <span className="flex items-center gap-1.5 text-red-700">
+                            <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                            {formatQuantity(notAccepted)} {item.unit} returns to the balance
+                          </span>
+                        )}
+                        {error && (
+                          <span className="flex items-center gap-1.5 font-medium text-red-700">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            {error.message}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );
             })}
             {decisionLines.length === 0 && (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                Every line on this document already has an outcome.
-              </p>
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <ClipboardCheck className="h-8 w-8 text-muted-foreground/50" />
+                <p className="text-sm text-muted-foreground">
+                  Every line on this document already has an outcome.
+                </p>
+              </div>
             )}
           </div>
 
-          <DialogFooter>
+          {/* What the whole document commits, beside the button that commits it. */}
+          <DialogFooter className="shrink-0 flex-col-reverse gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            {decisionLines.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:mr-auto">
+                <span>
+                  {decisionLines.length} line{decisionLines.length === 1 ? "" : "s"}
+                </span>
+                <span>
+                  {definition.acceptedLabel}{" "}
+                  <strong className="font-semibold tabular-nums text-emerald-700">
+                    {formatQuantity(decisionTotals.accepted)}
+                  </strong>{" "}
+                  of {formatQuantity(decisionTotals.presented)}
+                </span>
+                {decisionTotals.notAccepted > 0 && (
+                  <span>
+                    Not accepted{" "}
+                    <strong className="font-semibold tabular-nums text-red-700">
+                      {formatQuantity(decisionTotals.notAccepted)}
+                    </strong>
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setDecisionDocId("")}>
               Cancel
             </Button>
@@ -1613,6 +1751,7 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
               )}
               Record outcome
             </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

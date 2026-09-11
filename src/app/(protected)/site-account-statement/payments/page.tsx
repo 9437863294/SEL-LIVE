@@ -138,6 +138,8 @@ export default function PaymentsPage() {
   const [loadingMore,   setLoadingMore]   = useState(false);
   const [staticLoaded,  setStaticLoaded]  = useState(false);
   const [reloadToken,   setReloadToken]   = useState(0);
+  /** True once the first load has finished — see the skeleton gate for why it matters. */
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [pageCursor,    setPageCursor]    = useState<SASCursor | null>(null);
   /** Server-side figures for the whole filtered period, independent of how many rows are paged in. */
   const [periodTotals,   setPeriodTotals]   = useState<{ total: number; count: number } | null>(null);
@@ -296,6 +298,19 @@ export default function PaymentsPage() {
     projectIds: ledgerScope.projectIds ? [...ledgerScope.projectIds].sort() : null,
   }), [ledgerScope]);
 
+  /**
+   * The scope, settled.
+   *
+   * A `<input type="date">` emits a change per edited segment, and each one used to kick off four
+   * Firestore round-trips. Waiting for a pause means adjusting the From/To filters costs one load
+   * instead of one per keystroke.
+   */
+  const [settledScopeKey, setSettledScopeKey] = useState(scopeKey);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettledScopeKey(scopeKey), 350);
+    return () => clearTimeout(timer);
+  }, [scopeKey]);
+
   useEffect(() => {
     if (!staticLoaded) return;
     let cancelled = false;
@@ -326,14 +341,17 @@ export default function PaymentsPage() {
         if (cancelled) return;
         toast({ title: 'Could not load payments', description: e?.message, variant: 'destructive' });
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setHasLoadedOnce(true);
+        }
       }
     }
 
     void load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [staticLoaded, scopeKey, reloadToken]);
+  }, [staticLoaded, settledScopeKey, reloadToken]);
 
   async function loadMore() {
     if (!pageCursor || loadingMore) return;
@@ -734,7 +752,14 @@ export default function PaymentsPage() {
     }
   }
 
-  if (isAuthLoading || loading) {
+  /*
+   * The full-page skeleton is for the *first* load only.
+   *
+   * Showing it on every refetch unmounted the whole page — filters included — so changing the
+   * From/To date replaced the very input being typed into, then remounted a fresh one when the
+   * queries returned. The field lost focus mid-keystroke. Later loads keep the UI mounted.
+   */
+  if (isAuthLoading || (loading && !hasLoadedOnce)) {
     return <div className="space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>;
   }
 
@@ -774,6 +799,8 @@ export default function PaymentsPage() {
         <div className="flex items-center gap-1.5 rounded-md border bg-white/80 px-3 py-1.5 text-sm font-medium min-w-[160px] justify-center">
           <Calendar className="h-3.5 w-3.5 text-emerald-500" />
           <span>{monthLabel}</span>
+          {/* Refetches no longer blank the page, so progress is shown here instead. */}
+          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>
         <Button variant="outline" size="sm" className="h-8 px-2.5 gap-1" onClick={() => shiftMonth(1)}>
           Next <ChevronRight className="h-3.5 w-3.5" />

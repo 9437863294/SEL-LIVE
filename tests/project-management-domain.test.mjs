@@ -2153,3 +2153,193 @@ test('outline numbering extends to purchase order, item and sub-drawing', async 
   assert.equal(mdlOutlineNo(...[], 0), '1');
   assert.equal(mdlOutlineNo(...[], 0, 1), '1.2');
 });
+
+/* ---------------------------------------------------------------------------
+ * Supply analytics — the reporting layer over the PO → MVAC chain.
+ * ------------------------------------------------------------------------- */
+
+const supplyLine = (overrides = {}) => ({
+  poId: 'po-1',
+  poNumber: 'PO/001',
+  poLineId: 'pol-1',
+  itemDescription: 'Current Transformer',
+  unit: 'Nos',
+  vendorId: 'v-1',
+  vendorName: 'Alpha Electricals',
+  rate: 100,
+  orderedQty: 10,
+  acceptedQtyByGate: {},
+  ...overrides,
+});
+
+test('supply funnel values each gate and names the leak, not just the conversion', async () => {
+  const { buildSupplyFunnel } = await import('../src/lib/project-management-supply-analytics.ts');
+  const stages = buildSupplyFunnel([
+    supplyLine({
+      acceptedQtyByGate: { mc: 10, inspection: 8, mdcc: 8, di: 6, grn: 6, mvac: 4 },
+      inFlightQtyByGate: { mvac: 2 },
+      rejectedQtyByGate: { inspection: 2 },
+    }),
+  ]);
+
+  const byGate = Object.fromEntries(stages.map((s) => [s.gate, s]));
+  assert.equal(byGate.ordered.value, 1000);
+  assert.equal(byGate.mc.value, 1000);
+  assert.equal(byGate.inspection.value, 800);
+  assert.equal(byGate.mvac.value, 400);
+  assert.equal(byGate.mvac.pctOfOrdered, 40);
+  // The leak is measured against the gate above, so inspection shows the 200 it lost.
+  assert.equal(byGate.inspection.leakedValue, 200);
+  assert.equal(byGate.mc.leakedValue, 0);
+  // Rework and in-flight are reported separately from the accepted value.
+  assert.equal(byGate.inspection.rejectedValue, 200);
+  assert.equal(byGate.mvac.inFlightValue, 200);
+  // Cancelled quantity never enters the funnel.
+  const withCancellation = buildSupplyFunnel([supplyLine({ cancelledQty: 4 })]);
+  assert.equal(withCancellation[0].value, 600);
+});
+
+test('bottlenecks weight age by value so a big recent block outranks a small old one', async () => {
+  const { buildSupplyBottlenecks } = await import('../src/lib/project-management-supply-analytics.ts');
+  const today = new Date(2026, 8, 11);
+  const bottlenecks = buildSupplyBottlenecks(
+    [
+      // Cheap line, stuck a long time at MDCC.
+      supplyLine({
+        poLineId: 'cheap',
+        rate: 1,
+        orderedQty: 10,
+        acceptedQtyByGate: { mc: 10, inspection: 10 },
+        oldestOpenDateByGate: { mdcc: '2026-06-11' },
+        inFlightQtyByGate: { mdcc: 10 },
+      }),
+      // Expensive line, stuck briefly at MDCC.
+      supplyLine({
+        poLineId: 'dear',
+        rate: 1000,
+        orderedQty: 10,
+        acceptedQtyByGate: { mc: 10, inspection: 10 },
+        oldestOpenDateByGate: { mdcc: '2026-09-01' },
+        inFlightQtyByGate: { mdcc: 10 },
+      }),
+    ],
+    today,
+  );
+
+  const mdcc = bottlenecks.find((entry) => entry.gate === 'mdcc');
+  assert.equal(mdcc.stuckLineCount, 2);
+  assert.equal(mdcc.stuckValue, 10010);
+  assert.equal(mdcc.oldestDays, 92);
+  // Value-weighted age sits near the expensive line's 10 days, not the cheap line's 92.
+  assert.ok(mdcc.valueWeightedAgeDays < 12, `expected ~10, got ${mdcc.valueWeightedAgeDays}`);
+  assert.equal(mdcc.owner, 'Client');
+});
+
+test('cycle time measures only completed steps and reports median with its tail', async () => {
+  const { buildSupplyCycleTimes, slowestSupplyStep } = await import(
+    '../src/lib/project-management-supply-analytics.ts'
+  );
+  const lines = [
+    supplyLine({ poDate: '2026-01-01', firstAcceptedDateByGate: { mc: '2026-01-11' } }),
+    supplyLine({ poDate: '2026-01-01', firstAcceptedDateByGate: { mc: '2026-01-21' } }),
+    supplyLine({ poDate: '2026-01-01', firstAcceptedDateByGate: { mc: '2026-04-01' } }),
+    // Never cleared MC — must not count as a zero-day step.
+    supplyLine({ poDate: '2026-01-01' }),
+  ];
+  const steps = buildSupplyCycleTimes(lines);
+  const orderedToMc = steps.find((s) => s.from === 'ordered' && s.to === 'mc');
+
+  assert.equal(orderedToMc.sampleSize, 3);
+  assert.equal(orderedToMc.medianDays, 20);
+  assert.equal(orderedToMc.worstDays, 90);
+  assert.equal(slowestSupplyStep(steps).to, 'mc');
+
+  // No measurable step at all yields null rather than a misleading zero.
+  const empty = buildSupplyCycleTimes([supplyLine({})]);
+  assert.equal(empty[0].medianDays, null);
+  assert.equal(slowestSupplyStep(empty), null);
+});
+
+test('vendor rejection is measured against what the vendor presented, not what was ordered', async () => {
+  const { buildSupplyVendorScores } = await import('../src/lib/project-management-supply-analytics.ts');
+  const [vendor] = buildSupplyVendorScores(
+    [
+      supplyLine({
+        orderedQty: 100,
+        rate: 10,
+        // Only 10 presented at inspection, of which 1 bounced.
+        acceptedQtyByGate: { mc: 10, inspection: 9, mvac: 5 },
+        rejectedQtyByGate: { inspection: 1 },
+        poDate: '2026-01-01',
+        firstAcceptedDateByGate: { grn: '2026-03-02' },
+      }),
+    ],
+    new Date(2026, 8, 11),
+  );
+
+  assert.equal(vendor.orderedValue, 1000);
+  assert.equal(vendor.deliveredValue, 50);
+  // 10 rejected value over 100 presented value — not 10 over the 1000 ordered.
+  assert.equal(vendor.rejectionPct, 10);
+  assert.equal(vendor.medianLeadDays, 60);
+});
+
+test('supply exceptions rank by severity then by money, and skip empty categories', async () => {
+  const { buildSupplyExceptions } = await import('../src/lib/project-management-supply-analytics.ts');
+  const today = new Date(2026, 8, 11);
+  const exceptions = buildSupplyExceptions(
+    [
+      supplyLine({ poEndDate: '2026-07-01', rate: 500, orderedQty: 10 }),
+      supplyLine({ poLineId: 'b', blockingObservationCount: 2, acceptedQtyByGate: { inspection: 4 } }),
+      supplyLine({ poLineId: 'c', shortQty: 2, damagedQty: 1, rate: 100 }),
+    ],
+    { today, stalledDays: 21 },
+  );
+
+  const ids = exceptions.map((entry) => entry.id);
+  assert.ok(ids.includes('po-overdue'));
+  assert.ok(ids.includes('blocking-observations'));
+  assert.ok(ids.includes('grn-discrepancy'));
+  // Criticals lead.
+  assert.equal(exceptions[0].severity, 'critical');
+  // The overdue PO carries 10 x 500 of exposure.
+  assert.equal(exceptions.find((e) => e.id === 'po-overdue').value, 5000);
+  // Nothing stalled was supplied, so no stalled-gate rows appear at all.
+  assert.equal(ids.some((id) => id.startsWith('stalled-')), false);
+});
+
+test('supply headline separates delivered, open, in-flight and rework value', async () => {
+  const { buildSupplyHeadline } = await import('../src/lib/project-management-supply-analytics.ts');
+  const headline = buildSupplyHeadline([
+    supplyLine({
+      rate: 100,
+      orderedQty: 10,
+      acceptedQtyByGate: { mc: 10, inspection: 8, mvac: 5 },
+      inFlightQtyByGate: { mdcc: 3 },
+      rejectedQtyByGate: { inspection: 2 },
+      poDate: '2026-01-01',
+      firstAcceptedDateByGate: { grn: '2026-02-10' },
+    }),
+    supplyLine({ poLineId: 'b', vendorId: 'v-2', rate: 50, orderedQty: 4 }),
+  ]);
+
+  assert.equal(headline.lineCount, 2);
+  assert.equal(headline.vendorCount, 2);
+  assert.equal(headline.orderedValue, 1200);
+  assert.equal(headline.deliveredValue, 500);
+  assert.equal(headline.openValue, 700);
+  assert.equal(headline.inFlightValue, 300);
+  assert.equal(headline.reworkValue, 200);
+  assert.equal(headline.medianLeadDays, 40);
+});
+
+test('supply CSV export quotes commas and defuses formula injection', async () => {
+  const { supplyLinesCsv } = await import('../src/lib/project-management-supply-analytics.ts');
+  const csv = supplyLinesCsv([
+    supplyLine({ itemDescription: '245 KV CT, 5 core', vendorName: '=cmd|calc', rate: 100 }),
+  ]);
+  const [header, row] = csv.split('\n');
+  assert.ok(header.startsWith('PO Number,BOQ SL No,Description'));
+  assert.ok(row.includes('"245 KV CT, 5 core"'));
+  assert.ok(row.includes("'=cmd|calc"));
+});
