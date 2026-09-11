@@ -57,7 +57,6 @@ import {
   pmAccent,
   type PmSidebarLink,
 } from "@/components/project-management/pm-shell";
-import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -368,9 +367,6 @@ export default function PoIssueStagePage() {
         backLabel="Back to Purchase Orders"
       />
 
-      {/* Where PO issue approval sits in the overall supply flow. Only this gate's own register is
-          loaded here, so only its count is passed — see SupplyGateNav. */}
-      <SupplyGateNav mappingId={mappingId} active="purchase-orders" />
 
       <PmContent>
         <PmSectionHead

@@ -63,7 +63,6 @@ import {
   PmTableFoot,
   PmTopbar,
 } from "@/components/project-management/pm-shell";
-import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { indentReservesQuantity } from "@/lib/project-management-indent-workflow";
 import {
   PO_ISSUE_APPROVAL_COLLECTION,
@@ -319,14 +318,6 @@ export default function PurchaseOrderRegisterPage() {
             </Button>
           ) : undefined
         }
-      />
-
-      <SupplyGateNav
-        mappingId={mappingId}
-        active="purchase-orders"
-        // Only this gate's register is loaded on this page, so only its count is passed. The rest
-        // render without a number rather than a misleading zero.
-        counts={{ "purchase-orders": purchaseOrders.length }}
       />
 
       <PmContent>

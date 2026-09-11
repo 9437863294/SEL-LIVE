@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The JMC screens as one consistent cross-link bar, mirroring SupplyGateNav on the supply side.
+ * The JMC screens as one consistent cross-link bar, mirroring the other module navs.
  *
  * Billing Recon's JMC screens are reached only by going back to the hub and picking another tile.
  * Project Management's operational screens instead carry a persistent bar so moving between

@@ -487,98 +487,9 @@ export function PmTopbar({
   );
 }
 
-/* ── Document chain ─────────────────────────────────────────────────────────────────────────── */
-
-export type PmChainStage = {
-  key: string;
-  label: string;
-  href: string;
-  /** Per-stage accent, e.g. `"text-emerald-600"` / `"bg-emerald-100"` / `"border-emerald-500"`. */
-  color: string;
-  bg: string;
-  border: string;
-  /** Omit when the page has not loaded this stage's register — see the module note. */
-  count?: number;
-};
-
-/**
- * The document chain: numbered stages in the order work moves through them, connected by a rule.
- *
- * This replaces a flat pill row for the supply gates. The numbers and the connectors are the
- * point — the seven gates are a *sequence*, and a row of equal pills said nothing about which
- * comes before which, which is exactly what somebody chasing a stuck item needs to know.
- */
-export function PmDocumentChain({
-  label,
-  stages,
-  active,
-}: {
-  label: string;
-  stages: PmChainStage[];
-  active: string;
-}) {
-  return (
-    <nav aria-label={label} className="border-b bg-card">
-      <div
-        className={cn(
-          "flex overflow-x-auto px-4 md:px-6",
-          "[-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-        )}
-      >
-        {stages.map((stage, index) => {
-          const isActive = stage.key === active;
-          const isEmpty = stage.count === 0;
-          return (
-            <Link
-              key={stage.key}
-              href={stage.href}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(
-                "relative flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-[13px] font-medium transition-colors",
-                isActive
-                  ? cn(stage.border, stage.color)
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {index > 0 && (
-                <span aria-hidden className="absolute -left-2 top-1/2 h-px w-4 bg-border" />
-              )}
-              <span
-                className={cn(
-                  "grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full text-[11px] font-semibold",
-                  isActive
-                    ? cn(stage.bg, stage.color)
-                    : "bg-muted text-muted-foreground/70",
-                )}
-              >
-                {index + 1}
-              </span>
-              {stage.label}
-              {stage.count !== undefined && (
-                <span
-                  className={cn(
-                    "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
-                    isEmpty
-                      ? "border border-dashed border-border text-muted-foreground/60"
-                      : isActive
-                        ? cn(stage.bg, stage.color)
-                        : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {stage.count}
-                </span>
-              )}
-            </Link>
-          );
-        })}
-      </div>
-    </nav>
-  );
-}
-
 /* ── Content furniture ──────────────────────────────────────────────────────────────────────── */
 
-/** The scrolling content area beneath the topbar and chain. */
+/** The scrolling content area beneath the topbar. */
 export function PmContent({ children, className }: { children: ReactNode; className?: string }) {
   return <main className={cn("flex-1 px-4 py-5 md:px-6", className)}>{children}</main>;
 }

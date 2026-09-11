@@ -2,7 +2,8 @@
 
 /**
  * The Manufacturing Clearance screens as one consistent cross-link bar, mirroring the other module
- * navs. Distinct from SupplyGateNav, which moves between supply *stages* rather than within one.
+ * navs. It moves between this gate's own screens; there is no longer a bar that steps across the
+ * supply gates themselves.
  *
  * Links are built through the host context, so every one carries the `?project=` handle forward.
  */

@@ -39,7 +39,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
-import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import type { WorkflowStep } from "@/lib/types";
 import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
 import { requestMcClearance } from "@/lib/project-management-mc-entries";
@@ -543,8 +542,6 @@ export default function ManufacturingClearanceRegisterPage() {
       />
 
       <PmContent>
-        <SupplyGateNav mappingId={mappingId} active="manufacturing-clearance" />
-
         <PmSectionHead
           title={VIEWS.find((entry) => entry.key === view)?.label ?? "All items"}
           stats={[

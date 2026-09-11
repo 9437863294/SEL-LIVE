@@ -56,7 +56,6 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { logUserActivity } from "@/lib/activity-logger";
 import { useToast } from "@/hooks/use-toast";
-import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -717,7 +716,6 @@ export default function ProjectPurchaseOrderDetailPage() {
         </div>
       </div>
 
-      <SupplyGateNav mappingId={mappingId} active="purchase-orders" />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">PO Date</p><p className="font-semibold">{formatDate(po.poDate)}</p></CardContent></Card>

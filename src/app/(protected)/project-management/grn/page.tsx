@@ -11,7 +11,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
-import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { PO_COLLECTION, formatQuantity, type PurchaseOrder } from "@/lib/purchase-orders";
 import { computeSerialSubsetCheck, formatSerialList, parseSerialList } from "@/lib/serial-tracking";
 import {
@@ -374,7 +373,6 @@ export default function GrnPage() {
         </div>
       </div>
 
-      <SupplyGateNav mappingId={mappingId} active="grn" />
 
       {receivedUnconsumed.count > 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">

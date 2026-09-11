@@ -11,7 +11,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
-import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { PO_COLLECTION, formatQuantity, type PurchaseOrder } from "@/lib/purchase-orders";
 import { computeSerialSubsetCheck, formatSerialList, parseSerialList } from "@/lib/serial-tracking";
 import {
@@ -450,7 +449,6 @@ export default function DispatchInstructionsPage() {
         </div>
       </div>
 
-      <SupplyGateNav mappingId={mappingId} active="dispatch-instructions" />
 
       {notYetDispatched.count > 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">

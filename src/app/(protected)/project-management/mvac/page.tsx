@@ -11,7 +11,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { logUserActivity } from "@/lib/activity-logger";
-import { SupplyGateNav } from "@/components/project-management/supply-gate-nav";
 import { PO_COLLECTION, formatQuantity, type PurchaseOrder } from "@/lib/purchase-orders";
 import { computeSerialSubsetCheck, formatSerialList, parseSerialList } from "@/lib/serial-tracking";
 import {
@@ -518,7 +517,6 @@ export default function MvacPage() {
         </div>
       </div>
 
-      <SupplyGateNav mappingId={mappingId} active="mvac" />
 
       {(eligibleNotRaised.count > 0 || signedNotBilled.count > 0) && (
         <div className="space-y-2">
