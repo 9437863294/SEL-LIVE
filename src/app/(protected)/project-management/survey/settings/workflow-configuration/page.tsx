@@ -20,7 +20,6 @@ import {
   SURVEY_WORKFLOW_DOC_ID,
 } from "@/lib/project-management-survey-workflow";
 import { useProjectManagementSurveyContext } from "@/components/survey/use-survey-host-context";
-import { SurveyNav } from "@/components/survey/survey-nav";
 import {
   SURVEY_SETTINGS_GRADIENT,
   SurveyAccessDenied,
@@ -80,7 +79,6 @@ export default function SurveyWorkflowConfigurationPage() {
         gradient={SURVEY_SETTINGS_GRADIENT}
       />
 
-      <SurveyNav context={context} active="settings" />
 
       <WorkflowConfigurationEditor
         workflowDocId={SURVEY_WORKFLOW_DOC_ID}

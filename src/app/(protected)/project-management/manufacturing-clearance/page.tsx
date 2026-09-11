@@ -4,7 +4,8 @@
  * Manufacturing Clearance hub — the same shape as the other module hubs: static screens plus one
  * card per configured clearance-approval stage.
  *
- * The MC register that used to live at this path is now at `manufacturing-clearance/register`.
+ * There is no per-BOQ-item gate register screen. MC documents are the working surface, and the
+ * per-item gate records the downstream chain reads are derived from the approved clearance quantity.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -16,7 +17,6 @@ import {
   type LucideIcon,
   Plus,
   Settings,
-  Table2,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -24,9 +24,7 @@ import type { WorkflowStep } from "@/lib/types";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
-import { MC_COLLECTION } from "@/lib/supply-gates";
 import { useProjectManagementMcContext } from "@/components/mc/use-mc-host-context";
-import { McNav } from "@/components/mc/mc-nav";
 import {
   MC_DOCUMENTS_GRADIENT,
   MC_GRADIENT,
@@ -66,7 +64,6 @@ export default function ManufacturingClearanceHubPage() {
 
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [openCountByStep, setOpenCountByStep] = useState<Record<number, number>>({});
-  const [pendingGateCount, setPendingGateCount] = useState(0);
   const [isWorkflowLoading, setIsWorkflowLoading] = useState(true);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
@@ -105,10 +102,9 @@ export default function ManufacturingClearanceHubPage() {
         setSteps(nextSteps);
 
         if (globalProjectId) {
-          const [approvalSnapshot, mcSnapshot] = await Promise.all([
-            getDocs(collection(db, "projects", globalProjectId, MC_CLEARANCE_APPROVAL_COLLECTION)),
-            getDocs(collection(db, "projects", globalProjectId, MC_COLLECTION)),
-          ]);
+          const approvalSnapshot = await getDocs(
+            collection(db, "projects", globalProjectId, MC_CLEARANCE_APPROVAL_COLLECTION),
+          );
           if (cancelled) return;
           const counts: Record<number, number> = {};
           approvalSnapshot.docs.forEach((approvalDoc) => {
@@ -117,11 +113,6 @@ export default function ManufacturingClearanceHubPage() {
             counts[approval.currentStepIndex] = (counts[approval.currentStepIndex] ?? 0) + 1;
           });
           setOpenCountByStep(counts);
-          setPendingGateCount(
-            mcSnapshot.docs.filter(
-              (mcDoc) => String(mcDoc.data()?.status ?? "Pending") === "Pending",
-            ).length,
-          );
         }
       } catch (error) {
         console.error("Failed to load the MC clearance workflow:", error);
@@ -164,15 +155,6 @@ export default function ManufacturingClearanceHubPage() {
         disabled: !canViewModule || !mappingId,
         gradient: MC_DOCUMENTS_GRADIENT,
       },
-      {
-        icon: Table2,
-        text: "MC Register",
-        href: context.mcHref("register"),
-        description: pendingGateCount
-          ? `${pendingGateCount} item${pendingGateCount === 1 ? "" : "s"} not yet cleared.`
-          : "Items on issued purchase orders awaiting clearance.",
-        disabled: !canViewModule || !mappingId,
-      },
     ];
 
     const stageItems: McItem[] = steps.map((step, index) => {
@@ -207,7 +189,6 @@ export default function ManufacturingClearanceHubPage() {
     mappingId,
     steps,
     openCountByStep,
-    pendingGateCount,
     canViewModule,
     canViewSettings,
     canClearModule,
@@ -246,7 +227,6 @@ export default function ManufacturingClearanceHubPage() {
         gradient={MC_GRADIENT}
       />
 
-      <McNav context={context} active="hub" />
 
       {workflowError ? (
         <Card className="border-border/60">

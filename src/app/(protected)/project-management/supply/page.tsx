@@ -184,7 +184,7 @@ export default function SupplyPage() {
     },
     {
       show: canViewMdcc,
-      href: `/project-management/mdcc?project=${encodeURIComponent(mappingId)}`,
+      href: `/project-management/mdcc/documents?project=${encodeURIComponent(mappingId)}`,
       title: "MDCC",
       description: mapping
         ? `Track MDCC for ${mapping.projectName}.`
@@ -194,7 +194,7 @@ export default function SupplyPage() {
     },
     {
       show: canViewDi,
-      href: `/project-management/dispatch-instructions?project=${encodeURIComponent(mappingId)}`,
+      href: `/project-management/dispatch-instructions/documents?project=${encodeURIComponent(mappingId)}`,
       title: "Dispatch Instructions",
       description: mapping
         ? `SEL's numbered instruction authorising vendor dispatch for ${mapping.projectName}.`
@@ -204,7 +204,7 @@ export default function SupplyPage() {
     },
     {
       show: canViewGrn,
-      href: `/project-management/grn?project=${encodeURIComponent(mappingId)}`,
+      href: `/project-management/grn/documents?project=${encodeURIComponent(mappingId)}`,
       title: "GRN",
       description: mapping
         ? `Record material receipt at site for ${mapping.projectName}.`
@@ -214,7 +214,7 @@ export default function SupplyPage() {
     },
     {
       show: canViewMvac,
-      href: `/project-management/mvac?project=${encodeURIComponent(mappingId)}`,
+      href: `/project-management/mvac/documents?project=${encodeURIComponent(mappingId)}`,
       title: "MVAC",
       description: mapping
         ? `Joint verification & acceptance with the client for ${mapping.projectName}.`

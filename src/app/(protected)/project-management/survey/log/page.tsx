@@ -13,7 +13,6 @@ import { db } from "@/lib/firebase";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { useProjectManagementSurveyContext } from "@/components/survey/use-survey-host-context";
-import { SurveyNav } from "@/components/survey/survey-nav";
 import {
   SURVEY_GRADIENT,
   SurveyAccessDenied,
@@ -172,7 +171,6 @@ export default function SurveyLogPage() {
         gradient={SURVEY_GRADIENT}
       />
 
-      <SurveyNav context={context} active="log" />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative w-full sm:max-w-xs">

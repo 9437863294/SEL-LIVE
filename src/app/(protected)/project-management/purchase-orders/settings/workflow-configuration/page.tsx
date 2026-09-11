@@ -17,7 +17,6 @@ import {
   PO_ISSUE_WORKFLOW_DOC_ID,
 } from "@/lib/project-management-po-workflow";
 import { useProjectManagementPoContext } from "@/components/po/use-po-host-context";
-import { PoNav } from "@/components/po/po-nav";
 import {
   PO_SETTINGS_GRADIENT,
   PoAccessDenied,
@@ -77,7 +76,6 @@ export default function PoIssueWorkflowConfigurationPage() {
         gradient={PO_SETTINGS_GRADIENT}
       />
 
-      <PoNav context={context} active="settings" />
 
       <WorkflowConfigurationEditor
         workflowDocId={PO_ISSUE_WORKFLOW_DOC_ID}

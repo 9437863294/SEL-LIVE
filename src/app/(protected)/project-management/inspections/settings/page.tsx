@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { GitMerge, Settings2 } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useProjectManagementInspectionContext } from "@/components/inspection/use-inspection-host-context";
-import { InspectionNav } from "@/components/inspection/inspection-nav";
 import {
   INSPECTION_SETTINGS_GRADIENT,
   InspectionAccessDenied,
@@ -65,7 +64,6 @@ export default function InspectionSettingsPage() {
         gradient={INSPECTION_SETTINGS_GRADIENT}
       />
 
-      <InspectionNav context={context} active="settings" />
 
       <InspectionNavCardGrid>
         <InspectionNavCard

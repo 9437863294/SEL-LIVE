@@ -61,7 +61,6 @@ import {
 import { getAssigneeForStep, calculateDeadline } from "@/lib/workflow-utils";
 import { applySurveyEntryToBoqInTransaction } from "@/lib/project-management-survey-entries";
 import { useProjectManagementSurveyContext } from "@/components/survey/use-survey-host-context";
-import { SurveyNav } from "@/components/survey/survey-nav";
 import {
   SURVEY_GRADIENT,
   SurveyAccessDenied,
@@ -426,7 +425,6 @@ export default function RecordSurveyPage() {
         gradient={SURVEY_GRADIENT}
       />
 
-      <SurveyNav context={context} active="record" />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative w-full sm:max-w-xs">

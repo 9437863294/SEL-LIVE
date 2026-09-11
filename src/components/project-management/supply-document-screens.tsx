@@ -22,7 +22,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  CircleDashed,
   ClipboardCheck,
   FileStack,
   Hourglass,
@@ -485,7 +484,10 @@ export function SupplyDocumentNew({ stage }: { stage: SupplyLedgerStage }) {
     <PmShell>
       <PmTopbar
         title={`New ${definition.label}`}
-        breadcrumbs={[{ label: definition.label, href: hrefWith(chrome.basePath, mappingId) }, { label: "New" }]}
+        breadcrumbs={[
+          { label: definition.label, href: hrefWith(`${chrome.basePath}/documents`, mappingId) },
+          { label: "New" },
+        ]}
         backHref={hrefWith(`${chrome.basePath}/documents`, mappingId)}
         backLabel={`Back to ${definition.label} documents`}
         actions={
@@ -1128,27 +1130,20 @@ export function SupplyDocumentRegister({ stage }: { stage: SupplyLedgerStage }) 
                 count: countFor(entry.key),
               })),
             },
-            {
-              label: "Elsewhere",
-              links: [
-                {
-                  href: hrefWith(chrome.basePath, mappingId),
-                  label: "Item gate register",
-                  icon: CircleDashed,
-                  color: "text-cyan-600",
-                  bg: "bg-cyan-100",
-                },
-              ],
-            },
           ]}
         />
       }
     >
       <PmTopbar
         title={`${definition.label} Documents`}
-        breadcrumbs={[{ label: projectName || "Project" }, { label: definition.label, href: hrefWith(chrome.basePath, mappingId) }]}
-        backHref={hrefWith(chrome.basePath, mappingId)}
-        backLabel={`Back to ${definition.label}`}
+        // This register is the only screen under the module base, so its parent is the Supply hub
+        // rather than a module landing page.
+        breadcrumbs={[
+          { label: projectName || "Project" },
+          { label: definition.label, href: hrefWith(`${chrome.basePath}/documents`, mappingId) },
+        ]}
+        backHref={hrefWith("/project-management/supply", mappingId)}
+        backLabel="Back to Supply"
         actions={
           <>
             <Button

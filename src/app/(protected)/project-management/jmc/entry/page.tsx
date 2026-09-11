@@ -39,7 +39,6 @@ import {
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
-import { JmcNav } from '@/components/jmc/jmc-nav';
 
 /* ---------- local types ---------- */
 type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
@@ -557,7 +556,6 @@ export default function JmcEntryPage() {
           }
         />
 
-        <JmcNav context={context} active="entry" />
 
         <Card className="border-border/60">
           <CardHeader>

@@ -71,10 +71,12 @@ const targetPath: Record<ProjectAttentionTarget, string> = {
   mdl: "mdl",
   "purchase-orders": "purchase-orders",
   inspections: "inspections",
-  mdcc: "mdcc",
-  "dispatch-instructions": "dispatch-instructions",
-  grn: "grn",
-  mvac: "mvac",
+  // These four gates have no per-item register screen; their document register is the working
+  // surface and the only route under the module base.
+  mdcc: "mdcc/documents",
+  "dispatch-instructions": "dispatch-instructions/documents",
+  grn: "grn/documents",
+  mvac: "mvac/documents",
   projects: "projects",
   civil: "civil",
   jmc: "jmc/log",

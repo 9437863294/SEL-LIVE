@@ -18,7 +18,6 @@ import {
   INDENT_WORKFLOW_DOC_ID,
 } from "@/lib/project-management-indent-workflow";
 import { useProjectManagementIndentContext } from "@/components/indent/use-indent-host-context";
-import { IndentNav } from "@/components/indent/indent-nav";
 import {
   INDENT_SETTINGS_GRADIENT,
   IndentAccessDenied,
@@ -78,7 +77,6 @@ export default function IndentWorkflowConfigurationPage() {
         gradient={INDENT_SETTINGS_GRADIENT}
       />
 
-      <IndentNav context={context} active="settings" />
 
       <WorkflowConfigurationEditor
         workflowDocId={INDENT_WORKFLOW_DOC_ID}

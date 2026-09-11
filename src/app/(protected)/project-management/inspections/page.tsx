@@ -4,7 +4,8 @@
  * Inspections hub — the same shape as the other module hubs: static screens plus one card per
  * configured result-approval stage.
  *
- * The inspection register that used to live at this path is now at `inspections/register`.
+ * There is no per-BOQ-item gate register screen. Inspection calls are the working surface, and the
+ * per-item gate records the downstream chain reads are derived from recorded call outcomes.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +18,6 @@ import {
   type LucideIcon,
   Plus,
   Settings,
-  Table2,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -25,9 +25,7 @@ import type { WorkflowStep } from "@/lib/types";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
-import { INSPECTION_COLLECTION } from "@/lib/supply-gates";
 import { useProjectManagementInspectionContext } from "@/components/inspection/use-inspection-host-context";
-import { InspectionNav } from "@/components/inspection/inspection-nav";
 import {
   INSPECTION_CALLS_GRADIENT,
   INSPECTION_GRADIENT,
@@ -68,7 +66,6 @@ export default function InspectionsHubPage() {
 
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [openCountByStep, setOpenCountByStep] = useState<Record<number, number>>({});
-  const [awaitingResultCount, setAwaitingResultCount] = useState(0);
   const [isWorkflowLoading, setIsWorkflowLoading] = useState(true);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
@@ -109,12 +106,9 @@ export default function InspectionsHubPage() {
         setSteps(nextSteps);
 
         if (globalProjectId) {
-          const [approvalSnapshot, inspectionSnapshot] = await Promise.all([
-            getDocs(
-              collection(db, "projects", globalProjectId, INSPECTION_RESULT_APPROVAL_COLLECTION),
-            ),
-            getDocs(collection(db, "projects", globalProjectId, INSPECTION_COLLECTION)),
-          ]);
+          const approvalSnapshot = await getDocs(
+            collection(db, "projects", globalProjectId, INSPECTION_RESULT_APPROVAL_COLLECTION),
+          );
           if (cancelled) return;
           const counts: Record<number, number> = {};
           approvalSnapshot.docs.forEach((approvalDoc) => {
@@ -123,11 +117,6 @@ export default function InspectionsHubPage() {
             counts[approval.currentStepIndex] = (counts[approval.currentStepIndex] ?? 0) + 1;
           });
           setOpenCountByStep(counts);
-          setAwaitingResultCount(
-            inspectionSnapshot.docs.filter(
-              (inspectionDoc) => String(inspectionDoc.data()?.status ?? "") === "Requested",
-            ).length,
-          );
         }
       } catch (error) {
         console.error("Failed to load the inspection result workflow:", error);
@@ -170,15 +159,6 @@ export default function InspectionsHubPage() {
         disabled: !canViewModule || !mappingId,
         gradient: INSPECTION_CALLS_GRADIENT,
       },
-      {
-        icon: Table2,
-        text: "Inspection Register",
-        href: context.inspectionHref("register"),
-        description: awaitingResultCount
-          ? `${awaitingResultCount} inspection${awaitingResultCount === 1 ? "" : "s"} awaiting a result.`
-          : "Items on issued purchase orders, and their inspection state.",
-        disabled: !canViewModule || !mappingId,
-      },
     ];
 
     const stageItems: InspectionItem[] = steps.map((step, index) => {
@@ -220,7 +200,6 @@ export default function InspectionsHubPage() {
     mappingId,
     steps,
     openCountByStep,
-    awaitingResultCount,
     canViewModule,
     canViewSettings,
     canRequestModule,
@@ -257,7 +236,6 @@ export default function InspectionsHubPage() {
         gradient={INSPECTION_GRADIENT}
       />
 
-      <InspectionNav context={context} active="hub" />
 
       {workflowError ? (
         <Card className="border-border/60">

@@ -228,7 +228,7 @@ export interface PmMcContext {
   globalProjectId: string;
   permissionResource: string;
   activityModule: string;
-  /** `mcHref()` is the hub, `mcHref("register")`, ``mcHref(`stage/${stepId}`)`` the rest.
+  /** `mcHref()` is the hub, `mcHref("documents")`, ``mcHref(`stage/${stepId}`)`` the rest.
    * Returns "#" with no mapping id, which the nav cards already render as disabled. */
   mcHref: (suffix?: string) => string;
   parentHref: string;

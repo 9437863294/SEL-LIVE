@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { GitMerge, Settings2 } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useProjectManagementSurveyContext } from "@/components/survey/use-survey-host-context";
-import { SurveyNav } from "@/components/survey/survey-nav";
 import {
   SURVEY_SETTINGS_GRADIENT,
   SurveyAccessDenied,
@@ -64,7 +63,6 @@ export default function SurveySettingsPage() {
         gradient={SURVEY_SETTINGS_GRADIENT}
       />
 
-      <SurveyNav context={context} active="settings" />
 
       <SurveyNavCardGrid>
         <SurveyNavCard

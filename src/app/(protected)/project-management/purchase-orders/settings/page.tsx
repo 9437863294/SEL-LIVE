@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { GitMerge, Settings2 } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useProjectManagementPoContext } from "@/components/po/use-po-host-context";
-import { PoNav } from "@/components/po/po-nav";
 import {
   PO_SETTINGS_GRADIENT,
   PoAccessDenied,
@@ -64,7 +63,6 @@ export default function PurchaseOrderSettingsPage() {
         gradient={PO_SETTINGS_GRADIENT}
       />
 
-      <PoNav context={context} active="settings" />
 
       <PoNavCardGrid>
         <PoNavCard

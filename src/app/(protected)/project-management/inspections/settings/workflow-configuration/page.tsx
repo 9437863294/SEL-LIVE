@@ -19,7 +19,6 @@ import {
   INSPECTION_RESULT_WORKFLOW_DOC_ID,
 } from "@/lib/project-management-inspection-workflow";
 import { useProjectManagementInspectionContext } from "@/components/inspection/use-inspection-host-context";
-import { InspectionNav } from "@/components/inspection/inspection-nav";
 import {
   INSPECTION_SETTINGS_GRADIENT,
   InspectionAccessDenied,
@@ -80,7 +79,6 @@ export default function InspectionResultWorkflowConfigurationPage() {
         gradient={INSPECTION_SETTINGS_GRADIENT}
       />
 
-      <InspectionNav context={context} active="settings" />
 
       <WorkflowConfigurationEditor
         workflowDocId={INSPECTION_RESULT_WORKFLOW_DOC_ID}

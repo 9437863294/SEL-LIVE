@@ -34,7 +34,6 @@ import {
   type IndentWorkflowFields,
 } from "@/lib/project-management-indent-workflow";
 import { useProjectManagementIndentContext } from "@/components/indent/use-indent-host-context";
-import { IndentNav } from "@/components/indent/indent-nav";
 import {
   INDENT_GRADIENT,
   IndentAccessDenied,
@@ -331,7 +330,6 @@ export default function IndentStagePage() {
           backLabel="Back to Indent"
           gradient={INDENT_GRADIENT}
         />
-        <IndentNav context={context} active="hub" />
         <Card className="border-border/60">
           <CardHeader>
             <CardTitle>Stage removed</CardTitle>
@@ -361,7 +359,6 @@ export default function IndentStagePage() {
         gradient={INDENT_GRADIENT}
       />
 
-      <IndentNav context={context} active="hub" />
 
       <Card>
         <CardContent className="p-0">

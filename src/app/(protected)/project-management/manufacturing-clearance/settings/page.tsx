@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { GitMerge, Settings2 } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useProjectManagementMcContext } from "@/components/mc/use-mc-host-context";
-import { McNav } from "@/components/mc/mc-nav";
 import {
   MC_SETTINGS_GRADIENT,
   McAccessDenied,
@@ -64,7 +63,6 @@ export default function ManufacturingClearanceSettingsPage() {
         gradient={MC_SETTINGS_GRADIENT}
       />
 
-      <McNav context={context} active="settings" />
 
       <McNavCardGrid>
         <McNavCard

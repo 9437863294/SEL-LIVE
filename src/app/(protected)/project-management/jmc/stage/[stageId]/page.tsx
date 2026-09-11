@@ -56,7 +56,6 @@ import {
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
-import { JmcNav } from '@/components/jmc/jmc-nav';
 import { Skeleton } from '@/components/ui/skeleton';
 import ViewJmcEntryDialog from '@/components/billing-recon/ViewJmcEntryDialog';
 import { Badge } from '@/components/ui/badge';
@@ -673,7 +672,6 @@ export default function StagePage() {
           gradient={JMC_GRADIENT}
         />
 
-        <JmcNav context={context} active="hub" />
 
         <Tabs defaultValue="pending">
           <TabsList className="grid w-full grid-cols-2">

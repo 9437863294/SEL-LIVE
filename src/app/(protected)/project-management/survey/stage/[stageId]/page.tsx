@@ -39,7 +39,6 @@ import {
 } from "@/lib/project-management-survey";
 import { DEFAULT_VARIATION_TOLERANCE_PCT } from "@/lib/project-management-variations";
 import { useProjectManagementSurveyContext } from "@/components/survey/use-survey-host-context";
-import { SurveyNav } from "@/components/survey/survey-nav";
 import {
   SURVEY_GRADIENT,
   SurveyAccessDenied,
@@ -273,7 +272,6 @@ export default function SurveyStagePage() {
           backLabel="Back to Survey"
           gradient={SURVEY_GRADIENT}
         />
-        <SurveyNav context={context} active="hub" />
         <Card className="border-border/60">
           <CardHeader>
             <CardTitle>Stage removed</CardTitle>
@@ -301,7 +299,6 @@ export default function SurveyStagePage() {
         gradient={SURVEY_GRADIENT}
       />
 
-      <SurveyNav context={context} active="hub" />
 
       <Card>
         <CardContent className="p-0">

@@ -25,7 +25,6 @@ import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { PO_COLLECTION } from "@/lib/purchase-orders";
 import { useProjectManagementPoContext } from "@/components/po/use-po-host-context";
-import { PoNav } from "@/components/po/po-nav";
 import {
   PO_GRADIENT,
   PO_SETTINGS_GRADIENT,
@@ -227,7 +226,6 @@ export default function PurchaseOrdersHubPage() {
         gradient={PO_GRADIENT}
       />
 
-      <PoNav context={context} active="hub" />
 
       {workflowError ? (
         <Card className="border-border/60">

@@ -289,7 +289,7 @@ export interface PmInspectionContext {
   globalProjectId: string;
   permissionResource: string;
   activityModule: string;
-  /** `inspectionHref()` is the hub, `inspectionHref("register")`,
+  /** `inspectionHref()` is the hub, `inspectionHref("calls")`,
    * ``inspectionHref(`stage/${stepId}`)`` the rest. Returns "#" with no mapping id, which the nav
    * cards already render as disabled. */
   inspectionHref: (suffix?: string) => string;

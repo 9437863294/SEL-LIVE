@@ -45,7 +45,6 @@ import {
   type InspectionResultApproval,
 } from "@/lib/project-management-inspection-workflow";
 import { useProjectManagementInspectionContext } from "@/components/inspection/use-inspection-host-context";
-import { InspectionNav } from "@/components/inspection/inspection-nav";
 import {
   INSPECTION_GRADIENT,
   InspectionAccessDenied,
@@ -285,7 +284,6 @@ export default function InspectionResultStagePage() {
           backLabel="Back to Inspections"
           gradient={INSPECTION_GRADIENT}
         />
-        <InspectionNav context={context} active="hub" />
         <Card className="border-border/60">
           <CardHeader>
             <CardTitle>Stage removed</CardTitle>
@@ -317,7 +315,6 @@ export default function InspectionResultStagePage() {
         gradient={INSPECTION_GRADIENT}
       />
 
-      <InspectionNav context={context} active="hub" />
 
       <Card>
         <CardContent className="p-0">

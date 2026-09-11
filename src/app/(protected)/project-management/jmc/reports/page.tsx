@@ -6,7 +6,6 @@ import { BarChart3, BarChart4 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-context';
-import { JmcNav } from '@/components/jmc/jmc-nav';
 import {
   JmcAccessDenied,
   JmcCardGridLoadingState,
@@ -68,7 +67,6 @@ export default function JmcReportsPage() {
         backLabel="Back to JMC"
       />
 
-      <JmcNav context={context} active="reports" />
 
       <JmcNavCardGrid>
         {reportItems.map((item) => (

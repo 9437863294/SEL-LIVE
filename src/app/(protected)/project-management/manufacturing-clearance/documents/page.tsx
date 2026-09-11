@@ -3,10 +3,11 @@
 /**
  * The Manufacturing Clearance document register.
  *
- * Distinct from the older MC Register, which lists BOQ *items* and their gate status — one row per
- * item, flipped Pending → Cleared. This lists the clearance *documents*: each one covers a vendor,
+ * The working surface for this gate. It lists the clearance *documents*: each one covers a vendor,
  * several purchase order lines and a quantity against each, and the same PO line appears on as many
- * of them as it takes to clear the ordered quantity.
+ * of them as it takes to clear the ordered quantity. There is no longer a per-BOQ-item gate register
+ * screen — the item gate records the downstream chain reads are derived from the approved quantity
+ * here, via syncMcGateRecords().
  *
  * Rows expand to their lines, because the quantity is the point — a collapsed row tells you an MC
  * exists, and the expanded one tells you what it actually authorises.
@@ -28,7 +29,6 @@ import {
   Plus,
   RotateCcw,
   Settings,
-  Table2,
   Trash2,
   X,
   XCircle,
@@ -332,18 +332,6 @@ export default function ManufacturingClearanceDocumentsPage() {
                 bg: pmAccent(index).bg,
                 count: countFor(entry.key),
               })),
-            },
-            {
-              label: "Elsewhere",
-              links: [
-                {
-                  href: context.mcHref("register"),
-                  label: "Item gate register",
-                  icon: Table2,
-                  color: "text-cyan-600",
-                  bg: "bg-cyan-100",
-                },
-              ],
             },
           ]}
           footerLinks={[

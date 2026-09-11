@@ -3,9 +3,10 @@
 /**
  * The inspection call register.
  *
- * Distinct from the older Inspection Register, which lists BOQ *items* and their gate status. This
- * lists the calls: each covers a vendor, several purchase order lines and a quantity offered on
- * each, and results are recorded per line.
+ * The working surface for this gate. It lists the calls: each covers a vendor, several purchase
+ * order lines and a quantity offered on each, and results are recorded per line. There is no longer
+ * a per-BOQ-item gate register screen — the item gate records the downstream chain reads are
+ * derived from the recorded results.
  *
  * Recording a result is where the three quantities separate — offered, accepted, rejected — so the
  * result dialog is built around that and nothing else. Accepted defaults to the whole offered
@@ -29,13 +30,13 @@ import {
   Plus,
   RotateCcw,
   Settings,
-  Table2,
   Trash2,
   Wrench,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { logUserActivity } from "@/lib/activity-logger";
 import { formatQuantity, toNumber } from "@/lib/purchase-orders";
 import { INSPECTION_PERMISSION_RESOURCE, PUNCH_SEVERITIES, type PunchItem, type PunchSeverity } from "@/lib/supply-gates";
@@ -286,6 +287,31 @@ export default function InspectionCallsPage() {
     [resultLines, resultByItemId],
   );
 
+  /** Running totals for the result dialog's footer — what this call will actually commit. A call
+   * routinely covers several PO lines, and the per-line figures alone never answer "how much is
+   * going forward and how much comes back for rework". */
+  const resultTotals = useMemo(() => {
+    let offered = 0;
+    let accepted = 0;
+    for (const item of resultLines) {
+      const lineOffered = toNumber(item.offeredQty);
+      offered += lineOffered;
+      accepted += Math.min(toNumber(resultByItemId[item.id]?.acceptedQty), lineOffered);
+    }
+    const round = (value: number) => Math.round(value * 1000) / 1000;
+    return {
+      offered: round(offered),
+      accepted: round(accepted),
+      rejected: round(Math.max(0, offered - accepted)),
+    };
+  }, [resultLines, resultByItemId]);
+
+  /** The call being recorded, for the dialog's header context. */
+  const resultCall = useMemo(
+    () => workspace?.calls.find((call) => call.id === resultCallId) ?? null,
+    [workspace, resultCallId],
+  );
+
   const handleRecordResult = async () => {
     if (!globalProjectId || !user || !resultCallId) return;
     if (resultErrors.length) {
@@ -484,18 +510,6 @@ export default function InspectionCallsPage() {
                 bg: pmAccent(index).bg,
                 count: countFor(entry.key),
               })),
-            },
-            {
-              label: "Elsewhere",
-              links: [
-                {
-                  href: context.inspectionHref("register"),
-                  label: "Item gate register",
-                  icon: Table2,
-                  color: "text-cyan-600",
-                  bg: "bg-cyan-100",
-                },
-              ],
             },
           ]}
           footerLinks={[
@@ -807,17 +821,20 @@ export default function InspectionCallsPage() {
       </PmContent>
 
       <Dialog open={Boolean(resultCallId)} onOpenChange={(open) => !open && setResultCallId("")}>
-        {/* The breakpoint prefix is load-bearing: DialogContent defaults to size="full", whose
+        {/* `size="xl"` rather than a `max-w-*` class: DialogContent defaults to size="full", whose
             `sm:max-w-[1800px]` an unprefixed `max-w-*` cannot override — tailwind-merge only
-            resolves conflicts within the same variant, so the two would both apply and the
-            wider one would win above 640px. */}
-        <DialogContent className="sm:max-w-3xl">
-          <DialogHeader className="pr-8">
-            <DialogTitle>
-              Record inspection result
-              {workspace?.calls.find((call) => call.id === resultCallId)?.callNumber
-                ? ` — ${workspace.calls.find((call) => call.id === resultCallId)!.callNumber}`
-                : ""}
+            resolves conflicts within the same variant, so both would apply and the wider would win
+            above 640px. The preset sidesteps that, and brings `max-h-[90vh]` with it so the shell's
+            `flex flex-col` lets the line list own the scroll and the footer stay pinned. */}
+        <DialogContent size="xl" className="gap-4">
+          <DialogHeader className="space-y-1.5 pr-8">
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              <span>Record inspection result</span>
+              {resultCall?.callNumber && (
+                <Badge variant="outline" className="font-mono text-xs font-normal">
+                  {resultCall.callNumber}
+                </Badge>
+              )}
             </DialogTitle>
             <DialogDescription>
               Accepted quantity proceeds to MDCC. Anything short of the offered quantity is
@@ -825,49 +842,102 @@ export default function InspectionCallsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          {/* Who inspected and when — one panel, visually separate from the per-line work below. */}
+          <div className="grid shrink-0 gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
             <div className="space-y-1.5">
-              <Label htmlFor="result-date">Inspection date</Label>
+              <Label htmlFor="result-date" className="text-xs">
+                Inspection date
+              </Label>
               <Input
                 id="result-date"
                 type="date"
-                className="h-9"
+                className="h-9 bg-background"
                 value={inspectionDate}
                 onChange={(event) => setInspectionDate(event.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="result-inspector">Inspector</Label>
+              <Label htmlFor="result-inspector" className="text-xs">
+                Inspector
+              </Label>
               <Input
                 id="result-inspector"
-                className="h-9"
-                placeholder="Who inspected"
+                className="h-9 bg-background"
+                placeholder="Who carried out the inspection"
                 value={inspectorName}
                 onChange={(event) => setInspectorName(event.target.value)}
               />
             </div>
           </div>
 
-          <div className="max-h-[45vh] space-y-3 overflow-y-auto pr-1">
+          {/* The lines own the remaining height rather than a fixed 45vh, so a two-line call is not
+              padded out and a ten-line one uses the whole dialog. */}
+          <div className="-mx-1 min-h-0 flex-1 space-y-3 overflow-y-auto px-1">
             {resultLines.map((item) => {
               const draft = resultByItemId[item.id];
               const offered = toNumber(item.offeredQty);
               const accepted = toNumber(draft?.acceptedQty);
               const rejected = Math.max(0, Math.round((offered - accepted) * 1000) / 1000);
               const error = resultErrors.find((entry) => entry.itemId === item.id);
+              const outcome = resultStatusFor(
+                accepted,
+                draft?.punchDescription.trim()
+                  ? [
+                      {
+                        punchId: "preview",
+                        description: draft.punchDescription,
+                        severity: draft.punchSeverity,
+                        closed: false,
+                      },
+                    ]
+                  : [],
+              );
               return (
-                <Card key={item.id} className={error ? "border-red-300" : "border-border/60"}>
-                  <CardContent className="space-y-3 py-3">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="text-sm font-medium">{item.itemDescription}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {item.poNumber} · offered {formatQuantity(offered)} {item.unit}
-                      </span>
+                <Card
+                  key={item.id}
+                  className={cn(
+                    "overflow-hidden",
+                    error ? "border-red-300 bg-red-50/40" : "border-border/60",
+                  )}
+                >
+                  <CardContent className="space-y-3 p-4">
+                    {/* What is being judged, and the verdict this input currently produces. */}
+                    <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium leading-snug">{item.itemDescription}</p>
+                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                          {item.poNumber}
+                        </p>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={cn("shrink-0", inspectionItemStatusStyles[outcome])}
+                      >
+                        {outcome}
+                      </Badge>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-[8rem_1fr_9rem]">
-                      <div className="space-y-1">
-                        <Label htmlFor={`accepted-${item.id}`} className="text-xs">
+                    {/* The quantity decision, as the arithmetic it actually is: offered is fixed,
+                        accepted is the only input, rejected falls out of the two. Showing all three
+                        side by side is what stops a mis-keyed figure going unnoticed. */}
+                    <div className="grid grid-cols-3 items-end gap-3 rounded-lg border border-border/60 bg-muted/30 p-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Offered
+                        </p>
+                        <p className="mt-1 truncate text-base font-semibold tabular-nums">
+                          {formatQuantity(offered)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {item.unit}
+                          </span>
+                        </p>
+                      </div>
+
+                      <div className="min-w-0 space-y-1">
+                        <Label
+                          htmlFor={`accepted-${item.id}`}
+                          className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+                        >
                           Accepted
                         </Label>
                         <Input
@@ -876,7 +946,7 @@ export default function InspectionCallsPage() {
                           min={0}
                           step="any"
                           inputMode="decimal"
-                          className="h-8 text-right tabular-nums"
+                          className="h-9 bg-background text-right text-base font-semibold tabular-nums"
                           value={draft?.acceptedQty ?? ""}
                           onChange={(event) =>
                             setResultByItemId((current) => ({
@@ -888,13 +958,33 @@ export default function InspectionCallsPage() {
                         />
                       </div>
 
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Rejected
+                        </p>
+                        <p
+                          className={cn(
+                            "mt-1 truncate text-base font-semibold tabular-nums",
+                            rejected > 0 ? "text-red-700" : "text-muted-foreground",
+                          )}
+                        >
+                          {formatQuantity(rejected)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {item.unit}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Secondary to the quantity: an observation only matters once something passed. */}
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
                       <div className="space-y-1">
                         <Label htmlFor={`punch-${item.id}`} className="text-xs">
-                          Punch item (optional)
+                          Punch item <span className="text-muted-foreground">(optional)</span>
                         </Label>
                         <Input
                           id={`punch-${item.id}`}
-                          className="h-8"
+                          className="h-9"
                           placeholder="Observation to be closed out"
                           value={draft?.punchDescription ?? ""}
                           onChange={(event) =>
@@ -922,8 +1012,11 @@ export default function InspectionCallsPage() {
                               },
                             }))
                           }
+                          // A severity with nothing to describe is noise; the field only becomes
+                          // meaningful once a punch item has been written.
+                          disabled={!draft?.punchDescription.trim()}
                         >
-                          <SelectTrigger className="h-8">
+                          <SelectTrigger className="h-9">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -937,56 +1030,82 @@ export default function InspectionCallsPage() {
                       </div>
                     </div>
 
-                    <Textarea
-                      rows={1}
-                      placeholder="Remarks (optional)"
-                      value={draft?.remarks ?? ""}
-                      onChange={(event) =>
-                        setResultByItemId((current) => ({
-                          ...current,
-                          [item.id]: { ...current[item.id], remarks: event.target.value },
-                        }))
-                      }
-                    />
-
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                      <span className="text-muted-foreground">
-                        Outcome:{" "}
-                        <span className="font-medium text-foreground">
-                          {resultStatusFor(
-                            accepted,
-                            draft?.punchDescription.trim()
-                              ? [
-                                  {
-                                    punchId: "preview",
-                                    description: draft.punchDescription,
-                                    severity: draft.punchSeverity,
-                                    closed: false,
-                                  },
-                                ]
-                              : [],
-                          )}
-                        </span>
-                      </span>
-                      {rejected > 0 && (
-                        <span className="text-red-700">
-                          {formatQuantity(rejected)} {item.unit} rejected, returns for rework
-                        </span>
-                      )}
-                      {error && <span className="text-red-700">{error.message}</span>}
+                    <div className="space-y-1">
+                      <Label htmlFor={`remarks-${item.id}`} className="text-xs">
+                        Remarks <span className="text-muted-foreground">(optional)</span>
+                      </Label>
+                      <Textarea
+                        id={`remarks-${item.id}`}
+                        rows={2}
+                        className="resize-y"
+                        placeholder="Anything worth recording against this line"
+                        value={draft?.remarks ?? ""}
+                        onChange={(event) =>
+                          setResultByItemId((current) => ({
+                            ...current,
+                            [item.id]: { ...current[item.id], remarks: event.target.value },
+                          }))
+                        }
+                      />
                     </div>
+
+                    {(rejected > 0 || error) && (
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                        {rejected > 0 && !error && (
+                          <span className="flex items-center gap-1.5 text-red-700">
+                            <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                            {formatQuantity(rejected)} {item.unit} returns to the cleared balance
+                            for rework
+                          </span>
+                        )}
+                        {error && (
+                          <span className="flex items-center gap-1.5 font-medium text-red-700">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            {error.message}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );
             })}
             {resultLines.length === 0 && (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                Every line on this call already has a result.
-              </p>
+              <div className="flex flex-col items-center gap-2 py-10 text-center">
+                <ClipboardCheck className="h-8 w-8 text-muted-foreground/50" />
+                <p className="text-sm text-muted-foreground">
+                  Every line on this call already has a result.
+                </p>
+              </div>
             )}
           </div>
 
-          <DialogFooter>
+          {/* What the whole call commits, so the decision is visible next to the button that makes
+              it — the per-line figures never add themselves up. */}
+          <DialogFooter className="shrink-0 flex-col-reverse gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            {resultLines.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:mr-auto">
+                <span>
+                  {resultLines.length} line{resultLines.length === 1 ? "" : "s"}
+                </span>
+                <span>
+                  Accepted{" "}
+                  <strong className="font-semibold tabular-nums text-emerald-700">
+                    {formatQuantity(resultTotals.accepted)}
+                  </strong>{" "}
+                  of {formatQuantity(resultTotals.offered)}
+                </span>
+                {resultTotals.rejected > 0 && (
+                  <span>
+                    Rejected{" "}
+                    <strong className="font-semibold tabular-nums text-red-700">
+                      {formatQuantity(resultTotals.rejected)}
+                    </strong>
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setResultCallId("")}>
               Cancel
             </Button>
@@ -1006,6 +1125,7 @@ export default function InspectionCallsPage() {
               )}
               Record result
             </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

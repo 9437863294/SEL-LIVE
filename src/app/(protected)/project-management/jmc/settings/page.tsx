@@ -7,7 +7,6 @@ import { useSearchParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useMemo } from 'react';
 import { useProjectManagementJmcContext } from '@/components/jmc/use-jmc-host-context';
-import { JmcNav } from '@/components/jmc/jmc-nav';
 import {
   JMC_SETTINGS_GRADIENT,
   JmcAccessDenied,
@@ -116,7 +115,6 @@ export default function JmcSettingsPage() {
         gradient={JMC_SETTINGS_GRADIENT}
       />
 
-      <JmcNav context={context} active="settings" />
 
       <JmcNavCardGrid>
         {settingsItems.map((item) => (

@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { GitMerge, Settings2 } from "lucide-react";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useProjectManagementIndentContext } from "@/components/indent/use-indent-host-context";
-import { IndentNav } from "@/components/indent/indent-nav";
 import {
   INDENT_SETTINGS_GRADIENT,
   IndentAccessDenied,
@@ -64,7 +63,6 @@ export default function IndentSettingsPage() {
         gradient={INDENT_SETTINGS_GRADIENT}
       />
 
-      <IndentNav context={context} active="settings" />
 
       <IndentNavCardGrid>
         <IndentNavCard

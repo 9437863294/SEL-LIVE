@@ -34,7 +34,6 @@ import {
   type McClearanceApproval,
 } from "@/lib/project-management-mc-workflow";
 import { useProjectManagementMcContext } from "@/components/mc/use-mc-host-context";
-import { McNav } from "@/components/mc/mc-nav";
 import {
   MC_GRADIENT,
   McAccessDenied,
@@ -261,7 +260,6 @@ export default function McClearanceStagePage() {
           backLabel="Back to Manufacturing Clearance"
           gradient={MC_GRADIENT}
         />
-        <McNav context={context} active="hub" />
         <Card className="border-border/60">
           <CardHeader>
             <CardTitle>Stage removed</CardTitle>
@@ -293,7 +291,6 @@ export default function McClearanceStagePage() {
         gradient={MC_GRADIENT}
       />
 
-      <McNav context={context} active="hub" />
 
       <Card>
         <CardContent className="p-0">

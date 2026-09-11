@@ -17,7 +17,6 @@ import type { BoqItem } from "@/lib/types";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { useProjectManagementSurveyContext } from "@/components/survey/use-survey-host-context";
-import { SurveyNav } from "@/components/survey/survey-nav";
 import {
   SURVEY_GRADIENT,
   SurveyAccessDenied,
@@ -162,7 +161,6 @@ export default function SurveyReportsPage() {
         gradient={SURVEY_GRADIENT}
       />
 
-      <SurveyNav context={context} active="hub" />
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Card>

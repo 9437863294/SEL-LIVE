@@ -23,7 +23,6 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { useProjectManagementIndentContext } from "@/components/indent/use-indent-host-context";
-import { IndentNav } from "@/components/indent/indent-nav";
 import {
   INDENT_GRADIENT,
   INDENT_SETTINGS_GRADIENT,
@@ -228,7 +227,6 @@ export default function IndentHubPage() {
         gradient={INDENT_GRADIENT}
       />
 
-      <IndentNav context={context} active="hub" />
 
       {workflowError ? (
         <Card className="border-border/60">

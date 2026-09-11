@@ -40,7 +40,6 @@ import {
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
-import { JmcNav } from '@/components/jmc/jmc-nav';
 
 interface SummaryStats {
     totalJMCs: number;
@@ -319,7 +318,6 @@ export default function JmcSummaryPage() {
         backLabel="Back to JMC Reports"
       />
 
-      <JmcNav context={context} active="reports" />
 
       <Card className="border-border/60">
         <CardContent className="p-4">

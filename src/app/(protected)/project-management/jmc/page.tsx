@@ -36,7 +36,6 @@ import {
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
-import { JmcNav } from '@/components/jmc/jmc-nav';
 
 /* ---------------- types ---------------- */
 type JmcItem = {
@@ -257,7 +256,6 @@ export default function JmcPage() {
         gradient={JMC_GRADIENT}
       />
 
-      <JmcNav context={context} active="hub" />
 
       {workflowError ? (
         <Card className="border-border/60">

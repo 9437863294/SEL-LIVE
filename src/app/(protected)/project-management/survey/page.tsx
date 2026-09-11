@@ -25,7 +25,6 @@ import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/ca
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { useToast } from "@/hooks/use-toast";
 import { useProjectManagementSurveyContext } from "@/components/survey/use-survey-host-context";
-import { SurveyNav } from "@/components/survey/survey-nav";
 import {
   SURVEY_GRADIENT,
   SURVEY_SETTINGS_GRADIENT,
@@ -227,7 +226,6 @@ export default function SurveyHubPage() {
         gradient={SURVEY_GRADIENT}
       />
 
-      <SurveyNav context={context} active="hub" />
 
       {workflowError ? (
         <Card className="border-border/60">

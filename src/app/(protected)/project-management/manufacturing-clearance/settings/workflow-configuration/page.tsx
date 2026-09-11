@@ -19,7 +19,6 @@ import {
   MC_CLEARANCE_WORKFLOW_DOC_ID,
 } from "@/lib/project-management-mc-workflow";
 import { useProjectManagementMcContext } from "@/components/mc/use-mc-host-context";
-import { McNav } from "@/components/mc/mc-nav";
 import {
   MC_SETTINGS_GRADIENT,
   McAccessDenied,
@@ -79,7 +78,6 @@ export default function McClearanceWorkflowConfigurationPage() {
         gradient={MC_SETTINGS_GRADIENT}
       />
 
-      <McNav context={context} active="settings" />
 
       <WorkflowConfigurationEditor
         workflowDocId={MC_CLEARANCE_WORKFLOW_DOC_ID}

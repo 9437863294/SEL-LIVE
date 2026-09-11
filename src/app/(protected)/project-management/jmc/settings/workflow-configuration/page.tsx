@@ -50,7 +50,6 @@ import {
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
-import { JmcNav } from '@/components/jmc/jmc-nav';
 import { Badge } from '@/components/ui/badge';
 
 /* ---------------- type guards ---------------- */
@@ -411,7 +410,6 @@ export default function JmcWorkflowConfigurationPage() {
         }
       />
 
-      <JmcNav context={context} active="settings" />
 
       <Card className="border-border/60">
         <CardHeader>

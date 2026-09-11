@@ -27,7 +27,6 @@ import {
   JmcPageShell,
   JmcProjectNotFound,
 } from '@/components/jmc/jmc-page-shell';
-import { JmcNav } from '@/components/jmc/jmc-nav';
 import { jmcSlugify } from '@/lib/jmc-module';
 import { logUserActivity } from '@/lib/activity-logger';
 import {
@@ -412,7 +411,6 @@ export default function JmcLogPage() {
           }
         />
 
-        <JmcNav context={context} active="log" />
 
         <Card className="border-border/60">
           <CardContent className="p-0">
