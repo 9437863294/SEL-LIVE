@@ -1,18 +1,39 @@
 "use client";
 
+/**
+ * The per-BOQ-item inspection gate register.
+ *
+ * Distinct from Inspection Calls, which is the quantity-driven record: a call offers a quantity
+ * against a PO *line*, while this register answers the boolean question the downstream chain asks
+ * — has this BOQ item passed, so MDCC may be issued? `canIssueMdcc` in supply-gates.ts reads
+ * exactly that, along with its punch items.
+ *
+ * The two are kept in step by `syncInspectionGateRecords`, which projects accepted quantity and
+ * punch items onto this status. So the quantity columns here come from the same ledger the calls
+ * screen uses; if they disagree with the status, the projection has drifted and Sync gates
+ * repairs it.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
-  ArrowLeft,
+  Ban,
   CheckCircle2,
+  CircleDashed,
   ClipboardCheck,
+  ClipboardList,
   FolderOpen,
+  Hourglass,
+  Layers,
   Loader2,
   Paperclip,
   Plus,
+  RotateCcw,
+  Settings,
   Trash2,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
@@ -36,17 +57,29 @@ import {
   type InspectionResultApproval,
 } from "@/lib/project-management-inspection-workflow";
 import { useProjectManagementInspectionContext } from "@/components/inspection/use-inspection-host-context";
-import { InspectionNav } from "@/components/inspection/inspection-nav";
 import {
-  INSPECTION_GRADIENT,
   InspectionAccessDenied,
   InspectionLoadingState,
-  InspectionPageHeader,
-  InspectionPageShell,
   InspectionProjectNotFound,
 } from "@/components/inspection/inspection-page-shell";
+import {
+  PM_TABLE_CLASS,
+  PmContent,
+  PmSectionHead,
+  PmShell,
+  PmSidebar,
+  PmTableFoot,
+  PmTopbar,
+  pmAccent,
+} from "@/components/project-management/pm-shell";
+import { inspectionPoLineKey } from "@/lib/project-management-inspection-quantity";
+import {
+  loadInspectionWorkspace,
+  syncInspectionGateRecords,
+  type InspectionWorkspace,
+} from "@/lib/project-management-inspection-service";
 import { uploadProjectManagementDocument } from "@/lib/project-management-documents";
-import { PO_COLLECTION, type PurchaseOrder } from "@/lib/purchase-orders";
+import { PO_COLLECTION, formatQuantity, type PurchaseOrder } from "@/lib/purchase-orders";
 import { MDL_COLLECTION, isMdlApproved, type MdlOverallStatus } from "@/lib/mdl";
 import { formatSerialList, parseSerialList } from "@/lib/serial-tracking";
 import {
@@ -68,13 +101,7 @@ import {
 } from "@/lib/supply-gates";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -114,6 +141,18 @@ type ProjectMapping = {
 
 const getBoqSlNo = (item: BoqItem) => String(item["BOQ SL No"] ?? item["SL. No."] ?? "");
 
+/** Register views. Each is a queue somebody actually works from. */
+const VIEWS = [
+  { key: "all", label: "All items", icon: Layers },
+  { key: "ready", label: "Ready to request", icon: CircleDashed },
+  { key: "requested", label: "Awaiting result", icon: Hourglass },
+  { key: "passed", label: "Passed", icon: CheckCircle2 },
+  { key: "punch", label: "Punch open", icon: Wrench },
+  { key: "failed", label: "Failed", icon: Ban },
+] as const;
+
+type ViewKey = (typeof VIEWS)[number]["key"];
+
 const today = () => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -129,7 +168,9 @@ const emptyPunchRow = (): PunchItem => ({
 
 export default function InspectionRegisterPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const mappingId = searchParams?.get("project") ?? "";
+  const view = (searchParams?.get("view") ?? "all") as ViewKey;
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -148,6 +189,9 @@ export default function InspectionRegisterPage() {
   const [mdlStatusByBoqItemId, setMdlStatusByBoqItemId] = useState<Map<string, MdlOverallStatus>>(new Map());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  /** The call ledger, so the gate status can be shown against the quantity behind it. */
+  const [workspace, setWorkspace] = useState<InspectionWorkspace | null>(null);
   /** Result approval stages, if this project has configured any. */
   const [resultSteps, setResultSteps] = useState<WorkflowStep[]>([]);
   const [resultApprovals, setResultApprovals] = useState<InspectionResultApproval[]>([]);
@@ -235,6 +279,10 @@ export default function InspectionRegisterPage() {
       setMdlStatusByBoqItemId(
         new Map(mdlSnapshot.docs.map((item) => [item.id, (item.data() as { status?: MdlOverallStatus }).status ?? "Pending"])),
       );
+
+      // Loaded last so a failure here degrades to the register working without its quantity
+      // columns, rather than the whole screen failing.
+      setWorkspace(await loadInspectionWorkspace(mappingData.globalProjectId));
     } catch (error) {
       console.error("Failed to load inspection data:", error);
       toast({ title: "Unable to load inspection data", variant: "destructive" });
@@ -251,11 +299,92 @@ export default function InspectionRegisterPage() {
     void loadData();
   }, [canView, isAuthLoading, loadData]);
 
-  const rows = useMemo(
+  /**
+   * Cleared, accepted and available quantity per BOQ item, summed across its PO lines.
+   *
+   * Null until the ledger loads — the table renders those cells blank rather than as zero,
+   * because "not loaded" and "nothing inspected" mean opposite things.
+   */
+  const qtyByBoqItemId = useMemo(() => {
+    if (!workspace) return null;
+    const map = new Map<
+      string,
+      { clearedQty: number; acceptedQty: number; rejectedQty: number; availableQty: number }
+    >();
+    for (const line of workspace.poLines) {
+      if (!line.boqItemId) continue;
+      const ledger = workspace.ledgers.get(inspectionPoLineKey(line.poId, line.poLineId));
+      if (!ledger) continue;
+      const entry =
+        map.get(line.boqItemId) ??
+        { clearedQty: 0, acceptedQty: 0, rejectedQty: 0, availableQty: 0 };
+      entry.clearedQty += ledger.clearedQty;
+      entry.acceptedQty += ledger.acceptedQty;
+      entry.rejectedQty += ledger.rejectedQty;
+      entry.availableQty += ledger.availableQty;
+      map.set(line.boqItemId, entry);
+    }
+    return map;
+  }, [workspace]);
+
+  const allRows = useMemo(
     () =>
       Array.from(placedItems.values()).sort((a, b) => a.boqSlNo.localeCompare(b.boqSlNo, undefined, { numeric: true })),
     [placedItems],
   );
+
+  const matchesView = useCallback(
+    (item: PoPlacedItem, key: ViewKey) => {
+      if (key === "all") return true;
+      const mcStatus = clearances.get(item.boqItemId)?.status ?? "Pending";
+      const inspection = inspections.get(item.boqItemId);
+      const status = inspection?.status ?? "Not Requested";
+      const openPunch = (inspection?.punchItems ?? []).filter((punch) => !punch.closed).length;
+
+      if (key === "punch") return openPunch > 0;
+      if (key === "requested") return status === "Requested";
+      if (key === "passed") return status === "Passed" || status === "Passed with Punch Items";
+      if (key === "failed") return status === "Failed";
+      // Ready to request: MC has opened the gate and no inspection is in flight yet.
+      return canRequestInspection(mcStatus) && (status === "Not Requested" || status === "Failed");
+    },
+    [clearances, inspections],
+  );
+
+  const rows = useMemo(() => allRows.filter((item) => matchesView(item, view)), [allRows, matchesView, view]);
+  const countFor = useCallback(
+    (key: ViewKey) => allRows.filter((item) => matchesView(item, key)).length,
+    [allRows, matchesView],
+  );
+
+  const setView = (value: string) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (value === "all") params.delete("view");
+    else params.set("view", value);
+    const path = context.inspectionHref("register").split("?")[0];
+    const query = params.toString();
+    router.replace(query ? `${path}?${query}` : path);
+  };
+
+  const handleSyncGates = async () => {
+    if (!mapping) return;
+    setIsSyncing(true);
+    try {
+      const written = await syncInspectionGateRecords(mapping.globalProjectId);
+      toast({
+        title: written ? "Gates brought in line" : "Gates already in line",
+        description: written
+          ? `${written} item gate${written === 1 ? "" : "s"} updated from the recorded call results.`
+          : "Every item gate already matches the recorded call results.",
+      });
+      await loadData();
+    } catch (error) {
+      console.error("Failed to sync the inspection gates:", error);
+      toast({ title: "Unable to sync item gates", variant: "destructive" });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const openRequest = (item: PoPlacedItem) => {
     setRequestItem(item);
@@ -535,50 +664,125 @@ export default function InspectionRegisterPage() {
   }
 
   return (
-    <InspectionPageShell>
-      <InspectionPageHeader
+    <PmShell
+      sidebar={
+        <PmSidebar
+          title="Inspection Register"
+          subtitle={mapping.projectName}
+          icon={ClipboardCheck}
+          gradient="from-blue-500 to-indigo-600"
+          activeValue={view}
+          onChange={setView}
+          groups={[
+            {
+              label: "Views",
+              views: VIEWS.map((entry, index) => ({
+                value: entry.key,
+                label: entry.label,
+                icon: entry.icon,
+                color: pmAccent(index).color,
+                bg: pmAccent(index).bg,
+                count: countFor(entry.key),
+              })),
+            },
+            {
+              label: "Elsewhere",
+              links: [
+                {
+                  href: context.inspectionHref("calls"),
+                  label: "Inspection Calls",
+                  icon: ClipboardList,
+                  color: "text-sky-600",
+                  bg: "bg-sky-100",
+                },
+                {
+                  href: `/project-management/documents?project=${encodeURIComponent(mappingId)}&category=${encodeURIComponent("Inspection Report")}`,
+                  label: "Inspection reports",
+                  icon: FolderOpen,
+                  color: "text-violet-600",
+                  bg: "bg-violet-100",
+                },
+              ],
+            },
+          ]}
+          footerLinks={[
+            {
+              href: context.inspectionHref("settings"),
+              label: "Settings",
+              icon: Settings,
+              color: "text-slate-600",
+              bg: "bg-slate-100",
+            },
+          ]}
+        />
+      }
+    >
+      <PmTopbar
         title="Inspection Register"
-        subtitle={`${rows.length} item${rows.length === 1 ? "" : "s"} on issued purchase orders for ${mapping.projectName}`}
-        icon={ClipboardCheck}
+        breadcrumbs={[
+          { label: mapping.projectName },
+          { label: "Inspections", href: context.inspectionHref() },
+        ]}
         backHref={context.inspectionHref()}
         backLabel="Back to Inspections"
-        gradient={INSPECTION_GRADIENT}
         actions={
-          <Button variant="outline" asChild>
-            <Link
-              href={`/project-management/documents?project=${encodeURIComponent(mappingId)}&category=${encodeURIComponent("Inspection Report")}`}
-            >
-              <FolderOpen className="mr-2 h-4 w-4" />
-              View Inspection Reports
-            </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isSyncing || !canRecord}
+            onClick={() => void handleSyncGates()}
+            title="Recompute each item's gate from the recorded inspection call results."
+          >
+            {isSyncing ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <RotateCcw className="mr-1.5 h-4 w-4" />
+            )}
+            Sync gates
           </Button>
         }
       />
 
-      <InspectionNav context={context} active="register" />
+      <PmContent>
+        <SupplyGateNav mappingId={mappingId} active="inspections" />
 
-      <SupplyGateNav mappingId={mappingId} active="inspections" />
+        <PmSectionHead
+          title={VIEWS.find((entry) => entry.key === view)?.label ?? "All items"}
+          stats={[
+            { label: "items", value: String(rows.length) },
+            { label: "passed", value: String(countFor("passed")) },
+            ...(countFor("punch")
+              ? [{ label: "punch open", value: String(countFor("punch")), tone: "flag" as const }]
+              : []),
+            ...(countFor("failed")
+              ? [{ label: "failed", value: String(countFor("failed")), tone: "flag" as const }]
+              : []),
+          ]}
+        />
 
-      <Card>
-        <CardContent className="p-0">
+        <Card className="overflow-hidden border-border/60">
           <div className="overflow-x-auto">
-            <Table>
+            <Table className={PM_TABLE_CLASS}>
               <TableHeader>
                 <TableRow>
-                  <TableHead>BOQ SL No</TableHead>
+                  <TableHead>SL No</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>PO Number</TableHead>
-                  <TableHead>MC Status</TableHead>
-                  <TableHead className="text-right">Qty (Acc./Off.)</TableHead>
-                  <TableHead>Inspection Date</TableHead>
+                  <TableHead>MC</TableHead>
+                  <TableHead className="text-right">Cleared</TableHead>
+                  <TableHead className="text-right">Accepted</TableHead>
+                  <TableHead className="text-right">Rejected</TableHead>
+                  <TableHead className="text-right">To offer</TableHead>
+                  <TableHead>Inspected</TableHead>
                   <TableHead>Report</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-48 text-right">Actions</TableHead>
+                  <TableHead>Gate</TableHead>
+                  <TableHead className="w-44 text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.length ? (
                   rows.map((item) => {
+                    const qty = qtyByBoqItemId?.get(item.boqItemId);
                     const mc = clearances.get(item.boqItemId);
                     const mcStatus = mc?.status ?? "Pending";
                     const inspection = inspections.get(item.boqItemId);
@@ -592,7 +796,11 @@ export default function InspectionRegisterPage() {
                     return (
                       <TableRow key={item.boqItemId}>
                         <TableCell className="whitespace-nowrap">{item.boqSlNo || "—"}</TableCell>
-                        <TableCell className="max-w-xs truncate" title={item.description}>{item.description}</TableCell>
+                        <TableCell>
+                          <span className="block max-w-[18rem] truncate" title={item.description}>
+                            {item.description}
+                          </span>
+                        </TableCell>
                         <TableCell className="whitespace-nowrap">{item.poNumber}</TableCell>
                         <TableCell>
                           <Badge
@@ -608,10 +816,17 @@ export default function InspectionRegisterPage() {
                             {mcStatus}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right whitespace-nowrap text-xs">
-                          {inspection?.qtyOffered != null
-                            ? `${inspection.qtyAccepted ?? "—"} / ${inspection.qtyOffered}`
-                            : "—"}
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {qty ? formatQuantity(qty.clearedQty) : ""}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums text-emerald-700">
+                          {qty ? (qty.acceptedQty ? formatQuantity(qty.acceptedQty) : "—") : ""}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-red-700">
+                          {qty ? (qty.rejectedQty ? formatQuantity(qty.rejectedQty) : "—") : ""}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {qty ? formatQuantity(qty.availableQty) : ""}
                         </TableCell>
                         <TableCell className="whitespace-nowrap">{formatGateDate(inspection?.inspectionDate)}</TableCell>
                         <TableCell>
@@ -633,8 +848,22 @@ export default function InspectionRegisterPage() {
                             {status}
                           </Badge>
                           {status === "Passed with Punch Items" && openPunchCount > 0 && (
-                            <div className="mt-1 text-[10px] text-amber-600">{openPunchCount} open item(s)</div>
+                            <span className="ml-1 text-xs text-amber-700">
+                              {openPunchCount} open
+                            </span>
                           )}
+                          {/* Gate says passed but no call quantity backs it — either recorded on
+                              this register directly, or the projection has drifted. */}
+                          {(status === "Passed" || status === "Passed with Punch Items") &&
+                            qty &&
+                            qty.acceptedQty <= 0 && (
+                              <span
+                                className="ml-1 text-xs text-amber-700"
+                                title="No accepted inspection call quantity backs this gate."
+                              >
+                                no qty
+                              </span>
+                            )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
@@ -680,9 +909,13 @@ export default function InspectionRegisterPage() {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={9} className="h-32 text-center">
+                    <TableCell colSpan={12} className="h-32 text-center">
                       <ClipboardCheck className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-                      <p className="font-medium">Nothing to inspect yet</p>
+                      <p className="font-medium">
+                        {allRows.length === 0
+                          ? "Nothing to inspect yet"
+                          : `No items ${(VIEWS.find((entry) => entry.key === view)?.label ?? "").toLowerCase()}`}
+                      </p>
                       <p className="mt-1 text-sm text-muted-foreground">
                         Items appear here once a purchase order for them has been issued.
                       </p>
@@ -692,8 +925,23 @@ export default function InspectionRegisterPage() {
               </TableBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
+          <PmTableFoot
+            left={
+              <>
+                {rows.length} item{rows.length === 1 ? "" : "s"} of {allRows.length} on issued
+                purchase orders
+              </>
+            }
+            right={
+              qtyByBoqItemId ? (
+                <span>Quantity columns come from the inspection call ledger</span>
+              ) : (
+                <span>Loading quantities…</span>
+              )
+            }
+          />
+        </Card>
+      </PmContent>
 
       <Dialog open={Boolean(requestItem)} onOpenChange={(open) => !open && setRequestItem(null)}>
         <DialogContent>
@@ -883,6 +1131,6 @@ export default function InspectionRegisterPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </InspectionPageShell>
+    </PmShell>
   );
 }

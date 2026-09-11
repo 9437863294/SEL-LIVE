@@ -7,12 +7,14 @@
  * Links are built through the host context, so every one carries the `?project=` handle forward.
  */
 
-import { LayoutGrid, Settings, Table2 } from "lucide-react";
+import { ClipboardList, LayoutGrid, Plus, Settings, Table2 } from "lucide-react";
 import { PillNav } from "@/components/shared/pill-nav";
 import type { PmInspectionContext } from "@/lib/project-management-inspection-workflow";
 
 const SCREENS = [
   { key: "hub", suffix: undefined, label: "Inspections", icon: LayoutGrid },
+  { key: "calls", suffix: "calls", label: "Inspection Calls", icon: ClipboardList },
+  { key: "new", suffix: "new", label: "New Call", icon: Plus },
   { key: "register", suffix: "register", label: "Inspection Register", icon: Table2 },
   { key: "settings", suffix: "settings", label: "Settings", icon: Settings },
 ] as const;

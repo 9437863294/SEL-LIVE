@@ -361,6 +361,7 @@ export default function MdccPage() {
 
   return (
     <main className="min-h-[calc(100dvh-4rem)] space-y-5 p-4 sm:p-6">
+      <SupplyDocumentsBanner mappingId={mappingId} />
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
           <Link href={`/project-management/supply?project=${encodeURIComponent(mappingId)}`} aria-label="Back to Supply">
@@ -583,5 +584,33 @@ export default function MdccPage() {
         </DialogContent>
       </Dialog>
     </main>
+  );
+}
+
+/**
+ * Link out to the quantity-driven client clearance documents.
+ *
+ * This register tracks the per-BOQ-item gate — the boolean the downstream chain reads. The
+ * documents screen tracks the quantity, which is what actually limits what may move next.
+ */
+function SupplyDocumentsBanner({ mappingId }: { mappingId: string }) {
+  const query = `?project=${encodeURIComponent(mappingId)}`;
+  return (
+    <Card className="border-border/60 bg-muted/30">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
+        <p className="text-sm text-muted-foreground">
+          This register shows each BOQ item&rsquo;s gate. MDCC <strong>quantity</strong> is tracked on
+          documents, which can cover several purchase order lines at once.
+        </p>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/project-management/mdcc/documents${query}`}>View MDCC documents</Link>
+          </Button>
+          <Button size="sm" asChild>
+            <Link href={`/project-management/mdcc/new${query}`}>New MDCC</Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

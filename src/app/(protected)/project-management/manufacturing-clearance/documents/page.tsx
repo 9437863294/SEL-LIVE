@@ -52,6 +52,7 @@ import {
   deleteMcDraft,
   loadMcWorkspace,
   rebuildMcPoLineBalances,
+  syncMcGateRecords,
   type McWorkspace,
 } from "@/lib/project-management-mc-service";
 import { useProjectManagementMcContext } from "@/components/mc/use-mc-host-context";
@@ -279,9 +280,12 @@ export default function ManufacturingClearanceDocumentsPage() {
     setBusyMcId("rebuild");
     try {
       const written = await rebuildMcPoLineBalances(globalProjectId);
+      // The gate projection is rebuilt alongside, because the two can only drift together: both
+      // are derived from the clearance items.
+      const gates = await syncMcGateRecords(globalProjectId);
       toast({
         title: "Balances rebuilt",
-        description: `${written} purchase order line balance${written === 1 ? "" : "s"} recomputed from the clearance records.`,
+        description: `${written} purchase order line balance${written === 1 ? "" : "s"} recomputed, and ${gates} item gate${gates === 1 ? "" : "s"} brought in line with the approved quantity.`,
       });
       await loadData();
     } catch (error) {

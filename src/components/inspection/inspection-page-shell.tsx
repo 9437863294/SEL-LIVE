@@ -21,5 +21,9 @@ export {
 
 /** The Inspection accent — matching the Inspections tile on the Supply hub. */
 export const INSPECTION_GRADIENT = "from-blue-500 to-indigo-600";
+/** Raising a call — the module's primary action. */
+export const INSPECTION_NEW_GRADIENT = "from-emerald-500 to-teal-600";
+/** The call register, distinct from the per-item gate register. */
+export const INSPECTION_CALLS_GRADIENT = "from-sky-500 to-blue-600";
 /** Settings screens use the slate accent Project Management gives every settings surface. */
 export const INSPECTION_SETTINGS_GRADIENT = "from-slate-500 to-slate-700";

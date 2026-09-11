@@ -11,9 +11,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ClipboardCheck,
+  ClipboardList,
   FolderOpen,
   GitMerge,
   type LucideIcon,
+  Plus,
   Settings,
   Table2,
 } from "lucide-react";
@@ -27,7 +29,9 @@ import { INSPECTION_COLLECTION } from "@/lib/supply-gates";
 import { useProjectManagementInspectionContext } from "@/components/inspection/use-inspection-host-context";
 import { InspectionNav } from "@/components/inspection/inspection-nav";
 import {
+  INSPECTION_CALLS_GRADIENT,
   INSPECTION_GRADIENT,
+  INSPECTION_NEW_GRADIENT,
   INSPECTION_SETTINGS_GRADIENT,
   InspectionAccessDenied,
   InspectionCardGridLoadingState,
@@ -79,6 +83,8 @@ export default function InspectionsHubPage() {
 
   const canViewModule = safeCan("View");
   const canViewSettings = safeCan("View Settings");
+  /** Raising a call is the Request permission; recording the result is a separate one. */
+  const canRequestModule = safeCan("Request");
 
   const globalProjectId = context.globalProjectId;
 
@@ -147,6 +153,24 @@ export default function InspectionsHubPage() {
 
     const head: InspectionItem[] = [
       {
+        icon: Plus,
+        text: "New Call",
+        href: context.inspectionHref("new"),
+        description:
+          "Offer cleared quantity for inspection across one or more purchase order lines.",
+        disabled: !canRequestModule || !mappingId,
+        gradient: INSPECTION_NEW_GRADIENT,
+      },
+      {
+        icon: ClipboardList,
+        text: "Inspection Calls",
+        href: context.inspectionHref("calls"),
+        description:
+          "Every call raised, the quantity offered and accepted on each, and what needs rework.",
+        disabled: !canViewModule || !mappingId,
+        gradient: INSPECTION_CALLS_GRADIENT,
+      },
+      {
         icon: Table2,
         text: "Inspection Register",
         href: context.inspectionHref("register"),
@@ -199,6 +223,7 @@ export default function InspectionsHubPage() {
     awaitingResultCount,
     canViewModule,
     canViewSettings,
+    canRequestModule,
   ]);
 
   if (authIsLoading || isResolving || isWorkflowLoading) {

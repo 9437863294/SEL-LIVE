@@ -26,6 +26,7 @@ import {
 import { db } from "@/lib/firebase";
 import type { BoqItem } from "@/lib/types";
 import { PO_COLLECTION, resolvePoLineId, toNumber, type PurchaseOrder } from "@/lib/purchase-orders";
+import { MC_COLLECTION } from "@/lib/supply-gates";
 import {
   MC_HEADER_COLLECTION,
   MC_ITEM_COLLECTION,
@@ -60,7 +61,19 @@ export interface McWorkspace {
   ledgers: Map<string, PoLineLedger>;
   /** Vendor of each PO, for the grouping check and the vendor picker. */
   vendorByPoId: Map<string, { vendorId: string; vendorName: string }>;
+  /** BOQ serial numbers, for the gate-record projection which keys on the BOQ item. */
+  boqSlNoByBoqItemId: Map<string, string>;
 }
+
+/**
+ * Marks a `manufacturingClearances` record as owned by the MC-document projection rather than
+ * typed in on the old per-item register.
+ *
+ * The projection may only downgrade what it created. A record cleared directly on the item gate
+ * register has no counterpart in the quantity ledger, so recomputing from the ledger would read
+ * it as "nothing approved" and silently reopen a gate somebody had closed.
+ */
+export const MC_GATE_SOURCE_DOCUMENT = "mcDocument";
 
 const projectPath = (globalProjectId: string, name: string) =>
   collection(db, "projects", globalProjectId, name);
@@ -140,7 +153,98 @@ export async function loadMcWorkspace(
         { vendorId: po.vendorId ?? "", vendorName: po.vendorName ?? "" },
       ]),
     ),
+    boqSlNoByBoqItemId,
   };
+}
+
+/**
+ * Projects the quantity ledger onto the old per-BOQ-item gate records.
+ *
+ * Two MC models coexist: the quantity-driven documents in `mcClearances`, and the original
+ * `manufacturingClearances` gate record — one document per BOQ item, status Pending or Cleared —
+ * which `canRequestInspection`, `boq-traceability` and six screens still read. Without this
+ * projection, approving a clearance would leave every one of them showing "Pending".
+ *
+ * The mapping is deliberately **permissive**: any approved quantity against any PO line for a
+ * BOQ item marks that item Cleared. The old gate is a boolean and cannot express "40 of 100
+ * cleared", and its only job is to let inspection be *requested* — the quantity limit is enforced
+ * by the inspection ledger, which reads approved quantity directly rather than this status. A
+ * stricter "fully cleared" mapping would block inspection of material that is genuinely ready.
+ *
+ * One-directional: records this projection created are downgraded when their quantity goes away,
+ * records typed in on the old register are left alone. Idempotent, so it can be re-run to repair.
+ */
+export async function syncMcGateRecords(globalProjectId: string): Promise<number> {
+  const { poLines, ledgers, boqSlNoByBoqItemId, vendorByPoId } =
+    await loadMcWorkspace(globalProjectId);
+
+  /** Approved quantity per BOQ item, summed across every PO line that references it. */
+  const approvedByBoqItemId = new Map<
+    string,
+    { approvedQty: number; poId: string; poNumber: string; description: string; vendorName: string }
+  >();
+
+  for (const line of poLines) {
+    if (!line.boqItemId) continue;
+    const ledger = ledgers.get(poLineKey(line.poId, line.poLineId));
+    if (!ledger) continue;
+    const entry =
+      approvedByBoqItemId.get(line.boqItemId) ??
+      {
+        approvedQty: 0,
+        poId: line.poId,
+        poNumber: line.poNumber,
+        description: line.itemDescription,
+        vendorName: vendorByPoId.get(line.poId)?.vendorName ?? "",
+      };
+    entry.approvedQty += ledger.approvedQty;
+    approvedByBoqItemId.set(line.boqItemId, entry);
+  }
+
+  const existingSnapshot = await getDocs(projectPath(globalProjectId, MC_COLLECTION));
+  const existingById = new Map(
+    existingSnapshot.docs.map((entry) => [entry.id, entry.data() as Record<string, unknown>]),
+  );
+
+  const batch = writeBatch(db);
+  let written = 0;
+
+  for (const [boqItemId, entry] of approvedByBoqItemId) {
+    const existing = existingById.get(boqItemId);
+    const ref = doc(db, "projects", globalProjectId, MC_COLLECTION, boqItemId);
+
+    if (entry.approvedQty > 0) {
+      if (existing?.status === "Cleared") continue;
+      batch.set(
+        ref,
+        {
+          boqItemId,
+          boqSlNo: boqSlNoByBoqItemId.get(boqItemId) ?? "",
+          description: entry.description,
+          poId: entry.poId,
+          poNumber: entry.poNumber,
+          vendorName: entry.vendorName,
+          status: "Cleared",
+          clearedDate: new Date().toISOString().slice(0, 10),
+          source: MC_GATE_SOURCE_DOCUMENT,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      written += 1;
+      continue;
+    }
+
+    // Quantity has gone (rejected, withdrawn or amended away). Only reopen a gate this
+    // projection closed in the first place.
+    if (existing?.status === "Cleared" && existing.source === MC_GATE_SOURCE_DOCUMENT) {
+      batch.set(ref, { status: "Pending", updatedAt: serverTimestamp() }, { merge: true });
+      written += 1;
+    }
+  }
+
+  if (written > 0) await batch.commit();
+  return written;
 }
 
 /** One line the user has asked to clear. */
@@ -377,6 +481,11 @@ export async function decideMcDocument({
     if (remarks?.trim()) headerUpdate.decisionRemarks = remarks.trim();
     transaction.set(headerRef, headerUpdate, { merge: true });
   });
+
+  // Outside the transaction because it has to read the whole ledger, which a client transaction
+  // cannot query. It is an idempotent projection, so a failure here leaves the decision intact
+  // and is repaired by re-running it — which is what the register's Sync gates action does.
+  await syncMcGateRecords(globalProjectId);
 }
 
 /** Deletes a draft MC and its lines. Drafts hold no quantity, so no guard document changes. */
