@@ -934,7 +934,7 @@ export default function SiteFundBudgetPage() {
       const ws = wb.addWorksheet('Budget Tree');
       ws.columns = [
         { header: 'Level',          key: 'level',     width: 16 },
-        { header: 'Name',           key: 'name',      width: 35 },
+        { header: 'Name',           key: 'name',      width: 38 },
         { header: 'Budget (₹)',     key: 'budget',    width: 16 },
         { header: 'Received (₹)',   key: 'received',  width: 16 },
         { header: 'Spent (₹)',      key: 'spent',     width: 16 },
@@ -944,6 +944,64 @@ export default function SiteFundBudgetPage() {
         { header: 'Notes',          key: 'notes',     width: 30 },
       ];
       ws.getRow(1).font = { bold: true };
+      ws.views = [{ state: 'frozen', ySplit: 1 }];
+
+      /*
+       * Parent rows sit *above* their children, which is the opposite of Excel's default
+       * assumption that a group's summary row comes last. Without this the collapse controls line
+       * up against the wrong rows and folding a project hides the project instead of its contents.
+       */
+      // ExcelJS 3.10 honours these at runtime — written and read back to confirm — but its bundled
+      // typings leave `outlineProperties` off `WorksheetProperties`. Widened to exactly the shape
+      // being assigned rather than to `any`, so the assignment itself stays type-checked.
+      (ws.properties as typeof ws.properties & {
+        outlineProperties?: { summaryBelow: boolean; summaryRight: boolean };
+      }).outlineProperties = { summaryBelow: false, summaryRight: false };
+
+      /**
+       * Writes one node of the tree.
+       *
+       * `depth` drives three things at once: Excel's own row grouping (the +/− controls in the
+       * gutter, so Total → FY → Month → Category collapses like the on-screen tree), the visual
+       * indent, and the weight of the type. Indentation is set through the cell's alignment rather
+       * than by padding the string with spaces — a real indent survives sorting, and leaves the
+       * name column filterable on the actual name.
+       */
+      const TINTS = ['FFE8F5EE', 'FFEFF4FB', 'FFFDF6E9', undefined];
+      function addNode(depth: 0 | 1 | 2 | 3, data: Record<string, unknown>) {
+        const row = ws.addRow(data);
+        row.outlineLevel = depth;
+        row.getCell('name').alignment = { indent: depth * 2 };
+        if (depth === 0) row.font = { bold: true };
+        if (depth === 1) row.font = { bold: true, color: { argb: 'FF1F4E79' } };
+        const tint = TINTS[depth];
+        if (tint) {
+          row.eachCell({ includeEmpty: true }, cell => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: tint } };
+          });
+        }
+      }
+
+      /*
+       * Each level also gets its own flat sheet.
+       *
+       * The tree sheet is for reading: one shared header, and a "Budget" column that silently means
+       * four different things depending on the row's depth. That is fine to look at and useless to
+       * analyse — you cannot sort it, filter it, or drop it into a pivot without first working out
+       * which rows are which. So the walk below also collects each level into its own list, written
+       * afterwards with headers that name that level's fields and with the parent context carried
+       * on every row, so each sheet stands alone.
+       */
+      type LevelRow = Record<string, string | number | null>;
+      const totalRows: LevelRow[] = [];
+      const fyRows: LevelRow[] = [];
+      const monthRows: LevelRow[] = [];
+      const categoryRows: LevelRow[] = [];
+
+      /** Percentages are stored as fractions so Excel can sort them; the cell format shows a %. */
+      const pctOf = (part: number, whole: number) => (whole > 0 ? part / whole : null);
+      /** Absent budgets stay blank rather than becoming an em dash, which would make the column text. */
+      const amount = (value: number) => (value > 0 ? value : null);
 
       for (const project of visibleProjects) {
         const pExp = allExpenses.filter(e => e.projectId === project.id);
@@ -955,15 +1013,26 @@ export default function SiteFundBudgetPage() {
         const exportMonthSumAll = allBudgets.filter(b => b.projectId === project.id && b.budgetType === 'monthly').reduce((s, b) => s + b.budgetAmount, 0);
         const tAmt   = tb ? tb.budgetAmount : exportFySumAll > 0 ? exportFySumAll : exportMonthSumAll;
         if (totalPerm.view) {
-          const tRow = ws.addRow({
-            level: 'Total', name: project.projectName,
+          addNode(0, {
+            level: 'Total',
+            name: project.projectName + (project.projectCode ? ` (${project.projectCode})` : ''),
             budget: tAmt || '—', received: tRcvd, spent: tSpent,
             remaining: tAmt > 0 ? tAmt - tSpent : '—',
             pctUsed: tAmt > 0 ? formatPct((tSpent / tAmt) * 100) : '—',
             status: tAmt === 0 ? 'No Budget' : tSpent > tAmt ? 'Over Budget' : (tSpent / tAmt) * 100 >= 80 ? 'Warning' : 'On Track',
             notes: tb?.notes || '',
           });
-          tRow.font = { bold: true };
+          totalRows.push({
+            project: project.projectName,
+            code: project.projectCode || '',
+            budget: amount(tAmt),
+            received: tRcvd,
+            spent: tSpent,
+            remaining: tAmt > 0 ? tAmt - tSpent : null,
+            pctUsed: pctOf(tSpent, tAmt),
+            status: tAmt === 0 ? 'No Budget' : tSpent > tAmt ? 'Over Budget' : (tSpent / tAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+            notes: tb?.notes || '',
+          });
         }
 
         for (const fyS of getRelevantFYs(project.id)) {
@@ -978,11 +1047,23 @@ export default function SiteFundBudgetPage() {
           if (!fyB && fySpent === 0 && exportFyMonthSum === 0) continue;
           const fAmt = fyB ? fyB.budgetAmount : exportFyMonthSum;
           if (fyPerm.view) {
-            ws.addRow({
-              level: `FY ${fyLabel(fyS)}`, name: `  FY ${fyLabel(fyS)}`,
+            addNode(1, {
+              level: 'Financial Year', name: `FY ${fyLabel(fyS)}`,
               budget: fAmt || '—', received: fyRcvd, spent: fySpent,
               remaining: fAmt > 0 ? fAmt - fySpent : '—',
               pctUsed: fAmt > 0 ? formatPct((fySpent / fAmt) * 100) : '—',
+              status: fAmt === 0 ? 'No Budget' : fySpent > fAmt ? 'Over Budget' : (fySpent / fAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+              notes: fyB?.notes || '',
+            });
+            fyRows.push({
+              project: project.projectName,
+              code: project.projectCode || '',
+              fy: `FY ${fyLabel(fyS)}`,
+              budget: amount(fAmt),
+              received: fyRcvd,
+              spent: fySpent,
+              remaining: fAmt > 0 ? fAmt - fySpent : null,
+              pctUsed: pctOf(fySpent, fAmt),
               status: fAmt === 0 ? 'No Budget' : fySpent > fAmt ? 'Over Budget' : (fySpent / fAmt) * 100 >= 80 ? 'Warning' : 'On Track',
               notes: fyB?.notes || '',
             });
@@ -995,11 +1076,25 @@ export default function SiteFundBudgetPage() {
             if (!mB && mSpent === 0 && !allCatBudgets.some(b => b.projectId === project.id && b.period === m)) continue;
             const mAmt = mB?.budgetAmount ?? 0;
             if (monthlyPerm.view) {
-              ws.addRow({
-                level: monthLabel(m), name: `    ${monthLabel(m)}`,
+              addNode(2, {
+                level: 'Month', name: monthLabel(m),
                 budget: mAmt || '—', received: mRcvd, spent: mSpent,
                 remaining: mAmt > 0 ? mAmt - mSpent : '—',
                 pctUsed: mAmt > 0 ? formatPct((mSpent / mAmt) * 100) : '—',
+                status: !mB ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
+                notes: mB?.notes || '',
+              });
+              monthRows.push({
+                project: project.projectName,
+                code: project.projectCode || '',
+                fy: `FY ${fyLabel(fyS)}`,
+                month: monthLabel(m),
+                period: m,
+                budget: amount(mAmt),
+                received: mRcvd,
+                spent: mSpent,
+                remaining: mAmt > 0 ? mAmt - mSpent : null,
+                pctUsed: pctOf(mSpent, mAmt),
                 status: !mB ? 'No Budget' : mSpent > mAmt ? 'Over Budget' : (mSpent / mAmt) * 100 >= 80 ? 'Warning' : 'On Track',
                 notes: mB?.notes || '',
               });
@@ -1012,11 +1107,25 @@ export default function SiteFundBudgetPage() {
                 const cSpent = pExp.filter(e => e.expenseDate.startsWith(m) && e.expenseCategory === cat).reduce((s, e) => s + (e.expenseAmount || 0), 0);
                 if (!cb && cSpent === 0) continue;
                 const cAmt = cb?.budgetAmount ?? 0;
-                ws.addRow({
-                  level: 'Category', name: `      ${cat}`,
+                addNode(3, {
+                  level: 'Category', name: cat,
                   budget: cAmt || '—', received: '—', spent: cSpent,
                   remaining: cAmt > 0 ? cAmt - cSpent : '—',
                   pctUsed: cAmt > 0 ? formatPct((cSpent / cAmt) * 100) : '—',
+                  status: !cb ? 'No Budget' : cSpent > cAmt ? 'Over' : (cSpent / cAmt) * 100 >= 80 ? 'Near Limit' : 'OK',
+                  notes: cb?.notes || '',
+                });
+                categoryRows.push({
+                  project: project.projectName,
+                  code: project.projectCode || '',
+                  fy: `FY ${fyLabel(fyS)}`,
+                  month: monthLabel(m),
+                  period: m,
+                  category: cat,
+                  budget: amount(cAmt),
+                  spent: cSpent,
+                  remaining: cAmt > 0 ? cAmt - cSpent : null,
+                  pctUsed: pctOf(cSpent, cAmt),
                   status: !cb ? 'No Budget' : cSpent > cAmt ? 'Over' : (cSpent / cAmt) * 100 >= 80 ? 'Near Limit' : 'OK',
                   notes: cb?.notes || '',
                 });
@@ -1025,6 +1134,97 @@ export default function SiteFundBudgetPage() {
           }
         }
       }
+
+      /**
+       * Writes one level's flat sheet: its own header, its own field names, one row per record.
+       *
+       * Skipped entirely when the level produced nothing, so an installation that never sets
+       * category budgets does not ship an empty tab that looks like a bug.
+       */
+      function addLevelSheet(
+        title: string,
+        columns: { header: string; key: string; width: number; numFmt?: string }[],
+        rows: LevelRow[],
+      ) {
+        if (rows.length === 0) return;
+        const sheet = wb.addWorksheet(title);
+        sheet.columns = columns.map(({ key, width }) => ({ key, width }));
+        sheet.addRow(columns.map(c => c.header)).font = { bold: true };
+        sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+        rows.forEach(record => sheet.addRow(record));
+
+        // Formats go on the column so they apply to rows added above and any added later.
+        columns.forEach((column, index) => {
+          if (column.numFmt) sheet.getColumn(index + 1).numFmt = column.numFmt;
+        });
+
+        // Filter handles on the header, so each sheet is usable on its own.
+        sheet.autoFilter = {
+          from: { row: 1, column: 1 },
+          to: { row: rows.length + 1, column: columns.length },
+        };
+      }
+
+      const MONEY = '#,##0';
+      const PCT = '0.0%';
+
+      addLevelSheet('Total', [
+        { header: 'Project',        key: 'project',   width: 30 },
+        { header: 'Code',           key: 'code',      width: 12 },
+        { header: 'Total Budget',   key: 'budget',    width: 16, numFmt: MONEY },
+        { header: 'Received',       key: 'received',  width: 16, numFmt: MONEY },
+        { header: 'Spent',          key: 'spent',     width: 16, numFmt: MONEY },
+        { header: 'Remaining',      key: 'remaining', width: 16, numFmt: MONEY },
+        { header: '% Used',         key: 'pctUsed',   width: 10, numFmt: PCT },
+        { header: 'Status',         key: 'status',    width: 14 },
+        { header: 'Notes',          key: 'notes',     width: 30 },
+      ], totalRows);
+
+      addLevelSheet('Financial Year', [
+        { header: 'Project',        key: 'project',   width: 30 },
+        { header: 'Code',           key: 'code',      width: 12 },
+        { header: 'Financial Year', key: 'fy',        width: 14 },
+        { header: 'FY Budget',      key: 'budget',    width: 16, numFmt: MONEY },
+        { header: 'Received',       key: 'received',  width: 16, numFmt: MONEY },
+        { header: 'Spent',          key: 'spent',     width: 16, numFmt: MONEY },
+        { header: 'Remaining',      key: 'remaining', width: 16, numFmt: MONEY },
+        { header: '% Used',         key: 'pctUsed',   width: 10, numFmt: PCT },
+        { header: 'Status',         key: 'status',    width: 14 },
+        { header: 'Notes',          key: 'notes',     width: 30 },
+      ], fyRows);
+
+      addLevelSheet('Month', [
+        { header: 'Project',        key: 'project',   width: 30 },
+        { header: 'Code',           key: 'code',      width: 12 },
+        { header: 'Financial Year', key: 'fy',        width: 14 },
+        { header: 'Month',          key: 'month',     width: 18 },
+        // The sortable form of the month, since "April 2026" sorts alphabetically otherwise.
+        { header: 'Period',         key: 'period',    width: 10 },
+        { header: 'Monthly Budget', key: 'budget',    width: 16, numFmt: MONEY },
+        { header: 'Received',       key: 'received',  width: 16, numFmt: MONEY },
+        { header: 'Spent',          key: 'spent',     width: 16, numFmt: MONEY },
+        { header: 'Remaining',      key: 'remaining', width: 16, numFmt: MONEY },
+        { header: '% Used',         key: 'pctUsed',   width: 10, numFmt: PCT },
+        { header: 'Status',         key: 'status',    width: 14 },
+        { header: 'Notes',          key: 'notes',     width: 30 },
+      ], monthRows);
+
+      // No Received column: money arrives from Head Office against a project, never a category.
+      addLevelSheet('Category', [
+        { header: 'Project',         key: 'project',   width: 30 },
+        { header: 'Code',            key: 'code',      width: 12 },
+        { header: 'Financial Year',  key: 'fy',        width: 14 },
+        { header: 'Month',           key: 'month',     width: 18 },
+        { header: 'Period',          key: 'period',    width: 10 },
+        { header: 'Category',        key: 'category',  width: 26 },
+        { header: 'Category Budget', key: 'budget',    width: 16, numFmt: MONEY },
+        { header: 'Spent',           key: 'spent',     width: 16, numFmt: MONEY },
+        { header: 'Remaining',       key: 'remaining', width: 16, numFmt: MONEY },
+        { header: '% Used',          key: 'pctUsed',   width: 10, numFmt: PCT },
+        { header: 'Status',          key: 'status',    width: 14 },
+        { header: 'Notes',           key: 'notes',     width: 30 },
+      ], categoryRows);
 
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(new Blob([buf]));
