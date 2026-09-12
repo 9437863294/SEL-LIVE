@@ -17,6 +17,7 @@ import type { Subcontractor, ContactPerson, Project } from '@/lib/types';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { logUserActivity } from '@/lib/activity-logger';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 const initialContact: Omit<ContactPerson, 'id'> = { type: 'Project', name: '', title: '', mobile: '', email: '' };
 
@@ -93,17 +94,23 @@ export default function AddSubcontractorPage() {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/manage`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Add New Subcontractor</h1>
-        </div>
-        <Button onClick={handleSubmit} disabled={isSaving}>
-          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Save Subcontractor
-        </Button>
-      </div>
+    <>
+      <PmTopbar
+        title={'Add Subcontractor'}
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Manage', href: `/subcontractors-management/${projectSlug}/manage` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/manage`}
+        backLabel="Back to Manage"
+        actions={
+          <Button size="sm" onClick={handleSubmit} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+            Save Subcontractor
+          </Button>
+        }
+      />
+      <PmContent>
 
       <div className="space-y-6">
         <Accordion type="multiple" defaultValue={['item-1', 'item-2', 'item-3']} className="w-full">
@@ -186,6 +193,7 @@ export default function AddSubcontractorPage() {
             </AccordionItem>
         </Accordion>
       </div>
-    </div>
+      </PmContent>
+    </>
   );
 }

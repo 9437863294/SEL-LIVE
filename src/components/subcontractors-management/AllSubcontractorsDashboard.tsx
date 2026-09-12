@@ -16,42 +16,16 @@ import { cn } from '@/lib/utils';
 import type { LucideIcon } from 'lucide-react';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PmNavCard, PmNavCardGrid } from '@/components/project-management/pm-shell';
 
-interface SubcontractorCardProps {
-  item: {
-    icon: LucideIcon;
-    text: string;
-    href: string;
-    description: string;
-    disabled?: boolean;
-  };
-}
-
-function SubcontractorCard({ item }: SubcontractorCardProps) {
-    const isDisabled = item.href === '#' || item.disabled;
-    const cardContent = (
-      <Card className={cn(
-        'flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50',
-        isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-      )}>
-        <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
-          <div className="bg-primary/10 p-3 rounded-lg">
-            <item.icon className="w-6 h-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-            <CardDescription className="text-xs">{item.description}</CardDescription>
-          </div>
-        </CardHeader>
-      </Card>
-    );
-    if (isDisabled) return <div className="h-full">{cardContent}</div>;
-  
-    return (
-      <Link href={item.href} className="no-underline h-full">{cardContent}</Link>
-    );
-}
-
+/** Per-tile accents, cycled so neighbouring cards stay tellable apart. */
+const TILE_GRADIENTS = [
+  'from-sky-500 to-blue-600',
+  'from-violet-500 to-purple-600',
+  'from-amber-500 to-orange-600',
+  'from-emerald-500 to-teal-600',
+  'from-rose-500 to-pink-600',
+];
 export default function AllSubcontractorsDashboard() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
 
@@ -98,10 +72,20 @@ export default function AllSubcontractorsDashboard() {
   );
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-      {dashboardItems.map((item) => (
-        <SubcontractorCard key={item.text} item={item} />
+    <PmNavCardGrid>
+      {dashboardItems.map((item, index) => (
+        <PmNavCard
+          key={item.text}
+          item={{
+            icon: item.icon,
+            title: item.text,
+            description: item.description,
+            href: item.href,
+            gradient: TILE_GRADIENTS[index % TILE_GRADIENTS.length],
+            disabled: item.disabled,
+          }}
+        />
       ))}
-    </div>
+    </PmNavCardGrid>
   );
 }

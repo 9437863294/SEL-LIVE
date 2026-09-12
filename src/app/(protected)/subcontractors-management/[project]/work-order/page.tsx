@@ -16,6 +16,7 @@ import type { WorkOrder, Project } from '@/lib/types';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PM_TABLE_CLASS, PmContent, PmSectionHead, PmTopbar } from '@/components/project-management/pm-shell';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -122,16 +123,16 @@ export default function WorkOrderLogPage() {
 
   if (authLoading || (isLoading && canViewPage)) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <PmContent>
             <Skeleton className="h-10 w-96 mb-6" />
             <Skeleton className="h-[500px] w-full" />
-        </div>
+        </PmContent>
     );
   }
 
   if (!canViewPage) {
      return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <PmContent>
             <div className="mb-6 flex items-center gap-2">
                 <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
                 <h1 className="text-xl font-bold">Work Order Log</h1>
@@ -143,30 +144,43 @@ export default function WorkOrderLogPage() {
                 </CardHeader>
                 <CardContent className="flex justify-center p-8"><ShieldAlert className="h-16 w-16 text-destructive" /></CardContent>
             </Card>
-        </div>
+        </PmContent>
     );
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href={`/subcontractors-management/${projectSlug}`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+    <>
+      <PmTopbar
+        title="Work Orders"
+        breadcrumbs={[
+          { label: projectSlug === 'all' ? 'All projects' : currentProject?.projectName || 'Project' },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}`}
+        backLabel="Back to Subcontractors"
+        actions={
+          projectSlug !== 'all' ? (
+            <Button size="sm" asChild>
+              <Link href={`/subcontractors-management/${projectSlug}/work-order/create`}>
+                <Plus className="mr-1.5 h-4 w-4" /> Create Work Order
+              </Link>
             </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">Work Order Log</h1>
-        </div>
-        {projectSlug !== 'all' && (
-            <Link href={`/subcontractors-management/${projectSlug}/work-order/create`}>
-              <Button><Plus className="mr-2 h-4 w-4" /> Create Work Order</Button>
-            </Link>
-        )}
-      </div>
-      <Card>
+          ) : undefined
+        }
+      />
+      <PmContent>
+        <PmSectionHead
+          title="All work orders"
+          stats={[
+            {
+              label: workOrders.length === 1 ? 'work order' : 'work orders',
+              value: String(workOrders.length),
+            },
+          ]}
+        />
+        <Card className="border-border/60">
         <CardContent className="p-0">
-          <Table>
+          <div className="overflow-x-auto">
+          <Table className={PM_TABLE_CLASS}>
             <TableHeader>
               <TableRow>
                 <TableHead>WO No.</TableHead>
@@ -208,8 +222,10 @@ export default function WorkOrderLogPage() {
               )}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
-      </Card>
-    </div>
+        </Card>
+      </PmContent>
+    </>
   );
 }

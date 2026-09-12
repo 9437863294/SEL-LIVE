@@ -29,6 +29,7 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 /* ---------- local types ---------- */
 type BoqItem = BoqItemBase & { projectId?: string; [k: string]: any };
@@ -490,23 +491,26 @@ export default function JmcEntryPage() {
   
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/billing-recon/${projectSlug}/jmc`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">Create JMC Entry</h1>
-          </div>
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+      {/* Back went to `/billing-recon/${projectSlug}/jmc` — a leftover from when this screen was
+          copied out of Billing Recon, which dropped the user into a different module. It now stays
+          inside Subcontractors Management. */}
+      <PmTopbar
+        title="Create JMC Entry"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}`}
+        backLabel="Back to Subcontractors"
+        actions={
+          <Button size="sm" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
             Save Entry
           </Button>
-        </div>
+        }
+      />
+      <PmContent>
 
-        <Card className="mb-6">
+        <Card className="mb-6 border-border/60">
           <CardHeader>
             <CardTitle>JMC Details</CardTitle>
             <CardDescription>Provide the main details for this Joint Measurement Certificate.</CardDescription>
@@ -642,7 +646,7 @@ export default function JmcEntryPage() {
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </PmContent>
 
       <BoqMultiSelectDialog
         key={currentProject?.id || 'no-project'}

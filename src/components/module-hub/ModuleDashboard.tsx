@@ -38,6 +38,22 @@ const moduleIcons: Record<string, string> = {
   "Tour, Travel & Expense": "Plane",
 };
 
+/**
+ * Modules deliberately kept off the home dashboard.
+ *
+ * This hides the CARD only. Permissions, routes and every in-app link into these modules keep
+ * working exactly as before — so a hidden module is still reachable by URL, and still reachable
+ * from wherever another module links to it.
+ *
+ * Remove a name from this set to bring its card back; nothing else has to change.
+ */
+const HIDDEN_FROM_DASHBOARD = new Set<string>([
+  // Reached through Project Management → Civil, which links into it already scoped to a project.
+  "Subcontractors Management",
+  // Project Management is deliberately NOT hidden: this card is its only entry point — it is not
+  // in the app shell nav, and nothing else links to /project-management.
+]);
+
 const moduleDescriptions: Record<string, string> = {
   "Site Fund Requisition": "Handle site fund requests and approvals.",
   "Site Fund Requisition 2":
@@ -108,6 +124,9 @@ export default function ModuleDashboard() {
 
     const availableModuleNames = Object.keys(permissionModules).filter(
       (moduleName) => {
+        // Filtered here rather than at render, so a card already saved in the user's own arrangement
+        // disappears too — `visibleSavedModules` below is filtered against this same list.
+        if (HIDDEN_FROM_DASHBOARD.has(moduleName)) return false;
         if (moduleName === "Driver Management") {
           return hasDriverPermission || isAssignedDriverWithVehicle;
         }

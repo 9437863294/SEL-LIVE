@@ -1,39 +1,41 @@
-
 'use client';
 
+/**
+ * Subcontractors Management chrome, built from Project Management's shell.
+ *
+ * The module previously carried its own fixed collapsible rail — a different width, a different
+ * active state, its own collapse control and a copyright footer none of the Project Management
+ * screens have. Sitting next to Supply or Civil it read as a different application, which is
+ * exactly what it is not: work orders and subcontractor billing measure the same civil BOQ lines
+ * the JMC lane certifies.
+ *
+ * Using `PmShell` + `PmSidebar` here restyles every screen in the module at once, and leaves each
+ * page free to add its own `PmTopbar` and `PmContent`. Navigation targets, the per-project
+ * permission scoping and the `all` / print special cases are unchanged.
+ */
+
 import * as React from 'react';
-import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
-  Users,
-  FileText,
-  Calculator,
-  FolderOpen,
-  ChevronLeft,
-  ChevronRight,
   BarChart3,
-  History,
+  Calculator,
+  FileText,
+  FolderOpen,
+  HardHat,
+  Users,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { Project } from '@/lib/types';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PmShell, PmSidebar, pmAccent } from '@/components/project-management/pm-shell';
 
 export default function ProjectLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [isExpanded, setIsExpanded] = React.useState(false);
   const params = useParams();
   const projectSlug = params.project as string;
   const pathname = usePathname();
@@ -43,107 +45,97 @@ export default function ProjectLayout({
   React.useEffect(() => {
     const fetchProject = async () => {
       if (!projectSlug || projectSlug === 'all') {
-          setCurrentProject(null);
-          return;
-      };
+        setCurrentProject(null);
+        return;
+      }
       const projectsQuery = query(collection(db, 'projects'));
       const projectsSnapshot = await getDocs(projectsQuery);
-      const projectData = projectsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project)).find(p => projectMatchesSlug(p.projectName, projectSlug));
+      const projectData = projectsSnapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() } as Project))
+        .find((p) => projectMatchesSlug(p.projectName, projectSlug));
       setCurrentProject(projectData || null);
     };
     fetchProject();
   }, [projectSlug]);
 
+  // Rights here are scoped to the global project id, as they always were.
   const projectId = currentProject?.id || '';
 
   const navItems = [
-    { href: `/subcontractors-management`, icon: FolderOpen, label: 'Projects', permission: can('View Module', 'Subcontractors Management')},
-    { href: `/subcontractors-management/${projectSlug}/manage`, icon: Users, label: 'Manage', permission: can('View', 'Subcontractors Management.Manage Subcontractors', projectId) },
-    { href: `/subcontractors-management/${projectSlug}/work-order`, icon: FileText, label: 'Work Order', permission: can('View', 'Subcontractors Management.Work Order', projectId) },
-    { href: `/subcontractors-management/${projectSlug}/billing`, icon: Calculator, label: 'Billing', permission: can('View', 'Subcontractors Management.Billing', projectId) },
-    { href: `/subcontractors-management/${projectSlug}/reports`, icon: BarChart3, label: 'Reports', permission: can('View', 'Subcontractors Management.Reports', projectId) },
+    {
+      href: `/subcontractors-management`,
+      icon: FolderOpen,
+      label: 'Projects',
+      permission: can('View Module', 'Subcontractors Management'),
+    },
+    {
+      href: `/subcontractors-management/${projectSlug}/manage`,
+      icon: Users,
+      label: 'Manage',
+      permission: can('View', 'Subcontractors Management.Manage Subcontractors', projectId),
+    },
+    {
+      href: `/subcontractors-management/${projectSlug}/work-order`,
+      icon: FileText,
+      label: 'Work Order',
+      permission: can('View', 'Subcontractors Management.Work Order', projectId),
+    },
+    {
+      href: `/subcontractors-management/${projectSlug}/billing`,
+      icon: Calculator,
+      label: 'Billing',
+      permission: can('View', 'Subcontractors Management.Billing', projectId),
+    },
+    {
+      href: `/subcontractors-management/${projectSlug}/reports`,
+      icon: BarChart3,
+      label: 'Reports',
+      permission: can('View', 'Subcontractors Management.Reports', projectId),
+    },
   ];
-  
-  const visibleNavItems = navItems.filter(item => item.permission);
-  
+
+  const visibleNavItems = navItems.filter((item) => item.permission);
+
   const isPrintPage = pathname.includes('/print');
   if (isPrintPage) {
     return <>{children}</>;
   }
 
-  // If we are on the "all" projects view, we render the children directly without a sidebar.
+  // The "all projects" view spans every project, so a project-scoped rail would be lying.
   if (projectSlug === 'all') {
     return <div className="p-4 sm:p-6 lg:p-8">{children}</div>;
   }
 
   return (
-    <div className="flex w-full h-full">
-      <aside 
-        className={cn(
-            "fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r bg-background transition-all duration-300",
-            isExpanded ? "w-56" : "w-16"
-        )}
-      >
-        <TooltipProvider delayDuration={0}>
-          <div className="flex-1 p-2">
-            <nav className="flex flex-col gap-1">
-              {visibleNavItems.map((item) => (
-                <Tooltip key={item.label}>
-                    <TooltipTrigger asChild>
-                       <Link href={item.href}>
-                         <Button
-                            variant={pathname.startsWith(item.href) ? 'secondary' : 'ghost'}
-                            className={cn(
-                                "w-full justify-start",
-                                !isExpanded && "h-10 w-10 p-0"
-                            )}
-                         >
-                            <div className={cn("flex items-center", isExpanded ? "" : "w-full justify-center")}>
-                                <item.icon className={cn("h-5 w-5", isExpanded && "mr-3")} />
-                                <span className={cn(!isExpanded && "sr-only")}>{item.label}</span>
-                            </div>
-                         </Button>
-                       </Link>
-                    </TooltipTrigger>
-                    {!isExpanded && (
-                       <TooltipContent side="right">
-                         <p>{item.label}</p>
-                       </TooltipContent>
-                    )}
-                </Tooltip>
-              ))}
-            </nav>
-          </div>
-          <div className="mt-auto p-2 border-t">
-            <Button
-                variant="ghost"
-                className={cn(
-                    "w-full justify-start mt-1",
-                    !isExpanded && "h-10 w-10 p-0 justify-center"
-                )}
-                onClick={() => setIsExpanded(!isExpanded)}
-            >
-                {isExpanded ? (
-                    <>
-                        <ChevronLeft className="h-5 w-5 mr-3" />
-                        <span>Collapse</span>
-                    </>
-                ) : (
-                    <ChevronRight className="h-5 w-5" />
-                )}
-                <span className="sr-only">Toggle Sidebar</span>
-            </Button>
-          </div>
-        </TooltipProvider>
-      </aside>
-      <div className={cn("flex-1 flex flex-col min-h-screen transition-all duration-300", isExpanded ? "ml-56" : "ml-16")}>
-        <main className="flex-grow p-4 sm:p-6 lg:p-8">
-            {children}
-        </main>
-        <footer className="flex-shrink-0 flex justify-between items-center text-muted-foreground text-sm py-4 px-6">
-            <span>Copyright © 2025 SEL. All Rights Reserved.</span>
-        </footer>
-      </div>
-    </div>
+    <PmShell
+      sidebar={
+        <PmSidebar
+          title="Subcontractors"
+          subtitle={currentProject?.projectName || undefined}
+          icon={HardHat}
+          gradient="from-sky-600 to-blue-600"
+          groups={[
+            {
+              label: 'Screens',
+              links: visibleNavItems.map((item, index) => ({
+                href: item.href,
+                label: item.label,
+                icon: item.icon,
+                color: pmAccent(index).color,
+                bg: pmAccent(index).bg,
+                // `Projects` is the module root, so an exact match — otherwise it would light up
+                // on every screen beneath it.
+                active:
+                  item.href === '/subcontractors-management'
+                    ? pathname === item.href
+                    : pathname.startsWith(item.href),
+              })),
+            },
+          ]}
+        />
+      }
+    >
+      {children}
+    </PmShell>
   );
 }

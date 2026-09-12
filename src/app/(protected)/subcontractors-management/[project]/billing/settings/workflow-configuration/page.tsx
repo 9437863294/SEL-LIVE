@@ -45,6 +45,7 @@ import { logUserActivity } from '@/lib/activity-logger';
 import { useParams } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 /* ---------------- type guards ---------------- */
 function isUserBased(step: WorkflowStep): step is WorkflowStepUser {
@@ -395,30 +396,33 @@ export default function BillingWorkflowConfigurationPage() {
   }
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href={`/subcontractors-management/${projectSlug}/billing/settings`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-6 w-6" />
+    <>
+      <PmTopbar
+        title="Billing Workflow"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+          { label: 'Settings', href: `/subcontractors-management/${projectSlug}/billing/settings` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/billing/settings`}
+        backLabel="Back to Billing Settings"
+        actions={
+          <>
+            {pageInvalidMsg && (
+              <Badge variant="destructive" className="whitespace-nowrap">
+                {pageInvalidMsg}
+              </Badge>
+            )}
+            <Button size="sm" onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
+              {isSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+              Save Workflow
             </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Billing Workflow Configuration</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          {pageInvalidMsg && (
-            <Badge variant="destructive" className="whitespace-nowrap">
-              {pageInvalidMsg}
-            </Badge>
-          )}
-          <Button onClick={handleSave} disabled={isSaving || !canEditPage || !!pageInvalidMsg}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Save Workflow
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
+      <PmContent>
 
-      <Card>
+      <Card className="border-border/60">
         <CardHeader>
           <CardTitle>Workflow Steps</CardTitle>
           <CardDescription>
@@ -801,7 +805,8 @@ export default function BillingWorkflowConfigurationPage() {
           </Button>
         </CardContent>
       </Card>
-    </div>
+      </PmContent>
+    </>
   );
 }
 

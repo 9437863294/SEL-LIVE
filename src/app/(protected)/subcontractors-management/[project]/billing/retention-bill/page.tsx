@@ -32,6 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 const initialDetails = {
     retentionBillNo: '',
@@ -216,17 +217,23 @@ export default function CreateRetentionBillPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/billing`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Retention Bill</h1>
-        </div>
-        <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+    <>
+      <PmTopbar
+        title="Retention Bill"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backLabel="Back to Billing"
+        actions={
+          <Button size="sm" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
             Save Retention Bill
-        </Button>
-      </div>
+          </Button>
+        }
+      />
+      <PmContent>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-1">
@@ -289,6 +296,7 @@ export default function CreateRetentionBillPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </PmContent>
+    </>
   );
 }

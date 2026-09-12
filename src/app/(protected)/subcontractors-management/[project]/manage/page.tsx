@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PM_TABLE_CLASS, PmContent, PmSectionHead, PmTopbar } from '@/components/project-management/pm-shell';
 
 
 export default function ManageSubcontractorsPage() {
@@ -196,7 +197,7 @@ export default function ManageSubcontractorsPage() {
 
   if (authLoading || (isLoading && canViewPage)) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <PmContent>
             <div className="mb-6 flex items-center justify-between">
                 <Skeleton className="h-10 w-48" />
                 <Skeleton className="h-10 w-32" />
@@ -206,7 +207,7 @@ export default function ManageSubcontractorsPage() {
                     <Skeleton className="h-96 w-full" />
                 </CardContent>
             </Card>
-        </div>
+        </PmContent>
     );
   }
   
@@ -226,20 +227,42 @@ export default function ManageSubcontractorsPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
-            <h1 className="text-2xl font-bold">Manage Subcontractors</h1>
-        </div>
-        <Link href={`/subcontractors-management/${projectSlug}/manage/add`}>
-            <Button disabled={!canAdd}><Plus className="mr-2 h-4 w-4"/> Add Subcontractor</Button>
-        </Link>
-      </div>
-      
-       <Card>
+    <>
+      <PmTopbar
+        title="Subcontractors"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}`}
+        backLabel="Back to Subcontractors"
+        actions={
+          <Button size="sm" disabled={!canAdd} asChild={canAdd}>
+            {canAdd ? (
+              <Link href={`/subcontractors-management/${projectSlug}/manage/add`}>
+                <Plus className="mr-1.5 h-4 w-4" /> Add Subcontractor
+              </Link>
+            ) : (
+              <span>
+                <Plus className="mr-1.5 h-4 w-4" /> Add Subcontractor
+              </span>
+            )}
+          </Button>
+        }
+      />
+      <PmContent>
+        <PmSectionHead
+          title="All subcontractors"
+          stats={[
+            {
+              label: subcontractors.length === 1 ? 'subcontractor' : 'subcontractors',
+              value: String(subcontractors.length),
+            },
+          ]}
+        />
+       <Card className="border-border/60">
           <CardContent className="p-0">
-            <Table>
+            <div className="overflow-x-auto">
+            <Table className={PM_TABLE_CLASS}>
                 <TableHeader>
                     <TableRow>
                         <TableHead className="w-12"></TableHead>
@@ -386,9 +409,11 @@ export default function ManageSubcontractorsPage() {
                     )}
                 </TableBody>
             </Table>
+            </div>
           </CardContent>
        </Card>
-    </div>
+      </PmContent>
+    </>
   );
 }
 

@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
 import { Progress } from '@/components/ui/progress';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 type EnrichedWorkOrderItem = WorkOrderItem & {
   boqQty: string;
@@ -177,10 +178,10 @@ export default function WorkOrderDetailsPage() {
 
   if (isLoading) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <PmContent>
         <Skeleton className="mb-6 h-10 w-96" />
         <Skeleton className="h-[500px] w-full" />
-      </div>
+      </PmContent>
     );
   }
 
@@ -208,22 +209,17 @@ export default function WorkOrderDetailsPage() {
     financials.totalAdvanceTaken - financials.totalAdvanceDeducted;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center gap-2">
-        <Link
-          href={`/subcontractors-management/${projectSlug}/reports/work-order-progress`}
-        >
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold">Work Order Details</h1>
-          <p className="text-sm text-muted-foreground">
-            WO No: {workOrder.workOrderNo}
-          </p>
-        </div>
-      </div>
+    <>
+      <PmTopbar
+        title={`Work Order ${workOrder.workOrderNo}`}
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Work Orders', href: `/subcontractors-management/${projectSlug}/work-order` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/work-order`}
+        backLabel="Back to Work Orders"
+      />
+      <PmContent>
 
       <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card>
@@ -351,6 +347,7 @@ export default function WorkOrderDetailsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </PmContent>
+    </>
   );
 }

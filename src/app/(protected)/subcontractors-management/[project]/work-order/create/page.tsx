@@ -50,6 +50,7 @@ import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
 import { CustomAssemblyDialog } from '@/components/subcontractors-management/CustomAssemblyDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PM_TABLE_CLASS, PmContent, PmSectionHead, PmTopbar } from '@/components/project-management/pm-shell';
 
 // UI-level WorkOrderItem — extends backend type with UI-only fields
 type WorkOrderItem = Omit<OriginalWorkOrderItem, 'id' | 'subItems'> & {
@@ -497,103 +498,111 @@ export default function CreateWorkOrderPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/work-order`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">Create Work Order</h1>
-          </div>
-          <Button onClick={handleSave} disabled={isSaving}>
+      <PmTopbar
+        title="Create Work Order"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Work Orders', href: `/subcontractors-management/${projectSlug}/work-order` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/work-order`}
+        backLabel="Back to Work Orders"
+        actions={
+          <Button size="sm" onClick={handleSave} disabled={isSaving}>
             {isSaving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
             ) : (
-              <Save className="mr-2 h-4 w-4" />
+              <Save className="mr-1.5 h-4 w-4" />
             )}
             Save Work Order
           </Button>
+        }
+      />
+      <PmContent>
+        {/* Who and when — one compact panel, matching the meta strip on the Project Management
+            document forms rather than a full Card header for three fields. */}
+        <div className="mb-4 grid gap-3 rounded-lg border border-border/60 bg-muted/30 p-3 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="workOrderNo" className="text-xs">
+              Work Order No.
+            </Label>
+            <Input
+              id="workOrderNo"
+              value={previewWoNo}
+              readOnly
+              className="h-9 bg-background font-mono text-sm"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="date" className="text-xs">
+              Date
+            </Label>
+            <Input
+              id="date"
+              name="date"
+              type="date"
+              className="h-9 bg-background"
+              value={details.date}
+              onChange={handleDetailChange}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="subcontractor" className="text-xs">
+              Subcontractor
+            </Label>
+            <Select
+              value={details.subcontractorId}
+              onValueChange={value =>
+                setDetails(prev => ({ ...prev, subcontractorId: value }))
+              }
+            >
+              <SelectTrigger id="subcontractor" className="h-9 bg-background">
+                <SelectValue placeholder="Select a subcontractor" />
+              </SelectTrigger>
+              <SelectContent>
+                {subcontractors.map(s => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.legalName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Work Order Details</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="workOrderNo">Work Order No.</Label>
-              <Input
-                id="workOrderNo"
-                value={previewWoNo}
-                readOnly
-                className="bg-muted"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="date">Date</Label>
-              <Input
-                id="date"
-                name="date"
-                type="date"
-                value={details.date}
-                onChange={handleDetailChange}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="subcontractor">Subcontractor</Label>
-              <Select
-                value={details.subcontractorId}
-                onValueChange={value =>
-                  setDetails(prev => ({ ...prev, subcontractorId: value }))
-                }
+        <PmSectionHead
+          title="Work order items"
+          stats={[
+            { label: items.length === 1 ? 'line' : 'lines', value: String(items.length) },
+            {
+              label: 'order value',
+              value: formatCurrency(items.reduce((sum, item) => sum + (item.totalAmount || 0), 0)),
+            },
+          ]}
+          actions={
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => setIsBoqMultiSelectOpen(true)}
               >
-                <SelectTrigger id="subcontractor">
-                  <SelectValue placeholder="Select a subcontractor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {subcontractors.map(s => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.legalName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Work Order Items</CardTitle>
-                <CardDescription>
-                  Select items from the BOQ and specify quantity and rate.
-                </CardDescription>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => setIsBoqMultiSelectOpen(true)}
-                >
-                  <Library className="mr-2 h-4 w-4" /> Add From BOQ
-                </Button>
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => setIsCustomAssemblyOpen(true)}
-                >
-                  <Component className="mr-2 h-4 w-4" /> Add Custom Assembly
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
+                <Library className="mr-1.5 h-4 w-4" /> Add From BOQ
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => setIsCustomAssemblyOpen(true)}
+              >
+                <Component className="mr-1.5 h-4 w-4" /> Add Custom Assembly
+              </Button>
+            </>
+          }
+        />
+        <Card className="border-border/60">
+          <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <Table>
+              <Table className={PM_TABLE_CLASS}>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12" />
@@ -849,17 +858,15 @@ export default function CreateWorkOrderPage() {
                 </TableBody>
               </Table>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={addItem}
-              className="mt-4"
-            >
-              <Plus className="mr-2 h-4 w-4" /> Add Item
-            </Button>
+            {/* CardContent is p-0 so the table meets the card edges; the footer supplies its own. */}
+            <div className="border-t border-border/60 p-3">
+              <Button variant="outline" size="sm" onClick={addItem}>
+                <Plus className="mr-1.5 h-4 w-4" /> Add Item
+              </Button>
+            </div>
           </CardContent>
         </Card>
-      </div>
+      </PmContent>
 
       <BoqMultiSelectDialog
         isOpen={isBoqMultiSelectOpen}

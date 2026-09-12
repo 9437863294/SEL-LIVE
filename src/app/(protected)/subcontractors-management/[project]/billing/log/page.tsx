@@ -89,6 +89,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 
 // Unified Display types
@@ -683,23 +684,18 @@ export default function BillLogPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/subcontractors-management/${
-                projectSlug === 'all' ? '' : projectSlug
-              }`}
-            >
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">Billing Log</h1>
-          </div>
-        </div>
+      <PmTopbar
+        title="Billing Log"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backLabel="Back to Billing"
+      />
+      <PmContent>
 
-        <Card className="mb-6">
+        <Card className="mb-6 border-border/60">
           <CardHeader className="p-4">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
               {projectSlug === 'all' && (
@@ -818,7 +814,7 @@ export default function BillLogPage() {
             {renderTable(completedTasks)}
           </TabsContent>
         </Tabs>
-      </div>
+      </PmContent>
 
       {isViewOpen &&
         (selectedBill ? (

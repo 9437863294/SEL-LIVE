@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PM_TABLE_CLASS, PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 interface EnrichedWorkOrder extends WorkOrder {
     totalBilled: number;
@@ -102,30 +103,33 @@ export default function WorkOrderProgressReport() {
     const formatCurrency = (amount: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
 
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-            <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Link href={`/subcontractors-management/${projectSlug}/reports`}>
-                        <Button variant="ghost" size="icon">
-                            <ArrowLeft className="h-6 w-6" />
-                        </Button>
-                    </Link>
-                    <h1 className="text-2xl font-bold">Work Order Progress Report</h1>
+        <>
+            <PmTopbar
+                title="Work Order Progress"
+                breadcrumbs={[
+                    { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+                    { label: 'Reports', href: `/subcontractors-management/${projectSlug}/reports` },
+                ]}
+                backHref={`/subcontractors-management/${projectSlug}/reports`}
+                backLabel="Back to Reports"
+            />
+            <PmContent>
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+                    <div className="relative flex-1 sm:max-w-sm">
+                        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            placeholder="Search by WO No or Contractor..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="pl-8"
+                        />
+                    </div>
                 </div>
-                <div className="relative w-full max-w-sm">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                        placeholder="Search by WO No or Contractor..."
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                        className="pl-8"
-                    />
-                </div>
-            </div>
 
-            <Card>
+            <Card className="border-border/60">
                 <CardContent className="p-0">
-                    <Table>
+                    <div className="overflow-x-auto">
+                    <Table className={PM_TABLE_CLASS}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Work Order ID</TableHead>
@@ -168,8 +172,10 @@ export default function WorkOrderProgressReport() {
                             )}
                         </TableBody>
                     </Table>
+                    </div>
                 </CardContent>
             </Card>
-        </div>
+            </PmContent>
+        </>
     );
 }

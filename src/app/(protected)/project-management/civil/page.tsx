@@ -13,7 +13,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, Building2, Ruler, ShieldAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  BarChart3,
+  Building2,
+  Calculator,
+  FileText,
+  Ruler,
+  ShieldAlert,
+  Users,
+} from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
@@ -28,13 +38,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthorization } from "@/hooks/useAuthorization";
 import { cn } from "@/lib/utils";
 import { PM_JMC_BASE_PATH } from "@/lib/jmc-module";
+import { projectSlugCanonical } from "@/lib/project-slug";
 
 const MODULE_NAME = "Project Management";
 const PERMISSION_RESOURCE = `${MODULE_NAME}.Civil`;
 
+const SUBCONTRACTORS_MODULE = "Subcontractors Management";
+
 type ProjectMapping = {
   id: string;
   projectName: string;
+  /** The mapped global project — Subcontractors Management is scoped by it, not by the mapping. */
+  globalProjectId: string;
+  globalProjectName?: string;
 };
 
 export default function CivilPage() {
@@ -50,6 +66,22 @@ export default function CivilPage() {
   const [mapping, setMapping] = useState<ProjectMapping | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  /**
+   * Subcontractors Management rights are scoped per project, and the scope is the GLOBAL project id
+   * — the same argument its own sidebar passes. Checking them unscoped here would show tiles the
+   * destination then refuses, so the check is deferred until the mapping has resolved.
+   */
+  const globalProjectId = mapping?.globalProjectId ?? "";
+  const canSub = (resource: string) =>
+    Boolean(globalProjectId) && can("View", `${SUBCONTRACTORS_MODULE}.${resource}`, globalProjectId);
+
+  /** Their own pickers build URLs with the canonical slug, so links are built with it too. */
+  const subcontractorSlug = projectSlugCanonical(mapping?.globalProjectName);
+  const subHref = (suffix: string) =>
+    subcontractorSlug
+      ? `/subcontractors-management/${subcontractorSlug}${suffix ? `/${suffix}` : ""}`
+      : "#";
+
   useEffect(() => {
     if (isAuthLoading || !canView || !mappingId) {
       setIsLoading(false);
@@ -59,11 +91,29 @@ export default function CivilPage() {
       setIsLoading(true);
       try {
         const snapshot = await getDoc(doc(db, "projectManagementProjects", mappingId));
-        setMapping(
-          snapshot.exists()
-            ? { id: snapshot.id, projectName: snapshot.data().projectName }
-            : null,
-        );
+        if (!snapshot.exists()) {
+          setMapping(null);
+          return;
+        }
+        const data = snapshot.data() as {
+          projectName?: string;
+          globalProjectId?: string;
+          globalProjectName?: string;
+        };
+        // The Subcontractors links need the GLOBAL project's name to build their slug. The mapping
+        // usually caches it; when it doesn't, read the project document rather than falling back to
+        // the mapping's own alias, which would slug to something that resolves to nothing there.
+        let globalProjectName = data.globalProjectName ?? "";
+        if (!globalProjectName && data.globalProjectId) {
+          const projectSnapshot = await getDoc(doc(db, "projects", data.globalProjectId));
+          globalProjectName = String(projectSnapshot.data()?.projectName ?? "");
+        }
+        setMapping({
+          id: snapshot.id,
+          projectName: String(data.projectName ?? ""),
+          globalProjectId: String(data.globalProjectId ?? ""),
+          globalProjectName,
+        });
       } catch (error) {
         console.error("Failed to load project mapping:", error);
         setMapping(null);
@@ -84,6 +134,21 @@ export default function CivilPage() {
         : "Joint measurement certificates — executed and certified quantity.",
       icon: Ruler,
       gradient: "from-emerald-500 to-green-600",
+    },
+    // One entry, not four. Subcontractors Management has its own hub listing Manage, Work Order,
+    // Billing and Reports — repeating those four here duplicated a menu that already exists and
+    // made this page look like it owned screens it does not.
+    {
+      show:
+        canSub("Manage Subcontractors") ||
+        canSub("Work Order") ||
+        canSub("Billing") ||
+        canSub("Reports"),
+      href: subHref(""),
+      title: "Subcontractors",
+      description: "Work orders, billing and reports for this project's subcontractors.",
+      icon: Users,
+      gradient: "from-sky-500 to-blue-600",
     },
   ].filter((link) => link.show);
 

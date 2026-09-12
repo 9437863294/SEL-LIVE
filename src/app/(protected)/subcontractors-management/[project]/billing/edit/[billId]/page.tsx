@@ -31,6 +31,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 type EnrichedBillItem = BillItem & {
   orderQty: number;
@@ -215,19 +216,23 @@ export default function EditBillPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href={`/subcontractors-management/${projectSlug}/billing/log`}>
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-          </Link>
-          <h1 className="text-2xl font-bold">Edit Bill: {bill.billNo}</h1>
-        </div>
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Update Bill
-        </Button>
-      </div>
+    <>
+      <PmTopbar
+        title={`Edit Bill ${bill.billNo}`}
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Billing Log', href: `/subcontractors-management/${projectSlug}/billing/log` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/billing/log`}
+        backLabel="Back to Billing Log"
+        actions={
+          <Button size="sm" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+            Update Bill
+          </Button>
+        }
+      />
+      <PmContent>
 
       {/* Bill Items */}
        <Card>
@@ -326,6 +331,7 @@ export default function EditBillPage() {
             </div>
         </CardContent>
       </Card>
-    </div>
+      </PmContent>
+    </>
   );
 }

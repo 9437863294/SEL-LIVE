@@ -45,6 +45,7 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 const initialBillDetails = {
   proformaNo: '',
@@ -395,23 +396,24 @@ export default function CreateProformaPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">Proforma / Advance Bill</h1>
-          </div>
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+      <PmTopbar
+        title="Proforma / Advance Bill"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backLabel="Back to Billing"
+        actions={
+          <Button size="sm" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
             Save Proforma Bill
           </Button>
-        </div>
+        }
+      />
+      <PmContent>
 
-        <Card className="mb-6">
+        <Card className="mb-6 border-border/60">
           <CardHeader>
             <CardTitle>Proforma Bill Details</CardTitle>
           </CardHeader>
@@ -608,7 +610,7 @@ export default function CreateProformaPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PmContent>
 
       <WorkOrderItemSelectorDialog
         isOpen={isSelectorOpen}

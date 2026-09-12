@@ -45,6 +45,7 @@ import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import ViewProformaBillDialog from '@/components/subcontractors-management/ViewProformaBillDialog';
 import { Textarea } from '@/components/ui/textarea';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 
 /* -------- helpers -------- */
@@ -324,15 +325,16 @@ export default function BillStagePage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-            </Link>
-            <h1 className="text-2xl font-bold">{stage?.name || 'Billing Stage'}</h1>
-          </div>
-        </div>
+      <PmTopbar
+        title={stage?.name || 'Billing Stage'}
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backLabel="Back to Billing"
+      />
+      <PmContent>
         <Tabs defaultValue="pending">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="pending"><Clock className="mr-2 h-4 w-4" /> Pending ({pendingTasks.length})</TabsTrigger>
@@ -341,7 +343,7 @@ export default function BillStagePage() {
           <TabsContent value="pending" className="mt-4">{renderTable(pendingTasks, 'pending')}</TabsContent>
           <TabsContent value="completed" className="mt-4">{renderTable(completedTasks, 'completed')}</TabsContent>
         </Tabs>
-      </div>
+      </PmContent>
 
        <ViewBillDialog
           isOpen={isViewOpen}

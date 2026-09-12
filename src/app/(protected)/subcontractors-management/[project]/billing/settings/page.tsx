@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { useParams } from 'next/navigation';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PmContent, PmNavCard, PmNavCardGrid, PmTopbar } from '@/components/project-management/pm-shell';
 
 interface SettingsCardProps {
   item: {
@@ -93,27 +94,19 @@ export default function BillingSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <Skeleton className="h-10 w-96 mb-6" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Skeleton className="h-28" />
+      <PmContent>
+        <Skeleton className="h-9 w-64" />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          <Skeleton className="h-20 rounded-xl" />
         </div>
-      </div>
+      </PmContent>
     );
   }
 
   if (!canViewPage) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center gap-4">
-          <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold">Billing Settings</h1>
-        </div>
-        <Card>
+      <PmContent>
+        <Card className="border-border/60">
           <CardHeader>
             <CardTitle>Access Denied</CardTitle>
             <CardDescription>You do not have permission to access these settings.</CardDescription>
@@ -122,26 +115,38 @@ export default function BillingSettingsPage() {
             <ShieldAlert className="h-16 w-16 text-destructive" />
           </CardContent>
         </Card>
-      </div>
+      </PmContent>
     );
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
-      <div className="mb-6 flex items-center gap-4">
-        <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-          <Button variant="ghost" size="icon" aria-label="Back">
-            <ArrowLeft className="h-6 w-6" />
-          </Button>
-        </Link>
-        <h1 className="text-xl font-bold">Billing Settings</h1>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {settingsItems.map((item) => (
-          <SettingsCard key={item.text} item={item} />
-        ))}
-      </div>
-    </div>
+    <>
+      <PmTopbar
+        title="Billing Settings"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backLabel="Back to Billing"
+      />
+      <PmContent>
+        <PmNavCardGrid>
+          {settingsItems.map((item) => (
+            <PmNavCard
+              key={item.text}
+              item={{
+                icon: item.icon,
+                title: item.text,
+                description: item.description,
+                href: item.href,
+                gradient: 'from-slate-500 to-slate-700',
+                disabled: item.disabled,
+              }}
+            />
+          ))}
+        </PmNavCardGrid>
+      </PmContent>
+    </>
   );
 }

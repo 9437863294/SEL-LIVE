@@ -42,6 +42,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
 import { getAssigneeForStep, calculateDeadline } from '@/lib/workflow-utils';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { civilBoqKey, civilBoqKeyOfBoqItem, readLooseScope } from '@/lib/civil-execution';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 /**
  * Local WorkOrder shim — add to lib/types.ts later for long-term fix.
@@ -134,6 +136,8 @@ export default function CreateBillPage() {
   const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
   const [jmcEntries, setJmcEntries] = useState<JmcEntry[]>([]);
+  /** boqItemId → the (scope1, scope2, BOQ SL No) key JMC items are matched on. */
+  const [boqKeyByBoqItemId, setBoqKeyByBoqItemId] = useState<Map<string, string>>(new Map());
   const [bills, setBills] = useState<Bill[]>([]);
   const [proformaBills, setProformaBills] = useState<ProformaBill[]>([]);
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
@@ -176,13 +180,18 @@ export default function CreateBillPage() {
         const jmcQuery = query(collection(db, 'projects', project.id, 'jmcEntries'));
         const billsQuery = query(collection(db, 'projects', project.id, 'bills'));
         const proformaBillsQuery = query(collection(db, 'projects', project.id, 'proformaBills'));
+        // BOQ items are needed to make the JMC join scope-aware: a work-order item carries
+        // boqItemId and boqSlNo but NOT scope1/scope2, while a JMC item carries the scopes but no
+        // boqItemId. The BOQ document is the only place the two meet.
+        const boqQuery = query(collection(db, 'projects', project.id, 'boqItems'));
 
-        const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap] = await Promise.all([
+        const [subsSnap, woSnap, jmcSnap, billsSnap, proformaSnap, boqSnap] = await Promise.all([
           getDocs(subsQuery),
           getDocs(woQuery),
           getDocs(jmcQuery),
           getDocs(billsQuery),
           getDocs(proformaBillsQuery),
+          getDocs(boqQuery),
         ]);
 
         if (!mounted) return;
@@ -195,6 +204,14 @@ export default function CreateBillPage() {
         setAllWorkOrders(projectWorkOrders);
 
         setJmcEntries(jmcSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as JmcEntry)));
+        setBoqKeyByBoqItemId(
+          new Map(
+            boqSnap.docs.map((d) => [
+              d.id,
+              civilBoqKeyOfBoqItem({ id: d.id, ...(d.data() as Record<string, unknown>) }),
+            ]),
+          ),
+        );
         setBills(billsSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as Bill)));
         setProformaBills(proformaSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as ProformaBill)));
       } catch (err: any) {
@@ -357,9 +374,29 @@ export default function CreateBillPage() {
     const filteredAdd = selectedWoItems.filter(wo => !existingJmcIds.has(wo.id));
 
     const newBillItems: EnrichedBillItem[] = filteredAdd.map(woItem => {
+      // Certified quantity for THIS work-order line.
+      //
+      // Previously matched on `jItem.boqSlNo === woItem.boqSlNo` alone, which is scope-blind: a
+      // project that reuses an SL No across scopes (1.1 under Civil and again under Erection)
+      // summed both scopes' certified quantity onto each line. The BOQ item resolves the scopes —
+      // a work-order item has boqItemId but no scopes, a JMC item has scopes but no boqItemId.
+      //
+      // Cancelled and rejected entries are excluded: a rejected measurement is not certified work.
+      const woBoqKey = boqKeyByBoqItemId.get(woItem.boqItemId);
       const totalJmcCertifiedForBoqItem = jmcEntries
+        .filter(j => !['Rejected', 'Cancelled'].includes(String((j as any).status ?? '')))
         .flatMap(j => j.items || [])
-        .filter(jItem => jItem.boqSlNo === woItem.boqSlNo)
+        .filter(jItem =>
+          woBoqKey
+            ? civilBoqKey(
+                readLooseScope(jItem as unknown as Record<string, unknown>, 1),
+                readLooseScope(jItem as unknown as Record<string, unknown>, 2),
+                jItem.boqSlNo,
+              ) === woBoqKey
+            // No BOQ item to resolve scopes through — a custom assembly line, or a BOQ document
+            // since deleted. Fall back to the old SL No match rather than silently reporting zero.
+            : jItem.boqSlNo === woItem.boqSlNo,
+        )
         .reduce((s, it) => s + (it.certifiedQty || 0), 0);
 
       const alreadyBilledForWoItem = bills
@@ -669,27 +706,27 @@ export default function CreateBillPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/billing`}>
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-6 w-6" />
-              </Button>
-            </Link>
-            <h1 className="text-2xl font-bold">Bill Entry</h1>
-          </div>
-          <Button onClick={handleSave} disabled={isSaving}>
+      <PmTopbar
+        title="Bill Entry"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Billing', href: `/subcontractors-management/${projectSlug}/billing` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/billing`}
+        backLabel="Back to Billing"
+        actions={
+          <Button size="sm" onClick={handleSave} disabled={isSaving}>
             {isSaving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
             ) : (
-              <Save className="mr-2 h-4 w-4" />
+              <Save className="mr-1.5 h-4 w-4" />
             )}
             Save Bill
           </Button>
-        </div>
-
-        <Card className="mb-6">
+        }
+      />
+      <PmContent>
+        <Card className="mb-6 border-border/60">
           <CardHeader>
             <CardTitle>Bill Details</CardTitle>
           </CardHeader>
@@ -1206,7 +1243,7 @@ export default function CreateBillPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PmContent>
 
       <WorkOrderItemSelectorDialog
         isOpen={isSelectorOpen}

@@ -13,6 +13,7 @@ import {
   BarChart3,
   Home,
   ArrowLeft,
+  ArrowRight,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,16 +27,7 @@ import type { Project } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import AllSubcontractorsDashboard from '@/components/subcontractors-management/AllSubcontractorsDashboard';
 import { projectMatchesSlug } from '@/lib/project-slug';
-
-interface SubcontractorCardProps {
-  item: {
-    icon: LucideIcon;
-    text: string;
-    href: string;
-    description: string;
-    disabled?: boolean;
-  };
-}
+import { PmContent, PmNavCard, PmNavCardGrid, PmTopbar } from '@/components/project-management/pm-shell';
 
 const slugify = (text: string) => {
   if (!text) return '';
@@ -49,31 +41,6 @@ const slugify = (text: string) => {
     .replace(/^-+/, '')
     .replace(/-+$/, '');
 };
-
-function SubcontractorCard({ item }: SubcontractorCardProps) {
-  const isDisabled = item.href === '#' || item.disabled;
-  const cardContent = (
-    <Card className={cn(
-      'flex flex-col h-full transition-all duration-300 ease-in-out hover:shadow-lg bg-background rounded-xl border-border/80 hover:border-primary/50',
-      isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
-    )}>
-      <CardHeader className="flex-row items-center gap-4 space-y-0 p-4">
-        <div className="bg-primary/10 p-3 rounded-lg">
-          <item.icon className="w-6 h-6 text-primary" />
-        </div>
-        <div className="flex-1">
-          <CardTitle className="text-base font-bold">{item.text}</CardTitle>
-          <CardDescription className="text-xs">{item.description}</CardDescription>
-        </div>
-      </CardHeader>
-    </Card>
-  );
-  if (isDisabled) return <div className="h-full">{cardContent}</div>;
-
-  return (
-    <Link href={item.href} className="no-underline h-full">{cardContent}</Link>
-  );
-}
 
 export default function SubcontractorsProjectDashboard() {
   const { project: projectSlugParam } = useParams() as { project: string };
@@ -158,6 +125,7 @@ export default function SubcontractorsProjectDashboard() {
         text: 'Manage Subcontractors',
         href: basePath ? `${basePath}/manage` : '#',
         description: 'View, add, or edit subcontractor details.',
+        gradient: 'from-sky-500 to-blue-600',
         disabled: !basePath || !safeCan('View', 'Subcontractors Management.Manage Subcontractors', currentProject?.id),
       },
       {
@@ -165,6 +133,7 @@ export default function SubcontractorsProjectDashboard() {
         text: 'Manage Work Order',
         href: basePath ? `${basePath}/work-order` : '#',
         description: 'Create and manage work orders for subcontractors.',
+        gradient: 'from-violet-500 to-purple-600',
         disabled:
           !basePath || !safeCan('View', 'Subcontractors Management.Work Order', currentProject?.id),
       },
@@ -173,6 +142,7 @@ export default function SubcontractorsProjectDashboard() {
         text: 'Billing',
         href: basePath ? `${basePath}/billing` : '#',
         description: 'Create and manage subcontractor bills.',
+        gradient: 'from-amber-500 to-orange-600',
         disabled:
           !basePath || !safeCan('View', 'Subcontractors Management.Billing', currentProject?.id),
       },
@@ -181,6 +151,7 @@ export default function SubcontractorsProjectDashboard() {
         text: 'Reports',
         href: basePath ? `${basePath}/reports` : '#',
         description: 'View reports related to subcontractors.',
+        gradient: 'from-indigo-500 to-blue-600',
         disabled: !basePath || !safeCan('View', 'Subcontractors Management.Reports', currentProject?.id),
     },
     ],
@@ -191,9 +162,9 @@ export default function SubcontractorsProjectDashboard() {
     return (
       <div className="w-full">
         <Skeleton className="h-10 w-1/2 mb-8" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-28" />
+            <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
       </div>
@@ -258,42 +229,23 @@ export default function SubcontractorsProjectDashboard() {
   }
 
   return (
-    <div>
-      <div className="mb-8 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/subcontractors-management">
-            <Button variant="ghost" size="icon" aria-label="Back">
-              <ArrowLeft className="h-6 w-6" />
-            </Button>
-          </Link>
-          <h1 className="text-2xl font-bold">{projectName}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <FolderOpen className="h-5 w-5 text-muted-foreground" />
-          <Select value={selectedValue} onValueChange={handleProjectChange}>
-            <SelectTrigger className="w-full sm:w-[260px]">
-              <SelectValue placeholder="Select Project" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Projects</SelectItem>
-              {projects.map((p) => {
-                const value = slugify(p.projectName);
-                return (
-                  <SelectItem key={p.id} value={value}>
-                    {p.projectName}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {items.map((item) => (
-          <SubcontractorCard key={item.text} item={item} />
-        ))}
-      </div>
-    </div>
+    <>
+      <PmTopbar
+        title={projectName}
+        breadcrumbs={[{ label: 'Subcontractors', href: '/subcontractors-management' }]}
+        backHref="/subcontractors-management"
+        backLabel="Back to Projects"
+        /* No project picker here: the project is already the page title, it is in the URL, and the
+           sidebar's Projects link is the way to switch. A second selector on a page that is about
+           one project only invites changing it by accident. */
+      />
+      <PmContent>
+        <PmNavCardGrid>
+          {items.map((item) => (
+            <PmNavCard key={item.text} item={{ icon: item.icon, title: item.text, description: item.description, href: item.href, gradient: item.gradient, disabled: item.disabled }} />
+          ))}
+        </PmNavCardGrid>
+      </PmContent>
+    </>
   );
 }

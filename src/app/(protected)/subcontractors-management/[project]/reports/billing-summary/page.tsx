@@ -48,6 +48,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Progress } from '@/components/ui/progress';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { PmContent, PmTopbar } from '@/components/project-management/pm-shell';
 
 
 const slugify = (text: string) => {
@@ -301,20 +302,20 @@ export default function BillingSummaryReport() {
   
   if (isAuthLoading) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <PmContent>
             <Skeleton className="h-10 w-80 mb-6" />
             <Skeleton className="h-24 w-full mb-6" />
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 xl:grid-cols-9 gap-4 mb-8">
                 {Array.from({length: 9}).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
             </div>
             <Skeleton className="h-96 w-full" />
-        </div>
+        </PmContent>
     )
   }
 
   if(!canViewPage) {
     return (
-        <div className="w-full px-4 sm:px-6 lg:px-8">
+        <PmContent>
             <div className="mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link href={`/subcontractors-management/${projectSlug}/reports`}><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
@@ -330,23 +331,24 @@ export default function BillingSummaryReport() {
                     <ShieldAlert className="h-16 w-16 text-destructive" />
                 </CardContent>
             </Card>
-        </div>
+        </PmContent>
     );
   }
   
   return (
       <>
-      <div className="w-full px-4 sm:px-6 lg:px-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Link href={`/subcontractors-management/${projectSlug}/reports`}>
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button>
-            </Link>
-            <h1 className="text-2xl font-bold">Billing Summary Report</h1>
-          </div>
-        </div>
-        
-        <Card className="mb-6">
+      <PmTopbar
+        title="Billing Summary"
+        breadcrumbs={[
+          { label: 'Subcontractors', href: `/subcontractors-management/${projectSlug}` },
+          { label: 'Reports', href: `/subcontractors-management/${projectSlug}/reports` },
+        ]}
+        backHref={`/subcontractors-management/${projectSlug}/reports`}
+        backLabel="Back to Reports"
+      />
+      <PmContent>
+
+        <Card className="mb-6 border-border/60">
             <CardHeader className="p-4">
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     {projectSlug === 'all' && (
@@ -453,7 +455,7 @@ export default function BillingSummaryReport() {
           </CardContent>
         </Card>
 
-      </div>
+      </PmContent>
     </>
   );
 }
