@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowRight,
   Building2,
+  CalendarClock,
   ClipboardList,
   FileBarChart2,
   FileStack,
@@ -16,9 +17,19 @@ import {
   Package,
   Settings,
   ShieldAlert,
+  UserRound,
 } from "lucide-react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import {
+  projectLifecycleStyles,
+  resolveLifecycle,
+  type PmProjectTeam,
+  type ProjectLifecycleState,
+  type ProjectScope,
+  type ProjectType,
+} from "@/lib/project-management-projects";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -40,6 +51,11 @@ import { cn } from "@/lib/utils";
 const MODULE_NAME = "Project Management";
 const PROJECTS_COLLECTION = "projectManagementProjects";
 
+/**
+ * The mapping document is loaded whole, so the execution context the project wizard captures —
+ * code, type, scopes, manager, lifecycle — is already in hand. The header uses it rather than
+ * repeating the project's name across every tile's description.
+ */
 type ProjectMapping = {
   id: string;
   projectName: string;
@@ -50,6 +66,31 @@ type ProjectMapping = {
   startDate?: string;
   endDate?: string;
   status: "Active" | "Inactive";
+  projectCode?: string;
+  projectType?: ProjectType;
+  scopes?: ProjectScope[];
+  projectManagerName?: string;
+  siteInChargeName?: string;
+  team?: PmProjectTeam;
+  lifecycle?: ProjectLifecycleState;
+};
+
+const formatDate = (value?: string) => {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+/** Whole days from today to the completion date. Negative once it has passed. */
+const daysRemaining = (endDate?: string): number | null => {
+  if (!endDate) return null;
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(end.getTime())) return null;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((end.getTime() - startOfToday.getTime()) / 86_400_000);
 };
 
 export default function ProjectManagementPage() {
@@ -133,9 +174,7 @@ export default function ProjectManagementPage() {
           show: Boolean(selectedProject && canViewBoq),
           href: `/project-management/reports?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
           title: "Reports",
-          description: selectedProject
-            ? `Control tower indicators for ${selectedProject.projectName}.`
-            : "Commercial, engineering, procurement and site-control indicators.",
+          description: "Commercial, engineering, procurement and site-control indicators.",
           icon: FileBarChart2,
           gradient: "from-blue-500 to-indigo-600",
         },
@@ -150,9 +189,7 @@ export default function ProjectManagementPage() {
           show: Boolean(selectedProject && canViewBoq),
           href: `/project-management/boq?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
           title: "BOQ",
-          description: selectedProject
-            ? `Manage BOQ data for ${selectedProject.projectName}.`
-            : "Manage BOQ costing and operational BOQs.",
+          description: "Costing and operational BOQs, with every gate quantity alongside.",
           icon: ClipboardList,
           gradient: "from-emerald-500 to-teal-600",
         },
@@ -160,9 +197,7 @@ export default function ProjectManagementPage() {
           show: Boolean(selectedProject && canViewDocuments),
           href: `/project-management/documents?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
           title: "Documents",
-          description: selectedProject
-            ? `Drawings, QC certificates, and other files for ${selectedProject.projectName}.`
-            : "Drawings, QC certificates, and other project files.",
+          description: "Drawings, QC certificates and other filed evidence.",
           icon: FolderOpen,
           gradient: "from-purple-500 to-fuchsia-600",
         },
@@ -177,9 +212,7 @@ export default function ProjectManagementPage() {
           show: Boolean(selectedProject && canViewMdl),
           href: `/project-management/mdl?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
           title: "Design & Engineering",
-          description: selectedProject
-            ? `Track drawing submissions & approvals for ${selectedProject.projectName}.`
-            : "Master Drawing List — track drawing submission and approval.",
+          description: "Master Drawing List — submissions, revisions and approvals.",
           icon: FileStack,
           gradient: "from-sky-500 to-blue-600",
         },
@@ -187,9 +220,7 @@ export default function ProjectManagementPage() {
           show: Boolean(selectedProject && canViewSupply),
           href: `/project-management/supply?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
           title: "Supply",
-          description: selectedProject
-            ? `Track supply scope items for ${selectedProject.projectName}.`
-            : "Track supply scope BOQ items.",
+          description: "Indent to RFQ, PO, inspection, dispatch and site receipt.",
           icon: Package,
           gradient: "from-cyan-500 to-blue-600",
         },
@@ -197,9 +228,7 @@ export default function ProjectManagementPage() {
           show: Boolean(selectedProject && canViewCivil),
           href: `/project-management/civil?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
           title: "Civil",
-          description: selectedProject
-            ? `Track civil scope items for ${selectedProject.projectName}.`
-            : "Track civil scope BOQ items.",
+          description: "Civil execution, measured through joint measurement.",
           icon: Building2,
           gradient: "from-stone-500 to-stone-700",
         },
@@ -207,9 +236,7 @@ export default function ProjectManagementPage() {
           show: Boolean(selectedProject && canViewErection),
           href: `/project-management/erection?project=${encodeURIComponent(selectedProject?.id ?? "")}`,
           title: "Erection",
-          description: selectedProject
-            ? `Track erection scope items for ${selectedProject.projectName}.`
-            : "Track erection scope BOQ items.",
+          description: "Erection work packages, owners, progress and blockers.",
           icon: HardHat,
           gradient: "from-orange-500 to-red-600",
         },
@@ -232,7 +259,14 @@ export default function ProjectManagementPage() {
     },
   ]
     .map((group) => ({ ...group, links: group.links.filter((link) => link.show) }))
-    .filter((group) => group.links.length);
+    .filter((group) => group.links.length)
+    // Laid out as 2 + 1 columns per row, so this order both leads with the screens people open
+    // most and leaves no empty cells: scopes(2) + overview(1), then data(2) + configuration(1).
+    .sort(
+      (a, b) =>
+        ["scopes", "overview", "data", "configuration"].indexOf(a.key) -
+        ["scopes", "overview", "data", "configuration"].indexOf(b.key),
+    );
 
   // Project Data and Delivery Scopes are empty until a project is chosen. Without saying so the
   // page just looks short, as though those screens didn't exist for this user.
@@ -279,16 +313,76 @@ export default function ProjectManagementPage() {
       <Card className="relative overflow-hidden border-0 bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 text-white shadow-lg">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_white_0%,_transparent_60%)]" />
         <CardContent className="relative flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
               <FolderKanban className="h-7 w-7 text-white" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">{MODULE_NAME}</h1>
-              <p className="mt-0.5 text-sm text-blue-100">
-                Select a project to open its mapped BOQ, costing, and configuration data
-              </p>
-            </div>
+            {/* With a project chosen the header identifies it, rather than repeating an
+                instruction that has already been followed. */}
+            {selectedProject ? (
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate text-2xl font-bold tracking-tight">
+                    {selectedProject.projectName}
+                  </h1>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "border-0 shrink-0",
+                      projectLifecycleStyles[resolveLifecycle(selectedProject)],
+                    )}
+                  >
+                    {resolveLifecycle(selectedProject)}
+                  </Badge>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-blue-100">
+                  {selectedProject.projectCode && (
+                    <span className="font-mono">{selectedProject.projectCode}</span>
+                  )}
+                  {selectedProject.projectType && <span>{selectedProject.projectType}</span>}
+                  {selectedProject.globalProjectSite && (
+                    <span className="inline-flex items-center gap-1">
+                      <Building2 className="h-3 w-3" />
+                      {selectedProject.globalProjectSite}
+                    </span>
+                  )}
+                  {selectedProject.projectManagerName && (
+                    <span className="inline-flex items-center gap-1">
+                      <UserRound className="h-3 w-3" />
+                      {selectedProject.projectManagerName}
+                    </span>
+                  )}
+                  {selectedProject.endDate && (
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1",
+                        (daysRemaining(selectedProject.endDate) ?? 0) < 0 && "text-red-200",
+                      )}
+                    >
+                      <CalendarClock className="h-3 w-3" />
+                      {formatDate(selectedProject.startDate)
+                        ? `${formatDate(selectedProject.startDate)} → `
+                        : "Due "}
+                      {formatDate(selectedProject.endDate)}
+                      {(() => {
+                        const remaining = daysRemaining(selectedProject.endDate);
+                        if (remaining == null) return null;
+                        return remaining < 0
+                          ? ` · ${Math.abs(remaining)}d overrun`
+                          : ` · ${remaining}d left`;
+                      })()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">{MODULE_NAME}</h1>
+                <p className="mt-0.5 text-sm text-blue-100">
+                  Select a project to open its mapped BOQ, costing, and configuration data
+                </p>
+              </div>
+            )}
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
             {isLoadingProjects ? (
@@ -330,10 +424,22 @@ export default function ProjectManagementPage() {
         </CardContent>
       </Card>
 
-      {/* ── Quick access, grouped ────────────────────────────────────────── */}
-      <div className="space-y-5">
+      {/* ── Quick access ─────────────────────────────────────────────────────
+          Two columns rather than four stacked full-width grids. Each group used to own a
+          five-column row, so a two-tile group left three empty columns and the one-tile
+          Configuration group left four — most of the page was gaps. Delivery Scopes, the four
+          screens people actually work in, now leads a wide left column; the project-independent
+          and admin groups sit in a narrower right column and fill the space beside it. */}
+      <div className="grid gap-5 lg:grid-cols-3">
         {linkGroups.map((group) => (
-          <section key={group.key} className="space-y-2.5">
+          <section
+            key={group.key}
+            className={cn(
+              "space-y-2.5",
+              // Scopes and Project Data carry the page; Overview and Configuration are secondary.
+              group.key === "scopes" || group.key === "data" ? "lg:col-span-2" : "lg:col-span-1",
+            )}
+          >
             <div className="flex items-center gap-2">
               <group.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -343,7 +449,18 @@ export default function ProjectManagementPage() {
               <span aria-hidden className="h-px flex-1 bg-border" />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <div
+              className={cn(
+                "grid gap-3",
+                // Column counts are chosen per group so its tiles fill the row they are given
+                // instead of trailing off into empty cells.
+                group.key === "scopes"
+                  ? "sm:grid-cols-2 xl:grid-cols-4"
+                  : group.key === "data"
+                    ? "sm:grid-cols-2"
+                    : "sm:grid-cols-2 lg:grid-cols-1",
+              )}
+            >
               {group.links.map((link) => (
                 <Link
                   key={link.title}

@@ -58,6 +58,7 @@ import {
   loadInspectionWorkspace,
   rebuildInspectionPoLineBalances,
   recordInspectionResult,
+  syncInspectionGateRecords,
   type InspectionResultLine,
   type InspectionWorkspace,
 } from "@/lib/project-management-inspection-service";
@@ -458,9 +459,14 @@ export default function InspectionCallsPage() {
     setBusyCallId("rebuild");
     try {
       const written = await rebuildInspectionPoLineBalances(globalProjectId);
+      // The gate projection is rebuilt alongside, exactly as MC and the supply stages do: both are
+      // derived from the same call results, so they can only drift together. Without this the
+      // per-BOQ-item `inspections` records — which the BOQ costing page's Inspection Accepted Qty
+      // column reads — had no repair path at all once they fell behind.
+      const gates = await syncInspectionGateRecords(globalProjectId);
       toast({
         title: "Balances rebuilt",
-        description: `${written} purchase order line balance${written === 1 ? "" : "s"} recomputed, picking up any new clearance.`,
+        description: `${written} purchase order line balance${written === 1 ? "" : "s"} recomputed, and ${gates} item gate${gates === 1 ? "" : "s"} brought in line with the recorded results.`,
       });
       await loadData();
     } catch (error) {
