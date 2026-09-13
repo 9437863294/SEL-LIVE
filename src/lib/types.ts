@@ -1053,6 +1053,10 @@ export interface WorkOrderItem {
   rate: number;
   totalAmount: number;
   boqSlNo: string;
+  /** ERP SL No copied off the BOQ item at selection time. Work-order lines are ordered by it, the
+   * same as JMC items; absent on work orders saved before it was captured, in which case readers
+   * fall back to looking it up on the BOQ item. */
+  erpSlNo?: string;
   subItems?: SubItem[];
 }
 

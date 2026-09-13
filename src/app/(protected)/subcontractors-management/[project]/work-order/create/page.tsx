@@ -50,6 +50,7 @@ import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
 import { CustomAssemblyDialog } from '@/components/subcontractors-management/CustomAssemblyDialog';
 import { projectMatchesSlug } from '@/lib/project-slug';
+import { readErpSlNo, sortBoqItemsByErpSlNo, sortByErpSlNo } from '@/lib/civil-execution';
 import { PM_TABLE_CLASS, PmContent, PmSectionHead, PmTopbar } from '@/components/project-management/pm-shell';
 
 // UI-level WorkOrderItem — extends backend type with UI-only fields
@@ -252,6 +253,8 @@ export default function CreateWorkOrderPage() {
   };
 
   const addItem = () => {
+    // No re-sort: the row has no BOQ item yet, so it has no ERP SL No to sort by. It slots into
+    // place once a BOQ item is picked on it.
     setItems(prev => [
       ...prev,
       {
@@ -265,6 +268,7 @@ export default function CreateWorkOrderPage() {
         isBreakdown: false,
         subItems: [],
         boqSlNo: '',
+        erpSlNo: '',
       },
     ]);
   };
@@ -305,11 +309,12 @@ export default function CreateWorkOrderPage() {
       unit: String(boqItem.UNIT || boqItem.Unit || ''),
       rate: Number((boqItem as any)[rateKey] || 0),
       boqSlNo: String(boqItem['BOQ SL No'] || ''),
+      erpSlNo: readErpSlNo(boqItem as unknown as Record<string, unknown>),
       isBreakdown: newItems[index].isBreakdown,
       subItems: newItems[index].subItems,
     };
 
-    setItems(newItems);
+    setItems(sortByErpSlNo(newItems));
   };
 
   const handleAddFromBoq = (selectedItems: BoqItem[]) => {
@@ -326,16 +331,19 @@ export default function CreateWorkOrderPage() {
         rate: Number((boqItem as any)[rateKey] || 0),
         totalAmount: 0,
         boqSlNo: String(boqItem['BOQ SL No'] || ''),
+        erpSlNo: readErpSlNo(boqItem as unknown as Record<string, unknown>),
         isBreakdown: false,
         subItems: [],
       };
     });
 
+    // The picker hands items back in its own display order, and a second pass of picks lands after
+    // the first. Ordering the whole list by ERP SL No keeps the sheet reading like the ERP does.
     const isFirstItemEmpty = items.length === 1 && !items[0].boqItemId;
     if (isFirstItemEmpty) {
-      setItems(newWorkOrderItems);
+      setItems(sortByErpSlNo(newWorkOrderItems));
     } else {
-      setItems(prev => [...prev, ...newWorkOrderItems]);
+      setItems(prev => sortByErpSlNo([...prev, ...newWorkOrderItems]));
     }
   };
 
@@ -348,7 +356,7 @@ export default function CreateWorkOrderPage() {
       ...assembly.mainItem,
       id: nanoid(),
       isBreakdown: true,
-      subItems: assembly.bom.map(boqItem => {
+      subItems: sortBoqItemsByErpSlNo(assembly.bom).map(boqItem => {
         const rateKey = Object.keys(boqItem).find(k =>
           k.toLowerCase().includes('rate')
         ) || 'rate';
@@ -372,11 +380,12 @@ export default function CreateWorkOrderPage() {
     );
     newMainItem.totalAmount = newMainItem.rate * (newMainItem.orderQty || 0);
 
+    // A custom assembly has no BOQ line of its own, so it has no ERP SL No and sorts to the end.
     const isFirstItemEmpty = items.length === 1 && !items[0].boqItemId;
     if (isFirstItemEmpty) {
       setItems([newMainItem]);
     } else {
-      setItems(prev => [...prev, newMainItem]);
+      setItems(prev => sortByErpSlNo([...prev, newMainItem]));
     }
   };
 
@@ -606,6 +615,7 @@ export default function CreateWorkOrderPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12" />
+                    <TableHead>ERP Sl.No</TableHead>
                     <TableHead>BOQ Sl.No</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Unit</TableHead>
@@ -648,6 +658,13 @@ export default function CreateWorkOrderPage() {
                                 )}
                               </Button>
                             )}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap font-medium tabular-nums">
+                            {item.erpSlNo ||
+                              (boqItem
+                                ? readErpSlNo(boqItem as unknown as Record<string, unknown>)
+                                : '') ||
+                              '—'}
                           </TableCell>
                           <TableCell className="w-48">
                             <BoqItemSelector
@@ -725,7 +742,7 @@ export default function CreateWorkOrderPage() {
 
                         {isExpanded && item.isBreakdown && (
                           <TableRow className="bg-muted/30 hover:bg-muted/30">
-                            <TableCell colSpan={11} className="p-0">
+                            <TableCell colSpan={12} className="p-0">
                               <div className="space-y-2 p-4">
                                 <h4 className="text-sm font-semibold">
                                   Sub-Items (per 1 set of Main Item)

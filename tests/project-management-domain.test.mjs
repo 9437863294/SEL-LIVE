@@ -781,6 +781,43 @@ test('subcontractor bill aggregation excludes rejected and retention bills', asy
   assert.equal(agg.latestNo, 'B/2');
 });
 
+test('ERP SL No is read through whichever spelling the BOQ sheet used', async () => {
+  const { readErpSlNo } = await import('../src/lib/civil-execution.ts');
+  assert.equal(readErpSlNo({ 'ERP SL NO': '10.2' }), '10.2');
+  assert.equal(readErpSlNo({ 'ERP Sl No': ' 10.2 ' }), '10.2');
+  assert.equal(readErpSlNo({ 'ERP SLNo': '10.2' }), '10.2');
+  assert.equal(readErpSlNo({ 'erp.sl.no': '10.2' }), '10.2');
+  assert.equal(readErpSlNo({ erpSlNo: '10.2' }), '10.2');
+  // A stored blank must not shadow the sheet header it was copied from.
+  assert.equal(readErpSlNo({ erpSlNo: '', 'ERP SL NO': '10.2' }), '10.2');
+  assert.equal(readErpSlNo({ 'BOQ SL No': '14.2' }), '');
+  assert.equal(readErpSlNo(null), '');
+});
+
+test('lines sort by ERP SL No naturally, then BOQ SL No, with ERP-less lines last', async () => {
+  const { sortByErpSlNo } = await import('../src/lib/civil-execution.ts');
+  const sorted = sortByErpSlNo([
+    { id: 'custom', erpSlNo: '', boqSlNo: 'Custom' },
+    { id: 'c', erpSlNo: '10', boqSlNo: '3.1' },
+    { id: 'a', erpSlNo: '2', boqSlNo: '1.1' },
+    { id: 'blank', boqSlNo: '' },
+    { id: 'b2', erpSlNo: '9', boqSlNo: '2.2' },
+    { id: 'b1', erpSlNo: '9', boqSlNo: '2.10' },
+  ]);
+  // "10" after "9", not between "1" and "2" — a plain string sort gets this wrong.
+  assert.deepEqual(sorted.map((item) => item.id), ['a', 'b2', 'b1', 'c', 'custom', 'blank']);
+});
+
+test('sorting BOQ item documents by ERP SL No reads the sheet headers', async () => {
+  const { sortBoqItemsByErpSlNo } = await import('../src/lib/civil-execution.ts');
+  const sorted = sortBoqItemsByErpSlNo([
+    { id: 'x', 'ERP SL NO': '20', 'BOQ SL No': '5.1' },
+    { id: 'y', 'ERP Sl No': '3', 'BOQ SL No': '1.4' },
+    { id: 'z', 'BOQ SL No': '9.9' },
+  ]);
+  assert.deepEqual(sorted.map((item) => item.id), ['y', 'x', 'z']);
+});
+
 test('control tower joins the civil registers: cost, civil block, stalls, and the ladder', () => {
   const summary = calculateProjectControlTower({
     ...emptyTowerInput,

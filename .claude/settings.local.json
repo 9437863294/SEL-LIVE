@@ -84,7 +84,15 @@
       "PowerShell(npm run test:e-approval 2>&1)",
       "Bash(cd \"C:/Users/Ashish/.claude/plans\" && grep -n \"my own first draft\\\\|my first draft\\\\|my recommendation\\\\|I designed\\\\|I would sequence\\\\|I've stated\\\\|I took\\\\|Deliverable of this document\\\\|design-review artefact\\\\|per\\\\ndecision\\\\|not something I should\" yes-your-current-module-polished-stallman.md | head -20)",
       "Read(//c/Users/Ashish/.claude/plans/**)",
-      "Bash(grep -n \"scope1\\\\|scope2\\\\|_\\\\${\" \"src/app/\\(protected\\)/subcontractors-management/[project]/work-order/[workOrderId]/page.tsx\")"
+      "Bash(grep -n \"scope1\\\\|scope2\\\\|_\\\\${\" \"src/app/\\(protected\\)/subcontractors-management/[project]/work-order/[workOrderId]/page.tsx\")",
+      "mcp__chrome-devtools__evaluate_script",
+      "mcp__chrome-devtools__take_snapshot",
+      "Bash(git checkout *)",
+      "Bash(taskkill //IM chrome.exe //F)",
+      "Bash(rm -rf \"C:/Users/Ashish/AppData/Local/Temp/claude/chrome-probe-profile\")",
+      "Bash(curl -s \"http://localhost:3000/subcontractors-management/madanpur-rampur/work-order/create\")",
+      "Bash(grep -oE \"\\(Error|ENOENT|Module not found|Cannot find\\)[^<\\\\\"]{0,180}\")",
+      "Bash(cd \"C:/Users/Ashish/.claude/projects/d--Application-Dev-SEL-Live/memory\" && cat no-screenshot-path-for-protected-pages.md; echo \"==========\"; ls | head -20)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

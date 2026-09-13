@@ -74,6 +74,65 @@ export function readBoqSlNo(item: Record<string, unknown> | null | undefined): s
 export const civilBoqKeyOfBoqItem = (item: Record<string, unknown>): string =>
   civilBoqKey(readLooseScope(item, 1), readLooseScope(item, 2), readBoqSlNo(item));
 
+/** ERP SL No lookup. Imported BOQ sheets spell this header inconsistently ("ERP SL NO",
+ * "ERP Sl No", "ERP SLNo"), so keys are matched lowercased with whitespace and dots stripped. */
+export function readErpSlNo(item: Record<string, unknown> | null | undefined): string {
+  if (!item) return "";
+  // Any key spelling counts, but only one that actually carries a value — a line item stores
+  // `erpSlNo: ""` when nothing was captured, and that blank must not shadow the sheet header.
+  const key = Object.keys(item).find(
+    (candidate) =>
+      candidate.toLowerCase().replace(/\s+|\./g, "") === "erpslno" &&
+      String(item[candidate] ?? "").trim() !== "",
+  );
+  return key ? String(item[key]).trim() : "";
+}
+
+/** Natural ordering, so "10" follows "9" rather than "1". */
+const ERP_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/**
+ * Orders measurement/order lines the way the ERP lists them: by ERP SL No, then BOQ SL No.
+ *
+ * Lines with no ERP SL No sort *last* rather than first — a blank row the user just added, or a
+ * custom assembly that has no BOQ line behind it, should stay where it was put instead of jumping
+ * to the top of the sheet. Use with a stable sort to keep those in insertion order.
+ */
+export function compareByErpSlNo(
+  a: { erpSlNo?: unknown; boqSlNo?: unknown },
+  b: { erpSlNo?: unknown; boqSlNo?: unknown },
+): number {
+  const erpA = String(a.erpSlNo ?? "").trim();
+  const erpB = String(b.erpSlNo ?? "").trim();
+  if (!erpA || !erpB) {
+    // Neither is placed by the ERP: hold insertion order rather than ranking them by BOQ SL No.
+    if (!erpA && !erpB) return 0;
+    return erpA ? -1 : 1;
+  }
+  const byErp = ERP_COLLATOR.compare(erpA, erpB);
+  if (byErp !== 0) return byErp;
+  return ERP_COLLATOR.compare(String(a.boqSlNo ?? "").trim(), String(b.boqSlNo ?? "").trim());
+}
+
+/** `compareByErpSlNo` over a copy — Array.prototype.sort is stable, so ERP-less lines keep the
+ * order they were added in. */
+export function sortByErpSlNo<T extends { erpSlNo?: unknown; boqSlNo?: unknown }>(
+  items: readonly T[],
+): T[] {
+  return [...items].sort(compareByErpSlNo);
+}
+
+/** The same ordering for raw BOQ item documents, which carry the spreadsheet headers
+ * ("ERP SL NO", "BOQ SL No") rather than the camelCase fields a line item copies them into. */
+export function sortBoqItemsByErpSlNo<T extends Record<string, unknown>>(items: readonly T[]): T[] {
+  const keyed = items.map((item) => ({
+    item,
+    erpSlNo: readErpSlNo(item),
+    boqSlNo: readBoqSlNo(item),
+  }));
+  return keyed.sort(compareByErpSlNo).map((entry) => entry.item);
+}
+
 /* ---------------------------------------------------------------------------------------------
  * Structural input shapes — declared here rather than imported from src/lib/types.ts so this
  * module stays free of Firebase types and node-testable. Only the fields the join reads.

@@ -19,7 +19,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import type { BoqItem } from '@/lib/types';
-import { ScrollArea } from '../ui/scroll-area';
 
 interface BoqItemSelectorProps {
   boqItems: BoqItem[];
@@ -88,7 +87,7 @@ export function BoqItemSelector({
       </PopoverTrigger>
 
       <PopoverContent
-        className="w-[700px] p-0 z-[99999] pointer-events-auto"
+        className="w-[700px] p-0 z-[99999]"
         side="bottom"
         align="start"
         sideOffset={4}
@@ -131,31 +130,21 @@ export function BoqItemSelector({
                     key={item.id}
                     value={item.id}
                     keywords={[boqSlNo, erpSlNo, description, String(boqQty), String(rate ?? '')].filter(Boolean)}
-                    onSelect={(id) => commitSelect(id)} // keyboard path still works
-                    className={cn('p-0', isSelected && 'bg-accent text-accent-foreground')}
-                    aria-selected={isSelected}
-                    asChild
+                    onSelect={(id) => commitSelect(id)}
+                    className={cn('px-2 py-2', isSelected && 'bg-accent text-accent-foreground')}
                   >
-                    {/* Render a real button so the cursor is a hand and clicks always work */}
-                    <button
-                      type="button"
-                      className="w-full px-2 py-2 cursor-pointer pointer-events-auto"
-                      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); commitSelect(item.id); }}
-                      onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); commitSelect(item.id); }}
-                    >
-                      <div className="grid grid-cols-[1fr_1fr_3fr_1fr_1fr] w-full items-center gap-2">
-                        <div className="text-sm flex items-center gap-2">
-                          {isSelected && <Check className="h-4 w-4 text-primary" />}
-                          {erpSlNo}
-                        </div>
-                        <div className="text-sm">{boqSlNo}</div>
-                        <div className="text-sm font-medium truncate pr-2">{description}</div>
-                        <div className="text-right text-sm">{boqQty}</div>
-                        <div className="text-right text-xs text-muted-foreground">
-                          {rate} {unit && `/ ${unit}`}
-                        </div>
+                    <div className="grid grid-cols-[1fr_1fr_3fr_1fr_1fr] w-full items-center gap-2">
+                      <div className="text-sm flex items-center gap-2">
+                        {isSelected && <Check className="h-4 w-4 text-primary" />}
+                        {erpSlNo}
                       </div>
-                    </button>
+                      <div className="text-sm">{boqSlNo}</div>
+                      <div className="text-sm font-medium truncate pr-2">{description}</div>
+                      <div className="text-right text-sm">{boqQty}</div>
+                      <div className="text-right text-xs text-muted-foreground">
+                        {rate} {unit && `/ ${unit}`}
+                      </div>
+                    </div>
                   </CommandItem>
                 );
               })}
