@@ -9,12 +9,12 @@ import Link from 'next/link';
 import {
   ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert,
   Search, Calendar as CalendarIcon, Edit, Save, Loader2,
-  Receipt, IndianRupee, FileText, TrendingUp, Filter,
+  Receipt, IndianRupee, FileText, TrendingUp, Filter, Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, orderBy, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import type { Department, ExpenseRequest, Project, UserSettings, AccountHead, SubAccountHead } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -50,6 +50,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { logUserActivity } from '@/lib/activity-logger';
+import { ExpenseImportDialog } from '@/components/expenses/import-dialog';
 
 
 const baseTableHeaders = [
@@ -67,26 +68,14 @@ const baseTableHeaders = [
   'Reception Date',
 ];
 
-function StatPill({
-  icon: Icon,
-  label,
-  value,
-  colorClass,
-}: {
-  icon: typeof Receipt;
-  label: string;
-  value: string;
-  colorClass: string;
-}) {
-  return (
-    <div className={cn('flex items-center gap-2.5 px-4 py-2.5 rounded-lg border text-sm', colorClass)}>
-      <Icon className="h-4 w-4 flex-shrink-0" />
-      <div>
-        <span className="text-xs text-muted-foreground block leading-tight">{label}</span>
-        <span className="font-bold leading-tight">{value}</span>
-      </div>
-    </div>
-  );
+/**
+ * Reception dates are stored as free text, so a value that predates the import validation may not
+ * parse — show it as it was recorded rather than the words "Invalid Date".
+ */
+function formatReceptionDate(value: string | undefined) {
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : format(parsed, 'dd MMM, yyyy');
 }
 
 export default function DepartmentExpensesPage() {
@@ -109,6 +98,7 @@ export default function DepartmentExpensesPage() {
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRequest | null>(null);
   const [editFormData, setEditFormData] = useState<ExpenseRequest | null>(null);
@@ -129,7 +119,11 @@ export default function DepartmentExpensesPage() {
     } as DateRange | undefined,
   });
 
-  const canViewPage = can('View', 'Expenses.Departments', departmentId) || can('View All', 'Expenses');
+  // 'View All' lives on Expenses.Expense Requests, not on the module node — asking the module for it
+  // was a clause that could never be true, so anyone holding the consolidated-view grant was sent to
+  // Access Denied by the very department cards the overview page had just listed for them.
+  const canViewPage =
+    can('View', 'Expenses.Departments', departmentId) || can('View All', 'Expenses.Expense Requests');
   const canCreate = can('Create', 'Expenses.Departments', departmentId);
   const canEdit = can('Edit', 'Expenses.Departments', departmentId);
 
@@ -154,7 +148,7 @@ export default function DepartmentExpensesPage() {
         (filters.projectName === 'all' || exp.projectId === filters.projectName)
       );
     });
-  }, [expenses, filters, projects]);
+  }, [expenses, filters]);
 
   const totalAmount = useMemo(() =>
     filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0),
@@ -333,7 +327,7 @@ export default function DepartmentExpensesPage() {
         );
       case 'Name of the party': return expense.partyName;
       case 'Reception No': return expense.receptionNo || 'N/A';
-      case 'Reception Date': return expense.receptionDate || 'N/A';
+      case 'Reception Date': return formatReceptionDate(expense.receptionDate);
       default: return '';
     }
   };
@@ -492,6 +486,15 @@ export default function DepartmentExpensesPage() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Importing creates expense requests, so the authority to create is the authority to
+                bulk-create — gating it on a separate permission nobody has been granted yet would
+                only ship a button that is disabled for everybody. */}
+            {canCreate && (
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setIsImportDialogOpen(true)}>
+                <Upload className="h-3.5 w-3.5" /> Import
+              </Button>
+            )}
 
             {canCreate && (
               <Link href={`/expenses/new-request?departmentId=${departmentId}`}>
@@ -676,6 +679,20 @@ export default function DepartmentExpensesPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Import Dialog — mounted only while open so exceljs is not pulled in on a normal page view */}
+      {isImportDialogOpen && (
+        <ExpenseImportDialog
+          open={isImportDialogOpen}
+          onOpenChange={setIsImportDialogOpen}
+          department={department}
+          projects={projects}
+          accountHeads={accountHeads}
+          subAccountHeads={subAccountHeads}
+          existingExpenses={expenses}
+          onImported={fetchData}
+        />
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

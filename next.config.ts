@@ -6,6 +6,20 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  async redirects() {
+    return [
+      // The Expenses settings screens used to live under /settings as well as inside the module,
+      // and the /settings copies had drifted — one of them lost its permission check entirely.
+      // They are gone; these keep old links and bookmarks landing on the guarded module pages.
+      { source: '/settings/expenses', destination: '/expenses/settings', permanent: true },
+      { source: '/settings/expenses/accounts', destination: '/expenses/settings/accounts', permanent: true },
+      {
+        source: '/settings/expenses/department-serial-no',
+        destination: '/expenses/settings/department-serial-no',
+        permanent: true,
+      },
+    ];
+  },
   images: {
     remotePatterns: [
       {

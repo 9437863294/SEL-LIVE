@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/expenses/**/*.ts",
+    "src/app/(protected)/expenses/**/*.tsx",
+    "src/components/expenses/**/*.ts",
+    "src/components/expenses/**/*.tsx",
+    "src/lib/expenses-import.ts"
+  ],
+  "exclude": ["node_modules"]
+}

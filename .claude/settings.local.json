@@ -92,7 +92,9 @@
       "Bash(rm -rf \"C:/Users/Ashish/AppData/Local/Temp/claude/chrome-probe-profile\")",
       "Bash(curl -s \"http://localhost:3000/subcontractors-management/madanpur-rampur/work-order/create\")",
       "Bash(grep -oE \"\\(Error|ENOENT|Module not found|Cannot find\\)[^<\\\\\"]{0,180}\")",
-      "Bash(cd \"C:/Users/Ashish/.claude/projects/d--Application-Dev-SEL-Live/memory\" && cat no-screenshot-path-for-protected-pages.md; echo \"==========\"; ls | head -20)"
+      "Bash(cd \"C:/Users/Ashish/.claude/projects/d--Application-Dev-SEL-Live/memory\" && cat no-screenshot-path-for-protected-pages.md; echo \"==========\"; ls | head -20)",
+      "Bash(find \"//ASHISH/SEL Live/src/app/\\(protected\\)/expenses\" -type f | sed 's|.*/expenses/||')",
+      "Read(///ASHISH/SEL Live/src/app/\\\\\\(protected\\\\\\)/**)"
     ],
     "additionalDirectories": [
       "d:\\Application Dev\\SEL Live\\src\\app\\(protected)\\settings\\role-management\\edit\\[roleId]"

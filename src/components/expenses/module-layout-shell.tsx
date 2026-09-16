@@ -89,7 +89,10 @@ export default function ExpensesLayoutShell({ children }: { children: React.Reac
         </TooltipProvider>
       </aside>
 
-      <div className={cn('flex-1 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'ml-56' : 'ml-14')}>
+      {/* min-w-0 is load-bearing: a flex item defaults to min-width:auto, so without it a wide
+          table (the consolidated register is ~2000px across) sets the column's minimum width and
+          pushes the whole page sideways instead of scrolling inside its own card. */}
+      <div className={cn('flex-1 min-w-0 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'ml-56' : 'ml-14')}>
         <main className="flex-grow p-4 sm:p-6">{children}</main>
         <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
           <span>Copyright © 2025 SEL. All Rights Reserved.</span>

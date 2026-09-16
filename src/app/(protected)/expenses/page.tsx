@@ -85,30 +85,6 @@ function DepartmentCard({ item }: { item: DeptCardItem }) {
   );
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  color,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: string | number;
-  color: string;
-}) {
-  return (
-    <div className={cn('flex items-center gap-3 px-4 py-3 rounded-lg border bg-card/60 backdrop-blur-sm', color)}>
-      <div className={cn('flex items-center justify-center rounded-md h-8 w-8 bg-current/10 flex-shrink-0')}>
-        <Icon className="h-4 w-4" />
-      </div>
-      <div>
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-lg font-bold leading-tight">{value}</p>
-      </div>
-    </div>
-  );
-}
-
 export default function ExpensesPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -137,16 +113,34 @@ export default function ExpensesPage() {
     fetchDepartments();
   }, [isAuthLoading, canViewModule]);
 
-  const departmentItems = useMemo(() => {
-    return departments
-      .filter(dept => can('View', 'Expenses.Departments', dept.id) || can('View All', 'Expenses.Expense Requests'))
-      .map(dept => ({
+  const visibleDepartments = useMemo(
+    () =>
+      departments.filter(
+        dept => can('View', 'Expenses.Departments', dept.id) || can('View All', 'Expenses.Expense Requests'),
+      ),
+    [departments, can],
+  );
+
+  const departmentItems = useMemo(
+    () =>
+      visibleDepartments.map(dept => ({
         icon: Building2,
         text: dept.name,
         href: `/expenses/${dept.id}`,
         description: `View and manage expense requests for the ${dept.name} department.`,
-      }));
-  }, [departments, can]);
+      })),
+    [visibleDepartments],
+  );
+
+  /**
+   * Shown when the user can raise a request in *any* of their departments. This used to ask only
+   * about the first card in the grid, so someone who could create in their second department never
+   * saw the shortcut — and someone who could create only in the first saw it regardless.
+   */
+  const canCreateAnywhere = useMemo(
+    () => visibleDepartments.some(dept => can('Create', 'Expenses.Departments', dept.id)),
+    [visibleDepartments, can],
+  );
 
   const quickActions = useMemo(() => {
     const actions = [];
@@ -293,7 +287,7 @@ export default function ExpensesPage() {
               <DepartmentCard key={item.text} item={item} />
             ))}
             {/* New Expense Request shortcut card */}
-            {departmentItems.length > 0 && can('Create', 'Expenses.Departments', departmentItems[0]?.href.split('/').pop() || '') && (
+            {canCreateAnywhere && (
               <Link href="/expenses/new-request" className="h-full block">
                 <div className="group relative flex flex-col h-full rounded-xl border border-dashed border-primary/30 transition-all duration-300 overflow-hidden bg-primary/5 hover:bg-primary/10 hover:border-primary/50 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/10">
                   <div className="flex flex-col items-center justify-center flex-1 p-5 text-center gap-2">

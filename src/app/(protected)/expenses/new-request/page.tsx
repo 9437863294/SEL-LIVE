@@ -9,7 +9,7 @@ import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { ArrowLeft, Save, Loader2, Check, ChevronsUpDown, Receipt, Sparkles, Info } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Check, ChevronsUpDown, Receipt, Sparkles, Info, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,13 +21,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Department, Project, SerialNumberConfig, AccountHead, SubAccountHead, ExpenseRequest, DailyRequisitionEntry } from '@/lib/types';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useAuthorization } from '@/hooks/useAuthorization';
 import { format } from 'date-fns';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { logUserActivity } from '@/lib/activity-logger';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 
@@ -64,6 +65,7 @@ function ReadOnlyField({ label, value, id }: { label: string; value: string; id?
 function NewExpenseRequestForm() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { can, isLoading: isAuthLoading } = useAuthorization();
   const searchParams = useSearchParams();
 
   const departmentIdFromUrl = searchParams?.get('departmentId') ?? null;
@@ -102,6 +104,23 @@ function NewExpenseRequestForm() {
   useEffect(() => {
     if (partyNameFromUrl) setPartySearch(partyNameFromUrl);
   }, [partyNameFromUrl]);
+
+  /**
+   * This page had no permission check of its own — it trusted the links that lead to it, and a
+   * typed URL reached the form regardless. Only departments the user may raise a request in are
+   * offered, and a `?departmentId=` naming one they may not is refused.
+   */
+  const creatableDepartments = useMemo(
+    () => departments.filter(dept => can('Create', 'Expenses.Departments', dept.id)),
+    [departments, can],
+  );
+
+  const canUseUrlDepartment = departmentIdFromUrl
+    ? can('Create', 'Expenses.Departments', departmentIdFromUrl)
+    : true;
+
+  const isDenied =
+    !isAuthLoading && !isLoadingData && (!canUseUrlDepartment || creatableDepartments.length === 0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -180,6 +199,14 @@ function NewExpenseRequestForm() {
   const handleSave = async (data: ExpenseFormValues) => {
     if (!user) {
       toast({ title: 'Authentication Error', description: 'You must be logged in.', variant: 'destructive' });
+      return;
+    }
+    if (!can('Create', 'Expenses.Departments', data.departmentId)) {
+      toast({
+        title: 'Not permitted',
+        description: 'You do not have permission to raise a request for that department.',
+        variant: 'destructive',
+      });
       return;
     }
     setIsSaving(true);
@@ -268,13 +295,26 @@ function NewExpenseRequestForm() {
         </div>
       </div>
 
-      {isLoadingData ? (
+      {isLoadingData || isAuthLoading ? (
         <Card className="border-border/60 bg-card/60 backdrop-blur-sm">
           <CardContent className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
             </div>
           </CardContent>
+        </Card>
+      ) : isDenied ? (
+        <Card className="border-destructive/30">
+          <CardHeader className="text-center pb-2">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
+              <ShieldAlert className="h-7 w-7 text-destructive" />
+            </div>
+            <CardTitle>Access Denied</CardTitle>
+            <CardDescription>
+              You do not have permission to raise an expense request
+              {departmentIdFromUrl ? ' for this department.' : ' for any department.'}
+            </CardDescription>
+          </CardHeader>
         </Card>
       ) : (
         <Form {...form}>
@@ -326,7 +366,7 @@ function NewExpenseRequestForm() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                              {creatableDepartments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                             </SelectContent>
                           </Select>
                           <FormMessage />

@@ -113,11 +113,12 @@ export default function ModuleCard({
         return "/settings/project";
       case "Employee":
         return "/employee";
-      // Nested Expenses Settings
+      // Nested Expenses Settings — these live inside the module, under its own shell and its own
+      // Expenses.Settings permissions. The /settings/expenses duplicates they used to point at are gone.
       case "Manage Accounts":
-        return "/settings/expenses/accounts";
+        return "/expenses/settings/accounts";
       case "Department-wise Serial Number":
-        return "/settings/expenses/department-serial-no";
+        return "/expenses/settings/department-serial-no";
       // Nested Insurance Settings
       case "Policy Holders":
         return "/insurance/policy-holders";

@@ -4,10 +4,9 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import Link from 'next/link';
 import {
-  ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert,
+  ArrowLeft, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert,
   Search, FileText, IndianRupee, Building2, TrendingUp, Filter,
   Receipt, Layers,
 } from 'lucide-react';
@@ -60,6 +59,16 @@ const baseTableHeaders = [
   'Reception No',
   'Reception Date',
 ];
+
+/**
+ * Reception dates are stored as free text, so a value that predates the import validation may not
+ * parse — show it as it was recorded rather than the words "Invalid Date".
+ */
+function formatReceptionDate(value: string | undefined) {
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : format(parsed, 'dd MMM, yyyy');
+}
 
 export default function AllExpensesPage() {
   const { toast } = useToast();
@@ -264,7 +273,7 @@ export default function AllExpensesPage() {
         );
       case 'Name of the party': return expense.partyName;
       case 'Reception No': return expense.receptionNo || 'N/A';
-      case 'Reception Date': return expense.receptionDate ? format(new Date(expense.receptionDate), 'dd MMM, yyyy') : 'N/A';
+      case 'Reception Date': return formatReceptionDate(expense.receptionDate);
       default: return '';
     }
   };
@@ -453,54 +462,58 @@ export default function AllExpensesPage() {
         </CardContent>
       </Card>
 
-      {/* Data Table */}
+      {/* Data Table.
+          One native scroll container — the Table's own wrapper — rather than a Radix ScrollArea.
+          The ScrollArea here never scrolled: its viewport wraps children in a display:table box
+          that sizes to content, so the 12 nowrap columns stretched it (and every ancestor) to
+          2000px instead of clipping, and the horizontal <ScrollBar> was passed as a *child*, which
+          this wrapper renders inside the viewport as content — so it was never a scrollbar at all.
+          Native overflow also means a visible scrollbar to drag and a thead that sticks to the
+          right box. max-h, not h, so a short register does not leave dead space under the card. */}
       <Card className="border-border/60 bg-card/60 backdrop-blur-sm overflow-hidden">
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-22rem)]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background z-10">
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  {visibleHeaders.map(header => (
-                    <TableHead key={header} className="whitespace-nowrap px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {header}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 8 }).map((_, i) => (
-                    <TableRow key={i}>
-                      {visibleHeaders.map(header => (
-                        <TableCell key={header}><Skeleton className="h-4 w-full" /></TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : filteredExpenses.length > 0 ? (
-                  filteredExpenses.map(expense => (
-                    <TableRow key={expense.id} className="hover:bg-primary/5 transition-colors duration-150">
-                      {visibleHeaders.map(header => (
-                        <TableCell key={header} className="whitespace-nowrap text-sm px-4">
-                          {getCellContent(header, expense)}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={visibleHeaders.length}>
-                      <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                        <Receipt className="h-10 w-10 mb-3 opacity-30" />
-                        <p className="font-medium">No expense requests found</p>
-                        <p className="text-sm mt-1">Try adjusting your filters</p>
-                      </div>
-                    </TableCell>
+          <Table containerClassName="max-h-[calc(100vh-24rem)] overflow-auto">
+            <TableHeader className="sticky top-0 bg-background z-10">
+              <TableRow className="bg-muted/40 hover:bg-muted/40">
+                {visibleHeaders.map(header => (
+                  <TableHead key={header} className="whitespace-nowrap px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {header}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <TableRow key={i}>
+                    {visibleHeaders.map(header => (
+                      <TableCell key={header}><Skeleton className="h-4 w-full" /></TableCell>
+                    ))}
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+                ))
+              ) : filteredExpenses.length > 0 ? (
+                filteredExpenses.map(expense => (
+                  <TableRow key={expense.id} className="hover:bg-primary/5 transition-colors duration-150">
+                    {visibleHeaders.map(header => (
+                      <TableCell key={header} className="whitespace-nowrap text-sm px-4">
+                        {getCellContent(header, expense)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={visibleHeaders.length}>
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                      <Receipt className="h-10 w-10 mb-3 opacity-30" />
+                      <p className="font-medium">No expense requests found</p>
+                      <p className="text-sm mt-1">Try adjusting your filters</p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>
