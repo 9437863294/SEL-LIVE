@@ -182,6 +182,8 @@ export function ExpenseImportDialog({
   subAccountHeads,
   existingExpenses,
   onImported,
+  duplicateDetection = true,
+  defaultRequestNoSource = 'generate',
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -192,13 +194,17 @@ export function ExpenseImportDialog({
   /** This department's existing requests — what duplicate detection compares against. */
   existingExpenses: ExpenseRequest[];
   onImported: () => void;
+  /** From the module data rules; off means a re-import creates the rows again. */
+  duplicateDetection?: boolean;
+  /** From the module data rules; which numbering option the wizard opens on. */
+  defaultRequestNoSource?: RequestNoSource;
 }) {
   const { toast } = useToast();
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<Step>('upload');
-  const [requestNoSource, setRequestNoSource] = useState<RequestNoSource>('generate');
+  const [requestNoSource, setRequestNoSource] = useState<RequestNoSource>(defaultRequestNoSource);
   const [fileName, setFileName] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
@@ -356,8 +362,10 @@ export function ExpenseImportDialog({
     setResult(
       parseExpenseImportRows(sheet, columnMap, masters, {
         requestNoSource,
-        existingRequestNos: existing.requestNos,
-        existingFingerprints: existing.fingerprints,
+        // Duplicate detection is a module data rule. With it off, nothing is compared against what
+        // is already recorded and a re-import creates the rows a second time.
+        existingRequestNos: duplicateDetection ? existing.requestNos : [],
+        existingFingerprints: duplicateDetection ? existing.fingerprints : [],
       }),
     );
     setFilter('all');

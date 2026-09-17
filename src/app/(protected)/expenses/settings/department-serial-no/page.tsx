@@ -115,7 +115,7 @@ export default function DepartmentSerialNoPage() {
   
   if (isAuthLoading || (isLoading && canViewPage)) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div className="w-full">
         <Skeleton className="h-10 w-96 mb-6" />
         <div className="space-y-6">
             {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-48 w-full" />)}
@@ -126,7 +126,7 @@ export default function DepartmentSerialNoPage() {
 
   if (!canViewPage) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div className="w-full">
         <div className="mb-6 flex items-center gap-4">
             <Link href="/expenses/settings"><Button variant="ghost" size="icon"><ArrowLeft className="h-6 w-6" /></Button></Link>
             <h1 className="text-xl font-bold">Department-wise Serial Number</h1>
@@ -140,7 +140,7 @@ export default function DepartmentSerialNoPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8">
+    <div className="w-full">
       <div className="mb-6 flex items-center gap-4">
         <Link href="/expenses/settings">
           <Button variant="ghost" size="icon">

@@ -9,6 +9,7 @@ import {
   buildEApprovalSteps,
   canActOnEApprovalStep,
   canAssignEApprovalStep,
+  canDeleteEApprovalRequest,
   canEditEApprovalRequest,
   canRemoveEApprovalAttachment,
   canManageEApprovalDelegationFor,
@@ -2003,4 +2004,76 @@ test('every kind of reassignment has a verb for the timeline and the printed not
     assert.ok(E_APPROVAL_REASSIGNMENT_VERBS[kind].length > 0);
   }
   assert.equal(Object.keys(E_APPROVAL_REASSIGNMENT_VERBS).length, 4, 'a new kind needs a verb adding');
+});
+
+/* ── who may delete a request outright ───────────────────────────────────────────────────────── */
+
+test('a requester deletes their own draft with the Delete Draft grant', () => {
+  const draft = { status: 'Draft', requesterId: 'u-me' };
+  const decision = canDeleteEApprovalRequest(draft, { userId: 'u-me' }, { canDeleteDraft: true });
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.kind, 'Draft', 'the mild act, so the confirmation can say so');
+});
+
+test('deleting a draft without the grant is refused, and says which grant', () => {
+  const decision = canDeleteEApprovalRequest({ status: 'Draft', requesterId: 'u-me' }, { userId: 'u-me' });
+  assert.equal(decision.allowed, false);
+  assert.match(decision.reason, /Delete Draft/);
+});
+
+test("somebody else's draft is not yours to delete, grant or not", () => {
+  const draft = { status: 'Draft', requesterId: 'u-them' };
+  assert.equal(canDeleteEApprovalRequest(draft, { userId: 'u-me' }, { canDeleteDraft: true }).allowed, false);
+});
+
+test('a submitted request is not deletable by its requester — it is cancelled instead', () => {
+  for (const status of ['Submitted', 'Pending Approval', 'On Hold', 'Approved', 'Rejected']) {
+    const decision = canDeleteEApprovalRequest(
+      { status, requesterId: 'u-me' },
+      { userId: 'u-me' },
+      { canDeleteDraft: true },
+    );
+    assert.equal(decision.allowed, false, status);
+    assert.match(decision.reason, /Cancel it instead/, status);
+  }
+});
+
+test('the Delete grant removes a request at any status, as an administrative act', () => {
+  for (const status of ['Draft', 'Pending Approval', 'Approved', 'Cancelled', 'Superseded']) {
+    const decision = canDeleteEApprovalRequest(
+      { status, requesterId: 'u-them' },
+      { userId: 'u-admin' },
+      { canDeleteAny: true },
+    );
+    assert.equal(decision.allowed, true, status);
+    assert.equal(decision.kind, 'Administrative', status);
+  }
+});
+
+test('an administrator deleting their own untouched draft is still only a draft deletion', () => {
+  const decision = canDeleteEApprovalRequest(
+    { status: 'Draft', requesterId: 'u-admin' },
+    { userId: 'u-admin' },
+    { canDeleteDraft: true, canDeleteAny: true },
+  );
+  assert.equal(decision.kind, 'Draft', 'no point threatening them with an audit trail that does not exist yet');
+});
+
+test('an administrator with only the Delete grant can still bin their own draft', () => {
+  const decision = canDeleteEApprovalRequest(
+    { status: 'Draft', requesterId: 'u-admin' },
+    { userId: 'u-admin' },
+    { canDeleteAny: true },
+  );
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.kind, 'Administrative');
+});
+
+test('nobody signed in deletes nothing', () => {
+  const decision = canDeleteEApprovalRequest({ status: 'Draft', requesterId: 'u-me' }, null, {
+    canDeleteDraft: true,
+    canDeleteAny: true,
+  });
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.kind, null);
 });

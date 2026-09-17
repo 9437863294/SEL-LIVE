@@ -3,31 +3,23 @@
 
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Plus, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert,
+  ArrowLeft, Plus, ShieldAlert, SlidersHorizontal,
   Search, Calendar as CalendarIcon, Edit, Save, Loader2,
-  Receipt, IndianRupee, FileText, TrendingUp, Filter, Upload,
+  Receipt, IndianRupee, FileText, TrendingUp, Filter, Upload, X, Building2, BarChart3,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, query, where, getDocs, setDoc, updateDoc } from 'firebase/firestore';
-import type { Department, ExpenseRequest, Project, UserSettings, AccountHead, SubAccountHead } from '@/lib/types';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
+import type { Department, ExpenseRequest, Project, AccountHead, SubAccountHead } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -38,7 +30,7 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, startOfToday, endOfToday } from 'date-fns';
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, startOfToday, endOfToday } from 'date-fns';
 import { DateRange } from 'react-day-picker';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -51,45 +43,27 @@ import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { logUserActivity } from '@/lib/activity-logger';
 import { ExpenseImportDialog } from '@/components/expenses/import-dialog';
+import {
+  ExpenseDetailsDialog,
+  RemarksCell,
+  RequestNoCell,
+  formatExpenseTimestamp,
+  formatReceptionDate,
+} from '@/components/expenses/expense-details-dialog';
+import { ExpensesPageHeader } from '@/components/expenses/page-header';
+import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
+import { applyColumnSettings, resolveDatePreset } from '@/lib/expenses-settings';
 
-
-const baseTableHeaders = [
-  'Request No',
-  'Timestamp',
-  'Department',
-  'Project Name',
-  'Amount',
-  'Head of A/c',
-  'Sub-Head of A/c',
-  'Remarks',
-  'Description',
-  'Name of the party',
-  'Reception No',
-  'Reception Date',
-];
-
-/**
- * Reception dates are stored as free text, so a value that predates the import validation may not
- * parse — show it as it was recorded rather than the words "Invalid Date".
- */
-function formatReceptionDate(value: string | undefined) {
-  if (!value) return 'N/A';
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : format(parsed, 'dd MMM, yyyy');
-}
 
 export default function DepartmentExpensesPage() {
   const { departmentId } = useParams() as { departmentId: string };
   const { toast } = useToast();
   const { user, loading: isAuthLoading } = useAuth();
   const { can } = useAuthorization();
-  const settingsKey = `expenses_${departmentId}`;
 
-  const isInitialMount = useRef(true);
-  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedPrefsRef = useRef<string>('');
-  const loadedPrefRef = useRef<any>(null);
-  const latestPrefsRef = useRef<{ order: string[]; visibility: Record<string, boolean> } | null>(null);
+  // Columns, form fields and data rules are module configuration now — see
+  // Expenses › Settings › Table & Field Configuration.
+  const { settings } = useExpensesSettings();
 
   const [department, setDepartment] = useState<Department | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -97,27 +71,36 @@ export default function DepartmentExpensesPage() {
   const [accountHeads, setAccountHeads] = useState<AccountHead[]>([]);
   const [subAccountHeads, setSubAccountHeads] = useState<SubAccountHead[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [detailsExpense, setDetailsExpense] = useState<ExpenseRequest | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRequest | null>(null);
   const [editFormData, setEditFormData] = useState<ExpenseRequest | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
-  );
-
+  /**
+   * The opening period is configured, not hard-coded.
+   *
+   * This page used to open on the current month regardless, so a department whose last request
+   * was raised earlier showed an empty register reading "No expense requests found". The shipped
+   * default is now All time, and an administrator who wants it narrower sets that once under
+   * Settings › Table & Field Configuration rather than every user discovering the date picker.
+   */
   const [filters, setFilters] = useState({
     requestNo: '',
     projectName: 'all',
     partyName: '',
-    dateRange: {
-      from: startOfMonth(new Date()),
-      to: endOfMonth(new Date()),
-    } as DateRange | undefined,
+    dateRange: undefined as DateRange | undefined,
   });
+  const [hasTouchedDate, setHasTouchedDate] = useState(false);
+
+  useEffect(() => {
+    // Only until the user touches the picker — reapplying the configured period after that would
+    // undo their choice every time the settings snapshot fires.
+    if (hasTouchedDate) return;
+    const preset = resolveDatePreset(settings.data.defaultDateRange);
+    setFilters(previous => ({ ...previous, dateRange: preset ? { from: preset.from, to: preset.to } : undefined }));
+  }, [settings.data.defaultDateRange, hasTouchedDate]);
 
   // 'View All' lives on Expenses.Expense Requests, not on the module node — asking the module for it
   // was a clause that could never be true, so anyone holding the consolidated-view grant was sent to
@@ -132,15 +115,22 @@ export default function DepartmentExpensesPage() {
   };
 
   const handleDateRangeChange = (dateRange: DateRange | undefined) => {
+    setHasTouchedDate(true);
     setFilters(prev => ({ ...prev, dateRange }));
   };
 
   const filteredExpenses = useMemo(() => {
+    const from = filters.dateRange?.from ? startOfDay(filters.dateRange.from) : null;
+    // The calendar hands back midnight for the end of a range, so without widening it to the end of
+    // that day a request raised at 09:20 on the last day of the range fell outside its own range.
+    const to = filters.dateRange?.to ? endOfDay(filters.dateRange.to) : null;
+
     return expenses.filter(exp => {
-      const expDate = new Date(exp.createdAt);
-      const isDateMatch = filters.dateRange?.from && filters.dateRange?.to
-        ? expDate >= filters.dateRange.from && expDate <= filters.dateRange.to
-        : true;
+      let isDateMatch = true;
+      if (from && to) {
+        const expDate = new Date(exp.createdAt);
+        isDateMatch = !Number.isNaN(expDate.getTime()) && expDate >= from && expDate <= to;
+      }
       return (
         isDateMatch &&
         (filters.requestNo === '' || exp.requestNo.toLowerCase().includes(filters.requestNo.toLowerCase())) &&
@@ -149,6 +139,15 @@ export default function DepartmentExpensesPage() {
       );
     });
   }, [expenses, filters]);
+
+  const hasActiveFilters =
+    filters.requestNo !== '' ||
+    filters.partyName !== '' ||
+    filters.projectName !== 'all' ||
+    Boolean(filters.dateRange?.from && filters.dateRange?.to);
+
+  const clearFilters = () =>
+    setFilters({ requestNo: '', projectName: 'all', partyName: '', dateRange: undefined });
 
   const totalAmount = useMemo(() =>
     filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0),
@@ -202,84 +201,6 @@ export default function DepartmentExpensesPage() {
   };
 
   useEffect(() => {
-    if (!user || isAuthLoading) return;
-    const fetchSettings = async () => {
-      const settingsRef = doc(db, 'userSettings', user.id);
-      const settingsSnap = await getDoc(settingsRef);
-      if (settingsSnap.exists()) {
-        const settings = settingsSnap.data() as UserSettings;
-        const pageSettings = settings.columnPreferences?.[settingsKey];
-        if (pageSettings) {
-          loadedPrefRef.current = pageSettings;
-          const mergedVisibility = {
-            ...baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {}),
-            ...pageSettings.visibility,
-          };
-          const mergedOrder = [
-            ...pageSettings.order,
-            ...baseTableHeaders.filter(h => !pageSettings.order.includes(h)),
-          ];
-          lastSavedPrefsRef.current = JSON.stringify({ order: mergedOrder, visibility: mergedVisibility });
-          setColumnVisibility(mergedVisibility);
-          setColumnOrder(mergedOrder);
-        }
-      }
-    };
-    fetchSettings();
-  }, [user, settingsKey, isAuthLoading]);
-
-  const saveColumnSettings = async (order: string[], visibility: Record<string, boolean>) => {
-    if (!user) return;
-    try {
-      const settingsRef = doc(db, 'userSettings', user.id);
-      const existing = loadedPrefRef.current ?? {};
-      const payload = { ...existing, order, visibility };
-      await setDoc(
-        settingsRef,
-        { columnPreferences: { [settingsKey]: payload } },
-        { mergeFields: [`columnPreferences.${settingsKey}`] }
-      );
-      loadedPrefRef.current = payload;
-    } catch (e) {
-      console.error('Failed to save column settings to Firestore', e);
-      toast({ title: 'Error', description: 'Could not save your column preferences.', variant: 'destructive' });
-    }
-  };
-
-  useEffect(() => {
-    latestPrefsRef.current = { order: columnOrder, visibility: columnVisibility };
-  }, [columnOrder, columnVisibility]);
-
-  useEffect(() => {
-    if (isInitialMount.current) { isInitialMount.current = false; return; }
-    if (!user) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      const prefs = { order: columnOrder, visibility: columnVisibility };
-      const key = JSON.stringify(prefs);
-      saveTimerRef.current = null;
-      if (key === lastSavedPrefsRef.current) return;
-      lastSavedPrefsRef.current = key;
-      void saveColumnSettings(columnOrder, columnVisibility);
-    }, 700);
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [columnOrder, columnVisibility, user]);
-
-  useEffect(() => {
-    return () => {
-      if (!user || !saveTimerRef.current) return;
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-      const prefs = latestPrefsRef.current;
-      if (!prefs) return;
-      const key = JSON.stringify(prefs);
-      if (key === lastSavedPrefsRef.current) return;
-      lastSavedPrefsRef.current = key;
-      void saveColumnSettings(prefs.order, prefs.visibility);
-    };
-  }, [user]);
-
-  useEffect(() => {
     if (!departmentId || isAuthLoading) return;
     if (!canViewPage) { setIsLoading(false); return; }
     fetchData();
@@ -288,21 +209,16 @@ export default function DepartmentExpensesPage() {
   const getProjectName = (projectId: string) =>
     projects.find(p => p.id === projectId)?.projectName || 'Unknown Project';
 
-  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
-
-  const moveColumn = (index: number, direction: 'up' | 'down') => {
-    const newOrder = [...columnOrder];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex >= 0 && newIndex < newOrder.length) {
-      [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
-      setColumnOrder(newOrder);
-    }
-  };
+  const { order, visibility } = useMemo(
+    () => applyColumnSettings(settings.registers.department),
+    [settings],
+  );
+  const visibleHeaders = order.filter(header => visibility[header]);
 
   const getCellContent = (header: string, expense: ExpenseRequest) => {
     switch (header) {
-      case 'Request No': return expense.requestNo;
-      case 'Timestamp': return expense.createdAt ? format(new Date(expense.createdAt), 'dd MMM yyyy, HH:mm') : 'N/A';
+      case 'Request No': return <RequestNoCell expense={expense} onOpen={setDetailsExpense} />;
+      case 'Timestamp': return formatExpenseTimestamp(expense.createdAt);
       case 'Department': return expense.generatedByDepartment;
       case 'Project Name': return getProjectName(expense.projectId);
       case 'Amount':
@@ -313,7 +229,7 @@ export default function DepartmentExpensesPage() {
         );
       case 'Head of A/c': return expense.headOfAccount;
       case 'Sub-Head of A/c': return expense.subHeadOfAccount;
-      case 'Remarks': return expense.remarks;
+      case 'Remarks': return <RemarksCell remarks={expense.remarks} />;
       case 'Description':
         return (
           <TooltipProvider>
@@ -379,7 +295,7 @@ export default function DepartmentExpensesPage() {
 
   if (isLoading || isAuthLoading) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4">
+      <div className="w-full space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2"><Skeleton className="h-9 w-9" /><Skeleton className="h-8 w-72" /></div>
           <Skeleton className="h-9 w-40" />
@@ -393,7 +309,7 @@ export default function DepartmentExpensesPage() {
 
   if (!canViewPage) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div className="w-full">
         <div className="mb-6 flex items-center gap-2">
           <Link href="/expenses"><Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button></Link>
           <h1 className="text-2xl font-bold">Department Expenses</h1>
@@ -413,79 +329,33 @@ export default function DepartmentExpensesPage() {
 
   return (
     <>
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <Link href="/expenses">
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight">
-                {department ? `${department.name}` : 'Department Expenses'}
-              </h1>
-              <p className="text-xs text-muted-foreground">Expense Requests</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Sequence Dialog */}
-            <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
-              <DialogTrigger asChild>
+      <div className="w-full space-y-4">
+        <ExpensesPageHeader
+          icon={Building2}
+          title={department ? department.name : 'Department Expenses'}
+          description="Expense requests raised by this department"
+          accent="blue"
+          backHref="/expenses"
+          actions={
+            <>
+            {/* Column order and visibility are configured for the whole module, not per user. */}
+            {can('View', 'Expenses.Settings') && (
+              <Link href="/expenses/settings/table-and-fields">
                 <Button variant="outline" size="sm" className="gap-2">
-                  <Shuffle className="h-3.5 w-3.5" /> Reorder
+                  <SlidersHorizontal className="h-3.5 w-3.5" /> Columns
                 </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Edit Column Sequence</DialogTitle>
-                  <DialogDescription>Use the arrows to reorder columns. Changes are saved automatically.</DialogDescription>
-                </DialogHeader>
-                <div className="py-4 space-y-2">
-                  {columnOrder.map((header, index) => (
-                    <div key={header} className="flex items-center justify-between p-2.5 border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                      <span className="text-sm font-medium">
-                        <span className="text-muted-foreground mr-2 text-xs">{index + 1}.</span>{header}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onClick={() => moveColumn(index, 'up')}>
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === columnOrder.length - 1} onClick={() => moveColumn(index, 'down')}>
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <DialogFooter>
-                  <DialogClose asChild><Button>Done</Button></DialogClose>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+              </Link>
+            )}
 
-            {/* Columns Dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            {/* The report centre serves one department as readily as all of them, so this is the
+                same page pre-scoped rather than a second set of department-only reports. */}
+            {can('View', 'Expenses.Reports') && (
+              <Link href={`/expenses/reports?departmentId=${departmentId}`}>
                 <Button variant="outline" size="sm" className="gap-2">
-                  <View className="h-3.5 w-3.5" /> Columns
+                  <BarChart3 className="h-3.5 w-3.5" /> Reports
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {baseTableHeaders.map(header => (
-                  <DropdownMenuCheckboxItem
-                    key={header}
-                    checked={columnVisibility[header] !== false}
-                    onCheckedChange={value => setColumnVisibility(prev => ({ ...prev, [header]: !!value }))}
-                  >
-                    {header}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </Link>
+            )}
 
             {/* Importing creates expense requests, so the authority to create is the authority to
                 bulk-create — gating it on a separate permission nobody has been granted yet would
@@ -503,8 +373,9 @@ export default function DepartmentExpensesPage() {
                 </Button>
               </Link>
             )}
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Stats ribbon */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -600,15 +471,29 @@ export default function DepartmentExpensesPage() {
             </div>
             <div className="flex items-center gap-1 flex-wrap">
               {[
+                // "All time" first, and it is the default — whoever narrows the range needs a way
+                // back that does not depend on working out how to unpick a date picker.
+                { label: 'All time', fn: () => handleDateRangeChange(undefined), active: !filters.dateRange?.from },
                 { label: 'Today', fn: () => handleDateRangeChange({ from: startOfToday(), to: endOfToday() }) },
                 { label: 'This Week', fn: () => handleDateRangeChange({ from: startOfWeek(new Date()), to: endOfWeek(new Date()) }) },
                 { label: 'This Month', fn: () => handleDateRangeChange({ from: startOfMonth(new Date()), to: endOfMonth(new Date()) }) },
                 { label: 'Last Month', fn: () => handleDateRangeChange({ from: startOfMonth(subMonths(new Date(), 1)), to: endOfMonth(subMonths(new Date(), 1)) }) },
               ].map(btn => (
-                <Button key={btn.label} variant="ghost" size="sm" className="h-7 text-xs px-2.5" onClick={btn.fn}>
+                <Button
+                  key={btn.label}
+                  variant="ghost"
+                  size="sm"
+                  className={cn('h-7 text-xs px-2.5', btn.active && 'bg-primary/10 text-primary')}
+                  onClick={btn.fn}
+                >
                   {btn.label}
                 </Button>
               ))}
+              {hasActiveFilters && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs px-2.5 text-muted-foreground" onClick={clearFilters}>
+                  <X className="mr-1 h-3 w-3" /> Clear filters
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -640,22 +525,32 @@ export default function DepartmentExpensesPage() {
                     ))
                   ) : filteredExpenses.length > 0 ? (
                     filteredExpenses.map(expense => (
+                      // The whole row opens the details. Keyboard access is the Request No button
+                      // inside it, so the row keeps its table semantics.
                       <TableRow
                         key={expense.id}
-                        className="hover:bg-primary/5 transition-colors duration-150 group"
+                        onClick={() => setDetailsExpense(expense)}
+                        className="cursor-pointer hover:bg-primary/5 transition-colors duration-150 group"
                       >
                         {visibleHeaders.map(header => (
                           <TableCell key={header} className="whitespace-nowrap text-sm px-4">
                             {getCellContent(header, expense)}
                           </TableCell>
                         ))}
-                        <TableCell className="text-right">
+                        {/* Edit is a different intent from "show me this record", so the click
+                            stops here rather than also opening the details dialog behind it. */}
+                        <TableCell className="text-right" onClick={event => event.stopPropagation()}>
                           <Button
                             variant="outline"
                             size="sm"
                             className="h-7 text-xs gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                             onClick={() => openEditDialog(expense)}
-                            disabled={!canEdit || !!expense.receptionNo}
+                            // A received request is normally closed to edits; the data rules can
+                            // reopen it for organisations that correct after the fact.
+                            disabled={
+                              !canEdit ||
+                              (!!expense.receptionNo && !settings.data.allowEditAfterReception)
+                            }
                           >
                             <Edit className="h-3 w-3" /> Edit
                           </Button>
@@ -663,12 +558,29 @@ export default function DepartmentExpensesPage() {
                       </TableRow>
                     ))
                   ) : (
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={visibleHeaders.length + 1}>
+                        {/* "Nothing here" and "nothing here *because of a filter you set*" are very
+                            different messages, and conflating them is how a full register reads as
+                            an empty one. */}
                         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                           <Receipt className="h-10 w-10 mb-3 opacity-30" />
-                          <p className="font-medium">No expense requests found</p>
-                          <p className="text-sm mt-1">Try adjusting your filters or date range</p>
+                          {expenses.length > 0 ? (
+                            <>
+                              <p className="font-medium text-foreground">
+                                All {expenses.length} request{expenses.length === 1 ? ' is' : 's are'} hidden by the current filters
+                              </p>
+                              <p className="text-sm mt-1">This department has requests — none of them match what you have filtered on.</p>
+                              <Button variant="outline" size="sm" className="mt-4 gap-1.5" onClick={clearFilters}>
+                                <X className="h-3.5 w-3.5" /> Clear filters
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-medium">No expense requests yet</p>
+                              <p className="text-sm mt-1">Nothing has been raised for this department.</p>
+                            </>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -679,6 +591,13 @@ export default function DepartmentExpensesPage() {
           </CardContent>
         </Card>
       </div>
+
+      <ExpenseDetailsDialog
+        expense={detailsExpense}
+        projectName={detailsExpense ? getProjectName(detailsExpense.projectId) : ''}
+        open={!!detailsExpense}
+        onOpenChange={open => { if (!open) setDetailsExpense(null); }}
+      />
 
       {/* Import Dialog — mounted only while open so exceljs is not pulled in on a normal page view */}
       {isImportDialogOpen && (
@@ -691,6 +610,8 @@ export default function DepartmentExpensesPage() {
           subAccountHeads={subAccountHeads}
           existingExpenses={expenses}
           onImported={fetchData}
+          duplicateDetection={settings.data.importDuplicateDetection}
+          defaultRequestNoSource={settings.data.importRequestNoSource}
         />
       )}
 

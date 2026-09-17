@@ -30,6 +30,7 @@ import { dispatchNotification } from '@/lib/notifications';
 import {
   applyEApprovalAction,
   buildEApprovalSteps,
+  canDeleteEApprovalRequest,
   canManageEApprovalDelegationFor,
   canRemoveEApprovalAttachment,
   canRecallEApprovalAction,
@@ -1268,18 +1269,152 @@ export async function updateEApprovalDraft(
   });
 }
 
-/** A draft is the only thing that can be deleted; anything submitted is cancelled instead. */
-export async function deleteEApprovalDraft(approvalId: string, actor: EApprovalServiceActor): Promise<void> {
+/** What a deletion removed, so the caller can say so rather than just "done". */
+export interface EApprovalDeletionSummary {
+  steps: number;
+  history: number;
+  comments: number;
+  attachments: number;
+  versions: number;
+}
+
+/**
+ * Deletes every document in a collection belonging to one approval, and counts them.
+ *
+ * Chunked at 400 rather than issued as one batch because Firestore caps a batch at 500 writes, and a
+ * long-running approval passes that on its history alone — a chain of eight approvers with two
+ * verifications each writes well over a hundred entries before anybody comments.
+ */
+async function deleteEApprovalChildren(
+  collectionName: string,
+  approvalId: string,
+): Promise<{ count: number; docs: Array<{ id: string; data: () => Record<string, unknown> }> }> {
+  const snapshot = await getDocs(
+    query(collection(db, collectionName), where('approvalId', '==', approvalId)),
+  );
+  const refs = snapshot.docs.map((entry) => entry.ref);
+  for (let index = 0; index < refs.length; index += 400) {
+    const batch = writeBatch(db);
+    for (const ref of refs.slice(index, index + 400)) batch.delete(ref);
+    await batch.commit();
+  }
+  return { count: refs.length, docs: snapshot.docs };
+}
+
+/**
+ * Deletes a request outright, together with the whole workflow that belonged to it.
+ *
+ * Everything scoped to the approval goes: the step documents (the workflow), the history, the
+ * comments, the attachments and their stored files, and the superseded version snapshots. The old
+ * behaviour — flipping `isDeleted` on the request and leaving the rest — is what this replaces, and it
+ * was a genuine leak rather than a tidiness question: the register filters deleted requests, but
+ * `loadEApprovalAnalyticsData` sweeps `eApprovalSteps` across the whole organisation and
+ * `listEApprovalMyActivity` reads `eApprovalHistory` by actor, so a "deleted" approval went on
+ * feeding the SLA reports and went on appearing in people's own activity logs for ever.
+ *
+ * Three ordering decisions:
+ *
+ *   1. **The activity log is written first**, before anything is destroyed, and it carries the
+ *      reference, subject, status and the counts. `userActivityLogs` is outside this module's
+ *      collections, so it survives the deletion — which is what keeps an administrative delete
+ *      accountable. An approval can be removed; the fact that somebody removed it cannot.
+ *   2. **The request document is deleted last.** A failure part-way then leaves a still-visible
+ *      approval that can simply be deleted again; the reverse order would leave invisible orphans
+ *      with nothing pointing at them.
+ *   3. **A failed Storage delete does not stop the run.** The file may already be gone, or never have
+ *      landed; either way the attachment *record* is what the app reads, and leaving the record
+ *      behind because a blob could not be removed is the worse outcome.
+ */
+export async function deleteEApprovalRequest(
+  approvalId: string,
+  actor: EApprovalServiceActor,
+  options: { canDeleteDraft?: boolean; canDeleteAny?: boolean; reason?: string } = {},
+): Promise<EApprovalDeletionSummary> {
   const who = requireActor(actor);
   const request = await getEApprovalRequest(approvalId);
-  if (!request) return;
-  if (request.requesterId !== who.userId) throw new EApprovalServiceError('Only the requester can delete this draft.');
-  if (request.status !== 'Draft') throw new EApprovalServiceError('Only a draft can be deleted. Cancel it instead.');
-  await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId), {
-    isDeleted: true,
-    ...withUpdateAudit(who),
+  const empty: EApprovalDeletionSummary = { steps: 0, history: 0, comments: 0, attachments: 0, versions: 0 };
+  if (!request) return empty;
+
+  const decision = canDeleteEApprovalRequest(request, who, {
+    canDeleteDraft: options.canDeleteDraft,
+    canDeleteAny: options.canDeleteAny,
   });
-  await logEApprovalActivity(who, 'Delete Draft', {}, { recordId: approvalId });
+  if (!decision.allowed) throw new EApprovalServiceError(decision.reason ?? 'You cannot delete this approval.');
+
+  const reason = options.reason?.trim();
+  // A draft nobody has seen needs no justification. Removing a file that has been through approvers
+  // does, and it is the only part of it that will still exist afterwards.
+  if (decision.kind === 'Administrative' && !reason) {
+    throw new EApprovalServiceError('Give a reason for deleting an approval that has already been submitted.');
+  }
+
+  const [steps, history, comments, attachments, versions] = await Promise.all([
+    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.steps), where('approvalId', '==', approvalId))),
+    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.history), where('approvalId', '==', approvalId))),
+    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.comments), where('approvalId', '==', approvalId))),
+    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.attachments), where('approvalId', '==', approvalId))),
+    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.versions), where('approvalId', '==', approvalId))),
+  ]);
+  const summary: EApprovalDeletionSummary = {
+    steps: steps.size,
+    history: history.size,
+    comments: comments.size,
+    attachments: attachments.size,
+    versions: versions.size,
+  };
+
+  await logEApprovalActivity(
+    who,
+    decision.kind === 'Draft' ? 'Delete Draft' : 'Delete Approval',
+    {
+      status: request.status,
+      subject: request.subject,
+      requesterId: request.requesterId,
+      requesterName: request.requesterName ?? null,
+      departmentName: request.departmentName ?? null,
+      amount: request.amount ?? null,
+      version: request.version,
+      reason: reason ?? null,
+      removed: summary,
+    },
+    { recordId: approvalId, recordRef: request.referenceNo },
+  );
+
+  const storagePaths = mapDocs<EApprovalAttachment>(attachments.docs)
+    .map((attachment) => attachment.storagePath)
+    .filter(Boolean) as string[];
+  if (storagePaths.length) {
+    try {
+      const [{ storage }, { deleteObject, ref }] = await Promise.all([
+        import('@/lib/firebase-storage'),
+        import('firebase/storage'),
+      ]);
+      await Promise.all(
+        storagePaths.map(async (path) => {
+          try {
+            await deleteObject(ref(storage, path));
+          } catch (error) {
+            console.warn('[e-approval] could not delete a stored file; removing its record anyway', path, error);
+          }
+        }),
+      );
+    } catch (error) {
+      console.warn('[e-approval] Storage unavailable; attachment records removed without their files', error);
+    }
+  }
+
+  for (const collectionName of [
+    E_APPROVAL_COLLECTIONS.steps,
+    E_APPROVAL_COLLECTIONS.history,
+    E_APPROVAL_COLLECTIONS.comments,
+    E_APPROVAL_COLLECTIONS.attachments,
+    E_APPROVAL_COLLECTIONS.versions,
+  ]) {
+    await deleteEApprovalChildren(collectionName, approvalId);
+  }
+
+  await deleteDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId));
+  return summary;
 }
 
 /* ------------------------------------------------------------------------------------------------

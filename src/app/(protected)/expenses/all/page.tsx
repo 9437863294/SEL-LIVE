@@ -6,43 +6,34 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, View, ArrowUp, ArrowDown, Shuffle, ShieldAlert,
+  ArrowLeft, ShieldAlert, SlidersHorizontal,
   Search, FileText, IndianRupee, Building2, TrendingUp, Filter,
   Receipt, Layers,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, collection, getDocs, setDoc } from 'firebase/firestore';
-import type { Department, ExpenseRequest, Project, UserSettings } from '@/lib/types';
+import { collection, getDocs } from 'firebase/firestore';
+import type { Department, ExpenseRequest, Project } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose,
-  DialogDescription,
-} from '@/components/ui/dialog';
-import { format } from 'date-fns';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import {
+  ExpenseDetailsDialog,
+  RemarksCell,
+  RequestNoCell,
+  formatExpenseTimestamp,
+  formatReceptionDate,
+} from '@/components/expenses/expense-details-dialog';
+import { ExpensesPageHeader } from '@/components/expenses/page-header';
+import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
+import { applyColumnSettings } from '@/lib/expenses-settings';
 
 
 const baseTableHeaders = [
@@ -60,38 +51,20 @@ const baseTableHeaders = [
   'Reception Date',
 ];
 
-/**
- * Reception dates are stored as free text, so a value that predates the import validation may not
- * parse — show it as it was recorded rather than the words "Invalid Date".
- */
-function formatReceptionDate(value: string | undefined) {
-  if (!value) return 'N/A';
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : format(parsed, 'dd MMM, yyyy');
-}
-
 export default function AllExpensesPage() {
   const { toast } = useToast();
-  const { user, loading: isAuthLoading } = useAuth();
+  const { loading: isAuthLoading } = useAuth();
   const { can } = useAuthorization();
-  const settingsKey = `expenses_all`;
 
-  const isInitialMount = useRef(true);
-  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedPrefsRef = useRef<string>('');
-  const loadedPrefRef = useRef<any>(null);
-  const latestPrefsRef = useRef<{ order: string[]; visibility: Record<string, boolean> } | null>(null);
+  // Column order and visibility are module configuration now, not a per-user toolbar toggle —
+  // see Expenses › Settings › Table & Field Configuration.
+  const { settings } = useExpensesSettings();
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSequenceDialogOpen, setIsSequenceDialogOpen] = useState(false);
-
-  const [columnOrder, setColumnOrder] = useState<string[]>(baseTableHeaders);
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(
-    baseTableHeaders.reduce((acc, header) => ({ ...acc, [header]: true }), {})
-  );
+  const [detailsExpense, setDetailsExpense] = useState<ExpenseRequest | null>(null);
 
   const [filters, setFilters] = useState({
     requestNo: '',
@@ -129,80 +102,6 @@ export default function AllExpensesPage() {
   );
 
   useEffect(() => {
-    if (!user || isAuthLoading) return;
-    const fetchSettings = async () => {
-      const settingsRef = doc(db, 'userSettings', user.id);
-      const settingsSnap = await getDoc(settingsRef);
-      if (settingsSnap.exists()) {
-        const settings = settingsSnap.data() as UserSettings;
-        const pageSettings = settings.columnPreferences?.[settingsKey];
-        if (pageSettings) {
-          loadedPrefRef.current = pageSettings;
-          const mergedVisibility = {
-            ...baseTableHeaders.reduce((acc, h) => ({ ...acc, [h]: true }), {}),
-            ...pageSettings.visibility,
-          };
-          const mergedOrder = [
-            ...pageSettings.order,
-            ...baseTableHeaders.filter(h => !pageSettings.order.includes(h)),
-          ];
-          lastSavedPrefsRef.current = JSON.stringify({ order: mergedOrder, visibility: mergedVisibility });
-          setColumnVisibility(mergedVisibility);
-          setColumnOrder(mergedOrder);
-        }
-      }
-    };
-    fetchSettings();
-  }, [user, settingsKey, isAuthLoading]);
-
-  const saveColumnSettings = async (order: string[], visibility: Record<string, boolean>) => {
-    if (!user) return;
-    try {
-      const settingsRef = doc(db, 'userSettings', user.id);
-      const existing = loadedPrefRef.current ?? {};
-      const payload = { ...existing, order, visibility };
-      await setDoc(settingsRef, { columnPreferences: { [settingsKey]: payload } }, { mergeFields: [`columnPreferences.${settingsKey}`] });
-      loadedPrefRef.current = payload;
-    } catch (e) {
-      console.error('Failed to save column settings to Firestore', e);
-      toast({ title: 'Error', description: 'Could not save your column preferences.', variant: 'destructive' });
-    }
-  };
-
-  useEffect(() => {
-    latestPrefsRef.current = { order: columnOrder, visibility: columnVisibility };
-  }, [columnOrder, columnVisibility]);
-
-  useEffect(() => {
-    if (isInitialMount.current) { isInitialMount.current = false; return; }
-    if (!user) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      const prefs = { order: columnOrder, visibility: columnVisibility };
-      const key = JSON.stringify(prefs);
-      saveTimerRef.current = null;
-      if (key === lastSavedPrefsRef.current) return;
-      lastSavedPrefsRef.current = key;
-      void saveColumnSettings(columnOrder, columnVisibility);
-    }, 700);
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [columnOrder, columnVisibility, user]);
-
-  useEffect(() => {
-    return () => {
-      if (!user || !saveTimerRef.current) return;
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-      const prefs = latestPrefsRef.current;
-      if (!prefs) return;
-      const key = JSON.stringify(prefs);
-      if (key === lastSavedPrefsRef.current) return;
-      lastSavedPrefsRef.current = key;
-      void saveColumnSettings(prefs.order, prefs.visibility);
-    };
-  }, [user]);
-
-  useEffect(() => {
     if (isAuthLoading) return;
     if (!canViewPage) { setIsLoading(false); return; }
 
@@ -231,24 +130,19 @@ export default function AllExpensesPage() {
   const getProjectName = (projectId: string) =>
     projects.find(p => p.id === projectId)?.projectName || 'Unknown Project';
 
-  const visibleHeaders = columnOrder.filter(header => columnVisibility[header]);
-
-  const moveColumn = (index: number, direction: 'up' | 'down') => {
-    const newOrder = [...columnOrder];
-    const newIndex = direction === 'up' ? index - 1 : index + 1;
-    if (newIndex >= 0 && newIndex < newOrder.length) {
-      [newOrder[index], newOrder[newIndex]] = [newOrder[newIndex], newOrder[index]];
-      setColumnOrder(newOrder);
-    }
-  };
+  const { order, visibility } = useMemo(
+    () => applyColumnSettings(settings.registers.all),
+    [settings],
+  );
+  const visibleHeaders = order.filter(header => visibility[header]);
 
   const getCellContent = (header: string, expense: ExpenseRequest) => {
     const formatCurrency = (amount: number) =>
       new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(amount);
 
     switch (header) {
-      case 'Request No': return expense.requestNo;
-      case 'Timestamp': return expense.createdAt ? format(new Date(expense.createdAt), 'dd MMM yyyy, HH:mm') : 'N/A';
+      case 'Request No': return <RequestNoCell expense={expense} onOpen={setDetailsExpense} />;
+      case 'Timestamp': return formatExpenseTimestamp(expense.createdAt);
       case 'Department': return expense.generatedByDepartment;
       case 'Project Name': return getProjectName(expense.projectId);
       case 'Amount':
@@ -259,7 +153,7 @@ export default function AllExpensesPage() {
         );
       case 'Head of A/c': return expense.headOfAccount;
       case 'Sub-Head of A/c': return expense.subHeadOfAccount;
-      case 'Remarks': return expense.remarks;
+      case 'Remarks': return <RemarksCell remarks={expense.remarks} />;
       case 'Description':
         return (
           <TooltipProvider>
@@ -280,7 +174,7 @@ export default function AllExpensesPage() {
 
   if (isLoading || isAuthLoading) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4">
+      <div className="w-full space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2"><Skeleton className="h-9 w-9" /><Skeleton className="h-8 w-56" /></div>
           <Skeleton className="h-9 w-36" />
@@ -296,7 +190,7 @@ export default function AllExpensesPage() {
 
   if (!canViewPage) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8">
+      <div className="w-full">
         <div className="mb-6 flex items-center gap-2">
           <Link href="/expenses"><Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button></Link>
           <h1 className="text-xl font-bold">Consolidated Expenses</h1>
@@ -315,74 +209,23 @@ export default function AllExpensesPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <Link href="/expenses">
-            <Button variant="ghost" size="icon" className="h-9 w-9"><ArrowLeft className="h-4 w-4" /></Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <Layers className="h-5 w-5 text-primary" />
-              <h1 className="text-xl font-bold tracking-tight">Consolidated Expenses</h1>
-            </div>
-            <p className="text-xs text-muted-foreground">All departments combined view</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Dialog open={isSequenceDialogOpen} onOpenChange={setIsSequenceDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2"><Shuffle className="h-3.5 w-3.5" /> Reorder</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Edit Column Sequence</DialogTitle>
-                <DialogDescription>Use the arrows to reorder columns.</DialogDescription>
-              </DialogHeader>
-              <div className="py-4 space-y-2">
-                {columnOrder.map((header, index) => (
-                  <div key={header} className="flex items-center justify-between p-2.5 border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                    <span className="text-sm font-medium">
-                      <span className="text-muted-foreground mr-2 text-xs">{index + 1}.</span>{header}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === 0} onClick={() => moveColumn(index, 'up')}>
-                        <ArrowUp className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" disabled={index === columnOrder.length - 1} onClick={() => moveColumn(index, 'down')}>
-                        <ArrowDown className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <DialogFooter>
-                <DialogClose asChild><Button>Done</Button></DialogClose>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2"><View className="h-3.5 w-3.5" /> Columns</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {baseTableHeaders.map(header => (
-                <DropdownMenuCheckboxItem
-                  key={header}
-                  checked={columnVisibility[header] !== false}
-                  onCheckedChange={value => setColumnVisibility(prev => ({ ...prev, [header]: !!value }))}
-                >
-                  {header}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+    <div className="w-full space-y-4">
+      <ExpensesPageHeader
+        icon={Layers}
+        title="Consolidated Expenses"
+        description="All departments combined view"
+        accent="violet"
+        backHref="/expenses"
+        actions={
+          can('View', 'Expenses.Settings') ? (
+            <Link href="/expenses/settings/table-and-fields">
+              <Button variant="outline" size="sm" className="gap-2">
+                <SlidersHorizontal className="h-3.5 w-3.5" /> Columns
+              </Button>
+            </Link>
+          ) : undefined
+        }
+      />
 
       {/* Stats ribbon */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -493,7 +336,13 @@ export default function AllExpensesPage() {
                 ))
               ) : filteredExpenses.length > 0 ? (
                 filteredExpenses.map(expense => (
-                  <TableRow key={expense.id} className="hover:bg-primary/5 transition-colors duration-150">
+                  // The whole row opens the details. Keyboard access is the Request No button
+                  // inside it, so the row keeps its table semantics.
+                  <TableRow
+                    key={expense.id}
+                    onClick={() => setDetailsExpense(expense)}
+                    className="cursor-pointer hover:bg-primary/5 transition-colors duration-150"
+                  >
                     {visibleHeaders.map(header => (
                       <TableCell key={header} className="whitespace-nowrap text-sm px-4">
                         {getCellContent(header, expense)}
@@ -516,6 +365,13 @@ export default function AllExpensesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <ExpenseDetailsDialog
+        expense={detailsExpense}
+        projectName={detailsExpense ? getProjectName(detailsExpense.projectId) : ''}
+        open={!!detailsExpense}
+        onOpenChange={open => { if (!open) setDetailsExpense(null); }}
+      />
     </div>
   );
 }

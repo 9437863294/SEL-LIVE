@@ -263,6 +263,9 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
           note(
             'Nothing else on an approval can be deleted once posted. That is what makes the file usable as evidence months later.',
           ),
+          note(
+            'The request itself can be deleted while it is still your draft — Delete draft, on the draft or its edit screen. Once submitted, use Cancel instead: that closes it and keeps the record. Removing a submitted approval outright needs the separate "Requests → Delete" permission and is meant for a file that should never have existed.',
+          ),
         ],
       },
       {
@@ -721,6 +724,10 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
             [
               ['View Module, Dashboard, Inbox', 'Seeing the module at all.'],
               ['Requests', 'Create, edit, delete a draft, cancel, and how much of the register you can see.'],
+              [
+                'Requests → Delete',
+                'Deleting a request that has already been submitted, together with its whole workflow — the stages, the audit trail, the comments, the attachments and the superseded versions. Grant it to nobody unless somebody genuinely needs it; Cancel closes a file and keeps the record. The deletion itself, with its reason, stays in the activity log.',
+              ],
               ['Requests → View Confidential', 'Opening files marked confidential.'],
               ['Comments, Attachments', 'Commenting and uploading.'],
               ['Audit Trail', 'The Activity tab.'],

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowUpDown, CheckCircle2, FileSearch, Inbox, Loader2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +44,7 @@ export function EApprovalRequestTable({
   showPendingWith = true,
   showAgeing = true,
   showStatusFilter = true,
+  renderActions,
 }: {
   rows: EApprovalRequest[];
   isLoading?: boolean;
@@ -53,6 +54,14 @@ export function EApprovalRequestTable({
   showPendingWith?: boolean;
   showAgeing?: boolean;
   showStatusFilter?: boolean;
+  /**
+   * Per-row controls in a trailing column — today, deleting a request.
+   *
+   * A render prop rather than a `canDelete` flag and a built-in button: the register has no business
+   * knowing which permissions govern which action, and the next thing wanted here (re-open a
+   * cancelled file, export one row) would otherwise be a second flag and a second button.
+   */
+  renderActions?: (row: EApprovalRequest) => ReactNode;
 }) {
   const [search, setSearch] = useState('');
   /**
@@ -201,6 +210,7 @@ export function EApprovalRequestTable({
                   </button>
                 </TableHead>
                 <TableHead className="whitespace-nowrap">Status</TableHead>
+                {renderActions && <TableHead className="w-10" aria-label="Actions" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -251,6 +261,11 @@ export function EApprovalRequestTable({
                   <TableCell className="whitespace-nowrap">
                     <EApprovalStatusBadge status={row.status} />
                   </TableCell>
+                  {renderActions && (
+                    <TableCell className="whitespace-nowrap py-1 pl-0 pr-1 text-right">
+                      {renderActions(row)}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

@@ -36,6 +36,12 @@ export const permissionModules = {
       "Create",
       "Edit",
       "Delete Draft",
+      // Two separate grants on purpose. "Delete Draft" bins your own unsubmitted draft — nobody has
+      // seen it and there is no trail to protect. "Delete" removes a request that has been through
+      // approvers, along with its whole workflow: the steps, history, comments, attachments and
+      // superseded versions all go. That destroys approvals people actually gave, so it is nobody's
+      // by default; the deletion itself is logged to the central activity trail, which survives it.
+      "Delete",
       "Cancel",
       "View Own",
       "View Department",

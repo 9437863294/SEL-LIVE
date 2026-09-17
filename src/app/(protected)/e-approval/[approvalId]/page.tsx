@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -34,6 +34,7 @@ import { loadEApprovalDetail } from '@/lib/e-approval-service';
 import { ActionPanel } from '@/components/e-approval/action-panel';
 import { AttachmentList } from '@/components/e-approval/attachment-list';
 import { CommentThread } from '@/components/e-approval/comment-thread';
+import { DeleteApprovalButton } from '@/components/e-approval/delete-request-dialog';
 import { ResponsibilityCard } from '@/components/e-approval/responsibility-card';
 import { EApprovalSourceCard } from '@/components/e-approval/source-card';
 import {
@@ -67,6 +68,7 @@ import {
 export default function EApprovalDetailPage() {
   const params = useParams<{ approvalId: string }>();
   const approvalId = String(params?.approvalId ?? '');
+  const router = useRouter();
   const { toast } = useToast();
   const { serviceActor, engineActor, isLoading: actorLoading } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
@@ -204,6 +206,15 @@ export default function EApprovalDetailPage() {
                 </Link>
               </Button>
             )}
+            {/* Renders nothing unless this person may actually delete this request — the authority is
+                decided once, in the engine, and the same decision drives the button and the write. */}
+            <DeleteApprovalButton
+              detail={detail}
+              serviceActor={serviceActor}
+              canDeleteDraft={permissions.canDeleteDraft}
+              canDeleteAny={permissions.canDeleteAnyRequest}
+              onDeleted={() => router.push(`${E_APPROVAL_BASE_PATH}/inbox`)}
+            />
           </>
         }
       />

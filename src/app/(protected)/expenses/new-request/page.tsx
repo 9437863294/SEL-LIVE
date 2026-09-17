@@ -30,18 +30,42 @@ import { cn } from '@/lib/utils';
 import { logUserActivity } from '@/lib/activity-logger';
 import { useState, useEffect, useMemo } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ExpenseBadge, ExpensesPageHeader } from '@/components/expenses/page-header';
+import { useExpensesSettings } from '@/components/expenses/use-expenses-settings';
+import {
+  defaultExpensesSettings,
+  resolveFormField,
+  type ExpensesModuleSettings,
+} from '@/lib/expenses-settings';
 
 
-const expenseFormSchema = z.object({
-  departmentId: z.string().min(1, 'Department is required.'),
-  projectId: z.string().min(1, 'Project is required.'),
-  amount: z.coerce.number().gte(0, 'Amount must be a non-negative number.'),
-  headOfAccount: z.string().min(1, 'Head of Account is required.'),
-  subHeadOfAccount: z.string().min(1, 'Sub-Head of Account is required.'),
-  remarks: z.string().optional(),
-  description: z.string().min(1, 'Description is required.'),
-  partyName: z.string().min(1, 'Party name is required.'),
-});
+/**
+ * Built from the module's field configuration rather than fixed, so making Remarks mandatory (or
+ * Party optional) under Settings actually changes what the form will accept. Project, amount and
+ * sub-head stay required whatever the configuration says — the record is meaningless without them,
+ * which is why the settings screen will not let them be relaxed either.
+ */
+const buildExpenseFormSchema = (settings: ExpensesModuleSettings) => {
+  const text = (key: Parameters<typeof resolveFormField>[1]) => {
+    const field = resolveFormField(settings, key);
+    return field.visible && field.required
+      ? z.string().min(1, `${field.label} is required.`)
+      : z.string().optional();
+  };
+
+  return z.object({
+    departmentId: z.string().min(1, 'Department is required.'),
+    projectId: z.string().min(1, 'Project is required.'),
+    amount: z.coerce.number().gte(0, 'Amount must be a non-negative number.'),
+    headOfAccount: z.string().min(1, 'Head of Account is required.'),
+    subHeadOfAccount: z.string().min(1, 'Sub-Head of Account is required.'),
+    remarks: text('remarks'),
+    description: text('description'),
+    partyName: text('partyName'),
+  });
+};
+
+const expenseFormSchema = buildExpenseFormSchema(defaultExpensesSettings());
 
 type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
 
@@ -66,7 +90,11 @@ function NewExpenseRequestForm() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { can, isLoading: isAuthLoading } = useAuthorization();
+  const { settings } = useExpensesSettings();
   const searchParams = useSearchParams();
+
+  /** Labels, help text and required-ness come from Settings › Table & Field Configuration. */
+  const fieldFor = (key: Parameters<typeof resolveFormField>[1]) => resolveFormField(settings, key);
 
   const departmentIdFromUrl = searchParams?.get('departmentId') ?? null;
   const amountFromUrl = searchParams?.get('amount') ?? null;
@@ -88,7 +116,7 @@ function NewExpenseRequestForm() {
   const [partyPopoverOpen, setPartyPopoverOpen] = useState(false);
 
   const form = useForm<ExpenseFormValues>({
-    resolver: zodResolver(expenseFormSchema),
+    resolver: zodResolver(buildExpenseFormSchema(settings)),
     defaultValues: {
       departmentId: departmentIdFromUrl || '',
       projectId: projectIdFromUrl || '',
@@ -226,8 +254,13 @@ function NewExpenseRequestForm() {
         return requestNo;
       });
 
+      // A field the configuration has made optional arrives as undefined, which Firestore rejects
+      // — and a request whose remarks are missing should read as empty, not as absent.
       const newExpenseRequest = {
         ...data,
+        partyName: data.partyName ?? '',
+        description: data.description ?? '',
+        remarks: data.remarks ?? '',
         requestNo: newRequestNo,
         generatedByDepartment: selectedDept.name,
         generatedByUser: user?.name || 'Unknown',
@@ -247,8 +280,8 @@ function NewExpenseRequestForm() {
         details: { requestNo: newRequestNo, department: selectedDept.name, amount: data.amount },
       });
 
-      if (!partyNames.includes(data.partyName)) {
-        setPartyNames(prev => [...prev, data.partyName].sort());
+      if (newExpenseRequest.partyName && !partyNames.includes(newExpenseRequest.partyName)) {
+        setPartyNames(prev => [...prev, newExpenseRequest.partyName].sort());
       }
 
       toast({ title: 'Request Created', description: `Expense request ${newRequestNo} has been successfully created.` });
@@ -274,26 +307,15 @@ function NewExpenseRequestForm() {
   const selectedDepartmentName = departments.find(d => d.id === form.getValues('departmentId'))?.name || '';
 
   return (
-    <div className="w-full mx-auto px-4 sm:px-6 lg:px-8 space-y-4 max-w-6xl">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/expenses">
-            <Button variant="ghost" size="icon" className="h-9 w-9"><ArrowLeft className="h-4 w-4" /></Button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <Receipt className="h-5 w-5 text-primary" />
-              <h1 className="text-xl font-bold tracking-tight">New Expense Request</h1>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
-                <Sparkles className="h-2.5 w-2.5" />
-                New
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">Fill in the details below to create a new expense request.</p>
-          </div>
-        </div>
-      </div>
+    <div className="w-full space-y-4">
+      <ExpensesPageHeader
+        icon={Receipt}
+        title="New Expense Request"
+        description="Fill in the details below to create a new expense request."
+        accent="emerald"
+        backHref="/expenses"
+        badge={<ExpenseBadge accent="emerald"><Sparkles className="h-2.5 w-2.5" /> New</ExpenseBadge>}
+      />
 
       {isLoadingData || isAuthLoading ? (
         <Card className="border-border/60 bg-card/60 backdrop-blur-sm">
@@ -319,12 +341,13 @@ function NewExpenseRequestForm() {
       ) : (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSave)}>
-            <Card className="border-border/60 bg-card/60 backdrop-blur-sm overflow-hidden">
-              {/* Card top glow accent */}
-              <div className="h-[2px] bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+            <Card className="border-white/60 bg-white/70 backdrop-blur-sm overflow-hidden shadow-sm">
+              <div className="h-[3px] bg-gradient-to-r from-emerald-500 via-teal-500 to-transparent" />
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <Receipt className="h-4 w-4 text-primary" />
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-50">
+                    <Receipt className="h-3.5 w-3.5 text-emerald-600" />
+                  </span>
                   Expense Details
                 </CardTitle>
                 <CardDescription className="text-xs">All fields except Remarks are required.</CardDescription>
@@ -333,9 +356,9 @@ function NewExpenseRequestForm() {
                 {/* Section: Auto-generated / Read-only */}
                 <div className="mb-4">
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="h-px flex-1 bg-border/50" />
-                    <span className="text-xs font-semibold text-muted-foreground tracking-normal px-2">Auto-generated</span>
-                    <div className="h-px flex-1 bg-border/50" />
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent to-slate-200" />
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">Auto-generated</span>
+                    <div className="h-px flex-1 bg-gradient-to-l from-transparent to-slate-200" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <ReadOnlyField label="Request No" value={previewRequestNo} id="requestNo" />
@@ -347,9 +370,9 @@ function NewExpenseRequestForm() {
                 {/* Section: Main Fields */}
                 <div>
                   <div className="flex items-center gap-2 mb-3">
-                    <div className="h-px flex-1 bg-border/50" />
-                    <span className="text-xs font-semibold text-muted-foreground tracking-normal px-2">Request Details</span>
-                    <div className="h-px flex-1 bg-border/50" />
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent to-emerald-200" />
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">Request Details</span>
+                    <div className="h-px flex-1 bg-gradient-to-l from-transparent to-emerald-200" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {/* Department */}
@@ -380,7 +403,7 @@ function NewExpenseRequestForm() {
                       name="projectId"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">Project Name</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('projectId').label}</FormLabel>
                           <Select onValueChange={field.onChange} value={field.value}>
                             <FormControl>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select Project" /></SelectTrigger>
@@ -398,7 +421,7 @@ function NewExpenseRequestForm() {
                       name="amount"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">Amount (₹)</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('amount').label}</FormLabel>
                           <FormControl>
                             <Input type="number" placeholder="0.00" className="h-9 text-sm" {...field} />
                           </FormControl>
@@ -413,7 +436,7 @@ function NewExpenseRequestForm() {
                       name="partyName"
                       render={({ field }) => (
                         <FormItem className="flex flex-col space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">Name of the Party</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('partyName').label}{!fieldFor('partyName').required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}</FormLabel>
                           <Popover open={partyPopoverOpen} onOpenChange={setPartyPopoverOpen}>
                             <PopoverTrigger asChild>
                               <FormControl>
@@ -479,7 +502,7 @@ function NewExpenseRequestForm() {
                       name="subHeadOfAccount"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5">
-                          <FormLabel className="text-sm font-medium text-slate-700">Sub-Head of A/c</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('subHeadOfAccount').label}</FormLabel>
                           <Select onValueChange={handleSubHeadChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Select Sub-Head" /></SelectTrigger>
@@ -520,7 +543,7 @@ function NewExpenseRequestForm() {
                       name="description"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                          <FormLabel className="text-sm font-medium text-slate-700">Description</FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('description').label}{!fieldFor('description').required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}</FormLabel>
                           <FormControl>
                             <Textarea {...field} rows={3} placeholder="Describe the purpose of this expense..." className="text-sm resize-none" />
                           </FormControl>
@@ -535,9 +558,7 @@ function NewExpenseRequestForm() {
                       name="remarks"
                       render={({ field }) => (
                         <FormItem className="space-y-1.5 col-span-1 md:col-span-2 lg:col-span-3">
-                          <FormLabel className="text-sm font-medium text-slate-700">
-                            Remarks <span className="normal-case font-normal text-muted-foreground">(optional)</span>
-                          </FormLabel>
+                          <FormLabel className="text-sm font-medium text-slate-700">{fieldFor('remarks').label}{!fieldFor('remarks').required && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}</FormLabel>
                           <FormControl>
                             <Textarea {...field} rows={2} placeholder="Any additional notes or remarks..." className="text-sm resize-none" />
                           </FormControl>
@@ -577,7 +598,7 @@ function NewExpenseRequestForm() {
 export default function NewExpenseRequestPage() {
   return (
     <Suspense fallback={
-      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4">
+      <div className="w-full space-y-4">
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-96 w-full rounded-xl" />
       </div>

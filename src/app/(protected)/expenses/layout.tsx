@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import type { ReactNode } from 'react';
+import { Suspense, type ReactNode } from 'react';
 import ExpensesLayoutShell from '@/components/expenses/module-layout-shell';
 
 export const metadata: Metadata = {
@@ -8,5 +8,11 @@ export const metadata: Metadata = {
 };
 
 export default function ExpensesLayout({ children }: { children: ReactNode }) {
-  return <ExpensesLayoutShell>{children}</ExpensesLayoutShell>;
+  // The shell reads `?report=` to mark the open report in the nav, and `useSearchParams` needs a
+  // boundary above it or the build refuses to prerender anything under this layout.
+  return (
+    <Suspense fallback={<div className="p-6">{children}</div>}>
+      <ExpensesLayoutShell>{children}</ExpensesLayoutShell>
+    </Suspense>
+  );
 }

@@ -1,102 +1,341 @@
-
 'use client';
+
+/**
+ * The Expenses module shell.
+ *
+ * Two things this fixes over the fixed-rail version it replaces. Padding is owned here and only
+ * here — every page used to add `px-4 sm:px-6 lg:px-8` of its own on top of the shell's `p-6`,
+ * which stacked into ~56px of dead margin down each side and left the create form floating in the
+ * middle of the screen. And there was no mobile treatment at all: a 56px rail sat pinned to the
+ * left of a phone screen with no way to collapse it, so the nav is now a drawer below `lg`.
+ *
+ * The layout and colour language follow the Recurring Payments shell, which is the pattern the
+ * rest of the app has converged on — a sidebar card with a gradient brand header, per-item colour
+ * chips, and a tinted backdrop. Expenses takes blue→indigo as its identity, the colour its rupee
+ * mark already used.
+ */
 
 import * as React from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
-import { BarChart3, ChevronLeft, ChevronRight, IndianRupee, LayoutDashboard, Layers, Settings } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { BarChart3, ChevronDown, IndianRupee, LayoutDashboard, Layers, Menu, Settings } from 'lucide-react';
+import { EXPENSE_REPORTS, EXPENSE_REPORT_GROUPS } from '@/lib/expenses-reports';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { useAuthorization } from '@/hooks/useAuthorization';
-import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
+
+type NavChild = { id: string; label: string; group: string };
+
+type NavItem = {
+  href: string;
+  label: string;
+  caption: string;
+  icon: React.ElementType;
+  /** Idle icon chip. */
+  color: string;
+  bg: string;
+  /** Active pill. */
+  gradient: string;
+  glow: string;
+  group: string;
+  permitted: boolean;
+  /**
+   * Rendered beneath the item while it is the active section, and folded away as soon as another
+   * section is opened. Selection travels in the URL (`?report=`) so a report can be linked to.
+   */
+  children?: NavChild[];
+  /** Query key the children select through. */
+  childParam?: string;
+};
+
+/** The custom pivot sits in the list alongside the fixed reports; the page knows this id too. */
+const PIVOT_ID = 'custom-pivot';
+
+const reportChildren: NavChild[] = [
+  ...EXPENSE_REPORTS.map(report => ({ id: report.id, label: report.title, group: report.group })),
+  { id: PIVOT_ID, label: 'Custom Pivot', group: 'Custom' },
+];
+
+const CHILD_GROUP_ORDER = [...EXPENSE_REPORT_GROUPS, 'Custom'];
+
+/** Sub-routes with a nav entry of their own; anything else under /expenses belongs to Overview. */
+const NAMED_SUB_ROUTES = ['/expenses/all', '/expenses/reports', '/expenses/settings'];
+
+function matchesPath(pathname: string, href: string) {
+  if (href === '/expenses') {
+    // Department registers (/expenses/<id>) and the create form are reached from Overview and read
+    // as part of it, so Overview stays lit rather than the menu going blank on those pages.
+    return pathname === '/expenses' || !NAMED_SUB_ROUTES.some(route => pathname.startsWith(route));
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export default function ExpensesLayoutShell({ children }: { children: React.ReactNode }) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const { can } = useAuthorization();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const safePathname = pathname || '';
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  /** Sections the user has folded by hand while still on them. */
+  const [collapsedSections, setCollapsedSections] = useState<string[]>([]);
 
-  const navItems = [
-    { href: '/expenses', icon: LayoutDashboard, label: 'Overview', permission: true, iconBg: 'bg-blue-100', iconColor: 'text-blue-600', activeGradient: 'from-blue-500 to-indigo-600', exact: true },
-    { href: '/expenses/all', icon: Layers, label: 'Consolidated', permission: can('View All', 'Expenses.Expense Requests'), iconBg: 'bg-violet-100', iconColor: 'text-violet-600', activeGradient: 'from-violet-500 to-purple-600' },
-    { href: '/expenses/reports', icon: BarChart3, label: 'Reports', permission: can('View', 'Expenses.Reports'), iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', activeGradient: 'from-indigo-500 to-blue-600' },
-    { href: '/expenses/settings', icon: Settings, label: 'Settings', permission: can('View', 'Expenses.Settings'), iconBg: 'bg-slate-100', iconColor: 'text-slate-600', activeGradient: 'from-slate-500 to-slate-700' },
-  ].filter(i => i.permission);
+  const navItems: NavItem[] = [
+    {
+      href: '/expenses',
+      label: 'Overview',
+      caption: 'Departments',
+      icon: LayoutDashboard,
+      color: 'text-blue-600',
+      bg: 'bg-blue-50',
+      gradient: 'from-blue-500 to-indigo-600',
+      glow: 'shadow-[0_8px_24px_-8px_rgba(59,130,246,0.55)]',
+      group: 'overview',
+      permitted: true,
+    },
+    {
+      href: '/expenses/all',
+      label: 'Consolidated',
+      caption: 'Every department',
+      icon: Layers,
+      color: 'text-violet-600',
+      bg: 'bg-violet-50',
+      gradient: 'from-violet-500 to-purple-600',
+      glow: 'shadow-[0_8px_24px_-8px_rgba(139,92,246,0.55)]',
+      group: 'registers',
+      permitted: can('View All', 'Expenses.Expense Requests'),
+    },
+    {
+      href: '/expenses/reports',
+      label: 'Reports',
+      caption: 'Pivot analysis',
+      icon: BarChart3,
+      color: 'text-fuchsia-600',
+      bg: 'bg-fuchsia-50',
+      gradient: 'from-fuchsia-500 to-pink-600',
+      glow: 'shadow-[0_8px_24px_-8px_rgba(217,70,239,0.55)]',
+      group: 'registers',
+      permitted: can('View', 'Expenses.Reports'),
+      children: reportChildren,
+      childParam: 'report',
+    },
+    {
+      href: '/expenses/settings',
+      label: 'Settings',
+      caption: 'Series & accounts',
+      icon: Settings,
+      color: 'text-teal-600',
+      bg: 'bg-teal-50',
+      gradient: 'from-teal-500 to-emerald-600',
+      glow: 'shadow-[0_8px_24px_-8px_rgba(20,184,166,0.55)]',
+      group: 'admin',
+      permitted: can('View', 'Expenses.Settings'),
+    },
+  ].filter(item => item.permitted);
 
-  const isPrintPage = pathname?.includes('/print') ?? false;
+  const isPrintPage = safePathname.includes('/print');
   if (isPrintPage) return <>{children}</>;
 
-  function isActive(item: typeof navItems[0]) {
-    if (item.exact) return pathname === item.href;
-    return pathname?.startsWith(item.href) ?? false;
-  }
+  const brand = (
+    <div className="flex items-center gap-2.5">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-sm">
+        <IndianRupee className="h-4 w-4 text-white" />
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold tracking-tight text-slate-800">Expenses</p>
+        <p className="text-[11px] leading-tight text-muted-foreground">Requests &amp; Reporting</p>
+      </div>
+    </div>
+  );
+
+  const navigationLinks = (onNavigate?: () => void) => {
+    let lastGroup = '';
+    return navItems.map(item => {
+      const active = matchesPath(safePathname, item.href);
+      const showDivider = item.group !== lastGroup && lastGroup !== '';
+      lastGroup = item.group;
+      const Icon = item.icon;
+
+      // Children belong to the open section only. Opening another section folds them away with
+      // no state to keep in sync — the active route is the single thing that decides.
+      const expanded = active && !!item.children && !collapsedSections.includes(item.href);
+      const selectedChild = item.childParam ? searchParams?.get(item.childParam) : null;
+
+      return (
+        <div key={item.href}>
+          {showDivider && <div className="my-1 h-px bg-slate-200/70" />}
+          <Link
+            href={item.href}
+            onClick={onNavigate}
+            aria-current={active ? 'page' : undefined}
+            aria-expanded={item.children ? expanded : undefined}
+            className={cn(
+              'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-200 lg:py-2',
+              active
+                ? cn('bg-gradient-to-r text-white', item.gradient, item.glow)
+                : 'text-slate-600 hover:bg-white hover:text-slate-900',
+            )}
+          >
+            <span
+              className={cn(
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
+                active ? 'bg-white/20' : cn('group-hover:scale-105', item.bg),
+              )}
+            >
+              <Icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'scale-110 text-white' : item.color)} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate leading-tight">{item.label}</span>
+              <span
+                className={cn(
+                  'block truncate text-[11px] leading-tight',
+                  active ? 'text-white/75' : 'text-muted-foreground',
+                )}
+              >
+                {item.caption}
+              </span>
+            </span>
+            {item.children && active && (
+              <span
+                role="button"
+                tabIndex={0}
+                aria-label={expanded ? `Collapse ${item.label}` : `Expand ${item.label}`}
+                onClick={event => {
+                  // Folding the list is not navigating to it.
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setCollapsedSections(previous =>
+                    previous.includes(item.href)
+                      ? previous.filter(href => href !== item.href)
+                      : [...previous, item.href],
+                  );
+                }}
+                onKeyDown={event => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setCollapsedSections(previous =>
+                    previous.includes(item.href)
+                      ? previous.filter(href => href !== item.href)
+                      : [...previous, item.href],
+                  );
+                }}
+                className="shrink-0 rounded p-0.5 hover:bg-white/20"
+              >
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !expanded && '-rotate-90')} />
+              </span>
+            )}
+          </Link>
+
+          {expanded && (
+            <div className="mt-1 max-h-[46vh] space-y-0.5 overflow-y-auto border-l-2 border-slate-200 pl-2 lg:ml-3">
+              {CHILD_GROUP_ORDER.map(group => {
+                const inGroup = item.children!.filter(child => child.group === group);
+                if (!inGroup.length) return null;
+                return (
+                  <div key={group} className="pt-1 first:pt-0">
+                    <p className="px-2 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {group}
+                    </p>
+                    {inGroup.map(child => {
+                      // The first entry is what the page falls back to when nothing is selected.
+                      const isSelected = selectedChild
+                        ? selectedChild === child.id
+                        : child.id === item.children![0].id;
+                      return (
+                        <Link
+                          key={child.id}
+                          href={`${item.href}?${item.childParam}=${child.id}`}
+                          onClick={onNavigate}
+                          aria-current={isSelected ? 'true' : undefined}
+                          className={cn(
+                            'block truncate rounded-md px-2 py-1.5 text-[13px] transition-colors',
+                            isSelected
+                              ? 'bg-fuchsia-50 font-semibold text-fuchsia-700'
+                              : 'text-slate-600 hover:bg-white hover:text-slate-900',
+                          )}
+                        >
+                          {child.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
 
   return (
-    <div className="flex w-full h-full">
-      <aside className={cn(
-        'fixed left-0 top-16 h-[calc(100vh-4rem)] z-40 flex flex-col border-r border-border/60 bg-background/95 backdrop-blur-sm transition-all duration-300 shadow-sm',
-        isExpanded ? 'w-56' : 'w-14',
-      )}>
-        <div className={cn('flex items-center gap-2 px-3 py-3 border-b border-border/40 shrink-0', !isExpanded && 'justify-center')}>
-          <div className="rounded-lg bg-blue-100 p-1.5 shrink-0">
-            <IndianRupee className="h-4 w-4 text-blue-600" />
-          </div>
-          {isExpanded && <span className="text-sm font-semibold text-foreground/80 truncate">Expenses</span>}
-        </div>
+    <div className="relative w-full px-3 py-4 sm:px-5 lg:px-6">
+      {/* Tinted backdrop. Sits behind everything and catches no clicks. */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-50/70 via-white to-violet-50/50" />
+        <div className="absolute left-[6%] top-[6%] h-56 w-56 rounded-full bg-blue-300/20 blur-3xl" />
+        <div className="absolute bottom-[8%] right-[8%] h-64 w-64 rounded-full bg-violet-300/20 blur-3xl" />
+      </div>
 
-        <TooltipProvider delayDuration={0}>
-          <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {navItems.map(item => {
-              const active = isActive(item);
-              return (
-                <Tooltip key={item.href}>
-                  <TooltipTrigger asChild>
-                    <Link href={item.href}>
-                      <div className={cn(
-                        'relative flex cursor-pointer items-center rounded-lg transition-all duration-200 group',
-                        isExpanded ? 'px-2 py-1.5 gap-2.5' : 'p-1.5 justify-center',
-                        active
-                          ? cn('bg-gradient-to-r text-white shadow-sm', item.activeGradient)
-                          : 'hover:bg-muted/40',
-                      )}>
-                        <div className={cn(
-                          'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
-                          active ? 'bg-white/25' : cn(item.iconBg, 'group-hover:scale-105'),
-                        )}>
-                          <item.icon className={cn('h-3.5 w-3.5 transition-transform', active ? 'text-white scale-110' : item.iconColor)} />
-                        </div>
-                        {isExpanded && (
-                          <span className={cn('text-sm truncate', active ? 'font-semibold' : 'font-medium text-foreground/80')}>
-                            {item.label}
-                          </span>
-                        )}
-                      </div>
-                    </Link>
-                  </TooltipTrigger>
-                  {!isExpanded && <TooltipContent side="right" className="text-xs font-medium">{item.label}</TooltipContent>}
-                </Tooltip>
-              );
-            })}
-          </div>
+      {/* `lg:hidden` is a min-width query, so this bar would otherwise print on a wide sheet. */}
+      <div className="mb-3 lg:hidden print:hidden">
+        <Card className="border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+          <CardContent className="flex items-center gap-3 px-3 py-2.5">
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" className="h-10 shrink-0 gap-2 bg-white/90 px-3 text-sm font-medium">
+                  <Menu className="h-4 w-4" /> Menu
+                </Button>
+              </SheetTrigger>
+              <SheetContent
+                side="left"
+                className="z-[60] flex w-[88vw] max-w-[300px] flex-col border-r border-slate-200 bg-slate-50 p-0"
+              >
+                <SheetHeader className="shrink-0 border-b border-slate-200/60 px-4 py-3 text-left">
+                  <SheetTitle className="sr-only">Expenses navigation</SheetTitle>
+                  <SheetDescription className="sr-only">Tap a section to navigate</SheetDescription>
+                  {brand}
+                </SheetHeader>
+                <div className="flex-1 space-y-0.5 overflow-y-auto p-2 pb-8">
+                  {navigationLinks(() => setMobileMenuOpen(false))}
+                </div>
+              </SheetContent>
+            </Sheet>
+            {brand}
+          </CardContent>
+        </Card>
+      </div>
 
-          <div className="shrink-0 border-t border-border/40 p-2">
-            <button
-              className={cn('w-full flex items-center rounded-lg px-2 py-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-all duration-200 text-sm gap-2', !isExpanded && 'justify-center')}
-              onClick={() => setIsExpanded(!isExpanded)}
-            >
-              {isExpanded ? <><ChevronLeft className="h-4 w-4 shrink-0" /><span>Collapse</span></> : <ChevronRight className="h-4 w-4" />}
-            </button>
-          </div>
-        </TooltipProvider>
-      </aside>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[232px_minmax(0,1fr)] lg:items-start">
+        <aside className="hidden lg:sticky lg:top-20 lg:block print:hidden">
+          <Card className="overflow-hidden border border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+            <div className="border-b border-white/50 bg-gradient-to-r from-blue-500/10 to-violet-500/5 px-4 py-3">
+              {brand}
+            </div>
+            <CardContent className="max-h-[calc(100vh-13rem)] space-y-0.5 overflow-y-auto p-2">
+              {navigationLinks()}
+            </CardContent>
+          </Card>
+        </aside>
 
-      {/* min-w-0 is load-bearing: a flex item defaults to min-width:auto, so without it a wide
-          table (the consolidated register is ~2000px across) sets the column's minimum width and
-          pushes the whole page sideways instead of scrolling inside its own card. */}
-      <div className={cn('flex-1 min-w-0 flex flex-col min-h-screen transition-all duration-300', isExpanded ? 'ml-56' : 'ml-14')}>
-        <main className="flex-grow p-4 sm:p-6">{children}</main>
-        <footer className="shrink-0 flex items-center text-muted-foreground text-xs py-3 px-6 border-t border-border/40">
-          <span>Copyright © 2025 SEL. All Rights Reserved.</span>
-        </footer>
+        {/* min-w-0: a grid item defaults to min-width:auto, so without it the consolidated
+            register's ~2000px table would widen the column and push the page sideways. */}
+        <main className="min-w-0">
+          {children}
+          <footer className="mt-6 flex items-center border-t border-slate-200/70 px-1 py-3 text-xs text-muted-foreground print:hidden">
+            <span>Copyright © 2025 SEL. All Rights Reserved.</span>
+          </footer>
+        </main>
       </div>
     </div>
   );

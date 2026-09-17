@@ -299,6 +299,52 @@ live request cannot have its routing rewritten after the fact. The expansion is 
 builder renders the same result as a preview without writing anything — enter a project and an amount
 and watch the resolved chain appear, every stage with a real name against it.
 
+## Deleting a request, and its workflow with it
+
+Two separate grants under `Requests`, because they are not the same act:
+
+| | **Delete Draft** | **Delete** |
+| --- | --- | --- |
+| What | your own unsubmitted draft | any request, at any status |
+| Who | the requester | anyone holding the grant |
+| Reason | optional | **required** |
+| Confirmation | one line — nothing has seen it | names the status, counts what is being destroyed, and says to cancel instead |
+
+`canDeleteEApprovalRequest` (policy, unit-tested) decides which of the two applies and drives both the
+button and the write, so a visible Delete cannot land on a refusal. The draft rule is checked first
+so a requester binning their own draft gets the mild confirmation even when they also hold the
+administrative grant — but it *falls through* rather than refusing when `Delete Draft` is absent,
+because somebody trusted to delete other people's approved files must not be blocked from binning
+their own draft.
+
+`deleteEApprovalRequest` removes **everything scoped to the approval**: the step documents (the
+workflow), the history, the comments, the attachments and their stored files, and the superseded
+version snapshots. The old behaviour — flipping `isDeleted` on the request and leaving the rest — is
+what this replaces, and it was a leak rather than untidiness: the register filters deleted requests,
+but `loadEApprovalAnalyticsData` sweeps `eApprovalSteps` across the whole organisation and
+`listEApprovalMyActivity` reads `eApprovalHistory` by actor, so a "deleted" approval went on feeding
+the SLA reports and went on appearing in people's own activity logs for ever.
+
+Three ordering decisions:
+
+1. **The activity log is written first**, before anything is destroyed, carrying the reference,
+   subject, status, amount and the counts. `userActivityLogs` is outside this module's collections, so
+   it survives — an approval can be removed, the fact that somebody removed it cannot.
+2. **The request document goes last.** A failure part-way leaves a still-visible approval that can be
+   deleted again; the reverse order would leave invisible orphans with nothing pointing at them.
+3. **Child deletes are chunked at 400.** Firestore caps a batch at 500 writes and a long chain passes
+   that on history alone.
+
+A failed Storage delete does not stop the run — the file may already be gone, and keeping an
+attachment *record* because a blob could not be removed is the worse outcome.
+
+Note this is the one place the module's append-only rule is deliberately broken, and only behind a
+permission nobody holds by default. Cancel remains the right answer almost always: it closes a file
+and keeps the record.
+
+> Requests soft-deleted under the old behaviour still have their steps and history in place. Nothing
+> migrates them; the escalation sweep's `isDeleted` check is kept for exactly those.
+
 ## Dialogs never discard typed work
 
 Every data-entry dialog in the module spreads `eApprovalDialogGuard(dirty)` (in

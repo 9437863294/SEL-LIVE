@@ -379,6 +379,8 @@ export function useEApprovalPermissions() {
       canCreate: can('Create', `${resource}.Requests`),
       canEdit: can('Edit', `${resource}.Requests`),
       canDeleteDraft: can('Delete Draft', `${resource}.Requests`),
+      /** Deleting a request that has already been submitted, and its whole workflow with it. */
+      canDeleteAnyRequest: can('Delete', `${resource}.Requests`),
       canCancel: can('Cancel', `${resource}.Requests`),
       canViewAll: can('View All', `${resource}.Requests`),
       canViewDepartment: can('View Department', `${resource}.Requests`),

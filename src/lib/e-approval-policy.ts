@@ -2397,6 +2397,78 @@ export function canEditEApprovalRequest(
 }
 
 /**
+ * The two kinds of deletion, which are not the same act wearing different hats.
+ *
+ * **Draft** — a requester binning something they never submitted. Nobody has seen it, no approval was
+ * given against it, and there is no trail to protect.
+ *
+ * **Administrative** — somebody with `Requests → Delete` removing a file that *has* been in flight.
+ * This destroys approvals people actually gave, so it is a separate grant, it demands a reason, and
+ * the reason is written to the central activity log before anything is touched.
+ */
+export type EApprovalDeleteKind = 'Draft' | 'Administrative';
+
+export interface EApprovalDeleteDecision {
+  allowed: boolean;
+  kind: EApprovalDeleteKind | null;
+  /** Why not, phrased for the person who tried. Absent when allowed. */
+  reason?: string;
+}
+
+/**
+ * Whether `actor` may delete a request outright, and under which of the two authorities.
+ *
+ * Deliberately separate from Cancel. Cancelling closes a file and leaves it on the record — which is
+ * the right answer almost always, and the reason the module offered no delete beyond drafts until
+ * now. Deleting removes the request *and its whole workflow*: the steps, the history, the comments,
+ * the attachments and the superseded versions. There is no undo, because there is nothing left to
+ * undo from.
+ *
+ * The draft rule is checked first so a requester deleting their own unsubmitted draft is reported as
+ * the mild act it is, even when they also hold the administrative grant — the confirmation they see
+ * should not threaten them with destroying an audit trail that does not exist yet.
+ *
+ * Permissions arrive as flags rather than being read here, exactly as `canReverseEApprovalAction`
+ * and `canManageEApprovalDelegationFor` take theirs: the engine has no notion of roles, and the role
+ * resolver is a React hook.
+ */
+export function canDeleteEApprovalRequest(
+  request: Pick<EApprovalRequestState, 'status' | 'requesterId'>,
+  actor: Pick<EApprovalActor, 'userId'> | null | undefined,
+  permissions: { canDeleteDraft?: boolean; canDeleteAny?: boolean } = {},
+): EApprovalDeleteDecision {
+  if (!actor?.userId) {
+    return { allowed: false, kind: null, reason: 'You must be signed in to delete an approval.' };
+  }
+
+  const own = request.requesterId === actor.userId;
+  // Checked first, and *falling through* rather than refusing when the grant is absent: somebody who
+  // holds the administrative grant but not this one must not be blocked from binning their own
+  // untouched draft, having just been trusted to delete other people's approved files.
+  if (own && request.status === 'Draft' && permissions.canDeleteDraft) {
+    return { allowed: true, kind: 'Draft' };
+  }
+
+  if (permissions.canDeleteAny) return { allowed: true, kind: 'Administrative' };
+
+  if (request.status === 'Draft') {
+    return {
+      allowed: false,
+      kind: null,
+      reason: own
+        ? 'Deleting a draft needs the “Requests → Delete Draft” permission.'
+        : 'Only the person who raised this draft can delete it.',
+    };
+  }
+
+  return {
+    allowed: false,
+    kind: null,
+    reason: `A ${request.status.toLowerCase()} approval has already been seen by its approvers. Cancel it instead, which closes it and keeps the record — or ask somebody with the “Requests → Delete” permission if it genuinely has to be removed.`,
+  };
+}
+
+/**
  * Whether `actor` may create or remove a delegation of `fromUserId`'s approvals.
  *
  * Your own, always — arranging cover before leave is nobody else's business to approve. Somebody

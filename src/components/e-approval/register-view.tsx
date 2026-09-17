@@ -13,6 +13,7 @@ import {
   type EApprovalStatus,
 } from '@/lib/e-approval';
 import { listEApprovals, OPEN_E_APPROVAL_STATUSES } from '@/lib/e-approval-service';
+import { DeleteApprovalDialog, DeleteApprovalRowButton } from './delete-request-dialog';
 import { EApprovalRequestTable } from './request-table';
 import { PageHeader } from './page-header';
 import { useEApprovalActor, useEApprovalPermissions } from './hooks';
@@ -114,6 +115,20 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
   const permissions = useEApprovalPermissions();
   const [rows, setRows] = useState<EApprovalRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  /** The row whose delete confirmation is open. One dialog for the table, not one per row. */
+  const [deleting, setDeleting] = useState<EApprovalRequest | null>(null);
+
+  const deleteAuthority = useMemo(
+    () =>
+      permissions.canDeleteDraft || permissions.canDeleteAnyRequest
+        ? {
+            serviceActor,
+            canDeleteDraft: permissions.canDeleteDraft,
+            canDeleteAny: permissions.canDeleteAnyRequest,
+          }
+        : null,
+    [serviceActor, permissions.canDeleteDraft, permissions.canDeleteAnyRequest],
+  );
 
   const load = useCallback(async () => {
     if (!serviceActor) return;
@@ -216,9 +231,35 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
             showPendingWith={config.showPendingWith}
             showAgeing={scope !== 'drafts'}
             showStatusFilter={scope !== 'drafts'}
+            // Offered on every register rather than only the full one: the row button renders nothing
+            // where the viewer may not delete that row, so a requester sees it on their own drafts
+            // and nowhere else, and an administrator sees it wherever they genuinely hold the grant.
+            // Deciding that per scope here would be a second copy of a rule the engine already owns.
+            renderActions={
+              deleteAuthority
+                ? (row) => (
+                    <DeleteApprovalRowButton request={row} authority={deleteAuthority} onSelect={setDeleting} />
+                  )
+                : undefined
+            }
           />
         </CardContent>
       </Card>
+
+      {/* Keyed by the row, so each confirmation mounts fresh — a reason typed for one request can
+          never be carried into another one's dialog. */}
+      {deleting && deleteAuthority && (
+        <DeleteApprovalDialog
+          key={deleting.id}
+          request={deleting}
+          {...deleteAuthority}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null);
+            void load();
+          }}
+        />
+      )}
     </div>
   );
 }
