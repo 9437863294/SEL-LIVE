@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment, useState } from 'react';
+import { Fragment, createContext, useContext, useState } from 'react';
 import { ChevronDown, Loader2, ShieldAlert } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,57 @@ import { hrCurrency, hrStatusLabel, hrStatusTone, priorityTone, type Requirement
  * meaning: a status badge's colour, how a rupee figure is formatted, what an empty register looks
  * like, how a fill bar renders. Anything with business logic belongs in hr-policy.ts, not here.
  */
+
+/**
+ * Whether this subtree is already inside a link.
+ *
+ * `HrDataList` wraps each **phone card** in a `<Link>` when given `cardHref`, while the desktop
+ * table does not — so the same `column.cell()` output renders inside an anchor on a phone and
+ * outside one on a desktop. A cell that renders its own link is therefore correct on desktop and
+ * produces `<a>` inside `<a>` on mobile, which React reports as a hydration error and browsers
+ * "fix" by silently restructuring the DOM.
+ *
+ * A cell cannot detect that on its own, so the card announces it. Cells that may contain a link
+ * read this and degrade to plain markup when it is true — the card itself is the tap target there,
+ * so nothing is lost. Defaults to `false`, so every existing cell behaves exactly as before.
+ */
+const HrInsideLinkContext = createContext(false);
+
+/** For a cell that renders a link: true when an ancestor is already an anchor. */
+export function useHrInsideLink(): boolean {
+  return useContext(HrInsideLinkContext);
+}
+
+/**
+ * A link for use inside a list cell, which becomes plain text when the row is already a link.
+ *
+ * **Why a component and not a hook.** `HrDataList` calls `column.cell(row)` while building the
+ * card, which happens *outside* the provider — so a `useHrInsideLink()` call written directly in a
+ * cell function would run in the page's render and always read `false`. A component works because
+ * the cell returns an *element*, and React runs that element's function later, inside the provider.
+ * Any cell that renders a link should use this rather than `<Link>` for that reason alone.
+ */
+export function HrCellLink({
+  href,
+  className,
+  children,
+}: {
+  href: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const insideLink = useHrInsideLink();
+
+  // The card is the tap target and points at the same place, so the anchor is redundant — and
+  // nesting it would be invalid HTML. The hover underline goes too: there is nothing to click.
+  if (insideLink) return <span className={className}>{children}</span>;
+
+  return (
+    <Link href={href} className={className}>
+      {children}
+    </Link>
+  );
+}
 
 export type HrTone = 'slate' | 'emerald' | 'amber' | 'rose' | 'blue' | 'indigo' | 'orange' | 'violet' | 'teal' | 'cyan';
 
@@ -548,7 +599,8 @@ export function HrDataList<T extends { id: string }>({
           if (href && footers.length === 0) {
             return (
               <Link key={row.id} href={href} className={cn(shell, 'block')}>
-                {body}
+                {/* Tells the cells inside they are in an anchor — see `HrInsideLinkContext`. */}
+                <HrInsideLinkContext.Provider value>{body}</HrInsideLinkContext.Provider>
               </Link>
             );
           }

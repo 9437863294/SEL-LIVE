@@ -49,6 +49,7 @@ import {
 } from '@/lib/office-hub-service';
 import { useOfficeHub, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
+  HrCellLink,
   MeetingStatusBadge,
   OfficeHubAccessDenied,
   OfficeHubDataList,
@@ -192,9 +193,9 @@ export default function TeamDetailPage() {
       mobile: 'title',
       cell: (task) => (
         <div className="min-w-0">
-          <Link href={`${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`} className="block truncate font-medium hover:underline">
+          <HrCellLink href={`${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`} className="block truncate font-medium hover:underline">
             {task.title}
-          </Link>
+          </HrCellLink>
           <p className="truncate text-xs text-muted-foreground">{task.reference}</p>
         </div>
       ),
@@ -223,9 +224,9 @@ export default function TeamDetailPage() {
       mobile: 'title',
       cell: (meeting) => (
         <div className="min-w-0">
-          <Link href={`${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`} className="block truncate font-medium hover:underline">
+          <HrCellLink href={`${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`} className="block truncate font-medium hover:underline">
             {meeting.title}
-          </Link>
+          </HrCellLink>
           <p className="truncate text-xs text-muted-foreground">
             {meeting.meetingType} · {meeting.organizerName}
           </p>

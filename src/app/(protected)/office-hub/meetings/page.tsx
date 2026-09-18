@@ -43,6 +43,7 @@ import {
   useOfficeHubQuery,
 } from '@/components/office-hub/hooks';
 import {
+  HrCellLink,
   MeetingModeBadge,
   MeetingStatusBadge,
   MeetingWhen,
@@ -207,12 +208,12 @@ export default function MeetingsRegisterPage() {
       mobile: 'title',
       cell: (meeting) => (
         <div className="min-w-0">
-          <Link
+          <HrCellLink
             href={`${OFFICE_HUB_BASE_PATH}/meetings/${meeting.id}`}
             className="block truncate font-medium hover:underline"
           >
             {meeting.title}
-          </Link>
+          </HrCellLink>
           <p className="truncate text-xs text-muted-foreground">
             {meeting.meetingType} · {meeting.organizerName}
             {meeting.projectName ? ` · ${meeting.projectName}` : ''}

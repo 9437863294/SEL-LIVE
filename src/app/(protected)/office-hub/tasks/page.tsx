@@ -53,6 +53,7 @@ import {
 import { listMyTasks, listTasks } from '@/lib/office-hub-service';
 import { useDebouncedValue, useOfficeHub, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
+  HrCellLink,
   OfficeHubAccessDenied,
   OfficeHubDataList,
   OfficeHubEmptyState,
@@ -190,12 +191,12 @@ export default function TasksPage() {
       mobile: 'title',
       cell: (task) => (
         <div className="min-w-0">
-          <Link
+          <HrCellLink
             href={`${OFFICE_HUB_BASE_PATH}/tasks/${task.id}`}
             className="block truncate font-medium hover:underline"
           >
             {task.title}
-          </Link>
+          </HrCellLink>
           <p className="truncate text-xs text-muted-foreground">
             {task.reference}
             {task.meetingTitle ? ` · from ${task.meetingTitle}` : ''}

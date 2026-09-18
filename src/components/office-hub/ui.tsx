@@ -58,6 +58,8 @@ import {
 export {
   HrAccessDenied as OfficeHubAccessDenied,
   HrBarList as OfficeHubBarList,
+  // Re-exported under its own name: a cell renders "a link", not "an office-hub link".
+  HrCellLink,
   HrDataList as OfficeHubDataList,
   HrEmptyState as OfficeHubEmptyState,
   HrField as OfficeHubField,
@@ -71,6 +73,9 @@ export {
   type HrListColumn as OfficeHubListColumn,
   type HrTone as OfficeHubTone,
 } from '@/components/hr/hr-ui';
+
+// Imported rather than re-exported: `PersonChip` below consults it, but no screen needs it.
+import { useHrInsideLink } from '@/components/hr/hr-ui';
 
 /* ── badges ──────────────────────────────────────────────────────────────────────────────────── */
 
@@ -440,7 +445,20 @@ export function PersonChip({
     </span>
   );
 
-  return href ? (
+  /**
+   * A chip inside a linked card renders as plain text, not a second link.
+   *
+   * `HrDataList` wraps each phone card in an anchor when it is given `cardHref`, and the desktop
+   * table does not — so a chip with an `href` is a legitimate link on a desktop row and an
+   * `<a>` nested in an `<a>` on the same page's phone card. That is invalid HTML, it is a
+   * hydration error, and browsers resolve it by restructuring the DOM, which breaks the card.
+   *
+   * Nothing is lost by degrading: the card links to the person's page already, which on every
+   * screen that does this is the same destination the chip pointed at.
+   */
+  const insideLink = useHrInsideLink();
+
+  return href && !insideLink ? (
     <Link href={href} className="min-w-0 hover:underline">
       {body}
     </Link>

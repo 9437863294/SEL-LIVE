@@ -26,6 +26,7 @@ import {
 import { listTeams } from '@/lib/office-hub-service';
 import { useDebouncedValue, useOfficeHub, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
+  HrCellLink,
   OfficeHubAccessDenied,
   OfficeHubDataList,
   OfficeHubEmptyState,
@@ -104,12 +105,12 @@ export default function TeamsPage() {
       mobile: 'title',
       cell: (team) => (
         <div className="min-w-0">
-          <Link
+          <HrCellLink
             href={`${OFFICE_HUB_BASE_PATH}/teams/${team.id}`}
             className="block truncate font-medium hover:underline"
           >
             {team.name}
-          </Link>
+          </HrCellLink>
           <p className="truncate text-xs text-muted-foreground">
             {team.departmentName ?? 'Cross-department'}
             {team.description ? ` · ${team.description}` : ''}

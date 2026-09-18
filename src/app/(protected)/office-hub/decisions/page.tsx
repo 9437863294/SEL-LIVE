@@ -12,7 +12,6 @@
  * register sorted by date reads like a history, and what a reader needs is what has been sitting.
  */
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, Download, Gavel, Plus, Search, X } from 'lucide-react';
@@ -40,6 +39,7 @@ import {
 import { listDecisions } from '@/lib/office-hub-service';
 import { useDebouncedValue, useOfficeHub, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
+  HrCellLink,
   DecisionStatusBadge,
   OfficeHubAccessDenied,
   OfficeHubDataList,
@@ -152,12 +152,12 @@ export default function DecisionsPage() {
       mobile: 'title',
       cell: (decision) => (
         <div className="min-w-0">
-          <Link
+          <HrCellLink
             href={`${OFFICE_HUB_BASE_PATH}/decisions/${decision.id}`}
             className="block truncate font-medium hover:underline"
           >
             {decision.title}
-          </Link>
+          </HrCellLink>
           <p className="truncate text-xs text-muted-foreground">
             {decision.reference}
             {decision.meetingTitle ? ` · ${decision.meetingTitle}` : ''}
