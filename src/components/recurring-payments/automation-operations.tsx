@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Bot, Loader2, Play, RefreshCw } from 'lucide-react';
 import { auth, db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -21,17 +21,46 @@ export default function AutomationOperations() {
   const { can } = useAuthorization();
   const { toast } = useToast();
   const organizationId = user?.organizationId || 'default';
-  const [logs, setLogs] = useState<Log[]>([]);
   const [running, setRunning] = useState(false);
 
-  useEffect(() => onSnapshot(
-    query(collection(db, RP_COLLECTIONS.automationLogs), where('organizationId', '==', organizationId), limit(50)),
-    snapshot => setLogs(snapshot.docs
-      .map(item => ({ id: item.id, ...item.data() } as Log))
+  // Two fixes live in this subscription.
+  //
+  // The nightly cron sweeps every organization in one pass and therefore logs its run against
+  // 'all', not against any single organization — so filtering on `organizationId` alone meant this
+  // table, the only place the scheduler's history is visible, listed nothing but the manual "Run
+  // automation now" clicks. Whether the scheduled job ran at all is the one question the page
+  // exists to answer, and it could not answer it.
+  //
+  // And the rows are ordered *after* the fetch, so the server-side `limit` was taking an arbitrary
+  // slice by document id and sorting only that: once the collection outgrew the limit, the "latest
+  // 20" quietly stopped being the latest. Sorting the whole (narrow) result set is correct, and
+  // keeps this on the automatic single-field index rather than requiring a composite index to be
+  // deployed — the convention the rest of the module follows.
+  //
+  // Two separate subscriptions rather than one `in` query, because this project's Firestore rules
+  // are maintained in the Firebase console rather than in this repository (see firestore.rules). If
+  // the live ruleset scopes reads to the caller's own organization, an `in` query spanning 'all'
+  // fails as a whole and takes the organization's own history down with it; as two queries, the
+  // global feed simply stays empty and the manual runs still render.
+  const [orgLogs, setOrgLogs] = useState<Log[]>([]);
+  const [globalLogs, setGlobalLogs] = useState<Log[]>([]);
+  const logs = useMemo(
+    () => [...orgLogs, ...globalLogs]
       .sort((a, b) => timestampMillis(b.createdAt || b.startedAt) - timestampMillis(a.createdAt || a.startedAt))
-      .slice(0, 20)),
-    () => setLogs([]),
-  ), [organizationId]);
+      .slice(0, 20),
+    [orgLogs, globalLogs],
+  );
+
+  useEffect(() => {
+    const subscribe = (scope: string, apply: (rows: Log[]) => void) => onSnapshot(
+      query(collection(db, RP_COLLECTIONS.automationLogs), where('organizationId', '==', scope)),
+      snapshot => apply(snapshot.docs.map(item => ({ id: item.id, ...item.data() } as Log))),
+      () => apply([]),
+    );
+    const stopOrg = subscribe(organizationId, setOrgLogs);
+    const stopGlobal = subscribe('all', setGlobalLogs);
+    return () => { stopOrg(); stopGlobal(); };
+  }, [organizationId]);
 
   async function run() {
     if (!can('Manage Automation', 'Recurring Payments.Settings') && !can('Edit', 'Recurring Payments.Settings')) return;

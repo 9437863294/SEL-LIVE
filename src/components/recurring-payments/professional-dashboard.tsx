@@ -258,7 +258,8 @@ export default function ProfessionalRecurringDashboard() {
       ),
       icon: ShieldCheck,
       color: "border-amber-100 text-amber-600",
-      href: "/recurring-payments/payments?status=Under%20Verification",
+      // Both statuses this tile counts, so the drill-down total matches the number clicked.
+      href: "/recurring-payments/payments?status=Under%20Verification,Bill%20Received",
     },
     {
       label: "Pending Approval",
@@ -274,7 +275,7 @@ export default function ProfessionalRecurringDashboard() {
       ),
       icon: IndianRupee,
       color: "border-emerald-100 text-emerald-600",
-      href: "/recurring-payments/payments?status=Approved",
+      href: "/recurring-payments/payments?status=Approved,Payment%20Processing",
     },
     {
       label: "Missing Payment Proof",

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   collection,
   doc,
@@ -52,6 +52,8 @@ import {
   currency,
   effectiveStatus,
   isObligationEditable,
+  paymentTiming,
+  recurringDateOnly,
   visibleObligations,
 } from "@/lib/recurring-payments";
 import { Badge } from "@/components/ui/badge";
@@ -105,6 +107,8 @@ type Filters = {
   from: string;
   to: string;
   varianceOnly: boolean;
+  /** Paid/Closed obligations with no receipt document — the dashboard's "Missing Payment Proof" tile. */
+  missingReceipt: boolean;
 };
 const initialFilters: Filters = {
   search: "",
@@ -117,10 +121,41 @@ const initialFilters: Filters = {
   from: "",
   to: "",
   varianceOnly: false,
+  missingReceipt: false,
 };
+
+/**
+ * The dashboard's KPI tiles link here with their own definition attached — `?status=Approved,Payment
+ * Processing`, `?from=&to=`, `?missingReceipt=1`. Every one of those parameters used to be dropped
+ * on the floor: this screen never read the query string, so clicking "Awaiting Bill · 12" opened the
+ * complete register of every obligation in the organization and left the user to rebuild the filter
+ * by hand. `status` is a comma-separated list because several tiles count more than one status, and
+ * a drill-down that shows fewer rows than the number that was clicked is its own bug.
+ */
+function filtersFromQuery(params: URLSearchParams): Filters {
+  const status = (params.get("status") || "").trim();
+  return {
+    ...initialFilters,
+    status: status || "all",
+    from: (params.get("from") || "").trim(),
+    to: (params.get("to") || "").trim(),
+    varianceOnly: params.get("varianceOnly") === "1",
+    missingReceipt: params.get("missingReceipt") === "1",
+  };
+}
+
+/** Whether a Paid/Closed obligation is missing its payment proof. Mirrors the dashboard tile. */
+function isMissingReceipt(payment: PaymentObligation): boolean {
+  return (
+    ["Paid", "Closed"].includes(payment.status) &&
+    !(payment.documentReferences || []).some((document) =>
+      ["Record Payment", "Close"].includes(document.action),
+    )
+  );
+}
 const finalStatuses = ["Paid", "Closed", "Cancelled", "Waived"];
 
-export default function RecurringPaymentRegister() {
+function PaymentRegisterView() {
   const router = useRouter();
   const { user, users } = useAuth();
   const { can } = useAuthorization();
@@ -129,7 +164,10 @@ export default function RecurringPaymentRegister() {
   const { activeProjects, activeDepartments } = useGlobalScopes();
   const [payments, setPayments] = useState<PaymentObligation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState<Filters>(initialFilters);
+  const searchParams = useSearchParams();
+  // Read once, as the initial state: the filter card stays fully editable afterwards, and a user
+  // who clears a filter should not have it reinstated by the URL they arrived from.
+  const [filters, setFilters] = useState<Filters>(() => filtersFromQuery(new URLSearchParams(searchParams?.toString() || "")));
   const [selected, setSelected] = useState<PaymentObligation | null>(null);
   const [recordOpen, setRecordOpen] = useState(false);
   useEffect(
@@ -184,8 +222,14 @@ export default function RecurringPaymentRegister() {
     () =>
       normalized
         .filter((p) => {
-          if (filters.status !== "all" && p.status !== filters.status)
+          // Split, so a single-status pick from the Select and a multi-status drill-down from the
+          // dashboard ("Approved,Payment Processing") go through the same comparison.
+          if (
+            filters.status !== "all" &&
+            !filters.status.split(",").map((value) => value.trim()).includes(p.status)
+          )
             return false;
+          if (filters.missingReceipt && !isMissingReceipt(p)) return false;
           if (filters.category !== "all" && p.category !== filters.category)
             return false;
           if (filters.vendor !== "all" && p.vendorName !== filters.vendor)
@@ -330,7 +374,7 @@ export default function RecurringPaymentRegister() {
     );
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `recurring-payments-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `recurring-payments-${recurringDateOnly(new Date())}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -412,7 +456,15 @@ export default function RecurringPaymentRegister() {
             value={filters.status}
             onChange={(status) => setFilters((f) => ({ ...f, status }))}
             placeholder="All statuses"
-            options={[...new Set(normalized.map((x) => x.status))]}
+            // A dashboard drill-down can arrive filtered on several statuses at once. Without it in
+            // the option list the Select has no item matching its own value and falls back to
+            // rendering the placeholder — the control would read "All statuses" over a filtered table.
+            options={[
+              ...new Set([
+                ...(filters.status.includes(",") ? [filters.status] : []),
+                ...normalized.map((x) => x.status),
+              ]),
+            ]}
           />
           <FilterSelect
             value={filters.category}
@@ -490,6 +542,16 @@ export default function RecurringPaymentRegister() {
             value={filters.to}
             onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value }))}
           />
+          <div className="flex items-center justify-between rounded-md border px-3 py-2">
+            <span className="text-sm">Missing payment proof</span>
+            <input
+              type="checkbox"
+              checked={filters.missingReceipt}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, missingReceipt: e.target.checked }))
+              }
+            />
+          </div>
           <div className="flex items-center justify-between rounded-md border px-3">
             <span className="text-sm">Variance alerts only</span>
             <input
@@ -572,7 +634,7 @@ export default function RecurringPaymentRegister() {
                         ).toLocaleDateString("en-IN")}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
-                        {daysLabel(payment.dueDate)}
+                        {paymentTiming(payment).label}
                       </TableCell>
                       <TableCell
                         className={`whitespace-nowrap text-right font-semibold ${payment.varianceWarning ? "text-amber-600" : ""}`}
@@ -1131,7 +1193,7 @@ function TransactionDialog({
             <Input
               name="paymentDate"
               type="date"
-              defaultValue={new Date().toISOString().slice(0, 10)}
+              defaultValue={recurringDateOnly(new Date())}
               required
             />
           </Field>
@@ -1325,14 +1387,22 @@ function formatTimestamp(value: unknown) {
     return new Date(data.seconds * 1000).toLocaleString("en-IN");
   return "—";
 }
-function daysLabel(date: string) {
-  const due = new Date(`${date}T00:00:00`);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const days = Math.round((due.getTime() - today.getTime()) / 86400000);
-  return days < 0
-    ? `${Math.abs(days)} day(s) overdue`
-    : days === 0
-      ? "Due today"
-      : `Due in ${days} day(s)`;
+
+/**
+ * Next requires a Suspense boundary around any client component reading the query string, or the
+ * production build fails on this route (it only appears to work in dev, where pages render on
+ * demand). Matches the wrapper the Expenses report centre already uses for the same reason.
+ */
+export default function RecurringPaymentRegister() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <Loader2 className="h-7 w-7 animate-spin text-indigo-600" />
+        </div>
+      }
+    >
+      <PaymentRegisterView />
+    </Suspense>
+  );
 }

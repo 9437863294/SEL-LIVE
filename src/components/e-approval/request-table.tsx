@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowUpDown, CheckCircle2, FileSearch, Inbox, Loader2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ import {
 } from '@/lib/e-approval';
 import {
   EApprovalConfidentialBadge,
+  EApprovalSourceBadge,
   EApprovalDueBadge,
   EApprovalEmptyState,
   EApprovalPriorityBadge,
@@ -43,6 +44,7 @@ export function EApprovalRequestTable({
   showPendingWith = true,
   showAgeing = true,
   showStatusFilter = true,
+  renderActions,
 }: {
   rows: EApprovalRequest[];
   isLoading?: boolean;
@@ -52,14 +54,37 @@ export function EApprovalRequestTable({
   showPendingWith?: boolean;
   showAgeing?: boolean;
   showStatusFilter?: boolean;
+  /**
+   * Per-row controls in a trailing column — today, deleting a request.
+   *
+   * A render prop rather than a `canDelete` flag and a built-in button: the register has no business
+   * knowing which permissions govern which action, and the next thing wanted here (re-open a
+   * cancelled file, export one row) would otherwise be a second flag and a second button.
+   */
+  renderActions?: (row: EApprovalRequest) => ReactNode;
 }) {
   const [search, setSearch] = useState('');
+  /**
+   * The term the list is actually filtered by, a beat behind what is being typed.
+   *
+   * The register renders every row it is given — the full-register screen loads four hundred, each
+   * one nine cells with badges and two links — and filtering on each keystroke re-rendered all of
+   * them per character. Holding the committed term separately means the input stays immediate while
+   * the table redraws once the typing pauses, which is the only moment the results are being read.
+   */
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [status, setStatus] = useState<'All' | EApprovalStatus>('All');
   const [sortKey, setSortKey] = useState<SortKey>('created');
   const [ascending, setAscending] = useState(false);
 
+  useEffect(() => {
+    if (search === appliedSearch) return;
+    const timer = setTimeout(() => setAppliedSearch(search), 200);
+    return () => clearTimeout(timer);
+  }, [search, appliedSearch]);
+
   const filtered = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = appliedSearch.trim().toLowerCase();
     let list = rows;
     if (term) {
       list = list.filter(
@@ -87,7 +112,7 @@ export function EApprovalRequestTable({
       const right = b.createdAt?.toMillis() ?? 0;
       return (left - right) * direction;
     });
-  }, [rows, search, status, sortKey, ascending]);
+  }, [rows, appliedSearch, status, sortKey, ascending]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setAscending((value) => !value);
@@ -185,6 +210,7 @@ export function EApprovalRequestTable({
                   </button>
                 </TableHead>
                 <TableHead className="whitespace-nowrap">Status</TableHead>
+                {renderActions && <TableHead className="w-10" aria-label="Actions" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -202,6 +228,7 @@ export function EApprovalRequestTable({
                     <span className="mt-0.5 flex flex-wrap items-center gap-1">
                       <EApprovalPriorityBadge priority={row.priority} />
                       <EApprovalConfidentialBadge confidential={row.confidential} />
+                      <EApprovalSourceBadge source={row.source} />
                       {(row.version ?? 1) > 1 && (
                         <span className="text-[10px] text-muted-foreground">v{row.version}</span>
                       )}
@@ -234,6 +261,11 @@ export function EApprovalRequestTable({
                   <TableCell className="whitespace-nowrap">
                     <EApprovalStatusBadge status={row.status} />
                   </TableCell>
+                  {renderActions && (
+                    <TableCell className="whitespace-nowrap py-1 pl-0 pr-1 text-right">
+                      {renderActions(row)}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -283,6 +315,7 @@ export function EApprovalActionList({
                   <span className="font-mono text-[11px] text-muted-foreground">{row.referenceNo}</span>
                   <EApprovalPriorityBadge priority={row.priority} />
                   <EApprovalConfidentialBadge confidential={row.confidential} />
+                  <EApprovalSourceBadge source={row.source} />
                 </div>
                 <p className="line-clamp-1 text-sm font-medium">{row.subject}</p>
                 <p className="truncate text-[11px] text-muted-foreground">

@@ -66,10 +66,10 @@ masters, the central `userNotifications` bell and the `userLogs` audit trail. Se
 ## Verification
 
 ```bash
-npm run test:office-hub        # 129 tests: domain, recurrence, reminders, reports, import
+npm run test:office-hub        # 129 tests: domain, recurrence, reminders, reports, import — all pass
 npm run typecheck:office-hub   # scoped tsc over the module — clean
 npm run typecheck              # whole repo
-npm run build
+npm run build                  # exit 0; all 29 Office Hub pages + the cron route compiled
 ```
 
 Two things to know about the repo-wide checks:

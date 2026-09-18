@@ -18,6 +18,7 @@ import type {
   RecurringAmountAssignee,
   RecurringWorkflowStep,
 } from './recurring-payments';
+import type { EApprovalMirrorMode } from './e-approval-link';
 
 const DAY_MS = 86_400_000;
 
@@ -145,6 +146,187 @@ export function stepStatus(step?: RecurringWorkflowStep): PaymentStatus {
   if (name.includes('processing')) return 'Payment Processing';
   if (name.includes('receipt') || name.includes('closure')) return 'Paid';
   return 'Generated';
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Routing an action through the workflow
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Actions that move an obligation *forward* when they succeed, as opposed to parking or ending it. */
+export const RECURRING_FORWARD_ACTIONS = ['Submit Bill', 'Verify', 'Approve', 'Record Payment', 'Close', 'Create Expense Request'];
+
+/**
+ * Actions that need data only the Recurring Payments form can collect — a bill number, a UTR, an
+ * expense-request department. A step offering any of these cannot be completed from another module's
+ * screen, whatever that screen thinks it is approving.
+ */
+export const RECURRING_DATA_ENTRY_ACTIONS = ['Submit Bill', 'Record Payment', 'Create Expense Request'];
+
+/** The state a routing decision reads. A structural subset of `PaymentObligation`. */
+export type RoutingPayment = AssigneeResolutionPayment & {
+  status: PaymentStatus;
+  assignees?: string[];
+  finalAccountsVerification?: boolean;
+};
+
+export interface RouteRecurringWorkflowInput {
+  /** The configured workflow, in order. */
+  workflow: RecurringWorkflowStep[];
+  /** The step the action is being taken at. */
+  step: RecurringWorkflowStep;
+  action: string;
+  payment: RoutingPayment;
+  /** Who is acting — recorded against a sequential/parallel approval level. */
+  actorId: string;
+  /**
+   * Whether the action itself completed the step's work. Only "Record Payment" ever passes `false`
+   * with a forward action: a part-settlement is a forward action that has not finished yet, and the
+   * caller is the only one that knows the arithmetic. Defaults to whether `action` is forward.
+   */
+  advance?: boolean;
+  /** The status the payment already has after the caller's own field updates (part-payment sets 'Partially Paid'). */
+  baseStatus?: PaymentStatus;
+}
+
+export interface RouteRecurringWorkflowResult {
+  workflowStatus: NonNullable<PaymentObligation['workflowStatus']>;
+  status: PaymentStatus;
+  /** The readable stage label written to `payment.stage`. */
+  stage: string;
+  currentStepId: string | null;
+  assignees: string[];
+  currentApprovalLevel: number;
+  approvalCompletedBy: string[];
+  /** The workflow step the payment ends up at — undefined when it left the chain. */
+  target?: RecurringWorkflowStep;
+  /** Step id for the "open your queue" deep link; empty once the payment has left the chain. */
+  destinationStepId: string;
+  /** Who to notify. Empty when the payment stayed exactly where it was. */
+  notify: string[];
+}
+
+/**
+ * Decides where an obligation goes when an action is taken on it, and who holds it next.
+ *
+ * Extracted from the workflow-stage screen because it stopped being that screen's business the
+ * moment a second caller existed: the E-Approval mirror has to move a payment forward on exactly the
+ * same rules when an approver acts from the other module, and a second inline copy of "advance,
+ * unless it's a sequential approval with levels remaining, unless final accounts verification is
+ * off…" would be wrong within a release. Pure and dependency-free, for the reason the rest of this
+ * module is: these are the decisions worth testing.
+ *
+ * Throws when the step it would move to has nobody on it. Deliberately loud — an obligation parked at
+ * a step with an empty assignee list is invisible work, and refusing the transition leaves it
+ * somewhere a person is still accountable for it.
+ */
+export function routeRecurringWorkflow(input: RouteRecurringWorkflowInput): RouteRecurringWorkflowResult {
+  const { workflow, step, action, payment, actorId } = input;
+  let advance = input.advance ?? RECURRING_FORWARD_ACTIONS.includes(action);
+  let workflowStatus: RouteRecurringWorkflowResult['workflowStatus'] = 'In Progress';
+  let status = input.baseStatus ?? payment.status;
+  let currentStepId: string | null = step.id;
+  let assignees = payment.assignees || [];
+  let currentApprovalLevel = Number(payment.currentApprovalLevel || 1);
+  let approvalCompletedBy = payment.approvalCompletedBy || [];
+  let target: RecurringWorkflowStep | undefined;
+  let stage = step.name;
+  let destinationStepId = step.id;
+  let notify: string[] = [];
+
+  // An approval step with a matched rule collects one decision per level, so it can be entered once
+  // and left several actions later — the step does not move until the last level has signed.
+  const isApproval = step.name.toLowerCase().includes('approval') && action === 'Approve' && payment.approvalLevels?.length;
+  if (isApproval && payment.approvalMode === 'Sequential' && currentApprovalLevel < payment.approvalLevels!.length) {
+    currentApprovalLevel += 1;
+    assignees = [payment.approvalLevels![currentApprovalLevel - 1]];
+    approvalCompletedBy = [...new Set([...approvalCompletedBy, actorId])];
+    stage = `${step.name} · Level ${currentApprovalLevel}`;
+    notify = assignees;
+    advance = false;
+  } else if (isApproval && payment.approvalMode === 'Parallel') {
+    approvalCompletedBy = [...new Set([...approvalCompletedBy, actorId])];
+    assignees = payment.approvalLevels!.filter((id) => !approvalCompletedBy.includes(id));
+    advance = assignees.length === 0;
+    if (!advance) {
+      stage = `${step.name} · ${assignees.length} approval(s) remaining`;
+      notify = assignees;
+    }
+  }
+
+  if (advance) {
+    target = workflow[workflow.findIndex((item) => item.id === step.id) + 1];
+    // An organization that does not run a separate receipt/closure check ends the workflow at the
+    // payment itself rather than parking it at a step nobody is meant to work.
+    if (action === 'Record Payment' && target && (target.name.toLowerCase().includes('receipt') || target.name.toLowerCase().includes('closure')) && payment.finalAccountsVerification === false) target = undefined;
+    if (target) {
+      currentStepId = target.id;
+      assignees = resolveAssignees(target, { ...payment, currentApprovalLevel, approvalCompletedBy });
+      if (!assignees.length) throw new Error(`No assignee is configured for ${target.name}.`);
+      status = stepStatus(target);
+      stage = target.name;
+      destinationStepId = target.id;
+      notify = assignees;
+    } else {
+      workflowStatus = 'Completed';
+      status = 'Closed';
+      currentStepId = null;
+      assignees = [];
+      stage = 'Completed';
+      destinationStepId = '';
+    }
+  } else if (action === 'Return for Correction') {
+    target = workflow[Math.max(0, workflow.findIndex((item) => item.id === step.id) - 1)];
+    currentStepId = target.id;
+    // Returning *into* an approval step restarts it: the levels that had already signed did so
+    // against figures the correction is about to change.
+    if (target.name.toLowerCase().includes('approval')) {
+      currentApprovalLevel = 1;
+      approvalCompletedBy = [];
+    }
+    assignees = resolveAssignees(target, { ...payment, currentApprovalLevel, approvalCompletedBy });
+    if (!assignees.length) throw new Error(`No assignee is configured for ${target.name}.`);
+    status = stepStatus(target);
+    stage = target.name;
+    destinationStepId = target.id;
+    notify = assignees;
+  } else if (action === 'Reject') {
+    workflowStatus = 'Rejected';
+    status = 'Rejected';
+    currentStepId = null;
+    assignees = [];
+    stage = 'Rejected';
+    destinationStepId = '';
+  } else if (!RECURRING_FORWARD_ACTIONS.includes(action)) {
+    status = action === 'Dispute' ? 'Disputed' : action === 'Payment Failed' ? 'Payment Failed' : 'On Hold';
+  }
+
+  return { workflowStatus, status, stage, currentStepId, assignees, currentApprovalLevel, approvalCompletedBy, target, destinationStepId, notify };
+}
+
+/**
+ * How a step behaves when it is mirrored into E-Approval.
+ *
+ * Derived from the step's own configured actions rather than set by hand, so an administrator who
+ * adds "Record Payment" to a step cannot leave behind a mirror that offers to approve it from a
+ * screen with no field for the UTR. A step that can only be completed with data the Recurring
+ * Payments form collects is 'Visibility': shown, notified, linked back — but not decidable there.
+ */
+export function recurringMirrorMode(step: RecurringWorkflowStep): EApprovalMirrorMode {
+  const actions = step.actions || [];
+  if (actions.some((action) => RECURRING_DATA_ENTRY_ACTIONS.includes(action))) return 'Visibility';
+  return actions.some((action) => action === 'Approve' || action === 'Verify' || action === 'Close') ? 'Decision' : 'Visibility';
+}
+
+/**
+ * The action a mirrored E-Approval stage applies back to the payment when it is approved.
+ *
+ * Prefers the step's own decision verb, so a "Bill Verification" step verifies rather than approves
+ * and the payment's status line stays truthful. Undefined for a 'Visibility' step, which is never
+ * completed from E-Approval at all.
+ */
+export function recurringMirrorAction(step: RecurringWorkflowStep): string | undefined {
+  if (recurringMirrorMode(step) !== 'Decision') return undefined;
+  return ['Approve', 'Verify', 'Close'].find((action) => (step.actions || []).includes(action));
 }
 
 export type WorkflowActivation = {

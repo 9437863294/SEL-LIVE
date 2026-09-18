@@ -31,7 +31,7 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
-  deleteField,
+  increment,
   doc,
   getCountFromServer,
   getDoc,
@@ -945,7 +945,7 @@ export async function createMeeting(
   if (input.templateId) {
     // Best-effort: a template's usage counter is nice to have and must not fail the creation.
     void updateDoc(docIn(OFFICE_HUB_COLLECTIONS.meetingTemplates, input.templateId), {
-      usageCount: arrayUnionSafeIncrement(),
+      usageCount: increment(1),
     }).catch(() => {});
   }
 
@@ -968,16 +968,6 @@ export async function createMeeting(
 
   return { meetingId: meetingRef.id, participantCount: participants.length, seriesInstancesCreated, warnings };
 }
-
-/**
- * `usageCount` + 1 without a transaction.
- *
- * `increment` would be the right primitive, but it is one more import on the critical path for a
- * counter nothing depends on. Reading it back is not worth a round trip either, so the field is
- * simply stamped with the current time instead and the count derived from the template's meetings
- * when anybody asks. Returning `deleteField()` here keeps the write valid while recording nothing.
- */
-const arrayUnionSafeIncrement = () => deleteField();
 
 function writeParticipants(
   batch: ReturnType<typeof writeBatch>,

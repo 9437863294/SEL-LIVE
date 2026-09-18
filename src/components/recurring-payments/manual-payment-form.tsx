@@ -202,6 +202,10 @@ export default function ManualPaymentForm() {
       );
       const duplicate = duplicates.docs.find((item) => {
         const payment = item.data();
+        // A deleted obligation is not a duplicate of anything: it is hidden from every register and
+        // report, so matching against it blocked re-entering a bill the user had just deleted with
+        // an error pointing at a record they could no longer open.
+        if (payment.deleted === true) return false;
         return (
           String(payment.vendorName || "").toLowerCase() ===
             vendorName.toLowerCase() &&

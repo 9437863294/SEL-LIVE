@@ -181,11 +181,7 @@ export function recurringMirrorIssues(stages: RecurringMirrorStage[]): string[] 
  * The stage list as E-Approval template steps.
  *
  * A 'Visibility' stage is carried into the chain like any other — it is a real stage of the real
- * workflow and hiding it would make the timeline lie about how the payment got where it is — but
- * marked `requesterMustAct`, which keeps `skipSelfApprovalSteps` off it. That distinction is the
- * whole reason the flag exists: "don't make the accountant approve their own note-sheet" and "don't
- * make the accountant collect the bill they were assigned" are opposite instructions, and to the
- * engine both stages look the same.
+ * workflow and hiding it would make the timeline lie about how the payment got where it is.
  */
 export function recurringMirrorTemplateSteps(stages: RecurringMirrorStage[]): EApprovalTemplateStep[] {
   return stages.map((stage, index) => ({
@@ -208,7 +204,26 @@ export function recurringMirrorTemplateSteps(stages: RecurringMirrorStage[]): EA
   }));
 }
 
-/** Stamps the mirror pointers onto freshly built step records, in stage order. */
+/**
+ * Stamps the mirror pointers onto freshly built step records, in stage order.
+ *
+ * Every mirrored stage is marked `requesterMustAct`, which keeps `skipSelfApprovalSteps` off the
+ * whole chain. That is not a detail — it is the difference between a mirror that tracks a workflow
+ * and one that runs away with it.
+ *
+ * The self-approval rule exists for a note-sheet: a stage naming the person who raised it is already
+ * satisfied, because submitting *was* their approval. A mirrored stage is not that. It is a step of
+ * a real workflow in another module — verify the bill, approve the payment, close the obligation —
+ * and it carries that module's own controls: the verification checklist, the approval-level record,
+ * the audit entry. Treating it as satisfied does not merely tick a box here; the reconciler then
+ * drags the payment through the corresponding step *there*, skipping all of it.
+ *
+ * The failure that taught us this: an organization where one person is the payment's owner, its
+ * verifier and its approver — a small office, or anyone testing with a single account. Completing
+ * step 1 of 5 auto-approved stages 2 and 3, and where no later stage happened to need a bill number
+ * to stop the cascade, all five went at once and the request read "Approved" against a payment whose
+ * bill had only just been submitted.
+ */
 export function attachRecurringMirrorFields(
   steps: EApprovalStepRecord[],
   stages: RecurringMirrorStage[],
@@ -222,7 +237,7 @@ export function attachRecurringMirrorFields(
       mirrorStepId: stage.stepId,
       mirrorAction: stage.action,
       mirrorLevel: stage.level,
-      requesterMustAct: stage.mode === 'Visibility',
+      requesterMustAct: true,
     };
   });
 }
@@ -376,6 +391,39 @@ export function shouldMirrorRecurringPayment(
   if (!payment.currentStepId) return false;
   const amount = Number(payment.billAmount || payment.expectedAmount || 0);
   return amount >= Number(settings.minAmount || 0);
+}
+
+/**
+ * The mirror's state said in the payment module's vocabulary rather than the approval module's.
+ *
+ * A five-step obligation whose first step is done is at "Bill Verification" — it is not "Pending
+ * Verification", and it is certainly not "Approved". E-Approval's own words are right for E-Approval
+ * (its chain really has approved everything asked of it) but wrong on a payment row, where the
+ * question is which step the payment has reached and whether the workflow has finished. Translating
+ * here rather than renaming anything in the approval engine keeps each module honest in its own
+ * terms.
+ */
+export function recurringMirrorLabel(
+  mirror: { status?: string; stageName?: string; detachedAt?: unknown } | undefined | null,
+): string {
+  if (!mirror) return '';
+  if (mirror.detachedAt) return 'Unlinked';
+  switch (mirror.status) {
+    // The chain has cleared every stage, which for a mirrored workflow means the work is done.
+    case 'Approved':
+      return 'Completed';
+    case 'Rejected':
+      return 'Rejected';
+    case 'Cancelled':
+      return 'Cancelled';
+    default:
+      return mirror.stageName || mirror.status || '';
+  }
+}
+
+/** Whether the mirror has finished — nothing further will happen on the approval side. */
+export function isRecurringMirrorClosed(mirror: { status?: string } | undefined | null): boolean {
+  return ['Approved', 'Rejected', 'Cancelled'].includes(String(mirror?.status));
 }
 
 /** The approval's subject line — what an approver sees before they open anything. */

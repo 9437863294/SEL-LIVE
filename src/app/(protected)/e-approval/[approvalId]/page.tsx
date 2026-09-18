@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -23,16 +23,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import {
   canEditEApprovalRequest,
+  canRemoveEApprovalAttachment,
   canSignEApprovalDocument,
   canViewEApproval,
   E_APPROVAL_BASE_PATH,
+  isTerminalEApprovalStatus,
   type EApprovalDetail,
 } from '@/lib/e-approval';
 import { loadEApprovalDetail } from '@/lib/e-approval-service';
 import { ActionPanel } from '@/components/e-approval/action-panel';
 import { AttachmentList } from '@/components/e-approval/attachment-list';
 import { CommentThread } from '@/components/e-approval/comment-thread';
+import { DeleteApprovalButton } from '@/components/e-approval/delete-request-dialog';
 import { ResponsibilityCard } from '@/components/e-approval/responsibility-card';
+import { EApprovalSourceCard } from '@/components/e-approval/source-card';
 import {
   EApprovalConfidentialBadge,
   EApprovalEmptyState,
@@ -40,6 +44,7 @@ import {
   EApprovalPriorityBadge,
   EApprovalStatusBadge,
 } from '@/components/e-approval/shared';
+import { EApprovalRichText } from '@/components/e-approval/rich-text-editor';
 import { WorkflowTimeline } from '@/components/e-approval/workflow-timeline';
 import { PageHeader } from '@/components/e-approval/page-header';
 import { EApprovalUndoButtons } from '@/components/e-approval/undo-button';
@@ -63,6 +68,7 @@ import {
 export default function EApprovalDetailPage() {
   const params = useParams<{ approvalId: string }>();
   const approvalId = String(params?.approvalId ?? '');
+  const router = useRouter();
   const { toast } = useToast();
   const { serviceActor, engineActor, isLoading: actorLoading } = useEApprovalActor();
   const permissions = useEApprovalPermissions();
@@ -200,9 +206,20 @@ export default function EApprovalDetailPage() {
                 </Link>
               </Button>
             )}
+            {/* Renders nothing unless this person may actually delete this request — the authority is
+                decided once, in the engine, and the same decision drives the button and the write. */}
+            <DeleteApprovalButton
+              detail={detail}
+              serviceActor={serviceActor}
+              canDeleteDraft={permissions.canDeleteDraft}
+              canDeleteAny={permissions.canDeleteAnyRequest}
+              onDeleted={() => router.push(`${E_APPROVAL_BASE_PATH}/inbox`)}
+            />
           </>
         }
       />
+
+      <EApprovalSourceCard source={request.source} />
 
       <ResponsibilityCard request={request} steps={steps} />
 
@@ -270,7 +287,13 @@ export default function EApprovalDetailPage() {
             <CardContent className="space-y-4 px-3 py-3 sm:px-4">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Proposal</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{request.body}</p>
+                {/* Rich when the request carries markup, plain text as before when it does not — the
+                    renderer sanitises again on the way out, so a stored row is never trusted. */}
+                {request.bodyHtml ? (
+                  <EApprovalRichText html={request.bodyHtml} className="mt-1" />
+                ) : (
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{request.body}</p>
+                )}
               </div>
               <div className="grid gap-3 border-t pt-3 sm:grid-cols-3 lg:grid-cols-4">
                 <EApprovalField label="Approval type">{request.approvalTypeName || '—'}</EApprovalField>
@@ -322,6 +345,20 @@ export default function EApprovalDetailPage() {
               <CardDescription className="text-xs">
                 Verification and clarification are shown inside the approver who raised them — they always return there.
               </CardDescription>
+              {/*
+                Which routing produced this chain. A chain of one stage is the same picture whether the
+                configured workflow ran and reduced to one stage, or was never consulted because the
+                requester named an approver on the form — and ad-hoc routing wins over both the template
+                and the approval matrix. Saying which one applied is the difference between "this is the
+                workflow" and "stages are missing".
+              */}
+              <p className="text-[11px] text-muted-foreground">
+                {request.adHocSteps?.length
+                  ? 'Routed to the approvers named on the form. The configured workflow and approval matrix were not applied.'
+                  : request.templateId || request.ruleId
+                    ? 'Routed by the configured workflow. Stages that did not apply to this request are not shown.'
+                    : 'Routed by the approval type’s default chain.'}
+              </p>
             </CardHeader>
             <CardContent className="px-3 pb-3 sm:px-4">
               <WorkflowTimeline steps={steps} />
@@ -353,6 +390,13 @@ export default function EApprovalDetailPage() {
                 serviceActor={serviceActor}
                 canUpload={permissions.canUpload}
                 canSign={canSignEApprovalDocument(request)}
+                canRemove={canRemoveEApprovalAttachment(request, serviceActor)}
+                // Anyone who may attach to a live approval may also attach a newer version of a
+                // document already on it — a verifier who obtains a corrected quotation should not
+                // have to send the file back to the requester just to get it onto the record. Once
+                // the approval has come to rest its documents are the record of what was approved,
+                // so the lineage stops there.
+                canRevise={!isTerminalEApprovalStatus(request.status)}
                 closedStatus={request.status}
                 onChanged={load}
               />

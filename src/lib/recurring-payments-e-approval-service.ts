@@ -436,27 +436,46 @@ async function reconcileMirror(
   const stageOf = (stepId: string) => workflow.find((step) => step.id === stepId);
   const currentStage = stages.find((stage) => stage.stepId === payment.currentStepId);
 
-  // Keep the two pointers fresh whatever else happens — a mirror in sync still has to say *where*.
+  /**
+   * Writes back where each side now stands.
+   *
+   * Re-reads both records rather than using the ones this function opened with. By the time it runs,
+   * an advance may have moved the payment three steps and closed half the approval chain, and
+   * stamping the state we started from would leave every payment row reporting the position it held
+   * *before* the action that prompted the sync — which is the one thing this pointer exists to avoid.
+   */
   const refresh = async () => {
+    const [latest, current] = await Promise.all([
+      loadPayment(payment.id),
+      getEApprovalRequest(approvalId),
+    ]);
+    const record = latest ?? payment;
+    const approval = current ?? request;
+    // Looked up in the list already built rather than rebuilt: advancing changes which stage the
+    // payment is on, not what the stages are.
+    const stageNow = stages.find((stage) => stage.stepId === record.currentStepId) ?? currentStage;
     await Promise.all([
       updateEApprovalSourceLink(
         approvalId,
         {
           module: 'Recurring Payments',
-          recordId: payment.id,
-          recordLabel: payment.title,
-          recordPath: PAYMENT_PATH(payment.id),
-          stepId: payment.currentStepId ?? undefined,
-          stepName: payment.stage,
-          mirrorMode: currentStage?.mode,
+          recordId: record.id,
+          recordLabel: record.title,
+          recordPath: PAYMENT_PATH(record.id),
+          stepId: record.currentStepId ?? undefined,
+          stepName: record.stage,
+          mirrorMode: stageNow?.mode,
         },
         actor,
       ),
-      stampMirror(payment.id, {
-        referenceNo: request.referenceNo ?? null,
-        status: request.status,
-        pendingLabel: request.pendingLabel ?? null,
-        mode: currentStage?.mode ?? null,
+      stampMirror(record.id, {
+        referenceNo: approval.referenceNo ?? null,
+        status: approval.status,
+        // The step the *payment* is on, which is what its own screens want to show. Falls back to
+        // the approval's active stage while the payment is between steps.
+        stageName: record.stage || approval.currentStepName || null,
+        pendingLabel: approval.pendingLabel ?? null,
+        mode: stageNow?.mode ?? null,
         lastError: null,
       }),
     ]);

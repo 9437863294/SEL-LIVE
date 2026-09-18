@@ -124,7 +124,7 @@ const statusGlossary: { status: string; tone: string; meaning: string }[] = [
   { status: 'On Hold', tone: 'bg-amber-50 text-amber-700 border-amber-200', meaning: 'Manually paused at any actionable step.' },
   { status: 'Waived', tone: 'bg-slate-100 text-slate-700 border-slate-200', meaning: 'Marked as not payable and closed without payment.' },
   { status: 'Cancelled', tone: 'bg-slate-100 text-slate-700 border-slate-200', meaning: 'Cancelled before completion.' },
-  { status: 'Overdue', tone: 'bg-rose-50 text-rose-700 border-rose-200', meaning: 'Computed live — past due date and not yet paid/closed. Shown on the Dashboard and Overdue page.' },
+  { status: 'Overdue', tone: 'bg-rose-50 text-rose-700 border-rose-200', meaning: 'Computed live — past the end of the master’s grace period (the due date itself, where no grace is configured) and not yet paid/closed. Between the due date and the end of grace a payment reads as “past due — in grace”, not as overdue. Shown on the Dashboard and Overdue page.' },
 ];
 
 const faqs: { q: string; a: string }[] = [

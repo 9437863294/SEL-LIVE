@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type DocumentData } from 'firebase-admin/firestore';
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from '@/lib/firebase-admin';
 import { buildPaymentObligationFields, DEFAULT_RECURRING_WORKFLOW, isWorkflowActivationDue, matchApprovalRule, pendingRecurringCycles, resolveEntryAssignees, stepStatus, type ApprovalRule, type PaymentObligation, type RecurringPaymentMaster, type RecurringWorkflowStep } from '@/lib/recurring-payments';
 import { addBusinessHours, makeIsWorkingDay, normalizeWorkingHoursDoc } from '@/lib/working-hours';
@@ -44,6 +44,25 @@ export async function GET(request: Request) {
 
   const db = getFirebaseAdminFirestore();
   const now = new Date();
+  /**
+   * One read of each organization's settings per run, not per record.
+   *
+   * The three loops below each needed the same document — once per master, then once per obligation
+   * for workflow activation, then once per obligation again for reminders. An organization with
+   * 800 open obligations therefore paid for ~1,600 reads of a single unchanging document every
+   * night, and the same document was re-read on every manual "run automation now". Settings cannot
+   * change mid-run, so caching them is also the only way the three loops are guaranteed to agree on
+   * the timezone and activation window they are working from.
+   */
+  const settingsCache = new Map<string, DocumentData | undefined>();
+  const loadSettings = async (organizationId: string) => {
+    if (!settingsCache.has(organizationId)) {
+      const snapshot = await db.collection('recurringPaymentSettings')
+        .doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')).get();
+      settingsCache.set(organizationId, snapshot.data());
+    }
+    return settingsCache.get(organizationId);
+  };
   // No run-wide `today`: the calendar date is a per-organization question (see
   // `organizationToday`), so each loop derives it from the settings it has already loaded. A
   // server-local one sitting here is what caused the off-by-one-day behaviour in the first place.
@@ -74,8 +93,7 @@ export async function GET(request: Request) {
     const master = { id: masterDoc.id, ...masterDoc.data() } as RecurringPaymentMaster;
     if (master.deleted || master.autoGenerationEnabled === false) continue;
     const organizationId = String(master.organizationId || 'default');
-    const settingsRef = db.collection('recurringPaymentSettings').doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_'));
-    const settings = (await settingsRef.get()).data();
+    const settings = await loadSettings(organizationId);
     if (settings?.automation?.enabled === false) { disabled++; continue; }
     const orgToday = organizationToday(now, String(settings?.automation?.timezone || 'Asia/Kolkata'));
     // Each cycle carries its own generation date — the expected bill date minus the master's lead
@@ -153,7 +171,7 @@ export async function GET(request: Request) {
       // activating it would put a record nobody can open into somebody's workflow queue.
       if (payment.deleted || payment.currentStepId || ['Paid','Closed','Cancelled','Waived','Rejected'].includes(payment.status) || !payment.dueDate) continue;
       const organizationId = String(payment.organizationId || 'default');
-      const settings = (await db.collection('recurringPaymentSettings').doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')).get()).data();
+      const settings = await loadSettings(organizationId);
       const activationDays = Math.min(90, Math.max(0, Number(settings?.automation?.workflowActivationDays ?? 7)));
       const orgToday = organizationToday(now, String(settings?.automation?.timezone || 'Asia/Kolkata'));
       // Shared with the client-side generate actions rather than re-derived here, so an obligation
@@ -209,7 +227,7 @@ export async function GET(request: Request) {
     // passed its date — for a record the recipient cannot even open.
     if (payment.deleted || ['Paid','Closed','Cancelled','Waived'].includes(payment.status) || !payment.dueDate) continue;
     const organizationId = String(payment.organizationId || 'default');
-    const settings = (await db.collection('recurringPaymentSettings').doc(organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')).get()).data();
+    const settings = await loadSettings(organizationId);
     const notification = settings?.notifications;
     if (!notification) continue;
     const orgToday = organizationToday(now, String(settings?.automation?.timezone || 'Asia/Kolkata'));

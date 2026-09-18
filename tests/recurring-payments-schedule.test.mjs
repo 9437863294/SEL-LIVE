@@ -10,6 +10,8 @@ import {
   normalizeDueDateRule,
   pendingRecurringCycles,
   recurrenceLeadDays,
+  daysUntilDate,
+  paymentTiming,
 } from '../src/lib/recurring-payments-schedule.ts';
 // Workflow entry logic lives in its own dependency-free module for exactly this reason.
 import {
@@ -630,4 +632,62 @@ test('a prepaid first bill predating the master start is created on the start da
   assert.equal(first.expectedBillDate, '2026-03-02');
   assert.equal(first.generationDate, '2026-04-01');
   assert.ok(first.generationDate >= yearly.startDate);
+});
+
+/*
+ * paymentTiming — the grace-aware reading of an obligation's dates.
+ *
+ * The bug these pin: the register, the stage queue and the detail header each measured lateness
+ * from `dueDate` alone, so a payment inside its master's grace period was shown as overdue while
+ * `effectiveStatus` (and the reminder it triggered) still treated it as in good standing.
+ */
+test('a payment inside its grace period is late but not overdue', () => {
+  const timing = paymentTiming({ dueDate: '2026-09-10', overdueDate: '2026-09-15' }, asOf('2026-09-12'));
+  assert.equal(timing.daysUntilDue, -2);
+  assert.equal(timing.isOverdue, false, 'grace has not run out yet');
+  assert.equal(timing.withinGrace, true);
+  assert.equal(timing.label, '2 day(s) past due — in grace');
+});
+
+test('overdue is counted from the end of grace, not from the due date', () => {
+  const timing = paymentTiming({ dueDate: '2026-09-10', overdueDate: '2026-09-15' }, asOf('2026-09-18'));
+  assert.equal(timing.isOverdue, true);
+  assert.equal(timing.withinGrace, false);
+  assert.equal(timing.daysPastGrace, 3, 'three days past the end of grace, not eight past the due date');
+  assert.equal(timing.label, '3 day(s) overdue');
+});
+
+test('the last day of grace is still inside it', () => {
+  const timing = paymentTiming({ dueDate: '2026-09-10', overdueDate: '2026-09-15' }, asOf('2026-09-15'));
+  assert.equal(timing.isOverdue, false, 'the grace date itself is the last acceptable day');
+  assert.equal(timing.withinGrace, true);
+});
+
+test('an obligation with no grace date falls back to its due date', () => {
+  // Manual payments have no master, and obligations written before grace existed have no
+  // `overdueDate` — both must keep reading exactly as they always did.
+  const timing = paymentTiming({ dueDate: '2026-09-10' }, asOf('2026-09-12'));
+  assert.equal(timing.isOverdue, true);
+  assert.equal(timing.withinGrace, false);
+  assert.equal(timing.label, '2 day(s) overdue');
+});
+
+test('upcoming and same-day obligations read as due, never as late', () => {
+  assert.equal(paymentTiming({ dueDate: '2026-09-20' }, asOf('2026-09-18')).label, 'Due in 2 day(s)');
+  assert.equal(paymentTiming({ dueDate: '2026-09-18' }, asOf('2026-09-18')).label, 'Due today');
+  assert.equal(paymentTiming({ dueDate: '2026-09-18' }, asOf('2026-09-18')).isOverdue, false);
+});
+
+test('timing ignores the time of day it is evaluated at', () => {
+  // The helpers normalize to local midnight; a late-evening call must not round a day away.
+  const morning = paymentTiming({ dueDate: '2026-09-20' }, new Date('2026-09-18T00:05:00'));
+  const night = paymentTiming({ dueDate: '2026-09-20' }, new Date('2026-09-18T23:55:00'));
+  assert.equal(morning.daysUntilDue, 2);
+  assert.equal(night.daysUntilDue, 2);
+});
+
+test('daysUntilDate is a plain local-calendar day count', () => {
+  assert.equal(daysUntilDate('2026-09-18', asOf('2026-09-18')), 0);
+  assert.equal(daysUntilDate('2026-10-01', asOf('2026-09-18')), 13, 'counts across a month boundary');
+  assert.equal(daysUntilDate('2026-09-11', asOf('2026-09-18')), -7);
 });

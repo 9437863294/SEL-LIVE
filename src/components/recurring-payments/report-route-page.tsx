@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import {
   AlertTriangle,
@@ -120,11 +121,30 @@ function datePresets(today: string): Array<{ label: string; from: string }> {
   ];
 }
 
-export default function RecurringReportRoutePage({
-  kind,
-}: {
-  kind: ReportKind;
-}) {
+/**
+ * Initial filters from the URL, so a drill-down arrives pre-scoped.
+ *
+ * The dashboard's "Due This Week" tile has always linked here as `?days=7`, and this screen never
+ * read the query string — the tile counted seven days and then opened the full forecast, so the
+ * figure the user clicked was nowhere on the page they landed on. `days` is expressed as the
+ * today → today+N window the tile means; `from`/`to`/`status` are accepted too so any caller can
+ * hand over an explicit range.
+ */
+function filtersFromQuery(params: URLSearchParams, today: string) {
+  const days = Number(params.get("days") || 0);
+  const from = (params.get("from") || "").trim();
+  const to = (params.get("to") || "").trim();
+  return {
+    ...DEFAULT_FILTERS,
+    from: from || (days > 0 ? today : ""),
+    to: to || (days > 0 ? addDays(today, days) : ""),
+    status: (params.get("status") || "").trim() || "all",
+    category: (params.get("category") || "").trim() || "all",
+    vendor: (params.get("vendor") || "").trim() || "all",
+  };
+}
+
+function ReportRouteView({ kind }: { kind: ReportKind }) {
   const { user, users } = useAuth();
   const { can } = useAuthorization();
   const organizationId = user?.organizationId || "default";
@@ -133,7 +153,14 @@ export default function RecurringReportRoutePage({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const searchParams = useSearchParams();
+  // Read once as initial state; the filter card stays fully editable afterwards.
+  const [filters, setFilters] = useState(() =>
+    filtersFromQuery(
+      new URLSearchParams(searchParams?.toString() || ""),
+      recurringDateOnly(new Date()),
+    ),
+  );
   useEffect(
     () =>
       onSnapshot(
@@ -755,5 +782,14 @@ function Filter({
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+/** Suspense boundary for the query-string read — see the note on the payment register. */
+export default function RecurringReportRoutePage({ kind }: { kind: ReportKind }) {
+  return (
+    <Suspense fallback={<ReportLoading />}>
+      <ReportRouteView kind={kind} />
+    </Suspense>
   );
 }

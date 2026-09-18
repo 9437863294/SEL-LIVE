@@ -662,14 +662,25 @@ service cloud.firestore {
      * Reminder rows are written by the client when a meeting or task is saved, and consumed by the
      * cron route.
      *
-     * A user may read and write **their own** rows only. Without the `userId` pin, anyone able to
-     * write here could schedule a notification that appears to come from the system, addressed to
-     * anybody in the organisation.
+     * **Reads are pinned to the requester; writes deliberately are not.** An organizer scheduling a
+     * meeting has to write a reminder row for each participant, so a create rule that pinned
+     * `userId` to the requester would break the feature entirely. What the read pin buys is
+     * privacy: a user can see the reminders addressed to them and nobody else's, so this collection
+     * cannot be used to enumerate who is being reminded about what.
+     *
+     * The residual exposure is that a user who can open the module could create a reminder row
+     * addressed to somebody else, which the sweep would turn into a notification. It is bounded by
+     * the sweep only rendering copy from the entity the row points at — so the worst case is an
+     * unwanted reminder about a real meeting or task, not arbitrary text. Closing it properly needs
+     * a `get()` on the parent meeting to check the requester is its organizer; the trade is the same
+     * one described at the top of this block.
      */
     match /officeHubReminders/{reminderId} {
       allow get, list: if signedIn() && resource.data.userId == request.auth.uid;
       allow create: if canOpenOfficeHub()
-        && request.resource.data.userId is string;
+        && request.resource.data.userId is string
+        && request.resource.data.entityId is string
+        && request.resource.data.status == 'Scheduled';
       allow update: if signedIn() && resource.data.userId == request.auth.uid;
       allow delete: if false;
     }
@@ -713,10 +724,14 @@ service cloud.firestore {
      */
     match /officeHubCounters/{counterId} {
       allow get: if canOpenOfficeHub();
-      allow create, update: if canOpenOfficeHub()
+      // `resource` is null on a create, so that case is tested separately rather than through a
+      // property on it. The first allocation must start at 1; every later one must be exactly the
+      // stored value plus one, which is what stops two records being given the same reference.
+      allow create: if canOpenOfficeHub()
+        && request.resource.data.value == 1;
+      allow update: if canOpenOfficeHub()
         && request.resource.data.value is int
-        && request.resource.data.value > 0
-        && (!resource.exists || request.resource.data.value == resource.data.value + 1);
+        && request.resource.data.value == resource.data.value + 1;
       allow list, delete: if false;
     }
 

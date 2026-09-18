@@ -40,6 +40,12 @@ export function useAssignedWorkflowSteps() {
             .map((item) => item.data() as PaymentObligation)
             .filter(
               (payment) =>
+                // Deleting a payment mid-workflow leaves `currentStepId`/`assignees` in place, on
+                // purpose — the audit trail keeps showing where it stopped. Without this filter
+                // that hidden record still counted as assigned work, so its step stayed in the
+                // sidebar (and, through `hasAssignedWork`, could be the only thing granting a user
+                // the module at all) while the step page itself showed an empty queue.
+                payment.deleted !== true &&
                 !!payment.currentStepId &&
                 (payment.assignees || []).includes(userId) &&
                 !["Completed", "Rejected"].includes(payment.workflowStatus || ""),

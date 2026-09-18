@@ -486,3 +486,60 @@ export function describeRecurrence(master: RecurrenceRuleInput): string {
     `obligation created ${recurrenceLeadDays(master)} day(s) before the bill date`,
   ].join(' · ');
 }
+
+/** The two dates an obligation's timing is read from; a structural subset of `PaymentObligation`. */
+export interface ObligationTimingDates {
+  dueDate: string;
+  /** `dueDate` + the master's grace period. Absent on manual payments and pre-grace obligations. */
+  overdueDate?: string;
+}
+
+/**
+ * Whole days from `asOf` (default: today) to `date`; negative once the date has passed.
+ * Local-midnight on both sides, so it never drifts with the time of day it is called at.
+ */
+export function daysUntilDate(date: string, asOf: Date = new Date()): number {
+  const today = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
+  return Math.round((localDate(date).getTime() - today.getTime()) / DAY_MS);
+}
+
+/**
+ * How an obligation's timing reads to a user: days to its due date and — separately — whether it is
+ * actually late.
+ *
+ * Lateness is measured from `overdueDate` (due date + the master's grace period), so it agrees with
+ * `effectiveStatus`, which is the module's single definition of Overdue. The workflow-stage queue,
+ * the payment register and the payment detail header each carried their own copy of this arithmetic
+ * measured from `dueDate` alone, so a payment inside its grace period was labelled "2 day(s)
+ * overdue", in red, on a row whose own status column still showed it in good standing — and the
+ * reminder sent for that same payment said the opposite ("inside its grace period until …").
+ *
+ * The three states returned here are the three that reminder already distinguishes: due, late but
+ * covered by grace, and genuinely overdue.
+ */
+export function paymentTiming(payment: ObligationTimingDates, asOf: Date = new Date()): {
+  daysUntilDue: number;
+  daysPastGrace: number;
+  isOverdue: boolean;
+  /** True when the due date has passed but the master's grace period has not run out. */
+  withinGrace: boolean;
+  label: string;
+} {
+  const daysUntilDue = daysUntilDate(payment.dueDate, asOf);
+  const daysPastGrace = -daysUntilDate(payment.overdueDate || payment.dueDate, asOf);
+  const isOverdue = daysPastGrace > 0;
+  const withinGrace = daysUntilDue < 0 && !isOverdue;
+  return {
+    daysUntilDue,
+    daysPastGrace,
+    isOverdue,
+    withinGrace,
+    label: isOverdue
+      ? `${daysPastGrace} day(s) overdue`
+      : withinGrace
+        ? `${Math.abs(daysUntilDue)} day(s) past due — in grace`
+        : daysUntilDue === 0
+          ? 'Due today'
+          : `Due in ${daysUntilDue} day(s)`,
+  };
+}

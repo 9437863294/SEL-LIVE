@@ -27,9 +27,11 @@ import {
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
   DEFAULT_RECURRING_WORKFLOW,
   loadWorkingCalendar,
+  mergeRecurringPaymentSettings,
+  paymentTiming,
   PAYMENT_MODES,
-  resolveAssignees,
-  stepStatus,
+  recurringDateOnly,
+  routeRecurringWorkflow,
   type PaymentMode,
   type PaymentObligation,
   type RecurringPaymentSettings,
@@ -58,6 +60,8 @@ import ModuleTableCard from './module-table-card';
 import { useFieldControl, validateFieldControlRequirements, type RPFieldSetting } from './use-field-control';
 import { dispatchNotification } from '@/lib/notifications';
 import { ACTIVITY_MODULES } from '@/lib/activity-modules';
+import { syncRecurringPaymentApprovalInBackground } from '@/lib/recurring-payments-e-approval-service';
+import { PaymentEApprovalCard } from './e-approval-link-card';
 
 const FORWARD_ACTIONS = ['Submit Bill', 'Verify', 'Approve', 'Record Payment', 'Close', 'Create Expense Request'];
 const COMMENT_REQUIRED = ['Return for Correction', 'Reject', 'Dispute', 'On Hold', 'Payment Failed'];
@@ -119,15 +123,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
       }, () => setLoading(false));
       stopSettings = onSnapshot(doc(db, RP_COLLECTIONS.settings, organizationId.replace(/[^a-zA-Z0-9_-]/g, '_')), snapshot => {
         if (!snapshot.exists()) return;
-        const data = snapshot.data() as Partial<RecurringPaymentSettings>;
-        setSettings({
-          ...DEFAULT_RECURRING_PAYMENT_SETTINGS,
-          ...data,
-          organizationId,
-          notifications: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.notifications, ...data.notifications },
-          automation: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.automation, ...data.automation },
-          controls: { ...DEFAULT_RECURRING_PAYMENT_SETTINGS.controls, ...data.controls },
-        });
+        setSettings(mergeRecurringPaymentSettings(snapshot.data() as Partial<RecurringPaymentSettings>, organizationId));
       });
     })();
     return () => { stopPayments(); stopSettings(); };
@@ -259,8 +255,12 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
         expenseRequestNo = expenseResult.requestNo;
       }
 
+      // Abandoned cycles are excluded from the baseline: a bill that was cancelled, rejected or
+      // waived was never accepted as this vendor's normal charge, so letting it set "previous" or
+      // pull the 3/6-cycle average either raised a variance warning on a perfectly ordinary bill or
+      // — worse — suppressed one, by dragging the average toward an amount nobody approved.
       const historicalBills = payments
-        .filter(payment => payment.masterId === selected.masterId && payment.id !== selected.id && payment.dueDate < selected.dueDate && Number(payment.billAmount) > 0)
+        .filter(payment => payment.masterId === selected.masterId && payment.id !== selected.id && payment.dueDate < selected.dueDate && Number(payment.billAmount) > 0 && !['Cancelled', 'Rejected', 'Waived'].includes(payment.status))
         .sort((a, b) => b.dueDate.localeCompare(a.dueDate));
       const average = (items: PaymentObligation[]) => items.length ? items.reduce((sum, payment) => sum + Number(payment.billAmount || 0), 0) / items.length : undefined;
       const rawComparisons = {
@@ -337,85 +337,31 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           });
         }
 
-        let target: RecurringWorkflowStep | undefined;
-        let workflowStatus: PaymentObligation['workflowStatus'] = 'In Progress';
-        let status = (patch.status || current.status) as PaymentObligation['status'];
-        let currentStepId: string | null = stage.id;
-        let assignees = current.assignees || [];
-        let currentApprovalLevel = Number(current.currentApprovalLevel || 1);
-        let approvalCompletedBy = current.approvalCompletedBy || [];
-
-        const isApproval = stage.name.toLowerCase().includes('approval') && action === 'Approve' && current.approvalLevels?.length;
-        if (isApproval && current.approvalMode === 'Sequential' && currentApprovalLevel < current.approvalLevels!.length) {
-          currentApprovalLevel += 1;
-          assignees = [current.approvalLevels![currentApprovalLevel - 1]];
-          approvalCompletedBy = [...new Set([...approvalCompletedBy, user.id])];
-          destination = `${stage.name} · Level ${currentApprovalLevel}`;
-          notify = assignees;
-          advance = false;
-        } else if (isApproval && current.approvalMode === 'Parallel') {
-          approvalCompletedBy = [...new Set([...approvalCompletedBy, user.id])];
-          assignees = current.approvalLevels!.filter(id => !approvalCompletedBy.includes(id));
-          advance = assignees.length === 0;
-          if (!advance) {
-            destination = `${stage.name} · ${assignees.length} approval(s) remaining`;
-            notify = assignees;
-          }
-        }
-
-        if (advance) {
-          target = workflow[workflow.findIndex(item => item.id === stage.id) + 1];
-          if (action === 'Record Payment' && target && (target.name.toLowerCase().includes('receipt') || target.name.toLowerCase().includes('closure')) && current.finalAccountsVerification === false) target = undefined;
-          if (target) {
-            currentStepId = target.id;
-            const nextPayment = { ...current, ...patch, billAmount, currentApprovalLevel, approvalCompletedBy } as PaymentObligation;
-            assignees = resolveAssignees(target, nextPayment);
-            if (!assignees.length) throw new Error(`No assignee is configured for ${target.name}.`);
-            status = stepStatus(target);
-            destination = target.name;
-            destinationStepId = target.id;
-            notify = assignees;
-          } else {
-            workflowStatus = 'Completed';
-            status = 'Closed';
-            currentStepId = null;
-            assignees = [];
-            destination = 'Completed';
-            destinationStepId = '';
-          }
-        } else if (action === 'Return for Correction') {
-          target = workflow[Math.max(0, workflow.findIndex(item => item.id === stage.id) - 1)];
-          currentStepId = target.id;
-          const returningToApproval = target.name.toLowerCase().includes('approval');
-          if (returningToApproval) {
-            currentApprovalLevel = 1;
-            approvalCompletedBy = [];
-          }
-          assignees = resolveAssignees(target, { ...current, currentApprovalLevel, approvalCompletedBy });
-          if (!assignees.length) throw new Error(`No assignee is configured for ${target.name}.`);
-          status = stepStatus(target);
-          destination = target.name;
-          destinationStepId = target.id;
-          notify = assignees;
-        } else if (action === 'Reject') {
-          workflowStatus = 'Rejected';
-          status = 'Rejected';
-          currentStepId = null;
-          assignees = [];
-          destination = 'Rejected';
-          destinationStepId = '';
-        } else if (!FORWARD_ACTIONS.includes(action)) {
-          status = action === 'Dispute' ? 'Disputed' : action === 'Payment Failed' ? 'Payment Failed' : 'On Hold';
-        }
+        // Where the payment goes next, and who holds it — decided by the shared, unit-tested router
+        // in `recurring-payments-workflow.ts` rather than inline here, because the E-Approval mirror
+        // has to move a payment on exactly the same rules when an approver acts from that module.
+        const routed = routeRecurringWorkflow({
+          workflow,
+          step: stage,
+          action,
+          actorId: user.id,
+          advance,
+          baseStatus: (patch.status || current.status) as PaymentObligation['status'],
+          payment: { ...current, ...patch, billAmount } as PaymentObligation,
+        });
+        const { target } = routed;
+        destination = routed.stage;
+        destinationStepId = routed.destinationStepId;
+        notify = routed.notify;
 
         Object.assign(patch, {
-          workflowStatus,
-          status,
-          stage: destination,
-          currentStepId,
-          assignees,
-          currentApprovalLevel,
-          approvalCompletedBy,
+          workflowStatus: routed.workflowStatus,
+          status: routed.status,
+          stage: routed.stage,
+          currentStepId: routed.currentStepId,
+          assignees: routed.assignees,
+          currentApprovalLevel: routed.currentApprovalLevel,
+          approvalCompletedBy: routed.approvalCompletedBy,
           stepEnteredAt: Timestamp.now(),
           // Accounts for the org's configured working hours and holidays, not raw calendar time.
           workflowDeadline: target ? Timestamp.fromMillis(addBusinessHours(new Date(), Math.max(1, target.tat), workingHours, holidays).getTime()) : current.workflowDeadline || null,
@@ -449,6 +395,10 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
           link: destinationStepId ? `/recurring-payments/stage/${destinationStepId}` : '/recurring-payments/payments',
         },
       );
+      // Brings the mirrored approval into line — raising it if the bridge has only just been turned
+      // on, otherwise recording this step against it. A no-op when the bridge is off, and never a
+      // reason for the action above to be reported as failed: it is already committed.
+      syncRecurringPaymentApprovalInBackground(selected.id, user);
       toast({
         title: action === 'Create Expense Request' ? `Expense request ${expenseRequestNo} created` : `${action} completed`,
         description: destination === stage.name ? 'The item remains in your queue for the next action.' : `Moved to ${destination}.`,
@@ -481,8 +431,10 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-7 w-7 animate-spin" /></div>;
   if (!stage) return <Card><CardContent className="py-16 text-center"><AlertTriangle className="mx-auto mb-3 h-9 w-9 text-amber-500" /><p className="font-semibold">Workflow step not found</p></CardContent></Card>;
 
-  const dueSoon = pending.filter(payment => daysUntil(payment.dueDate) <= 3).length;
-  const overdue = pending.filter(payment => daysUntil(payment.dueDate) < 0).length;
+  const dueSoon = pending.filter(payment => paymentTiming(payment).daysUntilDue <= 3).length;
+  // Counted on the same rule the status column uses, so this tile can't say "Overdue: 2" about
+  // rows the register still shows as in good standing inside their grace period.
+  const overdue = pending.filter(payment => paymentTiming(payment).isOverdue).length;
   return <div className="space-y-5">
     <Card className="border-0 bg-gradient-to-r from-indigo-700 via-violet-700 to-purple-700 text-white"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs uppercase tracking-wider text-indigo-200">Recurring payment workflow · Step {stage.id}</p><h1 className="text-2xl font-bold">{stage.name}</h1><p className="mt-1 text-sm text-indigo-100">{stage.description}</p></div><div className="grid grid-cols-3 gap-2 text-center"><StageMetric label="My queue" value={pending.length} /><StageMetric label="Due ≤ 3 days" value={dueSoon} /><StageMetric label="Overdue" value={overdue} /></div></CardContent></Card>
     <Tabs defaultValue="pending"><TabsList><TabsTrigger value="pending">My pending tasks ({pending.length})</TabsTrigger><TabsTrigger value="completed">My completed tasks ({completed.length})</TabsTrigger></TabsList><TabsContent value="pending"><TaskTable rows={pending} stage={stage} title={`${stage.name} — awaiting my action`} description="Assigned to you and not yet actioned" onView={setSelected} onAction={(payment, nextAction) => { setSelected(payment); setAction(nextAction); }} /></TabsContent><TabsContent value="completed"><TaskTable rows={completed} stage={stage} title={`${stage.name} — actioned by me`} description="Payments you have already moved through this step" onView={setSelected} /></TabsContent></Tabs>
@@ -491,7 +443,7 @@ export default function ProfessionalRecurringWorkflowStage({ stageId }: { stageI
 }
 
 function TaskTable({ rows, stage, title, description, onView, onAction }: { rows: PaymentObligation[]; stage: RecurringWorkflowStep; title: string; description: string; onView: (payment: PaymentObligation) => void; onAction?: (payment: PaymentObligation, action: string) => void }) {
-  return <ModuleTableCard title={title} description={description} count={rows.length} countNoun="task"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Category</TableHead><TableHead>Vendor</TableHead><TableHead>Due date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Variance</TableHead><TableHead>SLA deadline</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.length ? rows.map(payment => <TableRow key={payment.id} className="cursor-pointer" onClick={() => onView(payment)}><TableCell className="whitespace-nowrap"><div className="flex items-center gap-2">{payment.varianceWarning && <AlertTriangle className="h-4 w-4 text-amber-500" />}<span className="font-medium">{payment.title}</span></div></TableCell><TableCell className="whitespace-nowrap">{payment.category}</TableCell><TableCell className="whitespace-nowrap">{payment.vendorName}</TableCell><TableCell className="whitespace-nowrap">{payment.dueDate}</TableCell><TableCell className={`whitespace-nowrap ${daysUntil(payment.dueDate) < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{dueLabel(payment.dueDate)}</TableCell><TableCell className="whitespace-nowrap text-right font-semibold">{currency(payment.billAmount || payment.expectedAmount)}</TableCell><TableCell className="whitespace-nowrap"><Badge variant={payment.varianceWarning ? 'destructive' : 'outline'}>{payment.varianceWarning ? `${Number(payment.variancePercent || 0).toFixed(1)}% variance` : 'Normal'}</Badge></TableCell><TableCell className="whitespace-nowrap text-muted-foreground">{formatTimestamp(payment.workflowDeadline)}</TableCell><TableCell className="whitespace-nowrap text-right">{onAction ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" onClick={event => event.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{stage.actions.map(item => <DropdownMenuItem key={item} onSelect={() => onAction(payment, item)}>{item}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu> : <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={9} className="h-36 text-center text-muted-foreground"><CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-400" />No tasks in this queue.</TableCell></TableRow>}</TableBody></Table></ModuleTableCard>;
+  return <ModuleTableCard title={title} description={description} count={rows.length} countNoun="task"><Table><TableHeader><TableRow><TableHead>Payment</TableHead><TableHead>Category</TableHead><TableHead>Vendor</TableHead><TableHead>Due date</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Variance</TableHead><TableHead>SLA deadline</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>{rows.length ? rows.map(payment => <TableRow key={payment.id} className="cursor-pointer" onClick={() => onView(payment)}><TableCell className="whitespace-nowrap"><div className="flex items-center gap-2">{payment.varianceWarning && <AlertTriangle className="h-4 w-4 text-amber-500" />}<span className="font-medium">{payment.title}</span></div></TableCell><TableCell className="whitespace-nowrap">{payment.category}</TableCell><TableCell className="whitespace-nowrap">{payment.vendorName}</TableCell><TableCell className="whitespace-nowrap">{payment.dueDate}</TableCell><TableCell className={`whitespace-nowrap ${paymentTiming(payment).isOverdue ? 'text-red-600' : paymentTiming(payment).withinGrace ? 'text-amber-600' : 'text-muted-foreground'}`}>{paymentTiming(payment).label}</TableCell><TableCell className="whitespace-nowrap text-right font-semibold">{currency(payment.billAmount || payment.expectedAmount)}</TableCell><TableCell className="whitespace-nowrap"><Badge variant={payment.varianceWarning ? 'destructive' : 'outline'}>{payment.varianceWarning ? `${Number(payment.variancePercent || 0).toFixed(1)}% variance` : 'Normal'}</Badge></TableCell><TableCell className="whitespace-nowrap text-muted-foreground">{formatTimestamp(payment.workflowDeadline)}</TableCell><TableCell className="whitespace-nowrap text-right">{onAction ? <DropdownMenu><DropdownMenuTrigger asChild><Button size="icon" variant="ghost" onClick={event => event.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{stage.actions.map(item => <DropdownMenuItem key={item} onSelect={() => onAction(payment, item)}>{item}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu> : <Button variant="ghost" size="icon"><Eye className="h-4 w-4" /></Button>}</TableCell></TableRow>) : <TableRow><TableCell colSpan={9} className="h-36 text-center text-muted-foreground"><CheckCircle2 className="mx-auto mb-2 h-8 w-8 text-emerald-400" />No tasks in this queue.</TableCell></TableRow>}</TableBody></Table></ModuleTableCard>;
 }
 
 function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSubmit, working, departments, accountHeads, subAccountHeads, submitBillField, activeChecklist, recordPaymentField, expenseField, commonField }: { payment: PaymentObligation | null; stage: RecurringWorkflowStep; action: string | null; canAct: boolean; onAction: (action: string | null) => void; onClose: () => void; onSubmit: (event: React.FormEvent<HTMLFormElement>) => void; working: boolean; departments: Department[]; accountHeads: AccountHead[]; subAccountHeads: SubAccountHead[]; submitBillField: (key: string) => RPFieldSetting; activeChecklist: { key: string; label: string; required: boolean; visible: boolean }[]; recordPaymentField: (key: string) => RPFieldSetting; expenseField: (key: string) => RPFieldSetting; commonField: (key: string) => RPFieldSetting }) {
@@ -504,13 +456,14 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
   const outstanding = Math.max(0, (payment.billAmount || payment.expectedAmount) - (payment.settledAmount || payment.paidAmount || 0));
   return <Dialog open onOpenChange={open => !open && onClose()}><DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{payment.title}</DialogTitle><DialogDescription>{payment.vendorName} · {stage.name}</DialogDescription></DialogHeader>
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Summary label="Expected" value={currency(payment.expectedAmount)} /><Summary label="Bill" value={currency(payment.billAmount || 0)} /><Summary label="Outstanding" value={currency(outstanding)} /><Summary label="Status" value={payment.status} /></div>
+    <PaymentEApprovalCard payment={payment} compact />
     {payment.varianceWarning && <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="h-5 w-5 shrink-0" /><div><p className="font-semibold">Amount variance requires review</p><p>{Number(payment.variancePercent || 0).toFixed(1)}% against baseline {currency(payment.varianceBaseline || payment.expectedAmount)}{payment.amountLimitExceeded&&payment.maximumAmount?` and above the ${currency(payment.maximumAmount)} master limit`:''}. Verification and approval comments are mandatory.</p></div></div>}
     <div><Label>Workflow history</Label><div className="mt-2 max-h-48 space-y-2 overflow-y-auto">{(payment.workflowHistory || []).map((item, index) => <div key={index} className="flex gap-3 rounded-lg border p-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 text-indigo-500" /><div><p className="font-medium">{item.action} · {item.stepName}</p><p className="text-xs text-muted-foreground">{item.userName}{item.comment ? ` — ${item.comment}` : ''} · {formatTimestamp(item.timestamp)}</p></div></div>)}{!(payment.workflowHistory || []).length && <p className="text-sm text-muted-foreground">Workflow has just started.</p>}</div></div>
     {canAct && (!action ? <div className="flex flex-wrap gap-2 border-t pt-4">{stage.actions.map(item => <Button key={item} variant={['Reject', 'Payment Failed'].includes(item) ? 'destructive' : 'default'} onClick={() => onAction(item)}>{item}</Button>)}</div> : <form onSubmit={onSubmit} className="space-y-4 border-t pt-4"><p className="font-semibold">Action: {action}</p>
-      {action === 'Submit Bill' && <div className="grid gap-3 sm:grid-cols-3"><ControlledField setting={submitBillField('billNumber')}><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></ControlledField><ControlledField setting={submitBillField('billReceivedDate')}><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || new Date().toISOString().slice(0, 10)} required /></ControlledField><ControlledField setting={submitBillField('billAmount')}><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField></div>}
+      {action === 'Submit Bill' && <div className="grid gap-3 sm:grid-cols-3"><ControlledField setting={submitBillField('billNumber')}><Input name="billNumber" defaultValue={payment.billNumber || ''} required /></ControlledField><ControlledField setting={submitBillField('billReceivedDate')}><Input name="billReceivedDate" type="date" defaultValue={payment.billReceivedDate || recurringDateOnly(new Date())} required /></ControlledField><ControlledField setting={submitBillField('billAmount')}><Input name="billAmount" type="number" min="0.01" step="0.01" defaultValue={payment.billAmount || payment.expectedAmount} required /></ControlledField></div>}
       {action === 'Verify' && <div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div><p className="font-semibold">Bill verification checklist</p><p className="text-xs text-muted-foreground">Confirm every required control. The completed checklist is captured in the audit record.</p></div><div className="grid gap-3 sm:grid-cols-2">{activeChecklist.map(item => <label key={item.key} className="flex items-start gap-2 rounded-lg border bg-background p-3 text-sm"><Checkbox name="verificationChecklist" value={item.label} required={item.required} className="mt-0.5" /><span>{item.label}{item.required && <span className="text-destructive"> *</span>}</span></label>)}</div></div>}
       {action === 'Record Payment' && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <ControlledField setting={recordPaymentField('paymentDate')}><Input name="paymentDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></ControlledField>
+        <ControlledField setting={recordPaymentField('paymentDate')}><Input name="paymentDate" type="date" defaultValue={recurringDateOnly(new Date())} required /></ControlledField>
         <ControlledField setting={recordPaymentField('paymentAmount')}><Input name="paymentAmount" type="number" min="0.01" step="0.01" max={outstanding || undefined} required /></ControlledField>
         {recordPaymentField('mode').visible && <ControlledField setting={recordPaymentField('mode')}><Select name="mode" value={paymentMode} onValueChange={value => setPaymentMode(value as PaymentMode)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{PAYMENT_MODES.map(mode => <SelectItem value={mode} key={mode}>{mode}</SelectItem>)}</SelectContent></Select></ControlledField>}
         {/* Bank account and UTR/transaction reference only apply once money actually moves
@@ -546,7 +499,9 @@ function ActionDialog({ payment, stage, action, canAct, onAction, onClose, onSub
 
 function StageMetric({ label, value }: { label: string; value: number }) { return <div className="min-w-20 rounded-xl bg-white/15 px-3 py-2"><p className="text-lg font-bold">{value}</p><p className="text-[10px] text-indigo-100">{label}</p></div>; }
 function Summary({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border bg-muted/20 p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="font-semibold">{value}</p></div>; }
-function timestampDateOnly(value: unknown) { const data = value as { toDate?: () => Date; seconds?: number } | null | undefined; const date = data?.toDate ? data.toDate() : data?.seconds ? new Date(data.seconds * 1000) : null; return date ? date.toISOString().slice(0, 10) : ''; }
-function daysUntil(value: string) { const due = new Date(`${value}T00:00:00`); const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); return Math.round((due.getTime() - today.getTime()) / 86_400_000); }
-function dueLabel(value: string) { const days = daysUntil(value); return days < 0 ? `${Math.abs(days)} day(s) overdue` : days === 0 ? 'Due today' : `Due in ${days} day(s)`; }
+// `recurringDateOnly`, not `toISOString()`: the approval is compared against a `<input type="date">`
+// value, which is a *local* calendar date. Deriving the approval's date in UTC made them different
+// calendars — in IST an approval recorded before 05:30 reported the previous day, so the "payment
+// date cannot be before the approval date" guard silently let a backdated payment through.
+function timestampDateOnly(value: unknown) { const data = value as { toDate?: () => Date; seconds?: number } | null | undefined; const date = data?.toDate ? data.toDate() : data?.seconds ? new Date(data.seconds * 1000) : null; return date ? recurringDateOnly(date) : ''; }
 function formatTimestamp(value: unknown) { const data = value as { toDate?: () => Date; seconds?: number } | null; if (data?.toDate) return data.toDate().toLocaleString('en-IN'); if (data?.seconds) return new Date(data.seconds * 1000).toLocaleString('en-IN'); return '—'; }
