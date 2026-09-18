@@ -801,6 +801,73 @@ export const permissionModules = {
     "View Module": [],
     Vendors: ["View", "Add", "Edit", "Delete"],
   },
+  // Meetings, calendar, teams, tasks, decisions and minutes (`docs/office-hub.md`).
+  //
+  // Note what is *not* here, for the same reason E-Approval's block says it: there is no permission
+  // an organizer needs in order to run their own meeting. Organising a meeting is the authority over
+  // it — its agenda, its attendance, its minutes — and the same reading applies to a task's assignee
+  // and a decision's owner. These permissions decide who may *raise* meetings and tasks, how widely
+  // somebody can *see* other people's, and who administers the module. The relationship half of every
+  // check lives in `src/lib/office-hub-permissions.ts`.
+  //
+  // The spec's shorthand maps onto these one for one: `meeting.create` is
+  // `can('Create', 'Office Hub.Meetings')`, `task.assign` is `can('Assign', 'Office Hub.Tasks')`,
+  // and so on.
+  "Office Hub": {
+    "View Module": [],
+    Dashboard: ["View"],
+    Calendar: ["View", "Reschedule"],
+    Meetings: [
+      "View",
+      // Three widening grants rather than one. "View" is your own meetings; the other three are
+      // other people's, and they are the ones that need deciding per role.
+      "View Team",
+      "View Department",
+      "View All",
+      "Create",
+      "Edit",
+      "Cancel",
+      "Reschedule",
+      "Manage Participants",
+      // Scheduling a meeting in somebody else's name (§9). Separate because it lets the holder put
+      // a Director's name on a meeting the Director has not seen.
+      "Change Organizer",
+      "Export",
+    ],
+    Agenda: ["View", "Add", "Edit", "Delete"],
+    Attendance: ["View", "Record", "Export"],
+    // "Review" and "Approve" are separate grants, and the module additionally refuses to let one
+    // person hold both signatures on the same minutes — see `canAdvanceMinutes`.
+    Minutes: ["View", "Prepare", "Review", "Approve", "Publish", "Export"],
+    Decisions: ["View", "View All", "Create", "Edit", "Close", "Export"],
+    "Action Items": ["View", "Create", "Edit", "Complete", "Convert to Task"],
+    Tasks: [
+      "View",
+      "View Team",
+      "View Department",
+      "View All",
+      "Create",
+      "Edit",
+      "Assign",
+      "Complete",
+      // Removes a task and its comment thread. Nobody's by default; the deletion is a soft delete
+      // and is written to the central activity trail either way (§83).
+      "Delete",
+      "Comment",
+      "Export",
+    ],
+    Teams: ["View", "Create", "Edit", "Manage Members", "Change Leader", "Archive"],
+    // The directory is a *read* over the existing `employees` and `users` masters plus this module's
+    // work rollups. "Import" is the one write, and it is scoped to Office Hub's own profile fields.
+    Employees: ["View", "Import", "Export"],
+    Documents: ["View", "Upload", "Download", "Delete"],
+    Reports: ["View", "Export"],
+    Workload: ["View"],
+    // §73's management-only page. Operational facts, never a ranking.
+    "Management Overview": ["View"],
+    Templates: ["View", "Add", "Edit", "Delete"],
+    Settings: ["View", "Edit"],
+  },
   "Site Account Statement": {
     "View Module": [],
     "All Projects": ["View"],

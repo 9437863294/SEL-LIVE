@@ -492,19 +492,12 @@ export interface EApprovalStepRecord {
   mandatory?: boolean;
   capabilities?: EApprovalStepCapabilities;
   /**
-   * This stage is *work to be performed*, not a judgement on the proposal — so `skipSelfApprovalSteps`
-   * leaves it alone even when it lands on the requester.
+   * This stage is the requester's own work, not an approval of it — uploading the signed copy,
+   * collecting the vendor's bill — so `skipSelfApprovalSteps` leaves it alone.
    *
-   * Two kinds of stage need it, and without it that setting is too blunt to tell either from an
-   * ordinary approval: they all look identical to the engine — assigned to the requester, sitting in
-   * the primary chain.
-   *
-   *   - The requester's own task: uploading the signed copy, collecting the vendor's bill. "Don't
-   *     make somebody approve their own file" and "don't make somebody do the job they were given"
-   *     are opposite instructions.
-   *   - Any stage mirroring another module's workflow (see `e-approval-link.ts`). Skipping one of
-   *     those does not just tick a box here — the reconciler carries the source record through the
-   *     matching step there, past controls that step exists to enforce.
+   * Without the distinction that setting is too blunt: "don't make somebody approve their own file"
+   * and "don't make somebody do the task they were assigned" are opposite instructions, and both
+   * stages look identical to the engine — assigned to the requester, sitting in the primary chain.
    */
   requesterMustAct?: boolean;
   /** True once this step has been re-opened by a return, so the timeline can mark it. */
@@ -546,20 +539,6 @@ export interface EApprovalReassignment {
   to: EApprovalAssignment;
   reason?: string;
 }
-
-/**
- * How each kind of move is worded.
- *
- * Here rather than in the timeline component because the printed approval note has to word it the
- * same way the screen does — the note is the document that gets signed and filed, and a movement
- * described as "Forwarded" on screen and "Reassigned" on paper is two accounts of one event.
- */
-export const E_APPROVAL_REASSIGNMENT_VERBS: Record<EApprovalReassignment['kind'], string> = {
-  Forward: 'Forwarded',
-  Delegate: 'Delegated',
-  Escalate: 'Escalated',
-  Reassign: 'Reassigned',
-};
 
 /* ------------------------------------------------------------------------------------------------
  * Request state
@@ -661,24 +640,6 @@ export interface EApprovalSettings {
   /** Whether an approver may return to any earlier step, or only to the requester. */
   allowReturnToAnyStep: boolean;
   /**
-   * Whether a return travels back through the requester before it resumes.
-   *
-   * A return is a request for a correction, and the proposal is the requester's to correct —
-   * `canEditEApprovalRequest` gives nobody else that power, so a file returned straight to an earlier
-   * approver arrived with somebody who could read the objection but not act on it. They would
-   * approve it unchanged or return it again to the author, which is the trip this setting makes
-   * directly.
-   *
-   * On (the default), a return of either kind parks the whole chain with the requester and remembers
-   * the chosen step in `returnResumeStepId`. The requester revises, resubmits, and the file resumes
-   * at exactly the step the returner chose — so "return to Finance" still means Finance sees it next,
-   * with the correction Finance asked for already made.
-   *
-   * Off, a return to an earlier step re-activates that step immediately, which is the behaviour the
-   * module shipped with. Returning to the requester parks the chain either way.
-   */
-  returnViaRequester: boolean;
-  /**
    * Whether a primary-chain stage that lands on the requester themselves is completed automatically
    * rather than parked in their own inbox.
    *
@@ -722,17 +683,12 @@ export const DEFAULT_E_APPROVAL_SETTINGS: EApprovalSettings = {
   // approved — an approver who signed "purchase 10 helmets" has not approved "purchase 10 vehicles".
   materialFields: ['subject', 'body', 'amount', 'departmentId', 'projectId', 'attachmentsFingerprint'],
   amountTolerancePct: 0,
-  // The step that returned the file, not the first one. A material change does void every approval
-  // given against the old content — that part is not negotiable and still happens — but sending the
-  // file back to stage one afterwards means a correction the fourth approver asked for costs the
-  // three signatures before it, every time. Set to 'First Step' where full re-approval is required.
-  restartOnMaterialChange: 'Returning Step',
+  restartOnMaterialChange: 'First Step',
   defaultSlaHours: 24,
   allowApproveAndComplete: true,
   allowNestedVerification: true,
   maxVerificationDepth: 4,
   allowReturnToAnyStep: true,
-  returnViaRequester: true,
   skipSelfApprovalSteps: true,
   escalationLadder: [],
   confidentialRoles: [],
@@ -2175,39 +2131,11 @@ export interface EApprovalActor {
   delegations?: EApprovalDelegation[];
 }
 
-/**
- * The departments and projects an actor stands for, derived once per actor object.
- *
- * Both were recomputed on every call — each one building a `Set` and then an `Array` from it — and
- * both are called *per row*, from `rowIsWithActor`, `canViewEApproval` and the assignee checks. On a
- * register of a few hundred approvals that is a few thousand throwaway allocations for a list of two
- * or three strings that cannot have changed: an `EApprovalActor` is built once by
- * `loadEApprovalActorContext` and never mutated afterwards (the engine copies rather than edits it),
- * so the derivation is a pure function of an immutable object.
- *
- * A `WeakMap` rather than a `Map`, so holding the cache never holds the actor alive — the entry goes
- * when the actor does, which for the browser is on every context refresh.
- */
-const actorDepartmentCache = new WeakMap<EApprovalActor, string[]>();
-const actorProjectCache = new WeakMap<EApprovalActor, string[]>();
+const actorDepartments = (actor: EApprovalActor): string[] =>
+  Array.from(new Set([actor.departmentId, ...(actor.departmentIds ?? [])].filter(Boolean) as string[]));
 
-const actorDepartments = (actor: EApprovalActor): string[] => {
-  const cached = actorDepartmentCache.get(actor);
-  if (cached) return cached;
-  const value = Array.from(
-    new Set([actor.departmentId, ...(actor.departmentIds ?? [])].filter(Boolean) as string[]),
-  );
-  actorDepartmentCache.set(actor, value);
-  return value;
-};
-
-const actorProjects = (actor: EApprovalActor): string[] => {
-  const cached = actorProjectCache.get(actor);
-  if (cached) return cached;
-  const value = Array.from(new Set((actor.projectIds ?? []).filter(Boolean)));
-  actorProjectCache.set(actor, value);
-  return value;
-};
+const actorProjects = (actor: EApprovalActor): string[] =>
+  Array.from(new Set((actor.projectIds ?? []).filter(Boolean)));
 
 /**
  * Whether `actor` may act on `step`.
@@ -2342,33 +2270,6 @@ export function canSignEApprovalDocument(request: Pick<EApprovalRequestState, 's
 }
 
 /**
- * Whether an attachment may be removed from this request outright.
- *
- * **Draft only, and only by its author.** A draft is unsubmitted and unseen: no approver has read the
- * file, no decision rests on it, and it has no reference number. Attaching the wrong quotation there
- * is a slip to undo, not a fact to preserve — and "attachments are never removed" turning a
- * mis-drop into a permanent fixture of a note-sheet nobody has even sent is the rule being applied
- * past the point where it protects anything.
- *
- * Everything past Draft keeps the existing behaviour, and deliberately:
- *
- *   - On a **returned** request the intended path is a revision, not a deletion —
- *     `supersedesAttachmentId` exists for exactly that, and puts the new file beside the original so
- *     the record still shows what the approvers actually saw.
- *   - Hard-deleting a file an approver has seen would also leave the version snapshot's
- *     `attachmentsFingerprint` naming a document that no longer exists, which is an audit trail
- *     pointing at nothing.
- *   - On a live or closed request it is the trail itself, and not the requester's to edit.
- */
-export function canRemoveEApprovalAttachment(
-  request: Pick<EApprovalRequestState, 'status' | 'requesterId'>,
-  actor: Pick<EApprovalActor, 'userId'> | null | undefined,
-): boolean {
-  if (!actor?.userId || request.requesterId !== actor.userId) return false;
-  return request.status === 'Draft';
-}
-
-/**
  * Whether `actor` may edit the content of this request.
  *
  * A **draft** is its author's own unsubmitted working copy: nobody else has seen it, no approval
@@ -2394,78 +2295,6 @@ export function canEditEApprovalRequest(
   if (request.status === 'Draft') return true;
   if (request.status === 'Returned') return Boolean(options.canEdit);
   return false;
-}
-
-/**
- * The two kinds of deletion, which are not the same act wearing different hats.
- *
- * **Draft** — a requester binning something they never submitted. Nobody has seen it, no approval was
- * given against it, and there is no trail to protect.
- *
- * **Administrative** — somebody with `Requests → Delete` removing a file that *has* been in flight.
- * This destroys approvals people actually gave, so it is a separate grant, it demands a reason, and
- * the reason is written to the central activity log before anything is touched.
- */
-export type EApprovalDeleteKind = 'Draft' | 'Administrative';
-
-export interface EApprovalDeleteDecision {
-  allowed: boolean;
-  kind: EApprovalDeleteKind | null;
-  /** Why not, phrased for the person who tried. Absent when allowed. */
-  reason?: string;
-}
-
-/**
- * Whether `actor` may delete a request outright, and under which of the two authorities.
- *
- * Deliberately separate from Cancel. Cancelling closes a file and leaves it on the record — which is
- * the right answer almost always, and the reason the module offered no delete beyond drafts until
- * now. Deleting removes the request *and its whole workflow*: the steps, the history, the comments,
- * the attachments and the superseded versions. There is no undo, because there is nothing left to
- * undo from.
- *
- * The draft rule is checked first so a requester deleting their own unsubmitted draft is reported as
- * the mild act it is, even when they also hold the administrative grant — the confirmation they see
- * should not threaten them with destroying an audit trail that does not exist yet.
- *
- * Permissions arrive as flags rather than being read here, exactly as `canReverseEApprovalAction`
- * and `canManageEApprovalDelegationFor` take theirs: the engine has no notion of roles, and the role
- * resolver is a React hook.
- */
-export function canDeleteEApprovalRequest(
-  request: Pick<EApprovalRequestState, 'status' | 'requesterId'>,
-  actor: Pick<EApprovalActor, 'userId'> | null | undefined,
-  permissions: { canDeleteDraft?: boolean; canDeleteAny?: boolean } = {},
-): EApprovalDeleteDecision {
-  if (!actor?.userId) {
-    return { allowed: false, kind: null, reason: 'You must be signed in to delete an approval.' };
-  }
-
-  const own = request.requesterId === actor.userId;
-  // Checked first, and *falling through* rather than refusing when the grant is absent: somebody who
-  // holds the administrative grant but not this one must not be blocked from binning their own
-  // untouched draft, having just been trusted to delete other people's approved files.
-  if (own && request.status === 'Draft' && permissions.canDeleteDraft) {
-    return { allowed: true, kind: 'Draft' };
-  }
-
-  if (permissions.canDeleteAny) return { allowed: true, kind: 'Administrative' };
-
-  if (request.status === 'Draft') {
-    return {
-      allowed: false,
-      kind: null,
-      reason: own
-        ? 'Deleting a draft needs the “Requests → Delete Draft” permission.'
-        : 'Only the person who raised this draft can delete it.',
-    };
-  }
-
-  return {
-    allowed: false,
-    kind: null,
-    reason: `A ${request.status.toLowerCase()} approval has already been seen by its approvers. Cancel it instead, which closes it and keeps the record — or ask somebody with the “Requests → Delete” permission if it genuinely has to be removed.`,
-  };
 }
 
 /**
@@ -4100,8 +3929,8 @@ export function applyEApprovalAction(
         throw new EApprovalRuleError(`"${target.name}" is not a step this approval can be returned to.`);
       }
 
-      // Everything between the target and the returning step is re-opened either way, so the chain
-      // runs forward in its original order rather than jumping back to the returner.
+      // The target acts again now; everything between it and the returning step is re-opened so the
+      // chain runs forward in its original order rather than jumping back to the returner.
       primaryEApprovalSteps(steps)
         .filter((candidate) => candidate.sequence > target.sequence && candidate.sequence <= step.sequence)
         .forEach((candidate) => {
@@ -4110,59 +3939,17 @@ export function applyEApprovalAction(
           reopenStep(candidate);
         });
       if (step.depth === 0) reopenStep(step);
-      if (target.depth === 0) reopenStep(target);
-      else unpauseStep(target, now);
+      if (target.depth === 0) {
+        reopenStep(target);
+        activateStep(target, now, target.slaHours);
+      } else {
+        unpauseStep(target, now);
+      }
       target.returnedFromStepId = step.id;
       target.reopened = true;
+      request.status = 'Returned';
       request.returnedByStepId = step.id;
       request.returnReason = input.reason ?? input.comment;
-      request.status = 'Returned';
-
-      /*
-       * Via the requester, unless the organisation has turned that off.
-       *
-       * The correction being asked for is to the proposal, and the proposal is the requester's alone
-       * to change — so handing the file straight back to an earlier approver gave it to somebody who
-       * could read the objection and do nothing about it. See `returnViaRequester`.
-       */
-      if (settings.returnViaRequester !== false) {
-        primaryEApprovalSteps(steps)
-          .filter((candidate) => isOpenEApprovalStepStatus(candidate.status))
-          .forEach((candidate) => {
-            candidate.status = 'Pending';
-            candidate.startedAt = null;
-            candidate.dueAt = null;
-          });
-        // Where it picks up once the requester resubmits — the step the returner actually chose.
-        request.returnResumeStepId = target.depth === 0 ? target.id : null;
-        pushEvent({
-          ...onBehalfOf,
-          kind: 'Return',
-          stepId: step.id,
-          stepName: step.name,
-          stepType: step.type,
-          targetStepId: target.id,
-          targetStepName: target.name,
-          outcome: 'Returned',
-          reason: input.reason,
-          comment: input.comment,
-          summary: `Returned to the requester by ${actorLabel(actor)} for correction, to resume at "${
-            target.name
-          }" — ${input.reason || input.comment}`,
-        });
-        notifications.push({
-          kind: 'Returned',
-          userIds: [request.requesterId],
-          title: 'Approval returned',
-          body: `${describeEApprovalSubject(request)} was returned by ${actorLabel(actor)} for correction: ${
-            input.reason || input.comment || 'see comments'
-          }. Once you resubmit it, it resumes at "${target.name}".`,
-          severity: 'WARNING',
-        });
-        break;
-      }
-
-      if (target.depth === 0) activateStep(target, now, target.slaHours);
       pushEvent({
         ...onBehalfOf,
         kind: 'Return',
@@ -4667,50 +4454,10 @@ export function eApprovalWorkQueue<T extends EApprovalWorkRow>(
   now: string | Date = new Date(),
 ): EApprovalWorkQueue<T> {
   const at = parseEApprovalDate(now) ?? new Date();
-  /*
-   * Sorted on keys read off each row once, rather than by calling `compareEApprovalUrgency` from
-   * inside the comparator.
-   *
-   * The comparator parses `now` and both rows' `currentDueAt` and `submittedAt` every time it runs,
-   * and a sort runs its comparator O(n log n) times — so ordering three hundred approvals meant
-   * several thousand date parses to answer questions about thirty distinct dates. The ordering is
-   * unchanged: the block below is `compareEApprovalUrgency` with its inputs hoisted, including the
-   * "only when both are set" guard on the due comparison, and `compareEApprovalUrgency` itself stays
-   * exported for callers that compare two rows on their own.
-   */
-  const atMs = at.getTime();
   const mine = rows
     .filter((row) => isOpenEApprovalStatus(row.status))
     .filter((row) => rowIsWithActor(row, actor))
-    .map((row) => {
-      const due = millis(row.currentDueAt);
-      return {
-        row,
-        band: E_APPROVAL_URGENCIES.indexOf(
-          due == null
-            ? 'No Clock'
-            : due - atMs < 0
-              ? 'Overdue'
-              : due - atMs <= DAY
-                ? 'Due Today'
-                : due - atMs <= 3 * DAY
-                  ? 'Due Soon'
-                  : 'On Track',
-        ),
-        due,
-        priority: priorityRank[row.priority ?? 'Normal'] ?? 2,
-        amount: row.amount ?? 0,
-        age: millis(row.submittedAt) ?? Number.MAX_SAFE_INTEGER,
-      };
-    })
-    .sort((a, b) => {
-      if (a.band !== b.band) return a.band - b.band;
-      if (a.due != null && b.due != null && a.due !== b.due) return a.due - b.due;
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      if (a.amount !== b.amount) return b.amount - a.amount;
-      return a.age - b.age;
-    })
-    .map((entry) => entry.row);
+    .sort((a, b) => compareEApprovalUrgency(a, b, at));
   const byUrgency: Record<EApprovalUrgency, number> = { Overdue: 0, 'Due Today': 0, 'Due Soon': 0, 'On Track': 0, 'No Clock': 0 };
   const byKind: Record<EApprovalWorkKind, number> = { Approval: 0, Verification: 0, Clarification: 0, Correction: 0 };
   let valuePending = 0;

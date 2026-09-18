@@ -321,3 +321,16 @@ export function DocumentIcon(props: ModuleIconProps) {
     </Base>
   );
 }
+
+/** Office Hub — a calendar page with a ticked day, for meetings that end in action. */
+export function CalendarBoardIcon(props: ModuleIconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <line x1="3" y1="9.5" x2="21" y2="9.5" />
+      <line x1="8" y1="3" x2="8" y2="6" />
+      <line x1="16" y1="3" x2="16" y2="6" />
+      <path d="M8.5 15.2 10.4 17 14.5 12.8" />
+    </Base>
+  );
+}

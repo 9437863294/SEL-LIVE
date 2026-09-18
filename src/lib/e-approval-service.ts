@@ -30,9 +30,7 @@ import { dispatchNotification } from '@/lib/notifications';
 import {
   applyEApprovalAction,
   buildEApprovalSteps,
-  canDeleteEApprovalRequest,
   canManageEApprovalDelegationFor,
-  canRemoveEApprovalAttachment,
   canRecallEApprovalAction,
   canSignEApprovalDocument,
   canReverseEApprovalAction,
@@ -76,7 +74,6 @@ import {
   type EApprovalRuleRecord,
   type EApprovalSettingsRecord,
   type EApprovalSignatureRecord,
-  type EApprovalSourceLink,
   type EApprovalStatus,
   type EApprovalStep,
   type EApprovalStepRecord,
@@ -90,11 +87,6 @@ import {
   type EApprovalWorkflowNote,
 } from '@/lib/e-approval';
 import type { EApprovalSignaturePosition } from '@/lib/e-approval-pdf-signing';
-import {
-  eApprovalHtmlIsEmpty,
-  eApprovalHtmlToText,
-  eApprovalHtmlWithinLimit,
-} from '@/lib/e-approval-rich-text';
 
 /**
  * Write-side service for the E-Approval module.
@@ -194,109 +186,6 @@ const scopeQuery = (organizationId?: string) =>
   organizationId ? [where('organizationId', '==', organizationId)] : [];
 
 /* ------------------------------------------------------------------------------------------------
- * Configuration read cache
- *
- * Everything in this section is *configuration* — approval types, workflow templates, the matrix,
- * department and project routing, delegations, the settings document and the organisation's
- * department/project/role masters. All of it is read constantly and changes perhaps weekly.
- *
- * Before this cache existed the module re-read it continuously and visibly:
- *
- *   - Opening the module read `departments` twice and `eApprovalProjectRouting` twice, because the
- *     actor context and the directory each fetched their own copy of both.
- *   - **Every approve/reject/forward** re-read four whole collections before it could write, because
- *     `performEApprovalAction` rebuilds the actor context from scratch — so clearing ten files from
- *     the inbox cost forty collection reads nobody had asked for.
- *   - Every report page re-read up to 18,000 documents on mount, so moving between the seven report
- *     screens re-fetched the entire reporting corpus each time.
- *
- * Two properties make this safe rather than merely fast:
- *
- *   1. **Every write through this service clears it.** `invalidateEApprovalCache()` is called by each
- *     config write below, so a screen that saves and reloads always sees its own change. The window
- *     of staleness is only ever against *another* user's edit.
- *   2. **A failed read is never cached.** The entry is dropped on rejection, so one offline moment
- *     does not pin an error for the next half minute.
- *
- * The TTL is deliberately short. Thirty seconds is long enough to collapse the burst of reads a
- * screen makes on mount — and every action makes while the user works through an inbox — and short
- * enough that an administrator's routing change reaches everybody else within one screen refresh.
- * ---------------------------------------------------------------------------------------------- */
-
-const E_APPROVAL_CACHE_TTL_MS = 30_000;
-
-/** The reporting corpus is far more expensive to fetch and far less sensitive to being a minute old. */
-const E_APPROVAL_ANALYTICS_TTL_MS = 60_000;
-
-const configCache = new Map<string, { at: number; value: Promise<unknown> }>();
-
-/**
- * One in-flight read per key, reused for `ttlMs` after it resolves.
- *
- * The promise is cached rather than its result, so ten callers that ask at once share a single round
- * trip instead of starting ten — which is the case that matters on mount, where the actor context,
- * the directory and the first screen all ask for the same collections in the same tick.
- */
-function cachedRead<T>(
-  key: string,
-  load: () => Promise<T>,
-  options: { ttlMs?: number; force?: boolean } = {},
-): Promise<T> {
-  const ttlMs = options.ttlMs ?? E_APPROVAL_CACHE_TTL_MS;
-  const existing = configCache.get(key);
-  if (!options.force && existing && Date.now() - existing.at < ttlMs) return existing.value as Promise<T>;
-  const value = load().catch((error) => {
-    // A rejection must not be served for the rest of the window — see property 2 above.
-    if (configCache.get(key)?.value === value) configCache.delete(key);
-    throw error;
-  });
-  configCache.set(key, { at: Date.now(), value });
-  return value;
-}
-
-/**
- * Drops cached configuration.
- *
- * Called with no argument by every config write in this file. Clearing everything rather than the
- * one key that changed is deliberate: config writes happen on administration screens a few times a
- * week, and "which of the eleven keys does saving a project routing invalidate?" is precisely the
- * question a cache should not make anybody answer. Exported so a caller that writes one of these
- * collections by another route can say so.
- */
-export function invalidateEApprovalCache(keyPrefix?: string): void {
-  if (!keyPrefix) {
-    configCache.clear();
-    return;
-  }
-  for (const key of Array.from(configCache.keys())) {
-    if (key.startsWith(keyPrefix)) configCache.delete(key);
-  }
-}
-
-/** Every document in a collection, id included. Used for the org-wide masters this module reads. */
-const readWholeCollection = async (name: string): Promise<Array<Record<string, unknown> & { id: string }>> => {
-  const snapshot = await getDocs(collection(db, name));
-  return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
-};
-
-/**
- * The organisation's department / project / role masters.
- *
- * Exposed from the service — rather than each screen calling `getDocs(collection(db, 'departments'))`
- * itself — so the module reads each of them once per window instead of once per caller. A fresh array
- * is handed out every time because callers sort and filter what they are given, and an in-place
- * `sort` on the cached array would quietly reorder it for everybody else.
- */
-export const listEApprovalDepartmentMaster = (force = false) =>
-  cachedRead('master:departments', () => readWholeCollection('departments'), { force }).then((rows) => rows.slice());
-
-export const listEApprovalProjectMaster = (force = false) =>
-  cachedRead('master:projects', () => readWholeCollection('projects'), { force }).then((rows) => rows.slice());
-
-export const listEApprovalRoleMaster = (force = false) =>
-  cachedRead('master:roles', () => readWholeCollection('roles'), { force }).then((rows) => rows.slice());
-
-/* ------------------------------------------------------------------------------------------------
  * Settings, types, templates, rules, routing, delegations
  * ---------------------------------------------------------------------------------------------- */
 
@@ -309,20 +198,18 @@ export const listEApprovalRoleMaster = (force = false) =>
  */
 export async function loadEApprovalSettings(organizationId?: string): Promise<EApprovalSettingsRecord> {
   const key = organizationId || 'default';
-  return cachedRead(`settings:${key}`, async () => {
-    const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.settings, key));
-    const saved = snapshot.exists() ? (snapshot.data() as Partial<EApprovalSettingsRecord>) : {};
-    const base = DEFAULT_E_APPROVAL_SETTINGS_RECORD;
-    return {
-      ...base,
-      ...saved,
-      organizationId,
-      numbering: { ...base.numbering, ...(saved.numbering || {}) },
-      materialFields: saved.materialFields?.length ? saved.materialFields : base.materialFields,
-      escalationLadder: saved.escalationLadder?.length ? saved.escalationLadder : base.escalationLadder,
-      confidentialRoles: saved.confidentialRoles ?? base.confidentialRoles,
-    };
-  });
+  const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.settings, key));
+  const saved = snapshot.exists() ? (snapshot.data() as Partial<EApprovalSettingsRecord>) : {};
+  const base = DEFAULT_E_APPROVAL_SETTINGS_RECORD;
+  return {
+    ...base,
+    ...saved,
+    organizationId,
+    numbering: { ...base.numbering, ...(saved.numbering || {}) },
+    materialFields: saved.materialFields?.length ? saved.materialFields : base.materialFields,
+    escalationLadder: saved.escalationLadder?.length ? saved.escalationLadder : base.escalationLadder,
+    confidentialRoles: saved.confidentialRoles ?? base.confidentialRoles,
+  };
 }
 
 export async function saveEApprovalSettings(
@@ -336,23 +223,12 @@ export async function saveEApprovalSettings(
     pruneUndefined({ ...settings, organizationId: who.organizationId, ...withUpdateAudit(who) }),
     { merge: true },
   );
-  invalidateEApprovalCache();
   await logEApprovalActivity(who, 'Update Settings', {}, { recordId: key });
 }
 
-/**
- * A scoped configuration collection, cached.
- *
- * Handed out as a fresh array on every call: `listEApprovalTypes` below sorts what it is given, and
- * both the matrix and template panels sort their rows in place — an in-place `sort` on the cached
- * array would reorder it under every other caller.
- */
 const listCollection = async <T>(name: string, organizationId?: string): Promise<T[]> => {
-  const rows = await cachedRead(`list:${name}:${organizationId ?? ''}`, async () => {
-    const snapshot = await getDocs(query(collection(db, name), ...scopeQuery(organizationId)));
-    return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as T);
-  });
-  return rows.slice();
+  const snapshot = await getDocs(query(collection(db, name), ...scopeQuery(organizationId)));
+  return snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as T);
 };
 
 export const listEApprovalTypes = (organizationId?: string) =>
@@ -387,12 +263,10 @@ async function upsertConfigRecord<T extends { id?: string }>(
   const payload = pruneUndefined({ ...rest, organizationId: who.organizationId } as Record<string, unknown>);
   if (id) {
     await setDoc(doc(db, collectionName, id), { ...payload, ...withUpdateAudit(who) }, { merge: true });
-    invalidateEApprovalCache();
     await logEApprovalActivity(who, action, { id }, { recordId: id });
     return id;
   }
   const created = await addDoc(collection(db, collectionName), { ...payload, ...withCreateAudit(who) });
-  invalidateEApprovalCache();
   await logEApprovalActivity(who, action, { id: created.id }, { recordId: created.id });
   return created.id;
 }
@@ -470,7 +344,6 @@ export async function saveEApprovalDepartmentRouting(
     } as Record<string, unknown>),
     { merge: true },
   );
-  invalidateEApprovalCache();
   await logEApprovalActivity(who, 'Save Department Routing', { departmentId: record.departmentId });
 }
 
@@ -502,7 +375,6 @@ export async function saveEApprovalProjectRouting(
     } as Record<string, unknown>),
     { merge: true },
   );
-  invalidateEApprovalCache();
   await logEApprovalActivity(who, 'Save Project Routing', { projectId: record.projectId });
 }
 
@@ -513,7 +385,6 @@ export async function deleteEApprovalConfigRecord(
 ): Promise<void> {
   const who = requireActor(actor);
   await deleteDoc(doc(db, collectionName, id));
-  invalidateEApprovalCache();
   await logEApprovalActivity(who, 'Delete Configuration', { collection: collectionName, id }, { recordId: id });
 }
 
@@ -561,7 +432,6 @@ export async function seedEApprovalTemplates(actor: EApprovalServiceActor): Prom
     });
   }
   await batch.commit();
-  invalidateEApprovalCache();
   return planned.length;
 }
 
@@ -579,23 +449,13 @@ export async function seedEApprovalTemplates(actor: EApprovalServiceActor): Prom
  */
 export async function loadEApprovalActorContext(
   actor: EApprovalServiceActor,
-  options: { force?: boolean } = {},
 ): Promise<EApprovalActor> {
   const who = requireActor(actor);
-  return cachedRead(
-    `actor:${who.userId}:${who.organizationId ?? ''}:${who.departmentId ?? ''}:${who.role ?? ''}`,
-    () => buildEApprovalActorContext(who),
-    { force: options.force },
-  );
-}
-
-/** The uncached body of `loadEApprovalActorContext`. */
-async function buildEApprovalActorContext(who: EApprovalServiceActor): Promise<EApprovalActor> {
   const [routing, projectRouting, delegations, departments] = await Promise.all([
     listEApprovalDepartmentRouting(who.organizationId),
     listEApprovalProjectRouting(who.organizationId),
     listEApprovalDelegations(who.organizationId),
-    listEApprovalDepartmentMaster(),
+    getDocs(collection(db, 'departments')),
   ]);
   const mine = routing.filter(
     (row) => row.active !== false && (row.headUserId === who.userId || (row.memberUserIds ?? []).includes(who.userId)),
@@ -613,8 +473,8 @@ async function buildEApprovalActorContext(who: EApprovalServiceActor): Promise<E
   // Without it, a request addressed to a department reaches nobody until an administrator has
   // configured routing — and "send it to Finance" has to work on day one, before anybody has
   // configured anything. A configured routing document still wins; this only fills the gap.
-  const headedByMe = departments
-    .filter((entry) => (entry as { head?: string }).head === who.userId)
+  const headedByMe = departments.docs
+    .filter((entry) => (entry.data() as { head?: string }).head === who.userId)
     .map((entry) => entry.id);
 
   return {
@@ -660,26 +520,21 @@ async function buildEApprovalActorContext(who: EApprovalServiceActor): Promise<E
 async function resolveDepartmentUserIds(departmentIds: string[]): Promise<string[]> {
   if (!departmentIds.length) return [];
   const rows = await Promise.all(
-    // Cached like the rest of the routing configuration: an approver clearing a queue of files that
-    // all sit with the same department otherwise re-read that department's routing document — and
-    // sometimes the department master behind it — once per file.
-    departmentIds.map((departmentId) =>
-      cachedRead(`deptRecipients:${departmentId}`, async () => {
-        const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.departmentRouting, departmentId));
-        if (snapshot.exists()) {
-          const routing = snapshot.data() as EApprovalDepartmentRouting;
-          const members =
-            // A 'Head' step notifies only the head; other modes notify everybody who could pick it up.
-            routing.mode === 'Head'
-              ? ([routing.headUserId].filter(Boolean) as string[])
-              : ([routing.headUserId, ...(routing.memberUserIds ?? [])].filter(Boolean) as string[]);
-          if (members.length) return members;
-        }
-        const department = await getDoc(doc(db, 'departments', departmentId));
-        const head = (department.data() as { head?: string } | undefined)?.head;
-        return head ? [head] : [];
-      }),
-    ),
+    departmentIds.map(async (departmentId) => {
+      const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.departmentRouting, departmentId));
+      if (snapshot.exists()) {
+        const routing = snapshot.data() as EApprovalDepartmentRouting;
+        const members =
+          // A 'Head' step notifies only the head; other modes notify everybody who could pick it up.
+          routing.mode === 'Head'
+            ? ([routing.headUserId].filter(Boolean) as string[])
+            : ([routing.headUserId, ...(routing.memberUserIds ?? [])].filter(Boolean) as string[]);
+        if (members.length) return members;
+      }
+      const department = await getDoc(doc(db, 'departments', departmentId));
+      const head = (department.data() as { head?: string } | undefined)?.head;
+      return head ? [head] : [];
+    }),
   );
   return Array.from(new Set(rows.flat()));
 }
@@ -696,21 +551,18 @@ async function resolveDepartmentUserIds(departmentIds: string[]): Promise<string
 async function resolveProjectUserIds(projectIds: string[]): Promise<string[]> {
   if (!projectIds.length) return [];
   const rows = await Promise.all(
-    // Cached for the same reason as `resolveDepartmentUserIds` above.
-    projectIds.map((projectId) =>
-      cachedRead(`projectRecipients:${projectId}`, async () => {
-        const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.projectRouting, projectId));
-        if (!snapshot.exists()) return [] as string[];
-        const routing = snapshot.data() as EApprovalProjectRouting;
-        if (routing.active === false) return [] as string[];
-        if (routing.mode === 'Head') return [routing.headUserId].filter(Boolean) as string[];
-        return [
-          routing.headUserId,
-          ...(routing.memberUserIds ?? []),
-          ...(routing.roleHolders ?? []).map((holder) => holder.userId),
-        ].filter(Boolean) as string[];
-      }),
-    ),
+    projectIds.map(async (projectId) => {
+      const snapshot = await getDoc(doc(db, E_APPROVAL_COLLECTIONS.projectRouting, projectId));
+      if (!snapshot.exists()) return [];
+      const routing = snapshot.data() as EApprovalProjectRouting;
+      if (routing.active === false) return [];
+      if (routing.mode === 'Head') return [routing.headUserId].filter(Boolean) as string[];
+      return [
+        routing.headUserId,
+        ...(routing.memberUserIds ?? []),
+        ...(routing.roleHolders ?? []).map((holder) => holder.userId),
+      ].filter(Boolean) as string[];
+    }),
   );
   return Array.from(new Set(rows.flat()));
 }
@@ -1176,51 +1028,20 @@ const attachmentsFingerprintOf = (attachments: EApprovalAttachment[], version: n
     .sort()
     .join('|');
 
-/**
- * Keeps the proposal's two representations in step on the way to Firestore.
- *
- * `bodyHtml` carries the formatting and `body` is its plain-text rendition — and `body` is what
- * `eApprovalMaterialFingerprint` hashes, so the two drifting apart would mean change control
- * comparing a stale sentence against a live document. Rather than trust every caller to send a
- * matching pair, whenever HTML is present the text is derived from it here. One source of truth, at
- * the last point before the write.
- *
- * Returns only the keys it actually decides, so it can be spread over a partial draft without
- * inventing fields the caller never mentioned.
- */
-function reconcileEApprovalProposal(
-  draft: Partial<Pick<EApprovalRequestDraft, 'body' | 'bodyHtml'>>,
-): { body?: string; bodyHtml?: string } {
-  if (draft.bodyHtml != null) {
-    if (!eApprovalHtmlWithinLimit(draft.bodyHtml)) {
-      throw new EApprovalServiceError(
-        'The proposal is too large to store. Paste it in parts, or attach the document and summarise it here.',
-      );
-    }
-    // An editor left empty still reports markup (`<p><br></p>`), which would store as a proposal
-    // that looks present and reads blank.
-    if (eApprovalHtmlIsEmpty(draft.bodyHtml)) return { body: '', bodyHtml: '' };
-    return { body: eApprovalHtmlToText(draft.bodyHtml), bodyHtml: draft.bodyHtml };
-  }
-  if (draft.body != null) return { body: draft.body.trim() };
-  return {};
-}
-
 export async function createEApprovalDraft(
   draft: EApprovalRequestDraft,
   actor: EApprovalServiceActor,
 ): Promise<string> {
   const who = requireActor(actor);
   if (!draft.subject?.trim()) throw new EApprovalServiceError('A subject is required.');
-  const proposal = reconcileEApprovalProposal(draft);
-  if (!proposal.body) throw new EApprovalServiceError('A proposal is required.');
+  if (!draft.body?.trim()) throw new EApprovalServiceError('A proposal is required.');
 
   const created = await addDoc(
     collection(db, E_APPROVAL_COLLECTIONS.requests),
     pruneUndefined({
       ...draft,
-      ...proposal,
       subject: draft.subject.trim(),
+      body: draft.body.trim(),
       priority: draft.priority ?? ('Normal' as EApprovalPriority),
       status: 'Draft' as EApprovalStatus,
       version: 1,
@@ -1257,11 +1078,7 @@ export async function updateEApprovalDraft(
   }
   await updateDoc(
     doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId),
-    pruneUndefined({
-      ...draft,
-      ...reconcileEApprovalProposal(draft),
-      ...withUpdateAudit(who),
-    } as Record<string, unknown>),
+    pruneUndefined({ ...draft, ...withUpdateAudit(who) } as Record<string, unknown>),
   );
   await logEApprovalActivity(who, 'Edit Request', { status: request.status }, {
     recordId: approvalId,
@@ -1269,152 +1086,18 @@ export async function updateEApprovalDraft(
   });
 }
 
-/** What a deletion removed, so the caller can say so rather than just "done". */
-export interface EApprovalDeletionSummary {
-  steps: number;
-  history: number;
-  comments: number;
-  attachments: number;
-  versions: number;
-}
-
-/**
- * Deletes every document in a collection belonging to one approval, and counts them.
- *
- * Chunked at 400 rather than issued as one batch because Firestore caps a batch at 500 writes, and a
- * long-running approval passes that on its history alone — a chain of eight approvers with two
- * verifications each writes well over a hundred entries before anybody comments.
- */
-async function deleteEApprovalChildren(
-  collectionName: string,
-  approvalId: string,
-): Promise<{ count: number; docs: Array<{ id: string; data: () => Record<string, unknown> }> }> {
-  const snapshot = await getDocs(
-    query(collection(db, collectionName), where('approvalId', '==', approvalId)),
-  );
-  const refs = snapshot.docs.map((entry) => entry.ref);
-  for (let index = 0; index < refs.length; index += 400) {
-    const batch = writeBatch(db);
-    for (const ref of refs.slice(index, index + 400)) batch.delete(ref);
-    await batch.commit();
-  }
-  return { count: refs.length, docs: snapshot.docs };
-}
-
-/**
- * Deletes a request outright, together with the whole workflow that belonged to it.
- *
- * Everything scoped to the approval goes: the step documents (the workflow), the history, the
- * comments, the attachments and their stored files, and the superseded version snapshots. The old
- * behaviour — flipping `isDeleted` on the request and leaving the rest — is what this replaces, and it
- * was a genuine leak rather than a tidiness question: the register filters deleted requests, but
- * `loadEApprovalAnalyticsData` sweeps `eApprovalSteps` across the whole organisation and
- * `listEApprovalMyActivity` reads `eApprovalHistory` by actor, so a "deleted" approval went on
- * feeding the SLA reports and went on appearing in people's own activity logs for ever.
- *
- * Three ordering decisions:
- *
- *   1. **The activity log is written first**, before anything is destroyed, and it carries the
- *      reference, subject, status and the counts. `userActivityLogs` is outside this module's
- *      collections, so it survives the deletion — which is what keeps an administrative delete
- *      accountable. An approval can be removed; the fact that somebody removed it cannot.
- *   2. **The request document is deleted last.** A failure part-way then leaves a still-visible
- *      approval that can simply be deleted again; the reverse order would leave invisible orphans
- *      with nothing pointing at them.
- *   3. **A failed Storage delete does not stop the run.** The file may already be gone, or never have
- *      landed; either way the attachment *record* is what the app reads, and leaving the record
- *      behind because a blob could not be removed is the worse outcome.
- */
-export async function deleteEApprovalRequest(
-  approvalId: string,
-  actor: EApprovalServiceActor,
-  options: { canDeleteDraft?: boolean; canDeleteAny?: boolean; reason?: string } = {},
-): Promise<EApprovalDeletionSummary> {
+/** A draft is the only thing that can be deleted; anything submitted is cancelled instead. */
+export async function deleteEApprovalDraft(approvalId: string, actor: EApprovalServiceActor): Promise<void> {
   const who = requireActor(actor);
   const request = await getEApprovalRequest(approvalId);
-  const empty: EApprovalDeletionSummary = { steps: 0, history: 0, comments: 0, attachments: 0, versions: 0 };
-  if (!request) return empty;
-
-  const decision = canDeleteEApprovalRequest(request, who, {
-    canDeleteDraft: options.canDeleteDraft,
-    canDeleteAny: options.canDeleteAny,
+  if (!request) return;
+  if (request.requesterId !== who.userId) throw new EApprovalServiceError('Only the requester can delete this draft.');
+  if (request.status !== 'Draft') throw new EApprovalServiceError('Only a draft can be deleted. Cancel it instead.');
+  await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId), {
+    isDeleted: true,
+    ...withUpdateAudit(who),
   });
-  if (!decision.allowed) throw new EApprovalServiceError(decision.reason ?? 'You cannot delete this approval.');
-
-  const reason = options.reason?.trim();
-  // A draft nobody has seen needs no justification. Removing a file that has been through approvers
-  // does, and it is the only part of it that will still exist afterwards.
-  if (decision.kind === 'Administrative' && !reason) {
-    throw new EApprovalServiceError('Give a reason for deleting an approval that has already been submitted.');
-  }
-
-  const [steps, history, comments, attachments, versions] = await Promise.all([
-    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.steps), where('approvalId', '==', approvalId))),
-    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.history), where('approvalId', '==', approvalId))),
-    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.comments), where('approvalId', '==', approvalId))),
-    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.attachments), where('approvalId', '==', approvalId))),
-    getDocs(query(collection(db, E_APPROVAL_COLLECTIONS.versions), where('approvalId', '==', approvalId))),
-  ]);
-  const summary: EApprovalDeletionSummary = {
-    steps: steps.size,
-    history: history.size,
-    comments: comments.size,
-    attachments: attachments.size,
-    versions: versions.size,
-  };
-
-  await logEApprovalActivity(
-    who,
-    decision.kind === 'Draft' ? 'Delete Draft' : 'Delete Approval',
-    {
-      status: request.status,
-      subject: request.subject,
-      requesterId: request.requesterId,
-      requesterName: request.requesterName ?? null,
-      departmentName: request.departmentName ?? null,
-      amount: request.amount ?? null,
-      version: request.version,
-      reason: reason ?? null,
-      removed: summary,
-    },
-    { recordId: approvalId, recordRef: request.referenceNo },
-  );
-
-  const storagePaths = mapDocs<EApprovalAttachment>(attachments.docs)
-    .map((attachment) => attachment.storagePath)
-    .filter(Boolean) as string[];
-  if (storagePaths.length) {
-    try {
-      const [{ storage }, { deleteObject, ref }] = await Promise.all([
-        import('@/lib/firebase-storage'),
-        import('firebase/storage'),
-      ]);
-      await Promise.all(
-        storagePaths.map(async (path) => {
-          try {
-            await deleteObject(ref(storage, path));
-          } catch (error) {
-            console.warn('[e-approval] could not delete a stored file; removing its record anyway', path, error);
-          }
-        }),
-      );
-    } catch (error) {
-      console.warn('[e-approval] Storage unavailable; attachment records removed without their files', error);
-    }
-  }
-
-  for (const collectionName of [
-    E_APPROVAL_COLLECTIONS.steps,
-    E_APPROVAL_COLLECTIONS.history,
-    E_APPROVAL_COLLECTIONS.comments,
-    E_APPROVAL_COLLECTIONS.attachments,
-    E_APPROVAL_COLLECTIONS.versions,
-  ]) {
-    await deleteEApprovalChildren(collectionName, approvalId);
-  }
-
-  await deleteDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId));
-  return summary;
+  await logEApprovalActivity(who, 'Delete Draft', {}, { recordId: approvalId });
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1533,135 +1216,6 @@ export async function submitEApproval(
   });
 }
 
-export interface CreateMirroredEApprovalInput {
-  source: EApprovalSourceLink;
-  subject: string;
-  body: string;
-  /** The chain, already resolved by the source module against its own workflow and assignees. */
-  steps: EApprovalTemplateStep[];
-  /** Per-step mirror pointers, applied to the built records in chain order. */
-  decorateSteps?: (records: EApprovalStepRecord[]) => EApprovalStepRecord[];
-  approvalTypeId?: string;
-  approvalTypeName?: string;
-  departmentId?: string;
-  departmentName?: string;
-  projectId?: string;
-  projectName?: string;
-  externalRef?: string;
-  priority?: EApprovalPriority;
-  requiredBy?: string | null;
-  amount?: number;
-  vendorName?: string;
-  costCentre?: string;
-  budgetHead?: string;
-  confidential?: boolean;
-  /** The person the approval is raised on behalf of — the payment's owner, not whoever tripped the sync. */
-  requester: { userId: string; userName?: string };
-  ccUserIds?: string[];
-}
-
-/**
- * Raises a request that mirrors another module's workflow, already submitted and running.
- *
- * Deliberately not `createEApprovalDraft` + `submitEApproval`. Those two exist for a person filling
- * in a form: they resolve the chain from E-Approval's own templates and approval matrix, and they
- * refuse a submission from anybody but the requester. Neither is right here. The chain has already
- * been decided — by the source module's own configuration, which is the whole point of a mirror —
- * and the caller is a background reconcile, not the requester. Routing it through the form's path
- * would either overwrite the source module's chain with an unrelated one or fail on the requester
- * check, depending on how the organization happens to have E-Approval configured.
- *
- * There is no draft state: the payment is already in somebody's queue, so an approval sitting in
- * Drafts would be a second, invisible copy of work that has visibly started.
- */
-export async function createMirroredEApproval(
-  input: CreateMirroredEApprovalInput,
-  actor: EApprovalServiceActor,
-): Promise<{ approvalId: string; referenceNo: string }> {
-  const who = requireActor(actor);
-  if (!input.steps.length) throw new EApprovalServiceError('A mirrored approval needs at least one stage.');
-
-  const settings = await loadEApprovalSettings(who.organizationId);
-  const referenceNo = await allocateEApprovalReference(who.organizationId, input.departmentName, settings);
-  const priority = input.priority ?? 'Normal';
-  const nextId = firestoreIdFactory();
-
-  const requestRef = doc(collection(db, E_APPROVAL_COLLECTIONS.requests));
-  const built = buildEApprovalSteps(input.steps, { priority, settings, version: 1, nextId });
-  const steps = (input.decorateSteps ? input.decorateSteps(built) : built) as EApprovalStep[];
-
-  const request: EApprovalRequest = {
-    id: requestRef.id,
-    organizationId: who.organizationId,
-    referenceNo,
-    subject: input.subject,
-    body: input.body,
-    approvalTypeId: input.approvalTypeId,
-    approvalTypeName: input.approvalTypeName,
-    departmentId: input.departmentId,
-    departmentName: input.departmentName,
-    projectId: input.projectId,
-    projectName: input.projectName,
-    externalRef: input.externalRef,
-    priority,
-    requiredBy: input.requiredBy ?? null,
-    amount: input.amount,
-    vendorName: input.vendorName,
-    costCentre: input.costCentre,
-    budgetHead: input.budgetHead,
-    requesterId: input.requester.userId,
-    requesterName: input.requester.userName,
-    confidential: input.confidential,
-    ccUserIds: input.ccUserIds ?? [],
-    participantUserIds: input.ccUserIds ?? [],
-    status: 'Draft',
-    version: 1,
-    attachmentCount: 0,
-    commentCount: 0,
-    source: input.source,
-  };
-
-  // Written before the transition so the batch below merges onto a document that exists; the
-  // transition immediately overwrites `status` with whatever the engine produces.
-  await setDoc(
-    requestRef,
-    pruneUndefined({ ...request, ...withCreateAudit(who) } as unknown as Record<string, unknown>),
-  );
-
-  await commitEApprovalTransition({
-    request,
-    steps,
-    actor: who,
-    settings,
-    input: {
-      kind: 'Submit',
-      // The requester submits their own file, even though a reconcile is what triggered it: the
-      // engine's Submit refuses anybody else, and rightly — this approval is raised *for* them.
-      actor: { userId: input.requester.userId, userName: input.requester.userName },
-      now: nowIso(),
-      nextId,
-      settings,
-      materialChange: { changed: false, fields: [], fingerprint: '' },
-    },
-    extraRequestFields: { source: pruneUndefined(input.source as unknown as Record<string, unknown>) },
-    activityAction: 'Submit',
-  });
-
-  return { approvalId: requestRef.id, referenceNo };
-}
-
-/** Refreshes the denormalised source pointer — the label, the path, which stage is current. */
-export async function updateEApprovalSourceLink(
-  approvalId: string,
-  source: EApprovalSourceLink,
-  actor: EApprovalServiceActor,
-): Promise<void> {
-  await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId), {
-    source: pruneUndefined(source as unknown as Record<string, unknown>),
-    ...withUpdateAudit(requireActor(actor)),
-  });
-}
-
 /* ------------------------------------------------------------------------------------------------
  * Actions
  * ---------------------------------------------------------------------------------------------- */
@@ -1772,84 +1326,6 @@ export async function performEApprovalAction(
     versionSnapshot,
     activityAction: input.kind,
   });
-
-  await propagateToSource(request, who);
-}
-
-/**
- * Pushes a decision taken here back to the module whose workflow this request mirrors.
- *
- * Imported dynamically, and only when a request actually carries a source link. Statically, this
- * would make the approval engine depend on every module that ever mirrors into it — the wrong way
- * round, and a cycle: the bridge imports this file. Loading it on demand keeps E-Approval ignorant
- * of what a payment obligation is until the moment a payment obligation is in front of it.
- *
- * Failures are swallowed on purpose. The approver's decision is committed; refusing to acknowledge
- * it because the other module could not be updated would be the wrong trade, and the bridge is
- * idempotent — the next reconcile from either side picks it up, and the error is recorded on the
- * source record meanwhile.
- */
-async function propagateToSource(request: EApprovalRequest, actor: EApprovalServiceActor): Promise<void> {
-  const source = request.source;
-  if (!source?.recordId || source.detachedAt) return;
-  if (source.module !== 'Recurring Payments') return;
-  try {
-    const bridge = await import('@/lib/recurring-payments-e-approval-service');
-    await bridge.syncRecurringPaymentApproval(source.recordId, actor);
-  } catch {
-    // Deliberately silent — see above.
-  }
-}
-
-/**
- * Applies an action to a *mirrored* request on behalf of whoever completed the equivalent step in
- * the source module (see `e-approval-link.ts`).
- *
- * Exists because the two chains can drift. A mirrored stage is built from the source module's own
- * assignee resolution, so the person who acts there is normally the person the stage names here —
- * but not always: an amount-based assignment re-resolves when the bill comes in at three times the
- * estimate, a backup approver covers for the primary, an administrator edits the workflow mid-flight.
- * When that happens the engine is right to refuse the action, and swallowing the refusal would leave
- * the approval permanently one stage behind the payment.
- *
- * So the stage is moved to the person who actually acted, with a reassignment recorded, *before* the
- * action is applied — which is what happened. The alternative, passing the assignee as the actor,
- * would write "approved by Nandini" into an approval Ravi gave, and an approval trail that names the
- * wrong person is worse than no approval trail.
- */
-export async function applyMirroredEApprovalAction(
-  approvalId: string,
-  input: PerformEApprovalActionInput & { stepId: string },
-  actor: EApprovalServiceActor,
-  onBehalfOfNote?: string,
-): Promise<void> {
-  const who = requireActor(actor);
-  const steps = await listEApprovalSteps(approvalId);
-  const step = steps.find((candidate) => candidate.id === input.stepId);
-  if (!step) throw new EApprovalServiceError('That approval stage no longer exists.');
-
-  const alreadyTheirs =
-    step.assignment.kind === 'User' && step.assignment.userId === who.userId;
-  if (!alreadyTheirs) {
-    const to: EApprovalAssignment = { kind: 'User', userId: who.userId, userName: who.userName };
-    await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.steps, step.id), {
-      assignment: pruneUndefined(to as unknown as Record<string, unknown>),
-      reassignments: [
-        ...(step.reassignments ?? []),
-        {
-          at: nowIso(),
-          kind: 'Reassign' as const,
-          byUserId: who.userId,
-          byName: who.userName,
-          from: step.assignment,
-          to,
-          reason: onBehalfOfNote || 'Actioned in the source module by this user.',
-        },
-      ],
-      ...withUpdateAudit(who),
-    });
-  }
-  await performEApprovalAction(approvalId, input, who);
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1878,37 +1354,11 @@ export interface EApprovalAnalyticsData {
  */
 export async function loadEApprovalAnalyticsData(
   organizationId?: string,
-  options: {
-    requestLimit?: number;
-    stepLimit?: number;
-    eventLimit?: number;
-    includeEvents?: boolean;
-    /** Bypass the cache — what a report page's Refresh button asks for. */
-    force?: boolean;
-  } = {},
+  options: { requestLimit?: number; stepLimit?: number; eventLimit?: number; includeEvents?: boolean } = {},
 ): Promise<EApprovalAnalyticsData> {
   const requestLimit = options.requestLimit ?? 2000;
   const stepLimit = options.stepLimit ?? 8000;
   const eventLimit = options.eventLimit ?? 8000;
-
-  // Keyed on the caps as well as the organisation, so a caller asking for a narrower slice is never
-  // handed a wider one that happens to be in the cache under the same organisation.
-  return cachedRead(
-    `analytics:${organizationId ?? ''}:${requestLimit}:${stepLimit}:${eventLimit}:${options.includeEvents === false ? 'norefs' : 'events'}`,
-    () => fetchEApprovalAnalyticsData({ organizationId, requestLimit, stepLimit, eventLimit, includeEvents: options.includeEvents }),
-    { ttlMs: E_APPROVAL_ANALYTICS_TTL_MS, force: options.force },
-  );
-}
-
-/** The uncached body of `loadEApprovalAnalyticsData`. */
-async function fetchEApprovalAnalyticsData(options: {
-  organizationId?: string;
-  requestLimit: number;
-  stepLimit: number;
-  eventLimit: number;
-  includeEvents?: boolean;
-}): Promise<EApprovalAnalyticsData> {
-  const { organizationId, requestLimit, stepLimit, eventLimit } = options;
 
   const [requestSnap, stepSnap, eventSnap] = await Promise.all([
     getDocs(
@@ -2312,38 +1762,31 @@ async function deliverEApprovalNotifications(
   referenceNo: string | undefined,
   approvalId: string,
 ): Promise<void> {
-  // In parallel, not one intent at a time. A single transition routinely produces three or four
-  // intents — the new assignee, the requester, a CC list, an escalation — and each carries its own
-  // membership resolution and dispatch. Run serially they add up in front of the approver, who is
-  // waiting on this before their screen refreshes; they are independent of one another, so nothing
-  // is gained by making the second wait for the first.
-  await Promise.all(
-    intents.map(async (intent) => {
-      const [departmentUserIds, projectUserIds] = await Promise.all([
-        resolveDepartmentUserIds(intent.departmentIds ?? []),
-        resolveProjectUserIds(intent.projectIds ?? []),
-      ]);
-      const userIds = Array.from(
-        new Set([...(intent.userIds ?? []), ...departmentUserIds, ...projectUserIds]),
-      ).filter(Boolean);
-      if (!userIds.length && !intent.roles?.length) return;
-      await dispatchNotification(
-        { userIds, roles: intent.roles },
-        {
-          // 'Moved' is the requester being kept informed, not somebody being asked to act, so it does
-          // not carry the type the bell renders as a call to action.
-          type: intent.kind === 'Moved' ? 'record_assigned' : 'approval_required',
-          title: intent.title,
-          body: intent.body,
-          module: ACTIVITY_MODULES.E_APPROVAL,
-          severity: intent.severity ?? 'INFO',
-          itemId: approvalId,
-          itemRef: referenceNo,
-          link: `${E_APPROVAL_BASE_PATH}/${approvalId}`,
-        },
-      );
-    }),
-  );
+  for (const intent of intents) {
+    const [departmentUserIds, projectUserIds] = await Promise.all([
+      resolveDepartmentUserIds(intent.departmentIds ?? []),
+      resolveProjectUserIds(intent.projectIds ?? []),
+    ]);
+    const userIds = Array.from(
+      new Set([...(intent.userIds ?? []), ...departmentUserIds, ...projectUserIds]),
+    ).filter(Boolean);
+    if (!userIds.length && !intent.roles?.length) continue;
+    await dispatchNotification(
+      { userIds, roles: intent.roles },
+      {
+        // 'Moved' is the requester being kept informed, not somebody being asked to act, so it does
+        // not carry the type the bell renders as a call to action.
+        type: intent.kind === 'Moved' ? 'record_assigned' : 'approval_required',
+        title: intent.title,
+        body: intent.body,
+        module: ACTIVITY_MODULES.E_APPROVAL,
+        severity: intent.severity ?? 'INFO',
+        itemId: approvalId,
+        itemRef: referenceNo,
+        link: `${E_APPROVAL_BASE_PATH}/${approvalId}`,
+      },
+    );
+  }
 }
 
 async function logEApprovalActivity(
@@ -2568,58 +2011,6 @@ export async function uploadEApprovalAttachment(
     recordRef: request.referenceNo,
   });
   return { id: created.id, ...(record as unknown as Omit<EApprovalAttachment, 'id'>) };
-}
-
-/**
- * Removes an attachment from a draft — the one place an attachment is deleted rather than superseded.
- *
- * Guarded by `canRemoveEApprovalAttachment`, which allows this only on the author's own unsubmitted
- * draft; see that function for why nothing past Draft is removable. Checked here as well as in the UI
- * because this is the single write path, so it is the only place the rule cannot be got around.
- *
- * The Storage object goes too, not just the Firestore row. A draft is where wrong files are dropped
- * and re-dropped, and orphaning every one of them leaves a bucket accruing cost for documents no
- * record refers to. That delete is best-effort: if the object is already gone the row must still go,
- * or a half-failed removal leaves an attachment that cannot be opened and cannot be removed either.
- */
-export async function deleteEApprovalDraftAttachment(
-  approvalId: string,
-  attachment: EApprovalAttachment,
-  actor: EApprovalServiceActor,
-): Promise<void> {
-  const who = requireActor(actor);
-  const request = await getEApprovalRequest(approvalId);
-  if (!request) throw new EApprovalServiceError('This approval no longer exists.');
-  if (!canRemoveEApprovalAttachment(request, who)) {
-    throw new EApprovalServiceError(
-      request.requesterId !== who.userId
-        ? 'Only the requester can remove an attachment.'
-        : `A ${request.status.toLowerCase()} approval keeps its attachments. Upload a revision instead — it is added beside the original.`,
-    );
-  }
-
-  if (attachment.storagePath) {
-    try {
-      const [{ storage }, { deleteObject, ref }] = await Promise.all([
-        import('@/lib/firebase-storage'),
-        import('firebase/storage'),
-      ]);
-      await deleteObject(ref(storage, attachment.storagePath));
-    } catch (error) {
-      // Already deleted, or never landed. Either way the row below is what the app reads.
-      console.warn('[e-approval] could not delete the stored file; removing the record anyway', error);
-    }
-  }
-
-  await deleteDoc(doc(db, E_APPROVAL_COLLECTIONS.attachments, attachment.id));
-  await updateDoc(doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId), {
-    attachmentCount: Math.max(0, (request.attachmentCount ?? 1) - 1),
-    ...withUpdateAudit(who),
-  });
-  await logEApprovalActivity(who, 'Remove Attachment', { name: attachment.name }, {
-    recordId: approvalId,
-    recordRef: request.referenceNo,
-  });
 }
 
 /* ------------------------------------------------------------------------------------------------

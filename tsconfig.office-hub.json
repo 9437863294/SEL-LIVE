@@ -1,0 +1,30 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/office-hub/**/*.ts",
+    "src/app/(protected)/office-hub/**/*.tsx",
+    "src/app/api/office-hub/**/*.ts",
+    "src/components/office-hub/**/*.ts",
+    "src/components/office-hub/**/*.tsx",
+    "src/lib/office-hub-time.ts",
+    "src/lib/office-hub-model.ts",
+    "src/lib/office-hub-rules.ts",
+    "src/lib/office-hub-recurrence.ts",
+    "src/lib/office-hub-reminders.ts",
+    "src/lib/office-hub-permissions.ts",
+    "src/lib/office-hub-reports.ts",
+    "src/lib/office-hub-search.ts",
+    "src/lib/office-hub-import.ts",
+    "src/lib/office-hub-integrations.ts",
+    "src/lib/office-hub.ts",
+    "src/lib/office-hub-service.ts",
+    "src/lib/office-hub-server.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

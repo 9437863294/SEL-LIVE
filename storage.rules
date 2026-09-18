@@ -47,12 +47,50 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+    /**
+     * Office Hub attachments: office-hub/{entityType}/{entityId}/{fileName} (§36, §82).
+     *
+     * Three things this enforces that the browser cannot be trusted to:
+     *
+     *   1. **Size.** The client checks the configured limit for the error message; this is the
+     *      control. 25 MB matches `OFFICE_HUB_DEFAULT_MAX_UPLOAD_MB`. An installation that raises
+     *      the limit in Settings must raise it here too — the setting alone cannot grant more than
+     *      the rule allows, which is the right way round.
+     *
+     *   2. **Type.** Only the extensions §36 permits. This is the reason a `.exe` renamed to
+     *      `.pdf` is the *worst* case rather than a trivial bypass: the rule matches on the name,
+     *      so content-type spoofing is still possible and the real defence for anything executable
+     *      is that nothing in the application ever runs an attachment — they are only ever
+     *      downloaded through an authenticated URL.
+     *
+     *   3. **Immutability.** `update` and `delete` are denied outright. The application soft-deletes
+     *      the *metadata* document (§83), deliberately leaving the object in place, so a file
+     *      referenced by published minutes cannot vanish from them because somebody tidied an
+     *      attachment list. Replacing a file in place would silently change what a reader of those
+     *      minutes sees; a corrected document is uploaded as a new one.
+     *
+     * Reads are open to any signed-in user, matching the Firestore rules for
+     * `officeHubDocuments` and for the same reason: narrowing a read to the participants of the
+     * parent meeting needs a Firestore `get()` per file, and Storage rules bill for those the same
+     * way. Note that this is *not* public access — an unauthenticated request is refused, and the
+     * application never stores a download URL, minting a fresh one per authenticated request.
+     */
+    match /office-hub/{entityType}/{entityId}/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.size > 0
+        && request.resource.size <= 25 * 1024 * 1024
+        && fileName.matches('.*\\.(?i)(pdf|docx?|xlsx?|csv|pptx?|png|jpe?g|webp|gif|txt|rtf|msg|eml|zip)');
+      allow update, delete: if false;
+    }
+
     // Allow read/write access to all authenticated users for all files
     // This is a permissive rule, you may want to restrict it further
     // for example, only allow users to read/write their own files.
     match /{allPaths=**} {
       allow read, write: if request.auth != null
         && !allPaths.matches('chat/.*')
+        && !allPaths.matches('office-hub/.*')
         && !allPaths.matches('organizations/[^/]+/fixed-deposits/.*')
         && !allPaths.matches('fixed-deposits/[^/]+/.*')
         && !allPaths.matches('organizations/[^/]+/letters-of-credit/.*')

@@ -36,6 +36,7 @@ const moduleIcons: Record<string, string> = {
   "Driver Management": "SteeringWheel",
   "Site Account Statement": "LedgerChart",
   "Tour, Travel & Expense": "Plane",
+  "Office Hub": "CalendarCheck",
 };
 
 /**
@@ -55,6 +56,8 @@ const HIDDEN_FROM_DASHBOARD = new Set<string>([
 ]);
 
 const moduleDescriptions: Record<string, string> = {
+  "Office Hub":
+    "Schedule meetings, run them, and turn what was decided into tracked tasks.",
   "Site Fund Requisition": "Handle site fund requests and approvals.",
   "Site Fund Requisition 2":
     "Raise, approve, and track site fund requests with configurable workflow and reporting.",

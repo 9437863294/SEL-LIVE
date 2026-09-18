@@ -285,18 +285,13 @@ export function ActionPanel({
    * A mirrored stage whose completion needs data only the source module's own form collects — a
    * bill number, a bank reference. See `e-approval-link.ts`.
    *
-   * Recognised by carrying no `mirrorAction`: that field holds the decision to apply back to the
-   * source record, and its absence is precisely "there is no decision that can be taken from here".
-   *
    * The forward actions are withdrawn rather than left to fail: approving here would either move the
    * source record on without the figures its own controls require, or be refused on write-back and
    * leave the two sides disagreeing. The stage still shows, and can still be commented on and
    * returned or rejected — an approver who thinks the whole thing is wrong should not have to go to
    * another module to say so.
    */
-  const completeAtSource = Boolean(
-    activeStep?.mirrorStepId && !activeStep.mirrorAction && request.source?.recordId && !request.source.detachedAt,
-  );
+  const completeAtSource = Boolean(activeStep?.requesterMustAct && request.source?.recordId && !request.source.detachedAt);
 
   const stepActions: EApprovalActionKind[] = activeStep
     ? availableEApprovalActions(request, activeStep, { settings: settings ?? undefined, hasRemainingSteps: remainingAhead })

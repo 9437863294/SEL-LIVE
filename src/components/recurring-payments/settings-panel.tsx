@@ -29,7 +29,6 @@ import {
   ApprovalRule,
   DEFAULT_PAYMENT_CATEGORIES,
   DEFAULT_RECURRING_PAYMENT_SETTINGS,
-  mergeRecurringPaymentSettings,
   RecurringPaymentSettings,
   RP_COLLECTIONS,
   currency,
@@ -111,10 +110,24 @@ export default function RecurringPaymentSettingsPanel({
     );
     const stopSettings = onSnapshot(settingsRef, (snap) => {
       if (!snap.exists()) return;
-      const merged = mergeRecurringPaymentSettings(
-        snap.data() as Partial<RecurringPaymentSettings>,
+      const data = snap.data() as Partial<RecurringPaymentSettings>;
+      const merged = {
+        ...DEFAULT_RECURRING_PAYMENT_SETTINGS,
+        ...data,
         organizationId,
-      );
+        notifications: {
+          ...DEFAULT_RECURRING_PAYMENT_SETTINGS.notifications,
+          ...data.notifications,
+        },
+        automation: {
+          ...DEFAULT_RECURRING_PAYMENT_SETTINGS.automation,
+          ...data.automation,
+        },
+        controls: {
+          ...DEFAULT_RECURRING_PAYMENT_SETTINGS.controls,
+          ...data.controls,
+        },
+      };
       setSettings(merged);
       setDaysBeforeText(merged.notifications.daysBefore.join(", "));
       setDaysAfterText(merged.notifications.daysAfter.join(", "));

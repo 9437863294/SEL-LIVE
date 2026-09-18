@@ -4,6 +4,7 @@ import {
   BankColumnsIcon,
   BanknoteIcon,
   BranchMergeIcon,
+  CalendarBoardIcon,
   ChatBubbleIcon,
   ClipboardCheckIcon,
   DocumentIcon,
@@ -71,6 +72,7 @@ export const moduleIconRegistry: Record<string, ModuleIconEntry> = {
   // E-Approval / E-Notesheet. The wax-seal glyph rather than a clipboard: what the module produces
   // is a signed note, and the seal reads that way at 16px where a tick does not.
   Stamp: { Icon: EnvelopeSealIcon, gradient: "from-sky-500 to-indigo-600" },
+  CalendarCheck: { Icon: CalendarBoardIcon, gradient: "from-indigo-500 to-sky-600" },
   Settings: { Icon: GearIcon, gradient: "from-slate-500 to-slate-700" },
   // Tour, Travel & Expense. Sky/cyan matches the module's own theme (see module-layout-shell.tsx).
   Plane: { Icon: PlaneIcon, gradient: "from-sky-500 to-cyan-600" },

@@ -3,6 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import React, { Suspense } from 'react';
+import { DailyRequisitionImportDialog } from '@/components/daily-requisition/import-dialog';
+import { requisitionFingerprint } from '@/lib/daily-requisition-import';
 import {
   Plus,
   ArrowUpDown,
@@ -16,6 +18,7 @@ import {
   Trash2,
   ShieldAlert,
   Printer,
+  Upload,
   File as FileIcon,
   X,
 } from 'lucide-react';
@@ -146,6 +149,7 @@ function EntrySheetPageComponent() {
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [editingEntry, setEditingEntry] = React.useState<EnrichedDailyRequisitionEntry | null>(null);
 
+  const [isImportOpen, setIsImportOpen] = React.useState(false);
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [departments, setDepartments] = React.useState<Department[]>([]);
   const [expenseRequests, setExpenseRequests] = React.useState<ExpenseRequest[]>([]);
@@ -197,6 +201,29 @@ function EntrySheetPageComponent() {
       netAmount: '',
     },
   });
+
+  /**
+   * What the importer needs to recognise a re-import.
+   *
+   * Reception numbers are the real key; the fingerprints matter only when an import allocates fresh
+   * numbers, where there is no key to compare and the whole of what was typed has to stand in.
+   */
+  const importExisting = React.useMemo(
+    () => ({
+      receptionNos: entries.map((entry) => entry.receptionNo).filter(Boolean),
+      fingerprints: entries.map((entry) =>
+        requisitionFingerprint({
+          projectId: entry.projectId,
+          departmentId: entry.departmentId,
+          grossAmount: Number(entry.grossAmount) || 0,
+          partyName: entry.partyName ?? '',
+          description: entry.description ?? '',
+          date: (toDate(entry.date) ?? new Date()).toISOString(),
+        }),
+      ),
+    }),
+    [entries],
+  );
 
   const fetchAllData = React.useCallback(async () => {
     setIsLoading(true);
@@ -645,6 +672,11 @@ function EntrySheetPageComponent() {
                 <Button variant="outline" onClick={() => setIsSelectionMode(true)} disabled={!canViewChecklist}>
                   <Printer className="mr-2 h-4 w-4" /> Print Checklists
                 </Button>
+                {/* Gated on Add, the same grant as keying one by hand — importing a register is
+                    creating entries, and there is no separate power to invent for it. */}
+                <Button variant="outline" onClick={() => setIsImportOpen(true)} disabled={!canAdd}>
+                  <Upload className="mr-2 h-4 w-4" /> Import
+                </Button>
                 <Button onClick={() => setIsAddDialogOpen(true)} disabled={!canAdd}>
                   <Plus className="mr-2 h-4 w-4" /> Add Entry
                 </Button>
@@ -965,6 +997,15 @@ function EntrySheetPageComponent() {
           onActionComplete={fetchAllData}
         />
       )}
+
+      <DailyRequisitionImportDialog
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        projects={projects}
+        departments={departments}
+        existing={importExisting}
+        onImported={fetchAllData}
+      />
     </>
   );
 }

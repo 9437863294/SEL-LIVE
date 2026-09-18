@@ -341,16 +341,6 @@ export interface PaymentEApprovalMirror {
   referenceNo?: string;
   /** The approval's own status — 'Pending Approval', 'Approved', 'Rejected', … */
   status?: string;
-  /**
-   * Name of the workflow step the mirror is currently sitting on — "Bill Verification".
-   *
-   * Kept alongside `status` because the two answer different questions and the payment screens want
-   * the second one. E-Approval's status is a statement about the *approval* ('Pending Verification',
-   * and 'Approved' the moment its last stage clears); a payment's own vocabulary is the step it is
-   * at, and 'Completed' only when the workflow has actually finished. Rendering the approval's word
-   * on a payment row reads as though a five-step obligation were done after its first step.
-   */
-  stageName?: string;
   /** Whether the current stage can be decided in E-Approval, or only viewed there. */
   mode?: 'Decision' | 'Visibility';
   /** Readable "pending with" line, mirrored so a payment row can show it without a join. */

@@ -8,7 +8,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { PaymentObligation } from '@/lib/recurring-payments';
-import { isRecurringMirrorClosed, recurringMirrorLabel } from '@/lib/recurring-payments-e-approval';
 import {
   detachRecurringPaymentApproval,
   recurringPaymentEApprovalActor,
@@ -45,11 +44,7 @@ export function PaymentEApprovalCard({
   if (!mirror?.requestId) return null;
 
   const detached = Boolean(mirror.detachedAt);
-  const closed = isRecurringMirrorClosed(mirror);
-  // The payment module's own word for where the mirror stands — the step name while the workflow is
-  // running, 'Completed' once every step is done. E-Approval's "Approved" is true of the approval
-  // and misleading on a payment that still has four steps to go.
-  const label = recurringMirrorLabel(mirror);
+  const closed = ['Approved', 'Rejected', 'Cancelled'].includes(String(mirror.status));
 
   async function resync() {
     const actor = recurringPaymentEApprovalActor(user);
@@ -95,7 +90,7 @@ export function PaymentEApprovalCard({
             {mirror.referenceNo && (
               <Badge variant="outline" className="font-mono text-[10px]">{mirror.referenceNo}</Badge>
             )}
-            {label && <Badge variant={closed ? 'secondary' : 'default'} className="text-[10px]">{label}</Badge>}
+            {mirror.status && <Badge variant={closed ? 'secondary' : 'default'} className="text-[10px]">{mirror.status}</Badge>}
             {mirror.mode === 'Visibility' && !detached && (
               <Badge variant="outline" className="text-[10px]">Complete here, not there</Badge>
             )}

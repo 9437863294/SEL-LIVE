@@ -45,7 +45,11 @@
     "test:greythr": "node --experimental-strip-types --test tests/greythr-domain.test.mjs tests/greythr-linking.test.mjs",
     "typecheck:greythr": "tsc -p tsconfig.greythr.json",
     "firebase:admin-env": "node scripts/set-firebase-admin-env.mjs",
-    "firebase:admin-check": "node scripts/check-firebase-admin.mjs"
+    "firebase:admin-check": "node scripts/check-firebase-admin.mjs",
+    "test:office-hub": "node --experimental-strip-types --test tests/office-hub-domain.test.mjs tests/office-hub-recurrence.test.mjs tests/office-hub-reminders.test.mjs tests/office-hub-reports.test.mjs tests/office-hub-import.test.mjs",
+    "typecheck:office-hub": "tsc -p tsconfig.office-hub.json",
+    "seed:office-hub": "node scripts/seed-office-hub.mjs",
+    "test:daily-requisition": "node --experimental-strip-types --test tests/daily-requisition-import.test.mjs"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

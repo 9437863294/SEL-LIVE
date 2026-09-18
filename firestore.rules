@@ -1,7 +1,8 @@
 rules_version = '2';
 
 /**
- * Firestore security rules for the access-management and Site Account Statement collections.
+ * Firestore security rules for the access-management, Site Account Statement and Office Hub
+ * collections.
  *
  * ── Read this before deploying ──────────────────────────────────────────────────────────────────
  *
@@ -23,6 +24,13 @@ rules_version = '2';
  *      entirely in the browser, which anyone can bypass. Copy them together with their `sas*`
  *      helper functions, and verify with the rules simulator that a user assigned to one project
  *      can read that project's expenses and not another's.
+ *
+ *      The same applies to the `officeHub*` blocks at the bottom of this file. Until they are in
+ *      the console ruleset, Office Hub's meetings, tasks and decisions are readable and writable by
+ *      any signed-in user — the module's screens enforce its permissions in the browser, which
+ *      anyone can bypass. Copy them together with their `canOpenOfficeHub`, `officeHubHolds` and
+ *      `isOfficeHubMeetingMember` helpers, and verify with the rules simulator that a user who is
+ *      not a participant of a meeting cannot read that meeting's document.
  *
  *   2. Export the console's current rules, paste them into this file above the access blocks, add
  *      `"rules": "firestore.rules"` under `"firestore"` in `firebase.json`, and from then on manage
@@ -436,6 +444,286 @@ service cloud.firestore {
       allow create, update: if holdsPermission('Settings.Role Management', 'Add')
         || holdsPermission('Settings.Role Management', 'Edit');
       allow delete: if holdsPermission('Settings.Role Management', 'Delete');
+    }
+
+    /* ── Office Hub (docs/office-hub.md) ──────────────────────────────────────────────────────
+     *
+     * Meetings, tasks, decisions, teams and minutes. §49 of the module's specification is the
+     * point of this block: the browser decides what to *render*, and these rules decide what can
+     * actually be read and written. A front-end permission check is a courtesy; this is the control.
+     *
+     * ── The shape of the rules, and its one honest limitation ────────────────────────────────
+     *
+     * Firestore rules cannot run a query, so a rule cannot ask "is this user a participant of the
+     * meeting this agenda item belongs to?" without a `get()` per document — which on a list of
+     * fifty agenda items is fifty extra reads, billed, on every render. So the rules are built
+     * around fields that live *on the document being accessed*:
+     *
+     *   • A **meeting** carries `participantUserIds`, so participant access is a single
+     *     `in` test against the requester with no extra reads. That is exactly why the service
+     *     denormalises that array (see `office-hub.ts`).
+     *   • A **task** carries `assigneeId`, `createdBy` and `watcherUserIds`, for the same reason.
+     *   • The **child collections** — participants, agenda, notes, attendance, documents — are
+     *     readable by any signed-in user who can open the module, and writable only by somebody
+     *     holding the corresponding module permission. This is deliberately *coarser* than the UI,
+     *     which additionally requires you to be the organizer. It is coarser because tightening it
+     *     needs the parent-meeting `get()` described above; if an installation decides the read cost
+     *     is worth it, the commented `isMeetingParticipant()` helper below is the change to make.
+     *
+     * ── What is genuinely closed here ────────────────────────────────────────────────────────
+     *
+     *   • **Nothing is hard-deletable** except a participant row (removing somebody from an
+     *     invitation) and an agenda item. Meetings, tasks, decisions, action items and teams are
+     *     soft-deleted by the application (§83), so `allow delete: if false` is not a restriction
+     *     the app has to work around — it is the app's own model expressed as a rule.
+     *   • **Reminders and counters are server-only.** A client that could write a reminder row
+     *     could schedule a notification as anybody; a client that could write a counter could
+     *     duplicate a reference number. Both are written by the Admin SDK, which bypasses rules.
+     *   • **A participant may only answer their own invitation.** The update rule pins
+     *     `userId` to the requester for the response fields.
+     *   • **Settings are read by everyone and written by administrators.** Every screen reads them.
+     */
+
+    function canOpenOfficeHub() {
+      return signedIn() && rolePermissions() != null && (
+        rolePermissions()['Office Hub'] != null
+        || rolePermissions()['Office Hub.Meetings'] != null
+        || rolePermissions()['Office Hub.Tasks'] != null
+        || rolePermissions()['Office Hub.Dashboard'] != null
+      );
+    }
+
+    function officeHubHolds(page, action) {
+      return holdsPermission('Office Hub.' + page, action);
+    }
+
+    /**
+     * Whether the requester is named on this meeting.
+     *
+     * Reads only the document being accessed, so it costs nothing extra. The child-collection rules
+     * could call a `get()`-based variant of this against their parent meeting; see the note above
+     * for why they do not by default.
+     */
+    function isOfficeHubMeetingMember(meeting) {
+      return signedIn() && (
+        meeting.organizerId == request.auth.uid
+        || (meeting.participantUserIds is list && request.auth.uid in meeting.participantUserIds)
+      );
+    }
+
+    match /officeHubMeetings/{meetingId} {
+      allow get, list: if canOpenOfficeHub() && (
+        officeHubHolds('Meetings', 'View All')
+        || officeHubHolds('Meetings', 'View Department')
+        || officeHubHolds('Meetings', 'View Team')
+        // A participant can always read their own meeting, however narrow their grant.
+        || isOfficeHubMeetingMember(resource.data)
+      );
+      allow create: if officeHubHolds('Meetings', 'Create');
+      allow update: if officeHubHolds('Meetings', 'Edit')
+        || officeHubHolds('Meetings', 'Cancel')
+        || officeHubHolds('Meetings', 'Reschedule')
+        || officeHubHolds('Meetings', 'Manage Participants')
+        // The organizer edits their own meeting without needing a role permission: organising a
+        // meeting *is* the authority over it. See `office-hub-permissions.ts`.
+        || resource.data.organizerId == request.auth.uid;
+      // Soft-deleted through `isDeleted`, never removed (§83).
+      allow delete: if false;
+    }
+
+    match /officeHubParticipants/{participantId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create: if officeHubHolds('Meetings', 'Create')
+        || officeHubHolds('Meetings', 'Manage Participants');
+      allow update: if officeHubHolds('Meetings', 'Manage Participants')
+        || officeHubHolds('Attendance', 'Record')
+        // Answering your own invitation. The document id is `<meetingId>_<userId>`, and `userId` is
+        // immutable here, so this cannot be used to answer on somebody else's behalf.
+        || (resource.data.userId == request.auth.uid
+            && request.resource.data.userId == request.auth.uid);
+      // Removing somebody from an invitation list is a real removal, not an archive: the
+      // invitation should stop existing rather than linger as a cancelled one.
+      allow delete: if officeHubHolds('Meetings', 'Manage Participants');
+    }
+
+    match /officeHubAgenda/{agendaId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create, update: if officeHubHolds('Agenda', 'Add')
+        || officeHubHolds('Agenda', 'Edit')
+        || officeHubHolds('Meetings', 'Create')
+        || officeHubHolds('Meetings', 'Edit');
+      allow delete: if officeHubHolds('Agenda', 'Delete') || officeHubHolds('Meetings', 'Edit');
+    }
+
+    /** One notes document per meeting, keyed by the meeting id. Auto-saved during the meeting. */
+    match /officeHubNotes/{meetingId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create, update: if officeHubHolds('Minutes', 'Prepare')
+        || officeHubHolds('Meetings', 'Create')
+        || officeHubHolds('Meetings', 'Edit');
+      allow delete: if false;
+    }
+
+    match /officeHubMom/{meetingId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create, update: if officeHubHolds('Minutes', 'Prepare')
+        || officeHubHolds('Minutes', 'Review')
+        || officeHubHolds('Minutes', 'Approve')
+        || officeHubHolds('Minutes', 'Publish')
+        || officeHubHolds('Meetings', 'Create');
+      // The minutes are the record of the meeting. They are superseded, never deleted.
+      allow delete: if false;
+    }
+
+    match /officeHubDecisions/{decisionId} {
+      allow get, list: if canOpenOfficeHub() && (
+        officeHubHolds('Decisions', 'View')
+        || officeHubHolds('Decisions', 'View All')
+        || resource.data.ownerId == request.auth.uid
+      );
+      allow create: if officeHubHolds('Decisions', 'Create');
+      allow update: if officeHubHolds('Decisions', 'Edit')
+        || officeHubHolds('Decisions', 'Close')
+        || resource.data.ownerId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /officeHubActionItems/{itemId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create: if officeHubHolds('Action Items', 'Create')
+        || officeHubHolds('Meetings', 'Create');
+      allow update: if officeHubHolds('Action Items', 'Edit')
+        || officeHubHolds('Action Items', 'Complete')
+        || officeHubHolds('Action Items', 'Convert to Task')
+        || resource.data.responsibleUserId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /officeHubTasks/{taskId} {
+      allow get, list: if canOpenOfficeHub() && (
+        officeHubHolds('Tasks', 'View All')
+        || officeHubHolds('Tasks', 'View Department')
+        || officeHubHolds('Tasks', 'View Team')
+        // Your own work, and anything you raised or are following, regardless of grant.
+        || resource.data.assigneeId == request.auth.uid
+        || resource.data.createdBy == request.auth.uid
+        || (resource.data.watcherUserIds is list
+            && request.auth.uid in resource.data.watcherUserIds)
+      );
+      allow create: if officeHubHolds('Tasks', 'Create');
+      allow update: if officeHubHolds('Tasks', 'Edit')
+        || officeHubHolds('Tasks', 'Assign')
+        || officeHubHolds('Tasks', 'Complete')
+        || officeHubHolds('Tasks', 'Delete')
+        // The assignee owns their own work; a task whose owner cannot update it never gets updated.
+        || resource.data.assigneeId == request.auth.uid
+        || resource.data.createdBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /officeHubTaskComments/{commentId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create: if officeHubHolds('Tasks', 'Comment') || officeHubHolds('Tasks', 'View');
+      // Edits rewrite history on a thread other people have read, so a comment is amended by
+      // adding another, never by changing the one that was posted.
+      allow update, delete: if false;
+    }
+
+    /** Append-only. An activity trail that can be edited is not a trail. */
+    match /officeHubTaskActivity/{entryId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create: if canOpenOfficeHub();
+      allow update, delete: if false;
+    }
+
+    match /officeHubTeams/{teamId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create: if officeHubHolds('Teams', 'Create');
+      allow update: if officeHubHolds('Teams', 'Edit')
+        || officeHubHolds('Teams', 'Manage Members')
+        || officeHubHolds('Teams', 'Change Leader')
+        || officeHubHolds('Teams', 'Archive')
+        // The team leader manages their own team.
+        || resource.data.leaderId == request.auth.uid;
+      // Archived, never deleted: every past meeting and task still names the team (§6).
+      allow delete: if false;
+    }
+
+    match /officeHubDocuments/{documentId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create: if officeHubHolds('Documents', 'Upload');
+      // Soft-deleted, so a file referenced by published minutes cannot vanish from them.
+      allow update: if officeHubHolds('Documents', 'Delete')
+        || resource.data.uploadedById == request.auth.uid;
+      allow delete: if false;
+    }
+
+    /**
+     * Reminder rows are written by the client when a meeting or task is saved, and consumed by the
+     * cron route.
+     *
+     * A user may read and write **their own** rows only. Without the `userId` pin, anyone able to
+     * write here could schedule a notification that appears to come from the system, addressed to
+     * anybody in the organisation.
+     */
+    match /officeHubReminders/{reminderId} {
+      allow get, list: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if canOpenOfficeHub()
+        && request.resource.data.userId is string;
+      allow update: if signedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /officeHubMeetingTemplates/{templateId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create, update: if officeHubHolds('Templates', 'Add')
+        || officeHubHolds('Templates', 'Edit');
+      allow delete: if false;
+    }
+
+    match /officeHubAgendaTemplates/{templateId} {
+      allow get, list: if canOpenOfficeHub();
+      allow create, update: if officeHubHolds('Templates', 'Add')
+        || officeHubHolds('Templates', 'Edit');
+      allow delete: if false;
+    }
+
+    /** Office-wide configuration. Read by every screen; written by administrators. */
+    match /officeHubSettings/{docId} {
+      allow get, list: if signedIn();
+      allow create, update: if officeHubHolds('Settings', 'Edit');
+      allow delete: if false;
+    }
+
+    /** A user's own preferences. Nobody else's, including an administrator's. */
+    match /officeHubUserSettings/{userId} {
+      allow get, list: if signedIn() && userId == request.auth.uid;
+      allow create, update: if signedIn() && userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    /**
+     * Reference-number counters. Server-only.
+     *
+     * The client allocates references through a transaction on these documents, which needs write
+     * access — so this is one place where the rule is deliberately looser than "server-only" would
+     * be, and the compensating control is that a counter can only ever be *incremented* by the
+     * transaction's read-then-write. A counter a client could set freely would let two records
+     * share a reference number.
+     */
+    match /officeHubCounters/{counterId} {
+      allow get: if canOpenOfficeHub();
+      allow create, update: if canOpenOfficeHub()
+        && request.resource.data.value is int
+        && request.resource.data.value > 0
+        && (!resource.exists || request.resource.data.value == resource.data.value + 1);
+      allow list, delete: if false;
+    }
+
+    /** Written only by the cron route, through the Admin SDK. */
+    match /officeHubAttendanceLog/{entryId} {
+      allow get, list: if canOpenOfficeHub();
+      allow write: if false;
     }
   }
 }

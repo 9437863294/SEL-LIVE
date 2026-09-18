@@ -338,6 +338,19 @@ Three ordering decisions:
 A failed Storage delete does not stop the run — the file may already be gone, and keeping an
 attachment *record* because a blob could not be removed is the worse outcome.
 
+**Where it appears.** The approval screen, the edit screen, and a trailing column on every register
+(`RegisterView` → `EApprovalRequestTable`'s `renderActions` render prop). The register splits the
+control in two: `DeleteApprovalRowButton` per row, and **one** `DeleteApprovalDialog` hoisted to the
+view, keyed by the selected row. A dialog per row would be four hundred subtrees on the one table
+whose render cost is already a documented concern — and mounting the dialog fresh per selection is
+also what keeps a reason typed for one request from appearing in another's.
+
+The authority decision needs only `status` and `requesterId`, both already on a register row, so the
+button costs no reads. The *counts* need the collections, so they are fetched when the dialog opens —
+`detail` is passed straight through where the screen already has it. A failed count read is reported
+without blocking the delete: refusing to remove something because we could not *describe* it would be
+the wrong trade.
+
 Note this is the one place the module's append-only rule is deliberately broken, and only behind a
 permission nobody holds by default. Cancel remains the right answer almost always: it closes a file
 and keeps the record.

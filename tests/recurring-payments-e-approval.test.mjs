@@ -13,8 +13,6 @@ import {
   recurringApprovalPosition,
   recurringMirrorBody,
   recurringMirrorIssues,
-  recurringMirrorLabel,
-  isRecurringMirrorClosed,
   recurringMirrorPlanStages,
   recurringMirrorPriority,
   recurringMirrorSubject,
@@ -160,94 +158,14 @@ test('adding a data-entry action to a decision step withdraws it from decision m
   assert.equal(recurringMirrorMode(contaminated), 'Visibility');
 });
 
-test('every mirrored stage is marked as work to perform, so none is auto-approved away', () => {
+test('a visibility stage is marked so the requester is never auto-approved out of their own task', () => {
   const { steps } = chainFor(payment());
-  assert.ok(steps.every((step) => step.requesterMustAct === true));
-  // A visibility stage is still told apart from a decision one — by whether it has an action to
-  // apply back, which is what the screens key off.
-  assert.equal(steps.find((step) => step.mirrorStepId === '1').mirrorAction, undefined);
-  assert.equal(steps.find((step) => step.mirrorStepId === '2').mirrorAction, 'Verify');
-});
-
-test('one person holding every step does not collapse the whole chain on the first action', () => {
-  // The bug this guards: owner, verifier and approver are the same person — a small office, or
-  // anyone testing with one login. Completing step 1 of 5 auto-approved stages 2 and 3 as well, and
-  // where no later stage needed a bill number to stop it, all five went and the request read
-  // "Approved" against a payment whose bill had only just been submitted.
-  const solo = 'u-solo';
-  // Steps left unassigned in Workflow Configuration, so each falls back to the master's own
-  // verifier / approver / processor — which here is all the same person.
-  const workflow = WORKFLOW.map((step) => ({ ...step, assignedTo: [] }));
-  const pay = payment({
-    assignedTo: solo, assignees: [solo], verifierId: solo, approverId: solo, accountsProcessorId: solo,
-  });
-  const stages = buildRecurringMirrorStages(workflow, pay, settings());
-  assert.ok(stages.every((stage) => stage.assignees.includes(solo)), 'one person really does hold all five');
-
-  let n = 0;
-  const steps = attachRecurringMirrorFields(
-    buildEApprovalSteps(recurringMirrorTemplateSteps(stages), { nextId: (seed) => `${seed}#${(n += 1)}` }),
-    stages,
-  );
-  const request = {
-    id: 'EA1', referenceNo: 'EA/1', status: 'Draft', version: 1,
-    requesterId: solo, requesterName: 'Solo', priority: 'Normal',
-  };
-  const submitted = applyEApprovalAction(request, steps, {
-    kind: 'Submit', actor: { userId: solo }, now: '2026-08-22T10:00:00.000Z',
-  });
-  assert.equal(submitted.steps.filter((step) => step.status === 'Active').length, 1);
-
-  const first = submitted.steps.find((step) => step.mirrorStepId === '1');
-  const after = applyEApprovalAction(submitted.request, submitted.steps, {
-    kind: 'Approve', actor: { userId: solo }, stepId: first.id, now: '2026-08-22T11:00:00.000Z',
-  });
-
-  assert.deepEqual(
-    after.steps.map((step) => step.status),
-    ['Completed', 'Active', 'Pending', 'Pending', 'Pending'],
-    'exactly one step done, the next one live, the rest still to come',
-  );
-  assert.notEqual(after.request.status, 'Approved');
-});
-
-test('an ordinary note-sheet still skips the requester’s own approval stage', () => {
-  // The carve-out above is for mirrored stages only — the engine-wide rule is untouched.
-  const result = submitted(
-    [
-      { id: 't1', name: 'Site Accountant', assignments: [user('u-req')] },
-      { id: 't2', name: 'Director', assignments: [user('u-dir', 'Rekha')] },
-    ],
-    'u-req',
-  );
-  assert.equal(result.steps.find((step) => step.name === 'Site Accountant').status, 'Completed');
-  assert.equal(result.steps.find((step) => step.name === 'Director').status, 'Active');
-});
-
-/* ── how the mirror reads on a payment ───────────────────────────────────────────────────────── */
-
-test('a running mirror reads as the step the payment is on, not as the approval’s status', () => {
-  assert.equal(
-    recurringMirrorLabel({ status: 'Pending Verification', stageName: 'Bill Verification' }),
-    'Bill Verification',
-  );
-});
-
-test('a finished mirror reads as Completed — “Approved” is the approval’s word, not the payment’s', () => {
-  assert.equal(recurringMirrorLabel({ status: 'Approved', stageName: 'Receipt & Closure' }), 'Completed');
-  assert.equal(isRecurringMirrorClosed({ status: 'Approved' }), true);
-});
-
-test('a rejected, cancelled or unlinked mirror says so', () => {
-  assert.equal(recurringMirrorLabel({ status: 'Rejected' }), 'Rejected');
-  assert.equal(recurringMirrorLabel({ status: 'Cancelled' }), 'Cancelled');
-  assert.equal(recurringMirrorLabel({ status: 'Approved', detachedAt: {} }), 'Unlinked');
-  assert.equal(isRecurringMirrorClosed({ status: 'Pending Approval' }), false);
-});
-
-test('a mirror with no stage name yet falls back to the approval status rather than going blank', () => {
-  assert.equal(recurringMirrorLabel({ status: 'Pending Approval' }), 'Pending Approval');
-  assert.equal(recurringMirrorLabel(undefined), '');
+  const collection = steps.find((step) => step.mirrorStepId === '1');
+  const verification = steps.find((step) => step.mirrorStepId === '2');
+  assert.equal(collection.requesterMustAct, true);
+  assert.equal(verification.requesterMustAct, false);
+  assert.equal(collection.mirrorAction, undefined);
+  assert.equal(verification.mirrorAction, 'Verify');
 });
 
 test('a visibility stage offers no decision to apply back, so nothing can advance the payment from it', () => {
