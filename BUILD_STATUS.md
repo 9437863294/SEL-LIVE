@@ -45,6 +45,7 @@ masters, the central `userNotifications` bell and the `userLogs` audit trail. Se
 | Export (Excel / CSV / print) | DONE |
 | Scheduled jobs (cron route) | DONE |
 | Integration interfaces (Calendar / Meeting / Email / Notification providers) | DONE |
+| **Google Meet integration** (per-user OAuth, Meet link + Google Calendar event) | DONE |
 | Firestore rules + indexes | DONE |
 | Storage rules | DONE |
 | Seed / demo data | DONE |
@@ -54,23 +55,28 @@ masters, the central `userNotifications` bell and the `userLogs` audit trail. Se
 
 | | |
 | --- | --- |
-| Pure domain modules | 10 (`office-hub-time` … `office-hub-integrations`) |
+| Pure domain modules | 11 (`office-hub-time` … `office-hub-google`) |
 | Firestore service / server engine | `office-hub-service.ts`, `office-hub-server.ts` |
-| Routes | 29 pages + 1 API route |
-| Components | 20 |
-| Domain tests | 129, all passing |
-| Firestore composite indexes added | 43 (+1 on `userNotifications`) |
-| Firestore rule blocks added | 19 |
-| New npm dependencies | **0** |
+| Routes | 29 pages + 5 API routes |
+| Components | 21 |
+| Domain tests | 175, all passing |
+| Firestore composite indexes added | 44 (+1 on `userNotifications`) |
+| Firestore rule blocks added | 20 |
+| New npm dependencies | **0** — the Google integration uses `fetch` against the OAuth and Calendar REST endpoints and `node:crypto` for token encryption and state signing, rather than pulling in `googleapis` |
 
 ## Verification
 
 ```bash
-npm run test:office-hub        # 129 tests: domain, recurrence, reminders, reports, import — all pass
+npm run test:office-hub        # 175 tests: domain, recurrence, reminders, reports, import, google — all pass
 npm run typecheck:office-hub   # scoped tsc over the module — clean
 npm run typecheck              # whole repo
-npm run build                  # exit 0; all 29 Office Hub pages + the cron route compiled
+npm run build                  # exit 0; all 29 Office Hub pages + 5 API routes compiled
 ```
+
+The build is the check that catches what `tsc` cannot: a `server-only` module reached from a client
+component. That boundary matters here, because `office-hub-google-server.ts` holds the OAuth client
+secret and the token-encryption key — only the four `/api/office-hub/google/*` routes and
+`office-hub-server.ts` import it, and a mistake would be a build error rather than a leak.
 
 Two things to know about the repo-wide checks:
 
@@ -88,7 +94,15 @@ Two things to know about the repo-wide checks:
   against the existing `employees` collection; it does not create a parallel directory (§89).
 * **Performance scores or rankings.** §40 and §73 both prohibit them. `buildWorkload` returns plain
   counts and has no composite field.
-* **Mandatory external calendar integrations.** §63 asks for the interfaces, not the integrations.
-  `office-hub-integrations.ts` defines `CalendarProvider`, `MeetingProvider`, `EmailProvider` and
-  `NotificationProvider`, ships working no-op/ICS implementations, and registers real ones through
-  configuration.
+* **A Teams or Zoom integration.** Conferencing is Google Meet only — Office Hub creates the Meet
+  and the Google Calendar event itself rather than collecting a pasted link. The other three
+  provider contracts (`CalendarProvider`, `EmailProvider`, `NotificationProvider`) still ship
+  working defaults and accept real implementations through configuration, and the meeting registry
+  is what a second conferencing platform would plug into. See `docs/office-hub.md` §14.
+* **Reading Google Calendar RSVPs back.** Creating the Meet creates a calendar event, so Google
+  collects its own Yes/No/Maybe that Office Hub does not read — `officeHubParticipants.response`
+  stays authoritative. There is no honest reconciliation (Google has no required/optional
+  distinction), so the consequence is stated in the Settings card and the docs rather than hidden.
+* **Moving a single occurrence of a series on Google Calendar.** The series shares one Google event
+  carrying the RRULE. Rescheduling the whole series works; editing one occurrence updates Office
+  Hub correctly but leaves Google showing the original slot. Documented, not half-built.

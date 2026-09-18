@@ -6,6 +6,8 @@ import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASBudget, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
 import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useSortControl } from '@/components/site-account-statement/use-sort-control';
+import { SortControl } from '@/components/site-account-statement/sort-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +33,7 @@ function getStatus(balance: number): BalanceStatus {
 export default function BalanceStatusPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
+  const sortControl = useSortControl('reportBalance');
   const canViewAll = can('View', `${MODULE}.All Projects`);
   const canView    = can('View', `${MODULE}.Reports`);
   const canExport  = can('Export', `${MODULE}.Reports`);
@@ -102,6 +105,9 @@ export default function BalanceStatusPage() {
     if (filterStatus && p.status !== filterStatus) return false;
     return true;
   }), [projectStats, search, filterStatus]);
+
+  // The whole scope is already in memory here, so ordering it is a plain wrap.
+  const sorted = useMemo(() => sortControl.sortRows(filtered), [filtered, sortControl]);
 
   const counts = useMemo(() => ({
     healthy:  projectStats.filter(p => p.status === 'healthy').length,
@@ -200,6 +206,7 @@ export default function BalanceStatusPage() {
       {/* Search */}
       <div className="flex gap-2 flex-wrap">
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search project or person..." className="h-9 text-sm max-w-xs" />
+        <SortControl control={sortControl} />
         {filterStatus && (
           <Button variant="outline" size="sm" className="h-9 gap-1" onClick={() => setFilterStatus('')}>
             Clear: {statusConfig[filterStatus].label}
@@ -241,7 +248,7 @@ export default function BalanceStatusPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((proj, idx) => {
+                  {sorted.map((proj, idx) => {
                     const cfg = statusConfig[proj.status];
                     return (
                       <tr key={proj.id} className={cn('border-b hover:bg-muted/20 transition-colors', proj.status === 'critical' && 'bg-red-50/30')}>

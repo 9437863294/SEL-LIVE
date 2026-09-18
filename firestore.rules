@@ -740,5 +740,24 @@ service cloud.firestore {
       allow get, list: if canOpenOfficeHub();
       allow write: if false;
     }
+
+    /**
+     * Google OAuth credentials. Closed to every client, including the owner's.
+     *
+     * The strictest block in this file, and the only Office Hub collection a signed-in user cannot
+     * read their own document from. Each holds an AES-256-GCM envelope around a Google **refresh
+     * token** — a standing grant to read and write that person's calendar that does not expire on
+     * its own. A rule allowing `userId == request.auth.uid` would look reasonable and would mean any
+     * XSS in the application, or any leaked ID token, could exfiltrate the envelope; combined with
+     * an `OFFICE_HUB_GOOGLE_TOKEN_KEY` that leaks separately, that is a live grant.
+     *
+     * Nothing in the client needs it. `office-hub-google-server.ts` is the sole accessor, through
+     * the Admin SDK, which bypasses these rules; the browser learns whether it is connected from
+     * `GET /api/office-hub/google/status`, which returns a redacted view with no token in it. If
+     * this rule and that file ever disagree, this one is right.
+     */
+    match /officeHubGoogleConnections/{userId} {
+      allow read, write: if false;
+    }
   }
 }

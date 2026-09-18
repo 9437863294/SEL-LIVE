@@ -6,6 +6,8 @@ import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASPayment, type SASProject } from '@/lib/site-account-statement';
 import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useSortControl } from '@/components/site-account-statement/use-sort-control';
+import { SortControl } from '@/components/site-account-statement/sort-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +24,7 @@ const MODULE = 'Site Account Statement';
 export default function ReceiptReportPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
+  const sortControl = useSortControl('reportReceipts');
   const canViewAll = can('View',   `${MODULE}.All Projects`);
   const canView    = can('View',   `${MODULE}.Reports`);
   const canExport  = can('Export', `${MODULE}.Reports`);
@@ -82,12 +85,15 @@ export default function ReceiptReportPage() {
     return true;
   }), [payments, userProjectIds, filterProject, filterFrom, filterTo, search]);
 
+  // The whole scope is already in memory here, so ordering it is a plain wrap.
+  const sorted = useMemo(() => sortControl.sortRows(filtered), [filtered, sortControl]);
+
   const total = useMemo(() => filtered.reduce((s, p) => s + (p.receivedAmount || 0), 0), [filtered]);
 
   // Group by project
   const grouped = useMemo(() => {
     const map = new Map<string, { name: string; rows: SASPayment[]; total: number }>();
-    filtered.forEach(p => {
+    sorted.forEach(p => {
       const key = p.projectId || p.projectName;
       if (!map.has(key)) map.set(key, { name: p.projectName, rows: [], total: 0 });
       const g = map.get(key)!;
@@ -95,7 +101,7 @@ export default function ReceiptReportPage() {
       g.total += p.receivedAmount || 0;
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered]);
+  }, [sorted]);
 
   async function exportExcel() {
     setExporting(true);
@@ -163,6 +169,7 @@ export default function ReceiptReportPage() {
         <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
         <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
+        <SortControl control={sortControl} />
       </div>
 
       {/* Total */}

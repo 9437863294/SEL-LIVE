@@ -286,7 +286,20 @@ export type OfficeHubFieldErrors = Record<string, string>;
  */
 export function validateMeetingInput(
   input: MeetingValidationInput,
-  options: { settings?: Partial<OfficeHubSettings> | null; now?: Date; allowPast?: boolean } = {},
+  options: {
+    settings?: Partial<OfficeHubSettings> | null;
+    now?: Date;
+    allowPast?: boolean;
+    /**
+     * Whether a joining link will be created for this meeting rather than typed into it.
+     *
+     * Set by the form when a `MeetingProvider` with `supportsCreation` is registered for the chosen
+     * platform — in practice, when Google Meet is connected. Without it, an organizer would be
+     * required to paste a link that the application is about to generate for them, which is a
+     * validation error with no valid way to satisfy it.
+     */
+    conferenceWillBeCreated?: boolean;
+  } = {},
 ): OfficeHubFieldErrors {
   const errors: OfficeHubFieldErrors = {};
   const isDraft = input.status === 'Draft';
@@ -329,7 +342,9 @@ export function validateMeetingInput(
   const mode = input.mode ?? 'Offline';
   if (mode === 'Online' || mode === 'Hybrid') {
     if (!input.meetingUrl?.trim()) {
-      errors.meetingUrl = 'An online meeting needs a joining link.';
+      // Only a problem when nothing is going to fill it in. A link that will be minted on save is
+      // not a missing link.
+      if (!options.conferenceWillBeCreated) errors.meetingUrl = 'An online meeting needs a joining link.';
     } else if (!isLikelyUrl(input.meetingUrl)) {
       errors.meetingUrl = 'Enter a full link, starting with https://';
     }

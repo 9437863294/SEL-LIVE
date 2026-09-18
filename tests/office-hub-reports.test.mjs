@@ -564,19 +564,26 @@ test('the manual meeting provider catches a link pasted against the wrong platfo
 });
 
 test('a registered provider wins, and an unregistered platform still gets a working one', () => {
+  // Stands in for `googleMeetProvider`, which lives in a `'use client'` module and cannot be
+  // imported here. What is being tested is the registry: that registering a provider that can
+  // create a conference is the whole of the wiring the meeting form needs.
   const stub = {
-    id: 'stub-zoom',
-    platform: 'Zoom',
-    label: 'Zoom (API)',
+    id: 'stub-google-meet',
+    platform: 'Google Meet',
+    label: 'Google Meet',
     supportsCreation: true,
     validateUrl: () => ({ ok: true, reason: null }),
-    create: async () => ({ ok: true, joinUrl: 'https://zoom.us/j/created' }),
+    create: async () => ({ ok: true, joinUrl: 'https://meet.google.com/abc-defg-hij' }),
   };
   registerMeetingProvider(stub);
 
-  assert.equal(getMeetingProvider('Zoom').id, 'stub-zoom');
-  assert.equal(getMeetingProvider('Zoom').supportsCreation, true);
-  assert.equal(getMeetingProvider('Google Meet').supportsCreation, false, 'falls back to the manual provider');
+  assert.equal(getMeetingProvider('Google Meet').id, 'stub-google-meet');
+  assert.equal(getMeetingProvider('Google Meet').supportsCreation, true);
+
+  // A platform with no provider still gets one that accepts a pasted link, which is what keeps a
+  // meeting created before this integration editable.
+  assert.equal(getMeetingProvider('Zoom').supportsCreation, false, 'falls back to the manual provider');
+  assert.equal(getMeetingProvider('Zoom').id, 'manual:Zoom');
   assert.equal(getMeetingProvider(null).platform, 'Other');
 });
 

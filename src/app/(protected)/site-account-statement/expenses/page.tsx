@@ -20,6 +20,8 @@ import {
 import { resetBudgetAlertState, runBudgetAlertChecks } from '@/lib/sas-budget-alerts';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { useDateControl } from '@/components/site-account-statement/use-date-control';
+import { useSortControl } from '@/components/site-account-statement/use-sort-control';
+import { SortControl } from '@/components/site-account-statement/sort-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -148,6 +150,7 @@ export default function SiteExpensesPage() {
   const { user } = useAuth();
   const { field } = useFieldControl('expense');
   const dateControl = useDateControl('expense');
+  const sortControl = useSortControl('expenses');
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   // Expense id the attachments upload under — the row's own id when editing, a
@@ -1019,6 +1022,16 @@ export default function SiteExpensesPage() {
   const refining = Boolean(filterSubCategory || filterMode || filterGstOnly || search.trim());
 
   /*
+   * Whether the whole period has to be in memory.
+   *
+   * True for any client-side filter, and also for any sort other than the one the server already
+   * returns — sorting a single page of 50 would reorder that page rather than the list, which
+   * looks like it worked and is wrong. Deliberately distinct from `refining`: a re-sorted but
+   * unfiltered list is still showing every row, so the totals below must not be relabelled.
+   */
+  const needsFullScope = refining || !sortControl.atRegistryDefault;
+
+  /*
    * The whole scope, loaded on demand so that a refinement filters *everything* in the period
    * rather than only the page on screen.
    *
@@ -1035,7 +1048,7 @@ export default function SiteExpensesPage() {
   const [scopeLoading, setScopeLoading] = useState(false);
 
   useEffect(() => {
-    if (!staticLoaded || !refining) return;
+    if (!staticLoaded || !needsFullScope) return;
     if (scopeCache?.key === scopeCacheKey) return;   // already held for this scope
     let cancelled = false;
 
@@ -1051,18 +1064,17 @@ export default function SiteExpensesPage() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [staticLoaded, refining, scopeCacheKey, scopeCache?.key]);
+  }, [staticLoaded, needsFullScope, scopeCacheKey, scopeCache?.key]);
 
   /** True once the refinement is running against the whole period rather than one page. */
-  const refinementComplete = refining && scopeCache?.key === scopeCacheKey;
+  const refinementComplete = needsFullScope && scopeCache?.key === scopeCacheKey;
 
   /** Rows the filters run over: the whole scope when refining, otherwise the loaded page(s). */
   const refinementSource = refinementComplete ? scopeCache!.rows : expenses;
 
   const filtered = useMemo(() => {
-    if (!refining) return expenses;
     const needle = search.trim().toLowerCase();
-    return refinementSource.filter(e => {
+    const matched = !refining ? refinementSource : refinementSource.filter(e => {
       if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory) return false;
       if (filterMode        && e.paymentMode !== filterMode)                       return false;
       if (filterGstOnly     && e.isGstBill !== true)                               return false;
@@ -1076,7 +1088,9 @@ export default function SiteExpensesPage() {
         !(e.billNo             || '').toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [expenses, refinementSource, refining, filterSubCategory, filterMode, filterGstOnly, search]);
+    // Sorted last, so the order applies to the matched set rather than to the page it came from.
+    return sortControl.atRegistryDefault ? matched : sortControl.sortRows(matched);
+  }, [refinementSource, refining, filterSubCategory, filterMode, filterGstOnly, search, sortControl]);
 
   /** Sum of the rows currently on screen. */
   const totalShown = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
@@ -1089,8 +1103,10 @@ export default function SiteExpensesPage() {
    * answer for what the user asked, so the total describes the filtered set instead of quietly
    * reporting a period total next to a filtered list.
    */
-  const periodExpenseTotal = refinementComplete ? totalShown : (periodTotals?.total ?? totalShown);
-  const periodExpenseCount = refinementComplete ? filtered.length : (periodTotals?.count ?? filtered.length);
+  // Keyed on `refining`, not `refinementComplete`: a re-sorted list still contains every row, so
+  // the server aggregate remains the right figure for it.
+  const periodExpenseTotal = (refining && refinementComplete) ? totalShown : (periodTotals?.total ?? totalShown);
+  const periodExpenseCount = (refining && refinementComplete) ? filtered.length : (periodTotals?.count ?? filtered.length);
 
   /**
    * Closing balance always reflects the *whole* period, never the filtered subset — narrowing the
@@ -1131,7 +1147,7 @@ export default function SiteExpensesPage() {
       const { rows: scopeRows, truncated } = await fetchAllExpenses(ledgerScope);
       const needle = search.trim().toLowerCase();
       // Mirrors the on-screen refinement exactly, so the file matches what the user is looking at.
-      const rows = refining
+      const ordered = refining
         ? scopeRows.filter(e => {
             if (filterSubCategory && (e.expenseSubCategory || '') !== filterSubCategory) return false;
             if (filterMode        && e.paymentMode !== filterMode)                       return false;
@@ -1147,6 +1163,8 @@ export default function SiteExpensesPage() {
             return true;
           })
         : scopeRows;
+      // The file comes out in the order the user is looking at, not the query's order.
+      const rows = sortControl.atRegistryDefault ? ordered : sortControl.sortRows(ordered);
 
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Site Expenses');
@@ -1350,6 +1368,7 @@ export default function SiteExpensesPage() {
             <Checkbox checked={filterGstOnly} onCheckedChange={v => setFilterGstOnly(v === true)} />
             <span className="truncate">GST Bills Only</span>
           </label>
+          <SortControl control={sortControl} className="col-span-2 sm:col-span-1" />
         </div>
       </div>
 
@@ -1561,7 +1580,7 @@ export default function SiteExpensesPage() {
                   </tr>
                   {/* Only meaningful while the list is a partial view of the period. Once a
                       refinement covers the whole scope, the row above already is the answer. */}
-                  {!refining && pageCursor && (
+                  {!needsFullScope && pageCursor && (
                     <tr className="bg-muted/50 font-semibold">
                       <td colSpan={5} className="px-4 py-2.5">Period total (all {periodExpenseCount} records)</td>
                       <td className="px-4 py-2.5 text-right text-rose-800">{formatINR(periodExpenseTotal)}</td>
@@ -1575,8 +1594,8 @@ export default function SiteExpensesPage() {
 
           {/* Cursor pagination — the table holds one page at a time rather than the whole
               collection, while the totals above come from the server-side aggregate. Hidden while
-              refining, because the filter has already loaded and searched the entire period. */}
-          {pageCursor && !refining && (
+              refining or re-sorting, because both load the entire period up front. */}
+          {pageCursor && !needsFullScope && (
             <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
               <span className="text-xs text-muted-foreground">
                 Showing {expenses.length} of {periodExpenseCount} records

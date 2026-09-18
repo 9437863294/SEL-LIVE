@@ -87,7 +87,25 @@ export interface MeetingProvider {
     startAt: string;
     endAt: string;
     organizerEmail?: string | null;
-  }): Promise<{ ok: boolean; joinUrl?: string; passcode?: string; error?: string }>;
+    /**
+     * The saved meeting the conference belongs to.
+     *
+     * Optional because a provider that mints a standalone room needs nothing but a time range. The
+     * Google Meet provider does need it: a Meet link is a property of a Google Calendar event, so
+     * there has to *be* a meeting to attach the event to, and the server reads its participants and
+     * recurrence from the document rather than trusting a client to restate them.
+     */
+    meetingId?: string | null;
+  }): Promise<{
+    ok: boolean;
+    joinUrl?: string;
+    passcode?: string;
+    error?: string;
+    /** Participants left off the remote invitation, and why. Shown, never swallowed. */
+    warnings?: string[];
+    /** Set when the failure is "the organizer has not connected their account". */
+    needsConnect?: boolean;
+  }>;
 }
 
 export interface EmailMessage {

@@ -9,6 +9,8 @@ import {
 } from '@/lib/site-account-statement';
 import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useSortControl } from '@/components/site-account-statement/use-sort-control';
+import { SortControl } from '@/components/site-account-statement/sort-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,6 +27,7 @@ const MODULE = 'Site Account Statement';
 export default function ExpenseReportPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
+  const sortControl = useSortControl('reportExpenses');
   const canViewAll = can('View',   `${MODULE}.All Projects`);
   const canView    = can('View',   `${MODULE}.Reports`);
   const canExport  = can('Export', `${MODULE}.Reports`);
@@ -113,11 +116,14 @@ export default function ExpenseReportPage() {
     return true;
   }), [expenses, userProjectIds, filterProject, filterCategory, filterSubCategory, filterMode, filterFrom, filterTo, search]);
 
+  // The whole scope is already in memory here, so ordering it is a plain wrap.
+  const sorted = useMemo(() => sortControl.sortRows(filtered), [filtered, sortControl]);
+
   const total = useMemo(() => filtered.reduce((s, e) => s + (e.expenseAmount || 0), 0), [filtered]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, { name: string; rows: SASExpense[]; total: number }>();
-    filtered.forEach(e => {
+    sorted.forEach(e => {
       const key = e.projectId || e.projectName;
       if (!map.has(key)) map.set(key, { name: e.projectName, rows: [], total: 0 });
       const g = map.get(key)!;
@@ -125,7 +131,7 @@ export default function ExpenseReportPage() {
       g.total += e.expenseAmount || 0;
     });
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered]);
+  }, [sorted]);
 
   // Per-project balance
   const perProjectBalance = useMemo(() => {
@@ -241,6 +247,7 @@ export default function ExpenseReportPage() {
           <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
           <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
           <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
+          <SortControl control={sortControl} />
         </div>
       </div>
 

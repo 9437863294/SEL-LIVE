@@ -25,6 +25,9 @@ import 'server-only';
  *  5. **Top up recurring series.** Materialises the next instances of any open-ended series inside
  *     the horizon. *Idempotent by `occurrenceKey`*, which is what makes §86's "do not create
  *     duplicate recurring meetings" structural rather than a thing to remember.
+ *  6. **Repair Google Meet links.** Retries the meetings whose Meet link could not be created when
+ *     they were saved. *Idempotent* because the conference request id is derived from the meeting
+ *     id, so a retry returns the existing conference rather than minting a second one.
  *
  * Every sweep reuses the same pure functions the browser uses — `dueReminders`,
  * `deriveMeetingStatus`, `overdueTaskNotices`, `pendingOccurrences` — so the cron and the screens
@@ -85,6 +88,7 @@ import {
   type EmailMessage,
 } from './office-hub-integrations';
 import { addDays, todayInZone } from './office-hub-time';
+import { retryFailedGoogleSyncs } from './office-hub-google-server';
 
 /* ── email transport ─────────────────────────────────────────────────────────────────────────── */
 
@@ -229,6 +233,8 @@ export interface SweepResult {
   dueItemsNotified: number;
   seriesInstancesCreated: number;
   emailsSent: number;
+  /** Meetings whose Google Meet link was missing or failed and has now been created. */
+  googleMeetLinksRepaired: number;
   durationMs: number;
   errors: string[];
 }
@@ -777,6 +783,7 @@ export async function runOfficeHubSweep(options: { now?: Date; only?: string[] }
     dueItemsNotified: 0,
     seriesInstancesCreated: 0,
     emailsSent: 0,
+    googleMeetLinksRepaired: 0,
     durationMs: 0,
     errors: [],
   };
@@ -791,6 +798,18 @@ export async function runOfficeHubSweep(options: { now?: Date; only?: string[] }
     { name: 'overdue-tasks', run: () => notifyOverdueTasks(db, settings, preferences, now, result) },
     { name: 'due-items', run: () => notifyDueItems(db, settings, preferences, now, result) },
     { name: 'series', run: () => topUpSeries(db, now, result) },
+    /**
+     * Retry the Meet links that could not be created when the meeting was saved.
+     *
+     * Runs last, and after `series`, so a series parent that has just been topped up gets its link
+     * propagated in the same sweep. This step is the reason a Google outage during the working day
+     * does not leave meetings permanently linkless: `syncMeetingToGoogle` records the failure on the
+     * document, and this finds it.
+     *
+     * Per-user OAuth is no obstacle here, despite nobody being signed in — the organizer's refresh
+     * token is stored server-side, so the sweep can act as them exactly as a request would.
+     */
+    { name: 'google-meet', run: () => repairGoogleMeetLinks(now, result) },
   ];
 
   for (const step of steps) {
@@ -805,4 +824,31 @@ export async function runOfficeHubSweep(options: { now?: Date; only?: string[] }
 
   result.durationMs = Date.now() - startedAt;
   return result;
+}
+
+/* ── 6. Google Meet links that failed ────────────────────────────────────────────────────────── */
+
+/**
+ * Retry the Google Meet links that did not get created.
+ *
+ * Thin by design: `retryFailedGoogleSyncs` owns the query, the bound and the per-meeting decision,
+ * because the same retry is reachable from the meeting page's Retry button and the two must not
+ * disagree about what "failed" means or how many to attempt.
+ *
+ * A step that does nothing when Google Meet is unconfigured is the correct behaviour rather than an
+ * error: an installation that has not set up the integration has no failed syncs to repair, and a
+ * sweep reporting an error every 30 minutes for a feature nobody enabled is noise that trains
+ * operators to ignore the log.
+ */
+async function repairGoogleMeetLinks(now: Date, result: SweepResult): Promise<void> {
+  const outcome = await retryFailedGoogleSyncs({ now });
+  result.googleMeetLinksRepaired = outcome.succeeded;
+
+  if (outcome.failed > 0) {
+    // Collected into `errors` rather than thrown: the sweep did run, the other steps worked, and a
+    // meeting still without a link is a state the meeting page already shows with a Retry.
+    result.errors.push(
+      `google-meet: ${outcome.failed} of ${outcome.attempted} meetings still have no Meet link.`,
+    );
+  }
 }

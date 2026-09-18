@@ -29,6 +29,7 @@ import {
   ExternalLink,
   FileText,
   ListTodo,
+  Loader2,
   MapPin,
   Pencil,
   PlayCircle,
@@ -52,6 +53,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 // The app-wide audit stamp formatter, shared with every other module's detail screens.
 import { formatAuditStamp } from '@/lib/audit-fields';
 import {
@@ -67,6 +69,7 @@ import {
   describeResponses,
   formatClockTime,
   formatIsoDate,
+  googleMeetCode,
   isMeetingOrganizer,
   meetingDurationMinutes,
   meetingInViewerZone,
@@ -91,6 +94,7 @@ import {
   subscribeMeetingParticipants,
   getMom,
 } from '@/lib/office-hub-service';
+import { syncGoogleMeet } from '@/lib/office-hub-google-client';
 import { useOfficeHub, useOfficeHubAction, useOfficeHubQuery } from '@/components/office-hub/hooks';
 import {
   MeetingModeBadge,
@@ -123,6 +127,7 @@ export default function MeetingDetailPage() {
 
   const { actor, viewer, capabilities, settings, isLoading, today } = useOfficeHub();
   const { isBusy, run } = useOfficeHubAction();
+  const { toast } = useToast();
 
   const [meeting, setMeeting] = useState<OfficeHubMeeting | null>(null);
   const [meetingLoading, setMeetingLoading] = useState(true);
@@ -131,6 +136,8 @@ export default function MeetingDetailPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelScope, setCancelScope] = useState<'occurrence' | 'series'>('occurrence');
   const [tab, setTab] = useState('overview');
+  const [isSyncingMeet, setIsSyncingMeet] = useState(false);
+  const [meetSyncError, setMeetSyncError] = useState<string | null>(null);
 
   /* Live: the meeting record and its participants (§52). */
   useEffect(() => {
@@ -190,6 +197,9 @@ export default function MeetingDetailPage() {
     () => (meeting ? meetingInViewerZone(meeting, viewer.timeZone) : null),
     [meeting, viewer.timeZone],
   );
+
+  /** The `abc-defg-hij` part of a Meet link, which is what people read out on a phone call. */
+  const meetCode = useMemo(() => googleMeetCode(join?.url ?? null), [join?.url]);
 
   const followUp = useMemo(
     () =>
@@ -263,6 +273,39 @@ export default function MeetingDetailPage() {
     if (result) {
       setCancelOpen(false);
       setCancelReason('');
+    }
+  };
+
+  /**
+   * Create, or retry, the Google Meet link for this meeting.
+   *
+   * Offered only to whoever may edit the meeting, and only when there is no link — a "Retry" next
+   * to a working link would invite somebody to replace a URL participants already hold.
+   *
+   * The error is held in state rather than only shown as a toast, because it has to stay on screen
+   * next to the button that produced it — a toast for "the organizer has not connected Google" is
+   * gone by the time somebody wonders why there is no link.
+   *
+   * No reload afterwards: `subscribeMeeting` is a live listener, so the link the server just wrote
+   * arrives on its own.
+   */
+  const retryMeetLink = async () => {
+    setMeetSyncError(null);
+    setIsSyncingMeet(true);
+    try {
+      const result = await syncGoogleMeet(meeting.id);
+      if (result.ok && result.meetUrl) {
+        toast({ title: 'Meet link created', description: 'Participants can now join from Office Hub or Google Calendar.' });
+      } else {
+        setMeetSyncError(result.error ?? 'Google did not return a Meet link.');
+      }
+      for (const warning of result.warnings) {
+        toast({ title: 'One thing to know', description: warning, duration: 12_000 });
+      }
+    } catch (error) {
+      setMeetSyncError(error instanceof Error ? error.message : 'The Meet link could not be created.');
+    } finally {
+      setIsSyncingMeet(false);
     }
   };
 
@@ -497,12 +540,54 @@ export default function MeetingDetailPage() {
                           <Copy className="h-3 w-3" />
                           Copy
                         </Button>
+                        {meetCode && <span className="text-[11px] text-muted-foreground">{meetCode}</span>}
                       </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">{join?.reason ?? 'No link yet.'}</p>
                     )}
+
+                    {/*
+                      The Meet link is created on save, so its absence on a scheduled online meeting
+                      means the Google call did not succeed. Shown with the reason and one action,
+                      to the people who can take it — everybody else would see a button that 403s.
+                    */}
+                    {!join?.url && verdicts?.edit.allowed && meeting.status !== 'Cancelled' && (
+                      <div className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2">
+                        {(meeting.googleSyncError || meetSyncError) && (
+                          <p className="text-[11px] leading-relaxed text-amber-900">
+                            {meetSyncError ?? meeting.googleSyncError}
+                          </p>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-1.5 h-7 gap-1.5 bg-white text-[11px]"
+                          onClick={() => void retryMeetLink()}
+                          disabled={isSyncingMeet}
+                        >
+                          {isSyncingMeet ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Video className="h-3 w-3" />
+                          )}
+                          {meeting.googleSyncState === 'failed' ? 'Retry Meet link' : 'Create Meet link'}
+                        </Button>
+                      </div>
+                    )}
+
                     {meeting.meetingPasscode && (
                       <p className="text-xs text-muted-foreground">Passcode: {meeting.meetingPasscode}</p>
+                    )}
+                    {meeting.googleEventHtmlLink && (
+                      <a
+                        href={meeting.googleEventHtmlLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                        Open in Google Calendar
+                      </a>
                     )}
                   </div>
                 </OfficeHubField>

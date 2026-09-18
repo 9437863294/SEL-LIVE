@@ -135,6 +135,7 @@ import { normalizeRecurrence, pendingOccurrences } from './office-hub-recurrence
 import { OFFICE_HUB_BASE_PATH } from './office-hub-permissions';
 import { todayInZone, type IsoDate } from './office-hub-time';
 import { registerNotificationProvider } from './office-hub-integrations';
+import { googleSyncPlan } from './office-hub-google';
 
 /* ── the actor ───────────────────────────────────────────────────────────────────────────────── */
 
@@ -931,6 +932,20 @@ export async function createMeeting(
     });
   }
 
+  /**
+   * The Meet link, after the series instances exist but before the invitations go out.
+   *
+   * Both halves of that ordering are deliberate:
+   *
+   *   • **After the instances**, because the parent's sync propagates its link down to every one of
+   *     them. Syncing first would leave the instances linkless until the nightly sweep.
+   *   • **Before the invitations**, so that a participant who opens the invitation the instant it
+   *     arrives finds the Meet link already on the meeting rather than "no link yet". It costs
+   *     nothing — both are awaited before this function returns either way — and a Google failure
+   *     still cannot stop the invitations, because `syncGoogleConference` does not throw.
+   */
+  warnings.push(...(await syncGoogleConference(meeting)));
+
   if (input.status === 'Scheduled') {
     await Promise.all([
       scheduleMeetingReminders(meeting, participants.map((participant) => participant.userId), settings),
@@ -1235,7 +1250,7 @@ export async function updateMeeting(
     reason?: string | null;
     scope?: 'occurrence' | 'series';
   } = {},
-): Promise<{ rescheduled: boolean; notified: number }> {
+): Promise<{ rescheduled: boolean; notified: number; warnings: string[] }> {
   const existing = await getMeeting(meetingId);
   if (!existing) throw new OfficeHubServiceError('That meeting no longer exists.', 'office-hub/not-found');
 
@@ -1320,6 +1335,19 @@ export async function updateMeeting(
     await applyToSeriesSiblings(actor, existing, update);
   }
 
+  /**
+   * Update Google, but only for a change Google would show.
+   *
+   * The title, the time, the place, the guest list and the agenda-bearing description are all on
+   * the event; a priority change or a tag is not. Patching on every save would mean a re-invitation
+   * email to every participant each time somebody fixed a typo in the notes — which is exactly the
+   * behaviour that trains people to ignore calendar invitations.
+   */
+  const googleWarnings =
+    rescheduled || patch.selection || patch.title != null || patch.description != null
+      ? await syncGoogleConference({ ...existing, ...update } as OfficeHubMeeting)
+      : [];
+
   logOfficeHub(
     actor,
     rescheduled ? 'Reschedule Meeting' : 'Edit Meeting',
@@ -1333,7 +1361,7 @@ export async function updateMeeting(
     { recordId: meetingId, recordRef: existing.title },
   );
 
-  return { rescheduled, notified };
+  return { rescheduled, notified, warnings: googleWarnings };
 }
 
 /**
@@ -1462,6 +1490,72 @@ async function replaceParticipants(
   }
 }
 
+/* ── Google Meet ─────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Bring a meeting's Google Meet link and calendar event in line with the meeting.
+ *
+ * Called from `createMeeting`, `updateMeeting` and `cancelMeeting` rather than from the pages, for
+ * the reason at the top of this file: "create a meeting" includes "create its Meet link", and a
+ * page that assembled the steps itself would eventually forget this one on the edit path — leaving
+ * a rescheduled meeting whose Google Calendar entry still says the old time.
+ *
+ * ── It never throws, and never fails the write ─────────────────────────────────────────────────
+ *
+ * The meeting is already committed by the time this runs. Google being unreachable is not a reason
+ * to report a failed save for a meeting that exists, has participants and has sent its invitations,
+ * so a failure comes back as a warning string and is recorded on the document as
+ * `googleSyncState: 'failed'` — which the meeting page shows with a Retry, and which the cron
+ * sweep's `google-meet` step picks up on its own.
+ *
+ * ── Why it consults the plan before making a request ───────────────────────────────────────────
+ *
+ * `googleSyncPlan` is pure and already knows that an in-person meeting has no conference, a draft
+ * is not on anybody's calendar, and a recurring instance inherits its parent's link rather than
+ * minting its own. Asking it first means the common cases cost nothing, and — more importantly —
+ * that the nightly series top-up creates joinable instances with no Google call and no signed-in
+ * user, which per-user OAuth could not otherwise serve.
+ */
+async function syncGoogleConference(
+  meeting: Pick<OfficeHubMeeting, 'id' | 'mode' | 'status'> &
+    Partial<Pick<OfficeHubMeeting, 'seriesId' | 'isSeriesParent' | 'googleEventId' | 'meetingUrl' | 'onlinePlatform'>>,
+  intent: 'save' | 'cancel' = 'save',
+): Promise<string[]> {
+  const plan = googleSyncPlan(meeting, intent);
+  // 'inherit' is handled by the parent's own sync, which pushes its link down the series.
+  if (plan.action === 'none' || plan.action === 'inherit') return [];
+
+  try {
+    const { syncGoogleMeet, withdrawGoogleMeet } = await import('./office-hub-google-client');
+    const result = plan.action === 'cancel' ? await withdrawGoogleMeet(meeting.id) : await syncGoogleMeet(meeting.id);
+
+    if (result.ok) return result.warnings;
+
+    /**
+     * Nothing to say when the organizer has not connected Google but has supplied a link anyway.
+     *
+     * That is the path the form steers them down when Google is unconnected — it asks for a link to
+     * paste — so the meeting already works. Telling them to connect Google at the moment they
+     * successfully saved a working meeting would be a warning about something they did right.
+     * Connecting belongs on the Settings card, where the form already points them.
+     */
+    if (result.needsConnect && meeting.meetingUrl?.trim()) return result.warnings;
+
+    return [
+      result.error ??
+        (plan.action === 'cancel'
+          ? 'The meeting is cancelled here, but its Google Calendar entry could not be removed.'
+          : 'The Meet link could not be created. Open the meeting to retry it.'),
+      ...result.warnings,
+    ];
+  } catch (error) {
+    // A thrown error here means the bridge could not even be loaded, or the session expired
+    // mid-save. Reported, not swallowed, and still not fatal to the meeting.
+    console.error('[office-hub] Google Meet sync could not run', error);
+    return ['Google Meet could not be reached. The meeting is saved; add or retry its link from the meeting page.'];
+  }
+}
+
 /** Send the invitation notifications for a set of participants (§13). */
 async function sendInvitations(
   actor: OfficeHubActor,
@@ -1483,7 +1577,7 @@ export async function sendMeetingInvitations(
   actor: OfficeHubActor,
   meetingId: string,
   options: { settings?: OfficeHubSettings | null } = {},
-): Promise<number> {
+): Promise<{ notified: number; warnings: string[] }> {
   const meeting = await getMeeting(meetingId);
   if (!meeting) throw new OfficeHubServiceError('That meeting no longer exists.', 'office-hub/not-found');
 
@@ -1499,22 +1593,33 @@ export async function sendMeetingInvitations(
   });
 
   const scheduled = { ...meeting, status: 'Scheduled' as MeetingStatus };
-  await scheduleMeetingReminders(scheduled, participants.map((participant) => participant.userId), settings);
-  const sent = await sendInvitations(actor, scheduled, participants, settings);
 
   if (scheduled.recurrence.frequency !== 'None') {
     await materializeSeriesInstances(actor, { ...scheduled, seriesId: scheduled.seriesId ?? meetingId, isSeriesParent: true });
   }
 
+  /**
+   * A draft has no Meet link — `googleSyncPlan` withholds one deliberately, because a draft is not
+   * on anybody's calendar. Sending the invitations is the moment it becomes a real meeting, so it
+   * is also the moment the link gets made.
+   *
+   * Ordered as in `createMeeting`, and for the same two reasons: after the series instances so the
+   * link propagates to them, and before the invitations so the link is there when somebody opens one.
+   */
+  const warnings = await syncGoogleConference(scheduled);
+
+  await scheduleMeetingReminders(scheduled, participants.map((participant) => participant.userId), settings);
+  const sent = await sendInvitations(actor, scheduled, participants, settings);
+
   logOfficeHub(actor, 'Send Meeting Invitations', { participants: participants.length, notified: sent }, { recordId: meetingId, recordRef: meeting.title });
-  return sent;
+  return { notified: sent, warnings };
 }
 
 export async function cancelMeeting(
   actor: OfficeHubActor,
   meetingId: string,
   options: { reason: string; scope?: 'occurrence' | 'series'; settings?: OfficeHubSettings | null } = { reason: '' },
-): Promise<{ cancelled: number; notified: number }> {
+): Promise<{ cancelled: number; notified: number; warnings: string[] }> {
   const meeting = await getMeeting(meetingId);
   if (!meeting) throw new OfficeHubServiceError('That meeting no longer exists.', 'office-hub/not-found');
   const settings = settingsOrDefaults(options.settings);
@@ -1562,6 +1667,19 @@ export async function cancelMeeting(
     }).catch(() => {});
   }
 
+  /**
+   * Withdraw the calendar events.
+   *
+   * Deleting the Google event is what actually takes the meeting off participants' calendars —
+   * marking it cancelled here does not, and a cancelled meeting still sitting on everybody's
+   * Monday morning is how people turn up to it. Done before the notifications so that the
+   * cancellation notice and the disappearing calendar entry arrive together.
+   */
+  const googleWarnings: string[] = [];
+  for (const target of targets) {
+    googleWarnings.push(...(await syncGoogleConference(target, 'cancel')));
+  }
+
   let notified = 0;
   for (const target of targets) {
     await cancelRemindersFor('meeting', target.id);
@@ -1584,7 +1702,7 @@ export async function cancelMeeting(
     { recordId: meetingId, recordRef: meeting.title },
   );
 
-  return { cancelled: targets.length, notified };
+  return { cancelled: targets.length, notified, warnings: googleWarnings };
 }
 
 export async function setMeetingStatus(

@@ -17,10 +17,13 @@
  *   office-hub-search.ts       search ranking and grouping             — imports the above
  *   office-hub-import.ts       employee CSV parsing                    — imports time
  *   office-hub-integrations.ts provider interfaces                     — imports time + model
+ *   office-hub-google.ts       Google Meet request/response shaping    — imports model + integrations
  *   ─────────────────────────────────────────────────────────────────────────────────────────────
  *   office-hub.ts              this file: collections + re-exports     — imports firebase types
  *   office-hub-service.ts      every Firestore read and write          — imports the browser SDK
  *   office-hub-server.ts       the same, through the Admin SDK         — server only
+ *   office-hub-google-server.ts Google OAuth, tokens, Calendar calls   — server only
+ *   office-hub-google-client.ts registers the Meet provider            — browser only
  *
  * The line in the middle is the one that matters. Everything above it runs under
  * `node --experimental-strip-types --test` with no Firebase installed, which is why the rules are
@@ -39,6 +42,7 @@ export * from './office-hub-permissions.ts';
 export * from './office-hub-reports.ts';
 export * from './office-hub-search.ts';
 export * from './office-hub-integrations.ts';
+export * from './office-hub-google.ts';
 
 /**
  * Every Firestore collection Office Hub owns.
@@ -83,6 +87,17 @@ export const OFFICE_HUB_COLLECTIONS = {
   settings: 'officeHubSettings',
   userSettings: 'officeHubUserSettings',
   counters: 'officeHubCounters',
+
+  /**
+   * Per-user Google authorisations. **Server-only, by rule.**
+   *
+   * `firestore.rules` denies every client read and write here, which is unlike every other
+   * collection in this map: the documents hold encrypted Google refresh tokens, and a refresh token
+   * is a standing grant to act as that person in Google Calendar. Nothing in `office-hub-service.ts`
+   * reads it; `office-hub-google-server.ts` is the only accessor, and the browser learns the
+   * connection state from `/api/office-hub/google/status` as a redacted view.
+   */
+  googleConnections: 'officeHubGoogleConnections',
 } as const;
 
 /** The masters Office Hub reads but does not own. Named so the dependency is explicit. */

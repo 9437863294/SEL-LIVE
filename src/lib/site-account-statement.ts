@@ -16,6 +16,11 @@ export const SAS_COLLECTIONS = {
 // mandatory-vs-optional field control configuration.
 export const SAS_FIELD_CONTROL_DOC_ID = 'fieldControl';
 
+// Doc id (inside SAS_COLLECTIONS.settings) holding the per-list default sort order. Kept separate
+// from the field-control document so a sort change cannot collide with a field-visibility save,
+// even though both are edited from the same Settings screen.
+export const SAS_SORT_CONTROL_DOC_ID = 'sortControl';
+
 // Doc id (inside SAS_COLLECTIONS.settings) holding how far back a transaction may be dated.
 export const SAS_DATE_CONTROL_DOC_ID = 'dateControl';
 

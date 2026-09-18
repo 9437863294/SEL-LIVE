@@ -57,6 +57,7 @@ import {
   OfficeHubSection,
 } from '@/components/office-hub/ui';
 import { DateField, TimeField } from '@/components/office-hub/selectors';
+import { GoogleMeetPanel } from '@/components/office-hub/google-meet-panel';
 
 /** The switches §35 lists, in its order, with the sentence each one governs. */
 const NOTIFICATION_ROWS: {
@@ -141,6 +142,11 @@ export default function OfficeHubSettingsPage() {
           browserNotificationsEnabled: office.browserNotificationsEnabled,
           taskDueReminderDaysBefore: office.taskDueReminderDaysBefore,
           holidays: office.holidays ?? [],
+          googleMeetEnabled: office.googleMeetEnabled !== false,
+          googleSendUpdates: office.googleSendUpdates ?? 'all',
+          // `primary` rather than an empty string: a blank calendar id would make every Calendar
+          // call 404 on a path Google reads as "no calendar", which is a confusing way to fail.
+          googleCalendarId: office.googleCalendarId?.trim() || 'primary',
         }),
       { success: 'Office settings saved', failure: 'Could not save the office settings' },
     );
@@ -337,6 +343,14 @@ export default function OfficeHubSettingsPage() {
               </div>
             </div>
           </OfficeHubSection>
+
+          {/*
+            Outside the save bar below, deliberately. Connecting Google is a redirect to Google and
+            back, not a value in this form — putting it above a "Save my preferences" button would
+            imply the connection is pending until saved, and lose the form's other edits to the
+            navigation.
+          */}
+          <GoogleMeetPanel showAdministratorDetail={capabilities.canViewSettings} />
 
           <div className="sticky bottom-0 -mx-1 flex items-center gap-2 border-t bg-white/95 px-1 py-3 backdrop-blur">
             <Button onClick={() => void savePreferences()} disabled={isBusy} className="gap-2">
@@ -633,6 +647,77 @@ export default function OfficeHubSettingsPage() {
                     onCheckedChange={(next) => setOffice({ ...office, browserNotificationsEnabled: next })}
                     aria-label="Browser notifications office-wide"
                   />
+                </div>
+              </div>
+            </OfficeHubSection>
+
+            <OfficeHubSection
+              title="Google Meet"
+              description="Office-wide behaviour for the Meet links and calendar events Office Hub creates."
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800">Create Meet links</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Off makes every online meeting ask for a joining link to paste, as it did
+                      before this integration. The escape hatch if Google is misbehaving — existing
+                      links keep working.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={office.googleMeetEnabled !== false}
+                    disabled={!capabilities.canEditSettings}
+                    onCheckedChange={(next) => setOffice({ ...office, googleMeetEnabled: next })}
+                    aria-label="Create Google Meet links"
+                  />
+                </div>
+
+                <div className="rounded-lg border bg-white px-3 py-2.5">
+                  <Label className="mb-1 block text-xs">Google’s own invitation emails</Label>
+                  <Select
+                    value={office.googleSendUpdates ?? 'all'}
+                    disabled={!capabilities.canEditSettings || office.googleMeetEnabled === false}
+                    onValueChange={(next) =>
+                      setOffice({ ...office, googleSendUpdates: next as OfficeHubSettings['googleSendUpdates'] })
+                    }
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Email everyone — two invitations per meeting</SelectItem>
+                      <SelectItem value="externalOnly">Email external guests only</SelectItem>
+                      <SelectItem value="none">Do not email — calendar entry only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {/*
+                    The trade-off stated where the choice is made. Neither option is wrong, and the
+                    wrong one for a given office produces either duplicate mail or a missing
+                    invitation for someone who lives in Google Calendar.
+                  */}
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                    {office.googleSendUpdates === 'none'
+                      ? 'The meeting still appears on participants’ Google Calendars; Office Hub sends the only invitation. The quieter arrangement.'
+                      : 'Participants receive Google’s invitation as well as Office Hub’s. Note that Office Hub never reads the RSVPs given in Google Calendar — only its own.'}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border bg-white px-3 py-2.5">
+                  <Label className="mb-1 block text-xs">Calendar to write to</Label>
+                  <Input
+                    value={office.googleCalendarId ?? 'primary'}
+                    disabled={!capabilities.canEditSettings || office.googleMeetEnabled === false}
+                    onChange={(event) => setOffice({ ...office, googleCalendarId: event.target.value })}
+                    placeholder="primary"
+                    className="bg-white font-mono text-xs"
+                  />
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                    <span className="font-mono">primary</span> is each organizer’s own calendar,
+                    which is almost always what you want. A shared calendar’s id works too, but
+                    every organizer’s Google account must have permission to write to it — and one
+                    who does not will see their Meet link fail.
+                  </p>
                 </div>
               </div>
             </OfficeHubSection>

@@ -100,12 +100,22 @@ const ANSWERS: { question: string; answer: React.ReactNode }[] = [
   {
     question: 'Who can see the joining link?',
     answer:
-      'Participants, the organizer, and anybody with permission to see every meeting. For most conferencing platforms the link *is* the access control, so being able to see that a meeting exists is deliberately not the same as being entitled to walk into it.',
+      'Participants, the organizer, and anybody with permission to see every meeting. With Google Meet the link *is* the access control, so being able to see that a meeting exists is deliberately not the same as being entitled to walk into it.',
+  },
+  {
+    question: 'Where does the Meet link come from?',
+    answer:
+      'Office Hub creates it. Connect your Google account once in Settings, and every online meeting you organise gets a Meet link when you save it — there is nothing to paste. The same step puts the meeting on participants’ Google Calendars, because a Meet link and a calendar event are the same thing to Google. Until you connect, an online meeting asks you for a link instead.',
+  },
+  {
+    question: 'I answered in Google Calendar. Why does Office Hub still say I have not responded?',
+    answer:
+      'Because those are two separate answers, and Office Hub only counts its own. The attendance sheet, the response summary and the chaser reminders all read your Office Hub response, so that is the one to give — Google’s Yes/No/Maybe is not read back. It is a real rough edge of putting meetings in both places, and the alternative would be two sources of truth disagreeing about who signed the attendance sheet.',
   },
   {
     question: 'I changed one occurrence of a recurring meeting — did I change them all?',
     answer:
-      'No. Editing asks which you mean, and defaults to this occurrence only. Changing how often a meeting repeats is refused from a single occurrence, because "move next Tuesday" and "move every Tuesday for a year" are different intentions.',
+      'No. Editing asks which you mean, and defaults to this occurrence only. Changing how often a meeting repeats is refused from a single occurrence, because "move next Tuesday" and "move every Tuesday for a year" are different intentions. One caveat with Google: a recurring series shares a single Google Calendar event, so moving one occurrence is correct in Office Hub but Google Calendar will still show the original slot.',
   },
   {
     question: 'Why does my task say it is blocked?',

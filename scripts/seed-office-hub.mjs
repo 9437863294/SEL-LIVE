@@ -109,6 +109,19 @@ const today = iso(new Date(Date.now() + 330 * 60_000));
 
 const pick = (list, index) => list[index % list.length];
 
+/**
+ * A Meet-shaped code (`abc-defg-hij`) for a demo meeting.
+ *
+ * Shaped correctly on purpose: `isGoogleMeetUrl` checks the code and not just the host, so a
+ * placeholder like `meet.google.com/demo` would be rejected by the very validation the seeded data
+ * is meant to exercise. These codes lead nowhere — the meetings are demo data.
+ */
+const meetCodeFor = (index) => {
+  const letters = 'abcdefghijklmnopqrstuvwxyz';
+  const at = (offset) => letters[(index * 7 + offset * 3) % 26];
+  return `${at(0)}${at(1)}${at(2)}-${at(3)}${at(4)}${at(5)}${at(6)}-${at(7)}${at(8)}${at(9)}`;
+};
+
 /* ── main ────────────────────────────────────────────────────────────────────────────────────── */
 
 async function main() {
@@ -362,8 +375,19 @@ async function main() {
       startAt: instantOf(date, plan.start),
       endAt: instantOf(date, plan.end),
       mode,
-      onlinePlatform: mode === 'Offline' ? null : 'Microsoft Teams',
-      meetingUrl: mode === 'Offline' ? null : 'https://teams.microsoft.com/l/meetup-join/demo',
+      /**
+       * Seeded meetings carry a plausible Meet link but no Google event.
+       *
+       * Deliberate: seeding runs with no signed-in user and no Google connection, and creating real
+       * calendar events for demo data would put twenty fake meetings on somebody's actual calendar.
+       * `googleSyncState: 'skipped'` is the honest record of that — it is distinct from `'failed'`,
+       * so the cron sweep's retry step leaves these alone rather than trying to sync demo data
+       * every thirty minutes.
+       */
+      onlinePlatform: mode === 'Offline' ? null : 'Google Meet',
+      meetingUrl: mode === 'Offline' ? null : `https://meet.google.com/${meetCodeFor(index)}`,
+      googleMeetUrl: mode === 'Offline' ? null : `https://meet.google.com/${meetCodeFor(index)}`,
+      googleSyncState: mode === 'Offline' ? null : 'skipped',
       location: mode === 'Online' ? null : 'Head Office',
       room: mode === 'Online' ? null : index % 2 ? 'Board Room' : 'Conference Room 2',
       organizerId: meetingOrganizer.userId,

@@ -49,7 +49,8 @@ below follows from it.
 ### What is new
 
 Three new **collection families** (`officeHub*`), a set of pure domain modules, a Firestore service,
-the `/office-hub` routes, and one API route for the scheduled job.
+the `/office-hub` routes, one API route for the scheduled job, and a **Google Meet integration**
+(§14) that creates the conference and the calendar entry for every online meeting.
 
 ---
 
@@ -66,11 +67,18 @@ src/lib/office-hub-reports.ts       report aggregation                 imports t
 src/lib/office-hub-search.ts        search ranking, list filters       imports the above
 src/lib/office-hub-import.ts        employee CSV parsing               imports time
 src/lib/office-hub-integrations.ts  provider interfaces, ICS, emails   imports time + model
+src/lib/office-hub-google.ts        Google Meet request/response shape imports model + integrations
 ─────────────────────────────────── the line ───────────────────────────────────────────────
 src/lib/office-hub.ts               collections + re-exports           imports firebase types
 src/lib/office-hub-service.ts       every client Firestore read/write  browser SDK
 src/lib/office-hub-server.ts        the scheduled sweeps               Admin SDK, server-only
+src/lib/office-hub-google-server.ts Google OAuth, tokens, Calendar     server-only
+src/lib/office-hub-google-client.ts registers the Meet provider        browser only
 ```
+
+The Google Meet integration is split across that line on purpose: the URL building, request-body
+shaping, response reading and error classification are all pure and tested directly, while the
+network calls, the token store and the cryptography sit in the server half where a secret can live.
 
 **Everything above the line is pure**: no network, no Firebase, no React. That is what lets
 `tests/office-hub-*.test.mjs` exercise the rules directly under `node --test`, and what lets the
@@ -124,6 +132,7 @@ that nothing downstream has to string-match a department again.
 | `officeHubUserSettings` | One doc per user | Time zone, reminders, notification switches |
 | `officeHubCounters` | Reference sequences | One per prefix per financial year |
 | `officeHubAttendanceLog` | Reserved for server-written attendance history | Server-only |
+| `officeHubGoogleConnections` | One per user: their encrypted Google refresh token | **Closed to every client, including the owner's** — the strictest rule in `firestore.rules`. Only the Admin SDK reads it. See §14 |
 
 ### Collections deliberately **not** created
 
@@ -283,6 +292,7 @@ time it was ever rescheduled.
 | `overdue-tasks` | Notifies about late tasks | `lastOverdueNoticeAt` holds it to one notice per task per day |
 | `due-items` | Chases decisions and action items | Bounded to a two-day horizon |
 | `series` | Tops up open-ended recurring series | Idempotent by `occurrenceKey` |
+| `google-meet` | Retries the Meet links that failed when their meeting was saved | Idempotent: the conference request id is derived from the meeting id, so Google returns the existing conference. Bounded to 25 future meetings per sweep, oldest first. Does nothing when Google Meet is unconfigured |
 
 Each step is wrapped so one failing does not abandon the rest — a broken series rule must not stop
 today's meeting reminders. Failures are collected and returned in the response.
@@ -339,7 +349,11 @@ table. Only the first two are new.
 | Variable | Needed for | Notes |
 | --- | --- | --- |
 | `CRON_SECRET` | **The scheduled job** | Required. Without it `/api/office-hub/cron` returns 503. Any long random string. |
-| `NEXT_PUBLIC_APP_URL` | Links inside notification emails | e.g. `https://erp.example.com`. Without it, email links are omitted rather than pointing at a guessed host. `APP_BASE_URL` is also read. |
+| `NEXT_PUBLIC_APP_URL` | Links inside notification emails, and the OAuth redirect URI | e.g. `https://erp.example.com`. Without it, email links are omitted rather than pointing at a guessed host. `APP_BASE_URL` is also read. |
+| `GOOGLE_OAUTH_CLIENT_ID` | **Google Meet** | From a Google Cloud OAuth 2.0 **Web application** client. Not secret, but read server-side so there is one place to look. |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | **Google Meet** | Secret. Also doubles as the HMAC key for the OAuth `state` parameter, so rotating it invalidates any consent round-trip in flight — which is correct behaviour. |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Google Meet, optionally | Defaults to `${NEXT_PUBLIC_APP_URL}/api/office-hub/google/callback`. Set it only if that is not the URL registered on the OAuth client. It must match Google's copy **exactly**, including the scheme and any trailing slash. |
+| `OFFICE_HUB_GOOGLE_TOKEN_KEY` | **Google Meet** | 32 random bytes, base64 or hex. Encrypts the stored refresh tokens. Without it Office Hub refuses to save a Google connection rather than storing a token in plaintext. Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. |
 | `FIREBASE_PROJECT_ID` | Admin SDK — cron, seed | Already present |
 | `FIREBASE_CLIENT_EMAIL` | Admin SDK | Already present |
 | `FIREBASE_PRIVATE_KEY` | Admin SDK | Already present |
@@ -473,14 +487,14 @@ Storage rules.
 
 ## 13. Integration interfaces
 
-§63 asks for the interfaces, not the integrations, and is explicit that no external integration is
-mandatory. `office-hub-integrations.ts` defines four provider contracts and ships a working default
-for each that needs no third-party account:
+`office-hub-integrations.ts` defines four provider contracts. Three ship a working default that
+needs no third-party account; the fourth — conferencing — is a **real integration with Google
+Meet**, documented in its own section below.
 
 | Provider | Default | To add a real one |
 | --- | --- | --- |
-| `CalendarProvider` | **ICS** — a standards-compliant `.ics` that Outlook, Google Calendar and Apple Calendar all import. Not a stub. | `registerCalendarProvider()` with a Graph or Google Calendar implementation. The payload (`calendarEventFromMeeting`) does not change; only the transport. |
-| `MeetingProvider` | **Manual link** — the organizer pastes a Teams/Meet/Zoom URL, which is what people do. Validates the link against the chosen platform. | `registerMeetingProvider()` with `supportsCreation: true` and a `create()` that calls the platform's API. Screens read `supportsCreation` to decide whether to offer the button. |
+| `CalendarProvider` | **ICS** — a standards-compliant `.ics` that Outlook, Google Calendar and Apple Calendar all import. Not a stub. | `registerCalendarProvider()` with a Graph implementation. The payload (`calendarEventFromMeeting`) does not change; only the transport. Google Calendar needs nothing here — the Meet integration writes to it directly. |
+| `MeetingProvider` | **Google Meet**, registered by `office-hub-google-client.ts`. `supportsCreation: true`: Office Hub creates the conference rather than asking for a pasted link. A platform with no provider still falls back to `manualMeetingProvider`, which is what keeps a meeting created before this integration editable. | `registerMeetingProvider()` with `supportsCreation: true` and a `create()` that calls the platform's API, plus an entry in `SELECTABLE_MEETING_PLATFORMS`. The two go together — that array is what stops the picker offering a platform nothing can create. |
 | `EmailProvider` | The app's `nodemailer` transport, registered by `office-hub-server.ts` when SMTP is configured. | `registerEmailProvider()` with anything that can send a subject + HTML + text. |
 | `NotificationProvider` | The app's header bell and push pipeline, registered by `office-hub-service.ts`. | `registerNotificationProvider()`. |
 
@@ -490,7 +504,158 @@ instance than as an RRULE that means something subtly different in Outlook.
 
 ---
 
-## 14. Charts
+## 14. Google Meet
+
+Google Meet is Office Hub's **only** conferencing platform, and Office Hub creates the Meet itself
+rather than asking the organizer to paste a link.
+
+### How a Meet link is actually made
+
+There is no useful "create a Meet" endpoint. A Meet link is a property of a Google Calendar event:
+you insert an event with `conferenceData.createRequest` and
+`conferenceSolutionKey.type = 'hangoutsMeet'`, pass `conferenceDataVersion=1`, and Google mints the
+conference and returns it as `hangoutLink`.
+
+**This is why the meeting also lands on participants' Google Calendars.** The two are the same API
+call, not two features — a Meet link without a calendar event is not something the Calendar API
+offers. Anyone deciding whether they want the calendar side effect should know they cannot have one
+without the other by this route.
+
+`conferenceDataVersion=1` is mandatory and easy to miss. Without it Google accepts the request,
+ignores `conferenceData` entirely, and returns a perfectly valid event with no Meet link — a
+success that produces nothing.
+
+### The two consequences worth knowing before enabling it
+
+**1. Google will collect its own RSVPs, and Office Hub does not read them.**
+
+The event carries the participants as attendees, so Google Calendar shows each of them Yes/No/Maybe
+buttons next to the ones in Office Hub. `officeHubParticipants.response` remains authoritative: it
+is what the attendance sheet, the response summary and the chaser notifications all read. **A
+participant who answers only in Google Calendar has, as far as this application is concerned, not
+answered.**
+
+There is no good way to reconcile the two — Google's RSVP has no concept of the required/optional
+distinction Office Hub tracks, and polling for changes would mean a second source of truth that
+disagrees with the attendance sheet somebody signed. So Office Hub does not try. What it does
+instead is say so: the Settings card states it in plain words, and `googleSendUpdates: 'none'`
+suppresses Google's invitation emails so that Office Hub is the only thing that writes to
+participants while the calendar entry still appears.
+
+| `googleSendUpdates` | What participants get |
+| --- | --- |
+| `all` *(default)* | Google's invitation email **and** Office Hub's. Two invitations, two sets of RSVP buttons. Right for an office that lives in Google Calendar. |
+| `externalOnly` | Google emails guests outside the Workspace domain only. |
+| `none` | The calendar entry, and only Office Hub's invitation. The quieter arrangement. |
+
+**2. A recurring series is one Google event, not one per occurrence.**
+
+Office Hub materialises a series into N Firestore meetings. Syncing each would put N separate
+events on everybody's calendar and hand out a different link each time. So the series **parent**
+owns a single event carrying the `RRULE`, and the instances inherit its `googleMeetUrl` with no API
+call at all — `googleSyncState: 'inherited'` records that.
+
+That property is what makes the nightly series top-up work: it creates joinable instances with
+nobody signed in and no Google credentials needed, which per-user OAuth could not otherwise serve.
+
+### Setup
+
+**1. Create the OAuth client.** In [Google Cloud Console](https://console.cloud.google.com/):
+
+* Enable the **Google Calendar API** for the project.
+* Configure the OAuth consent screen. **Internal** is the right user type for a Workspace
+  organisation — it needs no Google verification review. **External** works but stays in "Testing"
+  until verified, which caps it at 100 users and expires refresh tokens after seven days.
+* Create credentials → **OAuth client ID** → **Web application**.
+* Add an authorised redirect URI of `https://your-host/api/office-hub/google/callback`. It must
+  match **exactly**, including the scheme and any trailing slash; a mismatch fails at the token
+  exchange, *after* the user has consented, which is a confusing place to discover it. Add the
+  `http://localhost:3000` variant too if you develop locally.
+
+**2. Set the environment variables** (see §9):
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID=…apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=…
+OFFICE_HUB_GOOGLE_TOKEN_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+```
+
+**3. Each organizer connects their own account** at **Office Hub → Settings → My preferences →
+Google Meet**. There is no administrator step and no domain-wide delegation: the connection is
+personal, affects only that person's calendar, and they can revoke it from the same card.
+
+**4. Check the office-wide options** at **Settings → Office settings → Google Meet**: whether to
+create links at all, whether Google emails its own invitations, and which calendar to write to
+(`primary` is each organizer's own, which is almost always right).
+
+### The scopes requested, and the ones deliberately not
+
+| Scope | Why |
+| --- | --- |
+| `.../auth/calendar.events` | Insert, patch and delete events — including minting a conference — on calendars the user can already write to. |
+| `openid`, `email` | So the connection card can show *which* Google account was authorised. Without it, somebody who picked their personal Gmail instead of their work account has no way to notice. |
+
+The broader `.../auth/calendar` scope would additionally grant calendar creation, sharing and ACL
+changes, none of which this module does. Asking for it would be asking users to trust the
+application with more than it needs.
+
+### How the credentials are protected
+
+| Concern | What is done |
+| --- | --- |
+| Client secret reaching the browser | `office-hub-google-server.ts` is `import 'server-only'`, so a client-side import is a build error rather than a leak. |
+| Refresh tokens at rest | Sealed with **AES-256-GCM** under `OFFICE_HUB_GOOGLE_TOKEN_KEY`, with a fresh 12-byte nonce per seal. A refresh token is a standing grant that does not expire on its own, so a database export must not be a set of live grants. |
+| A missing encryption key | Connecting **fails**, with an operator-readable error naming the variable. It does not fall back to plaintext. |
+| Token exfiltration via the client | `firestore.rules` denies **all** client read and write on `officeHubGoogleConnections` — including the owner's own document, which is the only Office Hub collection where that is true. The browser learns its connection state from `GET /api/office-hub/google/status`, a redacted view with no token in it. |
+| CSRF / account binding on the callback | The `state` parameter is HMAC-SHA256 signed with the client secret and verified with a constant-time compare, with a 15-minute lifetime. Without this, an attacker could hand a victim a callback URL carrying the attacker's `code` and the victim's user id, leaving the victim's account creating meetings on the attacker's calendar. |
+| Open redirect on the callback | `safeReturnTo` honours in-application paths only. `//host` is rejected as well as `https://host` — a protocol-relative URL is absolute to a browser. |
+| Reading another user's connection | Impossible by construction: the status route has no `userId` parameter and always acts on the verified token's subject. No permission level changes that. |
+
+### What happens when Google fails
+
+A meeting is a real thing that exists whether or not Google was reachable when it was saved, so
+**a Google failure never fails the save.** `syncMeetingToGoogle` records
+`googleSyncState: 'failed'` with a readable `googleSyncError` on the meeting, and:
+
+* the meeting page shows the reason with a **Retry Meet link** button, to whoever may edit it;
+* the cron sweep's `google-meet` step retries future failed meetings on its own, oldest first,
+  25 per sweep — bounded so a persistent failure cannot consume the whole sweep;
+* retrying is safe because `conferenceRequestId` is derived from the meeting id, so Google returns
+  the conference it already made rather than minting a second one.
+
+Failures are classified by `describeGoogleApiError` into the three questions a caller actually has:
+retry, reconnect, or already gone. A 404 on a delete counts as success — the intent was "this
+should not be on anyone's calendar", and it is not.
+
+### When it is not configured, or not connected
+
+The integration degrades to the previous behaviour rather than blocking anything:
+
+| State | What the organizer sees |
+| --- | --- |
+| No OAuth client on the server | The meeting form asks for a joining link to paste, and says Google Meet is not set up. An administrator additionally sees which variables are missing. |
+| Configured, this user not connected | The form asks for a pasted link, with a **Connect your Google account** action beside it explaining what changes if they do. |
+| Grant revoked or expired | The same, phrased as **Reconnect Google** with the reason Google gave. |
+| Switched off in office settings | A pasted-link field, with no Google prompts. The escape hatch if Google is misbehaving; existing links keep working. |
+
+A meeting created before this integration keeps its stored platform — `'Zoom'`, `'Microsoft
+Teams'` — and still renders and validates its pasted link. The edit form shows that platform with a
+one-click **switch it to Google Meet**, rather than silently rewriting data the organizer did not
+ask to change.
+
+### A stated limitation
+
+**Editing a single occurrence of a recurring series does not move it on Google Calendar.** The
+series shares one Google event carrying the `RRULE`; moving one instance correctly would mean
+patching that instance through Google's recurring-event instance API, which needs the instance id
+resolved from its original start time and has awkward cases around already-modified instances.
+That is not built. Office Hub's own record of the occurrence is correct, and the Meet link still
+works — but Google Calendar will show the original slot. Rescheduling the whole series is handled
+properly.
+
+---
+
+## 15. Charts
 
 Both palettes in `src/components/office-hub/charts.tsx` were **validated, not eyeballed**, against
 the light surface `#f9fafb` and the dark surface `#09090b`: lightness band, chroma floor, CVD
@@ -514,9 +679,9 @@ genuinely ordered scales — priority, age bands — use the ramp.
 
 ---
 
-## 15. Testing checklist
+## 16. Testing checklist
 
-`npm run test:office-hub` covers the domain layer automatically (129 tests). The following are the
+`npm run test:office-hub` covers the domain layer automatically (175 tests). The following are the
 paths worth walking by hand after deploying.
 
 ### Authentication and access
@@ -529,7 +694,8 @@ paths worth walking by hand after deploying.
 ### Meetings
 
 - [ ] Create an offline meeting; participants receive an invitation in the header bell.
-- [ ] Create an online meeting; a link from the wrong platform is refused with a useful message.
+- [ ] Create an online meeting with Google connected; a Meet link appears without anybody pasting one.
+- [ ] Create an online meeting with Google *not* connected; the form asks for a pasted link, and a link from the wrong platform is refused with a useful message.
 - [ ] Invite a whole department and a whole team at once; somebody in both appears **once**.
 - [ ] Mark one invitee optional; they are still invited, and required wins if they are also reached as required.
 - [ ] Save a draft: no invitations are sent. Send it later; they are.
@@ -537,6 +703,26 @@ paths worth walking by hand after deploying.
 - [ ] Cancel with a reason: participants are notified and reminders are cancelled.
 - [ ] A completed meeting cannot be edited, but its attendance still can.
 - [ ] The join link is hidden from a signed-in user who is not a participant.
+
+### Google Meet
+
+- [ ] With no OAuth client configured, Settings says so and the meeting form asks for a pasted link. Nothing throws.
+- [ ] Connect Google from Settings; the card names the Google account that was authorised.
+- [ ] Connect with a *different* Google account than your work one; the card shows that address, so the mistake is visible.
+- [ ] Create an online meeting: the Meet link appears, and the meeting is on the organizer's Google Calendar with the participants as attendees.
+- [ ] A participant with no email address on record is reported as a warning, and still has the Office Hub invitation.
+- [ ] Reschedule the meeting: the Google Calendar event moves, and the Meet link does **not** change.
+- [ ] Cancel the meeting: the event disappears from participants' Google Calendars.
+- [ ] Create a **recurring** online meeting: exactly **one** event appears on Google Calendar, repeating, and every Office Hub instance shows the same Meet link.
+- [ ] Switch an online meeting to in-person: the Google event is removed.
+- [ ] Revoke Office Hub at `myaccount.google.com/permissions`, then save a meeting: the error says to reconnect, the meeting still saves, and Settings shows "Google stopped accepting the connection".
+- [ ] Disconnect from Settings, then re-check `myaccount.google.com/permissions`: the grant is gone.
+- [ ] Open a meeting created before the integration (platform `Zoom`): its pasted link still works, and "switch it to Google Meet" is offered.
+- [ ] Turn Google Meet off in office settings: new online meetings ask for a pasted link; existing links keep working.
+- [ ] Sign in as a **different** user and confirm they see their own connection state, not the first user's.
+- [ ] Try `GET /api/office-hub/google/callback?code=x&state=forged`: it refuses and returns you to Settings with "could not be verified".
+- [ ] Try `POST /api/office-hub/google/event` for a meeting you do not organise and cannot edit: 403.
+- [ ] Read `officeHubGoogleConnections` from the browser console with the client SDK: permission denied.
 
 ### Recurrence
 
@@ -621,20 +807,22 @@ paths worth walking by hand after deploying.
 
 ---
 
-## 16. Deliberately not built
+## 17. Deliberately not built
 
 | Not built | Why |
 | --- | --- |
 | A second employee master | §89. The importer reconciles against `employees`; it does not create a parallel directory. |
 | Performance scores, ratings or rankings | §40 and §73 both prohibit them. `buildWorkload` returns plain counts with no composite field, and the workload table sorts alphabetically until the reader picks a column. |
-| Mandatory external calendar integrations | §63 asks for interfaces. See §13. |
+| A Microsoft Teams or Zoom integration | Office Hub creates Google Meet conferences only, which is the platform this office uses. The provider registry is what a second one would plug into — see §13 and §14. |
+| Reading Google Calendar RSVPs back into Office Hub | There is no honest reconciliation: Google has no concept of the required/optional distinction Office Hub tracks, so polling it would produce a second source of truth that disagrees with the attendance sheet somebody signed. §14 states the consequence instead of hiding it. |
+| Moving a single occurrence of a series on Google Calendar | Would need Google’s recurring-event instance API, whose instance ids must be resolved from original start times. Stated as a limitation in §14 rather than half-built. |
 | Comment editing | A comment is amended by adding another, never by changing the one people have read. |
 | Hard deletes | §83. Everything important is archived or soft-deleted. |
 | A dual-axis chart | Two measures of different scale are two charts. |
 
 ---
 
-## 17. Where to look
+## 18. Where to look
 
 | I want to change… | File |
 | --- | --- |
@@ -645,6 +833,9 @@ paths worth walking by hand after deploying.
 | Who may do what | `src/lib/office-hub-permissions.ts` + `src/lib/permissions.ts` |
 | A Firestore read or write | `src/lib/office-hub-service.ts` |
 | The scheduled sweeps | `src/lib/office-hub-server.ts` |
+| Whether a meeting needs a Google event, and what goes in it | `src/lib/office-hub-google.ts` → `googleSyncPlan`, `buildGoogleEventBody` |
+| Google OAuth, token storage, the Calendar calls | `src/lib/office-hub-google-server.ts` |
+| The platforms a new meeting may use | `src/lib/office-hub-model.ts` → `SELECTABLE_MEETING_PLATFORMS` |
 | Chart colours or forms | `src/components/office-hub/charts.tsx` |
 | The nav | `src/components/office-hub/module-layout-shell.tsx` |
 | Module status at a glance | `BUILD_STATUS.md` |

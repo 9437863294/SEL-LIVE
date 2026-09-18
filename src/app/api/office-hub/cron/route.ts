@@ -5,8 +5,9 @@ import { runOfficeHubSweep } from '@/lib/office-hub-server';
  * Office Hub's scheduled job (§62).
  *
  * `GET /api/office-hub/cron` runs every sweep: due reminders, meeting status transitions, overdue
- * task notices, decision and action-item chasers, and the recurring-series top-up. See
- * `office-hub-server.ts` for what each does and the property that makes it safe to run twice.
+ * task notices, decision and action-item chasers, the recurring-series top-up, and the retry of
+ * any Google Meet link that failed to be created. See `office-hub-server.ts` for what each does and
+ * the property that makes it safe to run twice.
  *
  * ── Scheduling it ──────────────────────────────────────────────────────────────────────────────
  *
@@ -76,9 +77,10 @@ export async function GET(request: Request) {
   /**
    * `?only=reminders,series` runs a subset.
    *
-   * Useful when investigating one sweep in isolation, and for an installation that wants the
-   * reminder pass every 30 minutes but the series top-up only nightly — two schedules against one
-   * endpoint rather than two endpoints.
+   * The step names are `reminders`, `statuses`, `overdue-tasks`, `due-items`, `series` and
+   * `google-meet`. Useful when investigating one sweep in isolation, and for an installation that
+   * wants the reminder pass every 30 minutes but the series top-up only nightly — two schedules
+   * against one endpoint rather than two endpoints.
    */
   const url = new URL(request.url);
   const only = (url.searchParams.get('only') ?? '')

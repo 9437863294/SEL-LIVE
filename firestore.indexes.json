@@ -1647,6 +1647,20 @@
       ]
     },
     {
+      "collectionGroup": "officeHubMeetings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "googleSyncState",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "officeHubMeetingTemplates",
       "queryScope": "COLLECTION",
       "fields": [

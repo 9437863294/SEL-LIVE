@@ -20,9 +20,12 @@
     "src/lib/office-hub-search.ts",
     "src/lib/office-hub-import.ts",
     "src/lib/office-hub-integrations.ts",
+    "src/lib/office-hub-google.ts",
     "src/lib/office-hub.ts",
     "src/lib/office-hub-service.ts",
-    "src/lib/office-hub-server.ts"
+    "src/lib/office-hub-server.ts",
+    "src/lib/office-hub-google-server.ts",
+    "src/lib/office-hub-google-client.ts"
   ],
   "exclude": [
     "node_modules"

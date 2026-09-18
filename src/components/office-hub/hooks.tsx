@@ -53,6 +53,13 @@ import {
   type OfficeHubActor,
   type OfficeHubDirectory,
 } from '@/lib/office-hub-service';
+import {
+  UNCONFIGURED_GOOGLE_STATUS,
+  disconnectGoogleMeet,
+  fetchGoogleMeetStatus,
+  startGoogleConnect,
+  type GoogleMeetStatus,
+} from '@/lib/office-hub-google-client';
 import type { OfficeHubUserSettings } from '@/lib/office-hub-model';
 
 const EMPTY_DIRECTORY: OfficeHubDirectory = { people: [], departments: [], projects: [], teams: [] };
@@ -497,5 +504,78 @@ export function useBrowserNotifications(): {
     permission,
     request,
     show,
+  };
+}
+
+/**
+ * The caller's Google Meet connection, and the controls to change it (§63).
+ *
+ * Shared between the Settings card and the meeting form, because both need the same three facts —
+ * is the integration configured, is this user connected, and what should the button say — and a
+ * second copy of that logic would let the two screens disagree about whether Google works.
+ *
+ * ── It never surfaces a query error as an error ────────────────────────────────────────────────
+ *
+ * A failed status read is reported as "not connected", because that is the state the user should
+ * act on: every path out of it is the same Connect button. Distinguishing "we asked and you are not
+ * connected" from "we could not ask" would give the meeting form a third case to render and the
+ * user nothing new to do about it. The underlying error still reaches the console.
+ */
+export function useGoogleMeetStatus(options: { enabled?: boolean } = {}): {
+  status: GoogleMeetStatus;
+  isLoading: boolean;
+  reload: () => void;
+  connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
+  isBusy: boolean;
+} {
+  const { toast } = useToast();
+  const [isBusy, setIsBusy] = useState(false);
+
+  const { data, isLoading, reload } = useOfficeHubQuery(
+    () => fetchGoogleMeetStatus().catch(() => UNCONFIGURED_GOOGLE_STATUS),
+    [],
+    { enabled: options.enabled !== false, initial: UNCONFIGURED_GOOGLE_STATUS },
+  );
+
+  const connect = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      // On success this navigates away, so there is no state to reset on the happy path.
+      await startGoogleConnect();
+    } catch (error) {
+      setIsBusy(false);
+      toast({
+        variant: 'destructive',
+        title: 'Could not start the Google connection',
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
+      });
+    }
+  }, [toast]);
+
+  const disconnect = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      const message = await disconnectGoogleMeet();
+      toast({ title: 'Google disconnected', description: message });
+      reload();
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Could not disconnect Google',
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
+      });
+    } finally {
+      setIsBusy(false);
+    }
+  }, [reload, toast]);
+
+  return {
+    status: data ?? UNCONFIGURED_GOOGLE_STATUS,
+    isLoading,
+    reload,
+    connect,
+    disconnect,
+    isBusy,
   };
 }

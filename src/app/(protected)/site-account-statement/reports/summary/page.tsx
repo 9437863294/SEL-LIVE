@@ -6,6 +6,8 @@ import { db } from '@/lib/firebase';
 import { formatINR, SAS_COLLECTIONS, type SASBudget, type SASExpense, type SASPayment, type SASProject } from '@/lib/site-account-statement';
 import { loadScopedLedger } from '@/lib/site-account-statement-queries';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { useSortControl } from '@/components/site-account-statement/use-sort-control';
+import { SortControl } from '@/components/site-account-statement/sort-control';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +36,7 @@ interface ProjectStat {
 export default function ProjectSummaryPage() {
   const { can, isLoading: isAuthLoading } = useAuthorization();
   const { user } = useAuth();
+  const sortControl = useSortControl('reportSummary');
   const canViewAll = can('View',   `${MODULE}.All Projects`);
   const canView    = can('View',   `${MODULE}.Reports`);
   const canExport  = can('Export', `${MODULE}.Reports`);
@@ -140,6 +143,9 @@ export default function ProjectSummaryPage() {
     return true;
   }), [stats, search, budgetFilter]);
 
+  // The whole scope is already in memory here, so ordering it is a plain wrap.
+  const sorted = useMemo(() => sortControl.sortRows(filtered), [filtered, sortControl]);
+
   const overallReceived   = useMemo(() => filtered.reduce((s, p) => s + p.totalReceived, 0),  [filtered]);
   const overallExpenses   = useMemo(() => filtered.reduce((s, p) => s + p.totalExpenses, 0),  [filtered]);
   const overallOpening    = useMemo(() => filtered.reduce((s, p) => s + p.openingBalance, 0), [filtered]);
@@ -244,6 +250,7 @@ export default function ProjectSummaryPage() {
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-600">Project</label>
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search projects..." className="h-10 w-full" />
+            <SortControl control={sortControl} className="shrink-0" />
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-600">Month and year</label>
@@ -357,7 +364,7 @@ export default function ProjectSummaryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((stat, idx) => (
+                  {sorted.map((stat, idx) => (
                     <tr key={stat.id} className="border-b hover:bg-muted/20 transition-colors">
                       <td className="px-4 py-2.5 text-muted-foreground">{idx + 1}</td>
                       <td className="px-4 py-2.5 font-medium">{stat.name}</td>

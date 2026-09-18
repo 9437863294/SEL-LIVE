@@ -145,6 +145,13 @@ export type OnlineMeetingPlatform =
   | 'Webex'
   | 'Other';
 
+/**
+ * Every platform the type allows, which is not the same as every platform on offer.
+ *
+ * Kept whole so that a meeting stored before Office Hub standardised on Google Meet still renders
+ * its platform name instead of showing a blank. Nothing writes these values any more — see
+ * `SELECTABLE_MEETING_PLATFORMS`.
+ */
 export const ONLINE_MEETING_PLATFORMS: readonly OnlineMeetingPlatform[] = [
   'Microsoft Teams',
   'Google Meet',
@@ -152,6 +159,19 @@ export const ONLINE_MEETING_PLATFORMS: readonly OnlineMeetingPlatform[] = [
   'Webex',
   'Other',
 ] as const;
+
+/**
+ * What a *new* meeting may use: Google Meet, and nothing else.
+ *
+ * Office Hub creates the conference itself rather than collecting a pasted link, and it can only do
+ * that for a platform it has an integration with. Offering a picker of five when four of them mean
+ * "paste your own link and hope" was the previous behaviour; this is the deliberate narrowing. The
+ * form reads this array, so it renders a single locked choice rather than a dropdown.
+ *
+ * Widening it later means adding a `MeetingProvider` that can create a conference and listing the
+ * platform here — the two go together, and this array is the reason they cannot drift apart.
+ */
+export const SELECTABLE_MEETING_PLATFORMS: readonly OnlineMeetingPlatform[] = ['Google Meet'] as const;
 
 /**
  * The meeting types an installation starts with (§9).
@@ -340,6 +360,31 @@ export interface OfficeHubMeeting extends OfficeHubAuditFields {
 
   /** Free-text tags, shared with tasks so a subject can be followed across both. */
   tags?: string[];
+
+  /* ── Google Meet / Google Calendar (see `office-hub-google.ts`) ─────────────────────────────── */
+
+  /**
+   * The Google Calendar event this meeting created, and the conference on it.
+   *
+   * `meetingUrl` remains the field every screen reads for "the joining link" — `googleMeetUrl` is
+   * the same URL, kept separately so that a meeting whose link was pasted by hand before the
+   * integration existed is distinguishable from one Office Hub minted, and so clearing a failed
+   * sync cannot wipe a human-entered link.
+   *
+   * For a recurring series only the parent holds `googleEventId`: one event carries the RRULE and
+   * the instances inherit the link. `googleSyncState: 'inherited'` is how an instance records that.
+   */
+  googleEventId?: string | null;
+  googleCalendarId?: string | null;
+  googleMeetUrl?: string | null;
+  /** The event's own page in Google Calendar, for an "open in Google Calendar" link. */
+  googleEventHtmlLink?: string | null;
+  /** Which user's Google account owns the event — the one whose token can later change it. */
+  googleOrganizerUserId?: string | null;
+  googleSyncState?: 'not-synced' | 'synced' | 'inherited' | 'failed' | 'skipped' | null;
+  /** Why the last sync failed, shown to the organizer with a retry. Never a raw Google payload. */
+  googleSyncError?: string | null;
+  googleSyncedAt?: string | null;
 
   archivedAt?: OfficeHubTimestampLike;
   organizationId?: string | null;
@@ -901,8 +946,56 @@ export interface OfficeHubSettings {
   taskDueReminderDaysBefore: number[];
   /** Holidays shown on the calendar (§8). Office-wide, not per user. */
   holidays?: { date: IsoDate; name: string }[];
+
+  /**
+   * Google Meet. Off turns the integration into a pasted-link field again, which is the escape
+   * hatch when the OAuth client is misconfigured and meetings still have to be scheduled.
+   */
+  googleMeetEnabled?: boolean;
+  /**
+   * Whether Google emails its own invitations for the event it creates.
+   *
+   * `'all'` means participants get two invitations — Office Hub's and Google's — and two sets of
+   * RSVP buttons, of which Office Hub only reads its own. `'none'` still puts the meeting on their
+   * Google Calendar but leaves Office Hub as the only thing that writes to them, which is the
+   * quieter arrangement. `'externalOnly'` emails guests outside the Workspace domain only.
+   */
+  googleSendUpdates?: 'all' | 'externalOnly' | 'none';
+  /** Which calendar to write to. `'primary'` is the organizer's own. */
+  googleCalendarId?: string;
+
   updatedAt?: OfficeHubTimestampLike;
   updatedByName?: string | null;
+}
+
+/**
+ * One user's Google authorisation.
+ *
+ * Stored in `officeHubGoogleConnections`, keyed by Office Hub user id, and **unreadable from the
+ * browser**: the Firestore rules deny every client read and write on that collection, and only the
+ * Admin SDK touches it. The refresh token is additionally encrypted at rest with AES-256-GCM, so a
+ * leaked database export is not a set of live Google grants. Screens see the redacted
+ * `GoogleConnectionView` that the status route builds, never this.
+ */
+export interface OfficeHubGoogleConnection {
+  /** Document id: the Office Hub user id. */
+  id: string;
+  userId: string;
+  /** The Google account that was authorised, which need not be the user's Office Hub email. */
+  googleEmail: string | null;
+  googleUserId: string | null;
+  /** AES-256-GCM envelope. Never leaves the server. */
+  refreshTokenCipher: string | null;
+  refreshTokenIv: string | null;
+  refreshTokenTag: string | null;
+  /** Which key version encrypted it, so the key can be rotated without invalidating everything. */
+  keyVersion?: number | null;
+  scopes: string[];
+  connectedAt?: OfficeHubTimestampLike;
+  lastUsedAt?: OfficeHubTimestampLike;
+  /** Set when Google rejected the grant; cleared when the user reconnects. */
+  reauthReason?: string | null;
+  organizationId?: string | null;
 }
 
 export const DEFAULT_OFFICE_HUB_SETTINGS: OfficeHubSettings = {
@@ -923,6 +1016,9 @@ export const DEFAULT_OFFICE_HUB_SETTINGS: OfficeHubSettings = {
   browserNotificationsEnabled: true,
   taskDueReminderDaysBefore: [1],
   holidays: [],
+  googleMeetEnabled: true,
+  googleSendUpdates: 'all',
+  googleCalendarId: 'primary',
 };
 
 /** The switches in §35, one per notification class. */

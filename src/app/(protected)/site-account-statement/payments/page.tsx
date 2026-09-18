@@ -17,6 +17,8 @@ import {
 } from '@/lib/site-account-statement-queries';
 import { useFieldControl, validateFieldControlRequirements } from '@/components/site-account-statement/use-field-control';
 import { useDateControl } from '@/components/site-account-statement/use-date-control';
+import { useSortControl } from '@/components/site-account-statement/use-sort-control';
+import { SortControl } from '@/components/site-account-statement/sort-control';
 import { fieldMark } from '@/components/site-account-statement/controlled-field';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { useAuthorization } from '@/hooks/useAuthorization';
@@ -122,6 +124,7 @@ export default function PaymentsPage() {
   const { user } = useAuth();
   const { field } = useFieldControl('payment');
   const dateControl = useDateControl('payment');
+  const sortControl = useSortControl('payments');
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -614,12 +617,18 @@ export default function PaymentsPage() {
    */
   const refining = Boolean(search.trim());
 
+  /*
+   * Whether the whole period has to be in memory — see the Site Expenses page for the reasoning.
+   * Sorting one page of 50 reorders the page, not the list.
+   */
+  const needsFullScope = refining || !sortControl.atRegistryDefault;
+
   const [scopeCache, setScopeCache] = useState<{ key: string; rows: SASPayment[]; truncated: boolean } | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
   const scopeCacheKey = `${scopeKey}#${reloadToken}`;
 
   useEffect(() => {
-    if (!staticLoaded || !refining) return;
+    if (!staticLoaded || !needsFullScope) return;
     if (scopeCache?.key === scopeCacheKey) return;
     let cancelled = false;
 
@@ -635,26 +644,28 @@ export default function PaymentsPage() {
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [staticLoaded, refining, scopeCacheKey, scopeCache?.key]);
+  }, [staticLoaded, needsFullScope, scopeCacheKey, scopeCache?.key]);
 
-  const refinementComplete = refining && scopeCache?.key === scopeCacheKey;
+  const refinementComplete = needsFullScope && scopeCache?.key === scopeCacheKey;
   const refinementSource = refinementComplete ? scopeCache!.rows : payments;
 
   const filtered = useMemo(() => {
-    if (!refining) return payments;
     const needle = search.trim().toLowerCase();
-    return refinementSource.filter(p =>
+    const matched = !refining ? refinementSource : refinementSource.filter(p =>
       (p.projectName || '').toLowerCase().includes(needle) ||
       (p.receivedBy  || '').toLowerCase().includes(needle) ||
       (p.referenceNo || '').toLowerCase().includes(needle) ||
       (p.remarks     || '').toLowerCase().includes(needle)
     );
-  }, [payments, refinementSource, refining, search]);
+    // Sorted last, so the order applies to the matched set rather than to the page it came from.
+    return sortControl.atRegistryDefault ? matched : sortControl.sortRows(matched);
+  }, [refinementSource, refining, search, sortControl]);
 
   const totalShown = useMemo(() => filtered.reduce((s, p) => s + (p.receivedAmount || 0), 0), [filtered]);
 
-  const periodReceiptTotal = refinementComplete ? totalShown : (periodTotals?.total ?? totalShown);
-  const periodReceiptCount = refinementComplete ? filtered.length : (periodTotals?.count ?? filtered.length);
+  // Keyed on `refining`: a re-sorted list still holds every row, so the server aggregate stands.
+  const periodReceiptTotal = (refining && refinementComplete) ? totalShown : (periodTotals?.total ?? totalShown);
+  const periodReceiptCount = (refining && refinementComplete) ? filtered.length : (periodTotals?.count ?? filtered.length);
 
   // Closing balance always describes the whole period, never the searched subset.
   const closingBalance = useMemo(
@@ -679,13 +690,15 @@ export default function PaymentsPage() {
       // Export the whole filtered period, not just the page currently on screen.
       const { rows: scopeRows, truncated } = await fetchAllPayments(ledgerScope);
       const needle = search.trim().toLowerCase();
-      const rows = needle
+      const ordered = needle
         ? scopeRows.filter(p =>
             (p.projectName || '').toLowerCase().includes(needle) ||
             (p.receivedBy  || '').toLowerCase().includes(needle) ||
             (p.referenceNo || '').toLowerCase().includes(needle) ||
             (p.remarks     || '').toLowerCase().includes(needle))
         : scopeRows;
+      // The file comes out in the order the user is looking at.
+      const rows = sortControl.atRegistryDefault ? ordered : sortControl.sortRows(ordered);
 
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Payments Received');
@@ -846,6 +859,7 @@ export default function PaymentsPage() {
         <Input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="h-9 text-sm" />
         <Input type="date" value={filterTo}   onChange={e => setFilterTo(e.target.value)}   className="h-9 text-sm" />
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="h-9 text-sm" />
+        <SortControl control={sortControl} />
       </div>
 
       {/* Opening / Closing balance strip — scoped to the selected period only */}
@@ -1004,7 +1018,7 @@ export default function PaymentsPage() {
                     <td className="px-4 py-2.5 text-right text-blue-700">{formatINR(totalShown)}</td>
                     <td colSpan={(effectiveCanEdit || canDelete) ? 7 : 6} />
                   </tr>
-                  {!refining && pageCursor && (
+                  {!needsFullScope && pageCursor && (
                     <tr className="bg-muted/50 font-semibold">
                       <td colSpan={2} className="px-4 py-2.5">Period total (all {periodReceiptCount})</td>
                       <td className="px-4 py-2.5 text-right text-blue-800">{formatINR(periodReceiptTotal)}</td>
@@ -1018,7 +1032,7 @@ export default function PaymentsPage() {
 
           {/* Cursor pagination — one page of rows at a time; the totals above are server-side.
               Hidden while searching, since the search has already loaded the whole period. */}
-          {pageCursor && !refining && (
+          {pageCursor && !needsFullScope && (
             <div className="flex items-center justify-center gap-3 border-t px-4 py-3">
               <span className="text-xs text-muted-foreground">
                 Showing {payments.length} of {periodReceiptCount} records

@@ -22,10 +22,10 @@
  *     for both, because that is what hybrid means.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CalendarPlus, Loader2, Save, Send } from 'lucide-react';
+import { CalendarPlus, CheckCircle2, Loader2, Save, Send, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -39,10 +39,11 @@ import {
   NO_RECURRENCE,
   OFFICE_HUB_BASE_PATH,
   OFFICE_HUB_PRIORITIES,
-  ONLINE_MEETING_PLATFORMS,
+  SELECTABLE_MEETING_PLATFORMS,
   endTimeFromDuration,
   firstFieldError,
   getMeetingProvider,
+  googleSyncSummary,
   hasFieldErrors,
   isKnownTimeZone,
   validateMeetingInput,
@@ -55,7 +56,7 @@ import {
   type ParticipantSelection,
 } from '@/lib/office-hub';
 import { createMeeting, sendMeetingInvitations, updateMeeting } from '@/lib/office-hub-service';
-import { useOfficeHub, useOfficeHubAction } from './hooks';
+import { useGoogleMeetStatus, useOfficeHub, useOfficeHubAction } from './hooks';
 import { ParticipantSelector, DateField, ProjectSelector, TimeField, UserSelector } from './selectors';
 import { RecurrenceEditor, ReminderEditor } from './recurrence-editor';
 import { FieldError, OfficeHubSection } from './ui';
@@ -203,6 +204,45 @@ export function MeetingForm({
     });
   }, []);
 
+  const isOnline = draft.mode === 'Online' || draft.mode === 'Hybrid';
+
+  /**
+   * Google Meet's state, read only while it is relevant.
+   *
+   * An offline meeting has no conference, so an in-person-only office never makes this request at
+   * all — and never sees a Google connection prompt for something it does not use.
+   */
+  const googleMeet = useGoogleMeetStatus({ enabled: isOnline });
+
+  /**
+   * Whether the joining link will be created rather than typed.
+   *
+   * Three things have to be true: the integration is configured, this user has connected their
+   * Google account, and the chosen platform has a provider that can create a conference. The last
+   * is read from the registry rather than hard-coded to Google Meet, so a legacy meeting still set
+   * to Zoom correctly falls back to asking for a pasted link.
+   */
+  const conferenceWillBeCreated =
+    isOnline &&
+    googleMeet.status.configured &&
+    googleMeet.status.connection.connected &&
+    googleMeet.status.settings.enabled &&
+    getMeetingProvider(draft.onlinePlatform).supportsCreation;
+
+  /**
+   * Default the platform the moment the meeting becomes online.
+   *
+   * There is one platform to choose, so making somebody choose it is a field that exists only to be
+   * filled in. A value already on the draft is left alone — including a legacy `'Zoom'` from before
+   * this integration, because silently rewriting a stored meeting's platform on edit would change
+   * data the organizer did not ask to change.
+   */
+  useEffect(() => {
+    if (isOnline && !draft.onlinePlatform && SELECTABLE_MEETING_PLATFORMS.length === 1) {
+      set('onlinePlatform', SELECTABLE_MEETING_PLATFORMS[0]);
+    }
+  }, [isOnline, draft.onlinePlatform, set]);
+
   const validate = useCallback(
     (status: 'Draft' | 'Scheduled'): OfficeHubFieldErrors => {
       const found = validateMeetingInput(
@@ -216,6 +256,7 @@ export function MeetingForm({
           // An edit of an existing meeting must not be refused because the meeting is today and its
           // slot has passed — that is exactly when somebody needs to correct the room.
           allowPast: mode === 'edit',
+          conferenceWillBeCreated,
         },
       );
 
@@ -232,7 +273,24 @@ export function MeetingForm({
 
       return found;
     },
-    [draft, settings, mode],
+    [draft, settings, mode, conferenceWillBeCreated],
+  );
+
+  /**
+   * Show what the save could not finish.
+   *
+   * The meeting is written before Google is contacted, so a warning here means "saved, but". A
+   * participant with no email address who will not get a calendar invitation, or a Meet link that
+   * could not be minted, are both things the organizer has to know and can act on — a `console.warn`
+   * would mean nobody ever does.
+   */
+  const reportWarnings = useCallback(
+    (warnings: string[] | undefined) => {
+      for (const warning of warnings ?? []) {
+        toast({ title: 'Saved, with one thing to know', description: warning, duration: 12_000 });
+      }
+    },
+    [toast],
   );
 
   const submit = async (status: 'Draft' | 'Scheduled') => {
@@ -279,7 +337,10 @@ export function MeetingForm({
           describe: 'Create meeting',
         },
       );
-      if (result) router.push(`${OFFICE_HUB_BASE_PATH}/meetings/${result.meetingId}`);
+      if (result) {
+        reportWarnings(result.warnings);
+        router.push(`${OFFICE_HUB_BASE_PATH}/meetings/${result.meetingId}`);
+      }
       return;
     }
 
@@ -306,7 +367,10 @@ export function MeetingForm({
         describe: 'Update meeting',
       },
     );
-    if (result) router.push(`${OFFICE_HUB_BASE_PATH}/meetings/${meetingId}`);
+    if (result) {
+      reportWarnings(result.warnings);
+      router.push(`${OFFICE_HUB_BASE_PATH}/meetings/${meetingId}`);
+    }
   };
 
   const sendNow = async () => {
@@ -316,7 +380,10 @@ export function MeetingForm({
       failure: 'Could not send the invitations',
       describe: 'Send invitations',
     });
-    if (sent != null) router.push(`${OFFICE_HUB_BASE_PATH}/meetings/${meetingId}`);
+    if (sent != null) {
+      reportWarnings(sent.warnings);
+      router.push(`${OFFICE_HUB_BASE_PATH}/meetings/${meetingId}`);
+    }
   };
 
   const durationMinutes = useMemo(() => {
@@ -489,27 +556,44 @@ export function MeetingForm({
             ))}
           </div>
 
-          {(draft.mode === 'Online' || draft.mode === 'Hybrid') && (
+          {isOnline && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <Label className="mb-1 block text-xs">
                   Platform<span className="ml-0.5 text-destructive">*</span>
                 </Label>
-                <Select
-                  value={draft.onlinePlatform ?? ''}
-                  onValueChange={(next) => set('onlinePlatform', next as OnlineMeetingPlatform)}
-                >
-                  <SelectTrigger className={cn('bg-white', errors.onlinePlatform && 'border-destructive')}>
-                    <SelectValue placeholder="Choose a platform" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ONLINE_MEETING_PLATFORMS.map((platform) => (
-                      <SelectItem key={platform} value={platform}>
-                        {platform}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+                {/*
+                  One platform, so no dropdown. A select with a single option is a control that
+                  cannot be used for anything — it reads as "choose" and then refuses to offer a
+                  choice. The legacy branch below is the exception that keeps this honest: a meeting
+                  created before Office Hub standardised on Meet still shows what it actually uses.
+                */}
+                {draft.onlinePlatform && !SELECTABLE_MEETING_PLATFORMS.includes(draft.onlinePlatform) ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                    <p className="text-xs font-medium text-amber-900">{draft.onlinePlatform}</p>
+                    <p className="mt-0.5 text-[11px] text-amber-800">
+                      This meeting was created before Office Hub moved to Google Meet. Keep the
+                      pasted link, or{' '}
+                      <button
+                        type="button"
+                        className="font-medium underline underline-offset-2"
+                        onClick={() => {
+                          set('onlinePlatform', 'Google Meet');
+                          set('meetingUrl', '');
+                        }}
+                      >
+                        switch it to Google Meet
+                      </button>
+                      .
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex h-9 items-center gap-2 rounded-md border border-input bg-muted/40 px-3">
+                    <Video className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+                    <span className="text-sm">Google Meet</span>
+                  </div>
+                )}
                 <FieldError message={errors.onlinePlatform} />
               </div>
 
@@ -518,28 +602,105 @@ export function MeetingForm({
                 <Input
                   value={draft.meetingPasscode}
                   onChange={(event) => set('meetingPasscode', event.target.value)}
-                  placeholder="Optional"
+                  placeholder={conferenceWillBeCreated ? 'Google adds the dial-in PIN' : 'Optional'}
                   className="bg-white"
                 />
               </div>
 
               <div className="sm:col-span-2">
-                <Label className="mb-1 block text-xs">
-                  Joining link<span className="ml-0.5 text-destructive">*</span>
-                </Label>
-                <Input
-                  value={draft.meetingUrl}
-                  onChange={(event) => set('meetingUrl', event.target.value)}
-                  onBlur={() => setErrors((current) => ({ ...current, ...pick(validate('Scheduled'), ['meetingUrl']) }))}
-                  placeholder="https://teams.microsoft.com/l/meetup-join/…"
-                  className={cn('bg-white', errors.meetingUrl && 'border-destructive')}
-                  aria-invalid={Boolean(errors.meetingUrl)}
-                  inputMode="url"
-                />
-                <FieldError message={errors.meetingUrl} />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Only invited participants can see this link.
-                </p>
+                {conferenceWillBeCreated && !draft.meetingUrl.trim() ? (
+                  /*
+                    Nothing to fill in. The link is created together with the Google Calendar event
+                    when the meeting is saved, so an input here would be a required field with no
+                    correct value — and a "Create link" button would be a second press for something
+                    that is going to happen anyway.
+                  */
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-900">
+                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                      A Meet link will be created when you save
+                    </p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-emerald-800">
+                      {googleSyncSummary({
+                        connected: true,
+                        sendUpdates: googleMeet.status.settings.sendUpdates,
+                        attendeeCount: draft.selection.userIds.length,
+                      })}
+                    </p>
+                    <p className="mt-1 text-[11px] text-emerald-800">
+                      Only invited participants can see the link in Office Hub.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <Label className="mb-1 block text-xs">
+                      Joining link
+                      {conferenceWillBeCreated ? (
+                        <span className="ml-1 text-muted-foreground">(optional)</span>
+                      ) : (
+                        <span className="ml-0.5 text-destructive">*</span>
+                      )}
+                    </Label>
+                    <Input
+                      value={draft.meetingUrl}
+                      onChange={(event) => set('meetingUrl', event.target.value)}
+                      onBlur={() =>
+                        setErrors((current) => ({ ...current, ...pick(validate('Scheduled'), ['meetingUrl']) }))
+                      }
+                      placeholder="https://meet.google.com/abc-defg-hij"
+                      className={cn('bg-white', errors.meetingUrl && 'border-destructive')}
+                      aria-invalid={Boolean(errors.meetingUrl)}
+                      inputMode="url"
+                    />
+                    <FieldError message={errors.meetingUrl} />
+
+                    {/*
+                      Why the organizer is being asked to paste a link at all. Without this, the
+                      form looks identical whether Google is unconfigured, disconnected or switched
+                      off — three different problems with three different fixes.
+                    */}
+                    {!conferenceWillBeCreated && googleMeet.status.settings.enabled && (
+                      <div className="mt-1.5 rounded-md border border-sky-200 bg-sky-50 px-3 py-2">
+                        {!googleMeet.status.configured ? (
+                          <p className="text-[11px] leading-relaxed text-sky-900">
+                            Google Meet is not set up on this server, so paste a joining link for
+                            now. An administrator can enable it — see{' '}
+                            <span className="font-medium">docs/office-hub.md</span>.
+                          </p>
+                        ) : googleMeet.status.connection.health === 'reauth-required' ? (
+                          <p className="text-[11px] leading-relaxed text-sky-900">
+                            Google stopped accepting your connection
+                            {googleMeet.status.connection.reauthReason
+                              ? `: ${googleMeet.status.connection.reauthReason}`
+                              : '.'}{' '}
+                            <button
+                              type="button"
+                              className="font-medium underline underline-offset-2"
+                              onClick={() => void googleMeet.connect()}
+                              disabled={googleMeet.isBusy}
+                            >
+                              Reconnect Google
+                            </button>{' '}
+                            and Office Hub will create the link for you.
+                          </p>
+                        ) : (
+                          <p className="text-[11px] leading-relaxed text-sky-900">
+                            <button
+                              type="button"
+                              className="font-medium underline underline-offset-2"
+                              onClick={() => void googleMeet.connect()}
+                              disabled={googleMeet.isBusy}
+                            >
+                              Connect your Google account
+                            </button>{' '}
+                            and Office Hub will create the Meet link and add the meeting to
+                            participants’ Google Calendars — no link to paste.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}
