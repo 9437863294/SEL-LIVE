@@ -539,7 +539,10 @@ export function useGoogleMeetStatus(options: { enabled?: boolean } = {}): {
   const { data, isLoading, reload } = useOfficeHubQuery(
     () =>
       fetchGoogleMeetStatus().catch((error: unknown) => {
-        console.error('[office-hub] Could not read the Google Meet status', error);
+        // `warn`, not `error`: this is handled, and the reason is rendered on the screen with a
+        // retry. Next's dev overlay promotes every console.error into a full-screen modal, which
+        // makes a degradation the UI already explains look like a crash.
+        console.warn('[office-hub] Could not read the Google Meet status', error);
         return googleStatusUnavailable(error);
       }),
     [],
