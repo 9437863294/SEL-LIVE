@@ -2377,21 +2377,31 @@ export function canRemoveEApprovalAttachment(
  * separate `Edit` grant to alter a note-sheet you have not even sent yet is how somebody ends up
  * unable to fix their own typo, on their own document, in their own drafts list.
  *
- * A **returned** request is different: it has been through approvers and is being corrected at their
- * request, against a record that already exists. That stays behind the `Edit` permission, passed in
- * by the caller the way the other role-gated rules here take theirs.
+ * A **returned** request is the same answer for a different reason, and this used to get it wrong.
+ * Returning a file to its requester *is* the instruction to correct it — the approver chose that
+ * person and that action — so the return is the authority, exactly as being assigned a step is the
+ * authority to act on it (see the note at the top of this file). Gating it on `Edit` as well left a
+ * requester without that grant looking at a **Resubmit** button and no **Edit** button: able to send
+ * the file back unchanged, which is the one thing the approver had just refused, and unable to do the
+ * thing they were asked. The file stuck there.
  *
- * Anything else — live, closed, somebody else's — is not editable, and deliberately has no override.
- * Editing a live request would change the proposal under an approver mid-approval; editing a closed
- * one would rewrite what was approved.
+ * `Edit` keeps a job, and now a real one: correcting a *returned* request that is **not** yours —
+ * someone finishing a correction for a colleague on leave, so the file is not parked until they
+ * return. Only the requester can resubmit it, so a third party can fix the content but never push it
+ * back into the chain on the requester's behalf.
+ *
+ * Anything else — live, closed, somebody else's draft — is not editable, and deliberately has no
+ * override. Editing a live request would change the proposal under an approver mid-approval; editing
+ * a closed one would rewrite what was approved.
  */
 export function canEditEApprovalRequest(
   request: Pick<EApprovalRequestState, 'status' | 'requesterId'>,
   actor: Pick<EApprovalActor, 'userId'> | null | undefined,
   options: { canEdit?: boolean } = {},
 ): boolean {
-  if (!actor?.userId || request.requesterId !== actor.userId) return false;
-  if (request.status === 'Draft') return true;
+  if (!actor?.userId) return false;
+  const own = request.requesterId === actor.userId;
+  if (own) return request.status === 'Draft' || request.status === 'Returned';
   if (request.status === 'Returned') return Boolean(options.canEdit);
   return false;
 }

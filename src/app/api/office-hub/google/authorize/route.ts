@@ -34,7 +34,11 @@ export const runtime = 'nodejs';
 export async function GET(request: Request) {
   try {
     const context = await authenticateAccess(request);
-    requireAccess(context, OFFICE_HUB_RESOURCES.meetings, 'create');
+    // `'Create'`, capitalised: `hasPermission` matches the action with an exact `includes`, and
+    // every action in `permissions.ts` is title-case. A lowercase string here never matches, and
+    // the failure is a 403 for somebody who does hold the permission — which reads as a broken
+    // account rather than a typo.
+    requireAccess(context, OFFICE_HUB_RESOURCES.meetings, 'Create');
 
     const returnTo = new URL(request.url).searchParams.get('returnTo');
 

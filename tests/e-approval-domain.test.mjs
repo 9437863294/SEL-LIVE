@@ -1940,10 +1940,32 @@ test('a draft is fully editable by its author, with no Edit permission needed', 
   );
 });
 
-test('a returned request still needs the Edit permission to correct', () => {
+test('a request returned to you is yours to correct, with no Edit permission needed', () => {
   const returned = { status: 'Returned', requesterId: 'u-me' };
+  assert.equal(
+    canEditEApprovalRequest(returned, { userId: 'u-me' }),
+    true,
+    'the return is the instruction to correct it — the approver chose this person and this action',
+  );
+  assert.equal(canEditEApprovalRequest(returned, { userId: 'u-me' }, { canEdit: false }), true);
+});
+
+test('Resubmit and Edit agree on who may act on a returned file', () => {
+  // The engine lets the requester resubmit on status + identity alone. If Edit demanded a grant on
+  // top, a requester without it could only resubmit the file unchanged — the one thing the approver
+  // had just refused — so the two rules have to answer the same question the same way.
+  const returned = { status: 'Returned', requesterId: 'u-me' };
+  assert.equal(canEditEApprovalRequest(returned, { userId: 'u-me' }), true);
+});
+
+test("correcting somebody else's returned request needs the Edit permission", () => {
+  const returned = { status: 'Returned', requesterId: 'u-them' };
   assert.equal(canEditEApprovalRequest(returned, { userId: 'u-me' }), false);
-  assert.equal(canEditEApprovalRequest(returned, { userId: 'u-me' }, { canEdit: true }), true);
+  assert.equal(
+    canEditEApprovalRequest(returned, { userId: 'u-me' }, { canEdit: true }),
+    true,
+    'finishing a correction for a colleague on leave, rather than parking the file until they are back',
+  );
 });
 
 test('a live or closed request is never editable, permission or not', () => {
@@ -1958,8 +1980,22 @@ test('a live or closed request is never editable, permission or not', () => {
 
 test('somebody else never edits your draft, whatever they hold', () => {
   const draft = { status: 'Draft', requesterId: 'u-me' };
-  assert.equal(canEditEApprovalRequest(draft, { userId: 'u-other' }, { canEdit: true }), false);
+  assert.equal(
+    canEditEApprovalRequest(draft, { userId: 'u-other' }, { canEdit: true }),
+    false,
+    'an unsubmitted draft is nobody else-s business, and Edit does not reach it',
+  );
   assert.equal(canEditEApprovalRequest(draft, null), false);
+});
+
+test('Edit does not reach a live or closed request belonging to anybody', () => {
+  for (const status of ['Submitted', 'Pending Approval', 'On Hold', 'Approved', 'Rejected', 'Cancelled']) {
+    assert.equal(
+      canEditEApprovalRequest({ status, requesterId: 'u-them' }, { userId: 'u-me' }, { canEdit: true }),
+      false,
+      status,
+    );
+  }
 });
 
 /* ── who may take an attachment off again ────────────────────────────────────────────────────── */

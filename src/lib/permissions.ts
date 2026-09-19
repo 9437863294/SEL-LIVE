@@ -34,6 +34,11 @@ export const permissionModules = {
     Dashboard: ["View"],
     Requests: [
       "Create",
+      // Correcting a *returned* request that is not your own — finishing it for a colleague on
+      // leave. Nobody needs it for their own work: creating a draft, and being sent one back for
+      // correction, are each the authority to change it, exactly as being assigned a step is the
+      // authority to act on it. Gating your own returned file on this grant left requesters with a
+      // Resubmit button and no Edit button — able only to send it back unchanged.
       "Edit",
       "Delete Draft",
       // Two separate grants on purpose. "Delete Draft" bins your own unsubmitted draft — nobody has

@@ -234,6 +234,9 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
           p(
             'An approver can return a request for correction. It appears in your inbox marked Returned, with the reason. Open it, choose Edit, make the correction, save, then use Resubmit on the approval screen.',
           ),
+          note(
+            'A request returned to you is always yours to correct — no permission is needed for your own file. Correcting somebody else’s returned request, to finish it while they are on leave, needs the "Requests → Edit" permission; they still have to resubmit it themselves.',
+          ),
           warn(
             'If you change the subject, the proposal, the amount, the department, the project or the attachments, the approvals already given are superseded and the chain restarts. This is deliberate: somebody who approved "purchase 10 helmets for ₹25,000" has not approved "purchase 10 vehicles for ₹90,00,000". Correcting a typo costs you nothing — the file goes straight back to whoever returned it.',
           ),
@@ -723,7 +726,11 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
             ['Node', 'Governs'],
             [
               ['View Module, Dashboard, Inbox', 'Seeing the module at all.'],
-              ['Requests', 'Create, edit, delete a draft, cancel, and how much of the register you can see.'],
+              ['Requests', 'Create, delete a draft, cancel, and how much of the register you can see.'],
+              [
+                'Requests → Edit',
+                'Correcting a returned request that is not your own. Nobody needs it for their own work — your own draft, and your own file returned for correction, are always yours to change.',
+              ],
               [
                 'Requests → Delete',
                 'Deleting a request that has already been submitted, together with its whole workflow — the stages, the audit trail, the comments, the attachments and the superseded versions. Grant it to nobody unless somebody genuinely needs it; Cancel closes a file and keeps the record. The deletion itself, with its reason, stays in the activity log.',

@@ -152,8 +152,18 @@ try {
     : cert({ projectId, clientEmail, privateKey });
   const app = initializeApp({ credential, projectId });
 
-  // This probe prints no application data.
-  const snapshot = await getFirestore(app).collection('__admin_sdk_check__').limit(1).get();
+  /**
+   * A collection that will not exist, read to prove the credential reaches Firestore.
+   *
+   * Not `__admin_sdk_check__`: Firestore reserves every id matching `__…__`, and rejects a query
+   * against one with `INVALID_ARGUMENT: Collection id … is invalid because it is reserved`. That
+   * surfaced here as a FAILED line under a set of credentials that were entirely correct — the
+   * check reported a problem it had caused itself.
+   *
+   * Reading a non-existent collection is a legitimate query that returns zero documents, so this
+   * still prints no application data.
+   */
+  const snapshot = await getFirestore(app).collection('adminSdkCheckProbe').limit(1).get();
   console.log(`\n  OK Firestore answered (${snapshot.size} docs in the probe collection).`);
 
   // User creation needs Firebase Authentication IAM in addition to Firestore IAM. This is read-only

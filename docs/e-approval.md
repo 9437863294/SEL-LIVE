@@ -167,7 +167,8 @@ chain parks, the request goes to `Returned`, and `returnResumeStepId` holds *T* 
 corrects the proposal, resubmits, and the file resumes at exactly the step the returner chose.
 
 The reason is that the two halves of a return did not previously meet: a return asks for a change to
-the proposal, and `canEditEApprovalRequest` gives that power to the requester and to nobody else. A
+the proposal, and `canEditEApprovalRequest` gives that power to the requester (and, with
+`Requests → Edit`, to somebody correcting it for them) — never to an approver. A
 file handed straight back to an earlier approver therefore arrived with somebody who could read the
 objection and do nothing about it — their only moves were to approve it unchanged or return it again
 to the author, which is the trip this now makes directly. Turn `returnViaRequester` off to re-activate

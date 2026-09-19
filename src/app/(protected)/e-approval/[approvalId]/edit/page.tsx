@@ -72,7 +72,8 @@ export default function EditEApprovalPage() {
   const { request, attachments } = detail;
   const mine = request.requesterId === serviceActor?.userId;
   const isDraft = request.status === 'Draft';
-  // A draft needs no Edit grant — see `canEditEApprovalRequest`.
+  // Your own draft and your own returned request both need no Edit grant — creating it, and being
+  // sent it back, are each the authority to change it. See `canEditEApprovalRequest`.
   const editable = canEditEApprovalRequest(request, serviceActor, { canEdit: permissions.canEdit });
 
   if (!editable) {
@@ -81,10 +82,10 @@ export default function EditEApprovalPage() {
         <CardHeader>
           <CardTitle>Not editable</CardTitle>
           <CardDescription>
-            {!mine
-              ? 'Only the requester can edit this approval.'
-              : request.status === 'Returned'
-                ? 'Correcting a returned request needs the Edit permission.'
+            {request.status === 'Returned'
+              ? 'Correcting somebody else’s returned request needs the “Requests → Edit” permission. The requester can always correct their own.'
+              : !mine
+                ? 'Only the requester can edit this approval.'
                 : `A ${request.status.toLowerCase()} approval cannot be edited. Only drafts and returned requests can.`}
           </CardDescription>
         </CardHeader>
