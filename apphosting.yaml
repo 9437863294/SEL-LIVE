@@ -83,40 +83,30 @@ env:
       - RUNTIME
 
   # ── Office Hub → Google Meet (docs/office-hub.md §14) ───────────────
-  # Office Hub creates the Meet link and the Google Calendar event for every
-  # online meeting. The redirect URI is derived from APP_BASE_URL above, so it
-  # resolves to https://seltech.store/api/office-hub/google/callback — that exact
-  # string must be registered on the OAuth client or consent fails *after* the
-  # user has approved it, with redirect_uri_mismatch.
   #
-  # RUNTIME, not BUILD: all three are read server-side in the API routes. None is
-  # a NEXT_PUBLIC_* value, and none may ever become one — see below.
+  # Deliberately NOT declared here. Its three variables live in the App Hosting
+  # backend's own environment configuration (Firebase console → App Hosting →
+  # your backend → Environment), alongside GREYTHR_*, GEMINI_API_KEY and the
+  # Firebase client keys:
   #
-  # The client ID is not a secret (it identifies the app, and in a normal OAuth
-  # flow it travels through the browser), so it is a plain value like the
-  # reCAPTCHA site key. The other two are secrets and are stored in Secret
-  # Manager, because this file is committed to git.
-  - variable: GOOGLE_OAUTH_CLIENT_ID
-    value: 109112310488-1n8s5ltrs9f5mv385r120vhcu9rjne4k.apps.googleusercontent.com
-    availability:
-      - RUNTIME
-
-  # Create with:
-  #   firebase apphosting:secrets:set google-oauth-client-secret
-  - variable: GOOGLE_OAUTH_CLIENT_SECRET
-    secret: google-oauth-client-secret
-    availability:
-      - RUNTIME
-
-  # Encrypts the stored Google refresh tokens (AES-256-GCM, 32 bytes base64).
-  # Generate and store with:
-  #   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-  #   firebase apphosting:secrets:set office-hub-google-token-key
+  #   GOOGLE_OAUTH_CLIENT_ID        109112310488-…apps.googleusercontent.com
+  #   GOOGLE_OAUTH_CLIENT_SECRET    GOCSPX-…
+  #   OFFICE_HUB_GOOGLE_TOKEN_KEY   32 random bytes, base64
   #
-  # Use a *different* key from the local .env one, and keep it. Rotating it does
-  # not break the app, but it makes every stored token unreadable, so every
-  # organizer has to reconnect Google before their meetings get Meet links again.
-  - variable: OFFICE_HUB_GOOGLE_TOKEN_KEY
-    secret: office-hub-google-token-key
-    availability:
-      - RUNTIME
+  # Why not here: a `secret:` reference in this file must resolve at build time,
+  # so declaring one for a secret that does not exist yet fails the *entire*
+  # deployment at the preparer step — which is what happened on 18–19 Sep 2026.
+  # Google Meet is an optional integration: `googleMeetConfigured()` returns
+  # false when these are absent, the Settings card says so, and online meetings
+  # fall back to a pasted joining link. Coupling the whole app's deployability to
+  # it was the wrong trade, so the variables are configured where they can be
+  # added and changed without a deploy.
+  #
+  # The redirect URI is derived from APP_BASE_URL above and resolves to
+  # https://seltech.store/api/office-hub/google/callback — that exact string must
+  # be registered on the OAuth client, or consent fails *after* the user approves
+  # it, with redirect_uri_mismatch.
+  #
+  # OFFICE_HUB_GOOGLE_TOKEN_KEY encrypts the stored Google refresh tokens. Keep
+  # it: rotating it does not break the app, but it makes every stored token
+  # unreadable, so every organizer must reconnect Google.

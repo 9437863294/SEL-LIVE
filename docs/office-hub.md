@@ -580,6 +580,18 @@ GOOGLE_OAUTH_CLIENT_SECRET=…
 OFFICE_HUB_GOOGLE_TOKEN_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
 ```
 
+Locally that is `.env`. **In production these belong in the App Hosting backend's environment
+configuration (Firebase console → App Hosting → your backend → Environment), not in
+`apphosting.yaml`.** Declaring them there as `secret:` references was tried and reverted: a secret
+reference in that file must resolve at build time, so one naming a secret that does not exist yet
+fails the *entire* deployment at the preparer step with `fah/misconfigured-secret` — taking the
+whole application down for an integration that is optional by design. Configuring them on the
+backend also means they can be added or rotated without a deploy.
+
+Office Hub degrades cleanly while they are absent: `googleMeetConfigured()` returns false, the
+Settings card says the integration is not set up and names the missing variables for an
+administrator, and online meetings ask for a joining link to paste.
+
 **3. Each organizer connects their own account** at **Office Hub → Settings → My preferences →
 Google Meet**. There is no administrator step and no domain-wide delegation: the connection is
 personal, affects only that person's calendar, and they can revoke it from the same card.
