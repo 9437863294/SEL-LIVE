@@ -150,7 +150,7 @@ export function OfficeHubCommandPalette() {
         </Button>
       </div>
 
-      <CommandDialog open={open} onOpenChange={setOpen}>
+      <CommandDialog open={open} onOpenChange={setOpen} title="Search Office Hub">
         <CommandInput
           value={term}
           onValueChange={setTerm}
