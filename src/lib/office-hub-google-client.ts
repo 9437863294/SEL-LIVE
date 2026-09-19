@@ -57,6 +57,16 @@ export interface GoogleMeetStatus {
   settings: GoogleMeetSettingsView;
   /** Which environment variables are missing. Only present when `configured` is false. */
   configurationProblems: string[];
+  /**
+   * Set when the status could not be read at all, with the reason.
+   *
+   * Distinct from `configured: false`, and the distinction matters: "the server has no Google
+   * credentials" is an administrator's job, while "we could not ask the server" is usually an
+   * expired session or a server fault. Collapsing the two — which this module used to do — puts
+   * "Google Meet is not set up on this server" in front of somebody whose session simply lapsed,
+   * and sends them off to edit environment variables that were never the problem.
+   */
+  unavailable: string | null;
 }
 
 export const UNCONFIGURED_GOOGLE_STATUS: GoogleMeetStatus = {
@@ -64,6 +74,7 @@ export const UNCONFIGURED_GOOGLE_STATUS: GoogleMeetStatus = {
   connection: DISCONNECTED_GOOGLE_CONNECTION,
   settings: DEFAULT_GOOGLE_MEET_SETTINGS,
   configurationProblems: [],
+  unavailable: null,
 };
 
 /**
@@ -84,6 +95,15 @@ export async function fetchGoogleMeetStatus(): Promise<GoogleMeetStatus> {
     configurationProblems: Array.isArray(data.configurationProblems)
       ? (data.configurationProblems as string[])
       : [],
+    unavailable: null,
+  };
+}
+
+/** The status shape for a read that failed, carrying the reason instead of inventing a state. */
+export function googleStatusUnavailable(error: unknown): GoogleMeetStatus {
+  return {
+    ...UNCONFIGURED_GOOGLE_STATUS,
+    unavailable: error instanceof Error ? error.message : 'The Google connection could not be checked.',
   };
 }
 

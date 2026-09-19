@@ -661,7 +661,24 @@ export function MeetingForm({
                     */}
                     {!conferenceWillBeCreated && googleMeet.status.settings.enabled && (
                       <div className="mt-1.5 rounded-md border border-sky-200 bg-sky-50 px-3 py-2">
-                        {!googleMeet.status.configured ? (
+                        {/*
+                          "Could not check" comes first and is kept separate from "not configured".
+                          They look identical from here but need opposite responses — one is a
+                          lapsed session or a server fault, the other is an administrator task.
+                        */}
+                        {googleMeet.status.unavailable ? (
+                          <p className="text-[11px] leading-relaxed text-sky-900">
+                            Google Meet could not be checked, so paste a joining link for now.{' '}
+                            <span className="text-sky-800">{googleMeet.status.unavailable}</span>{' '}
+                            <button
+                              type="button"
+                              className="font-medium underline underline-offset-2"
+                              onClick={() => googleMeet.reload()}
+                            >
+                              Try again
+                            </button>
+                          </p>
+                        ) : !googleMeet.status.configured ? (
                           <p className="text-[11px] leading-relaxed text-sky-900">
                             Google Meet is not set up on this server, so paste a joining link for
                             now. An administrator can enable it — see{' '}

@@ -57,6 +57,7 @@ import {
   UNCONFIGURED_GOOGLE_STATUS,
   disconnectGoogleMeet,
   fetchGoogleMeetStatus,
+  googleStatusUnavailable,
   startGoogleConnect,
   type GoogleMeetStatus,
 } from '@/lib/office-hub-google-client';
@@ -514,12 +515,15 @@ export function useBrowserNotifications(): {
  * is the integration configured, is this user connected, and what should the button say — and a
  * second copy of that logic would let the two screens disagree about whether Google works.
  *
- * ── It never surfaces a query error as an error ────────────────────────────────────────────────
+ * ── A failed read is its own state, not "not configured" ───────────────────────────────────────
  *
- * A failed status read is reported as "not connected", because that is the state the user should
- * act on: every path out of it is the same Connect button. Distinguishing "we asked and you are not
- * connected" from "we could not ask" would give the meeting form a third case to render and the
- * user nothing new to do about it. The underlying error still reaches the console.
+ * This hook used to swallow a failed status read into `UNCONFIGURED_GOOGLE_STATUS`, on the theory
+ * that the user's next action was the same either way. That was wrong, and it cost real debugging
+ * time: an expired session or a 503 from the Admin SDK rendered as "Google Meet is not set up on
+ * this server", sending somebody to check environment variables that were correct all along.
+ *
+ * So a failure now carries its reason in `status.unavailable`, and the screens say "could not be
+ * checked" rather than asserting something about the server they do not know.
  */
 export function useGoogleMeetStatus(options: { enabled?: boolean } = {}): {
   status: GoogleMeetStatus;
@@ -533,7 +537,11 @@ export function useGoogleMeetStatus(options: { enabled?: boolean } = {}): {
   const [isBusy, setIsBusy] = useState(false);
 
   const { data, isLoading, reload } = useOfficeHubQuery(
-    () => fetchGoogleMeetStatus().catch(() => UNCONFIGURED_GOOGLE_STATUS),
+    () =>
+      fetchGoogleMeetStatus().catch((error: unknown) => {
+        console.error('[office-hub] Could not read the Google Meet status', error);
+        return googleStatusUnavailable(error);
+      }),
     [],
     { enabled: options.enabled !== false, initial: UNCONFIGURED_GOOGLE_STATUS },
   );

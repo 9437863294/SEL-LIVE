@@ -89,6 +89,34 @@ export function GoogleMeetPanel({ showAdministratorDetail }: { showAdministrator
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
             Checking the Google connection…
           </p>
+        ) : status.unavailable ? (
+          /*
+            The read itself failed. Says so, rather than asserting the server is unconfigured —
+            the two need opposite responses, and guessing wrong sends an administrator to check
+            environment variables that were never the problem.
+          */
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-amber-900">
+              <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+              The Google connection could not be checked
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-amber-800">{status.unavailable}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
+              This is usually an expired session or a server fault, not a Google problem. Sign in
+              again, or retry.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2 gap-1.5 bg-white text-xs"
+              onClick={() => reload()}
+              disabled={isBusy}
+            >
+              <Loader2 className={isBusy ? 'h-3.5 w-3.5 animate-spin' : 'hidden'} aria-hidden />
+              Try again
+            </Button>
+          </div>
         ) : !status.configured ? (
           /*
             Not an error the user can fix. Phrased as "an administrator needs to", and the missing
