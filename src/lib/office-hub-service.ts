@@ -231,6 +231,39 @@ async function allocateReference(prefix: string, date: IsoDate): Promise<string>
  * not fail because its audit row could not be written. The row carries `recordId`/`recordRef` so a
  * reviewer can pull every action against one meeting or task.
  */
+/**
+ * Drop `undefined` anywhere inside an audit `details` payload.
+ *
+ * Firestore rejects an `undefined` field value outright — `addDoc() called with invalid data` —
+ * and `details` is free-form, assembled inline at some forty call sites. Several of them build a
+ * value conditionally (`onBehalfOf: isDelegated ? name : undefined`), which is the natural way to
+ * write "only when it applies" and the wrong way to hand it to Firestore.
+ *
+ * Stripping centrally rather than at each call site, because the alternative is remembering it
+ * forty times and discovering the one that was forgotten when a real write fails. Recursive rather
+ * than shallow: a nested object or an array of names has the same problem.
+ */
+/**
+ * The same strip, keeping the argument's type.
+ *
+ * For payloads handed to `dispatchNotification`, which does `batch.set(ref, { ...body, userId })`
+ * with no filtering of its own — so every optional field it is given (`itemId`, `itemRef`, `link`,
+ * `organizationId`) is a write failure waiting for the one call where that value is absent.
+ */
+const definedOnly = <T extends object>(value: T): T => stripUndefined(value) as T;
+
+function stripUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.filter((entry) => entry !== undefined).map(stripUndefined);
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (entry !== undefined) output[key] = stripUndefined(entry);
+    }
+    return output;
+  }
+  return value;
+}
+
 function logOfficeHub(
   actor: OfficeHubActor,
   action: string,
@@ -243,7 +276,7 @@ function logOfficeHub(
     userEmail: actor.userEmail ?? undefined,
     module: ACTIVITY_MODULES.OFFICE_HUB,
     action,
-    details,
+    details: stripUndefined(details) as Record<string, unknown>,
     recordId: target.recordId,
     recordRef: target.recordRef,
     sessionId: typeof window !== 'undefined' ? localStorage.getItem('sessionId') ?? undefined : undefined,
@@ -317,7 +350,11 @@ async function notify(
 
   return dispatchNotification(
     { userIds: allowed },
-    {
+    // `definedOnly` because `itemId`, `itemRef` and `organizationId` are all optional and all
+    // genuinely absent sometimes — a notification with no entity, or a user with no organisation.
+    // Passing `undefined` through reaches Firestore as an invalid value and fails the whole batch:
+    // `WriteBatch.set() called with invalid data`.
+    definedOnly({
       type,
       title: copy.title,
       body: copy.body,
@@ -327,7 +364,7 @@ async function notify(
       itemRef: meta.entityRef,
       link: copy.link,
       organizationId: actor.organizationId ?? undefined,
-    },
+    }),
   );
 }
 
@@ -342,7 +379,7 @@ registerNotificationProvider({
   async deliver(input) {
     const delivered = await dispatchNotification(
       { userIds: input.userIds },
-      {
+      definedOnly({
         type: input.type,
         title: input.title,
         body: input.body,
@@ -350,7 +387,7 @@ registerNotificationProvider({
         severity: input.severity ?? 'INFO',
         itemId: input.entityId,
         link: input.link ?? undefined,
-      },
+      }),
     );
     return { delivered };
   },
