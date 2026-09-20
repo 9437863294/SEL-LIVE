@@ -818,7 +818,7 @@ function PublishVersionDialog({ onClose, onPublished }: { onClose: () => void; o
                 id="wa-subject"
                 value={signatureSubject}
                 onChange={(event) => setSignatureSubject(event.target.value)}
-                placeholder="Shyama Electrical Ltd"
+                placeholder="Siddhartha Engineering Limited"
               />
             </div>
           </div>

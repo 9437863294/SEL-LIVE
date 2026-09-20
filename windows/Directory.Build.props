@@ -66,9 +66,9 @@
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
     <Version>1.0.0</Version>
-    <Company>Shyama Electrical Ltd</Company>
+    <Company>Siddhartha Engineering Limited</Company>
     <Product>SEL LIVE Windows Agent</Product>
-    <Copyright>© Shyama Electrical Ltd</Copyright>
+    <Copyright>© Siddhartha Engineering Limited</Copyright>
 
     <!-- Warnings are not errors here: net48 reference assemblies raise a handful of obsolete-API
          notices that are unavoidable on the legacy target and would otherwise block the build. -->

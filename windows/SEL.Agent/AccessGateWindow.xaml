@@ -6,209 +6,459 @@
         WindowState="Maximized"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        Background="#0F172A"
+        Background="#020617"
         Topmost="True"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="ClearType"
+        UseLayoutRounding="True"
         KeyDown="OnKeyDown">
 
     <!--
-      §5's sign-in and §6's morning dashboard, in one window with two views.
+      §5's sign-in and §6's morning dashboard, styled to match the web login page.
 
-      One window rather than two because the transition between them is the moment the employee
-      is waiting on: signing in and then watching a second window construct itself makes a
-      three-second operation feel like ten. The dashboard's content is filled from the login
-      response, which already carries it.
+      This is a deliberate copy of `src/components/auth/LoginPageContent.tsx`, not an
+      interpretation of it: the same #020617 field, the same two-panel card with a cyan-bordered
+      edge, the same branding column with its dot grid, glow blobs, headline and feature strip,
+      and the same dark inputs. An employee signing in at their desk and signing in through a
+      browser should not feel they are using two products — and on a monitoring agent in
+      particular, looking unfamiliar reads as looking untrustworthy.
 
-      On what this window can and cannot guarantee: it is topmost, it swallows the usual escape
-      keys, and it re-asserts itself if something steals focus. It is *not* a Windows security
-      boundary — Ctrl+Alt+Delete still works, by design, because breaking it is both unsupported
-      and the fastest way to make a PC unrecoverable. See the access-gate section of
-      docs/windows-agent.md for what a real enforcement boundary requires and why it is staged
-      separately.
+      Where it necessarily differs, and why:
+
+        • It shows which computer you are signing in to. The web page has no need to; a shared
+          office PC does, and "am I at the right machine" is the first question somebody asks
+          when a gate appears in front of them.
+
+        • It states what the agent records, above the fold. The web login has nothing to
+          disclose. This one does, and burying it would make the disclosure worthless.
+
+      Tailwind colours are inlined as hex because WPF has no design tokens. The mapping is
+      slate-950 #020617, slate-900 #0F172A, cyan-100 #CFFAFE, cyan-200 #A5F3FC, cyan-300 #67E8F9,
+      cyan-400 #22D3EE, blue-900 #1E3A8A, slate-400 #94A3B8, slate-500 #64748B, rose-400 #FB7185.
     -->
 
     <Window.Resources>
-    <Style x:Key="LinkButton" TargetType="Button">
-    <Setter Property="Background" Value="Transparent" />
-    <Setter Property="BorderThickness" Value="0" />
-    <Setter Property="Foreground" Value="#2563EB" />
-    <Setter Property="FontSize" Value="12" />
-    <Setter Property="Cursor" Value="Hand" />
-    <Setter Property="Padding" Value="4,2" />
-    </Style>
+
+        <!-- The flickering indicator the web page animates with `animate-electric-flicker`. -->
+        <Storyboard x:Key="ElectricFlicker" RepeatBehavior="Forever">
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="Opacity">
+                <LinearDoubleKeyFrame Value="1.0" KeyTime="0:0:0.0" />
+                <LinearDoubleKeyFrame Value="0.35" KeyTime="0:0:1.1" />
+                <LinearDoubleKeyFrame Value="1.0" KeyTime="0:0:1.4" />
+                <LinearDoubleKeyFrame Value="0.6" KeyTime="0:0:2.0" />
+                <LinearDoubleKeyFrame Value="1.0" KeyTime="0:0:2.6" />
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
+
+        <!-- The dot grid behind the branding panel: one ellipse, tiled. -->
+        <DrawingBrush x:Key="DotGrid" TileMode="Tile" Viewport="0,0,28,28" ViewportUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <GeometryDrawing Brush="#4064C8FF">
+                    <GeometryDrawing.Geometry>
+                        <EllipseGeometry Center="1,1" RadiusX="1" RadiusY="1" />
+                    </GeometryDrawing.Geometry>
+                </GeometryDrawing>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+
+        <!--
+          Dark inputs matching the web's `bg-slate-900/40 border-white/10`.
+
+          A full template rather than setters, because WPF's default TextBox chrome paints its
+          own light border that no property can remove — setting Background alone leaves a white
+          ring around every field on a dark panel.
+        -->
+        <Style x:Key="DarkInput" TargetType="TextBox">
+            <Setter Property="Foreground" Value="#F1F5F9" />
+            <Setter Property="CaretBrush" Value="#67E8F9" />
+            <Setter Property="SelectionBrush" Value="#22D3EE" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,9" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Chrome"
+                                CornerRadius="8"
+                                Background="#660F172A"
+                                BorderBrush="#1AFFFFFF"
+                                BorderThickness="1">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#8022D3EE" />
+                                <Setter TargetName="Chrome" Property="Background" Value="#800F172A" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DarkPasswordInput" TargetType="PasswordBox">
+            <Setter Property="Foreground" Value="#F1F5F9" />
+            <Setter Property="CaretBrush" Value="#67E8F9" />
+            <Setter Property="SelectionBrush" Value="#22D3EE" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,9" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="PasswordBox">
+                        <Border x:Name="Chrome"
+                                CornerRadius="8"
+                                Background="#660F172A"
+                                BorderBrush="#1AFFFFFF"
+                                BorderThickness="1">
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#8022D3EE" />
+                                <Setter TargetName="Chrome" Property="Background" Value="#800F172A" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#CBD5E1" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+
+        <!-- The primary action: the web's cyan-to-blue gradient button. -->
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#041016" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome" CornerRadius="8" Padding="0,12">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#67E8F9" Offset="0" />
+                                    <GradientStop Color="#38BDF8" Offset="1" />
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.Effect>
+                                <DropShadowEffect Color="#22D3EE" BlurRadius="24" ShadowDepth="0" Opacity="0.45" />
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.9" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GhostButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#A5F3FC" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                CornerRadius="7"
+                                Padding="12,7"
+                                Background="#400F172A"
+                                BorderBrush="#1AFFFFFF"
+                                BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Background" Value="#800F172A" />
+                                <Setter TargetName="Chrome" Property="BorderBrush" Value="#4D22D3EE" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Kept for the dashboard's quick links; the code-behind references it by key. -->
+        <Style x:Key="LinkButton" TargetType="Button" BasedOn="{StaticResource GhostButton}" />
     </Window.Resources>
 
-    <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-
-        <!-- Left: branding and the machine's own facts, so somebody at a shared PC can see at a
-             glance which computer they are signing in to. -->
-        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="64,0,32,0" MaxWidth="420">
-            <TextBlock Text="SEL LIVE"
-                       FontSize="46"
-                       FontWeight="Light"
-                       Foreground="#F8FAFC" />
-            <TextBlock Text="Shyama Electrical Ltd"
-                       FontSize="15"
-                       Foreground="#64748B"
-                       Margin="0,2,0,0" />
-
-            <Border Margin="0,44,0,0" Padding="18" CornerRadius="6" Background="#1E293B">
-                <StackPanel>
-                    <TextBlock x:Name="DeviceNameText" FontSize="14" Foreground="#E2E8F0" FontWeight="SemiBold" />
-                    <TextBlock x:Name="DeviceDetailText" FontSize="12" Foreground="#94A3B8" Margin="0,4,0,0" TextWrapping="Wrap" />
-                    <Separator Margin="0,12" Background="#334155" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="DateText" FontSize="12" Foreground="#94A3B8" />
-                        <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <Ellipse x:Name="NetworkDot" Width="8" Height="8" Fill="#22C55E" VerticalAlignment="Center" />
-                            <TextBlock x:Name="NetworkText" FontSize="12" Foreground="#94A3B8" Margin="6,0,0,0" />
-                        </StackPanel>
-                    </Grid>
-                </StackPanel>
-            </Border>
-        </StackPanel>
-
-        <!-- Right: the card. Swaps between sign-in and the morning dashboard. -->
-        <Border Grid.Column="1"
-                Width="420"
-                VerticalAlignment="Center"
-                Background="#FFFFFF"
-                CornerRadius="8"
-                Padding="34,30,34,30">
+    <!-- The #020617 field the card floats on, exactly as the web page does. -->
+    <Grid Background="#020617">
+        <Border MaxWidth="1180"
+                MaxHeight="760"
+                Margin="32"
+                CornerRadius="16"
+                Background="#80020617"
+                BorderBrush="#2667E8F9"
+                BorderThickness="1"
+                ClipToBounds="True">
+            <Border.Effect>
+                <DropShadowEffect Color="#0E74FF" BlurRadius="120" ShadowDepth="24" Direction="270" Opacity="0.35" />
+            </Border.Effect>
 
             <Grid>
-                <!-- View 1: sign in -->
-                <StackPanel x:Name="SignInView">
-                    <TextBlock Text="Sign in to start your day"
-                               FontSize="19"
-                               FontWeight="SemiBold"
-                               Foreground="#0F172A" />
-                    <TextBlock Text="Use your SEL LIVE account."
-                               FontSize="12"
-                               Foreground="#64748B"
-                               Margin="0,4,0,0" />
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-                    <TextBlock Text="Employee ID or email"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Foreground="#334155"
-                               Margin="0,24,0,6" />
-                    <TextBox x:Name="EmailBox"
-                             Padding="10,8"
-                             FontSize="14"
-                             BorderBrush="#CBD5E1"
-                             BorderThickness="1" />
+                <!-- ══ Left: branding ══════════════════════════════════════════════════════ -->
+                <Grid Grid.Column="0" x:Name="BrandingPanel">
+                    <Grid.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#1F22D3EE" Offset="0" />
+                            <GradientStop Color="#CC0F172A" Offset="0.55" />
+                            <GradientStop Color="#331E3A8A" Offset="1" />
+                        </LinearGradientBrush>
+                    </Grid.Background>
 
-                    <TextBlock Text="Password"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               Foreground="#334155"
-                               Margin="0,14,0,6" />
-                    <PasswordBox x:Name="PasswordBox"
-                                 Padding="10,8"
-                                 FontSize="14"
-                                 BorderBrush="#CBD5E1"
-                                 BorderThickness="1" />
+                    <Rectangle Fill="{StaticResource DotGrid}" Opacity="0.15" />
 
-                    <Border x:Name="ErrorPanel"
-                            Margin="0,14,0,0"
-                            Padding="12,9"
-                            CornerRadius="4"
-                            Background="#FEF2F2"
-                            BorderBrush="#FECACA"
-                            BorderThickness="1"
-                            Visibility="Collapsed">
-                        <TextBlock x:Name="ErrorText"
-                                   FontSize="12"
-                                   Foreground="#B91C1C"
-                                   TextWrapping="Wrap" />
-                    </Border>
+                    <!-- The two blurred glow blobs from the web panel. -->
+                    <Ellipse Width="260" Height="260"
+                             HorizontalAlignment="Left" VerticalAlignment="Top"
+                             Margin="-128,-80,0,0" Fill="#1F67E8F9">
+                        <Ellipse.Effect><BlurEffect Radius="80" /></Ellipse.Effect>
+                    </Ellipse>
+                    <Ellipse Width="290" Height="290"
+                             HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                             Margin="0,0,-112,-128" Fill="#263B82F6">
+                        <Ellipse.Effect><BlurEffect Radius="100" /></Ellipse.Effect>
+                    </Ellipse>
 
-                    <Button x:Name="SignInButton"
-                            Content="Sign in"
-                            Margin="0,20,0,0"
-                            Padding="0,11"
-                            FontSize="14"
-                            FontWeight="SemiBold"
-                            Foreground="White"
-                            Background="#2563EB"
-                            BorderThickness="0"
-                            Cursor="Hand"
-                            IsDefault="True"
-                            Click="OnSignInClicked" />
+                    <Border BorderBrush="#1AFFFFFF" BorderThickness="0,0,1,0" />
 
-                    <TextBlock x:Name="AgentStatusLine"
-                               Margin="0,16,0,0"
-                               FontSize="11"
-                               Foreground="#94A3B8"
-                               TextWrapping="Wrap"
-                               HorizontalAlignment="Center" />
-                </StackPanel>
+                    <Grid Margin="36,32,36,32">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
 
-                <!-- View 2: the morning dashboard (§6) -->
-                <StackPanel x:Name="DashboardView" Visibility="Collapsed">
-                    <TextBlock x:Name="GreetingText"
-                               FontSize="21"
-                               FontWeight="SemiBold"
-                               Foreground="#0F172A"
-                               TextWrapping="Wrap" />
-                    <TextBlock x:Name="CheckInText"
-                               FontSize="12"
-                               Foreground="#64748B"
-                               Margin="0,4,0,0" />
+                        <StackPanel Grid.Row="0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                <Border Width="36" Height="36" CornerRadius="10"
+                                        Background="#2622D3EE" BorderBrush="#6667E8F9" BorderThickness="1">
+                                    <Ellipse x:Name="BrandDot" Width="8" Height="8" Fill="#A5F3FC" />
+                                </Border>
+                                <TextBlock Text="SEL LIVE"
+                                           VerticalAlignment="Center"
+                                           Margin="10,0,0,0"
+                                           FontSize="17"
+                                           FontWeight="SemiBold"
+                                           Foreground="#CFFAFE" />
+                            </StackPanel>
 
-                    <Border Margin="0,20,0,0" Padding="2" Background="#F8FAFC" CornerRadius="6">
-                        <UniformGrid x:Name="CountsGrid" Columns="2" />
-                    </Border>
+                            <TextBlock FontSize="27" FontWeight="Bold" Foreground="White"
+                                       LineHeight="34" TextWrapping="Wrap">
+                                Powering every project<LineBreak />
+                                through <Run Foreground="#67E8F9">live intelligence</Run>
+                            </TextBlock>
 
-                    <TextBlock x:Name="NextMeetingText"
-                               Margin="0,14,0,0"
-                               FontSize="12"
-                               Foreground="#475569"
-                               TextWrapping="Wrap"
-                               Visibility="Collapsed" />
+                            <TextBlock Margin="0,14,0,0"
+                                       MaxWidth="330"
+                                       HorizontalAlignment="Left"
+                                       FontSize="12.5"
+                                       LineHeight="20"
+                                       Foreground="#A6CFFAFE"
+                                       TextWrapping="Wrap"
+                                       Text="Monitor execution, approvals, and field operations from one control layer built for engineering teams." />
+                        </StackPanel>
 
-                    <Button x:Name="StartDayButton"
-                            Content="START MY DAY"
-                            Margin="0,22,0,0"
-                            Padding="0,12"
-                            FontSize="14"
-                            FontWeight="SemiBold"
-                            Foreground="White"
-                            Background="#16A34A"
-                            BorderThickness="0"
-                            Cursor="Hand"
-                            IsDefault="True"
-                            Click="OnStartDayClicked" />
+                        <!-- The digital clock, ticking from the code-behind. -->
+                        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Rectangle Height="1" Width="170" Margin="0,0,0,16">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#0067E8F9" Offset="0" />
+                                        <GradientStop Color="#8067E8F9" Offset="0.5" />
+                                        <GradientStop Color="#0067E8F9" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
 
-                    <WrapPanel Margin="0,14,0,0" HorizontalAlignment="Center">
-                        <Button x:Name="ViewTasksButton" Content="Tasks" Style="{DynamicResource LinkButton}" Margin="6,0" Click="OnOpenTasks" />
-                        <Button x:Name="ViewApprovalsButton" Content="Approvals" Style="{DynamicResource LinkButton}" Margin="6,0" Click="OnOpenApprovals" />
-                        <Button x:Name="ViewMeetingsButton" Content="Meetings" Style="{DynamicResource LinkButton}" Margin="6,0" Click="OnOpenMeetings" />
-                        <Button x:Name="OpenErpButton" Content="Open SEL LIVE" Style="{DynamicResource LinkButton}" Margin="6,0" Click="OnOpenErp" />
-                    </WrapPanel>
-                </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <TextBlock x:Name="ClockHours" Text="--"
+                                           FontFamily="Consolas" FontSize="46" FontWeight="Thin"
+                                           Foreground="#67E8F9">
+                                    <TextBlock.Effect>
+                                        <DropShadowEffect Color="#22D3EE" BlurRadius="28" ShadowDepth="0" Opacity="0.9" />
+                                    </TextBlock.Effect>
+                                </TextBlock>
+                                <TextBlock x:Name="ClockColon" Text=":" Margin="3,0,3,6"
+                                           VerticalAlignment="Bottom"
+                                           FontFamily="Consolas" FontSize="38" FontWeight="Thin"
+                                           Foreground="#22D3EE" />
+                                <TextBlock x:Name="ClockMinutes" Text="--"
+                                           FontFamily="Consolas" FontSize="46" FontWeight="Thin"
+                                           Foreground="#67E8F9">
+                                    <TextBlock.Effect>
+                                        <DropShadowEffect Color="#22D3EE" BlurRadius="28" ShadowDepth="0" Opacity="0.9" />
+                                    </TextBlock.Effect>
+                                </TextBlock>
+                                <StackPanel Margin="9,0,0,7" VerticalAlignment="Bottom" MinWidth="26">
+                                    <TextBlock x:Name="ClockSeconds" Text="--"
+                                               FontFamily="Consolas" FontSize="12"
+                                               Foreground="#B322D3EE" />
+                                    <TextBlock x:Name="ClockMeridiem" Text=" "
+                                               FontFamily="Consolas" FontSize="12"
+                                               Margin="0,3,0,0"
+                                               Foreground="#B322D3EE" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <TextBlock x:Name="ClockDate" Margin="0,10,0,0"
+                                       HorizontalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="#8CA5F3FC" />
+
+                            <Rectangle Height="1" Width="170" Margin="0,16,0,0">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Color="#0067E8F9" Offset="0" />
+                                        <GradientStop Color="#8067E8F9" Offset="0.5" />
+                                        <GradientStop Color="#0067E8F9" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="2" x:Name="FeatureList" />
+                    </Grid>
+                </Grid>
+
+                <!-- ══ Right: authentication ═══════════════════════════════════════════════ -->
+                <Grid Grid.Column="1" Background="#020617">
+                    <Grid Margin="40,26,40,20">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Which computer this is, and whether it can reach the server. -->
+                        <Border Grid.Row="0" CornerRadius="9" Padding="14,10"
+                                Background="#4D0F172A" BorderBrush="#14FFFFFF" BorderThickness="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock x:Name="DeviceNameText" FontSize="13" FontWeight="SemiBold" Foreground="#E2E8F0" />
+                                    <TextBlock x:Name="DeviceDetailText" FontSize="11" Foreground="#94A3B8" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse x:Name="NetworkDot" Width="7" Height="7" Fill="#22C55E" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="NetworkText" FontSize="11" Foreground="#94A3B8" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Hidden; kept because RefreshChrome still writes the long-form date. -->
+                        <TextBlock x:Name="DateText" Visibility="Collapsed" />
+
+                        <ScrollViewer Grid.Row="1" Margin="0,20,0,0"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Padding="0,0,4,0">
+                        <Grid VerticalAlignment="Center">
+
+                            <!-- View 1: sign in -->
+                            <StackPanel x:Name="SignInView">
+                                <TextBlock Text="Sign in to start your day"
+                                           FontSize="21" FontWeight="SemiBold" Foreground="#F8FAFC" />
+                                <TextBlock Text="Use your SEL LIVE account."
+                                           FontSize="12.5" Foreground="#94A3B8" Margin="0,5,0,0" />
+
+                                <TextBlock Text="Employee ID or email" Style="{StaticResource FieldLabel}" Margin="0,24,0,6" />
+                                <TextBox x:Name="EmailBox" Style="{StaticResource DarkInput}" />
+
+                                <TextBlock Text="Password" Style="{StaticResource FieldLabel}" Margin="0,14,0,6" />
+                                <PasswordBox x:Name="PasswordBox" Style="{StaticResource DarkPasswordInput}" />
+
+                                <Border x:Name="ErrorPanel"
+                                        Margin="0,14,0,0" Padding="12,9" CornerRadius="7"
+                                        Background="#26F43F5E" BorderBrush="#4DF43F5E" BorderThickness="1"
+                                        Visibility="Collapsed">
+                                    <TextBlock x:Name="ErrorText" FontSize="12" Foreground="#FDA4AF" TextWrapping="Wrap" />
+                                </Border>
+
+                                <Button x:Name="SignInButton" Content="Sign in"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Margin="0,22,0,0" IsDefault="True" Click="OnSignInClicked" />
+
+                                <TextBlock x:Name="AgentStatusLine"
+                                           Margin="0,16,0,0" FontSize="10.5" Foreground="#64748B"
+                                           TextWrapping="Wrap" TextAlignment="Center" />
+                            </StackPanel>
+
+                            <!-- View 2: the morning dashboard (§6) -->
+                            <StackPanel x:Name="DashboardView" Visibility="Collapsed">
+                                <TextBlock x:Name="GreetingText"
+                                           FontSize="23" FontWeight="SemiBold" Foreground="#F8FAFC"
+                                           TextWrapping="Wrap" />
+                                <TextBlock x:Name="CheckInText"
+                                           FontSize="12.5" Foreground="#94A3B8" Margin="0,5,0,0" TextWrapping="Wrap" />
+
+                                <Border Margin="0,20,0,0" CornerRadius="10" Padding="4"
+                                        Background="#400F172A" BorderBrush="#14FFFFFF" BorderThickness="1">
+                                    <UniformGrid x:Name="CountsGrid" Columns="3" />
+                                </Border>
+
+                                <TextBlock x:Name="NextMeetingText"
+                                           Margin="0,14,0,0" FontSize="12" Foreground="#A5F3FC"
+                                           TextWrapping="Wrap" Visibility="Collapsed" />
+
+                                <Button x:Name="StartDayButton" Content="START MY DAY"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Margin="0,22,0,0" IsDefault="True" Click="OnStartDayClicked" />
+
+                                <WrapPanel Margin="0,14,0,0" HorizontalAlignment="Center">
+                                    <Button x:Name="ViewTasksButton" Content="Tasks" Style="{StaticResource GhostButton}" Margin="4" Click="OnOpenTasks" />
+                                    <Button x:Name="ViewApprovalsButton" Content="Approvals" Style="{StaticResource GhostButton}" Margin="4" Click="OnOpenApprovals" />
+                                    <Button x:Name="ViewMeetingsButton" Content="Meetings" Style="{StaticResource GhostButton}" Margin="4" Click="OnOpenMeetings" />
+                                    <Button x:Name="OpenErpButton" Content="Open SEL LIVE" Style="{StaticResource GhostButton}" Margin="4" Click="OnOpenErp" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Grid>
+                        </ScrollViewer>
+
+                        <StackPanel Grid.Row="2" Margin="0,16,0,0">
+                            <TextBlock x:Name="MonitoringNotice"
+                                       FontSize="10.5" Foreground="#64748B"
+                                       TextWrapping="Wrap" TextAlignment="Center" LineHeight="16" />
+                            <TextBlock x:Name="CopyrightText"
+                                       Margin="0,10,0,0" FontSize="10.5" Foreground="#5A64748B"
+                                       TextAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
             </Grid>
         </Border>
-
-        <!-- Right spacer keeps the card visually centred without stretching it. -->
-        <TextBlock x:Name="MonitoringNotice"
-                   Grid.Column="2"
-                   VerticalAlignment="Bottom"
-                   HorizontalAlignment="Right"
-                   Margin="0,0,24,18"
-                   FontSize="11"
-                   Foreground="#475569"
-                   TextWrapping="Wrap"
-                   MaxWidth="320"
-                   TextAlignment="Right" />
     </Grid>
 </Window>

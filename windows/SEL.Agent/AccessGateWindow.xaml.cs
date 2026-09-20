@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Sel.Agent.Core;
 using Sel.Agent.Core.Api;
@@ -97,25 +98,128 @@ namespace Sel.Agent
                 WindowState = WindowState.Normal;
                 ResizeMode = ResizeMode.CanMinimize;
                 SizeToContent = SizeToContent.Manual;
-                Width = 980;
-                Height = 620;
+                // Sized so the sign-in column fits without a scrollbar at 100% DPI. The
+                // ScrollViewer around it is the fallback for a small or heavily scaled display,
+                // not the normal case — a scrollbar next to a two-field form looks broken.
+                Width = 1000;
+                Height = 700;
                 Topmost = false;
                 ShowInTaskbar = true;
                 WindowStartupLocation = WindowStartupLocation.CenterScreen;
             }
 
-            _clock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-            _clock.Tick += (s, e) => RefreshChrome();
+            // One second, because the branding panel now carries a live clock like the web login
+            // page does. RefreshChrome is the cheaper part and only runs every thirtieth tick —
+            // it reads the device record and the coordinator's status, which do not change
+            // second to second and are not worth re-reading sixty times a minute.
+            _clock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _clock.Tick += OnClockTick;
 
             Loaded += OnLoaded;
             Deactivated += OnDeactivated;
             Closing += OnClosing;
         }
 
+        private int _tick;
+
+        /// <summary>The clock every second; the rest of the chrome every thirty.</summary>
+        private void OnClockTick(object sender, EventArgs e)
+        {
+            RefreshClock();
+            if (++_tick % 30 == 0) RefreshChrome();
+        }
+
+        /// <summary>
+        /// The branding panel's digital clock, mirroring the web login page's.
+        /// </summary>
+        /// <remarks>
+        /// Local time, not the office timezone, and deliberately so. Everywhere else in this
+        /// module a time is rendered in Asia/Kolkata, because a report is read by somebody who
+        /// may be elsewhere and has to compare sites. This clock is decoration on the machine in
+        /// front of you: showing 09:02 to somebody whose wall clock says 09:02 is the point, and
+        /// showing them anything else would just look broken.
+        /// </remarks>
+        private void RefreshClock()
+        {
+            DateTime now = DateTime.Now;
+            ClockHours.Text = now.ToString("hh");
+            ClockMinutes.Text = now.ToString("mm");
+            ClockSeconds.Text = now.ToString("ss");
+            ClockMeridiem.Text = now.ToString("tt", System.Globalization.CultureInfo.InvariantCulture);
+            ClockDate.Text = now.ToString("dddd, dd MMMM yyyy");
+            // The blinking colon the web page animates with `animate-pulse`.
+            ClockColon.Opacity = now.Second % 2 == 0 ? 1.0 : 0.3;
+        }
+
+        /// <summary>The three feature cards from the web login's branding column.</summary>
+        private void BuildFeatureList()
+        {
+            var features = new[]
+            {
+                new[] { "Live workflows", "Real-time approvals and status tracking" },
+                new[] { "Field operations", "Monitor execution across all sites" },
+                new[] { "Smart finance", "Requisitions, billing and loan management" },
+            };
+
+            foreach (string[] feature in features)
+            {
+                var card = new Border
+                {
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(14, 10, 14, 10),
+                    Margin = new Thickness(0, 0, 0, 8),
+                    Background = new SolidColorBrush(Color.FromArgb(0x14, 0x22, 0xD3, 0xEE)),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(0x26, 0x67, 0xE8, 0xF9)),
+                    BorderThickness = new Thickness(1),
+                };
+
+                var row = new StackPanel { Orientation = Orientation.Horizontal };
+                row.Children.Add(new System.Windows.Shapes.Ellipse
+                {
+                    Width = 6,
+                    Height = 6,
+                    Margin = new Thickness(0, 5, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Fill = new SolidColorBrush(Color.FromRgb(0x67, 0xE8, 0xF9)),
+                });
+
+                var text = new StackPanel();
+                text.Children.Add(new TextBlock
+                {
+                    Text = feature[0],
+                    FontSize = 11.5,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0xCF, 0xFA, 0xFE)),
+                });
+                text.Children.Add(new TextBlock
+                {
+                    Text = feature[1],
+                    FontSize = 11,
+                    Margin = new Thickness(0, 1, 0, 0),
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x8C, 0xA5, 0xF3, 0xFC)),
+                });
+
+                row.Children.Add(text);
+                card.Child = row;
+                FeatureList.Children.Add(card);
+            }
+        }
+
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
             RefreshChrome();
+            RefreshClock();
+            BuildFeatureList();
             _clock.Start();
+
+            CopyrightText.Text = "© " + DateTime.Now.Year + " Siddhartha Engineering Limited · All rights reserved";
+
+            // The flickering brand dot, started here rather than in XAML so it stops cleanly
+            // with the window instead of holding a timer against a closed visual tree.
+            var flicker = (Storyboard)FindResource("ElectricFlicker");
+            Storyboard.SetTarget(flicker, BrandDot);
+            flicker.Begin();
 
             AgentStatusLine.Text = "Agent " + AgentVersion.Current + " · " + OsCompatibility.Current.FriendlyName
                 + " · " + _host.Notifications.DescribeSelection();
@@ -270,23 +374,33 @@ namespace Sel.Agent
             StartDayButton.Focus();
         }
 
+        /// <summary>
+        /// One tile in the morning dashboard's count grid, in the dark palette.
+        /// </summary>
+        /// <remarks>
+        /// Emphasis is rose for things that are late or waiting and cyan for everything else —
+        /// the same reading as the web app, and deliberately not "red = bad". A count of overdue
+        /// tasks is a fact about a queue, not a verdict on the person looking at it.
+        /// </remarks>
         private void AddCount(string label, int value, bool emphasise)
         {
-            var panel = new StackPanel { Margin = new Thickness(12, 10, 12, 10) };
+            var panel = new StackPanel { Margin = new Thickness(10, 9, 10, 9) };
             panel.Children.Add(new TextBlock
             {
                 Text = value.ToString(),
-                FontSize = 22,
+                FontSize = 21,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(emphasise
-                    ? Color.FromRgb(0xB9, 0x1C, 0x1C)
-                    : Color.FromRgb(0x0F, 0x17, 0x2A))
+                Foreground = new SolidColorBrush(emphasise && value > 0
+                    ? Color.FromRgb(0xFB, 0x71, 0x85)
+                    : Color.FromRgb(0x67, 0xE8, 0xF9)),
             });
             panel.Children.Add(new TextBlock
             {
                 Text = label,
-                FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B))
+                FontSize = 10.5,
+                Margin = new Thickness(0, 2, 0, 0),
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
             });
             CountsGrid.Children.Add(panel);
         }

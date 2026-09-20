@@ -23,7 +23,7 @@
   -->
 
   <Package Name="SEL LIVE Windows Agent"
-           Manufacturer="Shyama Electrical Ltd"
+           Manufacturer="Siddhartha Engineering Limited"
            Version="1.0.0.0"
            UpgradeCode="7E2D9A34-4C6B-4E3B-9A1D-2C7F8B5E6D41"
            Language="1033"
@@ -232,7 +232,7 @@
                 Description="SEL LIVE work activity and notification agent"
                 Target="[INSTALLFOLDER]SEL.Agent.exe"
                 WorkingDirectory="INSTALLFOLDER">
-        <ShortcutProperty Key="System.AppUserModel.ID" Value="ShyamaElectrical.SelLive.Agent" />
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="SiddharthaEngineering.SelLive.Agent" />
       </Shortcut>
       <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
       <RegistryValue Root="HKLM"
