@@ -1,0 +1,656 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Sel.Agent.Core.Api;
+using Sel.Agent.Core.Contracts;
+using Sel.Agent.Core.Platform;
+using Sel.Agent.Core.Tracking;
+
+namespace Sel.Agent.Core
+{
+    /// <summary>What the agent is currently doing, for the tray and the status panel.</summary>
+    public sealed class AgentStatus
+    {
+        public bool SignedIn { get; set; }
+        public string UserName { get; set; }
+        public string SessionId { get; set; }
+        public DateTime? SignedInAtUtc { get; set; }
+        public string Presence { get; set; }
+        public string CurrentApplication { get; set; }
+        public int QueuedSpans { get; set; }
+        public bool Online { get; set; }
+        public DateTime? LastSyncUtc { get; set; }
+        public string LastError { get; set; }
+        public ResolvedAgentPolicy Policy { get; set; }
+    }
+
+    /// <summary>
+    /// The agent's engine: two loops, some event wiring, and the rules for when to stop trying.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Deliberately has no UI and no Win32. Everything it touches is one of the interfaces in
+    /// <see cref="Sel.Agent.Core.Platform"/>, so the same coordinator drives the WPF tray on a
+    /// Windows 11 desktop and could be driven by a console harness in a test. That is what makes
+    /// "does the agent behave correctly when the network drops for two hours" a question that can
+    /// be answered without two hours or a network.
+    /// </para>
+    ///
+    /// <para><b>Two loops, at different cadences, for different reasons.</b></para>
+    /// <para>
+    /// The <b>heartbeat</b> (default 90s) is liveness and the only channel the server has back to
+    /// the agent — policy changes, directives, notification availability and update offers all
+    /// ride on its response. A missed beat is forgotten immediately: the next one carries the
+    /// same information, and retrying would only add load to a server that is evidently already
+    /// struggling.
+    /// </para>
+    /// <para>
+    /// The <b>flush</b> (default 180s) uploads spans. A missed flush is never forgotten, because
+    /// the spans are the record. They stay in the queue and go up with the next attempt.
+    /// </para>
+    ///
+    /// <para><b>Offline is inferred, not configured.</b></para>
+    /// <para>
+    /// There is no "offline mode" switch. The agent marks itself offline after a failed call and
+    /// online after a successful one, and the span builder stamps <c>recordedOffline</c> from
+    /// that flag — so the report can distinguish a day recorded with confidence from one
+    /// reconstructed from a queue. §54's requirement that work continue through an outage falls
+    /// out of the queue being the source of truth: nothing in the recording path calls the
+    /// network at all.
+    /// </para>
+    ///
+    /// <para><b>Directives are obeyed once.</b></para>
+    /// <para>
+    /// The server cannot clear a directive flag when it is honoured — it has no way to know — so
+    /// each one carries an id derived from the instant it was raised, and this class remembers
+    /// which it has acted on. Without that, a "sign out" flag set once would sign the user out
+    /// every ninety seconds for ever.
+    /// </para>
+    /// </remarks>
+    public sealed class AgentCoordinator : IDisposable
+    {
+        private readonly SelLiveApiClient _api;
+        private readonly IOfflineQueue _queue;
+        private readonly IForegroundWatcher _foreground;
+        private readonly IIdleMonitor _idle;
+        private readonly ISessionStateMonitor _sessionState;
+        private readonly ActivitySpanBuilder _builder;
+        private readonly Func<string> _idTokenProvider;
+        private readonly Action<string> _log;
+
+        private readonly HashSet<string> _handledDirectives = new HashSet<string>(StringComparer.Ordinal);
+        private readonly object _stateGate = new object();
+
+        private CancellationTokenSource _cancellation;
+        private Task _heartbeatLoop;
+        private Task _flushLoop;
+        private Task _tickLoop;
+
+        private ResolvedAgentPolicy _policy = ResolvedAgentPolicy.Defaults();
+        private string _sessionId;
+        private string _userName;
+        private DateTime? _signedInAtUtc;
+        private bool _online = true;
+        private bool _locked;
+        private DateTime? _lastSyncUtc;
+        private string _lastError;
+        private bool _trackingPaused;
+        private bool _disposed;
+
+        /// <summary>How often idle is sampled. Fine enough to catch short pauses, cheap enough to ignore.</summary>
+        private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(5);
+
+        /// <summary>Spans per upload. Comfortably under the server's 500 and under a request size worth worrying about.</summary>
+        private const int FlushBatchSize = 200;
+
+        public AgentCoordinator(
+            SelLiveApiClient api,
+            IOfflineQueue queue,
+            IForegroundWatcher foreground,
+            IIdleMonitor idle,
+            ISessionStateMonitor sessionState,
+            Func<string> idTokenProvider,
+            Action<string> log)
+        {
+            _api = api ?? throw new ArgumentNullException("api");
+            _queue = queue ?? throw new ArgumentNullException("queue");
+            _foreground = foreground ?? throw new ArgumentNullException("foreground");
+            _idle = idle ?? throw new ArgumentNullException("idle");
+            _sessionState = sessionState ?? throw new ArgumentNullException("sessionState");
+            _idTokenProvider = idTokenProvider ?? throw new ArgumentNullException("idTokenProvider");
+            _log = log ?? (message => { });
+            _builder = new ActivitySpanBuilder();
+        }
+
+        /// <summary>Raised when the server tells the agent to do something (§34).</summary>
+        public event EventHandler<AgentDirective> DirectiveReceived;
+
+        /// <summary>Raised when notifications are waiting, with their ids.</summary>
+        public event EventHandler<List<string>> NotificationsAvailable;
+
+        /// <summary>Raised when a newer agent build applies to this device (§43).</summary>
+        public event EventHandler<AvailableVersion> UpdateAvailable;
+
+        /// <summary>Raised whenever the status changes enough for the tray to care.</summary>
+        public event EventHandler StatusChanged;
+
+        public ResolvedAgentPolicy Policy { get { return _policy; } }
+
+        public AgentStatus Status
+        {
+            get
+            {
+                lock (_stateGate)
+                {
+                    ForegroundSnapshot current = _builder.Current;
+                    return new AgentStatus
+                    {
+                        SignedIn = !string.IsNullOrEmpty(_sessionId),
+                        UserName = _userName,
+                        SessionId = _sessionId,
+                        SignedInAtUtc = _signedInAtUtc,
+                        Presence = CurrentPresence(),
+                        CurrentApplication = current == null ? null : current.ApplicationName,
+                        QueuedSpans = SafeQueueCount(),
+                        Online = _online,
+                        LastSyncUtc = _lastSyncUtc,
+                        LastError = _lastError,
+                        Policy = _policy
+                    };
+                }
+            }
+        }
+
+        /// <summary>
+        /// Begin a tracked session after a successful sign-in.
+        /// </summary>
+        public void StartSession(AgentLoginResponse login)
+        {
+            if (login == null) throw new ArgumentNullException("login");
+
+            lock (_stateGate)
+            {
+                _sessionId = login.SessionId;
+                _userName = login.UserName;
+                _signedInAtUtc = IsoTime.Parse(login.LoginAt);
+                if (login.Policy != null) _policy = login.Policy;
+                _handledDirectives.Clear();
+            }
+
+            _sessionState.StateChanged += OnSessionStateChanged;
+            _foreground.ForegroundChanged += OnForegroundChanged;
+            _sessionState.Start();
+            _foreground.Start();
+            _builder.Start(DateTime.UtcNow, _foreground.Capture());
+
+            _cancellation = new CancellationTokenSource();
+            CancellationToken token = _cancellation.Token;
+            _heartbeatLoop = RunLoop(HeartbeatOnceAsync, () => _policy.Settings.HeartbeatIntervalSeconds, token);
+            _flushLoop = RunLoop(FlushOnceAsync, () => _policy.Settings.ActivityBatchIntervalSeconds, token);
+            _tickLoop = RunTickLoop(token);
+
+            _log("Session started: " + login.SessionId + " for " + login.UserName);
+            RaiseStatusChanged();
+        }
+
+        /// <summary>
+        /// End the session and close it server-side (§28).
+        /// </summary>
+        /// <remarks>
+        /// The open span is closed and everything still queued for this session travels on the
+        /// logout request itself. Windows allows only a few seconds between
+        /// <c>WM_QUERYENDSESSION</c> and the process being killed — enough for one request, not
+        /// for a flush followed by a logout. Sending them together is what makes the last minutes
+        /// before a shutdown survive.
+        /// </remarks>
+        public async Task StopSessionAsync(string endReason)
+        {
+            string sessionId;
+            lock (_stateGate) { sessionId = _sessionId; }
+            if (string.IsNullOrEmpty(sessionId)) return;
+
+            try
+            {
+                if (_cancellation != null) _cancellation.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already torn down by a racing shutdown path.
+            }
+
+            _foreground.ForegroundChanged -= OnForegroundChanged;
+            _sessionState.StateChanged -= OnSessionStateChanged;
+            _foreground.Stop();
+
+            _builder.Stop(DateTime.UtcNow);
+            List<ActivitySpan> finalSpans = _builder.DrainCompleted();
+            if (finalSpans.Count > 0) _queue.Enqueue(sessionId, finalSpans);
+
+            // Everything outstanding for this session, capped so a huge backlog cannot make the
+            // shutdown request time out and lose the close as well as the spans.
+            List<QueuedSpan> pending = _queue
+                .Peek(FlushBatchSize)
+                .Where(entry => entry.SessionId == sessionId)
+                .ToList();
+
+            var request = new SessionLogoutRequest
+            {
+                SessionId = sessionId,
+                IdToken = _idTokenProvider(),
+                EndReason = endReason ?? SessionEndReasons.UserSignout,
+                EndedAt = IsoTime.Now(),
+                FinalSpans = pending.Select(entry => entry.Span).ToList()
+            };
+
+            try
+            {
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8)))
+                {
+                    await _api.LogoutAsync(request, timeout.Token).ConfigureAwait(false);
+                }
+                _queue.Acknowledge(pending.Select(entry => entry.RowId));
+                _log("Session closed: " + endReason);
+            }
+            catch (Exception error)
+            {
+                // The spans stay queued and go up at the next sign-in; the reaper closes the
+                // session as UNCLEAN_END with an estimated time, which is exactly what §28 wants
+                // to happen when the evidence is incomplete.
+                _log("Logout could not be delivered (" + error.Message + "). The session will be reconciled server-side.");
+            }
+            finally
+            {
+                lock (_stateGate)
+                {
+                    _sessionId = null;
+                    _userName = null;
+                    _signedInAtUtc = null;
+                }
+                RaiseStatusChanged();
+            }
+        }
+
+        /// <summary>
+        /// Suspend recording, where the policy permits it (§26).
+        /// </summary>
+        /// <remarks>
+        /// Returns false when <c>allowUserPauseTracking</c> is off, and the tray hides the menu
+        /// item in that case — but the check is repeated here rather than trusted to the UI,
+        /// because a menu item that is merely hidden is not a control.
+        /// </remarks>
+        public bool TryPauseTracking()
+        {
+            if (!_policy.Settings.AllowUserPauseTracking) return false;
+            lock (_stateGate) { _trackingPaused = true; }
+            _builder.Stop(DateTime.UtcNow);
+            FlushBuilderToQueue();
+            RaiseStatusChanged();
+            return true;
+        }
+
+        public void ResumeTracking()
+        {
+            lock (_stateGate) { _trackingPaused = false; }
+            _builder.Start(DateTime.UtcNow, _foreground.Capture());
+            RaiseStatusChanged();
+        }
+
+        /// <summary>Upload now, from the tray's "Sync now".</summary>
+        public Task SyncNowAsync()
+        {
+            return FlushOnceAsync(CancellationToken.None);
+        }
+
+        /* ── Loops ───────────────────────────────────────────────────────────────────────── */
+
+        private Task RunLoop(Func<CancellationToken, Task> body, Func<int> intervalSeconds, CancellationToken token)
+        {
+            return Task.Run(async () =>
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await body(token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                    catch (Exception error)
+                    {
+                        // A loop that dies leaves the agent silently doing nothing, which is far
+                        // worse than a logged error — so nothing is allowed to escape.
+                        _log("Loop error: " + error.Message);
+                    }
+
+                    // Read the interval each time round: a policy change on the heartbeat
+                    // response takes effect on the next iteration, with no restart (§35).
+                    int seconds = Math.Max(15, intervalSeconds());
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(seconds), token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                }
+            }, token);
+        }
+
+        private Task RunTickLoop(CancellationToken token)
+        {
+            return Task.Run(async () =>
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        bool paused;
+                        lock (_stateGate) { paused = _trackingPaused; }
+                        if (!paused && _policy.Settings.ApplicationTrackingEnabled)
+                        {
+                            _builder.Offline = !_online;
+                            _builder.OnTick(DateTime.UtcNow, _idle.GetIdleSeconds());
+                            FlushBuilderToQueue();
+                        }
+                    }
+                    catch (Exception error)
+                    {
+                        _log("Tick error: " + error.Message);
+                    }
+
+                    try
+                    {
+                        await Task.Delay(TickInterval, token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                }
+            }, token);
+        }
+
+        /// <summary>Move finished spans from memory into the durable queue.</summary>
+        private void FlushBuilderToQueue()
+        {
+            if (_builder.PendingCount == 0) return;
+            string sessionId;
+            lock (_stateGate) { sessionId = _sessionId; }
+            if (string.IsNullOrEmpty(sessionId)) return;
+            _queue.Enqueue(sessionId, _builder.DrainCompleted());
+        }
+
+        private async Task HeartbeatOnceAsync(CancellationToken token)
+        {
+            string sessionId;
+            lock (_stateGate) { sessionId = _sessionId; }
+
+            var request = new HeartbeatRequest
+            {
+                SessionId = sessionId,
+                IdToken = _idTokenProvider(),
+                SentAt = IsoTime.Now(),
+                Presence = CurrentPresence(),
+                ProcessName = _builder.Current == null ? null : _builder.Current.ProcessName,
+                ApplicationName = _builder.Current == null ? null : _builder.Current.ApplicationName,
+                AgentVersion = AgentVersion.Current,
+                QueuedSpanCount = SafeQueueCount(),
+                IdleSeconds = (int)Math.Round(_idle.GetIdleSeconds())
+            };
+
+            try
+            {
+                HeartbeatResponse response = await _api.HeartbeatAsync(request, token).ConfigureAwait(false);
+                MarkOnline();
+
+                if (response.Policy != null && response.Policy.Settings != null) _policy = response.Policy;
+
+                if (response.Directives != null)
+                {
+                    foreach (AgentDirective directive in response.Directives) HandleDirective(directive);
+                }
+
+                if (response.PendingNotificationIds != null && response.PendingNotificationIds.Count > 0)
+                {
+                    EventHandler<List<string>> handler = NotificationsAvailable;
+                    if (handler != null) handler(this, response.PendingNotificationIds);
+                }
+
+                if (response.AvailableVersion != null)
+                {
+                    EventHandler<AvailableVersion> handler = UpdateAvailable;
+                    if (handler != null) handler(this, response.AvailableVersion);
+                }
+            }
+            catch (SelApiException error)
+            {
+                MarkOffline(error.Message);
+                // A device whose credential has been revoked must stop, not keep beating — see
+                // the class remarks on not hammering a server that has said no.
+                if (error.RequiresReenrollment) throw new OperationCanceledException();
+            }
+
+            RaiseStatusChanged();
+        }
+
+        private async Task FlushOnceAsync(CancellationToken token)
+        {
+            string sessionId;
+            lock (_stateGate) { sessionId = _sessionId; }
+            if (string.IsNullOrEmpty(sessionId)) return;
+
+            FlushBuilderToQueue();
+
+            IList<QueuedSpan> batch = _queue.Peek(FlushBatchSize);
+            if (batch.Count == 0) return;
+
+            // One request per session: a batch can span a sign-out and a sign-in if the agent was
+            // offline across both, and the server validates that every span belongs to the
+            // session named in the request.
+            foreach (var group in batch.GroupBy(entry => entry.SessionId))
+            {
+                if (string.IsNullOrEmpty(group.Key)) continue;
+                List<QueuedSpan> entries = group.ToList();
+
+                var request = new ActivityBatchRequest
+                {
+                    SessionId = group.Key,
+                    IdToken = _idTokenProvider(),
+                    SentAt = IsoTime.Now(),
+                    Spans = entries.Select(entry => entry.Span).ToList()
+                };
+
+                try
+                {
+                    ActivityBatchResponse response = await _api.SendActivityAsync(request, token).ConfigureAwait(false);
+                    MarkOnline();
+
+                    var settled = new HashSet<string>(StringComparer.Ordinal);
+                    if (response.Duplicates != null) foreach (string id in response.Duplicates) settled.Add(id);
+                    if (response.Rejected != null)
+                    {
+                        foreach (SpanRejection rejection in response.Rejected)
+                        {
+                            settled.Add(rejection.SpanId);
+                            _log("Span rejected (" + rejection.SpanId + "): " + rejection.Reason);
+                        }
+                    }
+
+                    // Accepted, duplicated and rejected all mean "the server is finished with
+                    // this span". Retrying a rejection would loop for ever on a span the server
+                    // has explained it will never take.
+                    _queue.Acknowledge(entries.Select(entry => entry.RowId));
+                    _lastSyncUtc = DateTime.UtcNow;
+                    _log(string.Format("Uploaded {0} spans ({1} accepted, {2} duplicate, {3} rejected).",
+                        entries.Count,
+                        response.Accepted,
+                        response.Duplicates == null ? 0 : response.Duplicates.Count,
+                        response.Rejected == null ? 0 : response.Rejected.Count));
+                }
+                catch (SelApiException error)
+                {
+                    MarkOffline(error.Message);
+                    // 4xx that is not a rate limit means these spans are wrong, not unlucky.
+                    bool permanent = !error.IsTransient && error.StatusCode >= 400 && error.StatusCode < 500
+                                     && !error.RequiresReauthentication;
+                    _queue.MarkFailed(entries.Select(entry => entry.RowId), error.Message, permanent);
+                    return;
+                }
+            }
+
+            RaiseStatusChanged();
+        }
+
+        /* ── Events ──────────────────────────────────────────────────────────────────────── */
+
+        private void OnForegroundChanged(object sender, ForegroundSnapshot snapshot)
+        {
+            bool paused;
+            lock (_stateGate) { paused = _trackingPaused; }
+            if (paused || !_policy.Settings.ApplicationTrackingEnabled) return;
+            _builder.OnForegroundChanged(DateTime.UtcNow, snapshot);
+        }
+
+        private void OnSessionStateChanged(object sender, SessionStateChange change)
+        {
+            DateTime now = DateTime.UtcNow;
+            switch (change)
+            {
+                case SessionStateChange.Locked:
+                    lock (_stateGate) { _locked = true; }
+                    _builder.OnLocked(now);
+                    break;
+                case SessionStateChange.Unlocked:
+                    lock (_stateGate) { _locked = false; }
+                    _builder.OnUnlocked(now);
+                    break;
+                case SessionStateChange.Suspending:
+                    _builder.OnSleep(now);
+                    FlushBuilderToQueue();
+                    break;
+                case SessionStateChange.Resumed:
+                    _builder.OnResume(now);
+                    break;
+                case SessionStateChange.LogOff:
+                case SessionStateChange.Shutdown:
+                    // Fire and forget with a short internal timeout: blocking Windows' shutdown
+                    // on a network call is how a fleet gets a reputation for slow restarts.
+                    string reason = change == SessionStateChange.Shutdown
+                        ? SessionEndReasons.WindowsShutdown
+                        : SessionEndReasons.WindowsLogoff;
+                    StopSessionAsync(reason).Wait(TimeSpan.FromSeconds(9));
+                    return;
+            }
+            FlushBuilderToQueue();
+            RaiseStatusChanged();
+        }
+
+        private void HandleDirective(AgentDirective directive)
+        {
+            if (directive == null || string.IsNullOrEmpty(directive.DirectiveId)) return;
+            lock (_stateGate)
+            {
+                if (!_handledDirectives.Add(directive.DirectiveId)) return;
+            }
+            _log("Directive: " + directive.Kind + " (" + directive.DirectiveId + ")");
+            EventHandler<AgentDirective> handler = DirectiveReceived;
+            if (handler != null) handler(this, directive);
+        }
+
+        /* ── State ───────────────────────────────────────────────────────────────────────── */
+
+        private string CurrentPresence()
+        {
+            bool locked;
+            lock (_stateGate) { locked = _locked; }
+            if (locked) return PresenceStates.Locked;
+
+            double idleSeconds = _idle.GetIdleSeconds();
+            if (idleSeconds >= _policy.Settings.ExtendedIdleThresholdSeconds) return PresenceStates.ExtendedIdle;
+            if (idleSeconds >= _policy.Settings.IdleThresholdSeconds) return PresenceStates.Idle;
+            return PresenceStates.Active;
+        }
+
+        private void MarkOnline()
+        {
+            bool changed;
+            lock (_stateGate)
+            {
+                changed = !_online;
+                _online = true;
+                _lastError = null;
+            }
+            _builder.Offline = false;
+            if (changed) _log("Back online.");
+        }
+
+        private void MarkOffline(string reason)
+        {
+            bool changed;
+            lock (_stateGate)
+            {
+                changed = _online;
+                _online = false;
+                _lastError = reason;
+            }
+            _builder.Offline = true;
+            if (changed) _log("Offline: " + reason + ". Recording continues locally.");
+        }
+
+        private int SafeQueueCount()
+        {
+            try
+            {
+                return _queue.PendingCount();
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        private void RaiseStatusChanged()
+        {
+            EventHandler handler = StatusChanged;
+            if (handler != null)
+            {
+                try { handler(this, EventArgs.Empty); }
+                catch { /* a UI subscriber's fault must not stop the engine */ }
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            try { if (_cancellation != null) _cancellation.Cancel(); } catch { }
+            _foreground.Dispose();
+            _sessionState.Dispose();
+            if (_cancellation != null) _cancellation.Dispose();
+        }
+    }
+
+    /// <summary>The running agent's version, read from the assembly so it cannot drift.</summary>
+    public static class AgentVersion
+    {
+        private static readonly Lazy<string> Value = new Lazy<string>(() =>
+        {
+            try
+            {
+                Version version = typeof(AgentVersion).Assembly.GetName().Version;
+                return version == null ? "0.0.0" : version.ToString(3);
+            }
+            catch
+            {
+                return "0.0.0";
+            }
+        });
+
+        public static string Current { get { return Value.Value; } }
+    }
+}

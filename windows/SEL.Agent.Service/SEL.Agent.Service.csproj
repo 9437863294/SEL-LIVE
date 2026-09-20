@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Windows service (§46).
+
+    OutputType is Exe rather than WinExe on purpose: the console and check switches need a
+    console to write to, and an application marked WinExe gets none. A service does not care
+    either way (the SCM never gives it a console), so the diagnostic modes come free.
+
+    No reference to SEL.Agent: the service launches the desktop agent as a separate process and
+    must not load PresentationFramework into session 0.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Sel.Agent.Service</RootNamespace>
+    <AssemblyName>SEL.Agent.Service</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.ServiceProcess" />
+    <Reference Include="System.Configuration.Install" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SEL.Agent.Core\SEL.Agent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

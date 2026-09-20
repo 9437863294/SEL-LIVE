@@ -1,0 +1,15 @@
+<Application x:Class="Sel.Agent.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <!--
+      ShutdownMode is OnExplicitShutdown, not the default OnLastWindowClose.
+
+      The agent spends almost all of its life with no window open at all — it is a tray icon and
+      two background loops. With the default, closing the access gate after START MY DAY would
+      end the process, and the agent would stop tracking at the exact moment it is supposed to
+      start. Shutdown is therefore explicit: Exit from the tray menu, or Windows ending the
+      session.
+    -->
+    <Application.Resources />
+</Application>

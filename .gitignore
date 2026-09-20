@@ -45,6 +45,18 @@ next-env.d.ts
 firebase-debug.log
 firestore-debug.log
 
+# Windows agent build output. MSBuild puts intermediate and final artefacts under bin/ and obj/
+# per project; the staged installer payload and the MSI itself live under the installer's own
+# bin/. None of it belongs in the repository — the MSI is published as a release artefact with a
+# recorded SHA-256, and a copy in git would be the one nobody remembers to update.
+windows/**/bin/
+windows/**/obj/
+
+# Written by the installer or by hand on a developer machine. Contains the ERP address, the
+# Firebase Web API key and — until it is redeemed — an enrolment code. The first two are public
+# by design; the third is not, which is reason enough to keep the whole file out.
+agent.config.json
+
 # Service-account keys. These grant full admin access to the project and cannot be scoped down, so
 # they are ignored by shape rather than by exact name — the console names the download after the
 # project and a random suffix, which is easy to commit by accident when it lands in the repo root.

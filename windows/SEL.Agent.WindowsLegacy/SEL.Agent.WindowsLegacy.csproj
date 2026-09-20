@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Windows 7 / 8 / 8.1 adapters.
+
+    Only one interface is implemented here — INotificationPresenter — and that is the honest
+    measure of how much of this agent is actually version-specific. Foreground tracking, idle
+    detection, lock/unlock, the offline queue, the service and deep links all use APIs that have
+    been unchanged since Windows Vista, so they live in Core and are shared verbatim.
+
+    WPF rather than WinForms for the popup: the agent's other windows are WPF, and mixing the two
+    toolkits in one process means two message loops' worth of subtle focus and DPI behaviour for
+    no benefit.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Sel.Agent.WindowsLegacy</RootNamespace>
+    <AssemblyName>SEL.Agent.WindowsLegacy</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SEL.Agent.Core\SEL.Agent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="SEL.Agent" />
+
+  <!--
+    Two things this manifest is load-bearing for, neither of them obvious.
+
+    1. THE supportedOS LIST MAKES WINDOWS TELL THE TRUTH.
+       Since Windows 8.1, GetVersionEx reports 6.2 to any process that has not declared support
+       for the release it is running on. Without the GUIDs below, OsCompatibility's registry and
+       RtlGetVersion fallbacks would still get it right — but Environment.OSVersion, and every
+       framework behaviour keyed off it, would not. Declaring support up to Windows 10/11 also
+       opts the process out of the compatibility shims Windows otherwise applies.
+
+    2. asInvoker, NOT requireAdministrator.
+       The agent runs at sign-in for an ordinary employee. Asking for elevation would put a UAC
+       prompt in front of every user every morning, which they would learn to click through — and
+       it is unnecessary: nothing the agent does at runtime needs administrator rights. Installing
+       the service, hardening the ProgramData ACL and writing the TLS registry keys all happen in
+       the installer, which is elevated once.
+
+    dpiAware/dpiAwareness are declared so the gate and the popup render sharply. The Windows 10
+    per-monitor value is listed first with a comma-separated fallback, which older releases parse
+    by taking the first value they recognise — so Windows 7 reads "system" and Windows 10 reads
+    "permonitorv2".
+  -->
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 7 -->
+      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}" />
+      <!-- Windows 8 -->
+      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}" />
+      <!-- Windows 8.1 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}" />
+      <!-- Windows 10 and Windows 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">permonitorv2,permonitor,system</dpiAwareness>
+      <!-- Long paths are opt-in from Windows 10 1607; harmless and ignored on earlier releases. -->
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>

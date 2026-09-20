@@ -1,0 +1,119 @@
+<Window x:Class="Sel.Agent.WindowsLegacy.SelNotificationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SEL LIVE"
+        Width="380"
+        SizeToContent="Height"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Topmost="True"
+        ResizeMode="NoResize"
+        FocusManager.IsFocusScope="True">
+
+    <!--
+      The Windows 7 / 8.1 replacement for an Action Center toast.
+
+      A tray balloon would have been less code and is what most agents do on legacy Windows. It
+      was rejected because a balloon cannot carry buttons: §23's approval alert needs Open and
+      Remind later, §25's meeting reminder needs Join, View agenda and Snooze, and a notification
+      that can only be read is half the feature. Drawing the window means Windows 7 gets the same
+      actions, the same deep links and the same §39 receipts as Windows 11.
+
+      Deliberately restrained visually. This appears unbidden over whatever somebody is working
+      on, several times a day — so it reads as a system surface rather than an advertisement, and
+      the accent stripe carries the priority instead of the whole panel being coloured.
+    -->
+
+    <Border Margin="12"
+            CornerRadius="6"
+            Background="#FFFFFF"
+            BorderBrush="#D4D9E0"
+            BorderThickness="1">
+        <Border.Effect>
+            <!-- Soft shadow so the panel separates from a white document underneath it. -->
+            <DropShadowEffect BlurRadius="14" ShadowDepth="2" Direction="270" Opacity="0.28" Color="#FF202A37" />
+        </Border.Effect>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Priority stripe. Set from code so the four levels stay in one place. -->
+            <Border x:Name="PriorityStripe"
+                    Grid.Column="0"
+                    Background="#2563EB"
+                    CornerRadius="6,0,0,6" />
+
+            <Grid Grid.Column="1" Margin="14,12,12,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Header: source, and a dismiss affordance that is always reachable. -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="SEL LIVE"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="#64748B" />
+                        <TextBlock x:Name="ModuleLabel"
+                                   Margin="8,0,0,0"
+                                   FontSize="11"
+                                   Foreground="#94A3B8" />
+                    </StackPanel>
+
+                    <Button x:Name="DismissButton"
+                            Grid.Column="1"
+                            Content="&#x2715;"
+                            Width="22"
+                            Height="22"
+                            Padding="0"
+                            FontSize="11"
+                            Foreground="#94A3B8"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            ToolTip="Dismiss"
+                            Click="OnDismissClicked" />
+                </Grid>
+
+                <TextBlock x:Name="TitleText"
+                           Grid.Row="1"
+                           Margin="0,6,0,0"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="#0F172A"
+                           TextWrapping="Wrap" />
+
+                <TextBlock x:Name="MessageText"
+                           Grid.Row="2"
+                           Margin="0,4,0,0"
+                           FontSize="12"
+                           Foreground="#475569"
+                           TextWrapping="Wrap"
+                           MaxHeight="88"
+                           TextTrimming="CharacterEllipsis" />
+
+                <!-- Actions are built in code from the notification's own list, so the same
+                     buttons appear here as in an Action Center toast on Windows 10/11. -->
+                <StackPanel x:Name="ActionPanel"
+                            Grid.Row="3"
+                            Margin="0,12,0,0"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

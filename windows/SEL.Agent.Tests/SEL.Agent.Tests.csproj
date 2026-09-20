@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tests for the agent, including the OS compatibility matrix.
+
+    They target net48 like everything else, so they exercise the same framework the fleet runs
+    rather than a modern one that happens to compile the same source. That matters here: several
+    of the behaviours under test (DPAPI entropy, ServicePointManager's protocol defaults,
+    SQLite's native interop) differ between .NET Framework and .NET, and a test suite on the
+    wrong runtime would pass while the shipped agent failed.
+
+    x86, inherited from Directory.Build.props and deliberately not overridden. The agent is built
+    x86 so that one binary runs everywhere under WOW64, and System.Data.SQLite loads the matching
+    native interop for the *process*. An AnyCPU test assembly runs 64-bit on this machine and
+    then cannot load the x86 Core assembly at all — BadImageFormatException on every test, which
+    is what happens if somebody "helpfully" sets AnyCPU here. vstest picks the x86 test host from
+    the assembly's own platform, so leaving it alone is all that is required.
+  -->
+
+  <PropertyGroup>
+    <!--
+      Pinned to net48 rather than following SelAgentTargetFramework.
+
+      The net461 retarget in Directory.Build.props exists so a Windows 8.0 machine can be
+      supported. It applies to the five shipping projects; it must not apply here, because
+      xunit.runner.visualstudio needs net462 or later and the whole solution would fail to
+      restore — which would make the escape hatch look broken when it is not. The tests are a
+      build-time artefact that never reaches a PC, and CLR 4.x behaviour is the same across
+      4.6.1 and 4.8 for everything they assert.
+    -->
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Sel.Agent.Tests</RootNamespace>
+    <AssemblyName>SEL.Agent.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <LangVersion>7.3</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SEL.Agent.Core\SEL.Agent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

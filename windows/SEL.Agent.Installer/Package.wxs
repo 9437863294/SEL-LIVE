@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <!--
+    The SEL LIVE Windows Agent installer (§44).
+
+    ── Why MSI and not MSIX ──────────────────────────────────────────────────────────────────────
+
+    MSIX needs Windows 10 1809 or later, which would exclude every Windows 7 and 8.1 machine in
+    the estate — the whole reason this agent targets .NET Framework. Windows Installer has been
+    present since Windows 2000 and installs the same package on every supported release, and it
+    is the only packaging format that can install a Windows service, which MSIX cannot do at all.
+
+    ── Why WiX 5 produces a package that installs on Windows 7 ───────────────────────────────────
+
+    The toolset is modern; the output is not. InstallerVersion is set to 405 (Windows Installer
+    4.5), which shipped with Windows 7 and is present on every later release. Nothing here uses a
+    table or an action introduced after that, so the MSI is readable by the installer engine on a
+    2009 machine even though it was authored with a 2024 toolchain. Only the *build* machine needs
+    anything current.
+  -->
+
+  <Package Name="SEL LIVE Windows Agent"
+           Manufacturer="Shyama Electrical Ltd"
+           Version="1.0.0.0"
+           UpgradeCode="7E2D9A34-4C6B-4E3B-9A1D-2C7F8B5E6D41"
+           Language="1033"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="405">
+
+    <SummaryInformation Description="SEL LIVE work activity, attendance and notification agent" />
+
+    <!-- Upgrades replace in place; a downgrade is refused with a readable message rather than
+         half-installing over a newer build. -->
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      DowngradeErrorMessage="A newer version of the SEL LIVE Agent is already installed. Uninstall it first if you genuinely need to go back." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ══ Prerequisites ══════════════════════════════════════════════════════════════════════
+         Checked before a single file is copied. Each one has a message that says what to do,
+         because "Setup failed" on a site-office PC turns into a phone call.
+    -->
+
+    <!-- .NET Framework 4.8. WixNetFxExtension's property is the supported way to detect it;
+         the raw registry read is kept as the condition so the package has no extension
+         dependency for something this simple. -->
+    <Property Id="NETFRAMEWORK48RELEASE" Secure="yes">
+      <RegistrySearch Id="NetFx48Release"
+                      Root="HKLM"
+                      Key="SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full"
+                      Name="Release"
+                      Type="raw" />
+    </Property>
+
+    <Launch Condition="Installed OR NETFRAMEWORK48RELEASE &gt;= &quot;#528040&quot;"
+            Message="The SEL LIVE Agent needs Microsoft .NET Framework 4.8. Install it (it is a free download from Microsoft, and is already present on Windows 10 1903 and later) and run this installer again." />
+
+    <!-- Windows 7 SP1 is 6.1.7601. VersionNT is 601 for Windows 7, 603 for 8.1, 1000 for 10/11.
+         602 (Windows 8.0) is excluded on purpose: .NET Framework 4.8 does not support it. -->
+    <Launch Condition="Installed OR (VersionNT &gt;= 601 AND VersionNT &lt;&gt; 602)"
+            Message="The SEL LIVE Agent supports Windows 7 SP1, Windows 8.1, Windows 10 and Windows 11. Windows 8.0 cannot run .NET Framework 4.8 — update this PC to Windows 8.1 (a free update) and run the installer again." />
+
+    <Launch Condition="Installed OR (VersionNT &gt; 601 OR ServicePackLevel &gt;= 1)"
+            Message="Windows 7 needs Service Pack 1 before the SEL LIVE Agent can be installed." />
+
+    <Launch Condition="Privileged"
+            Message="The SEL LIVE Agent installs a Windows service and must be run as an administrator." />
+
+    <!-- ══ Configuration, supplied on the command line ════════════════════════════════════════
+         msiexec /i SEL.Agent.msi /qn ^
+           APIBASEURL=https://sel.example.com ^
+           FIREBASEAPIKEY=AIza... ^
+           ENROLLMENTCODE=SEL-HO-2026
+
+         Secure="yes" is what allows these to survive the elevation boundary into the deferred
+         custom action. Without it they are silently empty in the elevated context and the agent
+         installs with no configuration — which looks like the installer worked.
+    -->
+    <Property Id="APIBASEURL" Secure="yes" />
+    <Property Id="FIREBASEAPIKEY" Secure="yes" />
+    <Property Id="ENROLLMENTCODE" Secure="yes" />
+    <Property Id="DEVICENAME" Secure="yes" />
+
+    <Launch Condition="Installed OR APIBASEURL"
+            Message="APIBASEURL is required: the address of your SEL LIVE installation, e.g. APIBASEURL=https://sel.example.com" />
+    <Launch Condition="Installed OR FIREBASEAPIKEY"
+            Message="FIREBASEAPIKEY is required: the Firebase Web API key (the same public value the web app uses)." />
+
+    <!-- ══ Layout ═════════════════════════════════════════════════════════════════════════════ -->
+
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="ManufacturerFolder" Name="SEL LIVE">
+        <Directory Id="INSTALLFOLDER" Name="Agent" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="SEL LIVE" />
+    </StandardDirectory>
+
+    <!-- The agent's working directory: device credential, offline queue, configuration. Created
+         here so its ACL is applied by the installer, which is elevated, rather than by the agent,
+         which is not. -->
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DataManufacturerFolder" Name="SEL LIVE">
+        <Directory Id="AGENTDATAFOLDER" Name="Agent" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="SEL LIVE Agent" Level="1" AllowAbsent="no">
+      <ComponentGroupRef Id="AgentBinaries" />
+      <ComponentRef Id="AgentService" />
+      <ComponentRef Id="AgentAutoStart" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="AgentDataFolder" />
+      <ComponentRef Id="Tls12Enablement" />
+    </Feature>
+
+    <!-- ══ Components ═════════════════════════════════════════════════════════════════════════ -->
+
+    <ComponentGroup Id="AgentBinaries" Directory="INSTALLFOLDER">
+      <!--
+        Everything in the staged output, harvested rather than listed. A new dependency (a NuGet
+        package picking up a transitive reference, say) then ships without anybody remembering to
+        add a Component for it — which is the usual way an installer comes to be missing one DLL.
+
+        The service executable is deliberately NOT in this bindpath. ServiceInstall takes its
+        image path from its parent component's KeyPath file, so the service binary has to be an
+        explicit File in the AgentService component below. Harvesting it here as well would
+        produce two File rows for one path — a short-filename collision that Windows Installer
+        resolves unpredictably. Keeping it in a second staging directory (bindpath `svc`) makes
+        the separation structural rather than something an Exclude pattern has to get right.
+      -->
+      <Files Include="!(bindpath.bin)\**" />
+    </ComponentGroup>
+
+    <Component Id="AgentService" Directory="INSTALLFOLDER" Guid="B2F41C7E-9A55-4E62-8F3B-1D6A4C8E7052">
+      <File Id="ServiceExe" Source="!(bindpath.svc)\SEL.Agent.Service.exe" KeyPath="yes" />
+      <File Id="ServiceExeConfig" Source="!(bindpath.svc)\SEL.Agent.Service.exe.config" />
+
+      <!--
+        LocalSystem, and it genuinely needs to be.
+
+        WTSQueryUserToken — how the service starts the desktop agent inside a signed-in user's
+        session — requires SE_TCB_NAME, which only LocalSystem holds. A LocalService or
+        NetworkService account cannot do it, so the agent would never appear for anybody.
+
+        Start="auto" with a delayed start: the agent has nothing useful to do until the network
+        stack and the user session are up, and a non-delayed service competing with the shell at
+        boot is a measurable few seconds off every morning on older hardware.
+      -->
+      <ServiceInstall Id="InstallAgentService"
+                      Name="SELLiveAgent"
+                      DisplayName="SEL LIVE Agent"
+                      Description="Keeps the SEL LIVE work activity agent running for each signed-in user, and maintains its local activity queue."
+                      Type="ownProcess"
+                      Start="auto"
+                      Account="LocalSystem"
+                      ErrorControl="normal"
+                      Vital="yes">
+        <!-- Restart on failure rather than leaving a machine untracked. The reset period means
+             a service that fails repeatedly over a day still gets retried the next day. -->
+        <util:ServiceConfig FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="60"
+                            ResetPeriodInDays="1" />
+      </ServiceInstall>
+
+      <ServiceControl Id="ControlAgentService"
+                      Name="SELLiveAgent"
+                      Start="install"
+                      Stop="both"
+                      Remove="uninstall"
+                      Wait="yes" />
+
+      <!-- The event source the service logs to. Creating it needs elevation, which is why it is
+           done here rather than on first run — see SelAgentService.Log. -->
+      <util:EventSource Log="Application"
+                        Name="SELLiveAgent"
+                        EventMessageFile="%SystemRoot%\System32\EventCreate.exe" />
+    </Component>
+
+    <!--
+      A per-machine Run entry, in addition to the service launching the agent.
+
+      Belt and braces, and each covers a case the other does not. The service handles a user
+      signing in while it is already running, and restarts the agent if it is killed. The Run key
+      handles the window where the service is still starting during a cold boot — on a slow
+      Windows 7 machine that can be twenty or thirty seconds, which is long enough for somebody to
+      sign in and start work before the agent appears. The agent's single-instance mutex makes the
+      overlap harmless.
+    -->
+    <Component Id="AgentAutoStart" Directory="INSTALLFOLDER" Guid="C4A7E913-6B28-4D71-A0E5-3F9C2B7D8146">
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+                     Name="SELLiveAgent"
+                     Type="string"
+                     Value="&quot;[INSTALLFOLDER]SEL.Agent.exe&quot;"
+                     KeyPath="yes" />
+    </Component>
+
+    <!--
+      The Start Menu shortcut is not cosmetic.
+
+      A Win32 application can only be *called back* when an Action Center toast is clicked if it
+      has a shortcut carrying an Application User Model ID. Without this component, Windows 10 and
+      11 machines fall back to the SEL LIVE popup — which works, but loses Action Center
+      persistence for no reason. ModernNotificationPresenter probes for exactly this.
+    -->
+    <Component Id="StartMenuShortcut" Directory="ShortcutFolder" Guid="D8B3F250-71C4-4A9E-B6D2-5E8A1C4F9037">
+      <Shortcut Id="AgentShortcut"
+                Name="SEL LIVE Agent"
+                Description="SEL LIVE work activity and notification agent"
+                Target="[INSTALLFOLDER]SEL.Agent.exe"
+                WorkingDirectory="INSTALLFOLDER">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="ShyamaElectrical.SelLive.Agent" />
+      </Shortcut>
+      <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\Shyama Electrical\SEL LIVE Agent"
+                     Name="ShortcutInstalled"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <Component Id="AgentDataFolder" Directory="AGENTDATAFOLDER" Guid="E5C92A18-3D7B-4F06-9C81-A2B4D6E8F350">
+      <CreateFolder>
+        <!--
+          Locked to SYSTEM and Administrators, inheritance broken.
+
+          ProgramData is world-readable by default. The device credential is DPAPI-encrypted with
+          purpose entropy, so an unhardened folder is a weaker position rather than an open one —
+          but machine-scope DPAPI means any local process can unprotect it, so the ACL is what
+          stops a standard user on a shared PC reading the blob in the first place.
+        -->
+        <PermissionEx Sddl="O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" />
+      </CreateFolder>
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\Shyama Electrical\SEL LIVE Agent"
+                     Name="DataFolder"
+                     Type="string"
+                     Value="[AGENTDATAFOLDER]"
+                     KeyPath="yes" />
+      <!-- The credential, queue and log are created at runtime, so they are removed explicitly
+           rather than tracked as installed files. -->
+      <RemoveFile Id="RemoveDeviceJson" Name="device.json" On="uninstall" />
+      <RemoveFile Id="RemoveQueueDb" Name="queue.db*" On="uninstall" />
+      <RemoveFile Id="RemoveAgentConfig" Name="agent.config.json" On="uninstall" />
+      <RemoveFile Id="RemoveAgentLog" Name="agent.log*" On="uninstall" />
+      <RemoveFile Id="RemoveServiceLog" Name="service.log" On="uninstall" />
+      <RemoveFolder Id="RemoveAgentDataFolder" On="uninstall" />
+    </Component>
+
+    <!--
+      TLS 1.2 for .NET on Windows 7.
+
+      Written unconditionally — the values are the default on Windows 8.1 and later, so setting
+      them there changes nothing, and conditioning the component would mean maintaining a version
+      test in two places. What this does *not* do is enable TLS 1.2 in SChannel itself: that needs
+      KB3140245 and a reboot, which an installer should not be doing silently. The prerequisite
+      check (SEL.Agent.Service.exe with the check switch) reports it, and the deployment guide
+      covers it.
+    -->
+    <Component Id="Tls12Enablement" Directory="INSTALLFOLDER" Guid="F7D14B6C-8E23-4950-BA7F-C1D5E9028463">
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\Microsoft\.NETFramework\v4.0.30319"
+                     Name="SchUseStrongCrypto"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\Microsoft\.NETFramework\v4.0.30319"
+                     Name="SystemDefaultTlsVersions"
+                     Type="integer"
+                     Value="1" />
+      <!-- The WOW6432Node counterpart matters: the agent is a 32-bit process, and on x64 Windows
+           it reads its .NET configuration from there. Setting only the 64-bit key is the classic
+           half-fix that leaves a 32-bit application still negotiating TLS 1.0. -->
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v4.0.30319"
+                     Name="SchUseStrongCrypto"
+                     Type="integer"
+                     Value="1" />
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\WOW6432Node\Microsoft\.NETFramework\v4.0.30319"
+                     Name="SystemDefaultTlsVersions"
+                     Type="integer"
+                     Value="1" />
+    </Component>
+
+    <!-- ══ Custom actions ═════════════════════════════════════════════════════════════════════
+         The configuration file is written by the agent's own code rather than by the installer,
+         so there is one implementation of "what a valid config looks like" and it is the one
+         that gets tested. See Program.WriteConfiguration for why JSON in WiX was avoided.
+    -->
+
+    <SetProperty Id="WriteAgentConfig"
+                 Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --write-config --url &quot;[APIBASEURL]&quot; --key &quot;[FIREBASEAPIKEY]&quot; --code &quot;[ENROLLMENTCODE]&quot; --device-name &quot;[DEVICENAME]&quot;"
+                 Before="WriteAgentConfig"
+                 Sequence="execute" />
+
+    <CustomAction Id="WriteAgentConfig"
+                  BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <InstallExecuteSequence>
+      <!-- After InstallFiles so the executable exists, and before StartServices so the service
+           finds a configuration on its first start rather than logging "not configured". -->
+      <Custom Action="WriteAgentConfig" After="InstallFiles" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+
+    <ui:WixUI xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui" Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+
+  </Package>
+</Wix>

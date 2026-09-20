@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The desktop agent: tray icon, access gate, morning dashboard and status window.
+
+    WindowsForms is referenced alongside WPF for one reason — NotifyIcon. WPF has never shipped a
+    tray API, and every third-party wrapper is this same class with a XAML surface on it. One
+    extra framework assembly is cheaper than a hand-rolled Shell_NotifyIcon host and its
+    taskbar-restart handling.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>Sel.Agent</RootNamespace>
+    <AssemblyName>SEL.Agent</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- AgentHost passes SelLiveApiClient.Http to FirebaseAuthClient so the two share a
+         connection pool, which puts HttpClient in this assembly's signature surface. -->
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SEL.Agent.Core\SEL.Agent.Core.csproj" />
+    <ProjectReference Include="..\SEL.Agent.WindowsLegacy\SEL.Agent.WindowsLegacy.csproj" />
+    <ProjectReference Include="..\SEL.Agent.WindowsModern\SEL.Agent.WindowsModern.csproj" />
+  </ItemGroup>
+
+</Project>

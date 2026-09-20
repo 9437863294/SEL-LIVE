@@ -1,0 +1,87 @@
+<Project>
+
+  <!--
+    Shared build settings for the SEL LIVE Windows Agent.
+
+    ── Why .NET Framework and not .NET 8 ─────────────────────────────────────────────────────────
+
+    The estate includes Windows 7 SP1 machines. .NET 8 does not support Windows 7 at all, and
+    WinUI 3 / MSIX need Windows 10 1809 or later — so a modern-stack agent would simply not run on
+    a large part of the fleet. .NET Framework 4.8 with WPF runs unchanged from Windows 7 SP1 to
+    Windows 11, is servicing-supported, and is already present in-box on Windows 10 1903+ and
+    Windows 11. Nothing about that choice reaches the server: the agent speaks HTTPS and JSON to
+    `/api/windows-agent/*`, and those routes neither know nor care what framework called them.
+
+    ── The Windows 8.0 caveat, stated plainly ────────────────────────────────────────────────────
+
+    .NET Framework 4.8's supported client operating systems are **Windows 7 SP1, Windows 8.1,
+    Windows 10 and Windows 11**. Windows 8.0 is *not* among them — Microsoft dropped it after
+    4.6.1, and 8.0 itself left support in January 2016, when Microsoft made 8.1 a prerequisite for
+    further updates.
+
+    So a genuine Windows 8.0 machine cannot run this agent as configured, and the installer says so
+    rather than failing obscurely. Two ways out, in order of preference:
+
+      1. Update that PC to Windows 8.1. Free, and it is the supported configuration regardless of
+         this agent — an unpatched 8.0 machine has had no security updates for a decade, which is
+         a poor place to install software that handles credentials.
+
+      2. Retarget the whole solution by overriding one property:
+
+             dotnet build windows/SEL.Agent.sln -p:SelAgentTargetFramework=net461
+
+         .NET Framework 4.6.1 supports Windows 8.0, and every dependency here (Newtonsoft.Json,
+         System.Data.SQLite, Microsoft.Toolkit.Uwp.Notifications) still resolves at that level.
+         What is lost is four years of framework servicing, so it is a deliberate trade and not
+         the default.
+
+    ── Language level ────────────────────────────────────────────────────────────────────────────
+
+    C# 7.3 — the last version with no runtime dependencies beyond .NET Framework. Newer language
+    versions do compile against net48, but features like records and `init` need types the
+    framework does not ship, and the resulting "add a shim so the compiler stops complaining"
+    pattern is exactly the kind of thing that makes a legacy codebase hard to maintain on the old
+    Visual Studio an engineer at a site office might be running. Plain C# costs nothing here.
+  -->
+
+  <PropertyGroup>
+    <SelAgentTargetFramework Condition="'$(SelAgentTargetFramework)' == ''">net48</SelAgentTargetFramework>
+    <TargetFramework>$(SelAgentTargetFramework)</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+
+    <!--
+      x86, on purpose, and not AnyCPU.
+
+      The agent loads a native SQLite library and P/Invokes a good deal of user32/kernel32. An
+      AnyCPU build runs 64-bit on a 64-bit PC and 32-bit on a 32-bit one, which means the fleet
+      needs both sets of native binaries deployed and both code paths exercised. An x86 build runs
+      identically everywhere under WOW64, and none of the Win32 calls this agent makes care —
+      GetForegroundWindow and GetLastInputInfo are not affected by the caller's bitness, and
+      reading a 64-bit process's executable path from a 32-bit caller works through
+      QueryFullProcessImageName, which is why the code uses it rather than GetModuleFileNameEx.
+    -->
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.0</Version>
+    <Company>Shyama Electrical Ltd</Company>
+    <Product>SEL LIVE Windows Agent</Product>
+    <Copyright>© Shyama Electrical Ltd</Copyright>
+
+    <!-- Warnings are not errors here: net48 reference assemblies raise a handful of obsolete-API
+         notices that are unavoidable on the legacy target and would otherwise block the build. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Lets the .NET SDK build net48 without Visual Studio or a Developer Pack installed, which
+         is what makes this solution buildable on a CI runner and on this workstation. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

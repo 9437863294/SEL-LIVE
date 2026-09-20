@@ -1,0 +1,214 @@
+<Window x:Class="Sel.Agent.AccessGateWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SEL LIVE"
+        WindowStyle="None"
+        WindowState="Maximized"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="#0F172A"
+        Topmost="True"
+        KeyDown="OnKeyDown">
+
+    <!--
+      §5's sign-in and §6's morning dashboard, in one window with two views.
+
+      One window rather than two because the transition between them is the moment the employee
+      is waiting on: signing in and then watching a second window construct itself makes a
+      three-second operation feel like ten. The dashboard's content is filled from the login
+      response, which already carries it.
+
+      On what this window can and cannot guarantee: it is topmost, it swallows the usual escape
+      keys, and it re-asserts itself if something steals focus. It is *not* a Windows security
+      boundary — Ctrl+Alt+Delete still works, by design, because breaking it is both unsupported
+      and the fastest way to make a PC unrecoverable. See the access-gate section of
+      docs/windows-agent.md for what a real enforcement boundary requires and why it is staged
+      separately.
+    -->
+
+    <Window.Resources>
+    <Style x:Key="LinkButton" TargetType="Button">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Foreground" Value="#2563EB" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Padding" Value="4,2" />
+    </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Left: branding and the machine's own facts, so somebody at a shared PC can see at a
+             glance which computer they are signing in to. -->
+        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="64,0,32,0" MaxWidth="420">
+            <TextBlock Text="SEL LIVE"
+                       FontSize="46"
+                       FontWeight="Light"
+                       Foreground="#F8FAFC" />
+            <TextBlock Text="Shyama Electrical Ltd"
+                       FontSize="15"
+                       Foreground="#64748B"
+                       Margin="0,2,0,0" />
+
+            <Border Margin="0,44,0,0" Padding="18" CornerRadius="6" Background="#1E293B">
+                <StackPanel>
+                    <TextBlock x:Name="DeviceNameText" FontSize="14" Foreground="#E2E8F0" FontWeight="SemiBold" />
+                    <TextBlock x:Name="DeviceDetailText" FontSize="12" Foreground="#94A3B8" Margin="0,4,0,0" TextWrapping="Wrap" />
+                    <Separator Margin="0,12" Background="#334155" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="DateText" FontSize="12" Foreground="#94A3B8" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Ellipse x:Name="NetworkDot" Width="8" Height="8" Fill="#22C55E" VerticalAlignment="Center" />
+                            <TextBlock x:Name="NetworkText" FontSize="12" Foreground="#94A3B8" Margin="6,0,0,0" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- Right: the card. Swaps between sign-in and the morning dashboard. -->
+        <Border Grid.Column="1"
+                Width="420"
+                VerticalAlignment="Center"
+                Background="#FFFFFF"
+                CornerRadius="8"
+                Padding="34,30,34,30">
+
+            <Grid>
+                <!-- View 1: sign in -->
+                <StackPanel x:Name="SignInView">
+                    <TextBlock Text="Sign in to start your day"
+                               FontSize="19"
+                               FontWeight="SemiBold"
+                               Foreground="#0F172A" />
+                    <TextBlock Text="Use your SEL LIVE account."
+                               FontSize="12"
+                               Foreground="#64748B"
+                               Margin="0,4,0,0" />
+
+                    <TextBlock Text="Employee ID or email"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#334155"
+                               Margin="0,24,0,6" />
+                    <TextBox x:Name="EmailBox"
+                             Padding="10,8"
+                             FontSize="14"
+                             BorderBrush="#CBD5E1"
+                             BorderThickness="1" />
+
+                    <TextBlock Text="Password"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#334155"
+                               Margin="0,14,0,6" />
+                    <PasswordBox x:Name="PasswordBox"
+                                 Padding="10,8"
+                                 FontSize="14"
+                                 BorderBrush="#CBD5E1"
+                                 BorderThickness="1" />
+
+                    <Border x:Name="ErrorPanel"
+                            Margin="0,14,0,0"
+                            Padding="12,9"
+                            CornerRadius="4"
+                            Background="#FEF2F2"
+                            BorderBrush="#FECACA"
+                            BorderThickness="1"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="ErrorText"
+                                   FontSize="12"
+                                   Foreground="#B91C1C"
+                                   TextWrapping="Wrap" />
+                    </Border>
+
+                    <Button x:Name="SignInButton"
+                            Content="Sign in"
+                            Margin="0,20,0,0"
+                            Padding="0,11"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            Foreground="White"
+                            Background="#2563EB"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            IsDefault="True"
+                            Click="OnSignInClicked" />
+
+                    <TextBlock x:Name="AgentStatusLine"
+                               Margin="0,16,0,0"
+                               FontSize="11"
+                               Foreground="#94A3B8"
+                               TextWrapping="Wrap"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <!-- View 2: the morning dashboard (§6) -->
+                <StackPanel x:Name="DashboardView" Visibility="Collapsed">
+                    <TextBlock x:Name="GreetingText"
+                               FontSize="21"
+                               FontWeight="SemiBold"
+                               Foreground="#0F172A"
+                               TextWrapping="Wrap" />
+                    <TextBlock x:Name="CheckInText"
+                               FontSize="12"
+                               Foreground="#64748B"
+                               Margin="0,4,0,0" />
+
+                    <Border Margin="0,20,0,0" Padding="2" Background="#F8FAFC" CornerRadius="6">
+                        <UniformGrid x:Name="CountsGrid" Columns="2" />
+                    </Border>
+
+                    <TextBlock x:Name="NextMeetingText"
+                               Margin="0,14,0,0"
+                               FontSize="12"
+                               Foreground="#475569"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+
+                    <Button x:Name="StartDayButton"
+                            Content="START MY DAY"
+                            Margin="0,22,0,0"
+                            Padding="0,12"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            Foreground="White"
+                            Background="#16A34A"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            IsDefault="True"
+                            Click="OnStartDayClicked" />
+
+                    <WrapPanel Margin="0,14,0,0" HorizontalAlignment="Center">
+                        <Button x:Name="ViewTasksButton" Content="Tasks" Style="{DynamicResource LinkButton}" Margin="6,0" Click="OnOpenTasks" />
+                        <Button x:Name="ViewApprovalsButton" Content="Approvals" Style="{DynamicResource LinkButton}" Margin="6,0" Click="OnOpenApprovals" />
+                        <Button x:Name="ViewMeetingsButton" Content="Meetings" Style="{DynamicResource LinkButton}" Margin="6,0" Click="OnOpenMeetings" />
+                        <Button x:Name="OpenErpButton" Content="Open SEL LIVE" Style="{DynamicResource LinkButton}" Margin="6,0" Click="OnOpenErp" />
+                    </WrapPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Right spacer keeps the card visually centred without stretching it. -->
+        <TextBlock x:Name="MonitoringNotice"
+                   Grid.Column="2"
+                   VerticalAlignment="Bottom"
+                   HorizontalAlignment="Right"
+                   Margin="0,0,24,18"
+                   FontSize="11"
+                   Foreground="#475569"
+                   TextWrapping="Wrap"
+                   MaxWidth="320"
+                   TextAlignment="Right" />
+    </Grid>
+</Window>

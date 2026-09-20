@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Windows 10 / 11 adapters.
+
+    Microsoft.Toolkit.Uwp.Notifications 7.1.3 is the last line that still ships a net461 target,
+    which is what lets a .NET Framework agent raise Action Center toasts at all. Version 8 moved
+    to the CommunityToolkit namespace and dropped .NET Framework entirely — upgrading would mean
+    losing the whole legacy fleet, so the version is pinned deliberately rather than by neglect.
+
+    The package is safe to *reference* on Windows 7: it only touches WinRT when a toast is
+    actually raised, and ModernNotificationPresenter probes before it does. That is why this
+    assembly can ship to every machine and the selection happens at runtime.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Sel.Agent.WindowsModern</RootNamespace>
+    <AssemblyName>SEL.Agent.WindowsModern</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SEL.Agent.Core\SEL.Agent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

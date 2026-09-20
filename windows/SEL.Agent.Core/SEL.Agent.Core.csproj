@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The OS-agnostic half of the agent: contracts, API clients, the activity state machine, the
+    offline queue and the coordinator. Everything that differs by Windows release sits behind an
+    interface in Platform/ and is supplied by SEL.Agent.WindowsLegacy or SEL.Agent.WindowsModern.
+
+    No WPF reference on purpose. This assembly is loaded by the Windows service as well as by the
+    desktop app, and a service that drags PresentationFramework into session 0 is a service that
+    fails to start on a Server Core box for reasons nobody enjoys diagnosing.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Sel.Agent.Core</RootNamespace>
+    <AssemblyName>SEL.Agent.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Newtonsoft rather than System.Text.Json: see the remarks in Contracts/AgentContracts.cs. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <!--
+      System.Data.SQLite.Core brings its own native interop assemblies for x86 and x64 and needs
+      no separate deployment step. 1.0.119 still supports .NET Framework 4.6+ and runs on
+      Windows 7, which newer "modern only" SQLite wrappers do not.
+    -->
+    <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Framework assemblies the SDK-style project does not reference by default on net48. -->
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.Configuration" />
+    <!-- ProtectedData (DPAPI) lives here on .NET Framework, not in System.Core. -->
+    <Reference Include="System.Security" />
+  </ItemGroup>
+
+</Project>
