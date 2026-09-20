@@ -202,6 +202,10 @@ compromised update server from running arbitrary code as SYSTEM on every PC.
 
 ### Install (on each PC, elevated)
 
+Two paths, and both work.
+
+**Unattended — the one to use for a rollout.** GPO, SCCM, or a script:
+
 ```
 msiexec /i SEL.Agent-1.0.0.0.msi /qn ^
   APIBASEURL=https://sel.example.com ^
@@ -209,11 +213,22 @@ msiexec /i SEL.Agent-1.0.0.0.msi /qn ^
   ENROLLMENTCODE=SEL-HO-2026
 ```
 
-Both `APIBASEURL` and `FIREBASEAPIKEY` are required. Neither is a secret — the API key is the same
-public value the web app ships to every browser, and it authorises nothing on its own.
+The agent starts configured and silent. Neither value is a secret — the API key is the same public
+value the web app already ships to every browser, and it authorises nothing on its own.
+
+**Double-click — for a pilot PC.** All three properties are optional. The install completes, and
+the agent opens a setup window asking for one thing: the address of your SEL LIVE installation. It
+fetches the Firebase configuration from that server itself, so nobody has to transcribe the API
+key onto each machine.
 
 The installer refuses to proceed if .NET Framework 4.8 is missing, the OS is unsupported, or it is
-not running elevated.
+not running elevated. It does **not** refuse for missing configuration — an installer that can
+only run from a command line is a script with a `.msi` extension.
+
+> If the MSI appears to do nothing when double-clicked, the usual cause is that the licence file
+> baked into it is not valid RTF — `WixUI_Minimal` shows the licence page first and fails silently
+> if it cannot render. Check with:
+> `(Get-Content windows/SEL.Agent.Installer/License.rtf -Raw).StartsWith('{\rtf1')`
 
 ### Check a PC before trusting it
 

@@ -86,10 +86,23 @@
     <Property Id="ENROLLMENTCODE" Secure="yes" />
     <Property Id="DEVICENAME" Secure="yes" />
 
-    <Launch Condition="Installed OR APIBASEURL"
-            Message="APIBASEURL is required: the address of your SEL LIVE installation, e.g. APIBASEURL=https://sel.example.com" />
-    <Launch Condition="Installed OR FIREBASEAPIKEY"
-            Message="FIREBASEAPIKEY is required: the Firebase Web API key (the same public value the web app uses)." />
+    <!--
+      Both are OPTIONAL, and that is a deliberate reversal.
+
+      They used to be Launch conditions, which made the MSI impossible to install by
+      double-clicking it: WixUI_Minimal offers nowhere to type a property, so the install could
+      only ever fail with "APIBASEURL is required". An installer that can only be run from a
+      command line is not a professional installer — it is a script with a .msi extension.
+
+      Supplied, they are written straight into agent.config.json and the agent starts silently:
+      that is the path for GPO, SCCM and any unattended rollout, and it stays the recommended one.
+
+      Omitted, the install still succeeds and the agent shows its first-run setup window, which
+      asks for the ERP address and fetches the Firebase key from that server's
+      /api/windows-agent/bootstrap. FIREBASEAPIKEY in particular is worth not demanding: it is a
+      public value, and making somebody transcribe it onto every PC only ever added a typo that
+      surfaces later as an opaque Google error.
+    -->
 
     <!-- ══ Layout ═════════════════════════════════════════════════════════════════════════════ -->
 
@@ -328,9 +341,18 @@
                   Return="check" />
 
     <InstallExecuteSequence>
-      <!-- After InstallFiles so the executable exists, and before StartServices so the service
-           finds a configuration on its first start rather than logging "not configured". -->
-      <Custom Action="WriteAgentConfig" After="InstallFiles" Condition="NOT Installed" />
+      <!--
+        After InstallFiles so the executable exists, and before StartServices so the service
+        finds a configuration on its first start rather than logging "not configured".
+
+        Only when both properties were supplied. The action runs with Return="check", so on an
+        unattended install with no properties it would exit non-zero and roll the whole install
+        back — turning "you did not pass optional settings" into "setup failed". Skipping it
+        instead leaves the agent to run its first-run setup window, which is exactly the intended
+        behaviour for a double-click install.
+      -->
+      <Custom Action="WriteAgentConfig" After="InstallFiles"
+              Condition="NOT Installed AND APIBASEURL AND FIREBASEAPIKEY" />
     </InstallExecuteSequence>
 
     <ui:WixUI xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui" Id="WixUI_Minimal" />

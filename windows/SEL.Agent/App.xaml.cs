@@ -80,14 +80,25 @@ namespace Sel.Agent
                 return;
             }
 
+            // Not configured yet: offer to do it rather than dead-ending.
+            //
+            // This used to be a message box naming a file path, followed by Shutdown(). The
+            // person who sees it is usually the person who was supposed to create that file, so
+            // pointing at it helped nobody — and it meant the MSI had to carry the address and
+            // the Firebase key as properties, which is why double-clicking the installer could
+            // never work. The setup window asks for the one thing an administrator knows, the
+            // address of their own ERP, and collects the rest from it.
             if (!config.IsUsable)
             {
-                MessageBox.Show(
-                    config.DescribeProblem() + Environment.NewLine + Environment.NewLine
-                        + "Ask IT to complete the agent configuration at " + AgentConfiguration.DefaultPath + ".",
-                    "SEL LIVE Agent", MessageBoxButton.OK, MessageBoxImage.Warning);
-                Shutdown();
-                return;
+                var setup = new FirstRunSetupWindow(config, _log);
+                bool? completed = setup.ShowDialog();
+                if (completed != true || setup.Result == null)
+                {
+                    _log.Write("First-run setup was cancelled; the agent cannot start.");
+                    Shutdown();
+                    return;
+                }
+                config = setup.Result;
             }
 
             _host = new AgentHost(config, Dispatcher, _log);
