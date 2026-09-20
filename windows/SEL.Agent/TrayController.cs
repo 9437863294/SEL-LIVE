@@ -47,6 +47,9 @@ namespace Sel.Agent
         public event EventHandler ExitRequested;
         public event EventHandler SignOutRequested;
 
+        /// <summary>Raised when a signed-out user asks to sign in from the menu.</summary>
+        public event EventHandler SignInRequested;
+
         public TrayController(AgentHost host)
         {
             _host = host ?? throw new ArgumentNullException("host");
@@ -101,10 +104,24 @@ namespace Sel.Agent
 
             var header = new ToolStripMenuItem(status.SignedIn
                 ? status.UserName + " — " + DescribePresence(status)
-                : "Not signed in")
+                : "Not signed in — nothing is being recorded")
             { Enabled = false };
             _menu.Items.Add(header);
             _menu.Items.Add(new ToolStripSeparator());
+
+            // The entry that was missing. Without it a signed-out agent offered no way back to
+            // the sign-in screen, so it sat in the tray recording nothing with no visible cause.
+            if (!status.SignedIn)
+            {
+                var signIn = Item("Sign in…", () =>
+                {
+                    EventHandler handler = SignInRequested;
+                    if (handler != null) handler(this, EventArgs.Empty);
+                });
+                signIn.Font = new Font(signIn.Font, FontStyle.Bold);
+                _menu.Items.Add(signIn);
+                _menu.Items.Add(new ToolStripSeparator());
+            }
 
             _menu.Items.Add(Item("Open SEL LIVE", () => _host.OpenErp("/")));
             _menu.Items.Add(Item("My work", () => _host.OpenErp("/windows-agent/my-activity")));

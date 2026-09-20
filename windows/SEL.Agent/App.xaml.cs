@@ -19,13 +19,19 @@ namespace Sel.Agent
     /// two users switched on one PC each legitimately get their own.
     /// </para>
     ///
-    /// <para><b>The gate is shown only when the policy asks for it.</b></para>
+    /// <para><b>Sign-in is always offered; the policy decides whether it can be dismissed.</b></para>
     /// <para>
     /// §60 is explicit that mandatory access control must not go out before the monitoring path
     /// and the recovery path have been proven, and the default policy has
-    /// <c>requireMorningLogin</c> off. So on a freshly installed fleet the agent starts silently
-    /// in the tray, tracks, and asks for a sign-in only when somebody opens it — which is the
-    /// right first stage of a rollout and the one this ships configured for.
+    /// <c>requireMorningLogin</c> off. That governs whether the sign-in window traps the desktop
+    /// — not whether it appears.
+    /// </para>
+    /// <para>
+    /// Reading it as "do not ask" produced a silent dead end: a freshly installed agent enrolled,
+    /// found no saved session, skipped the gate, and sat in the tray signed out. A signed-out
+    /// agent has no session, and with no session it records nothing — so the default
+    /// configuration tracked nothing at all while looking perfectly healthy. Monitoring first
+    /// still requires somebody to sign in first.
     /// </para>
     ///
     /// <para><b>Nothing here blocks Windows from starting.</b></para>
@@ -107,6 +113,7 @@ namespace Sel.Agent
             _tray = new TrayController(_host);
             _tray.ExitRequested += OnExitRequested;
             _tray.SignOutRequested += OnSignOutRequested;
+            _tray.SignInRequested += (sender, args) => ShowGate();
             _tray.Show();
 
             // Fire and forget: the UI thread must not wait on the network. Exceptions are caught
@@ -149,29 +156,53 @@ namespace Sel.Agent
         }
 
         /// <summary>
-        /// Show the access gate, or leave the agent quietly in the tray.
+        /// Ask the user to sign in. Blocking when the policy says so, an ordinary window otherwise.
         /// </summary>
         /// <remarks>
-        /// The policy consulted here is whatever the last heartbeat or the cached default says.
-        /// On a PC that has never reached the server, that is the built-in default — gate off —
-        /// which is the safe way round: a network outage on the morning of a rollout must not
-        /// lock a building out of its computers.
+        /// Always shown when there is no session, and that is the fix for a silent dead end. This
+        /// method used to return early when <c>requireMorningLogin</c> was off — which is the
+        /// default — so a freshly installed agent enrolled, never signed in, and therefore
+        /// recorded nothing at all while appearing to run. The policy governs whether the window
+        /// can be dismissed, not whether it appears.
         /// </remarks>
         public void ShowGateIfRequired()
         {
-            if (!_host.Coordinator.Policy.Settings.RequireMorningLogin)
-            {
-                _log.Write("Access gate not required by policy; the agent is running in the tray.");
-                return;
-            }
-            ShowGate();
+            bool enforce = _host.Coordinator.Policy.Settings.RequireMorningLogin;
+            _log.Write(enforce
+                ? "Showing the access gate; sign-in is required by policy."
+                : "Showing the sign-in window; it can be dismissed under the current policy.");
+            ShowGate(enforce);
         }
 
         public void ShowGate()
         {
-            var gate = new AccessGateWindow(_host);
+            ShowGate(_host.Coordinator.Policy.Settings.RequireMorningLogin);
+        }
+
+        public void ShowGate(bool enforce)
+        {
+            // One at a time. A second heartbeat directive, or an impatient double-click on the
+            // tray, would otherwise stack gates on top of each other.
+            foreach (Window open in Windows)
+            {
+                if (open is AccessGateWindow)
+                {
+                    open.Activate();
+                    return;
+                }
+            }
+
+            var gate = new AccessGateWindow(_host, enforce);
             gate.Released += (s, e) => _log.Write("Desktop released to the user.");
+            gate.Dismissed += (s, e) =>
+            {
+                _log.Write("Sign-in dismissed without signing in; nothing will be recorded until somebody does.");
+                _tray.ShowBalloon(
+                    "Not signed in",
+                    "SEL LIVE is not recording anything. Choose Sign in from this icon when you are ready.");
+            };
             gate.Show();
+            gate.Activate();
         }
 
         private async void OnDirectiveReceived(object sender, AgentDirective directive)

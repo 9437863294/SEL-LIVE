@@ -53,16 +53,56 @@ namespace Sel.Agent
     {
         private readonly AgentHost _host;
         private readonly DispatcherTimer _clock;
+
+        /// <summary>
+        /// Whether this is the blocking gate or an ordinary sign-in window.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The distinction the policy actually controls. <c>requireMorningLogin</c> decides
+        /// whether somebody may dismiss the sign-in and use their PC anyway — it does <b>not</b>
+        /// decide whether sign-in is offered.
+        /// </para>
+        /// <para>
+        /// Conflating the two produced a silent dead end: with the default policy the agent
+        /// enrolled, found no saved session, concluded the gate "was not required", and sat in
+        /// the tray signed out. A signed-out agent has no session, and with no session it records
+        /// nothing — so the default configuration tracked nothing at all, for ever, while looking
+        /// like it was running. §60 asks for monitoring first and enforcement later; monitoring
+        /// still needs somebody to sign in.
+        /// </para>
+        /// </remarks>
+        private readonly bool _enforce;
+
         private bool _released;
         private bool _signingIn;
 
         /// <summary>Raised when the user has signed in and pressed START MY DAY.</summary>
         public event EventHandler Released;
 
-        public AccessGateWindow(AgentHost host)
+        /// <summary>Raised when a non-enforcing window is closed without signing in.</summary>
+        public event EventHandler Dismissed;
+
+        public AccessGateWindow(AgentHost host, bool enforce)
         {
             _host = host ?? throw new ArgumentNullException("host");
+            _enforce = enforce;
             InitializeComponent();
+
+            if (!_enforce)
+            {
+                // An ordinary window: resizable chrome, a close button, on the taskbar, and not
+                // topmost. Same content, same sign-in, no trapping.
+                WindowStyle = WindowStyle.SingleBorderWindow;
+                WindowState = WindowState.Normal;
+                ResizeMode = ResizeMode.CanMinimize;
+                SizeToContent = SizeToContent.Manual;
+                Width = 980;
+                Height = 620;
+                Topmost = false;
+                ShowInTaskbar = true;
+                WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            }
 
             _clock = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
             _clock.Tick += (s, e) => RefreshChrome();
@@ -277,6 +317,10 @@ namespace Sel.Agent
                 return;
             }
 
+            // Only the enforcing gate swallows these. An ordinary sign-in window that ignored
+            // Escape and Alt+F4 would be a trap wearing a title bar, which is worse than either.
+            if (!_enforce) return;
+
             if (e.Key == Key.Escape || e.SystemKey == Key.F4 || e.Key == Key.LWin || e.Key == Key.RWin)
             {
                 e.Handled = true;
@@ -290,7 +334,7 @@ namespace Sel.Agent
 
         private void OnDeactivated(object sender, EventArgs e)
         {
-            if (_released) return;
+            if (!_enforce || _released) return;
             // Re-assert. BeginInvoke so the current activation completes first; activating
             // synchronously from inside Deactivated can loop.
             Dispatcher.BeginInvoke(new Action(() =>
@@ -312,7 +356,15 @@ namespace Sel.Agent
         {
             // Alt+F4 reaches WPF as a close request rather than a key. Cancelling here is what
             // actually stops it; the KeyDown handler alone would not.
-            if (!_released) e.Cancel = true;
+            if (_enforce && !_released) { e.Cancel = true; return; }
+
+            if (!_released)
+            {
+                // Closed without signing in. The agent stays in the tray and records nothing
+                // until somebody does, so the tray says so rather than leaving them to wonder.
+                EventHandler dismissed = Dismissed;
+                if (dismissed != null) dismissed(this, EventArgs.Empty);
+            }
         }
 
         private void Release()

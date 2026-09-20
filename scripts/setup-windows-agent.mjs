@@ -67,6 +67,15 @@ const argv = process.argv.slice(2);
 const STATUS_ONLY = argv.includes('--status');
 const AUTO_APPROVE = argv.includes('--auto-approve');
 
+/**
+ * Approve every device currently waiting.
+ *
+ * A pilot convenience, and kept separate from --auto-approve on purpose: that one changes the
+ * enrolment code so future machines skip approval, which is a standing decision. This one
+ * approves the machines already in the queue, once.
+ */
+const APPROVE_PENDING = argv.includes('--approve');
+
 function argValue(name, fallback) {
   const index = argv.indexOf(name);
   return index >= 0 && argv[index + 1] ? argv[index + 1] : fallback;
@@ -259,7 +268,7 @@ async function seedCatalog(db, FieldValue) {
   console.log(`${tick(true)}Seeded ${missing.length} application catalogue entries.`);
 }
 
-async function reportFleet(db) {
+async function reportFleet(db, FieldValue) {
   const [devices, sessions] = await Promise.all([
     db.collection(C.devices).get().catch(() => null),
     db.collection(C.sessions).limit(1).get().catch(() => null),
@@ -274,11 +283,50 @@ async function reportFleet(db) {
   const pending = devices.docs.filter((doc) => doc.data().status === 'PENDING');
   console.log(`${tick(true)}${count} computer(s) enrolled`
     + (pending.length ? `, ${pending.length} awaiting approval:` : '.'));
+
   for (const doc of pending) {
-    console.log(`        ${doc.data().deviceName || doc.id} — approve at /windows-agent/devices/${doc.id}`);
+    const name = doc.data().deviceName || doc.id;
+
+    if (!APPROVE_PENDING || STATUS_ONLY) {
+      console.log(`        ${name} — approve at /windows-agent/devices/${doc.id}`
+        + (APPROVE_PENDING ? '' : '  (or re-run with --approve)'));
+      continue;
+    }
+
+    // Approving from a script is a pilot convenience, not the normal path. It is written to the
+    // audit trail with the same shape an administrator's approval would have, and attributed to
+    // the script rather than to a person — an approval nobody can be asked about is worse than
+    // no audit row at all.
+    await doc.ref.update({
+      status: 'ACTIVE',
+      statusReason: 'Approved by setup-windows-agent (pilot setup).',
+      statusChangedAt: new Date().toISOString(),
+      statusChangedBy: 'setup-script',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    await db.collection('windowsAuditLogs').add({
+      action: 'DEVICE_APPROVED',
+      actorId: 'setup-script',
+      actorName: 'setup-windows-agent',
+      targetType: 'device',
+      targetId: doc.id,
+      targetLabel: name,
+      oldValue: 'PENDING',
+      newValue: 'ACTIVE',
+      reason: 'Approved from the command line during pilot setup.',
+      ipAddress: null,
+      userAgent: null,
+      at: new Date().toISOString(),
+      module: 'Windows Agent',
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    console.log(`        ${name} — APPROVED.`);
   }
+
   if (sessions && !sessions.empty) {
     console.log(`${tick(true)}Work sessions have been recorded — the agent is reporting.`);
+  } else {
+    console.log(`${tick(false)}No work session recorded yet — nobody has signed in on the agent.`);
   }
 }
 
@@ -294,7 +342,7 @@ async function main() {
   await reportPermissions(db);
   await ensureEnrollmentCode(db, FieldValue);
   await seedCatalog(db, FieldValue);
-  await reportFleet(db);
+  await reportFleet(db, FieldValue);
 
   console.log('-'.repeat(70));
   console.log('\nRemaining manual steps:');
