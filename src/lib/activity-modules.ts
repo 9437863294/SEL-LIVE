@@ -43,6 +43,7 @@ export const ACTIVITY_MODULES = {
   USER_MANAGEMENT: 'User Management',
   VEHICLE_MANAGEMENT: 'Vehicle Management',
   VENDOR_MANAGEMENT: 'Vendor Management',
+  WINDOWS_AGENT: 'Windows Agent',
 } as const;
 
 export type ActivityModule = (typeof ACTIVITY_MODULES)[keyof typeof ACTIVITY_MODULES];
@@ -100,6 +101,7 @@ const MODULE_BADGE_CLASSES: Record<string, string> = {
   [ACTIVITY_MODULES.USER_MANAGEMENT]: 'bg-zinc-100 text-zinc-700 border-zinc-200',
   [ACTIVITY_MODULES.VEHICLE_MANAGEMENT]: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   [ACTIVITY_MODULES.VENDOR_MANAGEMENT]: 'bg-red-50 text-red-700 border-red-200',
+  [ACTIVITY_MODULES.WINDOWS_AGENT]: 'bg-blue-50 text-blue-700 border-blue-200',
 };
 
 export const moduleBadgeClass = (module: string | null | undefined): string =>
@@ -134,6 +136,7 @@ const MODULE_ROUTES: Record<string, string> = {
   [ACTIVITY_MODULES.USER_MANAGEMENT]: '/settings/user-management',
   [ACTIVITY_MODULES.VEHICLE_MANAGEMENT]: '/vehicle-management',
   [ACTIVITY_MODULES.VENDOR_MANAGEMENT]: '/vendor-management',
+  [ACTIVITY_MODULES.WINDOWS_AGENT]: '/windows-agent',
 };
 
 export const moduleRoute = (module: string | null | undefined): string | null =>

@@ -898,6 +898,59 @@ export const permissionModules = {
     "Backdated Entry": ["Add", "Edit"],
     Reports: ["View", "Export"],
   },
+  // The Windows desktop agent: office PCs, work sessions, foreground-application time, desktop
+  // notifications (`docs/windows-agent.md`). Every permission here is new — nothing this module
+  // does is authorised by an existing grant, which is deliberate: on the day the agent is
+  // installed, nobody can see anybody's screen time until somebody is explicitly given the power.
+  //
+  // Two shapes in this block are worth explaining, because they are not the obvious ones.
+  //
+  // "Activity" is scoped rather than flat. "View Own" is a person's own record; "View Team",
+  // "View Department" and "View All" widen it, and the module narrows its *queries* by the widest
+  // one held rather than filtering rows in the page. A department manager therefore cannot fetch
+  // another department's hours at all, rather than fetching and being shown fewer.
+  //
+  // "Devices" splits its verbs by blast radius instead of folding them into Edit. Renaming a PC
+  // and blocking one are both "editing a device", but the second one locks somebody out of their
+  // desk — and "Force Re-authentication" across a fleet, mid-morning, is an outage. An
+  // organisation should be able to delegate the first without the others.
+  "Windows Agent": {
+    "View Module": [],
+    Dashboard: ["View"],
+    // §17's live board shows what every colleague has on screen right now. It is the most
+    // sensitive page in the application and is never implied by any other grant.
+    "Live Users": ["View"],
+    Devices: [
+      "View",
+      "Edit",
+      "Assign Users",
+      "Block",
+      "Retire",
+      "Force Re-authentication",
+      "Sign Out User",
+      "Restart Agent",
+      "Export",
+    ],
+    "Enrollment Codes": ["View", "Create", "Disable"],
+    Sessions: ["View", "Edit", "Export"],
+    Activity: ["View Own", "View Team", "View Department", "View All", "Export"],
+    // "Edit" corrects a session the machine got wrong — an unclean shutdown, a login against the
+    // wrong PC. The machine-recorded figures are annotated, never overwritten, and both values go
+    // to the audit trail.
+    Attendance: ["View", "Edit", "Export"],
+    // "Categorise" is §22's configurable classification. Kept apart from View because deciding
+    // that a browser counts as REFERENCE and a CAD package as WORK changes every report.
+    Applications: ["View", "Categorise", "Export"],
+    Reports: ["View", "Export"],
+    // "Send Broadcast" is separate from "Send": a message to all employees cannot be recalled
+    // once it has appeared on four hundred desktops.
+    Notifications: ["View", "Send", "Send Broadcast", "View Delivery"],
+    Policies: ["View", "Edit", "Delete"],
+    "Agent Versions": ["View", "Publish", "Withdraw", "Trigger Update"],
+    "Audit Logs": ["View", "Export"],
+    // §52's transparency page — what the agent collects, and what it deliberately does not.
+    "Monitoring Policy": ["View", "Edit"],
+  },
   Settings: {
     "View Module": [],
     "Manage Department": ["View", "Add", "Edit", "Delete"],

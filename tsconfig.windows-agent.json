@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/(protected)/windows-agent/**/*.ts",
+    "src/app/(protected)/windows-agent/**/*.tsx",
+    "src/app/api/windows-agent/**/*.ts",
+    "src/components/windows-agent/**/*.ts",
+    "src/components/windows-agent/**/*.tsx",
+    "src/lib/windows-agent-model.ts",
+    "src/lib/windows-agent-rules.ts",
+    "src/lib/windows-agent-policy.ts",
+    "src/lib/windows-agent-permissions.ts",
+    "src/lib/windows-agent-reports.ts",
+    "src/lib/windows-agent.ts",
+    "src/lib/windows-agent-service.ts",
+    "src/lib/windows-agent-server.ts",
+    "src/lib/windows-agent-notifications.ts",
+    "src/lib/windows-agent-morning.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
