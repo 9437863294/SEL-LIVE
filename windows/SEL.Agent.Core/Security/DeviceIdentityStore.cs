@@ -171,19 +171,45 @@ namespace Sel.Agent.Core.Security
         }
 
         /// <summary>
-        /// Lock the directory to SYSTEM and Administrators.
+        /// Set the directory's ACL: full control for SYSTEM and Administrators, Modify for Users.
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Best-effort by design. This runs from the installer (elevated, where it succeeds) and
-        /// also from the agent (usually not elevated, where it does not). Failing must not stop
-        /// the agent from working — the credential is still DPAPI-encrypted with purpose entropy,
-        /// so an unhardened directory is a weaker position rather than an open one. The installer
-        /// verifies the ACL afterwards and reports if it could not be applied.
+        /// <b>Users get Modify, and the first version of this method omitting them was a bug
+        /// worth explaining.</b> The obvious hardening — SYSTEM and Administrators only — locks
+        /// out the one process that needs this directory. The desktop agent runs as the
+        /// <i>signed-in standard user</i>, and it has to read <c>device.json</c>, read and write
+        /// <c>queue.db</c>, and write its log. An Administrators-only ACL means a correctly
+        /// installed agent cannot read its own credential or record a single span, on every PC
+        /// in the company.
         /// </para>
         /// <para>
-        /// Well-known SIDs rather than names, because a Hindi or German Windows has no group
-        /// called "Administrators" and the name-based overload would throw on it.
+        /// <b>And that ACL would have bought almost nothing.</b> Two reasons, both decisive.
+        /// </para>
+        /// <para>
+        /// First, the agent runs <i>as</i> the interactive user, so that user can attach a
+        /// debugger to it and read the decrypted secret out of its memory whatever the file
+        /// permissions say. An ACL cannot keep a secret from the account the process runs under.
+        /// </para>
+        /// <para>
+        /// Second, <c>device.json</c> holds a <i>machine</i> credential, not a personal one.
+        /// Every user of a shared PC legitimately uses the same device identity, so there is no
+        /// user-against-user separation being preserved. The genuinely per-person secret — the
+        /// Firebase refresh token — lives under <c>%LOCALAPPDATA%</c>, which Windows already
+        /// isolates per profile.
+        /// </para>
+        /// <para>
+        /// The protection that actually matters is DPAPI with purpose entropy, and it is
+        /// untouched by this: a disk pulled out of a machine, or a backup copied off it, yields
+        /// ciphertext that will not decrypt anywhere else. Administrators-only on top of that
+        /// defended against nothing real while breaking the product, which is the worst trade a
+        /// security control can make.
+        /// </para>
+        /// <para>
+        /// Best-effort either way. Called from the installer (elevated, where it succeeds) and
+        /// from the agent (usually not, where it may not). Failing must never stop the agent
+        /// working. Well-known SIDs rather than names, because a Hindi or German Windows has no
+        /// group called "Administrators" and the name-based overload would throw on it.
         /// </para>
         /// </remarks>
         public static bool TryHardenAcl(string directory)
@@ -198,15 +224,23 @@ namespace Sel.Agent.Core.Security
 
                 var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
                 var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+                var users = new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null);
+
+                const InheritanceFlags inherit =
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
 
                 security.AddAccessRule(new FileSystemAccessRule(
-                    system, FileSystemRights.FullControl,
-                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    system, FileSystemRights.FullControl, inherit,
                     PropagationFlags.None, AccessControlType.Allow));
 
                 security.AddAccessRule(new FileSystemAccessRule(
-                    administrators, FileSystemRights.FullControl,
-                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    administrators, FileSystemRights.FullControl, inherit,
+                    PropagationFlags.None, AccessControlType.Allow));
+
+                // Modify, not FullControl: enough to read the credential and read/write the queue
+                // and the log, while still stopping a standard user from rewriting this ACL.
+                security.AddAccessRule(new FileSystemAccessRule(
+                    users, FileSystemRights.Modify | FileSystemRights.Synchronize, inherit,
                     PropagationFlags.None, AccessControlType.Allow));
 
                 info.SetAccessControl(security);

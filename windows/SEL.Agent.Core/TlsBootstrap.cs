@@ -237,6 +237,41 @@ namespace Sel.Agent.Core
         }
 
         /// <summary>
+        /// Open a plain TCP connection, for a loopback development server that speaks http.
+        /// </summary>
+        /// <remarks>
+        /// Without this, the prerequisite check runs a TLS handshake against
+        /// <c>http://localhost:3000</c> and reports "the handshake failed due to an unexpected
+        /// packet format" — which is true, meaningless, and looks like a problem with the
+        /// machine. A check that cries wolf on a correctly configured development setup is a
+        /// check people learn to ignore, and then miss the real TLS failure on Windows 7.
+        /// </remarks>
+        public static ProbeResult ProbeTcp(string host, int port, int timeoutMs)
+        {
+            var result = new ProbeResult();
+            try
+            {
+                using (var client = new TcpClient())
+                {
+                    IAsyncResult connect = client.BeginConnect(host, port, null, null);
+                    if (!connect.AsyncWaitHandle.WaitOne(timeoutMs))
+                    {
+                        result.Error = "Could not reach " + host + ":" + port + " within " + timeoutMs + " ms.";
+                        return result;
+                    }
+                    client.EndConnect(connect);
+                    result.Succeeded = true;
+                    result.NegotiatedProtocol = "plain HTTP (no TLS)";
+                }
+            }
+            catch (Exception error)
+            {
+                result.Error = error.Message;
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Open a real TLS 1.2 connection and report what was negotiated.
         /// </summary>
         /// <remarks>

@@ -227,6 +227,53 @@ non-zero on failure, so it can be used from a deployment script.
 
 ---
 
+## 5a. Who can sign in on which computer
+
+**The default is open: any active SEL LIVE user, on any enrolled PC.** A freshly enrolled machine
+restricts nobody, and nobody is restricted to particular machines. You narrow it from either side,
+and a sign-in has to satisfy both.
+
+| | Where | Empty means |
+|---|---|---|
+| **Who may use this PC** | `/windows-agent/devices/<id>` → *Who may sign in here* | The PC is shared |
+| **Which PCs may this person use** | `/windows-agent/access` | The person may use any PC |
+
+The four configurations this gives you:
+
+| Device list | User list | Result |
+|---|---|---|
+| empty | empty | **Open fleet** — anybody, anywhere. The default. |
+| named | empty | **A personal machine.** Only those people; they can still use other PCs. |
+| empty | named | **A confined person.** A contractor tied to two site PCs, refused even on shared ones. |
+| named | named | **A locked pairing.** Both lists must agree. |
+
+### Why it takes two lists and not one
+
+This is the part worth understanding before configuring it, because the obvious single-list design
+does not work.
+
+A device-side list can only say *who may use this PC*. Naming Priya on two machines restricts
+**those machines** — it says nothing about the other thirty PCs in the building, which remain open
+to everybody including her. To actually confine her with device lists alone you would have to name
+an assignee on every other machine in the estate and keep that correct for ever. That is not a
+configuration; it is a standing chore that will be wrong within a week.
+
+The user-side list makes "Priya may use only these two" a single edit.
+
+### Practical notes
+
+- **Clearing the list removes the restriction**, it does not deny everything. The button says so
+  ("Allow any computer"), and the underlying document is deleted rather than stored empty — an
+  empty array left lying around reads as "a restriction exists" when none does.
+- **Ticking a PC that is reserved for other people achieves nothing on its own.** Both lists must
+  agree, so you also have to add the person on that device's page. The access screen warns you
+  inline rather than letting you save something that cannot work.
+- **Every change is audited** with the before and after lists and your reason.
+- **If the restriction cannot be read, the sign-in is allowed.** A Firestore hiccup must not lock
+  a building out of its computers; the device-side list still applies. The failure is logged.
+
+---
+
 ## 6. Windows 7 and TLS 1.2 — read this before piloting
 
 **This is the most likely reason a Windows 7 rollout fails.**

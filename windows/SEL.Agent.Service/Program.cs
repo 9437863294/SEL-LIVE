@@ -109,11 +109,27 @@ namespace Sel.Agent.Service
                 Uri baseUri;
                 if (Uri.TryCreate(config.ApiBaseUrl, UriKind.Absolute, out baseUri))
                 {
-                    TlsBootstrap.ProbeResult probe = TlsBootstrap.Probe(baseUri.Host, baseUri.Port, 8000);
-                    Console.WriteLine("Handshake        : " + (probe.Succeeded
+                    // A plain TCP connect for an http development server; a real TLS handshake
+                    // for anything else. Probing TLS against http://localhost:3000 always fails
+                    // with an unhelpful packet-format error and is not a problem worth reporting.
+                    bool overTls = baseUri.Scheme == Uri.UriSchemeHttps;
+                    TlsBootstrap.ProbeResult probe = overTls
+                        ? TlsBootstrap.Probe(baseUri.Host, baseUri.Port, 8000)
+                        : TlsBootstrap.ProbeTcp(baseUri.Host, baseUri.Port, 8000);
+
+                    Console.WriteLine("Reachability     : " + (probe.Succeeded
                         ? "OK (" + probe.NegotiatedProtocol + ")"
-                        : "FAIL — " + probe.Error));
-                    if (!probe.Succeeded) ok = false;
+                        : "FAIL - " + probe.Error));
+
+                    if (!probe.Succeeded)
+                    {
+                        ok = false;
+                        if (!overTls)
+                        {
+                            Console.WriteLine("        Nothing is listening on " + baseUri.Host + ":" + baseUri.Port
+                                + ". Start the SEL LIVE development server (npm run dev) and try again.");
+                        }
+                    }
                 }
             }
 
@@ -152,12 +168,34 @@ namespace Sel.Agent.Service
             }
 
             Uri parsed;
-            if (!Uri.TryCreate(url, UriKind.Absolute, out parsed) || parsed.Scheme != Uri.UriSchemeHttps)
+            if (!Uri.TryCreate(url, UriKind.Absolute, out parsed))
             {
-                // Refused rather than accepted with a warning: an agent configured against http
-                // would send its device secret in clear on every request.
-                Console.Error.WriteLine("--url must be an absolute https:// address.");
+                Console.Error.WriteLine("--url must be an absolute address, e.g. https://sel.example.com");
                 return 2;
+            }
+
+            // HTTPS everywhere except loopback.
+            //
+            // An agent configured against plain http would send its device secret in clear on
+            // every request, so that is refused rather than warned about. Loopback is the one
+            // exception, and it is a real one rather than a convenience: `next dev` serves http
+            // on localhost, traffic never leaves the machine, and without this carve-out the only
+            // way to test the agent against a development server would be to stand up TLS for it
+            // — which nobody does, so in practice people would disable the check instead. Browsers
+            // draw the same line, treating localhost as a secure context.
+            bool isLoopback = parsed.IsLoopback
+                || string.Equals(parsed.Host, "localhost", StringComparison.OrdinalIgnoreCase);
+            if (parsed.Scheme != Uri.UriSchemeHttps && !(parsed.Scheme == Uri.UriSchemeHttp && isLoopback))
+            {
+                Console.Error.WriteLine(
+                    "--url must be https, or http on localhost for development. "
+                    + "Plain http to a remote host would send this computer's credential in clear.");
+                return 2;
+            }
+
+            if (parsed.Scheme == Uri.UriSchemeHttp)
+            {
+                Console.WriteLine("NOTE: configured against http on loopback. Development only.");
             }
 
             try

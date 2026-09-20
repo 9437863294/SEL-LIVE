@@ -10,6 +10,9 @@ import {
   buildApplicationBreakdown,
   buildApplicationUsageDeltas,
   buildTimeline,
+  canUserSignInOnDevice,
+  describeAccessRefusal,
+  devicesAvailableToUser,
   compareVersions,
   defaultCategoryFor,
   dominantClassification,
@@ -530,6 +533,92 @@ test('a reconnect resumes today’s session rather than opening a second one', (
   assert.equal(shouldResumeSession(existing, { workDate: '2026-09-21', deviceId: 'pc-23', userId: 'u1' }), false);
   assert.equal(shouldResumeSession({ ...existing, status: 'CLOSED' }, { workDate: '2026-09-20', deviceId: 'pc-23', userId: 'u1' }), false);
   assert.equal(shouldResumeSession(null, { workDate: '2026-09-20', deviceId: 'pc-23', userId: 'u1' }), false);
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * Device access — the two allow-lists
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+const pc = (id, assignedUserIds = []) => ({ id, assignedUserIds });
+
+test('an open fleet is the default: anybody, on any computer', () => {
+  assert.deepEqual(canUserSignInOnDevice(pc('pc-1'), null, 'u1'), { allowed: true, refusal: null });
+  assert.deepEqual(canUserSignInOnDevice(pc('pc-1'), { allowedDeviceIds: [] }, 'u1'), { allowed: true, refusal: null });
+  // A device that has never had the field written at all.
+  assert.equal(canUserSignInOnDevice({ id: 'pc-1' }, undefined, 'u1').allowed, true);
+});
+
+test('a personal machine refuses everybody not named on it', () => {
+  const device = pc('pc-1', ['u1', 'u2']);
+  assert.equal(canUserSignInOnDevice(device, null, 'u1').allowed, true);
+  assert.equal(canUserSignInOnDevice(device, null, 'u2').allowed, true);
+
+  const refused = canUserSignInOnDevice(device, null, 'u9');
+  assert.equal(refused.allowed, false);
+  assert.equal(refused.refusal, 'USER_NOT_ASSIGNED_TO_DEVICE');
+});
+
+test('a person confined to certain computers is refused on the others, even shared ones', () => {
+  // The case a device-side list alone cannot express: pc-9 is open to everybody, and u1 still
+  // may not use it.
+  const restricted = { allowedDeviceIds: ['pc-1', 'pc-2'] };
+  assert.equal(canUserSignInOnDevice(pc('pc-1'), restricted, 'u1').allowed, true);
+  assert.equal(canUserSignInOnDevice(pc('pc-2'), restricted, 'u1').allowed, true);
+
+  const refused = canUserSignInOnDevice(pc('pc-9'), restricted, 'u1');
+  assert.equal(refused.allowed, false);
+  assert.equal(refused.refusal, 'DEVICE_NOT_ASSIGNED_TO_USER');
+});
+
+test('both lists must agree — neither one alone can grant access', () => {
+  // Named on the device, but the device is not on their own list.
+  assert.equal(
+    canUserSignInOnDevice(pc('pc-9', ['u1']), { allowedDeviceIds: ['pc-1'] }, 'u1').refusal,
+    'DEVICE_NOT_ASSIGNED_TO_USER',
+  );
+  // The device is on their list, but they are not named on the device.
+  assert.equal(
+    canUserSignInOnDevice(pc('pc-1', ['u2']), { allowedDeviceIds: ['pc-1'] }, 'u1').refusal,
+    'USER_NOT_ASSIGNED_TO_DEVICE',
+  );
+  // Both agree.
+  assert.equal(
+    canUserSignInOnDevice(pc('pc-1', ['u1']), { allowedDeviceIds: ['pc-1'] }, 'u1').allowed,
+    true,
+  );
+});
+
+test('the device objection is reported before the user one', () => {
+  // When both lists refuse, the person is told the thing IT can fix on the machine in front of
+  // them rather than the abstract one about their profile.
+  const refused = canUserSignInOnDevice(pc('pc-9', ['u2']), { allowedDeviceIds: ['pc-1'] }, 'u1');
+  assert.equal(refused.refusal, 'USER_NOT_ASSIGNED_TO_DEVICE');
+});
+
+test('every refusal has a sentence that names who to ask', () => {
+  for (const refusal of ['USER_NOT_ASSIGNED_TO_DEVICE', 'DEVICE_NOT_ASSIGNED_TO_USER']) {
+    const message = describeAccessRefusal(refusal);
+    assert.ok(message.length > 20, refusal + ' has no usable message');
+    assert.ok(/IT/.test(message), refusal + ' does not say who to ask');
+  }
+});
+
+test('devicesAvailableToUser answers "how many computers may this person use"', () => {
+  const fleet = [pc('pc-1'), pc('pc-2', ['u1']), pc('pc-3', ['u2']), pc('pc-4')];
+
+  // Unrestricted: every shared machine, plus the one they are named on.
+  assert.deepEqual(
+    devicesAvailableToUser(fleet, null, 'u1').map((device) => device.id),
+    ['pc-1', 'pc-2', 'pc-4'],
+  );
+
+  // Restricted to two, one of which is somebody else's personal machine.
+  assert.deepEqual(
+    devicesAvailableToUser(fleet, { allowedDeviceIds: ['pc-1', 'pc-3'] }, 'u1').map((device) => device.id),
+    ['pc-1'],
+  );
+
+  assert.deepEqual(devicesAvailableToUser([], null, 'u1'), []);
 });
 
 test('an unclean end is estimated from the last evidence and says that it was estimated', () => {

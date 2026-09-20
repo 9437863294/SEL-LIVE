@@ -144,6 +144,14 @@ const SECTIONS: Section[] = [
     gate: 'devices',
   },
   {
+    href: WINDOWS_AGENT_ROUTES.access,
+    label: 'Computer access',
+    description: 'Which computers each person may sign in on.',
+    icon: KeyRound,
+    group: 'monitor',
+    gate: 'devices',
+  },
+  {
     href: WINDOWS_AGENT_ROUTES.sessions,
     label: 'Sessions',
     description: 'Every sign-in and sign-out.',

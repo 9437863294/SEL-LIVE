@@ -14,6 +14,8 @@ import {
 import {
   DEFAULT_APP_CATALOG,
   buildApplicationUsageDeltas,
+  canUserSignInOnDevice,
+  describeAccessRefusal,
   compareVersions,
   defaultCategoryFor,
   dominantClassification,
@@ -577,6 +579,41 @@ export async function registerDevice(
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Device access
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * One person's computer restriction, or null when they have none.
+ *
+ * Keyed by user id, so this is a single `get` on the sign-in path rather than a query — sign-in
+ * is the one request an employee is standing at a keyboard waiting for, and an index lookup is
+ * not where to spend that time. A missing document means "any computer", which is both the
+ * default and the overwhelmingly common case.
+ */
+export async function loadUserDeviceAccess(
+  userId: string,
+): Promise<{ allowedDeviceIds: string[] } | null> {
+  try {
+    const snapshot = await getFirebaseAdminFirestore()
+      .collection(WINDOWS_AGENT_COLLECTIONS.userAccess)
+      .doc(userId)
+      .get();
+    if (!snapshot.exists) return null;
+    const allowed = snapshot.get('allowedDeviceIds');
+    return Array.isArray(allowed) ? { allowedDeviceIds: allowed.map(String) } : null;
+  } catch (error) {
+    // Fail open, deliberately, and loudly.
+    //
+    // A read failure here would otherwise lock every employee out of every PC over a Firestore
+    // hiccup — turning a transient backend problem into a company-wide inability to start work.
+    // The device-side list still applies and is already loaded, so the fleet is not unguarded;
+    // what is lost is the narrower per-person restriction, for the duration of the outage.
+    console.error('[windows-agent] Could not read the user device restriction; allowing:', error);
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Sessions (§5, §7)
  * ---------------------------------------------------------------------------------------------- */
 
@@ -618,12 +655,12 @@ export async function openOrResumeSession(options: {
       'DEVICE_NOT_APPROVED',
     );
   }
-  if (device.assignedUserIds?.length && !device.assignedUserIds.includes(user.userId)) {
-    throw new AgentRequestError(
-      'You are not assigned to this computer. Ask IT to add you.',
-      403,
-      'USER_NOT_ASSIGNED',
-    );
+  // Both allow-lists, each defaulting to unrestricted. See `canUserSignInOnDevice` for why one
+  // list cannot express a per-person limit.
+  const userAccess = await loadUserDeviceAccess(user.userId);
+  const access = canUserSignInOnDevice(device, userAccess, user.userId);
+  if (!access.allowed && access.refusal) {
+    throw new AgentRequestError(describeAccessRefusal(access.refusal), 403, 'USER_NOT_ASSIGNED');
   }
 
   const departmentIds = [user.departmentId, device.departmentId].filter(

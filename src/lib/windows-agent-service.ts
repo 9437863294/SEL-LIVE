@@ -45,6 +45,7 @@ import type {
   WindowsNotification,
   WindowsNotificationReceipt,
   WindowsSession,
+  WindowsUserDeviceAccess,
 } from './windows-agent-model';
 
 /**
@@ -291,6 +292,77 @@ export async function setDeviceUpdateRing(
   });
   await recordAdminAction(actor, 'AGENT_UPDATE_TRIGGERED', { type: 'device', id: device.id, label: device.deviceName },
     { oldValue: device.updateRing, newValue: updateRing });
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Per-user computer access
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Every user who has a computer restriction.
+ *
+ * Only people who *have* one get a document, so this collection stays small even in a company
+ * where nobody is restricted — which is the state it ships in. The access screen joins it against
+ * the full directory rather than the other way round.
+ */
+export async function fetchUserDeviceAccess(): Promise<WindowsUserDeviceAccess[]> {
+  const snapshot = await getDocs(col(WINDOWS_AGENT_COLLECTIONS.userAccess));
+  return readAll<WindowsUserDeviceAccess>(snapshot);
+}
+
+/**
+ * Set — or clear — which computers one person may use.
+ *
+ * An empty list deletes the document rather than storing `[]`. The two are equivalent to
+ * `canUserSignInOnDevice`, but an empty array left lying around reads on the access screen as "a
+ * restriction exists" when none does, and somebody would eventually spend an afternoon working
+ * out why a user with "no computers selected" could still sign in everywhere.
+ */
+export async function setUserDeviceAccess(
+  actor: Actor,
+  user: { id: string; name: string },
+  allowedDeviceIds: string[],
+  reason: string | null,
+): Promise<void> {
+  const ref = docIn(WINDOWS_AGENT_COLLECTIONS.userAccess, user.id);
+  const previous = await getDoc(ref).catch(() => null);
+  const before = previous?.exists() ? (previous.data().allowedDeviceIds ?? []) : [];
+
+  if (allowedDeviceIds.length === 0) {
+    if (previous?.exists()) await deleteDoc(ref);
+    await recordAdminAction(
+      actor,
+      'ASSIGNMENT_REVOKED',
+      { type: 'userAccess', id: user.id, label: user.name },
+      { oldValue: before, newValue: 'any computer', reason },
+    );
+    return;
+  }
+
+  await setDoc(
+    ref,
+    {
+      userId: user.id,
+      userName: user.name,
+      allowedDeviceIds,
+      reason,
+      updatedAtIso: new Date().toISOString(),
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.userId,
+      updatedByName: actor.userName,
+      ...(previous?.exists()
+        ? {}
+        : { createdAt: serverTimestamp(), createdBy: actor.userId, createdByName: actor.userName }),
+    },
+    { merge: true },
+  );
+
+  await recordAdminAction(
+    actor,
+    'ASSIGNMENT_ADDED',
+    { type: 'userAccess', id: user.id, label: user.name },
+    { oldValue: before, newValue: allowedDeviceIds, reason },
+  );
 }
 
 /* ------------------------------------------------------------------------------------------------

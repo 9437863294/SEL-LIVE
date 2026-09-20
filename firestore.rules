@@ -859,6 +859,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    /**
+     * Per-person computer restrictions — which PCs one user may sign in on.
+     *
+     * A person may read their own, so the agent's refusal message can be explained to them and so
+     * a future self-service screen can show it. They may never write it: a user who could edit
+     * this document could grant themselves access to any machine in the building.
+     */
+    match /windowsUserAccess/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || waPerm('Devices', 'View'));
+      allow list: if waPerm('Devices', 'View');
+      allow create, update, delete: if waPerm('Devices', 'Assign Users');
+    }
+
     match /windowsDeviceAssignments/{assignmentId} {
       allow get, list: if waPerm('Devices', 'View');
       allow create, update: if waPerm('Devices', 'Assign Users');

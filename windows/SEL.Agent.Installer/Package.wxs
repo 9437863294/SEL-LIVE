@@ -233,14 +233,28 @@
     <Component Id="AgentDataFolder" Directory="AGENTDATAFOLDER" Guid="E5C92A18-3D7B-4F06-9C81-A2B4D6E8F350">
       <CreateFolder>
         <!--
-          Locked to SYSTEM and Administrators, inheritance broken.
+          SYSTEM and Administrators full control; Users Modify. Inheritance broken.
 
-          ProgramData is world-readable by default. The device credential is DPAPI-encrypted with
-          purpose entropy, so an unhardened folder is a weaker position rather than an open one —
-          but machine-scope DPAPI means any local process can unprotect it, so the ACL is what
-          stops a standard user on a shared PC reading the blob in the first place.
+          The Users entry is load-bearing, not a relaxation. The desktop agent runs as the
+          signed-in standard user and must read device.json, read and write queue.db, and write
+          its log — all of which live here. An Administrators-only ACL produces an agent that
+          installs perfectly and then cannot read its own credential or record a single span.
+
+          Leaving Users out would also have bought very little: the agent runs as that user, so
+          they can read the decrypted secret out of its memory regardless of file permissions,
+          and device.json is a *machine* credential that every user of a shared PC legitimately
+          uses anyway. The per-person secret is the Firebase refresh token, and that lives in
+          %LOCALAPPDATA%, isolated by Windows per profile.
+
+          What still protects the credential is DPAPI with purpose entropy: a stolen disk or a
+          copied backup yields ciphertext that will not decrypt on another machine. Breaking
+          inheritance is still worth doing — it keeps the permissive ProgramData default from
+          flowing in — and Modify rather than FullControl stops a standard user rewriting this
+          ACL. See DeviceIdentityStore.TryHardenAcl for the same reasoning in code.
+
+          0x1301BF is the standard Modify mask.
         -->
-        <PermissionEx Sddl="O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" />
+        <PermissionEx Sddl="O:BAG:BAD:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1301BF;;;BU)" />
       </CreateFolder>
       <RegistryValue Root="HKLM"
                      Key="SOFTWARE\Shyama Electrical\SEL LIVE Agent"

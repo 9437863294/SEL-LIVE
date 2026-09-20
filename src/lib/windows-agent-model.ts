@@ -202,6 +202,35 @@ export interface WindowsDeviceAssignment extends WindowsAgentAuditStamps {
   revokedByName?: string | null;
 }
 
+/**
+ * Which computers one person may sign in on.
+ *
+ * The user-side half of device access, and the reason it exists is worth stating: the device's
+ * own `assignedUserIds` can only answer "who may use this PC". It cannot express "Priya may use
+ * only these two computers", because every PC she is *not* named on is still open to everybody.
+ * Naming her on two machines restricts those machines, not her.
+ *
+ * So access is decided by two independent allow-lists, each defaulting to "no restriction":
+ *
+ *   • `windowsDevices.assignedUserIds` — empty means the PC is shared.
+ *   • `windowsUserAccess.allowedDeviceIds` — empty means the person may use any PC.
+ *
+ * A sign-in must satisfy both. That gives four sensible configurations rather than one: an open
+ * fleet, personal machines, a roaming employee limited to a few sites, and a locked pairing of
+ * one person to one desk — all without a mode switch.
+ */
+export interface WindowsUserDeviceAccess extends WindowsAgentAuditStamps {
+  /** The user id. Also the document id, so a check is a single `get` with no query. */
+  id: string;
+  userId: string;
+  userName: string;
+  /** Empty or absent means "any computer". A populated list is exhaustive. */
+  allowedDeviceIds: string[];
+  /** Why the restriction exists, shown on the access screen and in the audit trail. */
+  reason?: string | null;
+  updatedAtIso?: IsoInstant | null;
+}
+
 /** A company enrolment code as issued on `/windows-agent/devices` (§45). */
 export interface WindowsEnrollmentCode extends WindowsAgentAuditStamps {
   /** The code itself is the document id, uppercased: `SEL-HO-2026`. */

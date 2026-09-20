@@ -54,6 +54,14 @@ export const WINDOWS_AGENT_COLLECTIONS = {
   dailyActivity: 'windowsDailyActivity',
   /** Administrator classification of executables (§22). */
   appCatalog: 'windowsAppCatalog',
+  /**
+   * Per-user computer restrictions, keyed by user id.
+   *
+   * The other half of device access. A device says who may use *it*; this says which computers a
+   * *person* may use. Both default to unrestricted, and a sign-in has to satisfy both — see
+   * `canUserSignInOnDevice`.
+   */
+  userAccess: 'windowsUserAccess',
   /** Module-level settings, including §52's monitoring policy text. */
   settings: 'windowsAgentSettings',
 } as const;
@@ -82,6 +90,8 @@ export const WINDOWS_AGENT_ROUTES = {
   dashboard: '/windows-agent',
   live: '/windows-agent/live',
   devices: '/windows-agent/devices',
+  /** Per-person computer restrictions — the other side of device assignment. */
+  access: '/windows-agent/access',
   device: (deviceId: string) => `/windows-agent/devices/${deviceId}`,
   users: '/windows-agent/users',
   user: (userId: string) => `/windows-agent/users/${userId}`,

@@ -925,6 +925,82 @@ export function compareVersions(left: string, right: string): number {
  * Sessions (§7, §28)
  * ---------------------------------------------------------------------------------------------- */
 
+/* ------------------------------------------------------------------------------------------------
+ * Device access (§4, §5)
+ * ---------------------------------------------------------------------------------------------- */
+
+/** Why a person may not sign in on a machine, or null when they may. */
+export type DeviceAccessRefusal = 'DEVICE_NOT_ASSIGNED_TO_USER' | 'USER_NOT_ASSIGNED_TO_DEVICE';
+
+/**
+ * May this person sign in on this computer?
+ *
+ * Two independent allow-lists, each defaulting to "no restriction", and **both** must permit it:
+ *
+ *   • The device names who may use it. Empty means shared — anybody with an active account.
+ *   • The user names which computers they may use. Empty means any.
+ *
+ * ── Why two lists rather than one ──────────────────────────────────────────────────────────────
+ *
+ * A single device-side list cannot express a per-person limit. Naming somebody on two machines
+ * restricts *those machines*; it says nothing about the thirty other PCs in the building, which
+ * remain open to everybody including them. An administrator trying to confine a contractor to two
+ * desks would have to name an assignee on every other machine in the estate and keep that list
+ * correct for ever — which is not a configuration, it is a standing chore that will be wrong
+ * within a week.
+ *
+ * With both lists the four cases people actually have are each one edit:
+ *
+ *   | Device list | User list | Result                                              |
+ *   |-------------|-----------|-----------------------------------------------------|
+ *   | empty       | empty     | open fleet — anybody, anywhere (the default)        |
+ *   | named       | empty     | a personal machine                                   |
+ *   | empty       | named     | a roaming person confined to certain computers       |
+ *   | named       | named     | a locked pairing; both must agree                    |
+ *
+ * The refusal code says which list objected, because "you are not assigned to this computer" and
+ * "this computer is not one of yours" send an employee to different people.
+ */
+export function canUserSignInOnDevice(
+  device: { id: string; assignedUserIds?: readonly string[] | null },
+  userAccess: { allowedDeviceIds?: readonly string[] | null } | null | undefined,
+  userId: string,
+): { allowed: boolean; refusal: DeviceAccessRefusal | null } {
+  const deviceList = device.assignedUserIds ?? [];
+  if (deviceList.length > 0 && !deviceList.includes(userId)) {
+    return { allowed: false, refusal: 'USER_NOT_ASSIGNED_TO_DEVICE' };
+  }
+
+  const userList = userAccess?.allowedDeviceIds ?? [];
+  if (userList.length > 0 && !userList.includes(device.id)) {
+    return { allowed: false, refusal: 'DEVICE_NOT_ASSIGNED_TO_USER' };
+  }
+
+  return { allowed: true, refusal: null };
+}
+
+/** The sentence shown on the sign-in screen for a refusal. */
+export function describeAccessRefusal(refusal: DeviceAccessRefusal): string {
+  return refusal === 'USER_NOT_ASSIGNED_TO_DEVICE'
+    ? 'You are not on the list of people allowed to use this computer. Ask IT to add you.'
+    : 'This computer is not one of the ones you have been given access to. Ask IT if you need it.';
+}
+
+/**
+ * Which computers a person may actually use, given the whole fleet.
+ *
+ * Used by the access screen to show "any computer" or a concrete list, and deliberately derived
+ * rather than stored — the answer changes when a *device* is made personal, not only when the
+ * person's own list is edited, and a cached figure would quietly go stale.
+ */
+export function devicesAvailableToUser<T extends { id: string; assignedUserIds?: readonly string[] | null }>(
+  devices: readonly T[],
+  userAccess: { allowedDeviceIds?: readonly string[] | null } | null | undefined,
+  userId: string,
+): T[] {
+  return devices.filter((device) => canUserSignInOnDevice(device, userAccess, userId).allowed);
+}
+
 /** Whether a login should reuse today's open session rather than opening a second one (§7). */
 export function shouldResumeSession(
   existing: { status: string; loginAt: string; workDate: IsoDate; deviceId: string; userId: string } | null,
