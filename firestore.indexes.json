@@ -1525,6 +1525,20 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "googleSyncState",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "officeHubMeetings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "isSeriesParent",
           "order": "ASCENDING"
         },
@@ -1643,20 +1657,6 @@
         {
           "fieldPath": "date",
           "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "officeHubMeetings",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "googleSyncState",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "startAt",
-          "order": "ASCENDING"
         }
       ]
     },
@@ -2576,6 +2576,298 @@
         },
         {
           "fieldPath": "startTimeIso",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsActivityEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sessionId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startedAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsActivityEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startedAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsActivityEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "workDate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsAgentVersions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "channel",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "version",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsApplicationUsage",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "sessionId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "totalSeconds",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsApplicationUsage",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsAuditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsAuditLogs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "targetId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsDailyActivity",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "departmentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsDailyActivity",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsDevices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "deviceName",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsNotificationReceipts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "notificationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsNotificationReceipts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsNotifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "createdAtIso",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsNotifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "expiresAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "departmentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "deviceId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "deviceId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "windowsSessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "workDate",
           "order": "DESCENDING"
         }
       ]

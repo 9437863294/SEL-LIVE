@@ -759,5 +759,243 @@ service cloud.firestore {
     match /officeHubGoogleConnections/{userId} {
       allow read, write: if false;
     }
+
+    /* ══════════════════════════════════════════════════════════════════════════════════════════
+     * Windows Agent (docs/windows-agent.md)
+     *
+     * The shape of this section is unlike the others in this file, and the reason is worth stating
+     * because it is the module's main security property.
+     *
+     * **Almost everything here is read-only to every browser.** Sessions, activity spans,
+     * heartbeats, application usage, daily rollups and notification receipts are written
+     * exclusively by `/api/windows-agent/*` through the Admin SDK, which bypasses these rules.
+     * No client — not an administrator's, not the agent's — can write them. That is what makes
+     * the attendance record evidence rather than an assertion: there is no code path by which a
+     * person can edit their own hours, and no permission that grants one.
+     *
+     * The collections a browser *may* write are the ones an administrator genuinely configures:
+     * devices, policies, enrolment codes, the application catalogue and the module settings.
+     *
+     * The audit log is append-only to everybody, including the administrators who write to it.
+     * §50 is explicit that an audit trail an administrator can edit is not an audit trail.
+     * ══════════════════════════════════════════════════════════════════════════════════════════ */
+
+    function waPerm(resource, action) {
+      return holdsPermission('Windows Agent.' + resource, action);
+    }
+
+    /** Any single page grant is enough to read the module's reference data. */
+    function canOpenWindowsAgent() {
+      return signedIn() && (
+        holdsPermission('Windows Agent', 'View Module')
+        || waPerm('Dashboard', 'View')
+        || waPerm('Live Users', 'View')
+        || waPerm('Devices', 'View')
+        || waPerm('Sessions', 'View')
+        || waPerm('Attendance', 'View')
+        || waPerm('Applications', 'View')
+        || waPerm('Reports', 'View')
+        || waPerm('Policies', 'View')
+        || waPerm('Agent Versions', 'View')
+        || waPerm('Audit Logs', 'View')
+        || waPerm('Activity', 'View Team')
+        || waPerm('Activity', 'View Department')
+        || waPerm('Activity', 'View All')
+      );
+    }
+
+    /**
+     * Whether the caller may read activity belonging to `userId`.
+     *
+     * Reading your own record needs no grant — §37 and §52 both turn on an employee being able to
+     * see what was recorded about them, and requiring a permission would mean that on the day
+     * monitoring starts, everybody is measured and nobody can look.
+     *
+     * ── How this behaves on a `list`, which is the part worth understanding ────────────────────
+     *
+     * Firestore evaluates a list rule against every document the query would return, and fails
+     * the whole query if any one of them fails. So `allow list: if canReadWindowsActivity(
+     * resource.data.userId)` is not merely advisory: a person with no grant querying
+     * `where('userId','==',me)` succeeds, and the same person querying the collection unfiltered
+     * is refused outright. The narrowing is enforced by the engine, not by the page.
+     *
+     * ── The one limitation, stated plainly ─────────────────────────────────────────────────────
+     *
+     * Rules cannot run queries, so this cannot check that a `View Department` holder's subject is
+     * actually in their department — it would have to look the user up, and `get()` per document
+     * in a list is neither allowed nor affordable. `View Department` therefore reads, at the rules
+     * layer, as "may read anybody's activity"; the department narrowing happens in the query built
+     * by `windows-agent-service.ts`.
+     *
+     * That is a real gap: a determined holder of `View Department` could read another
+     * department's rollups by crafting a request by hand. It is a smaller gap than it sounds —
+     * `View Department` is already a grant to read other people's hours — but if the distinction
+     * matters to your organisation, the fix is to grant `View All` to the few people who need
+     * cross-department reporting, leave everybody else with no activity grant at all, and serve
+     * the departmental reports from an API route that can do the lookup.
+     */
+    function canReadWindowsActivity(userId) {
+      return signedIn() && (
+        request.auth.uid == userId
+        || waPerm('Activity', 'View All')
+        || waPerm('Activity', 'View Department')
+        || waPerm('Activity', 'View Team')
+        || waPerm('Sessions', 'View')
+        || waPerm('Attendance', 'View')
+      );
+    }
+
+    /** Enrolled computers. Written by the agent's API through the Admin SDK; edited here. */
+    match /windowsDevices/{deviceId} {
+      allow get, list: if waPerm('Devices', 'View');
+      allow create: if false;
+      // Field-level protection on the credential. An administrator legitimately renames a device
+      // and changes its ring; nobody may touch the hashed secret, because a client that could
+      // write `deviceSecretHash` could set it to the hash of a value it knows and impersonate
+      // that machine. The agent's API rotates it through the Admin SDK.
+      allow update: if waPerm('Devices', 'Edit')
+        && request.resource.data.deviceSecretHash == resource.data.deviceSecretHash
+        && request.resource.data.secretVersion == resource.data.secretVersion;
+      allow delete: if false;
+    }
+
+    match /windowsDeviceAssignments/{assignmentId} {
+      allow get, list: if waPerm('Devices', 'View');
+      allow create, update: if waPerm('Devices', 'Assign Users');
+      allow delete: if false;
+    }
+
+    /**
+     * Enrolment codes.
+     *
+     * Not readable without the permission to manage them. A code is the one credential in this
+     * module that a person types, and an employee who could list them could enrol a machine of
+     * their own.
+     */
+    match /windowsEnrollmentCodes/{code} {
+      allow get, list: if waPerm('Enrollment Codes', 'View') || waPerm('Enrollment Codes', 'Create');
+      allow create: if waPerm('Enrollment Codes', 'Create');
+      // registrationCount is incremented by the registration route through the Admin SDK; a client
+      // that could lower it would reopen an exhausted code.
+      allow update: if waPerm('Enrollment Codes', 'Disable')
+        && request.resource.data.registrationCount == resource.data.registrationCount;
+      allow delete: if false;
+    }
+
+    /** Work sessions. Read-only to every client — see the note at the top of this section. */
+    match /windowsSessions/{sessionId} {
+      allow get: if canReadWindowsActivity(resource.data.userId);
+      allow list: if canReadWindowsActivity(resource.data.userId);
+      allow write: if false;
+    }
+
+    /** Raw foreground spans. The most sensitive collection in the module. */
+    match /windowsActivityEvents/{eventId} {
+      allow get: if canReadWindowsActivity(resource.data.userId);
+      allow list: if canReadWindowsActivity(resource.data.userId);
+      allow write: if false;
+    }
+
+    match /windowsApplicationUsage/{usageId} {
+      allow get: if canReadWindowsActivity(resource.data.userId);
+      allow list: if canReadWindowsActivity(resource.data.userId);
+      allow write: if false;
+    }
+
+    /**
+     * The live board's data, and the single most sensitive read in the module: it says what every
+     * colleague has on screen right now. Gated on its own permission and on nothing else.
+     */
+    match /windowsHeartbeats/{deviceId} {
+      allow get, list: if waPerm('Live Users', 'View');
+      allow write: if false;
+    }
+
+    /** Daily rollups. Every report reads these. */
+    match /windowsDailyActivity/{rollupId} {
+      allow get: if canReadWindowsActivity(resource.data.userId);
+      allow list: if canReadWindowsActivity(resource.data.userId);
+      allow write: if false;
+    }
+
+    /**
+     * Policies. Readable by anybody who can open the module — an employee benefits from being
+     * able to see the thresholds their own activity is measured against.
+     */
+    match /windowsAgentPolicies/{policyId} {
+      allow get, list: if canOpenWindowsAgent();
+      allow create, update: if waPerm('Policies', 'Edit');
+      allow delete: if waPerm('Policies', 'Delete');
+    }
+
+    match /windowsNotifications/{notificationId} {
+      allow get, list: if waPerm('Notifications', 'View') || waPerm('Notifications', 'Send');
+      // Raised through /api/windows-agent/notifications/send, which resolves recipients and writes
+      // a receipt each. A client-side create would need write access to the receipts collection
+      // that the §39 delivery report is computed from.
+      allow write: if false;
+    }
+
+    /**
+     * Receipts. A person may read their own — that is how they can see what was sent to them —
+     * and nobody may write one from a browser, because these are the delivery statistics.
+     */
+    match /windowsNotificationReceipts/{receiptId} {
+      allow get: if signedIn() && (
+        resource.data.userId == request.auth.uid
+        || waPerm('Notifications', 'View Delivery')
+        || waPerm('Notifications', 'Send')
+      );
+      allow list: if waPerm('Notifications', 'View Delivery') || waPerm('Notifications', 'Send');
+      allow write: if false;
+    }
+
+    /**
+     * Published agent builds.
+     *
+     * Writable by a publisher, and that is a genuinely high-privilege grant: the hash and
+     * signature subject here are what every agent checks before running an installer as SYSTEM.
+     * Treat 'Agent Versions.Publish' as equivalent to code-deployment rights.
+     */
+    match /windowsAgentVersions/{version} {
+      allow get, list: if canOpenWindowsAgent();
+      allow create, update: if waPerm('Agent Versions', 'Publish');
+      allow delete: if false;
+    }
+
+    /**
+     * The administrative trail. Append-only, for everybody.
+     *
+     * Create is allowed to anybody who can open the module because the client writes its own
+     * audit rows as it performs actions; update and delete are allowed to nobody at all. An
+     * administrator who could edit this could block a device, cause an outage, and erase the
+     * record of having done so.
+     */
+    match /windowsAuditLogs/{entryId} {
+      allow get, list: if waPerm('Audit Logs', 'View');
+      allow create: if canOpenWindowsAgent();
+      allow update, delete: if false;
+    }
+
+    /** The application catalogue. Read by anybody in the module; classified by an administrator. */
+    match /windowsAppCatalog/{processKey} {
+      allow get, list: if canOpenWindowsAgent();
+      allow create, update: if waPerm('Applications', 'Categorise');
+      allow delete: if false;
+    }
+
+    /**
+     * Module settings, including §52's monitoring statement.
+     *
+     * Readable by every signed-in user, deliberately and regardless of permissions: this document
+     * carries the disclosure text and the flag deciding whether employees may see their own
+     * activity. A monitoring policy only the monitors can read is not a disclosure.
+     */
+    match /windowsAgentSettings/{docId} {
+      allow get, list: if signedIn();
+      allow create, update: if waPerm('Monitoring Policy', 'Edit');
+      allow delete: if false;
+    }
+
   }
 }

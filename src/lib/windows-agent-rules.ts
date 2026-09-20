@@ -235,6 +235,18 @@ export function workDateOf(
   return utcToZonedParts(instant, timeZone).date;
 }
 
+/**
+ * Today, as the office reads it.
+ *
+ * Every screen that says "today" goes through this rather than `new Date().toISOString()`. In
+ * Asia/Kolkata the two disagree for the five and a half hours after midnight local time — so a
+ * dashboard opened at 02:00 would silently report yesterday, which is exactly when a night-shift
+ * supervisor would be looking at it.
+ */
+export function todayWorkDate(timeZone: string = WINDOWS_AGENT_TIME_ZONE, now: Date = new Date()): IsoDate {
+  return workDateOf(now, timeZone);
+}
+
 /** `09h 46m`, the format §7 and §9 print totals in. Seconds are shown only below a minute. */
 export function formatSeconds(totalSeconds: number | null | undefined): string {
   const seconds = Math.max(0, Math.round(Number(totalSeconds) || 0));

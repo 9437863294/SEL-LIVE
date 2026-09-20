@@ -989,6 +989,22 @@ export async function ingestActivityBatch(options: {
   const workDate = String(sessionSnapshot.get('workDate'));
   const nowIso = now.toISOString();
 
+  /**
+   * How long the session has been open, and how much of that the day has not yet been told about.
+   *
+   * The daily rollup's `sessionSeconds` used to advance only when a session *closed*, which meant
+   * every report read zero logged-in time for anybody still at their desk — so the dashboard
+   * showed six hours of active time inside zero hours of attendance. Advancing it by the
+   * difference on each batch keeps it correct all day, and `closeSessionDocument` computes its
+   * own delta the same way against the stored total, so the close adds only what is left rather
+   * than counting the day twice.
+   */
+  const sessionWallClockSeconds = secondsBetween(sessionStart, sessionEnd);
+  const sessionSecondsDelta = Math.max(
+    0,
+    sessionWallClockSeconds - Number(sessionSnapshot.get('totalSeconds') || 0),
+  );
+
   let totals = { total: 0, active: 0, idle: 0, extendedIdle: 0, locked: 0, offline: 0 };
   const batch = firestore.batch();
 
@@ -1082,7 +1098,7 @@ export async function ingestActivityBatch(options: {
     lockedSeconds: FieldValue.increment(totals.locked),
     offlineSeconds: FieldValue.increment(totals.offline),
     // Wall clock, not the sum of the spans: the gaps between spans are still part of the session.
-    totalSeconds: secondsBetween(sessionStart, sessionEnd),
+    totalSeconds: sessionWallClockSeconds,
     lastActivityAt: lastSpan.endedAt.toISOString(),
     currentProcessName: lastSpan.processKey || null,
     currentApplicationName: lastSpan.processKey
@@ -1098,6 +1114,7 @@ export async function ingestActivityBatch(options: {
     {
       userId: options.userId,
       workDate,
+      sessionSeconds: FieldValue.increment(sessionSecondsDelta),
       activeSeconds: FieldValue.increment(totals.active),
       idleSeconds: FieldValue.increment(totals.idle),
       extendedIdleSeconds: FieldValue.increment(totals.extendedIdle),
@@ -1117,7 +1134,7 @@ export async function ingestActivityBatch(options: {
     rejected,
     duplicates: [...alreadyStored],
     sessionTotals: {
-      totalSeconds: secondsBetween(sessionStart, sessionEnd),
+      totalSeconds: sessionWallClockSeconds,
       activeSeconds: emptyTotals.activeSeconds + totals.active,
       idleSeconds: emptyTotals.idleSeconds + totals.idle,
       extendedIdleSeconds: emptyTotals.extendedIdleSeconds + totals.extendedIdle,
