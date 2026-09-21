@@ -53,7 +53,8 @@
     "test:windows-agent": "node --experimental-strip-types --test tests/windows-agent-domain.test.mjs",
     "typecheck:windows-agent": "tsc -p tsconfig.windows-agent.json",
     "setup:windows-agent": "node scripts/setup-windows-agent.mjs",
-    "check:agent-login": "node scripts/check-agent-login.mjs"
+    "check:agent-login": "node scripts/check-agent-login.mjs",
+    "test:work-activity": "node --experimental-strip-types --test tests/work-activity-resolution.test.mjs"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
