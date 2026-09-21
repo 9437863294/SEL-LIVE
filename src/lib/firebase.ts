@@ -18,18 +18,16 @@ import {
   type Auth,
 } from "firebase/auth";
 
-// Your web app's Firebase configuration
-const firebaseConfig = {
-  projectId: "module-hub-uc7tw",
-  appId: "1:1098805626846:web:53c37d00f62dbbc19dbf4f",
-  storageBucket: "module-hub-uc7tw.firebasestorage.app",
-  apiKey: "AIzaSyBRnB-SvnQWuNipl2SOnuV4opME0ZmsdPQ",
-  authDomain: "module-hub-uc7tw.firebaseapp.com",
-  messagingSenderId: "1098805626846",
-  databaseURL:
-    process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ||
-    "https://module-hub-uc7tw-default-rtdb.firebaseio.com",
-};
+// Your web app's Firebase configuration.
+//
+// Moved to @/lib/firebase-public-config so the values are defined once. They used to live here,
+// which was fine while the browser was the only consumer — but a *server* route cannot read a
+// constant compiled into a client module, so the Windows Agent's bootstrap endpoint read the
+// `NEXT_PUBLIC_FIREBASE_*` variables instead and got a different, long-dead key. Same values,
+// same precedence as before; one definition.
+import { firebasePublicConfig } from "./firebase-public-config";
+
+const firebaseConfig = firebasePublicConfig;
 
 // Initialize Firebase
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);

@@ -200,15 +200,52 @@ namespace Sel.Agent.Core.Api
                 {
                     return new FirebaseAuthException("Your saved sign-in has expired. Please sign in again.", code, false);
                 }
+
+                // Configuration faults, not credential faults. These are the ones that used to
+                // fall through to "Sign-in failed. Please try again." — a message that sent
+                // somebody to retype a password that was never the problem, and hid a dead API
+                // key behind two layers. Nobody at the keyboard can fix these, so the text says
+                // who can.
+                if (code.IndexOf("API key not valid", StringComparison.OrdinalIgnoreCase) >= 0
+                    || code.StartsWith("INVALID_API_KEY"))
+                {
+                    return new FirebaseAuthException(
+                        "This computer is configured with a Firebase key that Google rejects. "
+                        + "Ask IT to re-run the agent setup — it collects the correct key from the "
+                        + "SEL LIVE server.", code, false);
+                }
+                if (code.StartsWith("OPERATION_NOT_ALLOWED"))
+                {
+                    return new FirebaseAuthException(
+                        "Email and password sign-in is switched off for this SEL LIVE project. "
+                        + "Ask IT to enable it in Firebase Authentication.", code, false);
+                }
+                if (code.IndexOf("CONFIGURATION_NOT_FOUND", StringComparison.OrdinalIgnoreCase) >= 0
+                    || code.IndexOf("IDENTITY_TOOLKIT", StringComparison.OrdinalIgnoreCase) >= 0
+                    || code.IndexOf("SERVICE_DISABLED", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return new FirebaseAuthException(
+                        "This computer is pointed at a Firebase project that is not set up for "
+                        + "sign-in. Ask IT to check the agent's SEL LIVE address.", code, false);
+                }
             }
 
             bool transient = statusCode == 0 || statusCode >= 500 || statusCode == 429;
+            if (transient)
+            {
+                return new FirebaseAuthException(
+                    "SEL LIVE could not be reached to verify your sign-in. Check the network and try again.",
+                    code ?? ("HTTP_" + statusCode), true);
+            }
+
+            // The catch-all now carries the code. It is not pretty, and an employee cannot act on
+            // it — but they can read it down the phone, which is worth far more than a tidy
+            // sentence that discards the only useful fact in the response.
             return new FirebaseAuthException(
-                transient
-                    ? "SEL LIVE could not be reached to verify your sign-in. Check the network and try again."
-                    : "Sign-in failed. Please try again.",
+                "Sign-in failed" + (code != null ? " (" + code + ")" : " with HTTP " + statusCode)
+                    + ". If this keeps happening, tell IT exactly what it says here.",
                 code ?? ("HTTP_" + statusCode),
-                transient);
+                false);
         }
     }
 

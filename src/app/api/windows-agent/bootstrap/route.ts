@@ -1,3 +1,5 @@
+import { firebaseConfigSource, firebasePublicConfig } from '@/lib/firebase-public-config';
+
 export const runtime = 'nodejs';
 
 /**
@@ -26,8 +28,23 @@ export const runtime = 'nodejs';
  * the MSI be installed by double-clicking it.
  */
 export async function GET() {
-  const firebaseApiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  // The same object the browser SDK initialises with, not the environment variables.
+  //
+  // Reading `NEXT_PUBLIC_FIREBASE_API_KEY` here was a real bug: on this installation those
+  // variables describe a different, retired app registration whose key Google rejects with
+  // "API key not valid". The web app never noticed because it had the working key hard-coded.
+  // Every agent configured from this endpoint got the dead one.
+  const { apiKey: firebaseApiKey, projectId } = firebasePublicConfig;
+
+  if (firebaseConfigSource.apiKeyDiffersFromBuiltIn) {
+    // Logged once per cold start rather than returned: the variable is unused, so this is a
+    // tidiness problem, not a failure. Saying so is how it gets deleted instead of lying in wait.
+    console.warn(
+      '[windows-agent] NEXT_PUBLIC_FIREBASE_API_KEY is set and does not match the configured '
+        + 'Firebase project. It is ignored — see src/lib/firebase-public-config.ts — but it is '
+        + 'worth removing before it misleads somebody again.',
+    );
+  }
 
   if (!firebaseApiKey || !projectId) {
     // A deployment problem rather than a caller problem, and worth saying plainly: the agent
@@ -36,9 +53,8 @@ export async function GET() {
     return Response.json(
       {
         error:
-          'This SEL LIVE server is missing its public Firebase configuration '
-          + '(NEXT_PUBLIC_FIREBASE_API_KEY / NEXT_PUBLIC_FIREBASE_PROJECT_ID). '
-          + 'The agent cannot be configured until that is set on the server.',
+          'This SEL LIVE server has no Firebase configuration. '
+          + 'The agent cannot be set up until src/lib/firebase-public-config.ts is populated.',
       },
       { status: 503 },
     );
