@@ -698,6 +698,35 @@ export interface AgentPolicySettings {
    * between: a walk to the printer resumes silently, a lunch break does not.
    */
   reauthAfterLockSeconds?: number;
+
+  /**
+   * Whether closing the agent needs a SEL LIVE administrator's approval.
+   *
+   * On by default, which is the behaviour §26 asks for. An installation running the agent
+   * purely for its own reporting — no attendance enforcement — can turn it off and let people
+   * close it, rather than having the setting be a fact of the build.
+   */
+  requireAdminToExit?: boolean;
+
+  /**
+   * The longest a single activity span may run before it is closed and a new one opened.
+   *
+   * This is the granularity of the record. Ten minutes means a two-hour stretch in one
+   * application appears as twelve rows rather than one, which is what makes an hour-by-hour
+   * timeline possible. Lower it for finer detail at the cost of more documents; raise it on a
+   * large fleet to cut Firestore writes.
+   */
+  maxSpanMinutes?: number;
+
+  /**
+   * How long the agent waits for a reply from SEL LIVE before giving up on one request.
+   *
+   * A fixed thirty seconds is wrong in both directions: generous on a head-office LAN, and too
+   * short on a site office behind a satellite link, where every heartbeat timing out looks like
+   * the server being down. Failed requests are retried from the offline queue, so a longer
+   * value costs patience rather than data.
+   */
+  requestTimeoutSeconds?: number;
   /** Days of raw spans to keep. The rollups outlive them (§51). */
   rawActivityRetentionDays?: number;
 }

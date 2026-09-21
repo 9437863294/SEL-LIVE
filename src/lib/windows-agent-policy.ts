@@ -82,6 +82,15 @@ export const DEFAULT_AGENT_POLICY: Required<AgentPolicySettings> = {
   lockOnSignOut: false,
   // Half an hour. A walk to the printer resumes silently; a lunch break asks again.
   reauthAfterLockSeconds: 1800,
+  // §26 asks for approval before tracking stops, so this is on. Switchable for an installation
+  // that reports without enforcing anything.
+  requireAdminToExit: true,
+  // The granularity of the record. Twelve rows for a two-hour stretch, which is what makes the
+  // hour-by-hour timeline readable without making a day thousands of documents.
+  maxSpanMinutes: 10,
+  // Generous on a head-office LAN, survivable on a site link. A request that times out is
+  // retried from the offline queue, so patience costs nothing but time.
+  requestTimeoutSeconds: 30,
   // §51's shortest offered option. An organisation that wants 180 days can say so; one that has
   // not thought about it yet keeps the least data, which is the right way round.
   rawActivityRetentionDays: 90,
@@ -109,6 +118,12 @@ const NUMERIC_BOUNDS: Partial<Record<keyof AgentPolicySettings, { min: number; m
   idleLockWarningSeconds: { min: 15, max: 600 },
   // Zero is meaningful here (ask on every unlock), so the floor is zero rather than a minimum.
   reauthAfterLockSeconds: { min: 0, max: 86_400 },
+  // Below a minute the record stops being a timeline and becomes a firehose; above an hour a
+  // long stretch in one application is a single unhelpful block.
+  maxSpanMinutes: { min: 1, max: 60 },
+  // Under ten seconds a slow link never completes a request at all; over three minutes the
+  // agent stops noticing it is offline.
+  requestTimeoutSeconds: { min: 10, max: 180 },
 };
 
 const CLOCK_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;

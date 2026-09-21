@@ -158,6 +158,16 @@ namespace Sel.Agent.Core.Contracts
         /// </summary>
         [JsonProperty("reauthAfterLockSeconds")] public int ReauthAfterLockSeconds { get; set; }
 
+        /// <summary>Whether closing the agent needs a SEL LIVE administrator.</summary>
+        [JsonProperty("requireAdminToExit")] public bool RequireAdminToExit { get; set; }
+
+        /// <summary>How long one activity span may run before it is closed. The granularity
+        /// of the record, so it is a policy rather than a constant in the builder.</summary>
+        [JsonProperty("maxSpanMinutes")] public int MaxSpanMinutes { get; set; }
+
+        /// <summary>Seconds to wait for a reply before abandoning one request.</summary>
+        [JsonProperty("requestTimeoutSeconds")] public int RequestTimeoutSeconds { get; set; }
+
         public static AgentPolicySettings Defaults()
         {
             return new AgentPolicySettings
@@ -184,7 +194,10 @@ namespace Sel.Agent.Core.Contracts
                 IdleLockWarningSeconds = 60,
                 LockOnErpWindowClose = false,
                 LockOnSignOut = false,
-                ReauthAfterLockSeconds = 1800
+                ReauthAfterLockSeconds = 1800,
+                RequireAdminToExit = true,
+                MaxSpanMinutes = 10,
+                RequestTimeoutSeconds = 30
             };
         }
     }

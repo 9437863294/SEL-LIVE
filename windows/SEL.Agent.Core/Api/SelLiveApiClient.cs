@@ -98,6 +98,36 @@ namespace Sel.Agent.Core.Api
         /// <summary>The HttpClient, exposed so <see cref="FirebaseAuthClient"/> can share the pool.</summary>
         public HttpClient Http { get { return _http; } }
 
+        /// <summary>
+        /// Change how long a request may take, from policy.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <c>HttpClient.Timeout</c> throws once a request has been sent on the instance, so this
+        /// swallows that rather than letting a policy update take down the heartbeat loop. In
+        /// practice the first policy arrives before the first ordinary request; a later change
+        /// applies from the next agent start.
+        /// </para>
+        /// <para>
+        /// Worth having at all because thirty seconds is wrong in both directions: needlessly
+        /// patient on a LAN, and far too short on a site office behind a satellite link, where
+        /// every request timing out reads as the server being down.
+        /// </para>
+        /// </remarks>
+        public void SetRequestTimeout(TimeSpan timeout)
+        {
+            if (timeout <= TimeSpan.Zero) return;
+            if (_http.Timeout == timeout) return;
+            try
+            {
+                _http.Timeout = timeout;
+            }
+            catch (InvalidOperationException)
+            {
+                // Already used. The value applies at the next start rather than never.
+            }
+        }
+
         /* ── Routes ──────────────────────────────────────────────────────────────────────── */
 
         public Task<DeviceRegisterResponse> RegisterDeviceAsync(DeviceRegisterRequest request, CancellationToken cancellation)

@@ -235,7 +235,7 @@ namespace Sel.Agent.Tests
             List<ActivitySpan> spans = builder.DrainCompleted();
             Assert.True(spans.Count >= 3, "Expected the span to be cut; got " + spans.Count + ".");
             Assert.All(spans, s => Assert.True(
-                Seconds(s) <= (int)ActivitySpanBuilder.MaxSpanDuration.TotalSeconds + 60,
+                Seconds(s) <= (int)ActivitySpanBuilder.DefaultMaxSpanDuration.TotalSeconds + 60,
                 "A segment ran to " + Seconds(s) + "s."));
             // Every segment is still the same application, so the timeline re-merges them.
             Assert.All(spans, s => Assert.Equal("excel.exe", s.ProcessName));

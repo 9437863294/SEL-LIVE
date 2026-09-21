@@ -160,6 +160,38 @@ namespace Sel.Agent.Core
         public ResolvedAgentPolicy Policy { get { return _policy; } }
 
         /// <summary>
+        /// Adopt a policy, and apply the parts of it that live outside this class.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Policy arrives from three places — the pre-sign-in fetch, the login response and
+        /// every heartbeat — and each used to assign <c>_policy</c> directly. Any setting that
+        /// has to be pushed somewhere else therefore had to be pushed in three places, or be
+        /// silently ignored in two of them. One method, three callers.
+        /// </para>
+        /// <para>
+        /// Both settings here were constants until an administrator needed them to differ per
+        /// site: the span length is the granularity of the record, and the request timeout is
+        /// the difference between a satellite link looking slow and looking dead.
+        /// </para>
+        /// </remarks>
+        private void ApplyPolicy(ResolvedAgentPolicy policy)
+        {
+            if (policy == null || policy.Settings == null) return;
+            _policy = policy;
+
+            if (policy.Settings.MaxSpanMinutes > 0)
+            {
+                _builder.MaxSpanDuration = TimeSpan.FromMinutes(policy.Settings.MaxSpanMinutes);
+            }
+
+            if (policy.Settings.RequestTimeoutSeconds > 0)
+            {
+                _api.SetRequestTimeout(TimeSpan.FromSeconds(policy.Settings.RequestTimeoutSeconds));
+            }
+        }
+
+        /// <summary>
         /// Fetch the device's policy before anybody has signed in.
         /// </summary>
         /// <remarks>
@@ -184,7 +216,7 @@ namespace Sel.Agent.Core
                 PolicyResponse response = await _api.FetchPolicyAsync(null, cancellation).ConfigureAwait(false);
                 if (response != null && response.Policy != null && response.Policy.Settings != null)
                 {
-                    _policy = response.Policy;
+                    ApplyPolicy(response.Policy);
                     _log("Policy fetched before sign-in; the access gate is "
                         + (_policy.Settings.RequireMorningLogin ? "mandatory." : "dismissible."));
                     RaiseStatusChanged();
@@ -233,7 +265,7 @@ namespace Sel.Agent.Core
                 _sessionId = login.SessionId;
                 _userName = login.UserName;
                 _signedInAtUtc = IsoTime.Parse(login.LoginAt);
-                if (login.Policy != null) _policy = login.Policy;
+                if (login.Policy != null) ApplyPolicy(login.Policy);
                 _handledDirectives.Clear();
             }
 
@@ -466,7 +498,7 @@ namespace Sel.Agent.Core
                 HeartbeatResponse response = await _api.HeartbeatAsync(request, token).ConfigureAwait(false);
                 MarkOnline();
 
-                if (response.Policy != null && response.Policy.Settings != null) _policy = response.Policy;
+                if (response.Policy != null && response.Policy.Settings != null) ApplyPolicy(response.Policy);
 
                 if (response.Directives != null)
                 {

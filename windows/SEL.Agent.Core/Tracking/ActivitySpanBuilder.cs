@@ -62,9 +62,34 @@ namespace Sel.Agent.Core.Tracking
     public sealed class ActivitySpanBuilder
     {
         /// <summary>
-        /// The longest a single span may run before it is cut. See remark 3 above.
+        /// The longest a span may run when no policy has said otherwise. See remark 2 above.
         /// </summary>
-        public static readonly TimeSpan MaxSpanDuration = TimeSpan.FromMinutes(10);
+        public static readonly TimeSpan DefaultMaxSpanDuration = TimeSpan.FromMinutes(10);
+
+        /// <summary>
+        /// How long one span may run before it is closed and a new one opened.
+        /// </summary>
+        /// <remarks>
+        /// Settable, because this is the granularity of the record rather than an implementation
+        /// detail: it decides whether two hours in one application is twelve rows or one, and
+        /// therefore both how readable the timeline is and how many documents a fleet writes.
+        /// The policy resolver supplies it; the default applies until the first policy arrives.
+        /// Clamped by the server to 1–60 minutes.
+        /// </remarks>
+        public TimeSpan MaxSpanDuration
+        {
+            get { lock (_gate) return _maxSpanDuration; }
+            set
+            {
+                lock (_gate)
+                {
+                    // A zero or negative maximum would close a span on every tick and fill the
+                    // queue with two-second records; a policy that malformed should be ignored
+                    // rather than obeyed.
+                    _maxSpanDuration = value > TimeSpan.Zero ? value : DefaultMaxSpanDuration;
+                }
+            }
+        }
 
         /// <summary>
         /// Spans shorter than this are dropped rather than recorded.
@@ -86,6 +111,7 @@ namespace Sel.Agent.Core.Tracking
         private DateTime _lastTickUtc;
         private double _idleSecondsInSpan;
         private bool _started;
+        private TimeSpan _maxSpanDuration = DefaultMaxSpanDuration;
 
         /// <summary>
         /// Serialises every public member.
@@ -202,7 +228,7 @@ namespace Sel.Agent.Core.Tracking
                     _idleSecondsInSpan += Math.Min(elapsed, Math.Max(0, idleSeconds));
                 }
 
-                if (nowUtc - _spanStartedUtc >= MaxSpanDuration)
+                if (nowUtc - _spanStartedUtc >= _maxSpanDuration)
                 {
                     string continuing = _currentEventType;
                     CloseSpan(nowUtc, continuing);

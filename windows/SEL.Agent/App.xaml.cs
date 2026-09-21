@@ -358,6 +358,15 @@ namespace Sel.Agent
         /// </remarks>
         private async void OnExitRequested(object sender, EventArgs e)
         {
+            // An installation that reports without enforcing anything can let people close the
+            // agent. On by default, because §26 is about a session somebody cannot silently stop.
+            if (!_host.Coordinator.Policy.Settings.RequireAdminToExit)
+            {
+                _log.Write("Exit taken; approval is not required under the current policy.");
+                await StopAndQuitAsync().ConfigureAwait(true);
+                return;
+            }
+
             var dialog = new ExitApprovalWindow(_host);
             bool? approved = dialog.ShowDialog();
 

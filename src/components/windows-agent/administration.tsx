@@ -122,6 +122,18 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
     label: 'Signing out locks the PC',
     help: 'Off by default. Without it, signing out leaves somebody at an unlocked desktop with nothing being recorded — the one way to work unmonitored that needs no administrator. Pair it with the access gate above, which decides whether the next sign-in can be dismissed.',
   },
+  requireAdminToExit: {
+    label: 'Closing the agent needs an administrator',
+    help: 'On by default. The tray’s Exit asks for a SEL LIVE sign-in and checks Windows Agent / Devices / Edit. Turn it off for an installation that reports without enforcing attendance.',
+  },
+  maxSpanMinutes: {
+    label: 'Longest activity block (minutes)',
+    help: 'The granularity of the record: at 10, two hours in one application is twelve rows rather than one, which is what makes the hour-by-hour timeline readable. Lower for finer detail, higher to cut writes on a large fleet. 1–60.',
+  },
+  requestTimeoutSeconds: {
+    label: 'Give up on a request after (seconds)',
+    help: 'Raise it for a site office on a slow or satellite link, where 30s makes every heartbeat look like the server is down. A request that times out is retried from the offline queue, so patience costs time rather than data. 10–180.',
+  },
   reauthAfterLockSeconds: {
     label: 'Sign in to SEL LIVE again after locked for (seconds)',
     help: '1800 is half an hour: a walk to the printer resumes silently, a lunch break asks again. Zero asks on every unlock; a very large number never does.',
