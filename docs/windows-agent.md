@@ -494,6 +494,13 @@ It is not in the URL. A custom token is a bearer credential for an hour; in a qu
 would land in browser history, in the `Referer` of the first outbound request, and in the access
 log of everything in between.
 
+**When there is no token, the window shows the login.** Nobody signed in to the agent means
+nothing to hand over, and `/auth/agent` forwards to `/login` carrying the page that was being
+opened, so signing in there lands where the person was going. It used to say "This page is
+opened by the SEL LIVE desktop agent. There is nothing to do here" and stop — a dead end at the
+one moment somebody needs a login. The same path covers a failed token mint (§4.6) and anyone
+who bookmarks the URL.
+
 ## 7b. Closing the agent
 
 The tray menu has **Exit**, and choosing it asks for a **SEL LIVE administrator** — a sign-in to
@@ -589,7 +596,22 @@ policy, on `/windows-agent/policies`.
 | `idleLockSeconds` | 600 | Ten minutes. Minimum 120 |
 | `idleLockWarningSeconds` | 60 | How long "Are you still working?" stays up. Any key or mouse movement cancels it. Minimum 15 |
 | `lockOnErpWindowClose` | off | Closing the embedded SEL LIVE window locks the PC, and the window opens automatically at sign-in |
+| `lockOnSignOut` | off | Signing out of SEL LIVE locks the PC |
 | `reauthAfterLockSeconds` | 1800 | Locked longer than this, and unlocking Windows also needs a SEL LIVE sign-in. Zero asks every time |
+
+### "You must sign in to SEL LIVE to use this PC"
+
+That is not one switch. It is three, and they do different jobs:
+
+| | |
+|---|---|
+| `requireMorningLogin` | Makes the sign-in window **mandatory** instead of dismissible. Without it the gate appears and can be closed, and the person carries on working with nothing recorded |
+| `lockOnSignOut` | Closes the other way out. Signing out otherwise leaves somebody at an unlocked desktop that records nothing — the only route to working unmonitored that needs no administrator, no Task Manager and no particular knowledge |
+| `lockOnIdleEnabled` | Covers walking away without signing out |
+
+Switch on only `requireMorningLogin` and Sign out is a bypass. Switch on only `lockOnSignOut`
+and the gate can be dismissed. They are listed separately because an installation may genuinely
+want one without the other, but "must sign in to use the PC" needs the first two together.
 
 **Locking means `LockWorkStation`** — the ordinary Windows lock screen, the same thing Win+L
 does. The person clears it with their own Windows password; nothing the agent holds is involved

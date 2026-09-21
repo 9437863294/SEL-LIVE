@@ -60,6 +60,9 @@ function AgentSignIn() {
   // Where to go once the session is genuinely established. Null until the token is exchanged.
   const [destination, setDestination] = useState<string | null>(null);
 
+  // Arrived with nothing to exchange. Signed out, that means the login page rather than a wait.
+  const [noToken, setNoToken] = useState(false);
+
   // React runs effects twice in development's strict mode, and a custom token is single-use in
   // the sense that a second exchange is wasted work and a second redirect fights the first.
   const started = useRef(false);
@@ -78,9 +81,21 @@ function AgentSignIn() {
         searchParams?.get('next'),
     );
 
+    // No token: send them somewhere they can do something.
+    //
+    // This used to say "This page is opened by the SEL LIVE desktop agent. There is nothing to
+    // do here" and stop, which is a dead end at the one moment it matters. It is reached most
+    // often when the agent is signed out — the window opens, there is no session to hand over,
+    // and the employee is shown a page telling them so instead of the login they need. It is
+    // also what a browser lands on if somebody bookmarks the URL.
+    //
+    // `destination` rather than a redirect here: the effect below waits for the auth state, so
+    // somebody who already has a browser session is forwarded straight on, and only a genuinely
+    // signed-out visitor is sent to the login page.
     if (!token) {
-      setFailed(true);
-      setMessage('This page is opened by the SEL LIVE desktop agent. There is nothing to do here.');
+      setMessage('Opening SEL LIVE…');
+      setDestination(target);
+      setNoToken(true);
       return;
     }
 
@@ -121,9 +136,20 @@ function AgentSignIn() {
    * /auth/agent is a public route, so nothing bounces us while we wait.
    */
   useEffect(() => {
-    if (!destination || loading || !user) return;
-    router.replace(destination);
-  }, [destination, loading, user, router]);
+    if (!destination || loading) return;
+
+    if (user) {
+      router.replace(destination);
+      return;
+    }
+
+    // Signed out and nothing to sign in with, so hand over to the ordinary login and come back
+    // afterwards. Only for the no-token case: when a token *was* present and the exchange has
+    // not landed yet, `user` is briefly null and redirecting here would race the sign-in.
+    if (noToken) {
+      router.replace('/login?redirect=' + encodeURIComponent(destination));
+    }
+  }, [destination, loading, user, noToken, router]);
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-[#020617] p-6 text-slate-100">

@@ -682,6 +682,16 @@ export interface AgentPolicySettings {
   lockOnErpWindowClose?: boolean;
 
   /**
+   * Signing out of SEL LIVE also locks the PC.
+   *
+   * Without this, signing out leaves somebody at an unlocked desktop with nothing being
+   * recorded — which is the one way to work unmonitored that needs no administrator and no
+   * Task Manager. Pair it with `requireMorningLogin`: locking decides how the session *ends*,
+   * and the gate decides whether the next one can be dismissed.
+   */
+  lockOnSignOut?: boolean;
+
+  /**
    * Seconds locked beyond which unlocking Windows also requires a fresh SEL LIVE sign-in.
    *
    * Zero means every unlock asks. A very large value means it never does. The default sits

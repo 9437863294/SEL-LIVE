@@ -149,6 +149,9 @@ namespace Sel.Agent.Core.Contracts
         /// <summary>Closing the embedded SEL LIVE window locks the PC.</summary>
         [JsonProperty("lockOnErpWindowClose")] public bool LockOnErpWindowClose { get; set; }
 
+        /// <summary>Signing out of SEL LIVE also locks the PC.</summary>
+        [JsonProperty("lockOnSignOut")] public bool LockOnSignOut { get; set; }
+
         /// <summary>
         /// Seconds locked beyond which unlocking Windows also needs a fresh SEL LIVE sign-in.
         /// Zero asks every time; a very large value never does.
@@ -180,6 +183,7 @@ namespace Sel.Agent.Core.Contracts
                 IdleLockSeconds = 600,
                 IdleLockWarningSeconds = 60,
                 LockOnErpWindowClose = false,
+                LockOnSignOut = false,
                 ReauthAfterLockSeconds = 1800
             };
         }

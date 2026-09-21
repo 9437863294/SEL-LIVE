@@ -118,6 +118,10 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
     label: 'Closing the SEL LIVE window locks the PC',
     help: 'For installations where that window is the working session. It also opens automatically at sign-in. Off by default: with it on, a misplaced click on the X costs somebody their unlocked desktop.',
   },
+  lockOnSignOut: {
+    label: 'Signing out locks the PC',
+    help: 'Off by default. Without it, signing out leaves somebody at an unlocked desktop with nothing being recorded — the one way to work unmonitored that needs no administrator. Pair it with the access gate above, which decides whether the next sign-in can be dismissed.',
+  },
   reauthAfterLockSeconds: {
     label: 'Sign in to SEL LIVE again after locked for (seconds)',
     help: '1800 is half an hour: a walk to the printer resumes silently, a lunch break asks again. Zero asks on every unlock; a very large number never does.',

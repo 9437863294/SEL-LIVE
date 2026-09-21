@@ -79,6 +79,7 @@ export const DEFAULT_AGENT_POLICY: Required<AgentPolicySettings> = {
   idleLockSeconds: 600,
   idleLockWarningSeconds: 60,
   lockOnErpWindowClose: false,
+  lockOnSignOut: false,
   // Half an hour. A walk to the printer resumes silently; a lunch break asks again.
   reauthAfterLockSeconds: 1800,
   // §51's shortest offered option. An organisation that wants 180 days can say so; one that has

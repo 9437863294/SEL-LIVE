@@ -290,7 +290,22 @@ namespace Sel.Agent
 
         private async void OnSignOutRequested(object sender, EventArgs e)
         {
+            // Read before signing out: SignOutAsync does not clear the policy, but reading it
+            // first makes the ordering irrelevant rather than something to be careful about.
+            bool lockAfterwards = _host.Coordinator.Policy.Settings.LockOnSignOut;
+
             await _host.SignOutAsync(SessionEndReasons.UserSignout).ConfigureAwait(true);
+
+            // Signing out is otherwise the one way to work unmonitored that needs no
+            // administrator, no Task Manager and no particular knowledge: the desktop is still
+            // there, and nothing is being recorded on it. Locking closes that, and the gate
+            // shown below decides whether the next session can be dismissed.
+            if (lockAfterwards)
+            {
+                _log.Write("Signed out; locking this computer as the policy requires.");
+                _lifecycle.LockNow();
+            }
+
             ShowGate();
         }
 
