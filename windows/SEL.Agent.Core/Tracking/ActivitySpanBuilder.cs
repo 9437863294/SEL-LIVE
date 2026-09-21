@@ -87,6 +87,18 @@ namespace Sel.Agent.Core.Tracking
         private double _idleSecondsInSpan;
         private bool _started;
 
+        /// <summary>
+        /// Serialises every public member.
+        /// </summary>
+        /// <remarks>
+        /// Callers arrive on three different threads: the heartbeat timer, the session-state
+        /// monitor, and the foreground watcher's pump thread. Before this, two of them could
+        /// close a span at once and produce overlapping records, or tear the completed list
+        /// mid-drain. Held only across field arithmetic and list operations — nothing in this
+        /// class calls out, so it cannot deadlock against the coordinator's own gate.
+        /// </remarks>
+        private readonly object _gate = new object();
+
         public ActivitySpanBuilder()
             : this(null)
         {
@@ -106,23 +118,26 @@ namespace Sel.Agent.Core.Tracking
         public bool Offline { get; set; }
 
         /// <summary>The application currently being counted, for the heartbeat and the tray.</summary>
-        public ForegroundSnapshot Current { get { return _current; } }
+        public ForegroundSnapshot Current { get { lock (_gate) return _current; } }
 
         /// <summary>The state the machine is in, as the heartbeat reports it.</summary>
-        public string CurrentEventType { get { return _currentEventType; } }
+        public string CurrentEventType { get { lock (_gate) return _currentEventType; } }
 
         /// <summary>Spans finished since the last <see cref="DrainCompleted"/>.</summary>
-        public int PendingCount { get { return _completed.Count; } }
+        public int PendingCount { get { lock (_gate) return _completed.Count; } }
 
         /// <summary>Begin tracking. Called once, when a session opens.</summary>
         public void Start(DateTime nowUtc, ForegroundSnapshot initial)
         {
-            _started = true;
-            _spanStartedUtc = nowUtc;
-            _lastTickUtc = nowUtc;
-            _idleSecondsInSpan = 0;
-            _current = initial;
-            _currentEventType = ActivityEventTypes.AppActive;
+            lock (_gate)
+            {
+                _started = true;
+                _spanStartedUtc = nowUtc;
+                _lastTickUtc = nowUtc;
+                _idleSecondsInSpan = 0;
+                _current = initial;
+                _currentEventType = ActivityEventTypes.AppActive;
+            }
         }
 
         /// <summary>
@@ -135,29 +150,32 @@ namespace Sel.Agent.Core.Tracking
         /// </remarks>
         public void OnForegroundChanged(DateTime nowUtc, ForegroundSnapshot snapshot)
         {
-            if (!_started) { Start(nowUtc, snapshot); return; }
-
-            // While locked, whatever Windows reports as foreground is behind the lock screen and
-            // is not being used. The change is remembered but does not end the locked span.
-            if (_currentEventType == ActivityEventTypes.Lock || _currentEventType == ActivityEventTypes.Sleep)
+            lock (_gate)
             {
+                if (!_started) { Start(nowUtc, snapshot); return; }
+
+                // While locked, whatever Windows reports as foreground is behind the lock screen and
+                // is not being used. The change is remembered but does not end the locked span.
+                if (_currentEventType == ActivityEventTypes.Lock || _currentEventType == ActivityEventTypes.Sleep)
+                {
+                    _current = snapshot;
+                    return;
+                }
+
+                if (snapshot != null && snapshot.SameApplicationAs(_current))
+                {
+                    // Same application, different window: keep the span, refresh the title so the
+                    // most recent one is what gets recorded if titles are enabled at all.
+                    _current.WindowTitle = snapshot.WindowTitle;
+                    return;
+                }
+
+                CloseSpan(nowUtc, ActivityEventTypes.AppActive);
                 _current = snapshot;
-                return;
+                _currentEventType = ActivityEventTypes.AppActive;
+                _spanStartedUtc = nowUtc;
+                _idleSecondsInSpan = 0;
             }
-
-            if (snapshot != null && snapshot.SameApplicationAs(_current))
-            {
-                // Same application, different window: keep the span, refresh the title so the
-                // most recent one is what gets recorded if titles are enabled at all.
-                _current.WindowTitle = snapshot.WindowTitle;
-                return;
-            }
-
-            CloseSpan(nowUtc, ActivityEventTypes.AppActive);
-            _current = snapshot;
-            _currentEventType = ActivityEventTypes.AppActive;
-            _spanStartedUtc = nowUtc;
-            _idleSecondsInSpan = 0;
         }
 
         /// <summary>
@@ -169,52 +187,61 @@ namespace Sel.Agent.Core.Tracking
         /// </param>
         public void OnTick(DateTime nowUtc, double idleSeconds)
         {
-            if (!_started) return;
-
-            double elapsed = (nowUtc - _lastTickUtc).TotalSeconds;
-            _lastTickUtc = nowUtc;
-            if (elapsed <= 0) return;
-
-            // Locked time is counted whole by the server from the span's own duration; adding
-            // idle on top would be counting the same seconds twice.
-            if (_currentEventType != ActivityEventTypes.Lock && _currentEventType != ActivityEventTypes.Sleep)
+            lock (_gate)
             {
-                _idleSecondsInSpan += Math.Min(elapsed, Math.Max(0, idleSeconds));
-            }
+                if (!_started) return;
 
-            if (nowUtc - _spanStartedUtc >= MaxSpanDuration)
-            {
-                string continuing = _currentEventType;
-                CloseSpan(nowUtc, continuing);
-                _spanStartedUtc = nowUtc;
-                _idleSecondsInSpan = 0;
-                _currentEventType = continuing;
+                double elapsed = (nowUtc - _lastTickUtc).TotalSeconds;
+                _lastTickUtc = nowUtc;
+                if (elapsed <= 0) return;
+
+                // Locked time is counted whole by the server from the span's own duration; adding
+                // idle on top would be counting the same seconds twice.
+                if (_currentEventType != ActivityEventTypes.Lock && _currentEventType != ActivityEventTypes.Sleep)
+                {
+                    _idleSecondsInSpan += Math.Min(elapsed, Math.Max(0, idleSeconds));
+                }
+
+                if (nowUtc - _spanStartedUtc >= MaxSpanDuration)
+                {
+                    string continuing = _currentEventType;
+                    CloseSpan(nowUtc, continuing);
+                    _spanStartedUtc = nowUtc;
+                    _idleSecondsInSpan = 0;
+                    _currentEventType = continuing;
+                }
             }
         }
 
         /// <summary>The workstation was locked, or the screensaver became secure.</summary>
         public void OnLocked(DateTime nowUtc)
         {
-            if (!_started || _currentEventType == ActivityEventTypes.Lock) return;
-            CloseSpan(nowUtc, _currentEventType);
-            _currentEventType = ActivityEventTypes.Lock;
-            _spanStartedUtc = nowUtc;
-            _idleSecondsInSpan = 0;
+            lock (_gate)
+            {
+                if (!_started || _currentEventType == ActivityEventTypes.Lock) return;
+                CloseSpan(nowUtc, _currentEventType);
+                _currentEventType = ActivityEventTypes.Lock;
+                _spanStartedUtc = nowUtc;
+                _idleSecondsInSpan = 0;
+            }
         }
 
         /// <summary>The workstation was unlocked.</summary>
         public void OnUnlocked(DateTime nowUtc)
         {
-            if (!_started) return;
-            if (_currentEventType == ActivityEventTypes.Lock || _currentEventType == ActivityEventTypes.Sleep)
+            lock (_gate)
             {
-                CloseSpan(nowUtc, _currentEventType);
+                if (!_started) return;
+                if (_currentEventType == ActivityEventTypes.Lock || _currentEventType == ActivityEventTypes.Sleep)
+                {
+                    CloseSpan(nowUtc, _currentEventType);
+                }
+                _currentEventType = ActivityEventTypes.AppActive;
+                _spanStartedUtc = nowUtc;
+                _idleSecondsInSpan = 0;
+                // The clock is reset so the sleep gap is not credited as idle time in the new span.
+                _lastTickUtc = nowUtc;
             }
-            _currentEventType = ActivityEventTypes.AppActive;
-            _spanStartedUtc = nowUtc;
-            _idleSecondsInSpan = 0;
-            // The clock is reset so the sleep gap is not credited as idle time in the new span.
-            _lastTickUtc = nowUtc;
         }
 
         /// <summary>
@@ -228,11 +255,14 @@ namespace Sel.Agent.Core.Tracking
         /// </remarks>
         public void OnSleep(DateTime nowUtc)
         {
-            if (!_started) return;
-            CloseSpan(nowUtc, _currentEventType);
-            _currentEventType = ActivityEventTypes.Sleep;
-            _spanStartedUtc = nowUtc;
-            _idleSecondsInSpan = 0;
+            lock (_gate)
+            {
+                if (!_started) return;
+                CloseSpan(nowUtc, _currentEventType);
+                _currentEventType = ActivityEventTypes.Sleep;
+                _spanStartedUtc = nowUtc;
+                _idleSecondsInSpan = 0;
+            }
         }
 
         /// <summary>
@@ -246,15 +276,18 @@ namespace Sel.Agent.Core.Tracking
         /// </remarks>
         public void OnResume(DateTime nowUtc)
         {
-            if (!_started) return;
-            if (_currentEventType == ActivityEventTypes.Sleep)
+            lock (_gate)
             {
-                CloseSpan(nowUtc, ActivityEventTypes.Sleep);
+                if (!_started) return;
+                if (_currentEventType == ActivityEventTypes.Sleep)
+                {
+                    CloseSpan(nowUtc, ActivityEventTypes.Sleep);
+                }
+                _currentEventType = ActivityEventTypes.AppActive;
+                _spanStartedUtc = nowUtc;
+                _idleSecondsInSpan = 0;
+                _lastTickUtc = nowUtc;
             }
-            _currentEventType = ActivityEventTypes.AppActive;
-            _spanStartedUtc = nowUtc;
-            _idleSecondsInSpan = 0;
-            _lastTickUtc = nowUtc;
         }
 
         /// <summary>
@@ -267,10 +300,13 @@ namespace Sel.Agent.Core.Tracking
         /// </remarks>
         public void Stop(DateTime nowUtc)
         {
-            if (!_started) return;
-            CloseSpan(nowUtc, _currentEventType);
-            _started = false;
-            _current = null;
+            lock (_gate)
+            {
+                if (!_started) return;
+                CloseSpan(nowUtc, _currentEventType);
+                _started = false;
+                _current = null;
+            }
         }
 
         /// <summary>
@@ -283,9 +319,12 @@ namespace Sel.Agent.Core.Tracking
         /// </remarks>
         public List<ActivitySpan> DrainCompleted()
         {
-            var drained = new List<ActivitySpan>(_completed);
-            _completed.Clear();
-            return drained;
+            lock (_gate)
+            {
+                var drained = new List<ActivitySpan>(_completed);
+                _completed.Clear();
+                return drained;
+            }
         }
 
         private void CloseSpan(DateTime endedUtc, string eventType)

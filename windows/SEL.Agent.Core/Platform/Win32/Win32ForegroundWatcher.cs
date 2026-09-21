@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Sel.Agent.Core.Tracking;
 
 namespace Sel.Agent.Core.Platform.Win32
@@ -36,9 +37,10 @@ namespace Sel.Agent.Core.Platform.Win32
     ///
     /// <para>
     /// <b>The hook needs a message pump.</b> <c>WINEVENT_OUTOFCONTEXT</c> delivers callbacks on
-    /// the thread that installed the hook, and only while that thread pumps messages. That is why
-    /// this is installed from the WPF UI thread and not from a background worker or the service:
-    /// in session 0 there is no desktop to watch and no pump to deliver on.
+    /// the thread that installed the hook, and only while that thread pumps messages. This class
+    /// therefore runs its own pump thread rather than trusting the caller to be on one — see
+    /// <see cref="Start"/> for what happened when it did trust the caller. It still has to be a
+    /// desktop process: in session 0 there is no desktop to watch.
     /// </para>
     ///
     /// <para>
@@ -74,6 +76,42 @@ namespace Sel.Agent.Core.Platform.Win32
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
+        /* ── The pump ────────────────────────────────────────────────────────────────────────
+         *
+         * WINEVENT_OUTOFCONTEXT delivers callbacks by posting to the message queue of the
+         * thread that installed the hook. No pump on that thread means no callbacks, ever —
+         * silently, because SetWinEventHook still returns a valid handle.
+         */
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeMessage
+        {
+            public IntPtr Hwnd;
+            public uint Message;
+            public IntPtr WParam;
+            public IntPtr LParam;
+            public uint Time;
+            public int PointX;
+            public int PointY;
+        }
+
+        private const uint WM_QUIT = 0x0012;
+
+        [DllImport("user32.dll")]
+        private static extern int GetMessage(out NativeMessage message, IntPtr hwnd, uint filterMin, uint filterMax);
+
+        [DllImport("user32.dll")]
+        private static extern bool TranslateMessage(ref NativeMessage message);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr DispatchMessage(ref NativeMessage message);
+
+        [DllImport("user32.dll")]
+        private static extern bool PostThreadMessage(uint threadId, uint message, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetWindowTextW(IntPtr hWnd, StringBuilder text, int count);
 
@@ -96,26 +134,103 @@ namespace Sel.Agent.Core.Platform.Win32
         private IntPtr _hook = IntPtr.Zero;
         private bool _disposed;
 
+        private Thread _pump;
+        private uint _pumpThreadId;
+        private readonly ManualResetEventSlim _ready = new ManualResetEventSlim(false);
+
         public event EventHandler<ForegroundSnapshot> ForegroundChanged;
 
+        /// <summary>
+        /// Install the hook on a thread that pumps messages, and keep that thread alive.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This used to install the hook on whatever thread happened to call it, relying on the
+        /// caller being the WPF UI thread. It was not: <c>AgentHost.OpenSessionAsync</c> awaits
+        /// the login with <c>ConfigureAwait(false)</c>, so <c>StartSession</c> — and this —
+        /// continued on a thread-pool thread. A pool thread has no message pump and is handed
+        /// straight back, so <c>WINEVENT_OUTOFCONTEXT</c> had nowhere to deliver and the
+        /// callback never fired once.
+        /// </para>
+        /// <para>
+        /// Nothing reported an error. <c>SetWinEventHook</c> returned a valid handle, and
+        /// tracking silently degraded to whatever <c>Capture()</c> sampled at each span
+        /// boundary — which is how a day of real work in Chrome and Word came to be recorded as
+        /// ten-minute blocks of whichever window happened to be in front at the sampling
+        /// instant, mostly the agent's own.
+        /// </para>
+        /// <para>
+        /// So the watcher now owns the requirement instead of documenting it. A dedicated
+        /// background thread installs the hook and runs a plain <c>GetMessage</c> loop, and no
+        /// caller has to know or care which thread it was invoked from.
+        /// </para>
+        /// </remarks>
         public void Start()
         {
-            if (_hook != IntPtr.Zero) return;
-            _callback = OnWinEvent;
-            _hook = SetWinEventHook(
-                EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
-                IntPtr.Zero, _callback, 0, 0,
-                // Skipping our own process stops the access gate and the tray menu appearing in
-                // somebody's application usage. The agent is not work.
-                WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+            if (_pump != null) return;
+
+            _ready.Reset();
+            _pump = new Thread(PumpLoop)
+            {
+                // Background, so a stuck pump can never keep the agent alive after everything
+                // else has shut down.
+                IsBackground = true,
+                Name = "SEL LIVE foreground watcher",
+            };
+            _pump.Start();
+
+            // Bounded: if the hook cannot be installed the agent must still run, just without
+            // per-application detail. Waiting forever here would hang sign-in.
+            _ready.Wait(TimeSpan.FromSeconds(5));
+        }
+
+        private void PumpLoop()
+        {
+            _pumpThreadId = GetCurrentThreadId();
+            try
+            {
+                _callback = OnWinEvent;
+                _hook = SetWinEventHook(
+                    EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+                    IntPtr.Zero, _callback, 0, 0,
+                    // Skipping our own process stops the access gate and the tray menu appearing
+                    // in somebody's application usage. The agent is not work.
+                    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+            }
+            finally
+            {
+                // Released even if the hook failed, so Start() does not block for five seconds
+                // on every sign-in when something is wrong.
+                _ready.Set();
+            }
+
+            NativeMessage message;
+            while (GetMessage(out message, IntPtr.Zero, 0, 0) > 0)
+            {
+                TranslateMessage(ref message);
+                DispatchMessage(ref message);
+            }
+
+            // On this thread, because a hook must be removed by the thread that installed it.
+            if (_hook != IntPtr.Zero)
+            {
+                UnhookWinEvent(_hook);
+                _hook = IntPtr.Zero;
+            }
+            _callback = null;
         }
 
         public void Stop()
         {
-            if (_hook == IntPtr.Zero) return;
-            UnhookWinEvent(_hook);
-            _hook = IntPtr.Zero;
-            _callback = null;
+            Thread pump = _pump;
+            if (pump == null) return;
+            _pump = null;
+
+            // WM_QUIT ends GetMessage, which lets the loop unhook and exit tidily. Aborting the
+            // thread instead would leave the hook installed against a dead callback, and the
+            // next foreground change would call into freed memory.
+            PostThreadMessage(_pumpThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+            pump.Join(TimeSpan.FromSeconds(2));
         }
 
         private void OnWinEvent(IntPtr hook, uint eventType, IntPtr hwnd,
@@ -137,11 +252,32 @@ namespace Sel.Agent.Core.Platform.Win32
             }
         }
 
+        /// <summary>
+        /// The foreground window right now, or null if it is one of ours.
+        /// </summary>
+        /// <remarks>
+        /// The own-process check mirrors <c>WINEVENT_SKIPOWNPROCESS</c> on the hook. Without it
+        /// the two disagreed, and the disagreement was visible in the reports: the hook refuses
+        /// to record the agent, but this is called at the start of every session — when the
+        /// sign-in window is, necessarily, the foreground — so every day opened with the agent
+        /// itself as the current application and stayed there until the next focus change.
+        /// "sel.agent.exe, 102 minutes" was the result.
+        ///
+        /// Null is the honest answer: no application of the user's is in front.
+        /// </remarks>
         public ForegroundSnapshot Capture()
         {
             IntPtr hwnd = GetForegroundWindow();
-            return hwnd == IntPtr.Zero ? null : Describe(hwnd);
+            if (hwnd == IntPtr.Zero) return null;
+
+            uint processId;
+            GetWindowThreadProcessId(hwnd, out processId);
+            if (processId == OwnProcessId) return null;
+
+            return Describe(hwnd);
         }
+
+        private static readonly uint OwnProcessId = (uint)Process.GetCurrentProcess().Id;
 
         private static ForegroundSnapshot Describe(IntPtr hwnd)
         {
