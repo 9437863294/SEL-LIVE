@@ -50,10 +50,24 @@ namespace Sel.Agent
         private AgentHost _host;
         private TrayController _tray;
         private AgentLog _log;
+        private IDisposable _exitListener;
 
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // The elevated helper launched by the tray's Exit. It signals the running agent and
+            // quits without starting anything — checked before the single-instance mutex,
+            // because it is not a second agent and must not be treated as one.
+            foreach (string argument in e.Args)
+            {
+                if (string.Equals(argument, ElevationGate.RequestExitArgument, StringComparison.OrdinalIgnoreCase))
+                {
+                    ElevationGate.SignalExitAndQuit();
+                    Shutdown();
+                    return;
+                }
+            }
 
             bool createdNew;
             _instanceMutex = new Mutex(true, InstanceMutexName, out createdNew);
@@ -115,6 +129,11 @@ namespace Sel.Agent
             _tray.SignOutRequested += OnSignOutRequested;
             _tray.SignInRequested += (sender, args) => ShowGate();
             _tray.Show();
+
+            // The other end of the elevated Exit: an approved helper sets this event and the
+            // agent shuts down cleanly rather than being killed.
+            _exitListener = ElevationGate.ListenForExitRequest(() =>
+                Dispatcher.BeginInvoke(new Action(async () => await StopAndQuitAsync())));
 
             // Fire and forget: the UI thread must not wait on the network. Exceptions are caught
             // inside StartAsync, which reports through the tray rather than throwing here.
@@ -245,7 +264,47 @@ namespace Sel.Agent
             ShowGate();
         }
 
+        /// <summary>
+        /// Exit from the tray, gated on administrator approval.
+        /// </summary>
+        /// <remarks>
+        /// The Exit item stays visible rather than being hidden when the user is not an
+        /// administrator. Hiding it would make the agent look like it cannot be stopped at all,
+        /// which is both untrue and the sort of thing that gets a monitoring tool a reputation
+        /// for being sneaky. Showing it and refusing is honest about who is in control.
+        /// </remarks>
         private async void OnExitRequested(object sender, EventArgs e)
+        {
+            ElevationGate.ExitApproval approval = ElevationGate.RequestExitApproval(_log.Write);
+
+            switch (approval)
+            {
+                case ElevationGate.ExitApproval.AlreadyElevated:
+                    await StopAndQuitAsync().ConfigureAwait(true);
+                    return;
+
+                case ElevationGate.ExitApproval.Approved:
+                    // The elevated helper is about to set the event; ListenForExitRequest picks
+                    // it up and calls StopAndQuitAsync. Nothing to do here — doing it here as
+                    // well would race the listener and close the session twice.
+                    return;
+
+                case ElevationGate.ExitApproval.Declined:
+                    _tray.ShowBalloon(
+                        "Still running",
+                        "Stopping the SEL LIVE agent needs an administrator. It is still recording.");
+                    return;
+
+                default:
+                    _tray.ShowBalloon(
+                        "Could not stop",
+                        "The administrator prompt could not be shown. Ask IT to stop the agent.");
+                    return;
+            }
+        }
+
+        /// <summary>Close the work session properly, then end the process.</summary>
+        private async Task StopAndQuitAsync()
         {
             await ShutdownCleanlyAsync(SessionEndReasons.AgentStopped).ConfigureAwait(true);
             Shutdown();
@@ -276,6 +335,7 @@ namespace Sel.Agent
 
         protected override void OnExit(ExitEventArgs e)
         {
+            if (_exitListener != null) _exitListener.Dispose();
             if (_tray != null) _tray.Dispose();
             if (_host != null) _host.Dispose();
             if (_instanceMutex != null)

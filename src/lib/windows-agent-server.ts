@@ -257,6 +257,14 @@ export async function authenticateDevice(request: Request): Promise<Authenticate
 
 export interface AgentUserIdentity {
   userId: string;
+  /**
+   * The Firebase Auth uid, which is not always the `users` document id in this database.
+   *
+   * Kept separately because the two are used for different things: `userId` addresses the
+   * application record, while anything handed back to Firebase — minting a custom token for the
+   * embedded ERP window, for instance — must use the uid Firebase itself issued.
+   */
+  firebaseUid: string;
   name: string;
   email: string | null;
   employeeId: string | null;
@@ -306,6 +314,7 @@ export async function resolveAgentUser(idToken: string): Promise<AgentUserIdenti
   const departmentId = typeof data.departmentId === 'string' ? data.departmentId : null;
   return {
     userId: snapshot.id,
+    firebaseUid: decoded.uid,
     name: String(data.name || data.email || 'User'),
     email: data.email ? String(data.email) : null,
     employeeId: data.employeeId ? String(data.employeeId) : null,

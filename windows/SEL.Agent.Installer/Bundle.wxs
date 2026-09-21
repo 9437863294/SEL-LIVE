@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!--
+    SEL LIVE Windows Agent — the single setup program.
+
+    ── What this is, and why it exists alongside the MSI ─────────────────────────────────────────
+
+    Package.wxs produces an MSI that installs the agent. It cannot install the agent's
+    prerequisites, because an MSI cannot chain another MSI: Windows Installer serialises
+    installations, so a package that tried to launch .NET Framework 4.8 from a custom action
+    would deadlock against itself. That is not a WiX limitation, it is the engine's.
+
+    So the MSI checks for .NET 4.8 and refuses with a readable message when it is missing. On
+    Windows 10 1903 and later that check always passes; on Windows 7 SP1 and 8.1 it frequently
+    does not, and those are exactly the machines where telling a site-office user to "download
+    .NET Framework 4.8 from Microsoft" is how a rollout stalls.
+
+    A Burn bundle is the documented answer. It is a real executable with its own engine that
+    installs prerequisites in order and then hands off to the MSI, and it is what every Microsoft
+    redistributable you have ever run actually is. The output is one file:
+
+        SEL.Agent-Setup-1.0.0.0.exe
+
+    Everything needed is inside it. Nothing else has to be copied to the PC.
+
+    ── One UAC prompt, not three ─────────────────────────────────────────────────────────────────
+
+    Burn runs its user interface unelevated and asks for elevation once, at the point where it
+    starts applying the chain. Every package after that — .NET, WebView2, the MSI — runs in that
+    single elevated session.
+
+    This is also what enforces "only an administrator can install this", and it does so far
+    better than a property check. An administrator sees a consent prompt. A standard user sees a
+    *credential* prompt, and can hand the keyboard to IT to type a password. Declining either one
+    aborts the install. Windows enforces it, we do not have to, and the standard user is not left
+    at a dead end — which is precisely what the `Privileged` launch condition removed from
+    Package.wxs used to do.
+
+    ── What is embedded, and what is not ─────────────────────────────────────────────────────────
+
+    .NET Framework 4.8 (121 MB) is embedded. It is mandatory: without it the agent does not start
+    at all, so a rollout to an offline site office has to carry it.
+
+    The Edge WebView2 runtime is embedded as its ~2 MB bootstrapper, which downloads the runtime
+    when it runs. The full offline installer is 188 MB and would more than double the setup, for
+    a component that is optional: WebView2 powers the ERP window *inside* the agent, and where it
+    is absent ErpBrowser detects that and opens SEL LIVE in the user's normal browser instead.
+    The feature is never silently dropped — the agent says which one it is using — so paying
+    188 MB on every PC to avoid a fallback that works is the wrong trade.
+
+    For genuinely air-gapped machines, build with -OfflineWebView2 and the full runtime is
+    embedded instead. See build.ps1.
+  -->
+
+  <?ifndef Version ?>
+  <?define Version = "1.0.0.0" ?>
+  <?endif?>
+
+  <!-- Set by build.ps1 to the WebView2 payload it staged: the bootstrapper, or the full
+       offline runtime when -OfflineWebView2 was used. -->
+  <?ifndef WebView2Payload ?>
+  <?define WebView2Payload = "redist\MicrosoftEdgeWebview2Setup.exe" ?>
+  <?endif?>
+
+  <?ifndef WebView2Arguments ?>
+  <?define WebView2Arguments = "/silent /install" ?>
+  <?endif?>
+
+  <?ifndef MsiPath ?>
+  <?define MsiPath = "obj\SEL.Agent.msi" ?>
+  <?endif?>
+
+  <Bundle Name="SEL LIVE Windows Agent"
+          Manufacturer="Siddhartha Engineering Limited"
+          Version="$(Version)"
+          UpgradeCode="3A9F6C21-D847-4B05-9E7A-B6134F8C2D95"
+          Compressed="yes"
+          AboutUrl="https://github.com/"
+          Tag="SEL LIVE Agent">
+
+    <!--
+      A different UpgradeCode from the MSI's, deliberately.
+
+      They are two distinct products to Windows: upgrading the bundle must not be mistaken for
+      upgrading the package it carries. Sharing the code makes the bundle try to major-upgrade
+      its own child and the chain fails in a way that is very hard to read in a log.
+    -->
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        Theme="rtfLicense"
+        LicenseFile="License.rtf"
+        SuppressOptionsUI="yes"
+        ShowVersion="yes" />
+      <!--
+        SuppressOptionsUI hides the "Options" button, which in the standard theme offers only an
+        install folder picker. The agent's location is not a choice worth offering: the MSI's
+        service registration, its ProgramData ACL and its auto-start entry all point at
+        Program Files, and a user who moves it gains nothing and can break the update check.
+      -->
+    </BootstrapperApplication>
+
+    <!-- ══ Detection ══════════════════════════════════════════════════════════════════════════
+
+         Read in the 32-bit registry view, because this bundle is x86. Both values are present
+         in that view on 64-bit Windows: the .NET Framework NDP key is written to both views,
+         and EdgeUpdate registers WebView2 under WOW6432Node. An x86 bundle therefore needs no
+         bitness juggling to see a runtime installed by a 64-bit installer.
+    -->
+
+    <util:RegistrySearch Id="NetFx48Release"
+                         Variable="NetFx48Release"
+                         Root="HKLM"
+                         Key="SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full"
+                         Value="Release"
+                         Result="value" />
+
+    <!-- WebView2 can be installed per-machine or per-user, and either satisfies the agent.
+         Checking only HKLM would reinstall it for somebody who already has a working per-user
+         copy, which on a locked-down PC is the copy they were allowed to have. -->
+    <util:RegistrySearch Id="WebView2Machine"
+                         Variable="WebView2Machine"
+                         Root="HKLM"
+                         Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+                         Value="pv"
+                         Result="value" />
+
+    <util:RegistrySearch Id="WebView2User"
+                         Variable="WebView2User"
+                         Root="HKCU"
+                         Key="Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+                         Value="pv"
+                         Result="value" />
+
+    <!-- ══ Configuration, passed straight through to the MSI ══════════════════════════════════
+
+         SEL.Agent-Setup.exe /quiet ^
+           APIBASEURL=https://sel.example.com ^
+           ENROLLMENTCODE=SEL-HO-2026
+
+         Identical spellings to the MSI properties, so one set of instructions covers both the
+         bundle and a bare msiexec deployment. Overridable is what makes them settable on the
+         command line at all; without it Burn ignores the assignment silently.
+    -->
+    <Variable Name="APIBASEURL"     Type="string" Value="" bal:Overridable="yes" />
+    <Variable Name="FIREBASEAPIKEY" Type="string" Value="" bal:Overridable="yes" />
+    <Variable Name="ENROLLMENTCODE" Type="string" Value="" bal:Overridable="yes" />
+    <Variable Name="DEVICENAME"     Type="string" Value="" bal:Overridable="yes" />
+
+    <!-- ══ Supported releases ═════════════════════════════════════════════════════════════════
+
+         Refused here rather than three packages later. The MSI carries the same conditions, but
+         a bundle that installs 121 MB of .NET before discovering the OS is unsupported has
+         wasted ten minutes of somebody's morning.
+
+         Burn version literals are vVersionNT-style: v6.1 is Windows 7, v6.2 Windows 8.0,
+         v6.3 Windows 8.1, v10.0 Windows 10 and 11.
+    -->
+    <bal:Condition
+      Condition="VersionNT &gt;= v6.1"
+      Message="The SEL LIVE Agent supports Windows 7 SP1, Windows 8.1, Windows 10 and Windows 11. This PC is running an older release of Windows." />
+
+    <bal:Condition
+      Condition="NOT (VersionNT = v6.1 AND ServicePackLevel &lt; 1)"
+      Message="Windows 7 needs Service Pack 1 before the SEL LIVE Agent can be installed. Install SP1 from Windows Update and run this setup again." />
+
+    <bal:Condition
+      Condition="VersionNT &lt;&gt; v6.2"
+      Message="Windows 8.0 cannot run .NET Framework 4.8, which the SEL LIVE Agent requires. Update this PC to Windows 8.1 — it is a free update from the Store — and run this setup again." />
+
+    <!-- ══ The chain ══════════════════════════════════════════════════════════════════════════ -->
+
+    <Chain>
+
+      <!--
+        .NET Framework 4.8.
+
+        Permanent, because it is a shared Windows component. Uninstalling the agent must not
+        remove the framework three other applications on the PC have started depending on since.
+
+        Protocol="netfx4" is not cosmetic: it is how Burn reads the framework installer's own
+        progress pipe, so the bar moves during the several minutes this takes on Windows 7
+        rather than sitting at zero and looking hung.
+
+        Vital, because there is no agent without it.
+      -->
+      <ExePackage Id="NetFx48"
+                  DisplayName="Microsoft .NET Framework 4.8"
+                  Description="Required by the SEL LIVE Agent"
+                  Permanent="yes"
+                  Vital="yes"
+                  Protocol="netfx4"
+                  DetectCondition="NetFx48Release &gt;= 528040"
+                  InstallArguments="/q /norestart /ChainingPackage &quot;SEL LIVE Agent&quot;">
+        <ExePackagePayload SourceFile="redist\NDP48-x86-x64-AllOS-ENU.exe" />
+
+        <!--
+          The framework installer asks for a restart far more often than it needs one, and on
+          Windows 7 it nearly always does. scheduleReboot lets the rest of the chain finish and
+          defers the prompt to the end, so the agent is installed and configured before the PC
+          goes down rather than after a reboot nobody performs until Friday.
+        -->
+        <ExitCode Value="3010" Behavior="scheduleReboot" />
+        <ExitCode Value="1641" Behavior="scheduleReboot" />
+      </ExePackage>
+
+      <!--
+        The Edge WebView2 runtime, for the ERP window inside the agent.
+
+        Vital="no" is the important attribute. This is the one package in the chain whose failure
+        must not fail the install: WebView2 has no Microsoft support on Windows 7 or 8.1, needs
+        network access when installed from the bootstrapper, and is blocked outright by some
+        managed-desktop policies. In every one of those cases ErpBrowser probes for it at
+        startup, does not find it, says so in the agent log and in the status panel, and opens
+        SEL LIVE in the user's default browser. The capability survives; only its delivery
+        changes. Refusing to install an attendance agent because an optional browser control is
+        unavailable would be the wrong failure.
+
+        InstallCondition skips it on Windows 7 and 8.1 rather than running an installer Microsoft
+        stopped supporting there in 2023, whose failure mode on those releases is less
+        predictable than not running it.
+      -->
+      <ExePackage Id="WebView2Runtime"
+                  DisplayName="Microsoft Edge WebView2 Runtime"
+                  Description="Lets SEL LIVE open inside the agent window (optional)"
+                  Permanent="yes"
+                  Vital="no"
+                  DetectCondition="WebView2Machine OR WebView2User"
+                  InstallCondition="VersionNT &gt;= v10.0"
+                  InstallArguments="$(WebView2Arguments)">
+        <ExePackagePayload SourceFile="$(WebView2Payload)" />
+      </ExePackage>
+
+      <!--
+        The agent.
+
+        Visible="no" (the default for MsiPackage) keeps the MSI out of Programs and Features, so
+        there is one uninstall entry — the bundle's — rather than two, one of which half-removes
+        the product and leaves the other behind.
+
+        The MSI's own WixUI_Minimal never appears. Burn always runs a chained MSI at the basic
+        UI level unless the package opts in, and it should not: the bundle has already shown a
+        licence and a progress bar, and two sets of UI for one install is how a setup program
+        comes to look amateur. (WiX 3 spelled this DisplayInternalUI="no" on this element;
+        WiX 4 removed the attribute and made silent the only behaviour.)
+      -->
+      <MsiPackage Id="SelAgentMsi"
+                  DisplayName="SEL LIVE Windows Agent"
+                  SourceFile="$(MsiPath)"
+                  Vital="yes"
+                  Compressed="yes">
+        <MsiProperty Name="APIBASEURL"     Value="[APIBASEURL]" />
+        <MsiProperty Name="FIREBASEAPIKEY" Value="[FIREBASEAPIKEY]" />
+        <MsiProperty Name="ENROLLMENTCODE" Value="[ENROLLMENTCODE]" />
+        <MsiProperty Name="DEVICENAME"     Value="[DEVICENAME]" />
+      </MsiPackage>
+
+    </Chain>
+  </Bundle>
+</Wix>

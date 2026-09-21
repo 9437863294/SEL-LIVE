@@ -21,7 +21,9 @@ A small agent runs on each office PC. While an employee is signed in to it, it r
 | Sign-in and sign-out times, per computer | The agent's own session, opened against the ERP |
 | ERP actions — what was opened, approved, updated | The existing `userLogs` trail, unchanged |
 
-It also shows desktop notifications from SEL LIVE, and clicking one opens the exact record.
+It also shows desktop notifications from SEL LIVE, and clicking one opens the exact record — in a
+SEL LIVE window inside the agent, already signed in as the person who signed in to the agent, or
+in their own browser where that window is not available (§7a).
 
 **What it does not do, and contains no code to do:** keystroke logging, password capture, clipboard
 reading, message or document contents, screenshots, screen recording, webcam, microphone, or
@@ -66,7 +68,7 @@ installing a service that cannot start. Two ways forward:
 
 ### Legacy-only limitations, in full
 
-These are the only two places behaviour differs, and neither is a feature being switched off.
+These are the only three places behaviour differs, and none is a feature being switched off.
 
 **Notifications on Windows 7 / 8.1.** No Action Center exists, so the agent draws its own window.
 It carries the same buttons, the same deep links and the same delivery receipts as a native toast,
@@ -77,6 +79,16 @@ next sign-in rather than queued by the OS.
 
 **Per-monitor DPI on Windows 7.** The gate and the popup are system-DPI aware only. On a mixed-DPI
 setup they render at the primary monitor's scale. Cosmetic.
+
+**The ERP window on Windows 7 / 8.1.** WebView2 is not part of Windows — it is an installable Edge
+component, and Microsoft ended support for it on these releases in 2023. So the installer does not
+offer it there, and SEL LIVE opens in the machine's default browser instead of in a window inside
+the agent. Single sign-on is what is lost: the employee signs in to the browser once, as they do
+today. Everything else — the deep links from notifications, the tray menu, the whole ERP — works
+identically. The agent states which mode it is in rather than leaving anyone to guess. §7a.
+
+The same fallback applies on Windows 10 and 11 where the WebView2 runtime is absent or blocked by
+policy, so this is a capability check at start-up rather than a version check.
 
 ---
 
@@ -126,6 +138,9 @@ useless on an unenrolled PC.
 | API routes | `src/app/api/windows-agent/*` |
 | Admin screens | `src/app/(protected)/windows-agent/*`, `src/components/windows-agent/*` |
 | Windows client | `windows/` — Core, WindowsLegacy, WindowsModern, app, service, tests, installer |
+| Embedded ERP window | `windows/SEL.Agent/ErpWindow.xaml{,.cs}`, `ErpBrowser.cs`, and `src/app/(public)/auth/agent/page.tsx` at the other end |
+| Admin-gated exit | `windows/SEL.Agent/ElevationGate.cs` |
+| Installer | `windows/SEL.Agent.Installer/Package.wxs` (the MSI), `Bundle.wxs` (the setup .exe), `build.ps1` (both) |
 | Tests | `tests/windows-agent-domain.test.mjs`, `windows/SEL.Agent.Tests` |
 
 ```
@@ -182,14 +197,31 @@ dotnet test windows/SEL.Agent.Tests # 68 agent tests, including the OS compatibi
 
 ```
 dotnet tool install --global wix --version 5.0.2
-wix extension add -g WixToolset.Util.wixext
-wix extension add -g WixToolset.UI.wixext
+wix extension add -g WixToolset.Util.wixext/5.0.2
+wix extension add -g WixToolset.UI.wixext/5.0.2
+wix extension add -g WixToolset.BootstrapperApplications.wixext/5.0.2
 
 pwsh windows/SEL.Agent.Installer/build.ps1 -Version 1.0.0.0
 ```
 
-It prints the MSI path and its **SHA-256**. Keep that: it is what you enter when publishing the
-version in SEL LIVE, and the agent refuses an update whose hash does not match.
+> Pin the extension versions. `wix extension add` without one resolves to the newest release,
+> which is currently 7.0.0; WiX 5 rejects it with a `WIX6101` warning and installs nothing, and
+> the build then fails much later with an unresolved-namespace error.
+
+The first build downloads the Microsoft redistributables into
+`windows/SEL.Agent.Installer/redist/` (about 123 MB) and caches them there. They are gitignored,
+and their SHA-256 is checked on every build — these files get embedded into something that runs
+as administrator on every PC in the estate, so a truncated download is worth catching here.
+
+The output is **one file**:
+
+```
+windows/SEL.Agent.Installer/bin/SEL.Agent-Setup-1.0.0.0.exe
+```
+
+Hand that to whoever is installing. Nothing else needs to be copied. The script prints its
+**SHA-256** — keep it, that is what you enter when publishing the version in SEL LIVE, and the
+agent refuses an update whose hash does not match.
 
 For a fleet, sign it:
 
@@ -197,38 +229,70 @@ For a fleet, sign it:
 pwsh windows/SEL.Agent.Installer/build.ps1 -Sign -CertificateThumbprint <thumbprint>
 ```
 
-An unsigned MSI is fine for a pilot. It is not fine for a rollout: the signature is what stops a
-compromised update server from running arbitrary code as SYSTEM on every PC.
+An unsigned installer is fine for a pilot. It is not fine for a rollout: the signature is what
+stops a compromised update server from running arbitrary code as SYSTEM on every PC, and an
+unsigned `.exe` also collects a SmartScreen warning on every machine it touches.
 
-### Install (on each PC, elevated)
+Other switches:
 
-Two paths, and both work.
+| Switch | Effect |
+|---|---|
+| `-KeepMsi` | Also writes the bare MSI to `bin\`, for Group Policy software installation or Intune's Win32 wrapper — neither can consume a bundle's switches |
+| `-SkipBundle` | MSI only. The .NET prerequisite is then your problem |
+| `-OfflineWebView2` | Embeds the full 188 MB WebView2 runtime instead of its 2 MB downloader. Only for sites with no internet at all |
+| `-NoDownload` | Fail rather than fetch a missing redistributable, for build servers with no egress |
+
+### What is in the package, and why
+
+| Component | Size | Installed when | Vital |
+|---|---|---|---|
+| .NET Framework 4.8 | 121 MB | `NDP\v4\Full\Release < 528040` | Yes — no agent without it |
+| Edge WebView2 (downloader) | 2 MB | Not already present, and Windows 10 or later | **No** |
+| The agent MSI | 3 MB | Always | Yes |
+
+WebView2 is deliberately non-vital. It powers the ERP window *inside* the agent (§7a), it has no
+Microsoft support on Windows 7 or 8.1, and some managed desktops block it outright. Where it is
+missing the agent says so and opens SEL LIVE in the user's normal browser instead. Failing an
+attendance rollout because an optional browser control would not install is the wrong failure.
+
+### Install (on each PC)
+
+**Double-click.** Windows asks for administrator approval once — a consent prompt for an
+administrator, a credential prompt for a standard user, who can then hand the keyboard to IT.
+Declining either aborts the install. Everything after that point, including the prerequisites,
+runs inside that one elevated session.
+
+All configuration is optional. Installed with none, the agent opens a setup window asking for one
+thing: the address of your SEL LIVE installation. It fetches the Firebase configuration from that
+server itself, so nobody transcribes an API key onto each machine.
 
 **Unattended — the one to use for a rollout.** GPO, SCCM, or a script:
 
 ```
-msiexec /i SEL.Agent-1.0.0.0.msi /qn ^
+SEL.Agent-Setup-1.0.0.0.exe /quiet ^
   APIBASEURL=https://sel.example.com ^
-  FIREBASEAPIKEY=<the NEXT_PUBLIC_FIREBASE_API_KEY value> ^
   ENROLLMENTCODE=SEL-HO-2026
 ```
 
-The agent starts configured and silent. Neither value is a secret — the API key is the same public
-value the web app already ships to every browser, and it authorises nothing on its own.
+```
+SEL.Agent-Setup-1.0.0.0.exe /uninstall /quiet
+SEL.Agent-Setup-1.0.0.0.exe /log setup.log        (when it goes wrong)
+```
 
-**Double-click — for a pilot PC.** All three properties are optional. The install completes, and
-the agent opens a setup window asking for one thing: the address of your SEL LIVE installation. It
-fetches the Firebase configuration from that server itself, so nobody has to transcribe the API
-key onto each machine.
+`FIREBASEAPIKEY` may also be passed but rarely should be: it is the same public value the web app
+already ships to every browser, it authorises nothing on its own, and demanding it per machine
+only ever added a typo that surfaced later as an opaque Google error.
 
-The installer refuses to proceed if .NET Framework 4.8 is missing, the OS is unsupported, or it is
-not running elevated. It does **not** refuse for missing configuration — an installer that can
-only run from a command line is a script with a `.msi` extension.
+The installer refuses before downloading anything if the OS is unsupported — Windows 8.0, or
+Windows 7 without SP1 — with a message saying what to do about it.
 
-> If the MSI appears to do nothing when double-clicked, the usual cause is that the licence file
-> baked into it is not valid RTF — `WixUI_Minimal` shows the licence page first and fails silently
-> if it cannot render. Check with:
-> `(Get-Content windows/SEL.Agent.Installer/License.rtf -Raw).StartsWith('{\rtf1')`
+> **Why "only an administrator can install this" is not a property check.** An earlier version
+> carried `Launch Condition="Privileged"` in the MSI. That condition is evaluated in the UI
+> sequence, *before* Windows Installer elevates anything, so a standard user saw a dead-end
+> message box and was never offered the chance to enter credentials. It has been removed. The
+> package is `Scope="perMachine"` and the bundle registers per-machine, so Windows requests
+> elevation itself — which is both stricter than a property we wrote and considerably more
+> helpful to the person standing at the PC.
 
 ### Check a PC before trusting it
 
@@ -345,7 +409,55 @@ Other recovery paths, in increasing order of severity:
 | One PC needs the gate off now | Stop the service, then end `SEL.Agent.exe` from Task Manager |
 | Credential broken after re-imaging | `SEL.Agent.Service.exe --reset-identity`, then restart the service |
 | PC must stop reporting entirely | Block the device in SEL LIVE — the agent stops within one heartbeat, and Windows is unaffected |
-| Remove the agent | `msiexec /x {7E2D9A34-4C6B-4E3B-9A1D-2C7F8B5E6D41} /qn` — removes the service, the binaries, the credential, the queue and the logs |
+| Remove the agent | `SEL.Agent-Setup-<version>.exe /uninstall /quiet`, or Programs and Features → "SEL LIVE Windows Agent" — removes the service, the binaries, the credential, the queue and the logs. .NET and WebView2 are left alone; they are shared Windows components and other software depends on them |
+
+There is one entry in Programs and Features, not three. The MSI installs with
+`ARPSYSTEMCOMPONENT`, so only the bundle is listed — removing it removes everything.
+
+---
+
+## 7a. The ERP inside the agent
+
+Signing in to the agent signs you in to SEL LIVE. Opening a notification, or "Open SEL LIVE" from
+the tray, brings up the ERP in a window that belongs to the agent, already authenticated as the
+person at the keyboard. There is a nav strip with back, forward, reload, home — and **Open in
+browser**, which hands the current page to Chrome or Edge.
+
+That last button is what makes the window safe to ship. Anything it renders badly, anything that
+needs a password manager, anything that wants to print: one click and it is in the real browser.
+Without it, an employee hitting a limitation has nowhere to go and the window becomes an obstacle.
+
+**Where WebView2 is unavailable** — Windows 7 and 8.1, an unmanaged desktop that never installed
+it, a policy that blocks it — the agent detects that at start-up, writes it to the log, says
+"Opens in your default browser" in its status panel, and every ERP link opens externally instead.
+The capability is never silently dropped; only its delivery changes.
+
+**How the single sign-on works, and what it deliberately avoids.** The embedded browser is its own
+profile under `%LOCALAPPDATA%`, so it starts with no session and two people sharing a PC never
+share one. The agent asks the server for a short-lived Firebase custom token
+(`POST /api/windows-agent/erp-session`, which requires both the device credential and a valid user
+token, and mints the token for the uid in *that* token — never for anything in the request body).
+It injects it with `AddScriptToExecuteOnDocumentCreatedAsync`, which runs before the document
+exists, and `/auth/agent` exchanges it for a real session.
+
+It is not in the URL. A custom token is a bearer credential for an hour; in a query string it
+would land in browser history, in the `Referer` of the first outbound request, and in the access
+log of everything in between.
+
+## 7b. Closing the agent
+
+The tray menu has **Exit**, and choosing it asks for administrator approval. An administrator
+consents; anyone else gets a credential prompt and can fetch IT. Cancelling leaves the agent
+running, and the attempt is recorded in the agent log either way.
+
+This is Windows' own elevation prompt, not a password box the agent drew — which matters, because
+a dialog an application invents can be answered by anything that can send it keystrokes. It is the
+same reasoning as §7: the agent asks Windows to enforce things Windows is good at enforcing, and
+does not pretend to be a security boundary it is not.
+
+The agent is still an ordinary user-mode process, so Task Manager can end it. That is stated in
+§7 and has not changed. What Exit adds is that the obvious, discoverable way to close it needs
+somebody with administrator rights, so it does not happen by accident on the way out at 5 p.m.
 
 ---
 
@@ -429,6 +541,10 @@ office work last March" stays answerable indefinitely, while "which window was o
 | A report is empty and the console says "permission denied" | The rules have not been adopted into the console ruleset. See §4.2. |
 | Hours look too low | Check whether the day contains locked or idle time — the buckets always sum to the session. Idle inside an application is idle, not use. |
 | A logout time is marked "est." | The session ended without a sign-out; the time is the last heartbeat, not an observation. Usually a power cut. |
+| SEL LIVE opens in the browser, not in the agent window | The WebView2 runtime is missing or blocked. Expected on Windows 7 and 8.1; elsewhere, install it or re-run the setup. Agent status names the mode in use. |
+| The ERP window opens on the login page | The custom token was refused. The device may have been blocked, or the PC's clock is wrong — a token is rejected if the machine's time is far from the server's. The window still works; sign in manually. |
+| Setup .exe appears to do nothing when double-clicked | The licence file baked into it is not valid RTF, and the licence page is the first thing shown. Check with `(Get-Content windows/SEL.Agent.Installer/License.rtf -Raw).StartsWith('{\rtf1')`. |
+| Setup asks for a password and the user has none | Intended. Only an administrator can install it. §5. |
 
 Agent log: **Agent status → Activity log** in the tray (always in memory). File logging is off by
 default because the log names the applications somebody used; enable `verboseLogging` in
@@ -452,5 +568,9 @@ Stated so nobody discovers them during a rollout.
 - **No reporting line is modelled** in this database, so `View Team` resolves to the viewer's own
   department members.
 - **Auto-update downloads and verifies but does not self-install.** The version check, hash and
-  signature verification are implemented; running the MSI unattended is left to your existing
-  software-deployment tooling, which is better at it and already has the rollback story.
+  signature verification are implemented; running the installer unattended is left to your
+  existing software-deployment tooling, which is better at it and already has the rollback story.
+- **The setup .exe needs internet for WebView2, though not for .NET.** The framework is embedded
+  in full; WebView2 ships as its 2 MB downloader, because the offline runtime is 188 MB and the
+  feature it enables has a working fallback. An air-gapped site either builds with
+  `-OfflineWebView2` or accepts that SEL LIVE opens in the browser there. §5.

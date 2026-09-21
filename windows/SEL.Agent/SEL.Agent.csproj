@@ -25,6 +25,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      The embedded ERP window. WebView2 is not part of Windows — it is a separately installed
+      runtime — so this reference only makes the API callable. ErpBrowser probes at startup and
+      falls back to the default browser when the runtime is absent, which is why nothing here
+      is conditional on the Windows version.
+    -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SEL.Agent.Core\SEL.Agent.Core.csproj" />
     <ProjectReference Include="..\SEL.Agent.WindowsLegacy\SEL.Agent.WindowsLegacy.csproj" />
     <ProjectReference Include="..\SEL.Agent.WindowsModern\SEL.Agent.WindowsModern.csproj" />

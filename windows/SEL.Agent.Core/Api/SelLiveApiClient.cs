@@ -156,6 +156,19 @@ namespace Sel.Agent.Core.Api
         }
 
         /// <summary>
+        /// A Firebase custom token so the agent's embedded ERP window opens already signed in.
+        /// </summary>
+        /// <remarks>
+        /// The token is for the caller's own user and nobody else's — the server takes the uid
+        /// from the verified ID token, never from anything this client sends.
+        /// </remarks>
+        public Task<ErpSessionResponse> CreateErpSessionAsync(string idToken, CancellationToken cancellation)
+        {
+            return SendAsync<ErpSessionResponse>(HttpMethod.Post, "/api/windows-agent/erp-session",
+                new { idToken }, true, null, cancellation);
+        }
+
+        /// <summary>
         /// Turn an employee ID into the email address Firebase knows the person by.
         /// </summary>
         /// <remarks>
@@ -314,6 +327,15 @@ namespace Sel.Agent.Core.Api
         [JsonProperty("status")] public string Status { get; set; }
         [JsonProperty("departmentName")] public string DepartmentName { get; set; }
         [JsonProperty("assignedLocation")] public string AssignedLocation { get; set; }
+    }
+
+    /// <summary>The embedded ERP window's single-sign-on token.</summary>
+    public sealed class ErpSessionResponse
+    {
+        [JsonProperty("customToken")] public string CustomToken { get; set; }
+        [JsonProperty("userId")] public string UserId { get; set; }
+        [JsonProperty("userName")] public string UserName { get; set; }
+        [JsonProperty("email")] public string Email { get; set; }
     }
 
     /// <summary>The employee-ID lookup's answer. <c>Email</c> is null when nothing matched.</summary>

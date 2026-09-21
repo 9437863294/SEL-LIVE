@@ -68,8 +68,24 @@
     <Launch Condition="Installed OR (VersionNT &gt; 601 OR ServicePackLevel &gt;= 1)"
             Message="Windows 7 needs Service Pack 1 before the SEL LIVE Agent can be installed." />
 
-    <Launch Condition="Privileged"
-            Message="The SEL LIVE Agent installs a Windows service and must be run as an administrator." />
+    <!--
+      There is deliberately NO `Launch Condition="Privileged"` here, and removing it is what
+      makes "only an administrator can install this" actually work.
+
+      The condition looks like the way to require admin. It is not. `Privileged` is evaluated by
+      the LaunchConditions action in the *UI* sequence, which runs before Windows Installer
+      elevates anything — so for a standard user it is 0, the condition fails, and they get a
+      dead-end message box. They are never offered the chance to enter administrator
+      credentials, and the install simply cannot proceed on the account that would normally ask
+      somebody to type a password.
+
+      Without it, the documented flow happens instead: the package is Scope="perMachine", so
+      Windows Installer requests elevation at the InstallExecuteSequence boundary. An
+      administrator sees a UAC consent prompt; a standard user sees a credential prompt and can
+      hand the keyboard to IT. Either way the install is refused unless somebody with
+      administrator rights approves it — enforced by Windows, which is both stricter and more
+      helpful than a property check we wrote ourselves.
+    -->
 
     <!-- ══ Configuration, supplied on the command line ════════════════════════════════════════
          msiexec /i SEL.Agent.msi /qn ^

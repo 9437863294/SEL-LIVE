@@ -52,6 +52,13 @@ firestore-debug.log
 windows/**/bin/
 windows/**/obj/
 
+# Microsoft's redistributables, cached by build.ps1 so it fetches them once rather than on every
+# build. 121 MB of .NET Framework 4.8 plus the WebView2 installer — none of it ours, all of it
+# re-downloadable from a fwlink, and every byte of it permanent in git history if committed
+# even once. The build script verifies their SHA-256 against pinned values, which is the part
+# that actually matters.
+windows/SEL.Agent.Installer/redist/
+
 # Written by the installer or by hand on a developer machine. Contains the ERP address, the
 # Firebase Web API key and — until it is redeemed — an enrolment code. The first two are public
 # by design; the third is not, which is reason enough to keep the whole file out.

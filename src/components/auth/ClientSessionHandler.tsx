@@ -12,7 +12,14 @@ const AUTH_ONLY_ROUTES = ['/login', '/driver-login', '/print-auth'];
 // /auth/action is intentionally NOT in AUTH_ONLY_ROUTES — a logged-in user
 // who lands there (e.g. mid-reset Firebase fires an auth event) must not be
 // bounced away before confirmPasswordReset resolves.
-const PUBLIC_ROUTES = [...AUTH_ONLY_ROUTES, '/auth/action'];
+//
+// /auth/agent is the Windows Agent's sign-in landing page and belongs here for the same
+// reason. It arrives with no session by definition — that is the point of it — and needs a
+// moment to exchange its custom token. Being in the app's (public) route group does not make
+// it public: that folder only groups files, while this guard runs on every page and knows
+// only the list above. Omitted from AUTH_ONLY_ROUTES too, because the moment the exchange
+// succeeds the user *is* logged in and a redirect from here would race the page's own.
+const PUBLIC_ROUTES = [...AUTH_ONLY_ROUTES, '/auth/action', '/auth/agent'];
 
 const DRIVER_APP_DEFAULT_REDIRECT = '/driver-management';
 const WEB_DEFAULT_REDIRECT = '/';

@@ -57,6 +57,7 @@ namespace Sel.Agent
         private readonly Win32DeepLinkLauncher _deepLinks;
         private readonly Win32MachineFactsProvider _facts;
         private readonly AgentCoordinator _coordinator;
+        private readonly ErpBrowser _erpBrowser;
 
         private readonly object _sessionGate = new object();
         private FirebaseSession _session;
@@ -100,7 +101,10 @@ namespace Sel.Agent
             _coordinator.StatusChanged += (s, e) => RaiseStatusChanged();
 
             _log.Write("Agent " + AgentVersion.Current + " starting on " + OsCompatibility.Current.Describe());
+            _erpBrowser = new ErpBrowser(this, _log.Write);
+
             _log.Write("Notification surface: " + _notifications.DescribeSelection());
+            _log.Write("ERP opens: " + _erpBrowser.Describe());
         }
 
         public AgentCoordinator Coordinator { get { return _coordinator; } }
@@ -264,6 +268,9 @@ namespace Sel.Agent
         {
             await _coordinator.StopSessionAsync(endReason ?? SessionEndReasons.UserSignout).ConfigureAwait(false);
             _notifications.ClearAll();
+            // The embedded window holds a signed-in ERP session; leaving it open after sign-out
+            // would leave the next person at this PC looking at the last one's dashboard.
+            _erpBrowser.Close();
             lock (_sessionGate) { _session = null; }
             CurrentLogin = null;
             RaiseStatusChanged();
@@ -329,10 +336,61 @@ namespace Sel.Agent
             }
         }
 
-        /// <summary>Open a path in the ERP. Validated against the configured origin first.</summary>
+        /// <summary>
+        /// Open a path in the ERP — embedded window where available, browser otherwise.
+        /// </summary>
+        /// <remarks>
+        /// Every caller goes through here: the tray, the morning dashboard's quick links, and a
+        /// clicked notification. None of them decides which browser to use, so the choice stays
+        /// in one place and a Windows 7 machine behaves correctly without any of them knowing.
+        /// </remarks>
         public void OpenErp(string path)
         {
+            if (_erpBrowser != null) _erpBrowser.Open(path);
+            else _deepLinks.Open(path);
+        }
+
+        /// <summary>Open a path in the user's own browser, bypassing the embedded window.</summary>
+        public void OpenErpExternally(string path)
+        {
             _deepLinks.Open(path);
+        }
+
+        /// <summary>How the ERP opens on this machine, for the status panel.</summary>
+        public string DescribeErpBrowser()
+        {
+            return _erpBrowser == null ? "Opens in your default browser" : _erpBrowser.Describe();
+        }
+
+        /// <summary>
+        /// A short-lived Firebase custom token so the embedded window opens already signed in.
+        /// </summary>
+        /// <remarks>
+        /// Returns null rather than throwing when it cannot be obtained. The embedded window
+        /// then shows the ERP's own login page, which is a worse experience but a working one —
+        /// failing to open the ERP because single sign-on was unavailable would be the wrong
+        /// trade entirely.
+        /// </remarks>
+        public async Task<string> CreateErpSessionTokenAsync()
+        {
+            try
+            {
+                string idToken = GetIdTokenBlocking();
+                if (string.IsNullOrEmpty(idToken)) return null;
+
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
+                {
+                    ErpSessionResponse response = await _api
+                        .CreateErpSessionAsync(idToken, timeout.Token)
+                        .ConfigureAwait(false);
+                    return response == null ? null : response.CustomToken;
+                }
+            }
+            catch (Exception error)
+            {
+                _log.Write("Could not obtain an ERP session token: " + error.Message);
+                return null;
+            }
         }
 
         /* ── Notifications ───────────────────────────────────────────────────────────────── */
@@ -453,6 +511,7 @@ namespace Sel.Agent
             if (_disposed) return;
             _disposed = true;
             _notifications.Outcome -= OnNotificationOutcome;
+            _erpBrowser.Dispose();
             _coordinator.Dispose();
             _notifications.Dispose();
             _queue.Dispose();
