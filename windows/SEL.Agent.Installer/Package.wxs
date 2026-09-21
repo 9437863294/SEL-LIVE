@@ -131,7 +131,27 @@
       surfaces later as an opaque Google error.
     -->
 
+    <!-- ══ Identity ═══════════════════════════════════════════════════════════════════════════ -->
+
+    <!--
+      The product icon: shortcuts, and the entry in Programs and Features.
+      Taken from the agent's source tree rather than its build output, because .ico files are
+      not copied to bin and an installer should not depend on one having been.
+    -->
+    <Icon Id="AgentIcon" SourceFile="..\SEL.Agent\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AgentIcon" />
+
+    <!--
+      Whether to put a shortcut on the desktop. 1 by default, because the agent is the way into
+      SEL LIVE on these machines and somebody who has just installed it should not have to go
+      looking. Suppressed with DESKTOPSHORTCUT=0, and offered as a checkbox by the setup
+      program so it is a choice rather than an imposition.
+    -->
+    <Property Id="DESKTOPSHORTCUT" Secure="yes" Value="1" />
+
     <!-- ══ Layout ═════════════════════════════════════════════════════════════════════════════ -->
+
+    <StandardDirectory Id="DesktopFolder" />
 
     <StandardDirectory Id="ProgramFilesFolder">
       <Directory Id="ManufacturerFolder" Name="SEL LIVE">
@@ -157,6 +177,7 @@
       <ComponentRef Id="AgentService" />
       <ComponentRef Id="AgentAutoStart" />
       <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
       <ComponentRef Id="AgentDataFolder" />
       <ComponentRef Id="Tls12Enablement" />
     </Feature>
@@ -258,13 +279,44 @@
                 Name="SEL LIVE Agent"
                 Description="SEL LIVE work activity and notification agent"
                 Target="[INSTALLFOLDER]SEL.Agent.exe"
-                WorkingDirectory="INSTALLFOLDER">
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AgentIcon">
         <ShortcutProperty Key="System.AppUserModel.ID" Value="SiddharthaEngineering.SelLive.Agent" />
       </Shortcut>
       <RemoveFolder Id="RemoveShortcutFolder" Directory="ShortcutFolder" On="uninstall" />
       <RegistryValue Root="HKLM"
-                     Key="SOFTWARE\Shyama Electrical\SEL LIVE Agent"
+                     Key="SOFTWARE\Siddhartha Engineering\SEL LIVE Agent"
                      Name="ShortcutInstalled"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <!--
+      The desktop shortcut, when it was asked for.
+      Its own component so the condition governs it alone: putting the condition on the Start
+      Menu component would take the toast AppUserModelID registration with it, and on Windows
+      10/11 that is what makes native notifications work at all.
+    -->
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="A1F7D63B-24E8-4C50-9B71-6E3A8D2C5F94"
+               Condition="DESKTOPSHORTCUT AND DESKTOPSHORTCUT &lt;&gt; &quot;0&quot;">
+      <Shortcut Id="AgentDesktopShortcut"
+                Name="SEL LIVE Agent"
+                Description="SEL LIVE work activity and notification agent"
+                Target="[INSTALLFOLDER]SEL.Agent.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AgentIcon">
+        <ShortcutProperty Key="System.AppUserModel.ID" Value="SiddharthaEngineering.SelLive.Agent" />
+      </Shortcut>
+      <!--
+        Per-machine, so the shortcut appears for everybody who signs in to a shared PC — which
+        is the same reasoning as the Start Menu entry. HKLM rather than HKCU for the KeyPath for
+        the same reason: a per-user key would make the component "not installed" for the second
+        user and Windows Installer would repair it on every launch.
+      -->
+      <RegistryValue Root="HKLM"
+                     Key="SOFTWARE\Siddhartha Engineering\SEL LIVE Agent"
+                     Name="DesktopShortcutInstalled"
                      Type="integer"
                      Value="1"
                      KeyPath="yes" />

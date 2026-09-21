@@ -16,7 +16,22 @@
     <RootNamespace>Sel.Agent</RootNamespace>
     <AssemblyName>SEL.Agent</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!--
+      Generated from public/logo.png by scratchpad tooling, then committed — the build must not
+      depend on an image somewhere else in the repository still being croppable the same way.
+
+      Sizes 16-64 are classic DIB entries and 128/256 are PNG-compressed. The shell reads
+      either, but System.Drawing.Icon only understands DIB, and it is System.Drawing that backs
+      NotifyIcon. An all-PNG icon throws "Requested range extends past the end of the array" the
+      moment managed code loads it.
+    -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Also as a resource, so the windows can reference it rather than only the .exe carrying it. -->
+    <Resource Include="app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- AgentHost passes SelLiveApiClient.Http to FirebaseAuthClient so the two share a

@@ -298,6 +298,43 @@ namespace Sel.Agent
         /// because <c>Icon.FromHandle</c> does not own it, and leaking one GDI handle every
         /// fifteen seconds exhausts the desktop heap in about a day.
         /// </remarks>
+        /// <summary>
+        /// The application icon, extracted once from our own executable.
+        /// </summary>
+        /// <remarks>
+        /// Null when it cannot be read, which is handled rather than thrown: an agent that
+        /// refused to start because it could not draw its own tray icon would be a poor trade.
+        /// </remarks>
+        private static readonly Bitmap BrandMark = LoadBrandMark();
+
+        private static Bitmap LoadBrandMark()
+        {
+            try
+            {
+                string executable = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+                using (Icon extracted = Icon.ExtractAssociatedIcon(executable))
+                {
+                    return extracted == null ? null : extracted.ToBitmap();
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// The tray icon: the company mark, with a status dot in the corner.
+        /// </summary>
+        /// <remarks>
+        /// This used to be the status dot alone, filling the whole 16 pixels. It read clearly
+        /// but said nothing about which application it belonged to — somebody with a dozen tray
+        /// icons had no way to find SEL LIVE except by hovering over each in turn.
+        ///
+        /// The dot is kept because it carries real information — signed out, working, idle,
+        /// offline — and moving it to a corner badge loses none of that while making the icon
+        /// identifiable. Where the mark cannot be loaded this falls back to the original dot.
+        /// </remarks>
         private static Icon BuildIcon(Color colour)
         {
             using (var bitmap = new Bitmap(16, 16))
@@ -305,14 +342,34 @@ namespace Sel.Agent
                 using (Graphics graphics = Graphics.FromImage(bitmap))
                 {
                     graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                     graphics.Clear(Color.Transparent);
-                    using (var brush = new SolidBrush(colour))
+
+                    if (BrandMark != null)
                     {
-                        graphics.FillEllipse(brush, 2, 2, 12, 12);
+                        // The mark is a wide wordmark, so it occupies the upper band and leaves
+                        // the lower-right corner free for the badge rather than being centred.
+                        graphics.DrawImage(BrandMark, new Rectangle(0, 2, 16, 8));
+
+                        using (var brush = new SolidBrush(colour))
+                        {
+                            graphics.FillEllipse(brush, 8, 8, 8, 8);
+                        }
+                        using (var pen = new Pen(Color.FromArgb(200, 255, 255, 255)))
+                        {
+                            graphics.DrawEllipse(pen, 8, 8, 8, 8);
+                        }
                     }
-                    using (var pen = new Pen(Color.FromArgb(120, 15, 23, 42)))
+                    else
                     {
-                        graphics.DrawEllipse(pen, 2, 2, 12, 12);
+                        using (var brush = new SolidBrush(colour))
+                        {
+                            graphics.FillEllipse(brush, 2, 2, 12, 12);
+                        }
+                        using (var pen = new Pen(Color.FromArgb(120, 15, 23, 42)))
+                        {
+                            graphics.DrawEllipse(pen, 2, 2, 12, 12);
+                        }
                     }
                 }
 

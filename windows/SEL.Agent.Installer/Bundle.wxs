@@ -78,7 +78,8 @@
           Version="$(Version)"
           UpgradeCode="3A9F6C21-D847-4B05-9E7A-B6134F8C2D95"
           Compressed="yes"
-          AboutUrl="https://github.com/"
+          AboutUrl="https://seltech.store"
+          IconSourceFile="..\SEL.Agent\app.ico"
           Tag="SEL LIVE Agent">
 
     <!--
@@ -92,9 +93,21 @@
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication
         Theme="rtfLicense"
+        ThemeFile="theme.xml"
+        LocalizationFile="theme.wxl"
         LicenseFile="License.rtf"
         SuppressOptionsUI="yes"
         ShowVersion="yes" />
+      <!--
+        theme.xml is the stock rtfLicense theme with one checkbox added, taken from the built
+        bundle rather than written from scratch so it stays byte-for-byte what WiX 5 ships apart
+        from that line. A Checkbox binds to the Burn variable of its own name, which is how the
+        desktop-shortcut choice reaches the MSI — the standard bootstrapper has no other way to
+        put a question on screen.
+
+        theme.wxl comes with it because the theme references localised strings by id; supplying
+        one without the other leaves the buttons blank.
+      -->
       <!--
         SuppressOptionsUI hides the "Options" button, which in the standard theme offers only an
         install folder picker. The agent's location is not a choice worth offering: the MSI's
@@ -151,6 +164,13 @@
     <Variable Name="FIREBASEAPIKEY" Type="string" Value="" bal:Overridable="yes" />
     <Variable Name="ENROLLMENTCODE" Type="string" Value="" bal:Overridable="yes" />
     <Variable Name="DEVICENAME"     Type="string" Value="" bal:Overridable="yes" />
+
+    <!--
+      The desktop shortcut, offered as a checkbox on the setup program's first page and passed
+      through to the MSI. A numeric variable rather than a string because the theme's checkbox
+      writes 0 or 1, and the MSI's component condition compares it as text either way.
+    -->
+    <Variable Name="DESKTOPSHORTCUT" Type="numeric" Value="1" bal:Overridable="yes" />
 
     <!-- ══ Supported releases ═════════════════════════════════════════════════════════════════
 
@@ -258,6 +278,7 @@
         <MsiProperty Name="FIREBASEAPIKEY" Value="[FIREBASEAPIKEY]" />
         <MsiProperty Name="ENROLLMENTCODE" Value="[ENROLLMENTCODE]" />
         <MsiProperty Name="DEVICENAME"     Value="[DEVICENAME]" />
+        <MsiProperty Name="DESKTOPSHORTCUT" Value="[DESKTOPSHORTCUT]" />
       </MsiPackage>
 
     </Chain>
