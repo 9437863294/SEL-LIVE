@@ -1,5 +1,6 @@
 import { getFirebaseAdminAuth } from '@/lib/firebase-admin';
 import {
+  AgentRequestError,
   agentErrorResponse,
   authenticateDevice,
   resolveAgentUser,
@@ -50,11 +51,45 @@ export async function POST(request: Request) {
 
     // The uid comes from the verified token, not from the request. Worth being explicit about:
     // this is the single line that decides whose session is being handed out.
-    const customToken = await getFirebaseAdminAuth().createCustomToken(user.firebaseUid, {
-      // Surfaced in the web session's token claims so the ERP can tell an agent-originated
-      // session from a browser one — useful for the activity trail, and it costs nothing here.
-      selAgentDevice: authenticated.device.id,
-    });
+    //
+    // Wrapped, because this is the only place in the entire application that asks the Admin SDK
+    // to *sign* something, and signing is the one server capability that can be absent while
+    // everything else works. Firestore reads, Firestore writes and verifyIdToken all succeed
+    // with an unsigned credential; only minting a token needs a private key, or the IAM
+    // signBlob permission when running on application-default credentials. A deployment missing
+    // either looks completely healthy until somebody opens the ERP window, and then reports
+    // "Something went wrong. Please try again." — which points nowhere.
+    let customToken: string;
+    try {
+      customToken = await getFirebaseAdminAuth().createCustomToken(user.firebaseUid, {
+        // Surfaced in the web session's token claims so the ERP can tell an agent-originated
+        // session from a browser one — useful for the activity trail, and costs nothing here.
+        selAgentDevice: authenticated.device.id,
+      });
+    } catch (signingError) {
+      const code =
+        signingError && typeof signingError === 'object' && 'code' in signingError
+          ? String((signingError as { code: unknown }).code)
+          : 'unknown';
+      const detail = signingError instanceof Error ? signingError.message : String(signingError);
+
+      console.error('[windows-agent] createCustomToken failed:', code, detail);
+
+      // 503, not 500: the request was valid and will succeed once the server is configured.
+      //
+      // `diagnostic` names the failure class, not a secret, and only a caller holding a valid
+      // device credential and a valid user token ever sees it. The alternative — making an
+      // administrator correlate a generic 500 against logs they may not have access to — is how
+      // a one-line IAM fix turns into a day.
+      throw new AgentRequestError(
+        'SEL LIVE cannot open signed-in inside the agent on this server yet. '
+          + 'The window will still open; sign in there as usual, and tell IT that the server '
+          + 'cannot mint sign-in tokens.',
+        503,
+        'ERP_SESSION_UNAVAILABLE',
+        { diagnostic: code, detail: detail.slice(0, 300) },
+      );
+    }
 
     return Response.json(
       {

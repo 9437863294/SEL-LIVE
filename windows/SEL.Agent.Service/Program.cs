@@ -161,16 +161,17 @@ namespace Sel.Agent.Service
             string code = ValueOf(args, "--code");
             string deviceName = ValueOf(args, "--device-name");
 
-            if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(key))
+            if (string.IsNullOrEmpty(url))
             {
-                Console.Error.WriteLine("--url and --key are required.");
+                Console.Error.WriteLine("--url is required.");
                 return 2;
             }
 
             Uri parsed;
             if (!Uri.TryCreate(url, UriKind.Absolute, out parsed))
             {
-                Console.Error.WriteLine("--url must be an absolute address, e.g. https://sel.example.com");
+                Console.Error.WriteLine(
+                    "--url must be an absolute address, e.g. " + SelLiveDeployment.DefaultApiBaseUrl);
                 return 2;
             }
 
@@ -198,6 +199,29 @@ namespace Sel.Agent.Service
                 Console.WriteLine("NOTE: configured against http on loopback. Development only.");
             }
 
+            // No --key? Ask the server for it.
+            //
+            // The same exchange the first-run window performs, and for the same reason. The Web
+            // API key is public — it ships to every browser that loads the ERP — so the server
+            // will hand it over unauthenticated, and asking the server that is about to be
+            // configured is strictly better than transcribing it onto each PC: it cannot be
+            // mistyped, and it cannot go stale the way a value baked into an installer does.
+            // A wrong key here surfaces much later as an opaque Google error, which is the
+            // failure this removes.
+            if (string.IsNullOrEmpty(key))
+            {
+                key = FetchApiKey(url.TrimEnd('/'));
+                if (string.IsNullOrEmpty(key))
+                {
+                    // Not fatal. The agent's first-run window asks again, with the address
+                    // already filled in, so an install during a network outage still completes
+                    // and the PC is configured by the first person to sign in.
+                    Console.Error.WriteLine(
+                        "Could not fetch the Firebase configuration from " + url
+                        + ". Writing the address only; the agent will ask for the rest at first run.");
+                }
+            }
+
             try
             {
                 string directory = Core.Security.DeviceIdentityStore.DefaultDirectory;
@@ -206,7 +230,7 @@ namespace Sel.Agent.Service
 
                 var config = new Newtonsoft.Json.Linq.JObject();
                 config["apiBaseUrl"] = url.TrimEnd('/');
-                config["firebaseApiKey"] = key;
+                if (!string.IsNullOrEmpty(key)) config["firebaseApiKey"] = key;
                 if (!string.IsNullOrEmpty(code)) config["enrollmentCode"] = code;
                 if (!string.IsNullOrEmpty(deviceName)) config["deviceNameOverride"] = deviceName;
                 config["verboseLogging"] = false;
@@ -220,6 +244,44 @@ namespace Sel.Agent.Service
             {
                 Console.Error.WriteLine("Could not write the configuration: " + error.Message);
                 return 1;
+            }
+        }
+
+        /// <summary>
+        /// Ask a SEL LIVE server for its public Firebase Web API key.
+        /// </summary>
+        /// <remarks>
+        /// Returns null on any failure rather than throwing. This runs inside the MSI's deferred
+        /// custom action, which is scheduled with <c>Return="check"</c> — an exception here would
+        /// roll back the entire installation because a network was briefly unavailable, turning
+        /// a recoverable situation into "Setup failed".
+        /// </remarks>
+        private static string FetchApiKey(string baseUrl)
+        {
+            try
+            {
+                // Windows 7 negotiates TLS 1.0 by default and the server will not accept it.
+                Core.TlsBootstrap.Configure();
+
+                using (var http = new System.Net.Http.HttpClient())
+                {
+                    http.Timeout = TimeSpan.FromSeconds(20);
+                    http.DefaultRequestHeaders.UserAgent.ParseAdd(
+                        "SEL-LIVE-Agent-Setup/" + Core.AgentVersion.Current);
+
+                    string body = http
+                        .GetStringAsync(baseUrl + "/api/windows-agent/bootstrap")
+                        .GetAwaiter()
+                        .GetResult();
+
+                    var parsed = Newtonsoft.Json.Linq.JObject.Parse(body);
+                    return (string)parsed["firebaseApiKey"];
+                }
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine("Bootstrap lookup failed: " + error.Message);
+                return null;
             }
         }
 

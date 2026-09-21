@@ -20,6 +20,10 @@
   <ItemGroup>
     <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Configuration.Install" />
+    <!-- The write-config switch asks the ERP for its public Firebase key when one is not
+         supplied. On .NET Framework HttpClient lives in a facade assembly that is not
+         referenced by default, unlike on .NET where it is part of the shared framework. -->
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
 
   <ItemGroup>

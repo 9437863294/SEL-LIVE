@@ -51,10 +51,12 @@ namespace Sel.Agent
             _log = log;
             InitializeComponent();
 
-            if (existing != null && !string.IsNullOrEmpty(existing.ApiBaseUrl))
-            {
-                UrlBox.Text = existing.ApiBaseUrl;
-            }
+            // Pre-filled with the company's own address so the common case is "click Save".
+            // An existing value still wins, because somebody who already pointed this PC at a
+            // staging server did so on purpose.
+            UrlBox.Text = existing != null && !string.IsNullOrEmpty(existing.ApiBaseUrl)
+                ? existing.ApiBaseUrl
+                : SelLiveDeployment.DefaultApiBaseUrl;
             if (existing != null && !string.IsNullOrEmpty(existing.EnrollmentCode))
             {
                 CodeBox.Text = existing.EnrollmentCode;

@@ -349,11 +349,12 @@ async function main() {
   console.log('  1. firebase deploy --only firestore:indexes     (reports fail without these)');
   console.log('  2. Copy the "Windows Agent" block from firestore.rules into the console ruleset');
   console.log('  3. Grant yourself the Windows Agent permissions in Role Management');
-  console.log('\nThen configure and start an agent:');
-  console.log('     SEL.Agent.Service.exe --write-config --url <https://your-host> \\');
-  console.log(`         --key <NEXT_PUBLIC_FIREBASE_API_KEY> --code ${CODE}`);
+  console.log('\nThen configure and start an agent. The installer does this for you against');
+  console.log('production; these are for pointing a development machine somewhere else:');
+  console.log(`     SEL.Agent.Service.exe --write-config --url <https://your-host> --code ${CODE}`);
   console.log('     SEL.Agent.Service.exe --check');
   console.log('     SEL.Agent.exe\n');
+  console.log('The Firebase key is fetched from that host, so it is no longer passed by hand.\n');
 }
 
 main().catch((error) => {

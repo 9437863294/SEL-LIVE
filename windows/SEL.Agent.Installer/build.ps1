@@ -404,7 +404,8 @@ if (-not $Sign) {
 Write-Host ""
 if ($SkipBundle) {
     Write-Host "Install with:" -ForegroundColor Cyan
-    Write-Host "  msiexec /i `"$product`" /qn APIBASEURL=https://sel.example.com ENROLLMENTCODE=SEL-HO-2026"
+    Write-Host "  msiexec /i `"$product`" /qn ENROLLMENTCODE=SEL-HO-2026"
+    Write-Host "  (APIBASEURL defaults to https://seltech.store; pass it only for a staging server)"
     Write-Host "  (requires .NET Framework 4.8 to be present already)"
 }
 else {
@@ -412,7 +413,8 @@ else {
     Write-Host "  double-click, approve the Windows prompt"
     Write-Host ""
     Write-Host "Unattended, for GPO or SCCM:" -ForegroundColor Cyan
-    Write-Host "  `"$([IO.Path]::GetFileName($product))`" /quiet APIBASEURL=https://sel.example.com ENROLLMENTCODE=SEL-HO-2026"
+    Write-Host "  `"$([IO.Path]::GetFileName($product))`" /quiet ENROLLMENTCODE=SEL-HO-2026"
+    Write-Host "  (APIBASEURL defaults to https://seltech.store; pass it only for a staging server)"
     Write-Host "  `"$([IO.Path]::GetFileName($product))`" /uninstall /quiet"
     Write-Host "  `"$([IO.Path]::GetFileName($product))`" /log setup.log        (when it goes wrong)"
     if ($KeepMsi) {

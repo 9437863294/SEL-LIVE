@@ -88,16 +88,27 @@
     -->
 
     <!-- ══ Configuration, supplied on the command line ════════════════════════════════════════
+         msiexec /i SEL.Agent.msi /qn ENROLLMENTCODE=SEL-HO-2026
+
+         APIBASEURL defaults to the company's own server and FIREBASEAPIKEY is fetched from it,
+         so an ordinary rollout passes neither. Both remain settable for a staging server:
+
          msiexec /i SEL.Agent.msi /qn ^
-           APIBASEURL=https://sel.example.com ^
-           FIREBASEAPIKEY=AIza... ^
+           APIBASEURL=https://staging.example.com ^
            ENROLLMENTCODE=SEL-HO-2026
 
          Secure="yes" is what allows these to survive the elevation boundary into the deferred
          custom action. Without it they are silently empty in the elevated context and the agent
          installs with no configuration — which looks like the installer worked.
     -->
-    <Property Id="APIBASEURL" Secure="yes" />
+    <!--
+      Defaulted to SEL LIVE's own address, so a double-click install is configured without
+      anybody typing anything. Overridable on the command line for a staging server. The same
+      judgement as the hard-coded Firebase project in src/lib/firebase-public-config.ts: there
+      is one server this agent is built to talk to, and making four hundred PCs each be told
+      about it by hand only ever produced typos.
+    -->
+    <Property Id="APIBASEURL" Secure="yes" Value="https://seltech.store" />
     <Property Id="FIREBASEAPIKEY" Secure="yes" />
     <Property Id="ENROLLMENTCODE" Secure="yes" />
     <Property Id="DEVICENAME" Secure="yes" />
@@ -361,14 +372,18 @@
         After InstallFiles so the executable exists, and before StartServices so the service
         finds a configuration on its first start rather than logging "not configured".
 
-        Only when both properties were supplied. The action runs with Return="check", so on an
-        unattended install with no properties it would exit non-zero and roll the whole install
-        back — turning "you did not pass optional settings" into "setup failed". Skipping it
-        instead leaves the agent to run its first-run setup window, which is exactly the intended
-        behaviour for a double-click install.
+        Conditioned on APIBASEURL alone, which now has a default, so this runs on every fresh
+        install. FIREBASEAPIKEY is no longer required: the write-config switch fetches the key
+        from the server's /api/windows-agent/bootstrap when it is not given, which is both one
+        fewer thing to type and one fewer copy of a value that has already gone stale once.
+
+        Should the address be blanked deliberately (APIBASEURL=""), this is skipped and the
+        agent runs its first-run setup window instead — still a working install, just one that
+        asks. The action would otherwise exit non-zero under Return="check" and roll the whole
+        installation back, turning "you cleared an optional setting" into "setup failed".
       -->
       <Custom Action="WriteAgentConfig" After="InstallFiles"
-              Condition="NOT Installed AND APIBASEURL AND FIREBASEAPIKEY" />
+              Condition="NOT Installed AND APIBASEURL" />
     </InstallExecuteSequence>
 
     <ui:WixUI xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui" Id="WixUI_Minimal" />

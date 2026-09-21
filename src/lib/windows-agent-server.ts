@@ -119,7 +119,21 @@ export class AgentRequestError extends Error {
   constructor(
     message: string,
     readonly status = 400,
-    readonly code: LoginRejectionCode | 'BAD_REQUEST' | 'UNAUTHORIZED' | 'RATE_LIMITED' = 'BAD_REQUEST',
+    readonly code:
+      | LoginRejectionCode
+      | 'BAD_REQUEST'
+      | 'UNAUTHORIZED'
+      | 'RATE_LIMITED'
+      | 'ERP_SESSION_UNAVAILABLE' = 'BAD_REQUEST',
+    /**
+     * Extra fields merged into the response body.
+     *
+     * For naming a server misconfiguration to a caller that has already authenticated — never
+     * for anything an unauthenticated request could reach, and never for a value that is itself
+     * sensitive. Used by the ERP session route to say *which* way token signing is broken,
+     * because the alternative is an administrator correlating a generic 500 against logs.
+     */
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'AgentRequestError';
@@ -129,7 +143,10 @@ export class AgentRequestError extends Error {
 /** Turn any thrown value into the JSON body and status a route should return. */
 export function agentErrorResponse(error: unknown): { body: Record<string, unknown>; status: number } {
   if (error instanceof AgentRequestError) {
-    return { body: { error: error.message, code: error.code }, status: error.status };
+    return {
+      body: { error: error.message, code: error.code, ...(error.details || {}) },
+      status: error.status,
+    };
   }
   console.error('[windows-agent] Unhandled error:', error);
   return { body: { error: 'Something went wrong. Please try again.', code: 'BAD_REQUEST' }, status: 500 };

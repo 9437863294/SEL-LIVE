@@ -262,16 +262,14 @@ administrator, a credential prompt for a standard user, who can then hand the ke
 Declining either aborts the install. Everything after that point, including the prerequisites,
 runs inside that one elevated session.
 
-All configuration is optional. Installed with none, the agent opens a setup window asking for one
-thing: the address of your SEL LIVE installation. It fetches the Firebase configuration from that
-server itself, so nobody transcribes an API key onto each machine.
+**Nothing needs to be typed.** `APIBASEURL` defaults to `https://seltech.store`, and the installer
+fetches the Firebase configuration from that server rather than carrying a copy, so a plain
+double-click produces a configured agent pointing at production.
 
 **Unattended — the one to use for a rollout.** GPO, SCCM, or a script:
 
 ```
-SEL.Agent-Setup-1.0.0.0.exe /quiet ^
-  APIBASEURL=https://sel.example.com ^
-  ENROLLMENTCODE=SEL-HO-2026
+SEL.Agent-Setup-1.0.0.0.exe /quiet ENROLLMENTCODE=SEL-HO-2026
 ```
 
 ```
@@ -279,9 +277,31 @@ SEL.Agent-Setup-1.0.0.0.exe /uninstall /quiet
 SEL.Agent-Setup-1.0.0.0.exe /log setup.log        (when it goes wrong)
 ```
 
-`FIREBASEAPIKEY` may also be passed but rarely should be: it is the same public value the web app
-already ships to every browser, it authorises nothing on its own, and demanding it per machine
-only ever added a typo that surfaced later as an opaque Google error.
+The enrolment code is the only value worth passing, and only because it saves an administrator
+approving each PC by hand.
+
+**Pointing a pilot machine somewhere else:**
+
+```
+SEL.Agent-Setup-1.0.0.0.exe /quiet ^
+  APIBASEURL=https://staging.example.com ^
+  ENROLLMENTCODE=SEL-DEV-LOCAL
+```
+
+Or on a PC that is already installed, without reinstalling:
+
+```
+"C:\Program Files\SEL LIVE\Agent\SEL.Agent.Service.exe" --write-config --url https://staging.example.com
+```
+
+`FIREBASEAPIKEY` may also be passed but should not be. It is the same public value the web app
+already ships to every browser, it authorises nothing on its own, and the server hands it out on
+request — the one time it was written down separately, the copy went stale and every agent
+configured from it got a key Google rejects.
+
+> **Where the default lives.** `windows/SEL.Agent.Core/SelLiveDeployment.cs`, alongside the same
+> judgement made on the web side in `src/lib/firebase-public-config.ts`. Change it in one place
+> and rebuild; it is a default, not a constraint, and every layer above it can override.
 
 The installer refuses before downloading anything if the OS is unsupported — Windows 8.0, or
 Windows 7 without SP1 — with a message saying what to do about it.

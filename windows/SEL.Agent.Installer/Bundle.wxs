@@ -137,9 +137,11 @@
 
     <!-- ══ Configuration, passed straight through to the MSI ══════════════════════════════════
 
-         SEL.Agent-Setup.exe /quiet ^
-           APIBASEURL=https://sel.example.com ^
-           ENROLLMENTCODE=SEL-HO-2026
+         SEL.Agent-Setup.exe /quiet ENROLLMENTCODE=SEL-HO-2026
+
+         APIBASEURL is defaulted by the MSI to the company's own server and the Firebase key is
+         fetched from it, so an ordinary rollout passes neither. Pass APIBASEURL to point a
+         pilot machine at a staging server instead.
 
          Identical spellings to the MSI properties, so one set of instructions covers both the
          bundle and a bare msiexec deployment. Overridable is what makes them settable on the
