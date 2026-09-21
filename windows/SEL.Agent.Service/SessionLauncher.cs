@@ -57,6 +57,13 @@ namespace Sel.Agent.Service
     /// </remarks>
     internal static class SessionLauncher
     {
+        /// <summary>
+        /// How long a freshly launched agent is given to still be alive before it counts as
+        /// having failed to start. Long enough for the CLR and WPF; short enough not to matter
+        /// on a sixty-second watchdog.
+        /// </summary>
+        private static readonly TimeSpan StartupGrace = TimeSpan.FromSeconds(3);
+
         private const int TOKEN_DUPLICATE = 0x0002;
         private const int TOKEN_QUERY = 0x0008;
         private const int TOKEN_ASSIGN_PRIMARY = 0x0001;
@@ -280,6 +287,29 @@ namespace Sel.Agent.Service
 
                 CloseHandle(processInfo.hThread);
                 CloseHandle(processInfo.hProcess);
+
+                // Did it survive?
+                //
+                // CreateProcessAsUser returning a pid means Windows created a process, not that
+                // the application ran. An agent that exits during start-up — a held
+                // single-instance mutex, an unusable configuration, a missing dependency —
+                // leaves this method reporting success every sixty seconds while nothing is
+                // running, which is indistinguishable in the event log from working properly.
+                // That is precisely the shape of failure this service exists to notice.
+                //
+                // Three seconds on a sixty-second watchdog, and only on the path that has just
+                // decided to launch something.
+                System.Threading.Thread.Sleep(StartupGrace);
+                if (!IsAgentRunningInSession(sessionId, System.IO.Path.GetFileNameWithoutExtension(executablePath)))
+                {
+                    log("Started the desktop agent in session " + sessionId + " (pid "
+                        + processInfo.dwProcessId + ") but it exited within "
+                        + StartupGrace.TotalSeconds + "s. Check %ProgramData%\\SEL LIVE\\Agent\\agent.log "
+                        + "with verboseLogging on; a silent exit this early is usually another copy "
+                        + "already running, or an unusable agent.config.json.");
+                    return 0;
+                }
+
                 log("Started the desktop agent in session " + sessionId + " (pid " + processInfo.dwProcessId + ").");
                 return processInfo.dwProcessId;
             }
