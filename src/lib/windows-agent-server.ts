@@ -460,6 +460,99 @@ export async function seedAppCatalog(): Promise<number> {
  * Enrolment and registration (§4, §45)
  * ---------------------------------------------------------------------------------------------- */
 
+/**
+ * The device already enrolled for this physical machine, if there is one.
+ *
+ * ── Why the placeholder check ─────────────────────────────────────────────────────────────────
+ *
+ * A key that is the same on every PC is worse than no key: it would collapse an entire fleet
+ * onto one device document. Windows' MachineGuid is normally unique, but cloned images and some
+ * virtualisation tooling leave it as a well-known constant, so the obviously-wrong values are
+ * refused rather than trusted.
+ *
+ * ── Why the oldest wins ───────────────────────────────────────────────────────────────────────
+ *
+ * Where duplicates already exist — every installation that ran before this check — the first
+ * document is the one carrying the history, the assignments and the approval. Re-registering
+ * onto it folds the machine back onto its own record instead of adopting the stray.
+ *
+ * Never throws. A machine that cannot be recognised must still be able to enrol; failing the
+ * lookup means a possible duplicate, while failing the registration means a PC that cannot
+ * report at all.
+ */
+async function findDeviceByMachineGuid(
+  firestore: FirebaseFirestore.Firestore,
+  machineGuid: string | null,
+): Promise<string> {
+  const guid = (machineGuid || '').trim().toLowerCase();
+  if (!guid || guid.length < 8) return '';
+  if (PLACEHOLDER_MACHINE_GUIDS.has(guid)) return '';
+
+  try {
+    const matches = await firestore
+      .collection(WINDOWS_AGENT_COLLECTIONS.devices)
+      .where('facts.machineGuid', '==', machineGuid)
+      .get();
+    if (matches.empty) return '';
+
+    // In service first, then oldest.
+    //
+    // A blocked or retired duplicate must not win, or a machine re-enrolling would attach
+    // itself to a record an administrator has deliberately taken out of service — and then be
+    // refused by the check below, permanently, with no way back.
+    const ranked = matches.docs
+      .slice()
+      .sort((left, right) => {
+        const leftOut = isWithdrawn(left.get('status'));
+        const rightOut = isWithdrawn(right.get('status'));
+        if (leftOut !== rightOut) return leftOut ? 1 : -1;
+        return createdAtMillis(left.get('createdAt')) - createdAtMillis(right.get('createdAt'));
+      });
+    return ranked[0].id;
+  } catch (error) {
+    console.error('[windows-agent] Could not look up a device by machineGuid:', error);
+    return '';
+  }
+}
+
+/**
+ * A creation stamp as a number, whatever it is stored as.
+ *
+ * `createdAt` on these documents is a Firestore `Timestamp`, and `String(timestamp)` is
+ * `"[object Object]"` — so the obvious `localeCompare` on the stringified value compares two
+ * identical strings, returns zero for every pair, and leaves the order arbitrary. That is not a
+ * hypothetical: the first version of this function did exactly that, and picked the *newer* of
+ * the two documents on the machine it was written to fix.
+ *
+ * Also accepts an ISO string and a Date, because the field is typed `WindowsAgentTimestampLike`
+ * and older documents carry strings.
+ */
+function createdAtMillis(value: unknown): number {
+  if (!value) return Number.MAX_SAFE_INTEGER;
+  if (typeof value === 'object' && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
+  }
+  if (typeof value === 'number') return value;
+  // Unknown shape: sort last, so a document whose stamp cannot be read never beats one whose can.
+  return Number.MAX_SAFE_INTEGER;
+}
+
+/** Blocked and retired machines are out of service and must not win a duplicate match. */
+function isWithdrawn(status: unknown): boolean {
+  return status === 'BLOCKED' || status === 'RETIRED';
+}
+
+/** Values seen on more than one machine, and therefore useless as an identity. */
+const PLACEHOLDER_MACHINE_GUIDS = new Set([
+  '00000000-0000-0000-0000-000000000000',
+  'ffffffff-ffff-ffff-ffff-ffffffffffff',
+]);
+
 function sanitizeFacts(raw: unknown): DeviceMachineFacts {
   const input = (raw || {}) as Record<string, unknown>;
   const text = (value: unknown, max = 120): string | null => {
@@ -523,7 +616,26 @@ export async function registerDevice(
   const secret = generateDeviceSecret();
   const deviceSecretHash = await hashDeviceSecret(secret);
 
-  const existingId = typeof input.deviceId === 'string' ? input.deviceId.trim() : '';
+  // The device id the agent already holds, if it has one.
+  const claimedId = typeof input.deviceId === 'string' ? input.deviceId.trim() : '';
+
+  // ── Otherwise, recognise the machine by its own identity ──────────────────────────────────
+  //
+  // Without this, one PC becomes two rows. The agent only sends a `deviceId` when it still has
+  // `device.json`, and that file legitimately goes missing: a reinstall that clears ProgramData,
+  // `--reset-identity` after re-imaging, DPAPI failing to decrypt it, or somebody wiping the
+  // folder. Every one of those produced a second document for the same computer, and the fleet
+  // list then shows "ASHISH" twice — one of them with no heartbeat, forever, because only one
+  // agent is actually running.
+  //
+  // MachineGuid is the right key. Windows generates it at installation and it survives renames,
+  // domain joins and hardware changes, whereas the hostname repeats across a fleet and the BIOS
+  // serial is frequently a placeholder — this very machine reports "Default string".
+  //
+  // Deliberately *not* a uniqueness constraint that rejects the registration: a PC re-enrolling
+  // must succeed and keep its history, not be refused. Recognising it is the whole point.
+  const existingId = claimedId || (await findDeviceByMachineGuid(firestore, facts.machineGuid));
+
   const deviceRef = existingId
     ? firestore.collection(WINDOWS_AGENT_COLLECTIONS.devices).doc(existingId)
     : firestore.collection(WINDOWS_AGENT_COLLECTIONS.devices).doc();
