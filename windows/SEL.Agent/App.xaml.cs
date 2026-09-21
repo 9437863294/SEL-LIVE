@@ -145,10 +145,29 @@ namespace Sel.Agent
                         return;
                     }
 
+                    // Before anything decides whether the gate can be dismissed. Policy
+                    // otherwise only arrives with a login or a heartbeat, both of which need
+                    // somebody already signed in — so a cold-started PC would offer a
+                    // dismissible gate however the policy was configured.
+                    await _host.Coordinator
+                        .RefreshPolicyBeforeLoginAsync(cancellation.Token)
+                        .ConfigureAwait(true);
+
                     // A restart mid-morning should not demand a password again unless the policy
                     // says so. The refresh token makes that possible without weakening anything:
                     // it is per-Windows-user and DPAPI-protected.
-                    AgentLoginResponse resumed = await _host.TryResumeAsync(cancellation.Token).ConfigureAwait(true);
+                    //
+                    // `requireLoginAfterRestart` is what says so, and until now nothing read it.
+                    // It was in the wire contract and in the admin screen, and an administrator
+                    // switching it on got no change in behaviour at all: the agent resumed the
+                    // saved session silently on every start. A setting that is offered and
+                    // ignored is worse than one that is absent.
+                    bool askAgain = _host.Coordinator.Policy.Settings.RequireLoginAfterRestart;
+                    if (askAgain) _log.Write("Policy requires a sign-in after restart; not resuming the saved session.");
+
+                    AgentLoginResponse resumed = askAgain
+                        ? null
+                        : await _host.TryResumeAsync(cancellation.Token).ConfigureAwait(true);
                     if (resumed != null)
                     {
                         _log.Write("Resumed as " + resumed.UserName + " without prompting.");

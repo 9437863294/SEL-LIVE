@@ -42,6 +42,22 @@ namespace Sel.Agent
         private readonly AgentHost _host;
         private readonly string _baseUrl;
         private bool _initialised;
+
+        /// <summary>
+        /// The start-up in flight, so it happens once.
+        /// </summary>
+        /// <remarks>
+        /// <c>Show()</c> raises <c>Loaded</c>, and both <see cref="ShowPath"/> and the Loaded
+        /// handler asked to initialise. A plain <c>if (_initialised) return</c> does not stop
+        /// that: neither call has finished when the other starts, so both passed the guard, both
+        /// built a <c>CoreWebView2Environment</c>, and the second one failed with "WebView2 was
+        /// already initialized with a different CoreWebView2Environment" — an error in the log
+        /// and a window that only worked on the retry.
+        ///
+        /// Everything here runs on the UI thread, so holding the Task is enough; no lock.
+        /// </remarks>
+        private Task _initialising;
+
         private string _pendingPath;
 
         public ErpWindow(AgentHost host)
@@ -82,10 +98,20 @@ namespace Sel.Agent
         /// offers the external browser instead. An embedded view is a convenience; the ERP itself
         /// has to stay reachable when the convenience does not work.
         /// </remarks>
-        private async Task InitialiseAsync()
+        private Task InitialiseAsync()
         {
-            if (_initialised) return;
+            if (_initialised) return CompletedTask;
+            if (_initialising != null) return _initialising;
 
+            _initialising = InitialiseCoreAsync();
+            return _initialising;
+        }
+
+        /// <summary>.NET Framework 4.8 has no <c>Task.CompletedTask</c> on every servicing level.</summary>
+        private static readonly Task CompletedTask = Task.FromResult(0);
+
+        private async Task InitialiseCoreAsync()
+        {
             try
             {
                 SetStatus("Opening SEL LIVE…", "Starting the embedded browser.", false);

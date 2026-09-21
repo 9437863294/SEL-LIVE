@@ -159,6 +159,43 @@ namespace Sel.Agent.Core
 
         public ResolvedAgentPolicy Policy { get { return _policy; } }
 
+        /// <summary>
+        /// Fetch the device's policy before anybody has signed in.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Policy otherwise arrives with the login response or a heartbeat, and both of those
+        /// need a signed-in user. That left the one decision that has to be made *before*
+        /// sign-in — whether the access gate can be dismissed — being made from the built-in
+        /// defaults, where <c>requireMorningLogin</c> is false. A cold-started PC therefore
+        /// offered a dismissible gate no matter what the administrator had configured, and
+        /// somebody could close it and work with nothing recorded.
+        /// </para>
+        /// <para>
+        /// The route is device-authenticated and treats the user token as optional precisely so
+        /// this call can be made. Failure is not fatal: no network means the previous policy or
+        /// the defaults, which is the same position the agent was in before.
+        /// </para>
+        /// </remarks>
+        public async Task RefreshPolicyBeforeLoginAsync(CancellationToken cancellation)
+        {
+            try
+            {
+                PolicyResponse response = await _api.FetchPolicyAsync(null, cancellation).ConfigureAwait(false);
+                if (response != null && response.Policy != null && response.Policy.Settings != null)
+                {
+                    _policy = response.Policy;
+                    _log("Policy fetched before sign-in; the access gate is "
+                        + (_policy.Settings.RequireMorningLogin ? "mandatory." : "dismissible."));
+                    RaiseStatusChanged();
+                }
+            }
+            catch (Exception error)
+            {
+                _log("Could not fetch the policy before sign-in: " + error.Message);
+            }
+        }
+
         public AgentStatus Status
         {
             get
