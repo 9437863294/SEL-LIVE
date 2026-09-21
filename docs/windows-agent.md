@@ -189,6 +189,35 @@ dotnet test windows/SEL.Agent.Tests # 68 agent tests, including the OS compatibi
 5. **Create an enrolment code** on `/windows-agent/devices`. Leave *Approve automatically* **off**
    for the pilot, so each new machine waits for approval.
 
+6. **Make sure the server can mint sign-in tokens** — needed only by the embedded ERP window
+   (§7a), and easy to miss because nothing else in SEL LIVE requires it.
+
+   `createCustomToken` is the one Admin SDK call that has to *sign* a JWT. Firestore reads,
+   Firestore writes and `verifyIdToken` all work with a credential that cannot sign, so a
+   deployment can look completely healthy and still fail here. There are two ways to satisfy it
+   and you need one:
+
+   | | |
+   |---|---|
+   | A real service-account key | `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL` and `FIREBASE_PRIVATE_KEY` present and well-formed. The SDK then signs locally. |
+   | Application-default credentials | The runtime service account needs `roles/iam.serviceAccountTokenCreator` **on itself**, because the SDK falls back to Google's `signBlob` API. |
+
+   On this installation *both* are now in place: the App Hosting runtime account
+   (`firebase-app-hosting-compute@…`) holds Token Creator, and Secret Manager holds a correct
+   key in `firebase-private-key` / `firebase-client-email` / `firebase-project-id`.
+
+   > **Outstanding.** The App Hosting backend's own Environment configuration sets those three
+   > as **plain values**, which override `apphosting.yaml`'s `secret:` references — and its
+   > `FIREBASE_PRIVATE_KEY` is a 52-character fragment with no PEM header, which is why the
+   > fallback was being used at all. Its `FIREBASE_CLIENT_EMAIL` also names a different service
+   > account (`firebase-adminsdk-uc7tw@`) from the working one (`firebase-adminsdk-fbsvc@`).
+   > Delete all three from Firebase console → App Hosting → the backend → Environment, and the
+   > secrets take over on the next deploy. Until then the IAM grant is what makes it work.
+
+   The symptom when neither is satisfied: `503 ERP_SESSION_UNAVAILABLE` from
+   `/api/windows-agent/erp-session`, with `diagnostic: auth/insufficient-permission`. The agent
+   degrades to opening the ERP's normal login page rather than failing.
+
 ---
 
 ## 5. Building and installing the agent
