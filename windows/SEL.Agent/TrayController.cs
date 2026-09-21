@@ -62,7 +62,16 @@ namespace Sel.Agent
                 ContextMenuStrip = _menu,
                 Visible = false
             };
-            _icon.DoubleClick += (s, e) => ShowStatus();
+            // A left click opens SEL LIVE. MouseClick rather than Click, because Click fires for
+            // the right button too and would open a window behind the context menu.
+            //
+            // This used to open Agent status on a double click, which put the diagnostics panel
+            // in the most discoverable gesture on the icon and left the application itself
+            // needing a right click and a menu.
+            _icon.MouseClick += (s, e) =>
+            {
+                if (e.Button == MouseButtons.Left) _host.OpenErp("/");
+            };
 
             // Rebuilt on open rather than once: the policy can change between heartbeats, and a
             // menu built at start-up would still be offering "Pause tracking" an hour after an
@@ -102,8 +111,14 @@ namespace Sel.Agent
             _menu.Items.Clear();
             AgentStatus status = _host.Coordinator.Status;
 
+            // Who is signed in, and whether anything is being recorded. Kept because signing in
+            // as the wrong person is otherwise invisible until the timesheet is wrong.
+            //
+            // Without the foreground application, which the tooltip still carries: naming the
+            // program somebody is looking at, back to them, on their own screen, tells them
+            // nothing they cannot see and reads like being watched rather than being informed.
             var header = new ToolStripMenuItem(status.SignedIn
-                ? status.UserName + " — " + DescribePresence(status)
+                ? status.UserName + " — " + DescribePresence(status, false)
                 : "Not signed in — nothing is being recorded")
             { Enabled = false };
             _menu.Items.Add(header);
@@ -123,19 +138,16 @@ namespace Sel.Agent
                 _menu.Items.Add(new ToolStripSeparator());
             }
 
+            // Three items, and that is the whole menu.
+            //
+            // It used to carry shortcuts to My work, Tasks, Approvals and Meetings. Every one of
+            // them opened a page of SEL LIVE, which "Open SEL LIVE" already reaches and which
+            // the ERP's own navigation is better at listing — so they were a second, worse menu
+            // for the application, kept in step by hand, in a place nobody looks for navigation.
             _menu.Items.Add(Item("Open SEL LIVE", () => _host.OpenErp("/")));
-            _menu.Items.Add(Item("My work", () => _host.OpenErp("/windows-agent/my-activity")));
-            _menu.Items.Add(Item("Tasks", () => _host.OpenErp("/office-hub/tasks")));
-            _menu.Items.Add(Item("Approvals", () => _host.OpenErp("/e-approval/inbox")));
-            _menu.Items.Add(Item("Meetings", () => _host.OpenErp("/office-hub/meetings")));
-            _menu.Items.Add(new ToolStripSeparator());
 
-            _menu.Items.Add(Item("Sync now", async () =>
-            {
-                await _host.Coordinator.SyncNowAsync().ConfigureAwait(false);
-            }));
-
-            // §26: absent, not disabled, when the policy forbids it. See the class remarks.
+            // §26: absent, not disabled, when the policy forbids it. Off by default, so this is
+            // normally not present at all. See the class remarks.
             if (_host.Coordinator.Policy.Settings.AllowUserPauseTracking)
             {
                 _menu.Items.Add(Item("Pause tracking", () =>
@@ -147,8 +159,30 @@ namespace Sel.Agent
                 }));
             }
 
-            _menu.Items.Add(Item("Agent status", ShowStatus));
-            _menu.Items.Add(Item("Monitoring policy", () => _host.OpenErp("/windows-agent/monitoring-policy")));
+            // Diagnostics, behind Shift.
+            //
+            // Sync now, Agent status and Monitoring policy are support tools, not things an
+            // employee needs on a Tuesday. But the activity log in Agent status is held in
+            // memory and is not written to disk unless verboseLogging is on, so dropping the
+            // item outright would have made the agent's own log unreachable at the moment
+            // somebody is trying to work out why it misbehaved.
+            //
+            // Shift to reveal extra menu entries is Explorer's own convention, so it is
+            // discoverable to the people who would think to try it and invisible to everyone
+            // else. The alternatives were leaving clutter in front of four hundred employees,
+            // or telling support to enable file logging and reproduce the fault again.
+            if ((Control.ModifierKeys & Keys.Shift) == Keys.Shift)
+            {
+                _menu.Items.Add(new ToolStripSeparator());
+
+                _menu.Items.Add(Item("Sync now", async () =>
+                {
+                    await _host.Coordinator.SyncNowAsync().ConfigureAwait(false);
+                }));
+                _menu.Items.Add(Item("Agent status", ShowStatus));
+                _menu.Items.Add(Item("Monitoring policy", () => _host.OpenErp("/windows-agent/monitoring-policy")));
+            }
+
             _menu.Items.Add(new ToolStripSeparator());
 
             if (status.SignedIn)
@@ -210,7 +244,7 @@ namespace Sel.Agent
                 _icon.Icon = BuildIcon(ColourFor(status));
 
                 string line = status.SignedIn
-                    ? "SEL LIVE — " + status.UserName + Environment.NewLine + DescribePresence(status)
+                    ? "SEL LIVE — " + status.UserName + Environment.NewLine + DescribePresence(status, true)
                     : "SEL LIVE Agent — not signed in";
                 if (status.QueuedSpans > 0) line += Environment.NewLine + status.QueuedSpans + " pending upload";
                 if (!status.Online) line += Environment.NewLine + "Offline — recording locally";
@@ -225,7 +259,7 @@ namespace Sel.Agent
             }
         }
 
-        private static string DescribePresence(AgentStatus status)
+        private static string DescribePresence(AgentStatus status, bool includeApplication)
         {
             if (!status.Online) return "Offline";
             switch (status.Presence)
@@ -234,7 +268,7 @@ namespace Sel.Agent
                 case PresenceStates.Idle: return "Idle";
                 case PresenceStates.ExtendedIdle: return "Idle (extended)";
                 default:
-                    return string.IsNullOrEmpty(status.CurrentApplication)
+                    return !includeApplication || string.IsNullOrEmpty(status.CurrentApplication)
                         ? "Working"
                         : "Working — " + status.CurrentApplication;
             }

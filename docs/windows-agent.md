@@ -535,7 +535,49 @@ did this PC stop reporting at half past two" — and does not happen by accident
 
 ---
 
-## 7c. Locking an unattended PC
+## 7c. The tray icon
+
+**Left-click** opens SEL LIVE. **Right-click** gives three items and a status line:
+
+```text
+Debaprasad Bhoi — Working
+─────────────────────────
+Open SEL LIVE
+─────────────────────────
+Sign out
+Exit
+```
+
+That is the whole menu an employee sees. It used to also carry My work, Tasks, Approvals and
+Meetings — every one of them a shortcut to a page of SEL LIVE that "Open SEL LIVE" already
+reaches, and that the ERP's own navigation lists better. A second, worse menu for the
+application, kept in step by hand, in the one place nobody looks for navigation.
+
+The status line names who is signed in, because signing in as the wrong person is otherwise
+invisible until a timesheet is wrong. It deliberately does *not* name the program they are
+currently using: telling somebody which window they are looking at, on their own screen, informs
+nobody and reads like being watched. The icon's hover tooltip still carries it, for support.
+
+**Shift + right-click** adds the support tools:
+
+```text
+Sync now
+Agent status
+Monitoring policy
+```
+
+Shift-to-reveal is Explorer's own convention, so it is discoverable to the people who would
+think to try it and invisible to everyone else. `Agent status` in particular has to stay
+reachable: its activity log is held in memory and is not written to disk unless `verboseLogging`
+is on, so dropping the item outright would have made the agent's own log unavailable at exactly
+the moment somebody is working out why it misbehaved.
+
+`Pause tracking` appears in the ordinary menu when — and only when — `allowUserPauseTracking` is
+on. It is off by default, so normally the menu really is three items.
+
+---
+
+## 7d. Locking an unattended PC
 
 Three settings, all **off or generous by default**, that together make the SEL LIVE sign-in the
 way into a working session. Set them per company, department, user or device like any other
@@ -616,8 +658,9 @@ how it is configured. Three things the software does to help:
 - **`/windows-agent/my-activity`** shows an employee exactly what their manager sees, down to the
   timeline. Not a softened summary. It needs no grant; you can switch it off, but you have to
   decide to.
-- **Agent status** in the tray shows, on the machine itself, which optional captures are switched
-  on for that PC.
+- **Agent status** shows, on the machine itself, which optional captures are switched on for that
+  PC. Reached with **Shift + right-click** on the tray icon (§7c), alongside the same Monitoring
+  policy page the ERP serves.
 
 Two things the software deliberately refuses to do, and that you should not work around:
 
@@ -671,9 +714,10 @@ office work last March" stays answerable indefinitely, while "which window was o
 | Setup .exe appears to do nothing when double-clicked | The licence file baked into it is not valid RTF, and the licence page is the first thing shown. Check with `(Get-Content windows/SEL.Agent.Installer/License.rtf -Raw).StartsWith('{\rtf1')`. |
 | Setup asks for a password and the user has none | Intended. Only an administrator can install it. §5. |
 
-Agent log: **Agent status → Activity log** in the tray (always in memory). File logging is off by
-default because the log names the applications somebody used; enable `verboseLogging` in
-`%ProgramData%\SEL LIVE\Agent\agent.config.json` only while investigating.
+Agent log: **Shift + right-click the tray icon → Agent status → Activity log** (always in
+memory). File logging is off by default because the log names the applications somebody used;
+enable `verboseLogging` in `%ProgramData%\SEL LIVE\Agent\agent.config.json` only while
+investigating.
 
 ---
 
