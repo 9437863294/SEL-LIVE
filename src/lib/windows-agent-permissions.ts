@@ -155,6 +155,29 @@ export function canSignOutUser(viewer: WindowsAgentViewer): boolean {
   return can(viewer, WINDOWS_AGENT_RESOURCES.devices, 'Sign Out User');
 }
 
+/**
+ * May authorise closing the agent on a computer.
+ *
+ * ── Why `Devices / Edit` and not a permission of its own ───────────────────────────────────────
+ *
+ * Because a new node starts out granted to nobody. Ship one and on day one not a single person
+ * in the company can close the agent, including the people who installed it — and the fix is a
+ * Role Management edit that somebody has to be told about. Every rollout that has ever happened
+ * to this module would have hit that.
+ *
+ * `Devices / Edit` is also the right shape on the merits: it is already the permission for
+ * blocking a device, rotating its credential and forcing a re-authentication. Someone who can
+ * block a PC outright can already stop it reporting, so being able to close the agent on it
+ * grants nothing they did not have.
+ *
+ * Deliberately *not* the Windows administrators group. An employee who is a local administrator
+ * on their own laptop is not a SEL LIVE administrator, and attendance approval is an
+ * organisational decision rather than an operating-system one.
+ */
+export function canStopAgent(viewer: WindowsAgentViewer): boolean {
+  return can(viewer, WINDOWS_AGENT_RESOURCES.devices, 'Edit');
+}
+
 export function canManageEnrollmentCodes(viewer: WindowsAgentViewer): boolean {
   return can(viewer, WINDOWS_AGENT_RESOURCES.enrollment, 'Create');
 }

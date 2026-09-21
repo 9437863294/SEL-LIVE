@@ -861,7 +861,15 @@ export type WindowsAuditAction =
   | 'ENROLLMENT_CODE_CREATED'
   | 'ENROLLMENT_CODE_DISABLED'
   | 'SESSION_EDITED'
-  | 'RETENTION_PURGE';
+  | 'RETENTION_PURGE'
+  /**
+   * A SEL LIVE administrator authorised closing the agent on one computer.
+   *
+   * Recorded because it is the one action that deliberately stops monitoring, so "the agent was
+   * off between 2pm and 5pm" needs to be answerable without guessing. The trail names who
+   * approved it, not just that somebody did.
+   */
+  | 'AGENT_EXIT_APPROVED';
 
 /**
  * One administrative action. Append-only — §50 is explicit that an audit trail an administrator can

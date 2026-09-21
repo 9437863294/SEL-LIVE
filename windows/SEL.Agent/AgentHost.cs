@@ -393,6 +393,83 @@ namespace Sel.Agent
             }
         }
 
+        /// <summary>
+        /// Ask SEL LIVE whether this administrator may close the agent on this computer.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Two steps, both remote: sign the administrator in to Firebase, then present that
+        /// token to the server, which checks the permission and records who approved it. The
+        /// agent never decides — a monitoring application that granted itself permission to stop
+        /// monitoring, on the machine whose user wants it stopped, would be deciding nothing.
+        /// </para>
+        /// <para>
+        /// Nothing about the administrator's session is kept. No refresh token is stored, the
+        /// agent's own signed-in user is untouched, and the token is discarded when this method
+        /// returns — they approved one action on one PC, not a sign-in.
+        /// </para>
+        /// <para>
+        /// Never throws. Every failure comes back as a sentence for the dialog to show, because
+        /// the alternative at this point is an unhandled exception in a modal window.
+        /// </para>
+        /// </remarks>
+        public async Task<ExitApprovalOutcome> RequestExitApprovalAsync(
+            string email, string password, string reason)
+        {
+            try
+            {
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                {
+                    FirebaseSession session = await _auth
+                        .SignInAsync(email, password, timeout.Token)
+                        .ConfigureAwait(false);
+
+                    ExitApprovalResponse response = await _api
+                        .RequestExitApprovalAsync(session.IdToken, reason, timeout.Token)
+                        .ConfigureAwait(false);
+
+                    if (response != null && response.Approved)
+                    {
+                        _log.Write("Exit approved by " + response.ApprovedByName + " (" + email + ").");
+                        return new ExitApprovalOutcome
+                        {
+                            Approved = true,
+                            ApprovedByName = response.ApprovedByName,
+                        };
+                    }
+
+                    _log.Write("Exit refused for " + email + ".");
+                    return new ExitApprovalOutcome
+                    {
+                        Message = "That account is not allowed to close the SEL LIVE agent.",
+                    };
+                }
+            }
+            catch (FirebaseAuthException error)
+            {
+                _log.Write("Exit approval sign-in failed for " + email + ": " + error.Message);
+                return new ExitApprovalOutcome { Message = error.Message };
+            }
+            catch (SelApiException error)
+            {
+                _log.Write("Exit approval refused (" + error.StatusCode + "): " + error.Message);
+                return new ExitApprovalOutcome
+                {
+                    // 0 is the client's own timeout marker, not a server answer. Worth saying so
+                    // plainly: an administrator who cannot tell "you may not" from "I could not
+                    // ask" will go looking for the wrong problem.
+                    Message = error.StatusCode == 0
+                        ? "Could not reach SEL LIVE to check this. The agent keeps running until it can ask."
+                        : error.Message,
+                };
+            }
+            catch (Exception error)
+            {
+                _log.Write("Exit approval failed: " + error.Message);
+                return new ExitApprovalOutcome { Message = "Could not check this approval: " + error.Message };
+            }
+        }
+
         /* ── Notifications ───────────────────────────────────────────────────────────────── */
 
         private async void OnNotificationsAvailable(object sender, List<string> ids)

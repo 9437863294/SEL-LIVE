@@ -139,7 +139,7 @@ useless on an unenrolled PC.
 | Admin screens | `src/app/(protected)/windows-agent/*`, `src/components/windows-agent/*` |
 | Windows client | `windows/` — Core, WindowsLegacy, WindowsModern, app, service, tests, installer |
 | Embedded ERP window | `windows/SEL.Agent/ErpWindow.xaml{,.cs}`, `ErpBrowser.cs`, and `src/app/(public)/auth/agent/page.tsx` at the other end |
-| Admin-gated exit | `windows/SEL.Agent/ElevationGate.cs` |
+| Admin-gated exit | `windows/SEL.Agent/ExitApprovalWindow.xaml{,.cs}`, and `src/app/api/windows-agent/exit-approval/route.ts` at the other end |
 | Installer | `windows/SEL.Agent.Installer/Package.wxs` (the MSI), `Bundle.wxs` (the setup .exe), `build.ps1` (both) |
 | Tests | `tests/windows-agent-domain.test.mjs`, `windows/SEL.Agent.Tests` |
 
@@ -466,18 +466,42 @@ log of everything in between.
 
 ## 7b. Closing the agent
 
-The tray menu has **Exit**, and choosing it asks for administrator approval. An administrator
-consents; anyone else gets a credential prompt and can fetch IT. Cancelling leaves the agent
-running, and the attempt is recorded in the agent log either way.
+The tray menu has **Exit**, and choosing it asks for a **SEL LIVE administrator** — a sign-in to
+this application, not a Windows one. Cancelling leaves the agent running.
 
-This is Windows' own elevation prompt, not a password box the agent drew — which matters, because
-a dialog an application invents can be answered by anything that can send it keystrokes. It is the
-same reasoning as §7: the agent asks Windows to enforce things Windows is good at enforcing, and
-does not pretend to be a security boundary it is not.
+The permission checked is `Windows Agent / Devices / Edit`, the same one that already covers
+blocking a device and forcing a re-authentication. Anyone who can block a PC outright can already
+stop it reporting, so being able to close the agent on it grants nothing new.
 
-The agent is still an ordinary user-mode process, so Task Manager can end it. That is stated in
-§7 and has not changed. What Exit adds is that the obvious, discoverable way to close it needs
-somebody with administrator rights, so it does not happen by accident on the way out at 5 p.m.
+**Why not a UAC prompt.** That was the first implementation and it asks the wrong question.
+Windows can only tell you whether somebody is a local administrator on that PC — a fact about who
+set the machine up. Plenty of employees are local administrators on their own laptop, and the HR
+or IT staff who should actually be making this call often hold no Windows rights on it at all.
+Whether an employee may stop their own attendance recording is an organisational decision, so it
+is answered by the organisation's own roles.
+
+**The server decides, not the agent.** The agent sends the administrator's sign-in to
+`/api/windows-agent/exit-approval`, which needs the device credential *as well*, checks the
+permission, and writes an `AGENT_EXIT_APPROVED` entry naming who approved it, on which computer,
+and why. Had the agent evaluated the permission locally, the record would be a claim by the
+machine whose user wanted it stopped.
+
+Nothing about the administrator's session is kept: no refresh token is stored, the employee's own
+agent session is untouched, and the token is discarded once the answer comes back. They approved
+one action on one PC, not a sign-in.
+
+**Two consequences worth knowing before a rollout:**
+
+- **It needs the network.** An offline PC cannot get approval, so Exit will not work there. The
+  recovery paths in §7 — stopping the service, Task Manager, blocking the device — all still do.
+- **Grant the permission to somebody before you need it.** A fresh installation where nobody holds
+  `Devices / Edit` has no one who can approve an exit. That is the same set of people who can
+  administer the module at all, so in practice it is already granted; check it is.
+
+The agent remains an ordinary user-mode process and Task Manager can still end it, exactly as §7
+says. What this adds is that the obvious, discoverable way to close it produces an answer to "why
+did this PC stop reporting at half past two" — and does not happen by accident on the way out at
+5 p.m.
 
 ---
 

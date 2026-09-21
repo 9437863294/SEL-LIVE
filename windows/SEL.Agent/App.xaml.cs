@@ -50,24 +50,10 @@ namespace Sel.Agent
         private AgentHost _host;
         private TrayController _tray;
         private AgentLog _log;
-        private IDisposable _exitListener;
 
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
-
-            // The elevated helper launched by the tray's Exit. It signals the running agent and
-            // quits without starting anything — checked before the single-instance mutex,
-            // because it is not a second agent and must not be treated as one.
-            foreach (string argument in e.Args)
-            {
-                if (string.Equals(argument, ElevationGate.RequestExitArgument, StringComparison.OrdinalIgnoreCase))
-                {
-                    ElevationGate.SignalExitAndQuit();
-                    Shutdown();
-                    return;
-                }
-            }
 
             bool createdNew;
             _instanceMutex = new Mutex(true, InstanceMutexName, out createdNew);
@@ -129,11 +115,6 @@ namespace Sel.Agent
             _tray.SignOutRequested += OnSignOutRequested;
             _tray.SignInRequested += (sender, args) => ShowGate();
             _tray.Show();
-
-            // The other end of the elevated Exit: an approved helper sets this event and the
-            // agent shuts down cleanly rather than being killed.
-            _exitListener = ElevationGate.ListenForExitRequest(() =>
-                Dispatcher.BeginInvoke(new Action(async () => await StopAndQuitAsync())));
 
             // Fire and forget: the UI thread must not wait on the network. Exceptions are caught
             // inside StartAsync, which reports through the tray rather than throwing here.
@@ -273,34 +254,41 @@ namespace Sel.Agent
         /// which is both untrue and the sort of thing that gets a monitoring tool a reputation
         /// for being sneaky. Showing it and refusing is honest about who is in control.
         /// </remarks>
+        /// <summary>
+        /// Exit, once a SEL LIVE administrator says so.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Not a UAC prompt, which is what this used to be. Windows can only answer "is this
+        /// person a local administrator", and that is a fact about who set the laptop up rather
+        /// than about who may stop somebody's attendance recording. Half the employees on a
+        /// small estate are local administrators on their own machine; the HR staff who should
+        /// be making this call frequently are not.
+        /// </para>
+        /// <para>
+        /// The dialog asks for a SEL LIVE sign-in and the server checks
+        /// <c>Windows Agent / Devices / Edit</c> — the same permission that already covers
+        /// blocking a device — then records who approved it. Both halves matter: the decision is
+        /// the organisation's, and afterwards there is an answer to "why did this PC stop
+        /// reporting at half past two".
+        /// </para>
+        /// </remarks>
         private async void OnExitRequested(object sender, EventArgs e)
         {
-            ElevationGate.ExitApproval approval = ElevationGate.RequestExitApproval(_log.Write);
+            var dialog = new ExitApprovalWindow(_host);
+            bool? approved = dialog.ShowDialog();
 
-            switch (approval)
+            if (approved != true)
             {
-                case ElevationGate.ExitApproval.AlreadyElevated:
-                    await StopAndQuitAsync().ConfigureAwait(true);
-                    return;
-
-                case ElevationGate.ExitApproval.Approved:
-                    // The elevated helper is about to set the event; ListenForExitRequest picks
-                    // it up and calls StopAndQuitAsync. Nothing to do here — doing it here as
-                    // well would race the listener and close the session twice.
-                    return;
-
-                case ElevationGate.ExitApproval.Declined:
-                    _tray.ShowBalloon(
-                        "Still running",
-                        "Stopping the SEL LIVE agent needs an administrator. It is still recording.");
-                    return;
-
-                default:
-                    _tray.ShowBalloon(
-                        "Could not stop",
-                        "The administrator prompt could not be shown. Ask IT to stop the agent.");
-                    return;
+                _tray.ShowBalloon(
+                    "Still running",
+                    "Closing the SEL LIVE agent needs approval from a SEL LIVE administrator. "
+                        + "It is still recording.");
+                return;
             }
+
+            _log.Write("Exit approved by " + (dialog.ApprovedByName ?? "an administrator") + ".");
+            await StopAndQuitAsync().ConfigureAwait(true);
         }
 
         /// <summary>Close the work session properly, then end the process.</summary>
@@ -335,7 +323,6 @@ namespace Sel.Agent
 
         protected override void OnExit(ExitEventArgs e)
         {
-            if (_exitListener != null) _exitListener.Dispose();
             if (_tray != null) _tray.Dispose();
             if (_host != null) _host.Dispose();
             if (_instanceMutex != null)

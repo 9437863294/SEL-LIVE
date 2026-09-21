@@ -169,6 +169,35 @@ namespace Sel.Agent.Core.Api
         }
 
         /// <summary>
+        /// Ask SEL LIVE whether this administrator may close the agent on this computer.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <paramref name="approverIdToken"/> belongs to the administrator standing at the
+        /// keyboard, not to whoever is signed in to the agent — those are different people by
+        /// definition, which is why it travels as an <c>Authorization</c> bearer rather than in
+        /// the usual agent-user header.
+        /// </para>
+        /// <para>
+        /// The server decides, and records who decided. Evaluating the permission here instead
+        /// would put the answer on the machine being argued with, and would leave no trail
+        /// explaining why a PC stopped reporting.
+        /// </para>
+        /// </remarks>
+        public Task<ExitApprovalResponse> RequestExitApprovalAsync(
+            string approverIdToken, string reason, CancellationToken cancellation)
+        {
+            return SendAsync<ExitApprovalResponse>(
+                HttpMethod.Post,
+                "/api/windows-agent/exit-approval",
+                new { reason },
+                true,
+                null,
+                approverIdToken,
+                cancellation);
+        }
+
+        /// <summary>
         /// Turn an employee ID into the email address Firebase knows the person by.
         /// </summary>
         /// <remarks>
@@ -191,12 +220,40 @@ namespace Sel.Agent.Core.Api
 
         /* ── Transport ───────────────────────────────────────────────────────────────────── */
 
+        private Task<T> SendAsync<T>(
+            HttpMethod method,
+            string path,
+            object payload,
+            bool requireDevice,
+            string idTokenHeader,
+            CancellationToken cancellation)
+        {
+            return SendAsync<T>(method, path, payload, requireDevice, idTokenHeader, null, cancellation);
+        }
+
+        /// <summary>
+        /// The full request, with an optional <c>Authorization</c> bearer token.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Two different token headers, deliberately. <c>X-SEL-Id-Token</c> carries the token of
+        /// whoever is signed in to the agent, on routes that act on their behalf.
+        /// <c>Authorization: Bearer</c> carries a *different* person's token — presently only the
+        /// administrator approving an exit — and is the header every browser-facing route in this
+        /// application already reads, so those routes need no special handling for the agent.
+        /// </para>
+        /// <para>
+        /// Kept as an overload so the eleven callers that never need a bearer are not each made
+        /// to pass a null for it.
+        /// </para>
+        /// </remarks>
         private async Task<T> SendAsync<T>(
             HttpMethod method,
             string path,
             object payload,
             bool requireDevice,
             string idTokenHeader,
+            string bearerToken,
             CancellationToken cancellation)
         {
             if (requireDevice && (string.IsNullOrEmpty(DeviceId) || string.IsNullOrEmpty(DeviceSecret)))
@@ -216,6 +273,10 @@ namespace Sel.Agent.Core.Api
                 {
                     // GET routes have no body, so the user token travels in a header instead.
                     request.Headers.TryAddWithoutValidation(IdTokenHeader, idTokenHeader);
+                }
+                if (!string.IsNullOrEmpty(bearerToken))
+                {
+                    request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + bearerToken);
                 }
 
                 if (payload != null)
@@ -336,6 +397,14 @@ namespace Sel.Agent.Core.Api
         [JsonProperty("userId")] public string UserId { get; set; }
         [JsonProperty("userName")] public string UserName { get; set; }
         [JsonProperty("email")] public string Email { get; set; }
+    }
+
+    /// <summary>Whether a SEL LIVE administrator authorised closing the agent.</summary>
+    public sealed class ExitApprovalResponse
+    {
+        [JsonProperty("approved")] public bool Approved { get; set; }
+        [JsonProperty("approvedBy")] public string ApprovedBy { get; set; }
+        [JsonProperty("approvedByName")] public string ApprovedByName { get; set; }
     }
 
     /// <summary>The employee-ID lookup's answer. <c>Email</c> is null when nothing matched.</summary>
