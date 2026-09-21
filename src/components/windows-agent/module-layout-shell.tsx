@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
   BellRing,
   CalendarClock,
   Gauge,
@@ -32,6 +34,12 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { WINDOWS_AGENT_ROUTES } from '@/lib/windows-agent';
 import {
@@ -90,6 +98,17 @@ interface Section {
   group: 'mine' | 'monitor' | 'reports' | 'config';
   gate: Gate;
   exact?: boolean;
+
+  /**
+   * The icon tile's colours, and the active row's gradient.
+   *
+   * Per item rather than per group, matching the Insurance module this now looks like. Colour
+   * is doing real work in a fourteen-item list: it is what lets somebody who uses "Devices"
+   * every morning find it by shape rather than by reading four headings.
+   */
+  tile: string;
+  tint: string;
+  active: string;
 }
 
 const SECTIONS: Section[] = [
@@ -100,6 +119,9 @@ const SECTIONS: Section[] = [
     icon: UserRound,
     group: 'mine',
     gate: 'self',
+    tile: 'bg-violet-100',
+    tint: 'text-violet-600',
+    active: 'from-violet-500 to-purple-600',
   },
   {
     href: WINDOWS_AGENT_ROUTES.monitoringPolicy,
@@ -108,6 +130,9 @@ const SECTIONS: Section[] = [
     icon: ShieldCheck,
     group: 'mine',
     gate: 'always',
+    tile: 'bg-emerald-100',
+    tint: 'text-emerald-600',
+    active: 'from-emerald-500 to-teal-600',
   },
 
   {
@@ -117,6 +142,9 @@ const SECTIONS: Section[] = [
     icon: Gauge,
     group: 'monitor',
     gate: 'dashboard',
+    tile: 'bg-blue-100',
+    tint: 'text-blue-600',
+    active: 'from-blue-500 to-indigo-600',
     exact: true,
   },
   {
@@ -126,6 +154,9 @@ const SECTIONS: Section[] = [
     icon: Activity,
     group: 'monitor',
     gate: 'live',
+    tile: 'bg-cyan-100',
+    tint: 'text-cyan-600',
+    active: 'from-cyan-500 to-sky-600',
   },
   {
     href: WINDOWS_AGENT_ROUTES.users,
@@ -134,6 +165,9 @@ const SECTIONS: Section[] = [
     icon: Users,
     group: 'monitor',
     gate: 'sessions',
+    tile: 'bg-indigo-100',
+    tint: 'text-indigo-600',
+    active: 'from-indigo-500 to-blue-600',
   },
   {
     href: WINDOWS_AGENT_ROUTES.devices,
@@ -142,6 +176,9 @@ const SECTIONS: Section[] = [
     icon: HardDrive,
     group: 'monitor',
     gate: 'devices',
+    tile: 'bg-teal-100',
+    tint: 'text-teal-600',
+    active: 'from-teal-500 to-cyan-600',
   },
   {
     href: WINDOWS_AGENT_ROUTES.access,
@@ -150,6 +187,9 @@ const SECTIONS: Section[] = [
     icon: KeyRound,
     group: 'monitor',
     gate: 'devices',
+    tile: 'bg-amber-100',
+    tint: 'text-amber-600',
+    active: 'from-amber-500 to-orange-500',
   },
   {
     href: WINDOWS_AGENT_ROUTES.sessions,
@@ -158,6 +198,9 @@ const SECTIONS: Section[] = [
     icon: CalendarClock,
     group: 'monitor',
     gate: 'sessions',
+    tile: 'bg-sky-100',
+    tint: 'text-sky-600',
+    active: 'from-sky-500 to-blue-600',
   },
 
   {
@@ -167,6 +210,9 @@ const SECTIONS: Section[] = [
     icon: CalendarClock,
     group: 'reports',
     gate: 'attendance',
+    tile: 'bg-orange-100',
+    tint: 'text-orange-600',
+    active: 'from-orange-500 to-amber-600',
   },
   {
     href: WINDOWS_AGENT_ROUTES.applications,
@@ -175,6 +221,9 @@ const SECTIONS: Section[] = [
     icon: MonitorSmartphone,
     group: 'reports',
     gate: 'applications',
+    tile: 'bg-fuchsia-100',
+    tint: 'text-fuchsia-600',
+    active: 'from-fuchsia-500 to-pink-600',
   },
   {
     href: WINDOWS_AGENT_ROUTES.reports,
@@ -183,6 +232,9 @@ const SECTIONS: Section[] = [
     icon: BarChart3,
     group: 'reports',
     gate: 'reports',
+    tile: 'bg-rose-100',
+    tint: 'text-rose-600',
+    active: 'from-rose-500 to-red-600',
     exact: true,
   },
 
@@ -193,6 +245,9 @@ const SECTIONS: Section[] = [
     icon: BellRing,
     group: 'config',
     gate: 'notifications',
+    tile: 'bg-yellow-100',
+    tint: 'text-yellow-700',
+    active: 'from-yellow-500 to-amber-600',
   },
   {
     href: WINDOWS_AGENT_ROUTES.policies,
@@ -201,6 +256,9 @@ const SECTIONS: Section[] = [
     icon: SlidersHorizontal,
     group: 'config',
     gate: 'policies',
+    tile: 'bg-slate-100',
+    tint: 'text-slate-600',
+    active: 'from-slate-500 to-slate-700',
   },
   {
     href: WINDOWS_AGENT_ROUTES.versions,
@@ -209,6 +267,9 @@ const SECTIONS: Section[] = [
     icon: Package,
     group: 'config',
     gate: 'versions',
+    tile: 'bg-lime-100',
+    tint: 'text-lime-700',
+    active: 'from-lime-500 to-green-600',
   },
   {
     href: WINDOWS_AGENT_ROUTES.audit,
@@ -217,6 +278,9 @@ const SECTIONS: Section[] = [
     icon: ScrollText,
     group: 'config',
     gate: 'audit',
+    tile: 'bg-stone-100',
+    tint: 'text-stone-600',
+    active: 'from-stone-500 to-stone-700',
   },
 ];
 
@@ -228,6 +292,9 @@ const GROUP_LABELS: Record<Section['group'], string> = {
 };
 
 const GROUP_ORDER: Section['group'][] = ['mine', 'monitor', 'reports', 'config'];
+
+/** Where the collapsed/expanded preference is kept. Per browser, not per user. */
+const NAV_COLLAPSED_KEY = 'sel.windowsAgent.navCollapsed';
 
 export default function WindowsAgentLayoutShell({ children }: { children: React.ReactNode }) {
   return (
@@ -241,6 +308,31 @@ function ShellBody({ children }: { children: React.ReactNode }) {
   const { viewer, loading, canOpenModule } = useWindowsAgent();
   const pathname = usePathname() || '';
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  /**
+   * Remember whether the sidebar was collapsed.
+   *
+   * Read in an effect rather than in `useState`'s initialiser: the server renders this too, and
+   * reading `localStorage` during the first render makes the client's markup differ from the
+   * server's, which React reports as a hydration error. Starting expanded and correcting on
+   * mount costs one frame and is the supported way round it.
+   */
+  useEffect(() => {
+    try {
+      setCollapsed(window.localStorage.getItem(NAV_COLLAPSED_KEY) === '1');
+    } catch {
+      // Private browsing, or storage disabled by policy. Expanded is a fine default.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? '1' : '0');
+    } catch {
+      // As above — not remembering the preference is not worth an error.
+    }
+  }, [collapsed]);
 
   // AppShell already strips the application header for a print route; this is a nested layout, so
   // without this the printed report would carry the module's sidebar too. `print:hidden` alone is
@@ -275,58 +367,98 @@ function ShellBody({ children }: { children: React.ReactNode }) {
 
   const visible = SECTIONS.filter((section) => isVisible(section.gate, viewer));
 
-  const nav = (
-    <nav className="space-y-6">
-      {GROUP_ORDER.map((group) => {
-        const items = visible.filter((section) => section.group === group);
-        if (!items.length) return null;
-        return (
-          <div key={group}>
-            <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {GROUP_LABELS[group]}
-            </p>
-            <div className="space-y-0.5">
-              {items.map((section) => {
-                const active = section.exact
-                  ? pathname === section.href
-                  : pathname.startsWith(section.href);
-                const Icon = section.icon;
-                return (
-                  <Link
-                    key={section.href}
-                    href={section.href}
-                    prefetch={false}
-                    onClick={() => setSheetOpen(false)}
-                    className={cn(
-                      'flex items-start gap-3 rounded-md px-3 py-2 text-sm transition-colors',
-                      active
-                        ? 'bg-primary/10 font-medium text-primary'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                    )}
-                  >
-                    <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                    <span className="min-w-0">
-                      <span className="block truncate">{section.label}</span>
-                      <span className="block truncate text-xs text-muted-foreground/80">
-                        {section.description}
-                      </span>
-                    </span>
-                  </Link>
-                );
-              })}
+  /**
+   * One row. A tile, a label when there is room, and a tooltip that always has something to say.
+   *
+   * The description used to sit under every label and be truncated to "Your own hours,
+   * applications and sign-i…", fourteen times down the page. It is the same sentence either
+   * way; as a tooltip it is readable and the list is legible.
+   */
+  function NavRow({ section, expanded }: { section: Section; expanded: boolean }) {
+    const active = section.exact
+      ? pathname === section.href
+      : pathname.startsWith(section.href);
+    const Icon = section.icon;
+
+    return (
+      <Tooltip key={section.href}>
+        <TooltipTrigger asChild>
+          <Link
+            href={section.href}
+            prefetch={false}
+            onClick={() => setSheetOpen(false)}
+            aria-current={active ? 'page' : undefined}
+            className={cn(
+              'group relative flex items-center rounded-lg transition-all duration-200',
+              expanded ? 'gap-2.5 px-2 py-1.5' : 'justify-center p-1.5',
+              active
+                ? cn('bg-gradient-to-r text-white shadow-sm', section.active)
+                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+            )}
+          >
+            <span
+              className={cn(
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all duration-200',
+                active ? 'bg-white/25' : cn(section.tile, 'group-hover:scale-105'),
+              )}
+            >
+              <Icon className={cn('h-4 w-4', active ? 'text-white' : section.tint)} aria-hidden />
+            </span>
+            {expanded ? (
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{section.label}</span>
+            ) : null}
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-xs">
+          {/* Collapsed, the label is the only thing missing; expanded, the description is. */}
+          {expanded ? null : <p className="text-xs font-semibold">{section.label}</p>}
+          <p className="text-xs text-muted-foreground">{section.description}</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  function renderNav(expanded: boolean) {
+    return (
+      <nav className={cn('space-y-1', expanded ? 'px-2' : 'px-1.5')}>
+        {GROUP_ORDER.map((group, index) => {
+          const items = visible.filter((section) => section.group === group);
+          if (!items.length) return null;
+          return (
+            <div key={group} className={index === 0 ? undefined : 'pt-3'}>
+              {expanded ? (
+                <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  {GROUP_LABELS[group]}
+                </p>
+              ) : (
+                // Collapsed there is no room for a heading, but the grouping still carries
+                // meaning — a hairline keeps it rather than running fourteen icons together.
+                index === 0 ? null : <div className="mx-auto mb-2 h-px w-6 bg-border" aria-hidden />
+              )}
+              <div className="space-y-0.5">
+                {items.map((section) => (
+                  <NavRow key={section.href} section={section} expanded={expanded} />
+                ))}
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </nav>
-  );
+          );
+        })}
+      </nav>
+    );
+  }
 
   return (
-    <div className="mx-auto w-full max-w-[100rem] p-3 sm:p-6">
-      <div className="flex items-center justify-between gap-3 lg:hidden">
-        <div>
-          <h1 className="text-lg font-semibold">Windows Agent</h1>
-          <p className="text-xs text-muted-foreground">Attendance, activity and desktop alerts</p>
+    <TooltipProvider delayDuration={200}>
+      {/* ── Below lg: a title bar and a drawer ────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-3 border-b px-4 py-3 lg:hidden">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+            <KeyRound className="h-4 w-4 text-primary" aria-hidden />
+          </span>
+          <div>
+            <h1 className="text-sm font-semibold leading-tight">Windows Agent</h1>
+            <p className="text-xs text-muted-foreground">Attendance &amp; activity</p>
+          </div>
         </div>
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
@@ -334,35 +466,80 @@ function ShellBody({ children }: { children: React.ReactNode }) {
               <Menu className="h-4 w-4" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-80 overflow-y-auto">
-            <SheetHeader className="text-left">
-              <SheetTitle>Windows Agent</SheetTitle>
-              <SheetDescription>Attendance, activity and desktop alerts</SheetDescription>
+          <SheetContent side="left" className="w-72 overflow-y-auto p-0">
+            <SheetHeader className="border-b px-4 py-3 text-left">
+              <SheetTitle className="text-sm">Windows Agent</SheetTitle>
+              <SheetDescription className="text-xs">
+                Attendance, activity and desktop alerts
+              </SheetDescription>
             </SheetHeader>
-            <div className="mt-6">{nav}</div>
+            {/* Always expanded in the drawer: it slid out because somebody wants to read it. */}
+            <div className="py-3">{renderNav(true)}</div>
           </SheetContent>
         </Sheet>
       </div>
 
-      <div className="mt-3 flex gap-6 lg:mt-0">
-        <aside className="hidden w-72 shrink-0 lg:block">
-          <div className="sticky top-4">
-            <div className="mb-5 flex items-center gap-2 px-3">
-              <KeyRound className="h-5 w-5 text-primary" aria-hidden />
-              <div>
-                <p className="text-sm font-semibold leading-tight">Windows Agent</p>
-                <p className="text-xs text-muted-foreground">Attendance &amp; activity</p>
-              </div>
+      {/* ── lg and up: a sidebar that collapses to a rail ─────────────────────────────── */}
+      <aside
+        className={cn(
+          'fixed left-0 top-16 z-30 hidden h-[calc(100vh-4rem)] flex-col border-r',
+          'bg-background/95 shadow-sm backdrop-blur-sm transition-[width] duration-300 lg:flex',
+          collapsed ? 'w-[4.25rem]' : 'w-64',
+        )}
+      >
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-2 border-b px-3 py-3',
+            collapsed && 'justify-center',
+          )}
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <KeyRound className="h-4 w-4 text-primary" aria-hidden />
+          </span>
+          {collapsed ? null : (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold leading-tight">Windows Agent</p>
+              <p className="truncate text-xs text-muted-foreground">Attendance &amp; activity</p>
             </div>
-            {nav}
-          </div>
-        </aside>
+          )}
+        </div>
 
-        {/* min-w-0 is load-bearing: without it a wide table inside a flex child refuses to shrink
-            and pushes the whole page horizontally instead of scrolling within its own container. */}
-        <main className="min-w-0 flex-1">{children}</main>
+        <div className="flex-1 overflow-y-auto py-3">{renderNav(!collapsed)}</div>
+
+        <div className="shrink-0 border-t p-2">
+          <button
+            type="button"
+            onClick={() => setCollapsed((value) => !value)}
+            aria-label={collapsed ? 'Expand the menu' : 'Collapse the menu'}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground',
+              'transition-colors hover:bg-muted/60 hover:text-foreground',
+              collapsed && 'justify-center',
+            )}
+          >
+            {collapsed ? (
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            ) : (
+              <>
+                <ChevronLeft className="h-4 w-4 shrink-0" aria-hidden />
+                <span>Collapse</span>
+              </>
+            )}
+          </button>
+        </div>
+      </aside>
+
+      {/* min-w-0 is load-bearing: without it a wide table refuses to shrink and pushes the
+          whole page sideways instead of scrolling inside its own container. */}
+      <div
+        className={cn(
+          'min-w-0 transition-[padding] duration-300',
+          collapsed ? 'lg:pl-[4.25rem]' : 'lg:pl-64',
+        )}
+      >
+        <main className="min-w-0 p-3 sm:p-6">{children}</main>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
 
