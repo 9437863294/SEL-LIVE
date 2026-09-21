@@ -1010,5 +1010,43 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    /* --------------------------------------------------------------------------------------------
+     * Work calls (the Android side of the same module)
+     * ------------------------------------------------------------------------------------------ */
+
+    /**
+     * The work directory.
+     *
+     * Readable by every signed-in employee. It is the list of site managers, clients and vendors
+     * somebody has to ring; gating it behind an administrative permission would hide it from the
+     * people who make the calls, and it would be back in everybody's personal phone contacts by
+     * the end of the week.
+     *
+     * Not writable from a client at all. /api/work-calls/contacts refuses a second contact with
+     * the same number, and that check is only worth anything if it cannot be gone around.
+     */
+    match /workContacts/{contactId} {
+      allow get, list: if signedIn();
+      allow write: if false;
+    }
+
+    /**
+     * Call records.
+     *
+     * A person may read their own, because the confirmation prompt and their own day's list are
+     * built from them. Colleagues' calls need the same permission as any other activity — a call
+     * log says who an employee has been talking to, which is no less revealing than what they
+     * have had on screen.
+     *
+     * Writable by nobody here. A call record is a claim about how nineteen minutes were spent and
+     * the resolution engine turns it into reported work time; the phone deciding its own duration
+     * would make the four-hour ceiling and the confirmation rules advisory.
+     */
+    match /workCalls/{callId} {
+      allow get: if canReadWindowsActivity(resource.data.userId);
+      allow list: if canReadWindowsActivity(resource.data.userId);
+      allow write: if false;
+    }
+
   }
 }

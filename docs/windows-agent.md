@@ -677,6 +677,125 @@ working session, and an irritation everywhere else.
 
 ---
 
+## 7e. Work calls, on the phone
+
+A site engineer's afternoon is mostly phone calls. None of that was reaching the timeline: the
+desktop agent sees a PC, and somebody standing in a stairwell talking to a supplier looks exactly
+like somebody who went home. `/work-calls` is the screen that closes that gap.
+
+It is a page in this web app, not a native screen. The SEL LIVE Android application loads
+`https://seltech.store` in a Capacitor shell, so a route here already *is* a screen in the app —
+no plugin, no release, no store review to ship a change to it. Dialling is a `tel:` link, which
+needs no permission and behaves the same way on every Android version back to the ones still in
+the field.
+
+### What it does not do, and why that is not a shortcut
+
+It does not read the Android call log, and it never will from this codebase. `READ_CALL_LOG` is
+restricted to apps the user has set as their default dialer; Play Store review rejects it
+otherwise, and an ERP is not a dialer. So there is no supported way for this app to be *told* that
+a call connected or how long it lasted.
+
+It also does not record audio, either side, ever — §T of the brief, and not a limitation anybody
+should be trying to work around.
+
+What remains is the honest option: the app records the dial, and when it comes back into the
+foreground it asks.
+
+### The flow
+
+1. Search the work directory — by name, company, designation, or by typing the number itself,
+   because that is what somebody holding a scrap of paper actually does.
+2. Optionally say what the call is about. Asked *before* dialling, because nobody types it
+   afterwards.
+3. The dial is recorded server-side, then the `tel:` link hands over to the phone. In that order:
+   once the dialer is in front, this page may be suspended and gets no further chance to say
+   anything.
+4. The app becoming visible again brings up one question — *did the call happen?* — with the
+   elapsed time already filled in.
+
+Opening the page also picks up any call still sitting in `DIALLED`. That is not a nicety: Android
+routinely kills a backgrounded web view, which is the single most likely thing to happen while
+the dialer is in front. Without that step the call would be lost — the employee made it, and
+nothing would ever ask them about it.
+
+| Endpoint | Does |
+|---|---|
+| `GET /api/work-calls/contacts` | Search the directory. Any signed-in employee |
+| `POST /api/work-calls/contacts` | Add or edit a contact. `Devices / Edit` |
+| `POST /api/work-calls/start` | Record a dial. Server-stamped time and `workDate` |
+| `POST /api/work-calls/end` | Confirm or cancel. Applies the duration rules |
+| `GET /api/work-calls/today` | The caller's own day, and anything left unconfirmed |
+
+### What each state is worth
+
+| State | Means | Counted as work time |
+|---|---|---|
+| `DIALLED` | The number went to the dialer. Nothing else is known yet | **No** |
+| `COMPLETED` | The employee confirmed the call happened | Yes, for the confirmed duration |
+| `CANCELLED` | The employee said it did not connect | No |
+| `NOT_CONFIRMED` | Confirmed, but the duration failed the rules below | No — the record is kept, with the reason |
+
+**An unconfirmed dial is worth nothing at all.** That is the whole design, so it is worth being
+explicit about the alternative: treating "away from the app for nineteen minutes" as a
+nineteen-minute call. That would be a guess presented as a measurement, and it would be wrong
+every time somebody left a voicemail and went to lunch. Because unconfirmed time is not counted,
+confirming is worth the employee's two seconds — which is the only thing that keeps the data
+truthful.
+
+There is deliberately **no `CONNECTED` state**. Nothing in this system can observe a connection,
+so there is no state to represent one.
+
+### Duration rules
+
+Applied server-side in `endCall`, never by the phone. A client that could send its own figure
+would make all of this advisory.
+
+| Rule | Value | Why |
+|---|---|---|
+| Minimum | 5 seconds | Below that it is a misdial, and it is stored as `CANCELLED` |
+| Maximum | 4 hours | An app left in the background overnight and reopened the next morning becomes `NOT_CONFIRMED`, not an eighteen-hour call |
+| Source | `RETURN_TO_APP` or `MANUAL` | Recorded on the row, so a report can tell a measured gap from a typed number |
+
+Times are stamped by the server, not the handset. A phone with a wrong clock would otherwise put
+a call in yesterday's timeline.
+
+### How it reaches the timeline
+
+`callsToActivityClaims` turns confirmed calls into `WORK_CALL` claims for the resolution engine
+(§X), which is what stops a call being double-counted against desktop activity in the same
+minutes — see `src/lib/work-activity-resolution.ts` and the priority table there. The claim's
+length comes from the confirmed duration, never from `endedAt`, so the timeline cannot disagree
+with the totals.
+
+`tests/work-calls.test.mjs` covers this end to end with the brief's own §U example: a confirmed
+call turns nineteen otherwise-idle minutes into work; the same dial left unconfirmed leaves them
+`UNEXPLAINED_IDLE`.
+
+### Administering the directory
+
+| | |
+|---|---|
+| Reading it | Any signed-in employee. It is the list of site managers and clients people have to ring; hiding it behind an administrative permission is how a directory ends up back in everybody's personal contacts |
+| Adding and editing | `Windows Agent / Devices / Edit` — not a permission of its own, because a new permission node starts out granted to nobody and on day one not a single person could add the first contact |
+| Duplicates | Refused. A second contact with the same number gets a 409 naming the existing one — three spellings of one site manager is the normal failure here, not an unlikely one |
+
+Reading somebody else's calls needs the same permission as reading their desktop activity. A call
+log says who an employee has been talking to, which is no less revealing than what they have had
+on screen.
+
+### Before this works in production
+
+`workContacts` and `workCalls` blocks have been added to `firestore.rules`, and the `workCalls`
+composite indexes to `firestore.indexes.json`. Both still need adopting the way §4 describes —
+the rules file is not wired into `firebase.json`, so the blocks have to be copied into the console
+ruleset. Until the indexes exist, `callsForDay` fails with an index-required error rather than
+returning nothing, which at least says so plainly.
+
+Neither collection is client-writable. Every write goes through `/api/work-calls/*`.
+
+---
+
 ## 8. Staged rollout
 
 Do not switch on the access gate fleet-wide. The default policy has it **off**, which is
@@ -792,3 +911,13 @@ Stated so nobody discovers them during a rollout.
   in full; WebView2 ships as its 2 MB downloader, because the offline runtime is 188 MB and the
   feature it enables has a working fallback. An air-gapped site either builds with
   `-OfflineWebView2` or accepts that SEL LIVE opens in the browser there. §5.
+- **Work-call durations are employee-confirmed, not measured.** §7e. Android will not tell an ERP
+  that a call connected, so there is no version of this feature that measures it. A dial nobody
+  confirms counts as nothing, which is the honest outcome but does mean the figure depends on
+  people answering one question.
+- **There is no administrative screen for the work directory yet.** Contacts go in through
+  `POST /api/work-calls/contacts`; the employee-facing search reads them. Somebody holding
+  `Devices / Edit` still needs a form.
+- **Work calls are not yet on the administrative reports.** The records exist, carry a `workDate`,
+  and already feed the resolution engine, so an employee's own timeline counts them. The
+  department and attendance reports do not break them out.

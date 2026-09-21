@@ -110,6 +110,11 @@ export const WINDOWS_AGENT_ROUTES = {
   myActivity: '/windows-agent/my-activity',
   /** §52's transparency page. */
   monitoringPolicy: '/windows-agent/monitoring-policy',
+  /**
+   * §Q's work calls. Outside the `/windows-agent` tree on purpose: it is the one screen in this
+   * module an employee opens on their phone, several times a day, and it is not administration.
+   */
+  workCalls: '/work-calls',
   help: '/windows-agent/help',
 } as const;
 
