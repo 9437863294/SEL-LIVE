@@ -470,12 +470,20 @@ There is one entry in Programs and Features, not three. The MSI installs with
 
 Signing in to the agent signs you in to SEL LIVE. Opening a notification, or "Open SEL LIVE" from
 the tray, brings up the ERP in a window that belongs to the agent, already authenticated as the
-person at the keyboard. There is a nav strip with back, forward, reload, home — and **Open in
-browser**, which hands the current page to Chrome or Edge.
+person at the keyboard. The nav strip has back, forward, reload and home, and nothing else.
 
-That last button is what makes the window safe to ship. Anything it renders badly, anything that
-needs a password manager, anything that wants to print: one click and it is in the real browser.
-Without it, an employee hitting a limitation has nowhere to go and the window becomes an obstacle.
+**There is deliberately no "Open in browser".** It was there as an escape hatch, and it is the
+wrong thing to offer once this window is the working session: with `lockOnErpWindowClose` on,
+closing the window locks the PC, so a button that moves the ERP into Chrome hands somebody a way
+to carry on working outside the window whose closure is supposed to end the session. The
+arrangement only means anything if there is one way in.
+
+Links the ERP opens with `target="_blank"` navigate in the same window for the same reason —
+leaving those to the browser would have been the identical escape without the button.
+
+The cost is real and worth stating: anything the embedded browser renders badly, or that needs a
+password manager, now has no in-product way out. If that bites, the setting to reconsider is
+`lockOnErpWindowClose` rather than reinstating the button.
 
 **Where WebView2 is unavailable** — Windows 7 and 8.1, an unmanaged desktop that never installed
 it, a policy that blocks it — the agent detects that at start-up, writes it to the log, says

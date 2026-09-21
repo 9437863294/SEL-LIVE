@@ -94,9 +94,10 @@ namespace Sel.Agent
         /// Bring up the WebView, sign it in, and navigate.
         /// </summary>
         /// <remarks>
-        /// Every failure here is reported in the window rather than thrown, and every one of them
-        /// offers the external browser instead. An embedded view is a convenience; the ERP itself
-        /// has to stay reachable when the convenience does not work.
+        /// Every failure here is reported in the window rather than thrown, and offers a retry.
+        /// Where WebView2 cannot run at all, ErpBrowser has already sent this path to the default
+        /// browser before a window was ever constructed — that fallback is automatic, and is not
+        /// a choice put in front of the person.
         /// </remarks>
         private Task InitialiseAsync()
         {
@@ -134,8 +135,8 @@ namespace Sel.Agent
                 settings.IsStatusBarEnabled = false;
                 settings.IsSwipeNavigationEnabled = false;
 
-                // Anything the ERP opens with target=_blank goes to the real browser rather than
-                // spawning a chromeless popup this window cannot manage.
+                // target=_blank opens in this window rather than escaping to a browser or
+                // spawning a second chromeless popup. See OnNewWindowRequested.
                 core.NewWindowRequested += OnNewWindowRequested;
                 core.NavigationCompleted += OnNavigationCompleted;
                 core.SourceChanged += (s, args) => UpdateChrome();
@@ -152,8 +153,8 @@ namespace Sel.Agent
                 _host.Log.Write("Embedded ERP window failed to start: " + error.Message);
                 SetStatus(
                     "SEL LIVE could not open in this window",
-                    "The embedded browser could not start on this computer. "
-                        + "You can open SEL LIVE in your normal browser instead. (" + error.Message + ")",
+                    "The embedded browser could not start on this computer. Try again, and if it "
+                        + "keeps happening tell IT. (" + error.Message + ")",
                     true);
             }
         }
@@ -213,26 +214,35 @@ namespace Sel.Agent
         }
 
         /// <summary>
-        /// Pop-ups go to the real browser.
+        /// Pop-ups open in this window, not a new one and not the browser.
         /// </summary>
         /// <remarks>
-        /// A print preview, a Google Meet link, a document viewer — all of them are better in the
-        /// browser the person already has signed in to, and none of them are worth a second
-        /// chromeless window this one would have to manage the lifetime of.
+        /// <para>
+        /// These used to be handed to the default browser. That made every <c>target="_blank"</c>
+        /// link in the ERP a way out of the managed window — the same escape as the "Open in
+        /// browser" button, reachable without the button. Removing one and leaving the other
+        /// would have been decoration.
+        /// </para>
+        /// <para>
+        /// Navigating in place rather than opening a second WebView: this window is the session,
+        /// and a second chromeless window would be one more thing whose lifetime has to be
+        /// managed and whose closure means something different from this one's. Back returns
+        /// the person to where they were.
+        /// </para>
         /// </remarks>
         private void OnNewWindowRequested(object sender, CoreWebView2NewWindowRequestedEventArgs e)
         {
             e.Handled = true;
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri)
+                if (Browser.CoreWebView2 != null && !string.IsNullOrEmpty(e.Uri))
                 {
-                    UseShellExecute = true,
-                });
+                    Browser.CoreWebView2.Navigate(e.Uri);
+                }
             }
             catch (Exception error)
             {
-                _host.Log.Write("Could not open " + e.Uri + " externally: " + error.Message);
+                _host.Log.Write("Could not open " + e.Uri + " in the SEL LIVE window: " + error.Message);
             }
         }
 
@@ -254,11 +264,15 @@ namespace Sel.Agent
             HomeButton.IsEnabled = enabled;
         }
 
-        private void SetStatus(string title, string detail, bool offerExternal)
+        /// <param name="offerRetry">
+        /// Whether to show "Try again". Was "offer the browser instead", which is no longer
+        /// something this window does — see <see cref="OnRetry"/>.
+        /// </param>
+        private void SetStatus(string title, string detail, bool offerRetry)
         {
             StatusTitle.Text = title;
             StatusDetail.Text = detail;
-            StatusActionButton.Visibility = offerExternal ? Visibility.Visible : Visibility.Collapsed;
+            StatusActionButton.Visibility = offerRetry ? Visibility.Visible : Visibility.Collapsed;
             StatusPanel.Visibility = Visibility.Visible;
             Browser.Visibility = Visibility.Collapsed;
         }
@@ -284,27 +298,28 @@ namespace Sel.Agent
         }
 
         /// <summary>
-        /// Hand the current page to the user's own browser.
+        /// Try the page again after a failure.
         /// </summary>
         /// <remarks>
-        /// The escape hatch that makes the embedded window safe to ship. Anything it renders
-        /// badly, anything that needs a password manager, anything that wants to print — one
-        /// click and it is in Chrome. Without it, an employee hitting a limitation has no way
-        /// forward and the whole window becomes an obstacle.
+        /// Replaces an "Open in browser instead" button. A page that would not load is almost
+        /// always a network blip, and reloading is the fix; offering the browser instead solved
+        /// it by abandoning the window, which is not something to put in front of somebody when
+        /// closing that window is what ends their session.
         /// </remarks>
-        private void OnOpenExternal(object sender, RoutedEventArgs e)
+        private void OnRetry(object sender, RoutedEventArgs e)
         {
-            string current = Browser.CoreWebView2?.Source;
-            if (!string.IsNullOrEmpty(current) && current.StartsWith(_baseUrl, StringComparison.OrdinalIgnoreCase))
+            if (Browser.CoreWebView2 == null)
             {
-                // Strip the origin so the launcher's same-origin check does the validating.
-                string path = current.Substring(_baseUrl.Length);
-                _host.OpenErpExternally(string.IsNullOrEmpty(path) ? "/" : path);
+                // Never got started. Go round again from the beginning rather than reloading
+                // a browser that does not exist.
+                _initialising = null;
+                _initialised = false;
+                ShowPath(_pendingPath);
+                return;
             }
-            else
-            {
-                _host.OpenErpExternally(SafePath(_pendingPath));
-            }
+
+            SetStatus("Opening SEL LIVE…", "Trying again.", false);
+            Browser.CoreWebView2.Reload();
         }
 
         /* ── Helpers ─────────────────────────────────────────────────────────────────────── */
