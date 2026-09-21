@@ -140,13 +140,14 @@ useless on an unenrolled PC.
 | Windows client | `windows/` — Core, WindowsLegacy, WindowsModern, app, service, tests, installer |
 | Embedded ERP window | `windows/SEL.Agent/ErpWindow.xaml{,.cs}`, `ErpBrowser.cs`, and `src/app/(public)/auth/agent/page.tsx` at the other end |
 | Admin-gated exit | `windows/SEL.Agent/ExitApprovalWindow.xaml{,.cs}`, and `src/app/api/windows-agent/exit-approval/route.ts` at the other end |
+| Idle lock | `windows/SEL.Agent.Core/Session/IdleLockPlanner.cs` (the rules, tested), `windows/SEL.Agent/SessionLifecycleController.cs` (the timer and windows) |
 | Installer | `windows/SEL.Agent.Installer/Package.wxs` (the MSI), `Bundle.wxs` (the setup .exe), `build.ps1` (both) |
 | Tests | `tests/windows-agent-domain.test.mjs`, `windows/SEL.Agent.Tests` |
 
 ```
 npm run test:windows-agent          # 54 domain tests
 npm run typecheck:windows-agent
-dotnet test windows/SEL.Agent.Tests # 68 agent tests, including the OS compatibility matrix
+dotnet test windows/SEL.Agent.Tests # 83 agent tests: the OS compatibility matrix and the idle-lock rules
 ```
 
 ---
@@ -531,6 +532,57 @@ The agent remains an ordinary user-mode process and Task Manager can still end i
 says. What this adds is that the obvious, discoverable way to close it produces an answer to "why
 did this PC stop reporting at half past two" — and does not happen by accident on the way out at
 5 p.m.
+
+---
+
+## 7c. Locking an unattended PC
+
+Three settings, all **off or generous by default**, that together make the SEL LIVE sign-in the
+way into a working session. Set them per company, department, user or device like any other
+policy, on `/windows-agent/policies`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `lockOnIdleEnabled` | off | After `idleLockSeconds` with no input, a countdown appears; `idleLockWarningSeconds` later the PC locks |
+| `idleLockSeconds` | 600 | Ten minutes. Minimum 120 |
+| `idleLockWarningSeconds` | 60 | How long "Are you still working?" stays up. Any key or mouse movement cancels it. Minimum 15 |
+| `lockOnErpWindowClose` | off | Closing the embedded SEL LIVE window locks the PC, and the window opens automatically at sign-in |
+| `reauthAfterLockSeconds` | 1800 | Locked longer than this, and unlocking Windows also needs a SEL LIVE sign-in. Zero asks every time |
+
+**Locking means `LockWorkStation`** — the ordinary Windows lock screen, the same thing Win+L
+does. The person clears it with their own Windows password; nothing the agent holds is involved
+in getting back in. Ctrl+Alt+Delete still works from it, the account can still be switched, and
+an administrator can still sign in. This is not a second authentication surface the agent
+invented, and §7's position that the agent is not a security boundary is unchanged.
+
+**The warning does not steal focus.** It appears exactly when somebody has stopped typing, and
+the most likely next event is that they start again — into whatever they were working in. A
+window that grabbed the keyboard at that moment would swallow the first few characters of the
+sentence that proves they are still there.
+
+**`idleLockSeconds` is not `idleThresholdSeconds`.** The latter only classifies recorded time
+and never acts on anything. They are deliberately separate: one number deciding both what a
+timesheet says and when somebody's screen goes dark could not be tuned for either, and the first
+administrator to lengthen the idle threshold so that long meetings stopped showing as idle would
+also, silently, have stopped PCs locking.
+
+**Nothing locks while nobody is signed in.** A signed-out agent has no session to protect, and
+locking the machine of somebody who never signed in to SEL LIVE would be the agent interfering
+with a PC it has no business interfering with. The access gate covers that case.
+
+**Closing the window is distinguished from the agent closing it.** Signing out closes the ERP
+window, and so does shutting the agent down for an update. Neither locks the PC — only a person
+clicking the X does.
+
+### Before switching any of this on
+
+Read §8. These are the settings that can stop somebody working, so the same staged rollout
+applies as for the access gate: prove the agent, the sign-in and the recovery shortcut on pilot
+machines first.
+
+`lockOnErpWindowClose` deserves particular thought. With it on, a misplaced click on the X costs
+somebody their unlocked desktop — which is the intended behaviour when that window *is* the
+working session, and an irritation everywhere else.
 
 ---
 

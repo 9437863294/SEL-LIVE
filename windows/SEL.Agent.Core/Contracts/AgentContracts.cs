@@ -124,6 +124,37 @@ namespace Sel.Agent.Core.Contracts
         [JsonProperty("allowUserPauseTracking")] public bool AllowUserPauseTracking { get; set; }
         [JsonProperty("rawActivityRetentionDays")] public int RawActivityRetentionDays { get; set; }
 
+        /* ── Session lifecycle ──────────────────────────────────────────────────────────────
+         *
+         * Whether an unattended desk becomes a locked one, and whether the SEL LIVE sign-in is
+         * the way back in. Locking means LockWorkStation: the ordinary Windows lock screen the
+         * person clears with their own Windows password, not a surface the agent invented.
+         */
+
+        [JsonProperty("lockOnIdleEnabled")] public bool LockOnIdleEnabled { get; set; }
+
+        /// <summary>
+        /// Seconds of no input before the lock countdown starts.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately not <see cref="IdleThresholdSeconds"/>, which only classifies recorded
+        /// time and never acts. One number deciding both what a timesheet says and when
+        /// somebody's screen goes dark could not be tuned for either.
+        /// </remarks>
+        [JsonProperty("idleLockSeconds")] public int IdleLockSeconds { get; set; }
+
+        /// <summary>How long the "still working?" prompt counts down. Any input cancels it.</summary>
+        [JsonProperty("idleLockWarningSeconds")] public int IdleLockWarningSeconds { get; set; }
+
+        /// <summary>Closing the embedded SEL LIVE window locks the PC.</summary>
+        [JsonProperty("lockOnErpWindowClose")] public bool LockOnErpWindowClose { get; set; }
+
+        /// <summary>
+        /// Seconds locked beyond which unlocking Windows also needs a fresh SEL LIVE sign-in.
+        /// Zero asks every time; a very large value never does.
+        /// </summary>
+        [JsonProperty("reauthAfterLockSeconds")] public int ReauthAfterLockSeconds { get; set; }
+
         public static AgentPolicySettings Defaults()
         {
             return new AgentPolicySettings
@@ -144,7 +175,12 @@ namespace Sel.Agent.Core.Contracts
                 WorkdayEnd = "18:00",
                 LateLoginGraceMinutes = 15,
                 AllowUserPauseTracking = false,
-                RawActivityRetentionDays = 90
+                RawActivityRetentionDays = 90,
+                LockOnIdleEnabled = false,
+                IdleLockSeconds = 600,
+                IdleLockWarningSeconds = 60,
+                LockOnErpWindowClose = false,
+                ReauthAfterLockSeconds = 1800
             };
         }
     }

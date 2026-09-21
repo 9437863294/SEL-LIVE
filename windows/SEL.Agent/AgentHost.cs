@@ -102,6 +102,11 @@ namespace Sel.Agent
 
             _log.Write("Agent " + AgentVersion.Current + " starting on " + OsCompatibility.Current.Describe());
             _erpBrowser = new ErpBrowser(this, _log.Write);
+            _erpBrowser.ClosedByUser += (sender, args) =>
+            {
+                EventHandler handler = ErpWindowClosedByUser;
+                if (handler != null) handler(this, EventArgs.Empty);
+            };
 
             _log.Write("Notification surface: " + _notifications.DescribeSelection());
             _log.Write("ERP opens: " + _erpBrowser.Describe());
@@ -355,6 +360,18 @@ namespace Sel.Agent
         {
             _deepLinks.Open(path);
         }
+
+        /// <summary>
+        /// The person closed the embedded ERP window. Not raised when the agent closes it.
+        /// </summary>
+        /// <remarks>
+        /// Subscribed by <see cref="SessionLifecycleController"/>, which locks the workstation
+        /// when the policy says that window is the working session.
+        /// </remarks>
+        public event EventHandler ErpWindowClosedByUser;
+
+        /// <summary>Whether the embedded ERP window is open right now.</summary>
+        public bool IsErpWindowOpen { get { return _erpBrowser != null && _erpBrowser.IsOpen; } }
 
         /// <summary>How the ERP opens on this machine, for the status panel.</summary>
         public string DescribeErpBrowser()

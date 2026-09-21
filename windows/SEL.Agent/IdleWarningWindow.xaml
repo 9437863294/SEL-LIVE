@@ -1,0 +1,80 @@
+<Window x:Class="Sel.Agent.IdleWarningWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SEL LIVE"
+        Width="420"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Background="Transparent"
+        AllowsTransparency="True">
+
+    <!--
+      "Are you still working?" — the last thing before the screen locks.
+
+      Topmost and borderless, because it has to be seen over whatever is on screen and there is
+      nothing useful to do with a title bar on a window that exists for sixty seconds. Not
+      ShowInTaskbar, for the same reason.
+
+      It does NOT take focus (see the code-behind). A dialog that steals the keyboard the moment
+      somebody starts typing after a pause would swallow their first few characters, which is
+      precisely the situation it is meant to detect and step out of the way for.
+    -->
+
+    <Border Background="#0F172A"
+            CornerRadius="10"
+            BorderBrush="#1E293B"
+            BorderThickness="1"
+            Padding="24,20">
+        <StackPanel>
+            <TextBlock Text="Are you still working?"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       Foreground="#F8FAFC" />
+
+            <TextBlock x:Name="DetailText"
+                       FontSize="12.5"
+                       Foreground="#94A3B8"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+
+            <TextBlock x:Name="CountdownText"
+                       FontSize="34"
+                       FontWeight="Bold"
+                       Foreground="#22D3EE"
+                       Margin="0,14,0,0" />
+
+            <Border x:Name="CountdownTrack"
+                    Height="4"
+                    Background="#1E293B"
+                    CornerRadius="2"
+                    Margin="0,10,0,0">
+                <Border x:Name="CountdownBar"
+                        HorizontalAlignment="Left"
+                        Background="#22D3EE"
+                        CornerRadius="2" />
+            </Border>
+
+            <TextBlock Text="Moving the mouse or pressing a key also keeps this computer unlocked."
+                       FontSize="11"
+                       Foreground="#64748B"
+                       TextWrapping="Wrap"
+                       Margin="0,14,0,0" />
+
+            <Button x:Name="KeepWorkingButton"
+                    Content="I'm still here"
+                    Padding="0,9"
+                    Margin="0,16,0,0"
+                    FontSize="13"
+                    FontWeight="SemiBold"
+                    Foreground="#042F2E"
+                    Background="#22D3EE"
+                    BorderThickness="0"
+                    Cursor="Hand"
+                    Click="OnKeepWorking" />
+        </StackPanel>
+    </Border>
+</Window>

@@ -647,6 +647,47 @@ export interface AgentPolicySettings {
    * stop a mandatory session, but an organisation that wants to allow it can.
    */
   allowUserPauseTracking?: boolean;
+
+  /* ── Session lifecycle ────────────────────────────────────────────────────────────────────
+   *
+   * Turning an unattended desk into a locked one, and making the SEL LIVE sign-in the way back
+   * in. All three default to off or generous, for the same reason as `requireMorningLogin`:
+   * these are the settings that can stop somebody working, and §60 puts enforcement after
+   * monitoring rather than alongside it.
+   *
+   * Locking is `LockWorkStation` — the ordinary Windows lock screen, which the person clears
+   * with their own Windows password. It is not a second authentication surface the agent
+   * invented, and it does not touch Ctrl+Alt+Delete.
+   */
+
+  /** Lock the PC after {@link idleLockSeconds} of no input, having warned first. */
+  lockOnIdleEnabled?: boolean;
+  /**
+   * Seconds of no keyboard or mouse before the lock countdown starts.
+   *
+   * Distinct from `idleThresholdSeconds`, which only classifies recorded time and never acts.
+   * Conflating them would mean the number that decides what a timesheet says also decides when
+   * somebody's screen goes dark, and neither could then be tuned without disturbing the other.
+   */
+  idleLockSeconds?: number;
+  /** How long the "still working?" prompt counts down before locking. Any input cancels it. */
+  idleLockWarningSeconds?: number;
+
+  /**
+   * Closing the embedded SEL LIVE window locks the PC.
+   *
+   * For installations where that window *is* the working session. Off by default, because with
+   * it on a misplaced click on the X costs somebody their unlocked desktop.
+   */
+  lockOnErpWindowClose?: boolean;
+
+  /**
+   * Seconds locked beyond which unlocking Windows also requires a fresh SEL LIVE sign-in.
+   *
+   * Zero means every unlock asks. A very large value means it never does. The default sits
+   * between: a walk to the printer resumes silently, a lunch break does not.
+   */
+  reauthAfterLockSeconds?: number;
   /** Days of raw spans to keep. The rollups outlive them (§51). */
   rawActivityRetentionDays?: number;
 }

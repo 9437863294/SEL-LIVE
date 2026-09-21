@@ -102,6 +102,26 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
     label: 'Keep raw activity for (days)',
     help: 'Daily totals and attendance are kept regardless; this is the detailed timeline only.',
   },
+  lockOnIdleEnabled: {
+    label: 'Lock the PC when it is left unattended',
+    help: 'Off by default. Shows a countdown first, and locks with the ordinary Windows lock screen — the person signs back in with their Windows password. Prove it on pilot machines before switching it on for a site.',
+  },
+  idleLockSeconds: {
+    label: 'Lock after idle for (seconds)',
+    help: 'Separate from the idle threshold above, which only classifies recorded time. 600 is ten minutes — short enough to matter, long enough to survive a phone call. Minimum 120.',
+  },
+  idleLockWarningSeconds: {
+    label: 'Countdown before locking (seconds)',
+    help: 'How long "Are you still working?" stays on screen. Any key or mouse movement cancels it. Minimum 15.',
+  },
+  lockOnErpWindowClose: {
+    label: 'Closing the SEL LIVE window locks the PC',
+    help: 'For installations where that window is the working session. It also opens automatically at sign-in. Off by default: with it on, a misplaced click on the X costs somebody their unlocked desktop.',
+  },
+  reauthAfterLockSeconds: {
+    label: 'Sign in to SEL LIVE again after locked for (seconds)',
+    help: '1800 is half an hour: a walk to the printer resumes silently, a lunch break asks again. Zero asks on every unlock; a very large number never does.',
+  },
 };
 
 export function PoliciesPage() {

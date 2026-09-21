@@ -37,10 +37,22 @@ namespace Sel.Agent
     /// </remarks>
     public sealed class ErpBrowser : IDisposable
     {
+        /// <summary>
+        /// The person closed the window. Not raised when the agent closes it itself.
+        /// </summary>
+        /// <remarks>
+        /// The distinction is the whole point. With `lockOnErpWindowClose` on, closing this
+        /// window locks the PC — and signing out, or shutting the agent down, also closes it.
+        /// Without separating the two, every sign-out would lock the machine of whoever was
+        /// leaving, and every agent update would lock a PC nobody was sitting at.
+        /// </remarks>
+        public event EventHandler ClosedByUser;
+
         private readonly AgentHost _host;
         private readonly Action<string> _log;
         private ErpWindow _window;
         private bool? _embeddedAvailable;
+        private bool _closingOurselves;
         private bool _disposed;
 
         public ErpBrowser(AgentHost host, Action<string> log)
@@ -86,6 +98,9 @@ namespace Sel.Agent
             }
         }
 
+        /// <summary>Whether the embedded window exists right now.</summary>
+        public bool IsOpen { get { return _window != null; } }
+
         /// <summary>A sentence for the agent status panel.</summary>
         public string Describe()
         {
@@ -108,7 +123,13 @@ namespace Sel.Agent
                 if (_window == null)
                 {
                     _window = new ErpWindow(_host);
-                    _window.Closed += (s, e) => _window = null;
+                    _window.Closed += (s, e) =>
+                    {
+                        _window = null;
+                        if (_closingOurselves) return;
+                        EventHandler handler = ClosedByUser;
+                        if (handler != null) handler(this, EventArgs.Empty);
+                    };
                 }
                 _window.ShowPath(path);
             }
@@ -123,10 +144,11 @@ namespace Sel.Agent
             }
         }
 
-        /// <summary>Close the embedded window, for sign-out.</summary>
+        /// <summary>Close the embedded window, for sign-out. Does not count as the user closing it.</summary>
         public void Close()
         {
             if (_window == null) return;
+            _closingOurselves = true;
             try
             {
                 _window.Close();
@@ -135,7 +157,11 @@ namespace Sel.Agent
             {
                 // Already closing.
             }
-            _window = null;
+            finally
+            {
+                _window = null;
+                _closingOurselves = false;
+            }
         }
 
         public void Dispose()

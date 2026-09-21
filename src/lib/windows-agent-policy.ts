@@ -72,6 +72,15 @@ export const DEFAULT_AGENT_POLICY: Required<AgentPolicySettings> = {
   workdayEnd: '18:00',
   lateLoginGraceMinutes: 15,
   allowUserPauseTracking: false,
+  // Off, with the timings already sensible for whoever switches it on. Ten minutes is long
+  // enough to survive a phone call or a long read; a minute's warning is long enough to notice
+  // and short enough that an empty desk is not left open for another five.
+  lockOnIdleEnabled: false,
+  idleLockSeconds: 600,
+  idleLockWarningSeconds: 60,
+  lockOnErpWindowClose: false,
+  // Half an hour. A walk to the printer resumes silently; a lunch break asks again.
+  reauthAfterLockSeconds: 1800,
   // §51's shortest offered option. An organisation that wants 180 days can say so; one that has
   // not thought about it yet keeps the least data, which is the right way round.
   rawActivityRetentionDays: 90,
@@ -92,6 +101,13 @@ const NUMERIC_BOUNDS: Partial<Record<keyof AgentPolicySettings, { min: number; m
   activityBatchIntervalSeconds: { min: 30, max: 1800 },
   lateLoginGraceMinutes: { min: 0, max: 240 },
   rawActivityRetentionDays: { min: 7, max: 730 },
+  // A two-minute floor on the idle lock. Anything shorter locks people mid-sentence, and the
+  // first thing a fleet does with a setting like that is demand it be switched off entirely.
+  idleLockSeconds: { min: 120, max: 14_400 },
+  // At least fifteen seconds to react. A warning nobody can read is just a lock with extra steps.
+  idleLockWarningSeconds: { min: 15, max: 600 },
+  // Zero is meaningful here (ask on every unlock), so the floor is zero rather than a minimum.
+  reauthAfterLockSeconds: { min: 0, max: 86_400 },
 };
 
 const CLOCK_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;

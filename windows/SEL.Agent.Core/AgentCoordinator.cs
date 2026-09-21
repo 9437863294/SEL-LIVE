@@ -136,6 +136,27 @@ namespace Sel.Agent.Core
         /// <summary>Raised whenever the status changes enough for the tray to care.</summary>
         public event EventHandler StatusChanged;
 
+        /// <summary>
+        /// Lock, unlock, sleep and resume, re-raised for the UI layer.
+        /// </summary>
+        /// <remarks>
+        /// The coordinator already subscribes to these to build spans, and a second subscriber
+        /// on <c>SystemEvents</c> would be a second static handler to remember to unhook — the
+        /// exact leak <see cref="Win32SessionStateMonitor"/>'s own remarks warn about. Re-raising
+        /// keeps one subscription and makes its lifetime this object's.
+        /// </remarks>
+        public event EventHandler<SessionStateChange> SessionStateChanged;
+
+        /// <summary>
+        /// Seconds since the last keyboard or mouse input, session-wide.
+        /// </summary>
+        /// <remarks>
+        /// Exposed so the idle-lock controller reads the same number the span builder does.
+        /// A second <see cref="IIdleMonitor"/> would work — it is a stateless Win32 call — but
+        /// two sources for one fact is how the lock and the timesheet come to disagree.
+        /// </remarks>
+        public double IdleSeconds { get { return _idle.GetIdleSeconds(); } }
+
         public ResolvedAgentPolicy Policy { get { return _policy; } }
 
         public AgentStatus Status
@@ -519,6 +540,20 @@ namespace Sel.Agent.Core
         private void OnSessionStateChanged(object sender, SessionStateChange change)
         {
             DateTime now = DateTime.UtcNow;
+
+            // Re-raised before the span bookkeeping, and outside it, so a throwing subscriber in
+            // the UI layer cannot leave the builder without its Locked or Unlocked edge — which
+            // would silently mis-classify the rest of the day.
+            try
+            {
+                EventHandler<SessionStateChange> handler = SessionStateChanged;
+                if (handler != null) handler(this, change);
+            }
+            catch (Exception error)
+            {
+                _log("A session-state subscriber threw: " + error.Message);
+            }
+
             switch (change)
             {
                 case SessionStateChange.Locked:

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Sel.Agent.Core;
 using Sel.Agent.Core.Contracts;
+using Sel.Agent.Core.Platform.Win32;
 
 namespace Sel.Agent
 {
@@ -50,6 +51,7 @@ namespace Sel.Agent
         private AgentHost _host;
         private TrayController _tray;
         private AgentLog _log;
+        private SessionLifecycleController _lifecycle;
 
         protected override void OnStartup(StartupEventArgs e)
         {
@@ -116,6 +118,14 @@ namespace Sel.Agent
             _tray.SignInRequested += (sender, args) => ShowGate();
             _tray.Show();
 
+            // Idle locking, re-authentication after a long lock, and locking when the ERP window
+            // is closed. Every one of them is off unless the policy asks, so constructing this
+            // unconditionally costs one timer tick a second doing a comparison.
+            _lifecycle = new SessionLifecycleController(
+                _host, new Win32WorkstationLock(_log.Write), _log.Write);
+            _lifecycle.ReauthenticationRequired += (sender, args) => ShowGate();
+            _host.ErpWindowClosedByUser += OnErpWindowClosedByUser;
+
             // Fire and forget: the UI thread must not wait on the network. Exceptions are caught
             // inside StartAsync, which reports through the tray rather than throwing here.
             StartAsync();
@@ -142,6 +152,7 @@ namespace Sel.Agent
                     if (resumed != null)
                     {
                         _log.Write("Resumed as " + resumed.UserName + " without prompting.");
+                        EnsureErpWindowOpen();
                         return;
                     }
                 }
@@ -193,7 +204,11 @@ namespace Sel.Agent
             }
 
             var gate = new AccessGateWindow(_host, enforce);
-            gate.Released += (s, e) => _log.Write("Desktop released to the user.");
+            gate.Released += (s, e) =>
+            {
+                _log.Write("Desktop released to the user.");
+                EnsureErpWindowOpen();
+            };
             gate.Dismissed += (s, e) =>
             {
                 _log.Write("Sign-in dismissed without signing in; nothing will be recorded until somebody does.");
@@ -203,6 +218,40 @@ namespace Sel.Agent
             };
             gate.Show();
             gate.Activate();
+        }
+
+        /// <summary>
+        /// Open the embedded SEL LIVE window, where the policy expects it to always be there.
+        /// </summary>
+        /// <remarks>
+        /// Only under `lockOnErpWindowClose`, and that is not an unrelated setting being reused.
+        /// That policy says the window *is* the working session — closing it locks the PC — so a
+        /// session that began without it would be one nobody could close, and the person would
+        /// have to discover the tray menu to get the thing whose absence locks their machine.
+        /// </remarks>
+        private void EnsureErpWindowOpen()
+        {
+            if (!_host.Coordinator.Policy.Settings.LockOnErpWindowClose) return;
+            if (_host.IsErpWindowOpen) return;
+
+            _log.Write("Opening the SEL LIVE window for this session.");
+            _host.OpenErp("/");
+        }
+
+        /// <summary>
+        /// The person closed the SEL LIVE window. Under the right policy, that ends the session.
+        /// </summary>
+        /// <remarks>
+        /// Guarded on being signed in. Closing the window after signing out — which is the
+        /// ordinary way to finish for the day — must not lock the PC on the way past.
+        /// </remarks>
+        private void OnErpWindowClosedByUser(object sender, EventArgs e)
+        {
+            if (!_host.Coordinator.Policy.Settings.LockOnErpWindowClose) return;
+            if (_host.CurrentLogin == null) return;
+
+            _log.Write("The SEL LIVE window was closed; locking this computer.");
+            _lifecycle.LockNow();
         }
 
         private async void OnDirectiveReceived(object sender, AgentDirective directive)
@@ -323,6 +372,9 @@ namespace Sel.Agent
 
         protected override void OnExit(ExitEventArgs e)
         {
+            // Before the host: it unsubscribes from the coordinator's session events, and the
+            // coordinator is disposed a line later.
+            if (_lifecycle != null) _lifecycle.Dispose();
             if (_tray != null) _tray.Dispose();
             if (_host != null) _host.Dispose();
             if (_instanceMutex != null)

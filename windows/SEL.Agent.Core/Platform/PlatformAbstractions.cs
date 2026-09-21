@@ -67,6 +67,18 @@ namespace Sel.Agent.Core.Platform
         double GetIdleSeconds();
     }
 
+    /// <summary>Locks the workstation.</summary>
+    /// <remarks>
+    /// An interface for one P/Invoke, so the idle-lock rules can be exercised in tests against a
+    /// recording double instead of locking the machine running them. That is the whole reason it
+    /// exists; there will never be a second production implementation.
+    /// </remarks>
+    public interface IWorkstationLock
+    {
+        /// <summary>Lock now. False when Windows refused, which is reported, not thrown.</summary>
+        bool Lock();
+    }
+
     public enum SessionStateChange
     {
         Locked,
