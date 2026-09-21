@@ -432,6 +432,25 @@ Then re-run `--check`. Windows 8.1 and later need none of this.
 The gate is a full-screen, topmost window shown at start-up when the policy asks for it. It blocks
 close, minimise, Escape and Alt+F4, and re-asserts focus if something takes it.
 
+While it is on screen and `requireMorningLogin` is on, it also:
+
+| | |
+|---|---|
+| Suppresses the shortcuts out of it | Windows key (either), Alt+Tab, Alt+Esc, Ctrl+Esc, Ctrl+Shift+Esc, Alt+F4 |
+| Covers every other monitor | Plain dark panels, so a second screen is not a working desktop |
+| Hides the taskbar | A full-screen topmost window covers it, and Win and Ctrl+Esc no longer summon it |
+| Offers nothing but the sign-in | Tasks, Approvals, Meetings and Open SEL LIVE appear only *after* signing in |
+
+Ordinary typing is untouched — including plain Tab between the two fields, Shift for capitals and
+Ctrl+V to paste a password.
+
+> **The shortcut suppression is not keystroke capture.** It is a low-level keyboard hook, which is
+> the same API a keylogger uses, so it is worth being exact: it compares a virtual-key code
+> against a fixed list and answers swallow or pass. It has no field to store a key in, writes
+> nothing anywhere, and the decision itself lives in `GateKeyPolicy` in Core with no I/O of any
+> kind. The hook exists only while an enforcing gate is on screen and is removed the moment it
+> closes. §12 is intact.
+
 **It is not a Windows security boundary.** Task Manager launched from Ctrl+Alt+Delete can end it,
 and a second local account bypasses it. Anyone describing a topmost window as mandatory access
 control is overselling it, and a rollout planned on that basis will be unpleasantly surprised.

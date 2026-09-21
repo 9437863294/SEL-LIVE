@@ -75,6 +75,12 @@ namespace Sel.Agent
         /// </remarks>
         private readonly bool _enforce;
 
+        /// <summary>Suppresses the Windows key and friends. Only ever non-null while enforcing.</summary>
+        private KeyboardLockdown _lockdown;
+
+        /// <summary>Blank panels over the monitors the gate itself is not on.</summary>
+        private System.Collections.Generic.List<Window> _covers;
+
         private bool _released;
         private bool _signingIn;
 
@@ -208,6 +214,25 @@ namespace Sel.Agent
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
+            // ── Lock the desktop down behind the gate ─────────────────────────────────────
+            //
+            // Only when enforcing. A dismissible sign-in window has no business blocking the
+            // Windows key or blanking somebody's second monitor.
+            //
+            // Both are installed here rather than in the constructor because a low-level
+            // keyboard hook has to go on a thread that pumps messages, and because the screen
+            // cover needs this window to have a handle before it can tell which monitor to
+            // leave alone.
+            if (_enforce)
+            {
+                _lockdown = KeyboardLockdown.Install(_host.Log.Write);
+                _covers = ScreenCover.CoverOtherScreens(this, _host.Log.Write);
+
+                // Back in front of the panels it just created.
+                Activate();
+                Focus();
+            }
+
             RefreshChrome();
             RefreshClock();
             BuildFeatureList();
@@ -472,6 +497,11 @@ namespace Sel.Agent
             // actually stops it; the KeyDown handler alone would not.
             if (_enforce && !_released) { e.Cancel = true; return; }
 
+            // Whatever route closed this window, the keyboard goes back to normal and the other
+            // monitors get their desktops back. A hook outliving its window would leave the
+            // Windows key dead with nothing on screen to explain why.
+            ReleaseLockdown();
+
             if (!_released)
             {
                 // Closed without signing in. The agent stays in the tray and records nothing
@@ -485,9 +515,32 @@ namespace Sel.Agent
         {
             _released = true;
             _clock.Stop();
+            ReleaseLockdown();
             EventHandler handler = Released;
             if (handler != null) handler(this, EventArgs.Empty);
             Close();
+        }
+
+        /// <summary>
+        /// Give the desktop back: unhook the keyboard and remove the screen covers.
+        /// </summary>
+        /// <remarks>
+        /// Called from every exit — signing in, the emergency release, and the window closing
+        /// for any other reason — because the one outcome that must never happen is a keyboard
+        /// hook outliving the window that justified it. Safe to call twice.
+        /// </remarks>
+        private void ReleaseLockdown()
+        {
+            if (_lockdown != null)
+            {
+                _lockdown.Dispose();
+                _lockdown = null;
+            }
+            if (_covers != null)
+            {
+                ScreenCover.Remove(_covers);
+                _covers = null;
+            }
         }
 
         /* ── Small helpers ───────────────────────────────────────────────────────────────── */
