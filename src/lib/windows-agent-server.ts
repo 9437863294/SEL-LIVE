@@ -2,7 +2,12 @@ import 'server-only';
 
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 
-import { FieldValue, type Firestore, type Transaction } from 'firebase-admin/firestore';
+import {
+  FieldValue,
+  type DocumentReference,
+  type Firestore,
+  type Transaction,
+} from 'firebase-admin/firestore';
 
 import { getFirebaseAdminAuth, getFirebaseAdminFirestore } from './firebase-admin';
 import { ACTIVITY_MODULES } from './activity-modules';
@@ -574,6 +579,88 @@ function sanitizeFacts(raw: unknown): DeviceMachineFacts {
 }
 
 /**
+ * Every reason an enrolment code may be refused, in one place.
+ *
+ * Extracted so that the code the setup screen checks and the code registration accepts cannot
+ * drift apart. A screen that says "code accepted" and an enrolment that then fails on the same
+ * code would be worse than no check at all — the person at the PC would have been told the one
+ * thing they could act on was fine.
+ *
+ * Throws rather than returning a verdict, because every caller wants the wording.
+ */
+async function requireUsableEnrollmentCode(
+  firestore: Firestore,
+  rawCode: unknown,
+): Promise<{ code: string; ref: DocumentReference; data: Record<string, unknown> }> {
+  const code = String(rawCode || '').trim().toUpperCase();
+  if (!code) throw new AgentRequestError('An enrolment code is required.', 400);
+
+  const snapshot = await firestore.collection(WINDOWS_AGENT_COLLECTIONS.enrollmentCodes).doc(code).get();
+  if (!snapshot.exists) throw new AgentRequestError('That enrolment code is not recognised.', 403);
+
+  const data = (snapshot.data() || {}) as Record<string, unknown>;
+  if (data.enabled === false) throw new AgentRequestError('That enrolment code has been disabled.', 403);
+  if (data.expiresAt && new Date(String(data.expiresAt)) < new Date()) {
+    throw new AgentRequestError('That enrolment code has expired.', 403);
+  }
+  const maxRegistrations = data.maxRegistrations;
+  if (
+    typeof maxRegistrations === 'number' &&
+    Number(data.registrationCount || 0) >= maxRegistrations
+  ) {
+    throw new AgentRequestError('That enrolment code has reached its registration limit.', 403);
+  }
+
+  return { code, ref: snapshot.ref, data };
+}
+
+/** What the setup screen learns about a code it is about to use. */
+export interface EnrollmentCodeCheck {
+  code: string;
+  departmentName: string | null;
+  assignedLocation: string | null;
+  /** False when a device enrolled with this code waits for an administrator (§45). */
+  autoApprove: boolean;
+  /** Null when the code has no registration limit. */
+  remainingRegistrations: number | null;
+}
+
+/**
+ * Check a code without redeeming it, so the agent's setup screen can refuse a bad one up front.
+ *
+ * Unauthenticated, like registration itself, and for the same reason: a PC being set up has no
+ * credential yet. It is a strictly smaller exposure than the registration route beside it — one
+ * document read by id, no writes, and nothing returned that a successful registration would not
+ * have revealed anyway.
+ *
+ * Deliberately **not** audited. It would be the only unauthenticated route in the module that
+ * writes, so anybody could fill the audit collection by holding down a key, and the resulting
+ * noise would bury the administrative trail §50 exists to keep readable. A code that gets as far
+ * as being redeemed is recorded by `registerDevice`.
+ *
+ * It does tell an attacker whether a guessed code is valid. That was already true of registration
+ * — see the note on the route — and a code buys the ability to enrol a machine, not to see
+ * anybody's data: a device credential cannot open a session without a real employee signing in.
+ */
+export async function checkEnrollmentCode(rawCode: unknown): Promise<EnrollmentCodeCheck> {
+  const firestore = getFirebaseAdminFirestore();
+  const { code, data } = await requireUsableEnrollmentCode(firestore, rawCode);
+
+  const maxRegistrations = typeof data.maxRegistrations === 'number' ? data.maxRegistrations : null;
+
+  return {
+    code,
+    departmentName: (data.departmentName as string) ?? null,
+    assignedLocation: (data.assignedLocation as string) ?? null,
+    autoApprove: data.autoApprove !== false,
+    remainingRegistrations:
+      maxRegistrations === null
+        ? null
+        : Math.max(0, maxRegistrations - Number(data.registrationCount || 0)),
+  };
+}
+
+/**
  * Enrol a PC, or re-issue a credential to one being reinstalled.
  *
  * The secret is returned in the response and then never again — it exists in Firestore only as a
@@ -590,23 +677,10 @@ export async function registerDevice(
   context: { ipAddress: string | null },
 ): Promise<DeviceRegisterResult> {
   const firestore = getFirebaseAdminFirestore();
-  const code = String(input.enrollmentCode || '').trim().toUpperCase();
-  if (!code) throw new AgentRequestError('An enrolment code is required.', 400);
-
-  const codeSnapshot = await firestore.collection(WINDOWS_AGENT_COLLECTIONS.enrollmentCodes).doc(code).get();
-  if (!codeSnapshot.exists) throw new AgentRequestError('That enrolment code is not recognised.', 403);
-  const codeData = codeSnapshot.data() || {};
-  if (codeData.enabled === false) throw new AgentRequestError('That enrolment code has been disabled.', 403);
-  if (codeData.expiresAt && new Date(String(codeData.expiresAt)) < new Date()) {
-    throw new AgentRequestError('That enrolment code has expired.', 403);
-  }
-  const maxRegistrations = codeData.maxRegistrations;
-  if (
-    typeof maxRegistrations === 'number' &&
-    Number(codeData.registrationCount || 0) >= maxRegistrations
-  ) {
-    throw new AgentRequestError('That enrolment code has reached its registration limit.', 403);
-  }
+  const { code, ref: codeRef, data: codeData } = await requireUsableEnrollmentCode(
+    firestore,
+    input.enrollmentCode,
+  );
 
   const facts = sanitizeFacts(input.facts);
   const agentVersion = String(input.agentVersion || '').trim().slice(0, 40) || null;
@@ -689,7 +763,7 @@ export async function registerDevice(
   );
 
   if (!isReregistration) {
-    await codeSnapshot.ref.update({ registrationCount: FieldValue.increment(1) });
+    await codeRef.update({ registrationCount: FieldValue.increment(1) });
   }
 
   await writeAudit({

@@ -121,6 +121,8 @@ export const WINDOWS_AGENT_ROUTES = {
 /** The API surface the desktop agent talks to. Mirrored by `SEL.Agent.Core/ApiRoutes.cs`. */
 export const WINDOWS_AGENT_API = {
   register: '/api/windows-agent/device/register',
+  /** Checks an enrolment code without redeeming it, for the agent's setup screen. */
+  checkCode: '/api/windows-agent/device/check-code',
   login: '/api/windows-agent/login',
   heartbeat: '/api/windows-agent/heartbeat',
   activityBatch: '/api/windows-agent/activity/batch',

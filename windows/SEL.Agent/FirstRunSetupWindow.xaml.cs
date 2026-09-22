@@ -9,6 +9,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Newtonsoft.Json.Linq;
 using Sel.Agent.Core;
+using Sel.Agent.Core.Api;
+using Sel.Agent.Core.Contracts;
 using Sel.Agent.Core.Security;
 
 namespace Sel.Agent
@@ -24,10 +26,25 @@ namespace Sel.Agent
     /// properties, so double-clicking it could never work.
     /// </para>
     /// <para>
-    /// <b>Only one field is genuinely required.</b> The Firebase Web API key is fetched from
-    /// <c>/api/windows-agent/bootstrap</c> on the server the administrator just named. It is
-    /// public — the same value the login page ships to every browser — so asking a human to copy
-    /// it onto each PC added a transcription error for no security benefit.
+    /// <b>Two fields, and both are checked with the server before anything is written.</b> The
+    /// Firebase Web API key is fetched from <c>/api/windows-agent/bootstrap</c> on the server the
+    /// administrator just named — it is public, the same value the login page ships to every
+    /// browser, so asking a human to copy it onto each PC added a transcription error for no
+    /// security benefit. The enrolment code goes to
+    /// <c>/api/windows-agent/device/check-code</c>, which answers without redeeming it.
+    /// </para>
+    /// <para>
+    /// <b>The code used to be optional, and that was a mistake.</b> The reasoning was that a
+    /// machine could be enrolled later. In practice "later" never came: setup completed, the PC
+    /// looked installed, and it reported nothing at all — the only trace being one line in a log
+    /// file saying "not enrolled and no enrolment code is configured". A mistyped code produced
+    /// exactly the same silence, hours after the person who could have fixed it had left. So the
+    /// code is required, and a code the server refuses stops the setup here.
+    /// </para>
+    /// <para>
+    /// A computer that has already enrolled is the one exception: it holds a device credential,
+    /// so it is not onboarding and has nothing to redeem. It may be reconfigured — pointed at a
+    /// different server, say — without producing a code it does not need.
     /// </para>
     /// <para>
     /// <b>It writes where it can.</b> ProgramData is the right home, shared by the service and
@@ -41,15 +58,51 @@ namespace Sel.Agent
     public partial class FirstRunSetupWindow : Window
     {
         private readonly AgentLog _log;
+        private readonly bool _alreadyEnrolled;
         private string _resolvedApiKey;
+
+        /// <summary>The code the server accepted, or null on an enrolled PC that supplied none.</summary>
+        private string _verifiedCode;
 
         /// <summary>The configuration that was saved, or null if the user closed without saving.</summary>
         public AgentConfiguration Result { get; private set; }
 
         public FirstRunSetupWindow(AgentConfiguration existing, AgentLog log)
+            : this(existing, log, null)
+        {
+        }
+
+        /// <param name="problem">
+        /// Why the agent could not continue, when this window is being shown to fix something
+        /// rather than at a genuine first run — a rejected enrolment code, most often. Shown
+        /// immediately, because otherwise the person sees a setup screen with no idea what is
+        /// wrong with the values already in it.
+        /// </param>
+        public FirstRunSetupWindow(AgentConfiguration existing, AgentLog log, string problem)
         {
             _log = log;
             InitializeComponent();
+
+            // An enrolled PC is not onboarding. It already has a device credential, so there is
+            // nothing for a code to redeem and demanding one would block an administrator from
+            // repointing the machine at a different server.
+            try
+            {
+                _alreadyEnrolled = new DeviceIdentityStore().Exists;
+            }
+            catch (Exception)
+            {
+                _alreadyEnrolled = false;
+            }
+
+            if (_alreadyEnrolled)
+            {
+                CodeLabel.Text = "Enrolment code (not needed)";
+                CodeHint.Text = "This computer is already registered with SEL LIVE, so it does not need a code. "
+                    + "Enter one only to re-enrol it.";
+                IntroText.Text = "The agent needs the address of your SEL LIVE installation. "
+                    + "Everything else comes from the server.";
+            }
 
             // Pre-filled with the company's own address so the common case is "click Save".
             // An existing value still wins, because somebody who already pointed this PC at a
@@ -67,10 +120,25 @@ namespace Sel.Agent
                     ? "You are running as an administrator."
                     : "If saving fails, right-click the agent and choose Run as administrator.");
 
+            if (!string.IsNullOrEmpty(problem)) ShowStatus(problem, false);
+
             Loaded += (s, e) =>
             {
-                UrlBox.Focus();
-                UrlBox.CaretIndex = UrlBox.Text.Length;
+                // Focus whichever field is the one still missing. When this window has been
+                // reopened because a code was rejected, the address is already right and the
+                // cursor belongs in the box that needs changing.
+                bool addressKnown = !string.IsNullOrEmpty(UrlBox.Text) && UrlBox.Text != "https://";
+                if (addressKnown && !_alreadyEnrolled && !string.IsNullOrEmpty(problem))
+                {
+                    CodeBox.Focus();
+                    CodeBox.CaretIndex = CodeBox.Text.Length;
+                    CodeBox.SelectAll();
+                }
+                else
+                {
+                    UrlBox.Focus();
+                    UrlBox.CaretIndex = UrlBox.Text.Length;
+                }
             };
         }
 
@@ -90,7 +158,9 @@ namespace Sel.Agent
             {
                 ApiBaseUrl = url,
                 FirebaseApiKey = _resolvedApiKey,
-                EnrollmentCode = string.IsNullOrWhiteSpace(CodeBox.Text) ? null : CodeBox.Text.Trim().ToUpperInvariant(),
+                // The code the server accepted, not the raw text: TestAsync has already run, so
+                // this is never a value that has not been through /device/check-code.
+                EnrollmentCode = _verifiedCode,
                 VerboseLogging = false,
             };
 
@@ -119,12 +189,17 @@ namespace Sel.Agent
         /* ── Bootstrap ───────────────────────────────────────────────────────────────────── */
 
         /// <summary>
-        /// Contact the named server and read its public Firebase configuration.
+        /// Contact the named server, read its public Firebase configuration, and check the code.
         /// </summary>
         /// <remarks>
         /// Doubles as the connectivity check, which is why the Test button and Save share it:
         /// it proves the address resolves, the TLS handshake works, and the thing answering is
         /// actually a SEL LIVE server rather than a captive portal or somebody's router.
+        /// <para>
+        /// Save calls this and stops on false, so there is exactly one path on which a
+        /// configuration can be written and it is the path that has checked both fields. A second
+        /// validation routine used only by Save is how the two drift apart.
+        /// </para>
         /// </remarks>
         private async Task<bool> TestAsync(bool announceSuccess)
         {
@@ -153,6 +228,20 @@ namespace Sel.Agent
                     "Plain http is only allowed for a development server on this machine. "
                     + "Use https:// for a real SEL LIVE installation.",
                     false);
+                return false;
+            }
+
+            // Checked here rather than after the round trip, so somebody who has left it blank
+            // is told in the same second — and after the address, so the messages arrive in the
+            // order the fields appear on screen.
+            string code = (CodeBox.Text ?? string.Empty).Trim().ToUpperInvariant();
+            if (code.Length == 0 && !_alreadyEnrolled)
+            {
+                ShowStatus(
+                    "An enrolment code is required. IT will have given you one; it looks like "
+                    + "SEL-HO-2026. Without it this computer cannot be registered with SEL LIVE.",
+                    false);
+                CodeBox.Focus();
                 return false;
             }
 
@@ -204,16 +293,24 @@ namespace Sel.Agent
                         }
 
                         _resolvedApiKey = key;
-                        if (announceSuccess)
-                        {
-                            ShowStatus(
-                                "Connected to SEL LIVE (project " + (string)parsedBody["projectId"] + "). "
-                                + "Press Save and start.",
-                                true);
-                        }
-                        return true;
                     }
                 }
+
+                // The server is reachable and is a SEL LIVE server. Now the code.
+                if (code.Length == 0)
+                {
+                    // Only possible on an already-enrolled PC, which has nothing to redeem.
+                    _verifiedCode = null;
+                    if (announceSuccess) ShowStatus("Connected to SEL LIVE. Press Save and start.", true);
+                    return true;
+                }
+
+                string accepted = await CheckCodeAsync(url, code).ConfigureAwait(true);
+                if (accepted == null) return false;
+
+                _verifiedCode = code;
+                if (announceSuccess) ShowStatus(accepted, true);
+                return true;
             }
             catch (Exception error)
             {
@@ -223,6 +320,75 @@ namespace Sel.Agent
             finally
             {
                 SetBusy(false);
+            }
+        }
+
+        /// <summary>
+        /// Ask the server whether the code will work, and describe what it will do.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Returns the success message, or null having already shown the refusal. The refusal is
+        /// the server's own wording — "not recognised", "disabled", "expired", "reached its
+        /// registration limit" — because those four need four different actions from whoever is
+        /// installing, and flattening them to "invalid code" sends somebody hunting for a typo in
+        /// a code that was simply used up.
+        /// </para>
+        /// <para>
+        /// On success it names the department the code enrols into. That is the check nobody
+        /// thinks to ask for and everybody needs: a code is four characters away from a different
+        /// site's code, and both are valid.
+        /// </para>
+        /// <para>
+        /// A network failure here is a refusal too. The address has just answered, so a failure
+        /// at this point is not "the server is down" — and accepting a code that could not be
+        /// checked is the behaviour this window exists to remove.
+        /// </para>
+        /// </remarks>
+        private async Task<string> CheckCodeAsync(string url, string code)
+        {
+            try
+            {
+                using (var client = new SelLiveApiClient(url, AgentVersion.Current))
+                {
+                    EnrollmentCodeCheckResponse check = await client
+                        .CheckEnrollmentCodeAsync(code, CancellationToken.None)
+                        .ConfigureAwait(true);
+
+                    string destination = check == null ? null : (check.DepartmentName ?? check.AssignedLocation);
+                    string message = "Code " + code + " accepted"
+                        + (string.IsNullOrEmpty(destination) ? string.Empty : " for " + destination)
+                        + ". ";
+
+                    if (check != null && !check.AutoApprove)
+                    {
+                        message += "This computer will wait for an administrator to approve it before "
+                            + "it starts reporting. ";
+                    }
+                    else if (check != null && check.RemainingRegistrations.HasValue
+                        && check.RemainingRegistrations.Value <= 3)
+                    {
+                        // Worth saying out loud: the next person to install with this code may be
+                        // the one it runs out on, and that failure looks like a typo.
+                        message += "It has " + check.RemainingRegistrations.Value
+                            + " registration(s) left. ";
+                    }
+
+                    return message + "Press Save and start.";
+                }
+            }
+            catch (SelApiException error)
+            {
+                _log.Write("Enrolment code " + code + " was refused: " + error.Message);
+                ShowStatus(
+                    error.StatusCode == 0
+                        ? "The enrolment code could not be checked: " + error.Message
+                          + " This computer has not been set up."
+                        : error.Message + " Ask IT for a current code for this computer.",
+                    false);
+                CodeBox.Focus();
+                CodeBox.SelectAll();
+                return null;
             }
         }
 

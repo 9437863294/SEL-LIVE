@@ -130,6 +130,16 @@ namespace Sel.Agent
             get { return !string.IsNullOrEmpty(_api.DeviceId); }
         }
 
+        /// <summary>
+        /// Why the last enrolment attempt failed, in words meant for the person at the PC.
+        /// </summary>
+        /// <remarks>
+        /// Kept because the alternative is a balloon tip saying "Ask IT to complete the
+        /// installation" over a failure IT could have fixed in ten seconds if anybody had told
+        /// them the code had expired. <see cref="App"/> puts this in front of the setup window.
+        /// </remarks>
+        public string LastEnrollmentError { get; private set; }
+
         /* ── Enrolment ───────────────────────────────────────────────────────────────────── */
 
         /// <summary>
@@ -161,6 +171,8 @@ namespace Sel.Agent
             if (string.IsNullOrEmpty(_config.EnrollmentCode))
             {
                 _log.Write("This computer is not enrolled and no enrolment code is configured.");
+                LastEnrollmentError = "This computer has not been registered with SEL LIVE yet. "
+                    + "Enter the enrolment code given to you by IT to finish setting it up.";
                 return false;
             }
 
@@ -195,13 +207,38 @@ namespace Sel.Agent
                 _log.Write(response.Approved
                     ? "Enrolled as " + response.DeviceName + " (" + response.DeviceId + ")."
                     : "Enrolled as " + response.DeviceName + ", awaiting administrator approval.");
+                LastEnrollmentError = null;
                 return true;
             }
             catch (SelApiException error)
             {
                 _log.Write("Enrolment failed: " + error.Message);
+
+                // The server's own wording, kept for the setup window. A code that was valid when
+                // it was written into the configuration can be expired, disabled or used up by
+                // the time the PC is switched on, and "Ask IT to complete the installation" does
+                // not tell anybody which of those happened.
+                LastEnrollmentError = error.IsTransient
+                    ? "SEL LIVE could not be reached to register this computer: " + error.Message
+                    : error.Message;
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Try again with a code somebody has just corrected, without restarting the agent.
+        /// </summary>
+        /// <remarks>
+        /// The setup window has already written the configuration file and had the code accepted
+        /// by <c>/device/check-code</c>; this pushes it into the running configuration so the
+        /// retry uses it. Restarting the process instead would work, and would also lose the tray
+        /// icon, the session lifecycle and anything the person was part-way through.
+        /// </remarks>
+        public Task<bool> RetryEnrolmentAsync(string code, CancellationToken cancellation)
+        {
+            if (string.IsNullOrEmpty(code)) return Task.FromResult(false);
+            _config.EnrollmentCode = code;
+            return EnsureEnrolledAsync(cancellation);
         }
 
         /* ── Sign-in ─────────────────────────────────────────────────────────────────────── */

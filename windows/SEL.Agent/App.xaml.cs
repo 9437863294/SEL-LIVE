@@ -140,8 +140,21 @@ namespace Sel.Agent
                     bool enrolled = await _host.EnsureEnrolledAsync(cancellation.Token).ConfigureAwait(true);
                     if (!enrolled)
                     {
+                        // Ask for a code rather than dead-ending in a balloon tip.
+                        //
+                        // This is the common case after an MSI installed without ENROLLMENTCODE,
+                        // and after a code that was valid at packaging time has expired or been
+                        // used up. Previously all of them produced "Ask IT to complete the
+                        // installation" and a PC that recorded nothing; the setup window checks a
+                        // code with the server before accepting it, so by the time it returns the
+                        // retry is known to be worth making.
+                        enrolled = await AskForEnrolmentCodeAsync(cancellation.Token).ConfigureAwait(true);
+                    }
+
+                    if (!enrolled)
+                    {
                         _tray.ShowBalloon("Not enrolled",
-                            "This computer is not registered with SEL LIVE. Ask IT to complete the installation.");
+                            "This computer is not registered with SEL LIVE. Ask IT for a current enrolment code.");
                         return;
                     }
 
@@ -183,6 +196,50 @@ namespace Sel.Agent
                 _log.Write("Start-up failed: " + error.Message);
                 _tray.ShowBalloon("SEL LIVE Agent", "Could not reach SEL LIVE. Working offline; will retry.");
             }
+        }
+
+        /// <summary>
+        /// Show the setup window to collect a working enrolment code, then enrol with it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The window will not return until the server has accepted the code, so this is not a
+        /// loop of hopeful retries — one attempt is made against a code that has already been
+        /// checked. A second failure therefore means something changed between the check and the
+        /// registration, which is worth reporting rather than retrying.
+        /// </para>
+        /// <para>
+        /// Closing the window is allowed and leaves the PC unenrolled. That is deliberate: this
+        /// agent is not a security boundary (§7), and a person who cannot reach IT should not be
+        /// left with a computer that will not let them work. The balloon says what is wrong and
+        /// the tray keeps saying it.
+        /// </para>
+        /// </remarks>
+        private async Task<bool> AskForEnrolmentCodeAsync(CancellationToken cancellation)
+        {
+            var setup = new FirstRunSetupWindow(
+                AgentConfiguration.Load(), _log, _host.LastEnrollmentError);
+
+            if (setup.ShowDialog() != true || setup.Result == null
+                || string.IsNullOrEmpty(setup.Result.EnrollmentCode))
+            {
+                _log.Write("Enrolment was not completed; this computer stays unregistered.");
+                return false;
+            }
+
+            bool enrolled = await _host
+                .RetryEnrolmentAsync(setup.Result.EnrollmentCode, cancellation)
+                .ConfigureAwait(true);
+
+            if (!enrolled)
+            {
+                MessageBox.Show(
+                    _host.LastEnrollmentError
+                        ?? "This computer could not be registered with SEL LIVE.",
+                    "SEL LIVE Agent", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
+            return enrolled;
         }
 
         /// <summary>

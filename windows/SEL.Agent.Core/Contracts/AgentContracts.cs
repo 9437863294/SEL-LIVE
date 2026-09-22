@@ -92,6 +92,28 @@ namespace Sel.Agent.Core.Contracts
         [JsonProperty("approved")] public bool Approved { get; set; }
     }
 
+    /// <summary>
+    /// The answer to "will this enrolment code work?", asked before a code is redeemed.
+    /// </summary>
+    /// <remarks>
+    /// A refusal never arrives as one of these — the server returns 403 and the client throws
+    /// <see cref="Api.SelApiException"/> carrying the reason, so the four different refusals
+    /// (unknown, disabled, expired, limit reached) reach the person installing intact.
+    /// </remarks>
+    public sealed class EnrollmentCodeCheckResponse
+    {
+        [JsonProperty("valid")] public bool Valid { get; set; }
+        [JsonProperty("code")] public string Code { get; set; }
+        [JsonProperty("departmentName")] public string DepartmentName { get; set; }
+        [JsonProperty("assignedLocation")] public string AssignedLocation { get; set; }
+
+        /// <summary>False when this code leaves a new PC waiting for an administrator (§45).</summary>
+        [JsonProperty("autoApprove")] public bool AutoApprove { get; set; }
+
+        /// <summary>Null when the code has no registration limit.</summary>
+        [JsonProperty("remainingRegistrations")] public int? RemainingRegistrations { get; set; }
+    }
+
     /* ── Policy ──────────────────────────────────────────────────────────────────────────── */
 
     /// <summary>

@@ -190,6 +190,9 @@ dotnet test windows/SEL.Agent.Tests # 83 agent tests: the OS compatibility matri
 5. **Create an enrolment code** on `/windows-agent/devices`. Leave *Approve automatically* **off**
    for the pilot, so each new machine waits for approval.
 
+   Not an optional step. No computer can be onboarded without a code that this server accepts —
+   see §5's install notes for what happens to a code it refuses.
+
 6. **Make sure the server can mint sign-in tokens** — needed only by the embedded ERP window
    (§7a), and easy to miss because nothing else in SEL LIVE requires it.
 
@@ -292,9 +295,29 @@ administrator, a credential prompt for a standard user, who can then hand the ke
 Declining either aborts the install. Everything after that point, including the prerequisites,
 runs inside that one elevated session.
 
-**Nothing needs to be typed.** `APIBASEURL` defaults to `https://seltech.store`, and the installer
-fetches the Firebase configuration from that server rather than carrying a copy, so a plain
-double-click produces a configured agent pointing at production.
+**One thing needs to be typed: the enrolment code.** `APIBASEURL` defaults to
+`https://seltech.store` and the installer fetches the Firebase configuration from that server
+rather than carrying a copy, so the address and the key look after themselves. The code does not,
+and the agent will not onboard a computer without one.
+
+Pass it as `ENROLLMENTCODE` and the install is silent. Leave it out and the install still
+succeeds, but the first person to use the PC gets the setup window asking for a code — which is
+the right place for the question, because that is where somebody who can ring IT is standing.
+
+**A code is checked with the server before it is accepted**, in both places it can be entered:
+
+| Where | What happens to a code the server refuses |
+|---|---|
+| `ENROLLMENTCODE=` on the installer | The reason is written to the install log and the code is **not** written to disk. The install completes and the agent asks for a good one at first run |
+| The agent's setup window | Refused on screen, with the server's reason, and nothing is saved. Save and start does nothing until a code is accepted |
+
+Both go to `/api/windows-agent/device/check-code`, which answers without redeeming the code — so
+running the installer twenty times on a bench does not consume twenty registrations.
+
+The install is deliberately **not** failed by a bad code. Rolling back a deferred custom action
+gives whoever is standing there "Setup failed" and puts the reason in an MSI log nobody opens,
+while the agent's own window states it plainly and fixes it on the spot. A code that cannot be
+*checked* — no network during the install — is kept and validated again before it is redeemed.
 
 **Unattended — the one to use for a rollout.** GPO, SCCM, or a script:
 
@@ -307,8 +330,8 @@ SEL.Agent-Setup-1.0.0.0.exe /uninstall /quiet
 SEL.Agent-Setup-1.0.0.0.exe /log setup.log        (when it goes wrong)
 ```
 
-The enrolment code is the only value worth passing, and only because it saves an administrator
-approving each PC by hand.
+The enrolment code is the only value worth passing, and now the one that matters: without it the
+PC is installed but not registered, and it records nothing until somebody enters one.
 
 **Pointing a pilot machine somewhere else:**
 
@@ -870,6 +893,9 @@ office work last March" stays answerable indefinitely, while "which window was o
 | Agent never appears | Service not running, or not enrolled. Check the Application event log, source `SELLiveAgent`, then `--check`. |
 | "This computer is not enrolled" | No `device.json`, or DPAPI cannot decrypt it (cloned image). `--reset-identity` and restart. |
 | "Awaiting administrator approval" | The enrolment code has `autoApprove` off. Approve it on the device page. |
+| The setup window appears on a PC that was already installed | The agent has no device credential and no usable code — an install without `ENROLLMENTCODE`, or a code that has since expired, been disabled or been used up. The window names which. |
+| "That enrolment code has reached its registration limit" | `maxRegistrations` is exhausted. Raise it, or issue a new code. The setup window warns when a code has three or fewer left, so this is usually avoidable. |
+| "That enrolment code is not recognised" on a code that looks right | Check it against the enrolment codes page: it is a document id, so `SEL-HO-2026` and `SEL-H0-2026` are different codes and both look correct on paper. |
 | Nothing syncs, no error visible | TLS 1.2 on Windows 7. Run `--check`. |
 | Live board shows somebody offline who is working | No heartbeat for three intervals. Check the queue count on their device page. |
 | Notifications never appear on Win 10/11 | No Start Menu shortcut (hand-copied install), so toast activation cannot register. The agent falls back to its own popup; Agent status says which is in use. |

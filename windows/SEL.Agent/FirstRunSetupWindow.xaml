@@ -19,9 +19,15 @@
       the configuring. It also made the MSI unusable by double-clicking, because the address and
       the API key had to be passed as msiexec properties.
 
-      This asks for the one thing an administrator actually knows — the address of their own ERP —
-      and fetches the rest from it. The enrolment code is optional here because a machine can be
-      enrolled later; what cannot be deferred is knowing which server to talk to.
+      This asks for the address of the ERP and the enrolment code, and fetches everything else
+      from the server.
+
+      Both are required, and the code is checked against the server before anything is written.
+      It used to be optional, on the reasoning that a machine could be enrolled later — but
+      "later" never arrived. The PC finished setup looking installed, sat in the office reporting
+      nothing, and the only record of why was a line in a log file: "not enrolled and no enrolment
+      code is configured". A typo produced the same silence. Refusing here costs one dialog and
+      saves that entire failure mode.
     -->
 
     <StackPanel Margin="24">
@@ -29,7 +35,8 @@
                    FontSize="17"
                    FontWeight="SemiBold"
                    Foreground="#0F172A" />
-        <TextBlock Text="The agent needs the address of your SEL LIVE installation. It will collect everything else from the server."
+        <TextBlock x:Name="IntroText"
+                   Text="The agent needs the address of your SEL LIVE installation and the enrolment code for this computer. Everything else comes from the server."
                    FontSize="12"
                    Foreground="#64748B"
                    TextWrapping="Wrap"
@@ -52,7 +59,8 @@
                    TextWrapping="Wrap"
                    Margin="0,4,0,0" />
 
-        <TextBlock Text="Enrolment code (optional)"
+        <TextBlock x:Name="CodeLabel"
+                   Text="Enrolment code"
                    FontSize="12"
                    FontWeight="SemiBold"
                    Foreground="#334155"
@@ -60,9 +68,11 @@
         <TextBox x:Name="CodeBox"
                  Padding="9,7"
                  FontSize="13"
+                 CharacterCasing="Upper"
                  BorderBrush="#CBD5E1"
                  BorderThickness="1" />
-        <TextBlock Text="Given to you by IT, e.g. SEL-HO-2026. Without it this computer will not register until a code is added later."
+        <TextBlock x:Name="CodeHint"
+                   Text="Given to you by IT, e.g. SEL-HO-2026. It is checked with the server before this computer is set up."
                    FontSize="11"
                    Foreground="#94A3B8"
                    TextWrapping="Wrap"

@@ -158,8 +158,15 @@ namespace Sel.Agent.Service
         {
             string url = ValueOf(args, "--url");
             string key = ValueOf(args, "--key");
-            string code = ValueOf(args, "--code");
             string deviceName = ValueOf(args, "--device-name");
+
+            // Upper-cased here, as the setup window does, because the code is a document id and
+            // those are always upper case. The server normalises before it looks one up, so a
+            // lower-case code still works — but it would sit in the configuration file looking
+            // different from the code in the administrator's list, which is the kind of small
+            // discrepancy that costs somebody an hour when they are comparing the two.
+            string code = ValueOf(args, "--code");
+            if (!string.IsNullOrEmpty(code)) code = code.Trim().ToUpperInvariant();
 
             if (string.IsNullOrEmpty(url))
             {
@@ -222,6 +229,37 @@ namespace Sel.Agent.Service
                 }
             }
 
+            // A code is checked with the server before it is written.
+            //
+            // An installer property is typed once and then deployed to a hundred machines, so a
+            // typo or an expired code is a hundred PCs that install cleanly and never enrol. The
+            // code is dropped rather than written, which leaves the agent asking for one at first
+            // run — in front of a person who can read the reason and type a correct code.
+            //
+            // The install itself is not failed. Rolling back a deferred custom action gives
+            // whoever is standing there "Setup failed" and puts the reason in an MSI log nobody
+            // opens, while the agent's own setup window states it plainly and fixes it on the
+            // spot. A code that cannot be checked at all — no network during the install — is
+            // kept and validated at first run instead.
+            if (!string.IsNullOrEmpty(code))
+            {
+                string refusal = DescribeCodeRefusal(url.TrimEnd('/'), code);
+                if (refusal != null)
+                {
+                    Console.Error.WriteLine("The enrolment code " + code + " was refused: " + refusal);
+                    Console.Error.WriteLine(
+                        "Writing the configuration without it. The agent will ask for a valid code "
+                        + "the first time somebody signs in on this computer.");
+                    code = null;
+                }
+            }
+            else
+            {
+                Console.WriteLine(
+                    "NOTE: no --code supplied. This computer will not register until somebody "
+                    + "enters an enrolment code at the agent's setup window.");
+            }
+
             try
             {
                 string directory = Core.Security.DeviceIdentityStore.DefaultDirectory;
@@ -281,6 +319,52 @@ namespace Sel.Agent.Service
             catch (Exception error)
             {
                 Console.Error.WriteLine("Bootstrap lookup failed: " + error.Message);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Why the server will not accept this enrolment code, or null if it will.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Asks <c>/api/windows-agent/device/check-code</c>, which answers without redeeming the
+        /// code, so running the installer twenty times does not consume twenty registrations.
+        /// </para>
+        /// <para>
+        /// A transient failure returns null — "no answer" is not "invalid". Treating an
+        /// unreachable server as a refusal would drop good codes during an install on a flaky
+        /// site link, and the agent re-checks the code before redeeming it anyway.
+        /// </para>
+        /// </remarks>
+        private static string DescribeCodeRefusal(string baseUrl, string code)
+        {
+            try
+            {
+                Core.TlsBootstrap.Configure();
+                using (var client = new Core.Api.SelLiveApiClient(baseUrl, Core.AgentVersion.Current))
+                {
+                    client
+                        .CheckEnrollmentCodeAsync(code, System.Threading.CancellationToken.None)
+                        .GetAwaiter()
+                        .GetResult();
+                    return null;
+                }
+            }
+            catch (Core.Contracts.SelApiException error)
+            {
+                if (error.IsTransient)
+                {
+                    Console.Error.WriteLine(
+                        "Could not check the enrolment code (" + error.Message
+                        + "). Keeping it; the agent checks it again before registering.");
+                    return null;
+                }
+                return error.Message;
+            }
+            catch (Exception error)
+            {
+                Console.Error.WriteLine("Could not check the enrolment code: " + error.Message);
                 return null;
             }
         }

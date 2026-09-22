@@ -132,9 +132,32 @@ namespace Sel.Agent.Core.Api
 
         public Task<DeviceRegisterResponse> RegisterDeviceAsync(DeviceRegisterRequest request, CancellationToken cancellation)
         {
-            // The one route with no device credential — the PC does not have one yet.
+            // One of the two routes with no device credential — the PC does not have one yet.
             return SendAsync<DeviceRegisterResponse>(HttpMethod.Post, "/api/windows-agent/device/register",
                 request, false, null, cancellation);
+        }
+
+        /// <summary>
+        /// Ask whether an enrolment code will work, without using it up.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// So that a mistyped or expired code is refused while the person who can fix it is still
+        /// standing at the PC. The alternative — which is what this replaces — was to accept the
+        /// code on trust, write it to disk, and discover hours later in a log file that the
+        /// machine had never enrolled.
+        /// </para>
+        /// <para>
+        /// Throws <see cref="SelApiException"/> for a refusal, with the server's own wording:
+        /// "not recognised", "disabled", "expired" and "reached its registration limit" each need
+        /// a different action from whoever is installing, so they must not be flattened into one
+        /// message.
+        /// </para>
+        /// </remarks>
+        public Task<EnrollmentCodeCheckResponse> CheckEnrollmentCodeAsync(string code, CancellationToken cancellation)
+        {
+            return SendAsync<EnrollmentCodeCheckResponse>(HttpMethod.Post, "/api/windows-agent/device/check-code",
+                new { enrollmentCode = code }, false, null, cancellation);
         }
 
         public Task<AgentLoginResponse> LoginAsync(AgentLoginRequest request, CancellationToken cancellation)
