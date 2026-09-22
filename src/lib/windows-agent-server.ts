@@ -1034,6 +1034,29 @@ export async function openOrResumeSession(options: {
   };
 }
 
+/**
+ * Record the login on the device, and retire the directives it has satisfied.
+ *
+ * ── Why a login clears `forceSignOutAt` and `forceReauthAt` ────────────────────────────────────
+ *
+ * Both flags mean "do this to the session running now". A successful login proves that session is
+ * over and a new one has begun by the very means the instruction was demanding — so the
+ * instruction is spent, and leaving it on the document makes it fire against every session that
+ * follows.
+ *
+ * That is not theoretical. A force sign-out raised on one PC at 13:07 ended every subsequent
+ * login on it within about 250 milliseconds for two days. The agent is supposed to remember which
+ * directives it has obeyed, but that memory is per-process and was additionally being cleared on
+ * each login, so every new session treated a two-day-old instruction as fresh. From the desk it
+ * looked like signing in worked and then the tray said nobody was signed in.
+ *
+ * The agent has been fixed to ignore any directive raised before its session started. This is the
+ * other half, and it is the half that matters for a fleet: it cures machines still running the
+ * older build, without waiting for every one of them to be updated.
+ *
+ * Only flags raised *before* this login are cleared. An administrator who clicks "sign out" while
+ * somebody is signing in is still obeyed.
+ */
 async function touchDeviceOnLogin(
   firestore: Firestore,
   deviceId: string,
@@ -1042,14 +1065,26 @@ async function touchDeviceOnLogin(
   ipAddress: string | null,
   agentVersion: string | null,
 ): Promise<void> {
-  await firestore
-    .collection(WINDOWS_AGENT_COLLECTIONS.devices)
-    .doc(deviceId)
+  const reference = firestore.collection(WINDOWS_AGENT_COLLECTIONS.devices).doc(deviceId);
+
+  const satisfied: Record<string, null> = {};
+  try {
+    const snapshot = await reference.get();
+    for (const field of ['forceSignOutAt', 'forceReauthAt'] as const) {
+      const raisedAt = snapshot.get(field);
+      if (typeof raisedAt === 'string' && raisedAt && raisedAt < nowIso) satisfied[field] = null;
+    }
+  } catch {
+    // A read failure here must not cost the login. The agent-side guard still holds.
+  }
+
+  await reference
     .update({
       lastLoginAt: nowIso,
       lastSeenUserId: user.userId,
       lastSeenUserName: user.name,
       ipAddress,
+      ...satisfied,
       ...(agentVersion ? { agentVersion } : {}),
       updatedAt: FieldValue.serverTimestamp(),
     })

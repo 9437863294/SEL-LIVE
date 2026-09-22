@@ -149,7 +149,7 @@ useless on an unenrolled PC.
 ```
 npm run test:windows-agent          # 61 domain tests
 npm run typecheck:windows-agent
-dotnet test windows/SEL.Agent.Tests # 98 agent tests: the OS compatibility matrix, the idle-lock rules, the gate keys
+dotnet test windows/SEL.Agent.Tests # 105 agent tests: OS compatibility, idle-lock rules, gate keys, directive expiry
 ```
 
 ### How the agent starts, and why it cannot be switched off
@@ -213,6 +213,33 @@ The watchdog also no longer gives up. It used to stop trying for ten minutes aft
 ten minutes of a PC recording nothing, repeated all day, on exactly the machines already broken.
 Now the interval stretches (30s → 2 min → 10 min) and stays there, so a machine that can be fixed
 by retrying is fixed in two minutes and one that cannot costs six log entries an hour.
+
+### Administrator directives, and why they expire
+
+**Force sign-out** and **Force re-authentication** on the device page are stored as instants on the
+device document — `forceSignOutAt`, `forceReauthAt` — because the server has no way to be told when
+an agent has complied. Anything stored that way is delivered again on every heartbeat, so something
+has to decide when the instruction is spent.
+
+**The rule: a directive raised before the current session began is already satisfied.** "Sign this
+user out" means the session that was running when somebody clicked it. If the person has signed in
+since, that session is gone — by exactly the means the instruction demanded.
+
+Enforced in both halves, deliberately:
+
+| | |
+|---|---|
+| The agent | `DirectivePolicy.ShouldObey` compares the directive's instant with the session's login instant, both stamped by the server, so the PC's clock is not involved. Seven tests |
+| The server | A login clears any flag older than itself. This is the half that matters for a fleet: it cures machines still running an older agent, without waiting for every one to be updated |
+
+> **This was a live bug, and it looked like nothing to do with directives.** A force sign-out raised
+> on one PC at 13:07 ended every subsequent login on it within about 250 milliseconds, for two
+> days. Signing in worked, the session opened, and the tray then said "Not signed in — nothing is
+> being recorded". The agent is supposed to remember which directives it has obeyed, but that
+> memory is per-process — so a restart, a reinstall or a re-image starts with none — and it was
+> additionally being cleared on every login, which is precisely when it was needed. The sessions
+> are still in Firestore, four of them, each a quarter of a second long with `endReason:
+> ADMIN_SIGNOUT`.
 
 ---
 
@@ -991,6 +1018,7 @@ office work last March" stays answerable indefinitely, while "which window was o
 | "This computer is not enrolled" | No `device.json`, or DPAPI cannot decrypt it (cloned image). `--reset-identity` and restart. |
 | "Awaiting administrator approval" | The enrolment code has `autoApprove` off. Approve it on the device page. |
 | The setup window appears on a PC that was already installed | The agent has no device credential and no usable code — an install without `ENROLLMENTCODE`, or a code that has since expired, been disabled or been used up. The window names which. |
+| Sign-in succeeds, then the tray immediately says "Not signed in" | A force sign-out or force re-authentication left on the device. Check `forceSignOutAt` / `forceReauthAt` against `lastLoginAt` on the device document — a flag older than the last login used to fire on every login for ever. Fixed in both halves (see below); on an older agent against an older server, clear the field. |
 | The agent takes ages to appear after signing in | Check `--check` for `Logon task : MISSING`. Without the task the service watchdog is doing the work, which is up to 30 seconds. Re-run the installer, or `--install-logon-task` from an elevated prompt. |
 | The agent never appears at all | `%ProgramData%\SEL LIVE\Agent\startup.log`, then the event log's exit code. §3 has the table: 0 means the agent chose to exit, 0xC0000000-something means Windows stopped it before it ran. |
 | "started the desktop agent … but it exited within 3s", repeatedly | Read the exit code in the same entry. Historically this was the service's job object killing the child; if it recurs with a 0xC0000000 code, look for AppLocker, WDAC or an antivirus blocking `SEL.Agent.exe` when it is launched by a service. |

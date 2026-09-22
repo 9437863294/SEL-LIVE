@@ -266,7 +266,14 @@ namespace Sel.Agent.Core
                 _userName = login.UserName;
                 _signedInAtUtc = IsoTime.Parse(login.LoginAt);
                 if (login.Policy != null) ApplyPolicy(login.Policy);
-                _handledDirectives.Clear();
+
+                // The obeyed-directive ids are deliberately NOT cleared here.
+                //
+                // Clearing them was how a stale force-sign-out became permanent: every login
+                // wiped the memory, the flag was still on the device document, and the next
+                // heartbeat delivered it as though it were new. Directive ids embed the instant
+                // they were raised, so they are unique per raise and there is nothing a new
+                // session needs to forget.
             }
 
             _sessionState.StateChanged += OnSessionStateChanged;
@@ -654,13 +661,50 @@ namespace Sel.Agent.Core
             RaiseStatusChanged();
         }
 
+        /// <summary>
+        /// Act on one instruction from the server, once, and only if it is still about this session.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>A directive raised before this session began is already satisfied.</b> "Sign this
+        /// user out" means the session that was running when an administrator clicked it. That
+        /// session is gone — the person signed in again afterwards, which is the only way this
+        /// code is reached — so obeying it now would end a session the instruction never referred
+        /// to.
+        /// </para>
+        /// <para>
+        /// That is not a hypothetical. A force sign-out raised on one machine at 13:07 signed the
+        /// user out roughly 250 milliseconds after every subsequent login, for two days: the flag
+        /// stays on the device document, the id-based memory below is per-process and was being
+        /// cleared on every login as well, so each new session saw a stale instruction as a new
+        /// one. From the desk it looked like "sign-in succeeds, then the tray says nobody is
+        /// signed in".
+        /// </para>
+        /// <para>
+        /// Both timestamps are stamped by the server — the directive's when it was raised, the
+        /// session's at login — so this comparison never involves the PC's clock.
+        /// </para>
+        /// </remarks>
         private void HandleDirective(AgentDirective directive)
         {
             if (directive == null || string.IsNullOrEmpty(directive.DirectiveId)) return;
+
+            DateTime sessionStartUtc;
             lock (_stateGate)
             {
                 if (!_handledDirectives.Add(directive.DirectiveId)) return;
+                // No session means no login instant to compare against, and DirectivePolicy
+                // treats that as "obey" — see its remarks on which mistake is the worse one.
+                sessionStartUtc = _signedInAtUtc ?? DateTime.MinValue;
             }
+
+            if (!Session.DirectivePolicy.ShouldObey(IsoTime.Parse(directive.IssuedAt), sessionStartUtc))
+            {
+                _log("Ignoring " + directive.Kind + " (" + directive.DirectiveId
+                    + "): raised before this session started, so it has already been satisfied.");
+                return;
+            }
+
             _log("Directive: " + directive.Kind + " (" + directive.DirectiveId + ")");
             EventHandler<AgentDirective> handler = DirectiveReceived;
             if (handler != null) handler(this, directive);
