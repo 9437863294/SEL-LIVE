@@ -141,14 +141,78 @@ useless on an unenrolled PC.
 | Embedded ERP window | `windows/SEL.Agent/ErpWindow.xaml{,.cs}`, `ErpBrowser.cs`, and `src/app/(public)/auth/agent/page.tsx` at the other end |
 | Admin-gated exit | `windows/SEL.Agent/ExitApprovalWindow.xaml{,.cs}`, and `src/app/api/windows-agent/exit-approval/route.ts` at the other end |
 | Idle lock | `windows/SEL.Agent.Core/Session/IdleLockPlanner.cs` (the rules, tested), `windows/SEL.Agent/SessionLifecycleController.cs` (the timer and windows) |
+| How it starts | `windows/SEL.Agent.Service/LogonTask.cs` (the scheduled task), `SelAgentService.cs` (the watchdog), `SessionLauncher.cs` (launching into a session) |
+| Start-up diagnostics | `windows/SEL.Agent/StartupTrace.cs` → `%ProgramData%\SEL LIVE\Agent\startup.log`, always on |
 | Installer | `windows/SEL.Agent.Installer/Package.wxs` (the MSI), `Bundle.wxs` (the setup .exe), `build.ps1` (both) |
 | Tests | `tests/windows-agent-domain.test.mjs`, `windows/SEL.Agent.Tests` |
 
 ```
-npm run test:windows-agent          # 54 domain tests
+npm run test:windows-agent          # 61 domain tests
 npm run typecheck:windows-agent
-dotnet test windows/SEL.Agent.Tests # 83 agent tests: the OS compatibility matrix and the idle-lock rules
+dotnet test windows/SEL.Agent.Tests # 98 agent tests: the OS compatibility matrix, the idle-lock rules, the gate keys
 ```
+
+### How the agent starts, and why it cannot be switched off
+
+Two mechanisms, and neither is a Run key any more.
+
+| | |
+|---|---|
+| **A scheduled task** | `SEL LIVE Agent`, a logon trigger with no delay, principal `BUILTIN\Users`, registered by the installer. Runs as whoever signs in, in their own session |
+| **The service watchdog** | Checks every **30 seconds** that an agent is running in each active session, and starts one if not. First check 3 seconds after the service starts |
+
+**Why the Run key had to go.** `HKLM\...\CurrentVersion\Run` appears in Task Manager's "Startup
+apps" tab and in Settings → Apps → Startup, each with a switch beside it. On a PC whose user is a
+local administrator — most of this fleet — anybody could turn the agent off before it ever ran,
+and the machine afterwards gave no sign that anything was missing. It simply recorded nothing. A
+scheduled task appears in neither list, and cannot be disabled, edited or deleted without
+administrative rights.
+
+It is also the answer to "why does the agent take so long to appear?". Explorer defers Run entries
+until the desktop is built and then adds a delay of its own — ten to thirty seconds of somebody
+already working while nothing is watching. A logon trigger runs as the session starts.
+
+The task is **not hidden** from Task Scheduler, deliberately, and its description says what it
+does. The protection is Windows permissions, not concealment.
+
+### When the agent does not start
+
+`%ProgramData%\SEL LIVE\Agent\startup.log` says how far it got. It is **always written**, unlike
+`agent.log`, because it contains only process facts and start-up milestones — no window titles, no
+application names, nothing observed about the person using the PC — which is what makes it safe to
+leave on permanently:
+
+```
+10:37:18.266  ---- start: pid 476, session 1, 1.0.0, launched by taskeng (pid 5312), 32-bit
+10:37:18.267  single-instance mutex acquired
+10:37:18.279  configuration: usable, pointing at https://seltech.store
+10:37:19.207  host constructed
+10:37:19.239  tray icon shown; start-up complete
+```
+
+The `launched by` field is the one that earns its place: the scheduled task, the service watchdog
+and a person double-clicking the icon fail in different ways, and this says which one asked.
+
+The service's event-log entry now carries the agent's **exit code** when a launch does not survive,
+which is the difference between a diagnosis and a guess:
+
+| Exit code | Means |
+|---|---|
+| `0` | The agent shut itself down deliberately — another copy already running, or a configuration it could not use. `startup.log` names which |
+| Above `0xC0000000` | **Windows** terminated it: a job-object limit, a blocked executable, a missing dependency. Nothing appears in the agent's own log, because it never ran |
+| Anything else | The agent's own failure exit; `startup.log` has the reason |
+
+> **This mattered on a real machine.** The service was launching the agent every minute and logging
+> "started … but exited within 3s", for weeks. The agent was fine — it ran perfectly when Explorer
+> started it from the Run key — but every service launch died in about sixty milliseconds, before
+> it could create its own mutex, with no crash report, because the child had inherited the
+> service's job object. `CREATE_BREAKAWAY_FROM_JOB` fixes it; the exit code and `startup.log` are
+> what make the next one of these a five-minute problem instead of a morning's.
+
+The watchdog also no longer gives up. It used to stop trying for ten minutes after three failures —
+ten minutes of a PC recording nothing, repeated all day, on exactly the machines already broken.
+Now the interval stretches (30s → 2 min → 10 min) and stays there, so a machine that can be fixed
+by retrying is fixed in two minutes and one that cannot costs six log entries an hour.
 
 ---
 
@@ -597,6 +661,32 @@ says. What this adds is that the obvious, discoverable way to close it produces 
 did this PC stop reporting at half past two" — and does not happen by accident on the way out at
 5 p.m.
 
+### Removing the agent needs the same approval
+
+Closing the agent needed an administrator; uninstalling it needed nothing at all, and took two
+clicks in Apps and Features. That gap is closed:
+
+| | |
+|---|---|
+| Apps and Features | Shows the agent with **no Uninstall or Modify button** (`DisableRemove` on the bundle). The entry stays, so the fleet is still auditable from the PC |
+| `setup.exe /uninstall` | Asks for a SEL LIVE administrator, the same `Devices / Edit` permission. Cancelling stops the uninstall with the machine untouched |
+| `setup.exe /uninstall /quiet` as SYSTEM | Proceeds. No window can be shown in session 0, and a removal driven by SCCM or GPO must not hang waiting for a click nobody can see |
+| An unanswered prompt | Refused after three minutes, rather than leaving msiexec waiting for ever |
+
+Approval is recorded as `AGENT_UNINSTALL_APPROVED`, deliberately a different audit action from
+`AGENT_EXIT_APPROVED`. Closing the agent pauses recording until the next sign-in; removing it ends
+recording on that computer, and afterwards the PC is indistinguishable from one that was never
+enrolled. "Why has this machine no data since March" needs those two to be distinguishable.
+
+Two exemptions, both intentional: a PC that is **not enrolled** and a PC that **cannot reach SEL
+LIVE** are allowed through. Blocking there would mean a machine with a dead link, or one that was
+never registered, could not have a broken agent removed without a re-image.
+
+> **This is deterrence, not enforcement**, and the distinction is the same one §7 makes about the
+> access gate. A local administrator can stop the service and delete the folder, and nothing here
+> pretends otherwise. What it removes is the casual route — two clicks, no record — and what it
+> adds is a name in the audit trail beside every PC that legitimately stopped being monitored.
+
 ---
 
 ## 7c. The tray icon
@@ -901,6 +991,10 @@ office work last March" stays answerable indefinitely, while "which window was o
 | "This computer is not enrolled" | No `device.json`, or DPAPI cannot decrypt it (cloned image). `--reset-identity` and restart. |
 | "Awaiting administrator approval" | The enrolment code has `autoApprove` off. Approve it on the device page. |
 | The setup window appears on a PC that was already installed | The agent has no device credential and no usable code — an install without `ENROLLMENTCODE`, or a code that has since expired, been disabled or been used up. The window names which. |
+| The agent takes ages to appear after signing in | Check `--check` for `Logon task : MISSING`. Without the task the service watchdog is doing the work, which is up to 30 seconds. Re-run the installer, or `--install-logon-task` from an elevated prompt. |
+| The agent never appears at all | `%ProgramData%\SEL LIVE\Agent\startup.log`, then the event log's exit code. §3 has the table: 0 means the agent chose to exit, 0xC0000000-something means Windows stopped it before it ran. |
+| "started the desktop agent … but it exited within 3s", repeatedly | Read the exit code in the same entry. Historically this was the service's job object killing the child; if it recurs with a 0xC0000000 code, look for AppLocker, WDAC or an antivirus blocking `SEL.Agent.exe` when it is launched by a service. |
+| No Uninstall button in Apps and Features | Intended. Removal needs a SEL LIVE administrator's approval — run the setup .exe with `/uninstall`. §7b. |
 | "That enrolment code has reached its registration limit" | `maxRegistrations` is exhausted. Raise it, or issue a new code. The setup window warns when a code has three or fewer left, so this is usually avoidable. |
 | "That enrolment code is not recognised" on a code that looks right | Check it against the enrolment codes page: it is a document id, so `SEL-HO-2026` and `SEL-H0-2026` are different codes and both look correct on paper. |
 | Nothing syncs, no error visible | TLS 1.2 on Windows 7. Run `--check`. |

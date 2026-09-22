@@ -26,10 +26,16 @@ namespace Sel.Agent.Service
     /// </para>
     /// <list type="bullet">
     /// <item><description>
-    /// <b>Making sure the agent is running.</b> Started at every sign-in and checked every
-    /// minute. §26 asks that an employee not be able to stop tracking during a mandatory
+    /// <b>Making sure the agent is running.</b> Checked every thirty seconds in every active
+    /// session. §26 asks that an employee not be able to stop tracking during a mandatory
     /// session; a tray application alone cannot promise that, because Task Manager exists. A
-    /// service running as LocalSystem that restarts it within a minute can.
+    /// service running as LocalSystem that restarts it within half a minute can.
+    /// <para>
+    /// The agent is normally started by the <c>SEL LIVE Agent</c> scheduled task at sign-in —
+    /// see <see cref="LogonTask"/> — and this is the second line rather than the first. Both
+    /// exist because they cover different failures: the task cannot bring the agent back when
+    /// somebody ends it from Task Manager, and the watchdog cannot be as fast as a logon trigger.
+    /// </para>
     /// </description></item>
     /// <item><description>
     /// <b>Multi-session support.</b> On a machine with fast user switching or RDP, each signed-in
@@ -41,13 +47,13 @@ namespace Sel.Agent.Service
     /// </description></item>
     /// </list>
     ///
-    /// <para><b>Restarting is rate-limited, and that is not a detail.</b></para>
+    /// <para><b>Restarting backs off, and never stops.</b></para>
     /// <para>
-    /// If the agent crashes on start-up — a corrupt configuration, a missing dependency — an
-    /// unthrottled watchdog would relaunch it every minute for ever, filling the event log and
-    /// flashing a window at the user all day. After three failures in ten minutes the service
-    /// stops trying for that session and logs why, leaving a machine that is quietly broken
-    /// rather than loudly broken, and a log line that says which.
+    /// If the agent cannot start — a corrupt configuration, a missing dependency — an
+    /// unthrottled watchdog would relaunch it every half minute for ever, filling the event log
+    /// and flashing a window at the user all day. So the interval stretches after three
+    /// failures, to two minutes and then ten; see the fields below for why it stretches rather
+    /// than stopping, which is what it used to do.
     /// </para>
     /// </remarks>
     public sealed class SelAgentService : ServiceBase

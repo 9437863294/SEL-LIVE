@@ -53,6 +53,9 @@ namespace Sel.Agent
                 IntroText.Text = "Removing the agent ends attendance and activity recording on this "
                     + "computer permanently, so a SEL LIVE administrator has to approve it.";
                 ApproveButton.Content = "Approve and remove agent";
+                // "Keep running" is the right words for the tray's Exit and the wrong ones here:
+                // the question being cancelled is an uninstall, not whether to stop the agent.
+                CancelButton.Content = "Cancel removal";
             }
             else
             {
