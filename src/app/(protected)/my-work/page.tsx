@@ -15,7 +15,8 @@ import WorkDashboard from '@/components/work-dashboard/work-dashboard';
 export default function MyWorkPage() {
   return (
     <AppShell>
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+      {/* Full width with the same minimal gutters as the home tab. */}
+      <main className="w-full px-2 py-4 sm:px-3 md:px-4">
         <WorkDashboard />
       </main>
     </AppShell>

@@ -2915,16 +2915,10 @@ export async function runEApprovalEscalations(
  * Convenience selectors used by more than one screen
  * ---------------------------------------------------------------------------------------------- */
 
-export const OPEN_E_APPROVAL_STATUSES: EApprovalStatus[] = [
-  'Submitted',
-  'Pending Approval',
-  'Pending Verification',
-  'Pending Clarification',
-  'Returned',
-  'Resubmitted',
-  'On Hold',
-  'Partially Approved',
-];
+// `OPEN_E_APPROVAL_STATUSES` moved to `e-approval-policy.ts` and is re-exported from `e-approval.ts`
+// along with the rest of that module, so this file's existing importers are unaffected. It moved
+// because the Windows agent's morning summary needs it in an Admin-SDK path and this file is
+// `'use client'`; it is now derived from `E_APPROVAL_STATUSES` rather than restated.
 
 export const isEApprovalOpen = (status: EApprovalStatus) => isOpenEApprovalStatus(status);
 export const isEApprovalClosed = (status: EApprovalStatus) => isTerminalEApprovalStatus(status);

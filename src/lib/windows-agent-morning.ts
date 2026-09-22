@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { getFirebaseAdminFirestore } from './firebase-admin';
-import { E_APPROVAL_COLLECTIONS } from './e-approval';
+import { E_APPROVAL_COLLECTIONS, OPEN_E_APPROVAL_STATUSES } from './e-approval';
 import { OFFICE_HUB_COLLECTIONS } from './office-hub';
 import { todayInZone } from './office-hub-time';
 import { WINDOWS_AGENT_TIME_ZONE } from './windows-agent-rules';
@@ -73,11 +73,17 @@ export async function buildMorningSummary(options: {
   const [pendingApprovals, pendingTasks, overdueTasks, unreadNotifications, reminders, meetings] =
     await Promise.all([
       // Approvals waiting on this person specifically — the inbox, not everything they can see.
+      //
+      // The status list is `OPEN_E_APPROVAL_STATUSES`, the same one `/e-approval/inbox` filters on.
+      // It previously read `['PENDING', 'IN_PROGRESS', 'RETURNED']`, which are not members of
+      // `EApprovalStatus` — the real values are Title Case with spaces ('Pending Approval',
+      // 'Pending Verification', …). An `in` filter against values nothing stores matches nothing, so
+      // this count was always zero and the morning screen told everybody their inbox was empty.
       safeCount(() =>
         firestore
           .collection(E_APPROVAL_COLLECTIONS.requests)
           .where('currentAssigneeIds', 'array-contains', options.userId)
-          .where('status', 'in', ['PENDING', 'IN_PROGRESS', 'RETURNED']),
+          .where('status', 'in', OPEN_E_APPROVAL_STATUSES),
       ),
       safeCount(() =>
         firestore

@@ -66,7 +66,8 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      <div className="px-3 pt-4 sm:px-4 md:px-6">
+      {/* Full width with minimal gutters — the page is a working surface, not an article. */}
+      <div className="w-full px-2 pt-3 sm:px-3 md:px-4">
         <Tabs value={tab} onValueChange={selectTab}>
           <TabsList>
             <TabsTrigger value="work" className="gap-2">

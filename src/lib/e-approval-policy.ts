@@ -150,6 +150,24 @@ export function isOpenEApprovalStatus(status: EApprovalStatus | string): boolean
   return !isTerminalEApprovalStatus(status) && String(status) !== 'Draft';
 }
 
+/**
+ * The open statuses as a list, for the `in` filters that cannot call a predicate.
+ *
+ * Derived from `E_APPROVAL_STATUSES` rather than hand-listed, so adding a status to the union puts
+ * it in every inbox query automatically instead of quietly leaving it out of all of them.
+ *
+ * It lives in this module — not in `e-approval-service.ts`, where it began — because the callers are
+ * not all in the browser: the Windows agent's morning summary needs it inside an Admin-SDK path, and
+ * the service module is `'use client'`. This file is the dependency-free one by design.
+ *
+ * Mutable, as it was before the move: the register's `statuses?: EApprovalStatus[]` filter field and
+ * several other call sites take a plain array, and making it `readonly` here would push a change
+ * onto all of them to no benefit.
+ */
+export const OPEN_E_APPROVAL_STATUSES: EApprovalStatus[] = E_APPROVAL_STATUSES.filter((status) =>
+  isOpenEApprovalStatus(status),
+);
+
 export const eApprovalStatusStyles: Record<EApprovalStatus, string> = {
   Draft: 'bg-slate-100 text-slate-700 border-slate-200',
   Submitted: 'bg-blue-100 text-blue-800 border-blue-200',

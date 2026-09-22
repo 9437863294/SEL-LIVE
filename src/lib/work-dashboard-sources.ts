@@ -54,8 +54,18 @@ import {
   type WorkLane,
 } from './work-dashboard';
 
-import { E_APPROVAL_BASE_PATH, E_APPROVAL_COLLECTIONS } from './e-approval';
-import { OFFICE_HUB_COLLECTIONS } from './office-hub';
+import {
+  E_APPROVAL_BASE_PATH,
+  E_APPROVAL_COLLECTIONS,
+  OPEN_E_APPROVAL_STATUSES,
+  type EApprovalStatus,
+} from './e-approval';
+import {
+  CLOSED_TASK_STATUSES,
+  DECISION_STATUSES,
+  OFFICE_HUB_COLLECTIONS,
+  TASK_STATUSES,
+} from './office-hub';
 import { OFFICE_HUB_BASE_PATH } from './office-hub-permissions';
 import { HR_COLLECTIONS } from './hr-requirement';
 import { PENDING_APPROVAL_STATUSES } from './hr-policy';
@@ -152,8 +162,43 @@ async function fetchCount(collectionName: string, field: string, values: string[
 
 /* ── E-Approval ────────────────────────────────────────────────────────────────────────────────── */
 
-/** Statuses in which an E-Approval file is still moving. Mirrors `isTerminalEApprovalStatus`. */
-const E_APPROVAL_OPEN = new Set(['PENDING', 'IN_PROGRESS', 'RETURNED', 'DRAFT_RETURNED', 'CLARIFICATION']);
+/**
+ * Whether an E-Approval file is still somebody's problem.
+ *
+ * `OPEN_E_APPROVAL_STATUSES` is the same constant the module's own inbox filters on, so this lane
+ * and `/e-approval/inbox` cannot disagree about what is open. Worth importing rather than restating:
+ * the statuses are Title Case with spaces — `'Pending Approval'`, `'Pending Verification'`,
+ * `'Pending Clarification'` — and an inlined guess at `'PENDING'` or `'IN_PROGRESS'` matches none of
+ * the fourteen real values, so the source silently returns nothing at all rather than failing.
+ */
+const isOpen = (status: unknown): boolean =>
+  OPEN_E_APPROVAL_STATUSES.includes(text(status) as EApprovalStatus);
+
+/**
+ * What the file is waiting for, in the words the inbox uses.
+ *
+ * A request pending verification and one pending approval are different jobs — one is "check this",
+ * the other is "decide this" — and the module models that as `currentStepType` precisely so its
+ * three inbox cards can be one query. Losing the distinction here would make the dashboard's row
+ * less informative than the screen it links to.
+ */
+const E_APPROVAL_STEP_LABEL: Record<string, string> = {
+  APPROVAL: 'Approval',
+  VERIFICATION: 'Verification',
+  CLARIFICATION: 'Clarification',
+  REVIEW: 'Review',
+};
+
+function eApprovalStage(row: Row): string | null {
+  const stepType = E_APPROVAL_STEP_LABEL[text(row.currentStepType).toUpperCase()];
+  const stepName = text(row.currentStepName) || text(row.pendingLabel);
+  // Both when they say different things — "Verification · Finance check" — and whichever exists
+  // otherwise. A step named the same as its type is not printed twice.
+  if (stepType && stepName && stepName.toLowerCase() !== stepType.toLowerCase()) {
+    return `${stepType} · ${stepName}`;
+  }
+  return stepType || stepName || text(row.status) || null;
+}
 
 function eApprovalItem(row: Row, lane: WorkLane, sourceId: string): WorkItem {
   return {
@@ -163,7 +208,7 @@ function eApprovalItem(row: Row, lane: WorkLane, sourceId: string): WorkItem {
     lane,
     title: text(row.subject, 'Approval request'),
     reference: text(row.referenceNo) || null,
-    stage: text(row.currentStepName) || text(row.pendingLabel) || null,
+    stage: eApprovalStage(row),
     href: `${E_APPROVAL_BASE_PATH}/${row.id}`,
     dueAt: toWorkDate(row.currentDueAt),
     amount: num(row.amount),
@@ -176,8 +221,20 @@ const eApprovalVisible = (context: WorkContext) => context.can('View Module', 'E
 
 /* ── Office Hub ────────────────────────────────────────────────────────────────────────────────── */
 
-const OFFICE_HUB_OPEN_TASK = new Set(['Not Started', 'In Progress', 'On Hold']);
-const OFFICE_HUB_OPEN_ITEM = new Set(['Open', 'In Progress']);
+/**
+ * Derived from the module's own unions rather than typed out here.
+ *
+ * The same reasoning as `OPEN_E_APPROVAL_STATUSES`: a hand-written status list is a filter that can
+ * stop matching without anything failing. Deriving means a new `TaskStatus` is treated as open until
+ * somebody explicitly closes it, which is the safe default for a screen whose job is to not lose
+ * work. `CLOSED_TASK_STATUSES` and `DECISION_STATUSES` are the source of truth.
+ */
+const OFFICE_HUB_OPEN_TASK = new Set<string>(
+  TASK_STATUSES.filter((status) => !CLOSED_TASK_STATUSES.includes(status)),
+);
+const OFFICE_HUB_OPEN_ITEM = new Set<string>(
+  DECISION_STATUSES.filter((status) => status !== 'Completed' && status !== 'Cancelled'),
+);
 
 const officeHubVisible = (context: WorkContext) => context.can('View Module', 'Office Hub');
 
@@ -193,7 +250,7 @@ export const WORK_SOURCES: WorkSource[] = [
     visible: eApprovalVisible,
     load: async (context) =>
       (await fetchWhere(E_APPROVAL_COLLECTIONS.requests, 'currentAssigneeIds', 'array-contains', context.userId))
-        .filter((row) => E_APPROVAL_OPEN.has(text(row.status)))
+        .filter((row) => isOpen(row.status))
         .map((row) => eApprovalItem(row, 'action', 'e-approval-mine')),
   },
   {
@@ -212,7 +269,7 @@ export const WORK_SOURCES: WorkSource[] = [
       );
       return rows(await getDocs(built))
         .filter(isLive)
-        .filter((row) => E_APPROVAL_OPEN.has(text(row.status)))
+        .filter((row) => isOpen(row.status))
         // A file that also names the viewer belongs in `action`; `dropLowerLaneDuplicates` collapses
         // the pair, but filtering here saves the row ever being built.
         .filter((row) => !list(row.currentAssigneeIds).includes(context.userId))
@@ -227,7 +284,7 @@ export const WORK_SOURCES: WorkSource[] = [
     visible: (context) => eApprovalVisible(context) && Boolean(context.role),
     load: async (context) =>
       (await fetchWhere(E_APPROVAL_COLLECTIONS.requests, 'currentRoles', 'array-contains', context.role))
-        .filter((row) => E_APPROVAL_OPEN.has(text(row.status)))
+        .filter((row) => isOpen(row.status))
         .filter((row) => !list(row.currentAssigneeIds).includes(context.userId))
         .map((row) => eApprovalItem(row, 'shared', 'e-approval-role')),
   },
@@ -239,7 +296,7 @@ export const WORK_SOURCES: WorkSource[] = [
     visible: eApprovalVisible,
     load: async (context) =>
       (await fetchWhere(E_APPROVAL_COLLECTIONS.requests, 'requesterId', '==', context.userId))
-        .filter((row) => E_APPROVAL_OPEN.has(text(row.status)))
+        .filter((row) => isOpen(row.status))
         .map((row) => ({
           ...eApprovalItem(row, 'watching', 'e-approval-raised'),
           // On a file you raised, the useful fact is who is holding it, not that you raised it.

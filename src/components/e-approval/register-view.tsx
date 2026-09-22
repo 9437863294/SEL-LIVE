@@ -8,11 +8,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import {
   E_APPROVAL_BASE_PATH,
+  OPEN_E_APPROVAL_STATUSES,
   isTerminalEApprovalStatus,
   type EApprovalRequest,
   type EApprovalStatus,
 } from '@/lib/e-approval';
-import { listEApprovals, OPEN_E_APPROVAL_STATUSES } from '@/lib/e-approval-service';
+import { listEApprovals } from '@/lib/e-approval-service';
 import { DeleteApprovalDialog, DeleteApprovalRowButton } from './delete-request-dialog';
 import { EApprovalRequestTable } from './request-table';
 import { PageHeader } from './page-header';

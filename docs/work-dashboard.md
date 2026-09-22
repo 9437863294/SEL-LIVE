@@ -55,6 +55,12 @@ production. Filter status in memory; the dashboard sorts everything itself anywa
 Subcollections are the exception: collection-group queries need an explicit `fieldOverrides` entry
 with `COLLECTION_GROUP` / `CONTAINS` scope. The seven Project Management ones are already declared.
 
+> **Declaring an index is not deploying it.** Until `firebase deploy --only firestore:indexes` runs,
+> a collection-group source throws `FAILED_PRECONDITION: The query requires an index` — which the
+> dashboard catches and reports in its "queues could not be read" notice. Six such failures with
+> `jmcEntries` working is the signature of exactly this: that one override predates the feature and
+> is already live, the other six are not. Click **Details** on the notice to confirm.
+
 ## The lanes
 
 - `action` — a field on the record names this user. They are accountable.
@@ -103,15 +109,43 @@ The reason no central view existed before: eleven names for one concept.
 - **A count badge in the header.** It would run the whole fan-out on every page in the application
   rather than on the one screen that displays it.
 
-## Collection names that were wrong
+## Never hand-write a status list
 
-Both found while verifying which collection each module actually uses, and both fixed:
+Filters are derived from each module's own union — `OPEN_E_APPROVAL_STATUSES`,
+`TASK_STATUSES` minus `CLOSED_TASK_STATUSES`, `DECISION_STATUSES` minus its closed pair — never
+typed out at the call site.
+
+This is the one rule in this document written in blood. The E-Approval source shipped filtering on
+`['PENDING', 'IN_PROGRESS', 'RETURNED', 'DRAFT_RETURNED', 'CLARIFICATION']`. Every one of those is
+invented; the real statuses are Title Case with spaces (`'Pending Approval'`,
+`'Pending Verification'`, `'Pending Clarification'`). **Nothing failed.** No type error — the values
+were compared as strings. No exception, no empty state, no entry in the failure notice. The filter
+simply matched none of the fourteen real statuses, so the source returned zero rows and the board
+told people with approvals waiting that their inbox was clear. The same mistake was live in
+`windows-agent-morning.ts` at the same time, zeroing the morning screen's approval count.
+
+A status filter cannot be wrong loudly, so it has to be wrong provably:
+`tests/work-dashboard-statuses.test.mjs` asserts every filter list is a non-empty subset of the
+union it selects from, and that the five invented constants above still do not exist.
+
+## Collection names and statuses that were wrong
+
+All found while verifying what each module actually stores, and all fixed:
 
 1. **`officeHubReminders.status == 'PENDING'`** in `windows-agent-morning.ts`. `ReminderStatus` is
    `'Scheduled' | 'Sent' | 'Failed' | 'Cancelled'` and `office-hub-reminders.ts` only ever writes
    `'Scheduled'`, so the morning dashboard's reminder count was structurally always zero.
 
-2. **Two crossed entries in `api/workflow/check-escalations`.** Its `daily-requisition-workflow`
+2. **`eApprovalRequests.status in ['PENDING', 'IN_PROGRESS', 'RETURNED']`**, also in
+   `windows-agent-morning.ts` — the same non-existent constants described above, so its
+   `pendingApprovals` figure was always zero too. Both now use `OPEN_E_APPROVAL_STATUSES`.
+
+   That constant moved from `e-approval-service.ts` to `e-approval-policy.ts` to make this possible:
+   the service module is `'use client'` and the morning summary is an Admin-SDK `server-only` path.
+   The policy module is the dependency-free one by design. It is re-exported through `e-approval.ts`
+   as before, and is now derived from `E_APPROVAL_STATUSES` rather than restated.
+
+3. **Two crossed entries in `api/workflow/check-escalations`.** Its `daily-requisition-workflow`
    entry pointed at `requisitions`, which is *Site Fund Requisition 2's* collection — so it measured
    SFR2 records against Daily Requisition's step config. Its `site-fund-requisition-2-workflow` entry
    pointed at `siteFundRequisitions2`, a name nothing in the repository writes, so SFR2's configured

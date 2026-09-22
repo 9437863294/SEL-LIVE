@@ -212,7 +212,7 @@ export default function ModuleDashboard({ className }: { className?: string } = 
   }, []);
 
   return (
-    <div className={className ?? "flex flex-col gap-6 h-full p-3 sm:p-4 md:p-6"}>
+    <div className={className ?? "flex flex-col gap-6 h-full p-2 sm:p-3 md:p-4"}>
       <div
         className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4"
         onDragOver={handleDragOver}

@@ -8,6 +8,22 @@
  * to the screen where that piece of work is actually done — which is the whole point, and the reason
  * `WorkItem.href` is required rather than optional.
  *
+ * ── Why it looks like the rest of the application ──────────────────────────────────────────────
+ *
+ * The figures are `KpiCard`s and the header is a `PageHeader`, from `@/components/shared/kpi-card` —
+ * the same two primitives fifty screens across HR and Employee already render, where they used to
+ * live as `HrKpiCard` and `HrPageHeader`. A dashboard that invents its own card, its own header scale
+ * and its own tile padding reads as a different application bolted on beside this one, which is
+ * exactly how the first cut of this screen looked: outsized tiles with a number floating in the
+ * middle of a mostly-empty box.
+ *
+ * They were moved out of `hr-ui.tsx` rather than imported from it because that file pulls in
+ * `@/lib/hr-requirement`, and through it `hr-policy.ts` — some thirty-six hundred lines of HR rules,
+ * which have no business loading on the home page.
+ *
+ * The board runs the full width of the page with minimal gutters — see the note on `shell` below for
+ * what that costs and what the better fix would be if it ever starts to grate.
+ *
  * ── What this screen deliberately does not do ──────────────────────────────────────────────────
  *
  * No charts, and no per-person productivity figures. A count of somebody's open items is not a
@@ -31,7 +47,6 @@ import {
   ChevronDown,
   Clock,
   Inbox,
-  Layers,
   RefreshCw,
   Users,
 } from 'lucide-react';
@@ -41,12 +56,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { moduleBadgeClass } from '@/lib/activity-modules';
+import { KpiCard, PageHeader, type Tone } from '@/components/shared/kpi-card';
 import {
   WORK_LANES,
   WORK_LANE_HINT,
   WORK_LANE_TITLE,
   WORK_URGENCY_BADGE,
-  WORK_URGENCY_LABEL,
   countByModule,
   dueLabel,
   workUrgency,
@@ -56,36 +71,76 @@ import {
 } from '@/lib/work-dashboard';
 import { useWorkDashboard } from './hooks';
 
-/* ── small pieces ──────────────────────────────────────────────────────────────────────────────── */
+/* ── figures ───────────────────────────────────────────────────────────────────────────────────── */
 
-function StatTile({
-  label,
-  value,
-  hint,
-  icon: Icon,
-  tone,
-}: {
-  label: string;
-  value: number;
-  hint?: string;
-  icon: React.ElementType;
-  tone: string;
-}) {
+/**
+ * A zero is rendered muted rather than in the same weight as a real figure.
+ *
+ * On a typical day most of these are zero — one person's four counts are not four pieces of news —
+ * and four confident black zeroes give a screen with one real item on it the visual weight of a
+ * screen with forty. Muting them keeps the eye on the number that is actually saying something.
+ */
+function Figure({ value }: { value: number }) {
   return (
-    <Card className="border-border/60">
-      <CardContent className="flex items-start gap-3 p-4">
-        <span className={cn('mt-0.5 rounded-md border p-2', tone)}>
-          <Icon className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-2xl font-semibold leading-none tabular-nums">{value}</p>
-          <p className="mt-1 text-sm font-medium text-foreground">{label}</p>
-          {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-        </div>
-      </CardContent>
-    </Card>
+    <span className={cn('tabular-nums', value === 0 && 'font-normal text-muted-foreground/60')}>{value}</span>
   );
 }
+
+function SummaryFigures({ summary, weekMeetings }: { summary: WorkSummary; weekMeetings: number }) {
+  const overdueHint =
+    summary.overdue > 0
+      ? `${summary.overdue} overdue${summary.dueToday > 0 ? `, ${summary.dueToday} due today` : ''}`
+      : summary.dueToday > 0
+        ? `${summary.dueToday} due today`
+        : undefined;
+
+  const figures: Array<{ label: string; value: number; hint?: string; icon: React.ElementType; tone: Tone }> = [
+    {
+      label: 'Needs your action',
+      value: summary.action,
+      hint: overdueHint,
+      icon: Inbox,
+      // Rose only when something is actually late, so the colour keeps meaning something.
+      tone: summary.overdue > 0 ? 'rose' : summary.action > 0 ? 'indigo' : 'slate',
+    },
+    {
+      label: 'Meetings today',
+      value: summary.meetingsToday,
+      hint: weekMeetings > summary.meetingsToday ? `${weekMeetings} this week` : undefined,
+      icon: CalendarClock,
+      tone: summary.meetingsToday > 0 ? 'blue' : 'slate',
+    },
+    {
+      label: "Your team's queues",
+      value: summary.shared,
+      icon: Users,
+      tone: summary.shared > 0 ? 'violet' : 'slate',
+    },
+    {
+      label: 'Waiting on others',
+      value: summary.watching,
+      icon: Clock,
+      tone: 'slate',
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+      {figures.map((figure) => (
+        <KpiCard
+          key={figure.label}
+          label={figure.label}
+          value={<Figure value={figure.value} />}
+          hint={figure.hint}
+          icon={figure.icon}
+          tone={figure.tone}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ── rows ──────────────────────────────────────────────────────────────────────────────────────── */
 
 const formatAmount = (value: number) =>
   new Intl.NumberFormat('en-IN', {
@@ -99,59 +154,63 @@ function WorkRow({ item, today }: { item: WorkItem; today: string }) {
   const urgency = workUrgency(item, today);
   const isQueue = typeof item.count === 'number' && item.count > 0;
 
+  // Joined with a middot rather than laid out in columns: the fields that are present vary by
+  // module, and a column grid over optional values leaves visible gaps where a module has no stage
+  // or no amount.
+  const details = [item.stage, item.raisedBy, typeof item.amount === 'number' ? formatAmount(item.amount) : null]
+    .filter((part): part is string => Boolean(part));
+
   return (
     <Link
       href={item.href}
       className={cn(
-        'group flex items-start gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-colors',
-        'hover:border-border hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'group relative flex items-start gap-3 py-2.5 pl-4 pr-3 transition-colors',
+        'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
       )}
     >
-      {/* A colour-blind-safe cue: the left rule repeats what the urgency badge says in words. */}
+      {/* The urgency cue, repeated as words in the badge — colour is never the only carrier. */}
       <span
         aria-hidden
         className={cn(
-          'mt-1 h-8 w-1 shrink-0 rounded-full',
-          urgency === 'overdue' && 'bg-red-500',
+          'absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r',
+          urgency === 'overdue' && 'bg-rose-500',
           urgency === 'today' && 'bg-amber-500',
-          urgency === 'soon' && 'bg-blue-500',
-          (urgency === 'later' || urgency === 'undated') && 'bg-border',
+          urgency === 'soon' && 'bg-blue-400',
+          (urgency === 'later' || urgency === 'undated') && 'bg-transparent',
         )}
       />
 
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="truncate text-sm font-medium text-foreground">{item.title}</span>
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-sm font-medium text-slate-800">{item.title}</span>
           {item.reference ? (
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">{item.reference}</span>
+            <span className="font-mono text-[11px] text-muted-foreground">{item.reference}</span>
           ) : null}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <Badge variant="outline" className={cn('px-1.5 py-0 text-[11px]', moduleBadgeClass(item.module))}>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px] font-medium', moduleBadgeClass(item.module))}>
             {item.module}
           </Badge>
-          {item.stage ? <span className="truncate">{item.stage}</span> : null}
-          {item.raisedBy ? <span className="truncate">{item.raisedBy}</span> : null}
-          {typeof item.amount === 'number' ? (
-            <span className="tabular-nums">{formatAmount(item.amount)}</span>
+          {details.length ? (
+            <span className="truncate text-xs text-muted-foreground">{details.join(' · ')}</span>
           ) : null}
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-1">
+      <div className="flex shrink-0 items-center gap-2 pt-0.5">
         {item.startTime ? (
-          <span className="text-sm font-semibold tabular-nums">{item.startTime}</span>
+          <span className="text-sm font-semibold tabular-nums text-slate-700">{item.startTime}</span>
         ) : null}
         {isQueue ? (
           <Badge variant="outline" className="px-1.5 py-0 text-[11px] tabular-nums">
             {item.count} waiting
           </Badge>
         ) : urgency === 'undated' ? null : (
-          <Badge variant="outline" className={cn('px-1.5 py-0 text-[11px]', WORK_URGENCY_BADGE[urgency])}>
+          <Badge variant="outline" className={cn('px-1.5 py-0 text-[11px] font-medium', WORK_URGENCY_BADGE[urgency])}>
             {dueLabel(item, today)}
           </Badge>
         )}
-        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
       </div>
     </Link>
   );
@@ -171,37 +230,33 @@ function LaneSection({ lane, items, today }: { lane: WorkLane; items: WorkItem[]
     // zeroes, the same choice `MyHrTasks` makes.
     if (lane !== 'action') return null;
     return (
-      <Card className="border-border/60">
-        <CardContent className="flex items-center gap-3 p-6">
-          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-          <div>
-            <p className="text-sm font-medium">Nothing is waiting on you.</p>
-            <p className="text-xs text-muted-foreground">
-              Approvals, tasks and workflow steps assigned to you will appear here.
-            </p>
-          </div>
+      <Card className="border-dashed border-slate-200 bg-white/60">
+        <CardContent className="flex flex-col items-center gap-1.5 py-10 text-center">
+          <CheckCircle2 className="h-8 w-8 text-emerald-500/70" />
+          <p className="font-medium text-slate-700">Nothing is waiting on you.</p>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Approvals, tasks and workflow steps assigned to you will appear here.
+          </p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <section className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 className="text-base font-semibold">
-            {WORK_LANE_TITLE[lane]}{' '}
-            <span className="text-sm font-normal text-muted-foreground tabular-nums">({items.length})</span>
-          </h2>
-          <p className="text-xs text-muted-foreground">{WORK_LANE_HINT[lane]}</p>
+    <section>
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{WORK_LANE_TITLE[lane]}</h2>
+          <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
+          <span className="hidden text-xs text-muted-foreground sm:inline">· {WORK_LANE_HINT[lane]}</span>
         </div>
         {byModule.length > 1 ? (
           <div className="flex flex-wrap gap-1">
-            {byModule.slice(0, 5).map(({ module, count }) => (
+            {byModule.slice(0, 4).map(({ module, count }) => (
               <Badge
                 key={module}
                 variant="outline"
-                className={cn('px-1.5 py-0 text-[11px]', moduleBadgeClass(module))}
+                className={cn('px-1.5 py-0 text-[10px] font-medium', moduleBadgeClass(module))}
               >
                 {module} {count}
               </Badge>
@@ -210,8 +265,8 @@ function LaneSection({ lane, items, today }: { lane: WorkLane; items: WorkItem[]
         ) : null}
       </div>
 
-      <Card className="border-border/60">
-        <CardContent className="divide-y divide-border/50 p-1.5">
+      <Card className="overflow-hidden border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
+        <CardContent className="divide-y divide-slate-100 p-0">
           {visible.map((item) => (
             <WorkRow key={item.id} item={item} today={today} />
           ))}
@@ -222,7 +277,7 @@ function LaneSection({ lane, items, today }: { lane: WorkLane; items: WorkItem[]
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 gap-1.5 text-xs"
+          className="mt-1 h-7 gap-1.5 text-xs"
           onClick={() => setExpanded((value) => !value)}
         >
           <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
@@ -233,47 +288,54 @@ function LaneSection({ lane, items, today }: { lane: WorkLane; items: WorkItem[]
   );
 }
 
+/* ── failures ──────────────────────────────────────────────────────────────────────────────────── */
+
 function FailureNotice({ failures }: { failures: Array<{ id: string; label: string; message: string }> }) {
   const [open, setOpen] = useState(false);
   if (!failures.length) return null;
 
   return (
-    <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/30">
-      <CardContent className="space-y-2 p-4">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-              {failures.length} queue{failures.length === 1 ? '' : 's'} could not be read.
-            </p>
-            <p className="text-xs text-amber-800/80 dark:text-amber-300/80">
-              Everything else below is accurate. Work in these may be waiting without appearing here.
-            </p>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 shrink-0 text-xs"
-            onClick={() => setOpen((value) => !value)}
-          >
-            {open ? 'Hide' : 'Details'}
-          </Button>
-        </div>
-        {open ? (
-          <ul className="space-y-1 pl-7 text-xs text-amber-900/90 dark:text-amber-200/90">
-            {failures.map((failure) => (
-              <li key={failure.id}>
-                <span className="font-medium">{failure.label}</span> — {failure.message}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </CardContent>
-    </Card>
+    <div className="rounded-lg border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-amber-900">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+        <p className="min-w-0 flex-1 text-xs">
+          <span className="font-medium">
+            {failures.length} queue{failures.length === 1 ? '' : 's'} could not be read.
+          </span>{' '}
+          <span className="text-amber-800/80">Everything below is accurate; work in these may not be shown.</span>
+        </p>
+        <button
+          type="button"
+          className="shrink-0 text-xs font-medium underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? 'Hide' : 'Details'}
+        </button>
+      </div>
+      {open ? (
+        <ul className="mt-1.5 space-y-0.5 border-t border-amber-200/70 pl-5 pt-1.5 text-[11px] text-amber-900/90">
+          {failures.map((failure) => (
+            <li key={failure.id}>
+              <span className="font-medium">{failure.label}</span> — {failure.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
 /* ── the screen ────────────────────────────────────────────────────────────────────────────────── */
+
+/** "1 item needs you", "4 items need you" — the verb has to agree, and it is the first line read. */
+function summaryLine(summary: WorkSummary): string {
+  if (summary.action === 0) {
+    return 'Pending approvals, tasks, workflow steps and meetings from every module.';
+  }
+  const items = summary.action === 1 ? '1 item needs' : `${summary.action} items need`;
+  const modules = summary.modules === 1 ? '1 module' : `${summary.modules} modules`;
+  return `${items} you across ${modules}.`;
+}
 
 export default function WorkDashboard({
   className,
@@ -303,99 +365,53 @@ export default function WorkDashboard({
     onSummaryChange?.(summary);
   }, [summary, onSummaryChange]);
 
+  // Full width, by request. There is no `max-w-*` here on purpose: on a wide monitor a row's title
+  // ends up a long way from its deadline badge, and that trade was made knowingly in favour of
+  // fitting more on screen. If the separation ever becomes the complaint, the fix is a two-column
+  // lane layout at `2xl` rather than a width cap — that uses the space instead of discarding it.
+  const shell = 'w-full';
+
   if (isLoading) {
     return (
-      <div className={cn('space-y-4', className)}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={cn(shell, 'space-y-3', className)}>
+        <Skeleton className="h-9 w-56 rounded-md" />
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
           {[0, 1, 2, 3].map((key) => (
-            <Skeleton key={key} className="h-[86px] rounded-xl" />
+            <Skeleton key={key} className="h-[72px] rounded-xl" />
           ))}
         </div>
-        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-48 rounded-xl" />
       </div>
     );
   }
 
-  return (
-    <div className={cn('space-y-5', className)}>
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          {showTitle ? <h1 className="text-xl font-semibold tracking-tight">Your work</h1> : null}
-          <p className="text-sm text-muted-foreground">
-            {summary.action > 0
-              ? `${summary.action} item${summary.action === 1 ? '' : 's'} need you across ${summary.modules} module${summary.modules === 1 ? '' : 's'}.`
-              : 'Pending approvals, tasks, workflow steps and meetings from every module.'}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5"
-          onClick={refresh}
-          disabled={isRefreshing}
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
-          Refresh
-        </Button>
-      </div>
+  const refreshButton = (
+    <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={refresh} disabled={isRefreshing}>
+      <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
+      Refresh
+    </Button>
+  );
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile
-          label="Needs your action"
-          value={summary.action}
-          hint={summary.overdue > 0 ? `${summary.overdue} overdue, ${summary.dueToday} due today` : undefined}
-          icon={Inbox}
-          tone={
-            summary.overdue > 0
-              ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300'
-              : 'border-border bg-muted text-foreground'
-          }
-        />
-        <StatTile
-          label="Meetings today"
-          value={summary.meetingsToday}
-          hint={lanes.meeting.length > summary.meetingsToday ? `${lanes.meeting.length} this week` : undefined}
-          icon={CalendarClock}
-          tone="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300"
-        />
-        <StatTile
-          label="In your team's queues"
-          value={summary.shared}
-          icon={Users}
-          tone="border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900 dark:bg-violet-950 dark:text-violet-300"
-        />
-        <StatTile
-          label="Waiting on others"
-          value={summary.watching}
-          icon={Clock}
-          tone="border-border bg-muted text-muted-foreground"
-        />
-      </div>
+  return (
+    <div className={cn(shell, 'space-y-4', className)}>
+      {showTitle ? (
+        <PageHeader title="Your work" description={summaryLine(summary)} actions={refreshButton} />
+      ) : (
+        // Without the title the description and the button would sit on a row of their own with
+        // nothing to anchor them, so they share one baseline instead.
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">{summaryLine(summary)}</p>
+          {refreshButton}
+        </div>
+      )}
+
+      <SummaryFigures summary={summary} weekMeetings={lanes.meeting.length} />
 
       <FailureNotice failures={failures} />
 
       {WORK_LANES.map((lane) => (
         <LaneSection key={lane} lane={lane} items={lanes[lane]} today={today} />
       ))}
-
-      {/* Named so the legend is not the only place the words appear — every row carries them too. */}
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-        <Layers className="h-3 w-3" />
-        {(['overdue', 'today', 'soon'] as const).map((urgency) => (
-          <span key={urgency} className="inline-flex items-center gap-1">
-            <span
-              aria-hidden
-              className={cn(
-                'h-2 w-2 rounded-full',
-                urgency === 'overdue' && 'bg-red-500',
-                urgency === 'today' && 'bg-amber-500',
-                urgency === 'soon' && 'bg-blue-500',
-              )}
-            />
-            {WORK_URGENCY_LABEL[urgency]}
-          </span>
-        ))}
-      </p>
     </div>
   );
 }
