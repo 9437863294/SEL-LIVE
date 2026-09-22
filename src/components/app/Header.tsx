@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle, MessageCircle } from 'lucide-react';
+import { Bell, Settings, LogOut, User as UserIcon, Lock, Home, FileText, Inbox, Loader2, Users, LogIn, History as HistoryIcon, AlertTriangle, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -443,6 +443,25 @@ export default function Header() {
           <div className="ml-auto flex items-center gap-2 md:gap-4">
              <span className="text-sm font-medium text-foreground hidden sm:inline">{user?.name}</span>
             <TooltipProvider>
+
+              {/*
+                A link, deliberately without a count.
+                The central dashboard's numbers come from a fan-out across every module the user can
+                see (see `loadWorkItems`), and putting that behind a header badge would run it on
+                every page in the application rather than on the one screen that displays it. The
+                bell beside this already carries a live unread count — that one is a single indexed
+                query — so the signal that something arrived is not lost.
+              */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button asChild variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
+                    <Link href="/my-work" aria-label="Your work">
+                      <Inbox className="h-5 w-5" />
+                    </Link>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Your work — pending approvals, tasks and meetings</TooltipContent>
+              </Tooltip>
 
               {canViewChat && (
                 <Tooltip>

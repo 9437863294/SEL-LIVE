@@ -23,22 +23,45 @@ namespace Sel.Agent
     public partial class ExitApprovalWindow : Window
     {
         private readonly AgentHost _host;
+        private readonly ApprovalPurpose _purpose;
         private bool _busy;
 
         /// <summary>Set when approval was granted, for the agent log.</summary>
         public string ApprovedByName { get; private set; }
 
         public ExitApprovalWindow(AgentHost host)
+            : this(host, ApprovalPurpose.Exit)
+        {
+        }
+
+        public ExitApprovalWindow(AgentHost host, ApprovalPurpose purpose)
         {
             _host = host ?? throw new ArgumentNullException("host");
+            _purpose = purpose;
             InitializeComponent();
 
+            bool uninstalling = purpose == ApprovalPurpose.Uninstall;
             string signedIn = host.CurrentLogin != null ? host.CurrentLogin.UserName : null;
-            IntroText.Text = string.IsNullOrEmpty(signedIn)
-                ? "Closing the agent stops attendance and activity recording on this computer, "
-                  + "so a SEL LIVE administrator has to approve it."
-                : "Closing the agent stops recording attendance and activity for " + signedIn
-                  + " on this computer, so a SEL LIVE administrator has to approve it.";
+
+            if (uninstalling)
+            {
+                // Stated in the strongest terms the situation deserves. Removing the agent is not
+                // a pause: the PC afterwards is indistinguishable from one that was never
+                // enrolled, and somebody approving this at four in the afternoon should know that
+                // before they type a password rather than discover it from a report in October.
+                Title = "SEL LIVE Agent — Approval to remove the agent";
+                IntroText.Text = "Removing the agent ends attendance and activity recording on this "
+                    + "computer permanently, so a SEL LIVE administrator has to approve it.";
+                ApproveButton.Content = "Approve and remove agent";
+            }
+            else
+            {
+                IntroText.Text = string.IsNullOrEmpty(signedIn)
+                    ? "Closing the agent stops attendance and activity recording on this computer, "
+                      + "so a SEL LIVE administrator has to approve it."
+                    : "Closing the agent stops recording attendance and activity for " + signedIn
+                      + " on this computer, so a SEL LIVE administrator has to approve it.";
+            }
 
             FooterText.Text = "Your Windows account is not what is checked here — this needs a SEL LIVE "
                 + "sign-in with permission to manage computers. The approval is recorded in the audit trail.";
@@ -63,7 +86,8 @@ namespace Sel.Agent
             try
             {
                 ExitApprovalOutcome outcome = await _host
-                    .RequestExitApprovalAsync(email, password, (ReasonBox.Text ?? string.Empty).Trim())
+                    .RequestExitApprovalAsync(email, password, (ReasonBox.Text ?? string.Empty).Trim(),
+                        _purpose == ApprovalPurpose.Uninstall ? "UNINSTALL" : "EXIT")
                     .ConfigureAwait(true);
 
                 if (!outcome.Approved)
@@ -75,7 +99,8 @@ namespace Sel.Agent
                 }
 
                 ApprovedByName = outcome.ApprovedByName;
-                ShowStatus("Approved by " + outcome.ApprovedByName + ". Closing the agent…", true);
+                ShowStatus("Approved by " + outcome.ApprovedByName + ". "
+                    + (_purpose == ApprovalPurpose.Uninstall ? "Continuing the removal…" : "Closing the agent…"), true);
 
                 // A beat so the confirmation is readable. Closing the instant the server answers
                 // makes an approval that worked look identical to a button that did nothing.
@@ -104,7 +129,9 @@ namespace Sel.Agent
             EmailBox.IsEnabled = !busy;
             PasswordBox.IsEnabled = !busy;
             ReasonBox.IsEnabled = !busy;
-            ApproveButton.Content = busy ? "Checking…" : "Approve and close agent";
+            ApproveButton.Content = busy
+                ? "Checking…"
+                : _purpose == ApprovalPurpose.Uninstall ? "Approve and remove agent" : "Approve and close agent";
         }
 
         private void ShowStatus(string message, bool good)

@@ -46,18 +46,38 @@ interface ModuleConfig {
   activeStatuses: string[];
 }
 
+/**
+ * ── A note on the two entries that used to be here ────────────────────────────────────────────
+ *
+ * This registry had a `daily-requisition-workflow` entry pointing at `requisitions`, and a
+ * `site-fund-requisition-2-workflow` entry pointing at `siteFundRequisitions2`. Both were wrong,
+ * and they were wrong in a way that cancelled out to "nothing happens":
+ *
+ *   - `requisitions` is **Site Fund Requisition 2's** collection, not Daily Requisition's — see
+ *     `site-fund-requisition-2/stage/[stageId]/page.tsx` and `MyPendingTasksTab.tsx`, which both
+ *     read it. So that entry was measuring Site Fund Requisition 2 records against Daily
+ *     Requisition's step configuration, and would have escalated them to Daily Requisition's
+ *     escalation users under a `/daily-requisition` link.
+ *
+ *   - `siteFundRequisitions2` is written by nothing. The name appears nowhere else in the
+ *     repository, so that entry scanned an empty collection and Site Fund Requisition 2's
+ *     configured TAT escalations have never fired.
+ *
+ * Daily Requisition is not in the list any more because it cannot be: `DailyRequisitionEntry` has
+ * no `currentStepId`: the module routes by status, and each stage is worked by whoever holds that
+ * tab's permission. `if (!stepId) continue` skipped every row, so that entry was a no-op even
+ * against the right collection. Giving it real TAT escalation means giving the module a step
+ * pointer first, which is a change to the module, not to this file.
+ *
+ * Site Fund Request (`siteFundRequests`) has the same `currentStepId` / `assignees` shape as
+ * Site Fund Requisition 2 and is *also* absent — it has never had escalation either. It is left
+ * out deliberately rather than by oversight: adding it would start sending alerts for a module
+ * that has never sent them, which is a decision to take knowingly.
+ */
 const MODULES: ModuleConfig[] = [
   {
-    workflowDocId: 'daily-requisition-workflow',
-    collection: 'requisitions',
-    currentStepIdField: 'currentStepId',
-    refField: 'requisitionId',
-    linkPrefix: '/daily-requisition',
-    activeStatuses: ['In Progress', 'Needs Review'],
-  },
-  {
     workflowDocId: 'site-fund-requisition-2-workflow',
-    collection: 'siteFundRequisitions2',
+    collection: 'requisitions',
     currentStepIdField: 'currentStepId',
     refField: 'requisitionId',
     linkPrefix: '/site-fund-requisition-2',

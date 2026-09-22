@@ -175,7 +175,6 @@
     <Feature Id="Main" Title="SEL LIVE Agent" Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="AgentBinaries" />
       <ComponentRef Id="AgentService" />
-      <ComponentRef Id="AgentAutoStart" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="DesktopShortcut" />
       <ComponentRef Id="AgentDataFolder" />
@@ -248,23 +247,29 @@
     </Component>
 
     <!--
-      A per-machine Run entry, in addition to the service launching the agent.
+      ══ How the agent starts, and why there is no Run key any more ═══════════════════════════
 
-      Belt and braces, and each covers a case the other does not. The service handles a user
-      signing in while it is already running, and restarts the agent if it is killed. The Run key
-      handles the window where the service is still starting during a cold boot — on a slow
-      Windows 7 machine that can be twenty or thirty seconds, which is long enough for somebody to
-      sign in and start work before the agent appears. The agent's single-instance mutex makes the
-      overlap harmless.
+      There used to be a per-machine `...\CurrentVersion\Run` entry here, alongside the service.
+      It had to go, for two reasons that turned out to be the same reason.
+
+      First, a Run entry is listed in Task Manager's "Startup apps" tab and in Settings → Apps →
+      Startup, each with a switch beside it. On a PC whose user is a local administrator — most
+      of this fleet — anybody could turn the agent off before it ever ran, and nothing about the
+      machine afterwards indicated that something was missing. It simply recorded nothing.
+
+      Second, Explorer defers Run entries until the desktop is built and then adds a delay of its
+      own. That is ten to thirty seconds every morning during which somebody is already working
+      and nothing is watching — which was the other half of "why does the agent take so long to
+      appear?".
+
+      Both are answered by a scheduled task with a logon trigger and no delay, registered by
+      the service executable’s install-logon-task switch. It is not listed in either startup UI, cannot
+      be disabled without administrative rights, and runs as the session starts. See LogonTask
+      for the full reasoning, including why it is deliberately not hidden from Task Scheduler.
+
+      The service watchdog remains, and still matters: it is what brings the agent back when
+      somebody ends it from Task Manager, now within thirty seconds rather than a minute.
     -->
-    <Component Id="AgentAutoStart" Directory="INSTALLFOLDER" Guid="C4A7E913-6B28-4D71-A0E5-3F9C2B7D8146">
-      <RegistryValue Root="HKLM"
-                     Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-                     Name="SELLiveAgent"
-                     Type="string"
-                     Value="&quot;[INSTALLFOLDER]SEL.Agent.exe&quot;"
-                     KeyPath="yes" />
-    </Component>
 
     <!--
       The Start Menu shortcut is not cosmetic.
@@ -419,6 +424,70 @@
                   Impersonate="no"
                   Return="check" />
 
+    <!--
+      The logon task. See the note above the components for why this replaced the Run key.
+
+      Return="ignore" on both, deliberately. A machine with Task Scheduler locked down by policy
+      should still end up with a working install: the service watchdog starts the agent within
+      thirty seconds of sign-in either way, and the check switch reports the task as MISSING so the
+      difference is visible rather than silent. Failing the install over it would turn a slower
+      start into no agent at all.
+    -->
+    <SetProperty Id="InstallLogonTask"
+                 Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --install-logon-task"
+                 Before="InstallLogonTask"
+                 Sequence="execute" />
+
+    <CustomAction Id="InstallLogonTask"
+                  BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <SetProperty Id="RemoveLogonTask"
+                 Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --remove-logon-task"
+                 Before="RemoveLogonTask"
+                 Sequence="execute" />
+
+    <CustomAction Id="RemoveLogonTask"
+                  BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      ══ Approval to remove the agent ═════════════════════════════════════════════════════════
+
+      An employee could close the agent only with a SEL LIVE administrator's approval, and then
+      uninstall it from Apps and Features with two clicks and no approval at all. This closes
+      that, with the same permission the tray's Exit uses.
+
+      The agent, run with the authorize-uninstall switch, shows the approval window and exits 0 for approved,
+      1 for refused; Return="check" turns a refusal into a stopped uninstall. The agent handles
+      that switch before its single-instance mutex, which is load-bearing: the agent is normally
+      already running, so a second copy reaching the mutex would exit 0 and be read as approval.
+
+      Immediate rather than deferred, and impersonating, because it has to draw a window on the
+      desktop of whoever is uninstalling. That also fixes what it can protect: an interactive
+      removal. It is not a security boundary — a local administrator can stop the service and
+      delete the folder, and §7 says so — and a silent `/quiet` removal is exempt by the
+      condition below, because blocking on a window nobody can see would leave a fleet that
+      cannot be serviced remotely.
+    -->
+    <SetProperty Id="AuthorizeUninstall"
+                 Value="&quot;[INSTALLFOLDER]SEL.Agent.exe&quot; --authorize-uninstall"
+                 Before="AuthorizeUninstall"
+                 Sequence="execute" />
+
+    <CustomAction Id="AuthorizeUninstall"
+                  BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixQuietExec"
+                  Execute="immediate"
+                  Impersonate="yes"
+                  Return="check" />
+
     <InstallExecuteSequence>
       <!--
         After InstallFiles so the executable exists, and before StartServices so the service
@@ -436,6 +505,40 @@
       -->
       <Custom Action="WriteAgentConfig" After="InstallFiles"
               Condition="NOT Installed AND APIBASEURL" />
+
+      <!--
+        Registered after the files are in place (the task names SEL.Agent.exe, which has to
+        exist), and on repair as well as a fresh install: a task somebody deleted is exactly the
+        thing a repair should put back.
+      -->
+      <Custom Action="InstallLogonTask" After="WriteAgentConfig"
+              Condition="NOT REMOVE" />
+
+      <!--
+        Before RemoveFiles, while the service executable that owns the task still exists. An
+        upgrade re-registers it moments later; that is harmless, because schtasks is called with
+        /F and the task is identical.
+      -->
+      <Custom Action="RemoveLogonTask" Before="RemoveFiles"
+              Condition="REMOVE~=&quot;ALL&quot;" />
+
+      <!--
+        First thing in the uninstall, before anything has been taken away, so a refusal leaves
+        the machine exactly as it was rather than half-removed.
+
+        Two conditions, each earning its place:
+          REMOVE~="ALL"             only a full removal, not a feature change
+          NOT UPGRADINGPRODUCTCODE  an upgrade removes the old package and must not stop to ask
+
+        Deliberately NOT conditioned on UILevel, which was the first attempt and would have made
+        the whole thing decorative: Burn runs its MSI packages with the UI level set to none, so
+        an interactive "setup.exe /uninstall" — the documented route, and the one anybody would
+        actually use — looks exactly like a silent removal from in here. The agent decides
+        instead, because it is the only party that can tell whether a window it draws will be
+        seen by a human. See App.AuthorizeUninstall.
+      -->
+      <Custom Action="AuthorizeUninstall" Before="InstallValidate"
+              Condition="REMOVE~=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
     </InstallExecuteSequence>
 
     <ui:WixUI xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui" Id="WixUI_Minimal" />

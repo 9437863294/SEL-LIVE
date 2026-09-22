@@ -56,10 +56,49 @@ namespace Sel.Agent.Service
         private const string AgentProcessName = "SEL.Agent";
         private const string AgentExecutable = "SEL.Agent.exe";
 
-        private static readonly TimeSpan WatchdogInterval = TimeSpan.FromMinutes(1);
+        /// <summary>
+        /// How often the agent is checked, and how soon after the service starts.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Thirty seconds rather than a minute, and the first check after three rather than ten.
+        /// Both numbers are what somebody experiences: the first is how long tracking stops for
+        /// when the agent is killed from Task Manager, and the second is how long after a restart
+        /// the agent takes to appear — which, now that the service is the only thing that starts
+        /// it, is the whole of the answer to "why does it take so long to come up?".
+        /// </para>
+        /// <para>
+        /// The cost is one process enumeration per active session every thirty seconds, which is
+        /// nothing next to what it buys.
+        /// </para>
+        /// </remarks>
+        private static readonly TimeSpan WatchdogInterval = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan FirstWatchdogCheck = TimeSpan.FromSeconds(3);
+
         private static readonly TimeSpan HousekeepingInterval = TimeSpan.FromHours(6);
-        private static readonly TimeSpan FailureWindow = TimeSpan.FromMinutes(10);
-        private const int MaxFailuresPerWindow = 3;
+
+        /// <summary>
+        /// Back off after repeated failures — but never stop trying.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The previous version gave up on a session for ten minutes after three failed launches.
+        /// That was the right instinct — an agent crashing on start-up must not be relaunched
+        /// every minute for ever — and the wrong number, because those ten minutes are ten
+        /// minutes of a PC recording nothing, repeated all day, on precisely the machines that
+        /// are already broken.
+        /// </para>
+        /// <para>
+        /// Now the interval stretches instead: after the third failure a session is retried every
+        /// two minutes, then every ten, and it stays at ten. A machine that can be fixed by
+        /// retrying is fixed within two minutes; a machine that cannot costs six log entries an
+        /// hour instead of sixty.
+        /// </para>
+        /// </remarks>
+        private const int FailuresBeforeBackoff = 3;
+        private static readonly TimeSpan ShortBackoff = TimeSpan.FromMinutes(2);
+        private static readonly TimeSpan LongBackoff = TimeSpan.FromMinutes(10);
+        private const int FailuresBeforeLongBackoff = 8;
 
         private Timer _watchdog;
         private Timer _housekeeping;
@@ -70,8 +109,8 @@ namespace Sel.Agent.Service
         private sealed class LaunchRecord
         {
             public int Failures;
-            public DateTime WindowStartedUtc;
-            public bool GivenUp;
+            /// <summary>When the next attempt is allowed. Always set; never "never".</summary>
+            public DateTime NextAttemptUtc;
         }
 
         public SelAgentService()
@@ -103,7 +142,7 @@ namespace Sel.Agent.Service
                     + "was cloned without sysprep.", EventLogEntryType.Error);
             }
 
-            _watchdog = new Timer(OnWatchdog, null, TimeSpan.FromSeconds(10), WatchdogInterval);
+            _watchdog = new Timer(OnWatchdog, null, FirstWatchdogCheck, WatchdogInterval);
             _housekeeping = new Timer(OnHousekeeping, null, TimeSpan.FromMinutes(2), HousekeepingInterval);
         }
 
@@ -175,48 +214,57 @@ namespace Sel.Agent.Service
 
         private void EnsureAgentInSession(uint sessionId)
         {
-            if (SessionLauncher.IsAgentRunningInSession(sessionId, AgentProcessName)) return;
+            if (SessionLauncher.IsAgentRunningInSession(sessionId, AgentProcessName))
+            {
+                // Running again: forget the failures, so a machine that has recovered is not
+                // still on a ten-minute backoff an hour later.
+                lock (_gate) { _launches.Remove(sessionId); }
+                return;
+            }
 
             LaunchRecord record;
             lock (_gate)
             {
                 if (!_launches.TryGetValue(sessionId, out record))
                 {
-                    record = new LaunchRecord { WindowStartedUtc = DateTime.UtcNow };
+                    record = new LaunchRecord { NextAttemptUtc = DateTime.UtcNow };
                     _launches[sessionId] = record;
                 }
 
-                if (DateTime.UtcNow - record.WindowStartedUtc > FailureWindow)
-                {
-                    // A new window: whatever went wrong before may well have been fixed.
-                    record.Failures = 0;
-                    record.WindowStartedUtc = DateTime.UtcNow;
-                    record.GivenUp = false;
-                }
-
-                if (record.GivenUp) return;
+                if (DateTime.UtcNow < record.NextAttemptUtc) return;
             }
 
             string path = AgentExecutablePath();
             if (path == null)
             {
                 Log("Cannot find " + AgentExecutable + " next to the service.", EventLogEntryType.Error);
-                lock (_gate) { record.GivenUp = true; }
+                lock (_gate) { record.NextAttemptUtc = DateTime.UtcNow.Add(LongBackoff); }
                 return;
             }
 
             int pid = SessionLauncher.LaunchInSession(sessionId, path, message => Log(message));
-            if (pid != 0) return;
+            if (pid != 0)
+            {
+                lock (_gate) { _launches.Remove(sessionId); }
+                return;
+            }
 
             lock (_gate)
             {
                 record.Failures++;
-                if (record.Failures >= MaxFailuresPerWindow)
+                TimeSpan wait = record.Failures < FailuresBeforeBackoff
+                    ? WatchdogInterval
+                    : record.Failures < FailuresBeforeLongBackoff ? ShortBackoff : LongBackoff;
+                record.NextAttemptUtc = DateTime.UtcNow.Add(wait);
+
+                // Logged once when the backoff first stretches, not on every attempt: the launch
+                // itself already logs a line each time, with the exit code.
+                if (record.Failures == FailuresBeforeBackoff || record.Failures == FailuresBeforeLongBackoff)
                 {
-                    record.GivenUp = true;
-                    Log("Gave up starting the desktop agent in session " + sessionId + " after "
-                        + record.Failures + " attempts. It will be retried after "
-                        + FailureWindow.TotalMinutes + " minutes.", EventLogEntryType.Warning);
+                    Log("The desktop agent has failed to start in session " + sessionId + " "
+                        + record.Failures + " times; retrying every " + wait.TotalMinutes
+                        + " minutes now. The exit code in the entries above says whether the agent "
+                        + "chose to exit or Windows stopped it.", EventLogEntryType.Warning);
                 }
             }
         }

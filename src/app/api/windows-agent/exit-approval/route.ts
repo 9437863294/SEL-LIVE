@@ -58,8 +58,15 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const reason = typeof body.reason === 'string' ? body.reason.trim().slice(0, 300) : null;
 
+    // Closing the agent and removing it are both authorised here, by the same permission, and
+    // recorded as different actions. One pauses recording until the next sign-in; the other ends
+    // it and leaves a machine indistinguishable from one that was never enrolled. An audit trail
+    // that called them the same thing would answer "why did this PC stop reporting in March"
+    // with "somebody closed the agent", which would be wrong.
+    const uninstall = String(body.action || '').toUpperCase() === 'UNINSTALL';
+
     await writeAudit({
-      action: 'AGENT_EXIT_APPROVED',
+      action: uninstall ? 'AGENT_UNINSTALL_APPROVED' : 'AGENT_EXIT_APPROVED',
       actorId: approver.userId,
       actorName: approver.userName,
       targetType: 'device',

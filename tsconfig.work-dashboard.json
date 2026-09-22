@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/lib/work-dashboard.ts",
+    "src/lib/work-dashboard-sources.ts",
+    "src/lib/work-dashboard-project-sources.ts",
+    "src/components/work-dashboard/**/*.ts",
+    "src/components/work-dashboard/**/*.tsx",
+    "src/app/(protected)/my-work/**/*.tsx",
+    "src/app/page.tsx",
+    "src/components/module-hub/ModuleDashboard.tsx"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

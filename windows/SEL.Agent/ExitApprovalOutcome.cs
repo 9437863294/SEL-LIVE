@@ -1,6 +1,21 @@
 namespace Sel.Agent
 {
     /// <summary>
+    /// Which act an administrator is being asked to authorise.
+    /// </summary>
+    /// <remarks>
+    /// The same permission covers both and the same window asks, but the wording and the audit
+    /// action differ — closing the agent pauses recording until the next sign-in, while removing
+    /// it ends recording on that computer for good. A single "approve" that meant either would
+    /// leave the audit trail unable to answer why a PC has no data since March.
+    /// </remarks>
+    public enum ApprovalPurpose
+    {
+        Exit = 0,
+        Uninstall = 1,
+    }
+
+    /// <summary>
     /// What came back from asking SEL LIVE for permission to close the agent.
     /// </summary>
     /// <remarks>

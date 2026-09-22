@@ -73,6 +73,23 @@
   <?define MsiPath = "obj\SEL.Agent.msi" ?>
   <?endif?>
 
+  <!--
+    DisableModify and DisableRemove: no buttons beside this entry in Apps and Features.
+
+    Removing the agent needs a SEL LIVE administrator's approval — the MSI asks for it, the same
+    way the tray's Exit does. Leaving an Uninstall button there as well would be an invitation to
+    the one route that used to skip that approval entirely, and the first thing anybody tries.
+
+    Administrators remove it with the setup executable, which is the documented route in §5 and
+    is what a deployment tool uses anyway:
+
+        SEL.Agent-Setup-1.0.0.0.exe /uninstall            (asks for approval)
+        SEL.Agent-Setup-1.0.0.0.exe /uninstall /quiet     (for a fleet rollback)
+
+    This is deterrence, not enforcement: a local administrator can still stop the service and
+    delete the folder. §7's position that the agent is not a security boundary is unchanged. What
+    it buys is that the discoverable route produces a record naming who approved it.
+  -->
   <Bundle Name="SEL LIVE Windows Agent"
           Manufacturer="Siddhartha Engineering Limited"
           Version="$(Version)"
@@ -80,6 +97,8 @@
           Compressed="yes"
           AboutUrl="https://seltech.store"
           IconSourceFile="..\SEL.Agent\app.ico"
+          DisableModify="yes"
+          DisableRemove="yes"
           Tag="SEL LIVE Agent">
 
     <!--

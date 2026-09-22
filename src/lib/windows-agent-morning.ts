@@ -99,11 +99,15 @@ export async function buildMorningSummary(options: {
           .where('userId', '==', options.userId)
           .where('read', '==', false),
       ),
+      // 'Scheduled', not 'PENDING'. `ReminderStatus` is
+      // `'Scheduled' | 'Sent' | 'Failed' | 'Cancelled'` and `office-hub-reminders.ts` only ever
+      // writes 'Scheduled', so the previous predicate matched a value nothing stores and this count
+      // was always zero — a morning dashboard that silently reported "0 reminders" to everybody.
       safeCount(() =>
         firestore
           .collection(OFFICE_HUB_COLLECTIONS.reminders)
           .where('userId', '==', options.userId)
-          .where('status', '==', 'PENDING'),
+          .where('status', '==', 'Scheduled'),
       ),
       firestore
         .collection(OFFICE_HUB_COLLECTIONS.meetings)

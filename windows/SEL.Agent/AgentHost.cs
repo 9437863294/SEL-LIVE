@@ -467,8 +467,19 @@ namespace Sel.Agent
         /// the alternative at this point is an unhandled exception in a modal window.
         /// </para>
         /// </remarks>
-        public async Task<ExitApprovalOutcome> RequestExitApprovalAsync(
+        public Task<ExitApprovalOutcome> RequestExitApprovalAsync(
             string email, string password, string reason)
+        {
+            return RequestExitApprovalAsync(email, password, reason, "EXIT");
+        }
+
+        /// <param name="action">
+        /// <c>EXIT</c> or <c>UNINSTALL</c>. Both need the same permission; they are recorded
+        /// separately because stopping the agent and removing it are different events with
+        /// different consequences for the attendance record.
+        /// </param>
+        public async Task<ExitApprovalOutcome> RequestExitApprovalAsync(
+            string email, string password, string reason, string action)
         {
             try
             {
@@ -479,12 +490,12 @@ namespace Sel.Agent
                         .ConfigureAwait(false);
 
                     ExitApprovalResponse response = await _api
-                        .RequestExitApprovalAsync(session.IdToken, reason, timeout.Token)
+                        .RequestExitApprovalAsync(session.IdToken, reason, action, timeout.Token)
                         .ConfigureAwait(false);
 
                     if (response != null && response.Approved)
                     {
-                        _log.Write("Exit approved by " + response.ApprovedByName + " (" + email + ").");
+                        _log.Write(action + " approved by " + response.ApprovedByName + " (" + email + ").");
                         return new ExitApprovalOutcome
                         {
                             Approved = true,
@@ -492,10 +503,12 @@ namespace Sel.Agent
                         };
                     }
 
-                    _log.Write("Exit refused for " + email + ".");
+                    _log.Write(action + " refused for " + email + ".");
                     return new ExitApprovalOutcome
                     {
-                        Message = "That account is not allowed to close the SEL LIVE agent.",
+                        Message = action == "UNINSTALL"
+                            ? "That account is not allowed to remove the SEL LIVE agent."
+                            : "That account is not allowed to close the SEL LIVE agent.",
                     };
                 }
             }

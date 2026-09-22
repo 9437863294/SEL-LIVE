@@ -30,6 +30,8 @@ namespace Sel.Agent.Service
             if (HasFlag(args, "--check")) return RunPrerequisiteCheck();
             if (HasFlag(args, "--write-config")) return WriteConfiguration(args);
             if (HasFlag(args, "--reset-identity")) return ResetIdentity();
+            if (HasFlag(args, "--install-logon-task")) return LogonTask.Install();
+            if (HasFlag(args, "--remove-logon-task")) return LogonTask.Remove();
 
             if (HasFlag(args, "--console"))
             {
@@ -132,6 +134,15 @@ namespace Sel.Agent.Service
                     }
                 }
             }
+
+            // The logon task is how the agent starts. Reported here because its absence is
+            // invisible otherwise — the service watchdog covers for it within thirty seconds, so
+            // a PC with no task looks fine and is simply slower to start every morning.
+            bool taskExists = LogonTask.Exists();
+            Console.WriteLine("Logon task       : " + (taskExists
+                ? "registered (\"" + LogonTask.TaskName + "\")"
+                : "MISSING - re-run the installer, or --install-logon-task as an administrator"));
+            if (!taskExists) ok = false;
 
             Console.WriteLine(new string('-', 60));
             Console.WriteLine(ok ? "All checks passed." : "One or more checks failed — see above.");

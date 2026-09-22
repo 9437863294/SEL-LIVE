@@ -57,18 +57,40 @@ namespace Sel.Agent
         {
             base.OnStartup(e);
 
+            // First line of the process, before anything that can fail. See StartupTrace for why
+            // this is separate from the activity log and always on.
+            StartupTrace.Begin();
+
+            // The uninstaller asking permission. Handled before the single-instance mutex, and
+            // that order is the whole of its correctness: the agent is normally already running,
+            // so a second copy reaching the mutex check would exit 0 — which the uninstaller
+            // would read as "approved" and remove the agent without asking anybody.
+            if (HasSwitch(e.Args, "--authorize-uninstall"))
+            {
+                StartupTrace.Write("asked to authorise an uninstall");
+                AuthorizeUninstall();
+                return;
+            }
+
             bool createdNew;
             _instanceMutex = new Mutex(true, InstanceMutexName, out createdNew);
             if (!createdNew)
             {
-                // Silent: a second copy started by the service or a stray shortcut should simply
-                // go away, not tell the user something is wrong.
+                // Silent to the user: a second copy started by the service or a stray shortcut
+                // should simply go away, not claim something is wrong. Not silent on disk — this
+                // is the most common reason a launch "fails", and it took a morning to establish
+                // that the previous version was not doing it.
+                StartupTrace.Write("exiting: another copy is already running in this session");
                 Shutdown();
                 return;
             }
+            StartupTrace.Write("single-instance mutex acquired");
 
             AgentConfiguration config = AgentConfiguration.Load();
             _log = new AgentLog(config.VerboseLogging);
+            StartupTrace.Write("configuration: " + (config.IsUsable
+                ? "usable, pointing at " + config.ApiBaseUrl
+                : "NOT usable — " + (config.DescribeProblem() ?? "reason unknown")));
 
             DispatcherUnhandledException += (s, args) =>
             {
@@ -81,6 +103,7 @@ namespace Sel.Agent
 
             if (!OsCompatibility.Current.IsSupported)
             {
+                StartupTrace.Write("exiting: unsupported Windows — " + OsCompatibility.Current.UnsupportedReason);
                 MessageBox.Show(
                     OsCompatibility.Current.UnsupportedReason,
                     "SEL LIVE Agent", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -98,11 +121,13 @@ namespace Sel.Agent
             // address of their own ERP, and collects the rest from it.
             if (!config.IsUsable)
             {
+                StartupTrace.Write("showing first-run setup");
                 var setup = new FirstRunSetupWindow(config, _log);
                 bool? completed = setup.ShowDialog();
                 if (completed != true || setup.Result == null)
                 {
                     _log.Write("First-run setup was cancelled; the agent cannot start.");
+                    StartupTrace.Write("exiting: first-run setup was closed without saving");
                     Shutdown();
                     return;
                 }
@@ -111,12 +136,14 @@ namespace Sel.Agent
 
             _host = new AgentHost(config, Dispatcher, _log);
             _host.DirectiveReceived += OnDirectiveReceived;
+            StartupTrace.Write("host constructed");
 
             _tray = new TrayController(_host);
             _tray.ExitRequested += OnExitRequested;
             _tray.SignOutRequested += OnSignOutRequested;
             _tray.SignInRequested += (sender, args) => ShowGate();
             _tray.Show();
+            StartupTrace.Write("tray icon shown; start-up complete");
 
             // Idle locking, re-authentication after a long lock, and locking when the ERP window
             // is closed. Every one of them is off unless the policy asks, so constructing this
@@ -129,6 +156,118 @@ namespace Sel.Agent
             // Fire and forget: the UI thread must not wait on the network. Exceptions are caught
             // inside StartAsync, which reports through the tray rather than throwing here.
             StartAsync();
+        }
+
+        private static bool HasSwitch(string[] args, string name)
+        {
+            if (args == null) return false;
+            foreach (string value in args)
+            {
+                if (string.Equals(value, name, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Ask a SEL LIVE administrator whether this computer may have the agent removed.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Run by the installer, which blocks the uninstall unless this process exits 0. The
+        /// approval is the same one the tray's Exit asks for — <c>Devices / Edit</c> — and is
+        /// recorded server-side as its own audit action, so removing the agent and closing it are
+        /// distinguishable a year later.
+        /// </para>
+        /// <para>
+        /// <b>What this is not.</b> It is not a way of preventing removal. A local administrator
+        /// can stop the service, delete the folder, or uninstall silently, and §7's position that
+        /// the agent is not a security boundary is unchanged. What it removes is the *casual*
+        /// route — Apps &amp; Features, two clicks, no record — and what it adds is a name in the
+        /// audit trail beside every PC that legitimately stopped being monitored.
+        /// </para>
+        /// <para>
+        /// A machine that cannot reach SEL LIVE, or that was never enrolled, is allowed through.
+        /// Blocking there would mean an unenrolled PC could never be cleaned up, and a site office
+        /// with a dead link could not remove a broken agent — which turns a support call into a
+        /// re-image.
+        /// </para>
+        /// </remarks>
+        private void AuthorizeUninstall()
+        {
+            AgentConfiguration config = AgentConfiguration.Load();
+            _log = new AgentLog(config.VerboseLogging);
+
+            // Nobody there to ask.
+            //
+            // A removal driven by SCCM, GPO or a scheduled task runs as SYSTEM in session 0,
+            // where a window would be drawn on a desktop no human can see and this process would
+            // wait for a click that can never come — leaving msiexec hung on a machine in a site
+            // office. Those removals are allowed, and the trace says so.
+            //
+            // The installer cannot make this call: Burn runs its MSI with the UI level set to
+            // none, so from inside the package an interactive uninstall and a silent one are
+            // indistinguishable. Interactivity is a fact about this process, so it is decided
+            // here.
+            if (!Environment.UserInteractive || Process.GetCurrentProcess().SessionId == 0)
+            {
+                StartupTrace.Write("uninstall allowed: no interactive desktop to ask on");
+                Shutdown(0);
+                return;
+            }
+
+            if (!config.IsUsable)
+            {
+                StartupTrace.Write("uninstall allowed: this computer has no usable configuration");
+                Shutdown(0);
+                return;
+            }
+
+            AgentHost host = null;
+            try
+            {
+                host = new AgentHost(config, Dispatcher, _log);
+                if (!host.IdentityStore.Exists)
+                {
+                    StartupTrace.Write("uninstall allowed: this computer is not enrolled");
+                    Shutdown(0);
+                    return;
+                }
+
+                using (var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                {
+                    // The device credential has to be loaded before the approval call: the route
+                    // requires it, so that an approval cannot be manufactured from any machine.
+                    host.EnsureEnrolledAsync(cancellation.Token).Wait(TimeSpan.FromSeconds(30));
+                }
+
+                var approval = new ExitApprovalWindow(host, ApprovalPurpose.Uninstall);
+                bool? approved = approval.ShowDialog();
+
+                if (approved == true)
+                {
+                    _log.Write("Uninstall approved by " + approval.ApprovedByName + ".");
+                    StartupTrace.Write("uninstall approved by " + approval.ApprovedByName);
+                    Shutdown(0);
+                }
+                else
+                {
+                    _log.Write("Uninstall was not approved; the installer will stop.");
+                    StartupTrace.Write("uninstall refused");
+                    Shutdown(1);
+                }
+            }
+            catch (Exception error)
+            {
+                // Allowed through, with the reason on record. See the remarks: a machine that
+                // cannot ask must still be serviceable.
+                _log.Write("Uninstall approval could not be requested: " + error.Message);
+                StartupTrace.Write("uninstall allowed: approval could not be requested — " + error.Message);
+                Shutdown(0);
+            }
+            finally
+            {
+                if (host != null) host.Dispose();
+            }
         }
 
         private async void StartAsync()
@@ -472,6 +611,10 @@ namespace Sel.Agent
 
         protected override void OnExit(ExitEventArgs e)
         {
+            // The other half of the start-up trail: a machine that stopped reporting at 14:05
+            // needs "the agent exited at 14:05" to be a fact rather than an inference.
+            StartupTrace.Write("process exiting with code " + e.ApplicationExitCode);
+
             // Before the host: it unsubscribes from the coordinator's session events, and the
             // coordinator is disposed a line later.
             if (_lifecycle != null) _lifecycle.Dispose();

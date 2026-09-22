@@ -237,13 +237,18 @@ namespace Sel.Agent.Core.Api
         /// explaining why a PC stopped reporting.
         /// </para>
         /// </remarks>
+        /// <param name="action">
+        /// <c>EXIT</c> or <c>UNINSTALL</c>. The same permission authorises both and the server
+        /// records them as different audit actions — see the route for why conflating them would
+        /// make "when did this PC stop reporting, and why" unanswerable.
+        /// </param>
         public Task<ExitApprovalResponse> RequestExitApprovalAsync(
-            string approverIdToken, string reason, CancellationToken cancellation)
+            string approverIdToken, string reason, string action, CancellationToken cancellation)
         {
             return SendAsync<ExitApprovalResponse>(
                 HttpMethod.Post,
                 "/api/windows-agent/exit-approval",
-                new { reason },
+                new { reason, action },
                 true,
                 null,
                 approverIdToken,

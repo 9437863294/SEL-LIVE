@@ -949,7 +949,16 @@ export type WindowsAuditAction =
    * off between 2pm and 5pm" needs to be answerable without guessing. The trail names who
    * approved it, not just that somebody did.
    */
-  | 'AGENT_EXIT_APPROVED';
+  | 'AGENT_EXIT_APPROVED'
+  /**
+   * A SEL LIVE administrator authorised removing the agent from one computer.
+   *
+   * Separate from `AGENT_EXIT_APPROVED` because the two are not the same event and the
+   * difference matters months later: closing the agent stops recording until the next sign-in,
+   * whereas uninstalling it stops recording permanently and leaves a PC that looks like one that
+   * was never enrolled. "Why has this machine no data since March" needs to be answerable.
+   */
+  | 'AGENT_UNINSTALL_APPROVED';
 
 /**
  * One administrative action. Append-only — §50 is explicit that an audit trail an administrator can

@@ -95,7 +95,14 @@ const moduleDescriptions: Record<string, string> = {
     "Raise tour requests, route them for approval, and manage travel advances, expense claims, and settlements.",
 };
 
-export default function ModuleDashboard() {
+/**
+ * `className` replaces the outer spacing, not just adds to it.
+ *
+ * The launcher used to be the whole page and owned its own page padding. Now it is one tab panel
+ * beside the work board, and the panel already pads itself — so the caller needs to be able to say
+ * "no padding here" rather than inheriting a second copy of it.
+ */
+export default function ModuleDashboard({ className }: { className?: string } = {}) {
   const { modules, addModule, updateModule, updateModuleOrder, isLoading } =
     useModules();
   const { can, isLoading: authLoading } = useAuthorization();
@@ -205,7 +212,7 @@ export default function ModuleDashboard() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-6 h-full p-3 sm:p-4 md:p-6">
+    <div className={className ?? "flex flex-col gap-6 h-full p-3 sm:p-4 md:p-6"}>
       <div
         className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-3 xl:grid-cols-4"
         onDragOver={handleDragOver}

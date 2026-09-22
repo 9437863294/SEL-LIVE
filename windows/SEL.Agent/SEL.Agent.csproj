@@ -37,6 +37,11 @@
     <!-- AgentHost passes SelLiveApiClient.Http to FirebaseAuthClient so the two share a
          connection pool, which puts HttpClient in this assembly's signature surface. -->
     <Reference Include="System.Net.Http" />
+
+    <!-- StartupTrace asks WMI which process started the agent. .NET Framework has no supported
+         way to read a parent process id, and that one field is what distinguishes "the scheduled
+         task started it" from "the service watchdog did" when a machine is not reporting. -->
+    <Reference Include="System.Management" />
   </ItemGroup>
 
   <ItemGroup>

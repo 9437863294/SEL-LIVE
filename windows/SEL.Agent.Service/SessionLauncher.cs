@@ -75,6 +75,33 @@ namespace Sel.Agent.Service
         private const int CREATE_NEW_CONSOLE = 0x00000010;
         private const int NORMAL_PRIORITY_CLASS = 0x00000020;
 
+        /// <summary>
+        /// Leave the service's job object behind.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Windows puts service processes in job objects, and a child created without this flag
+        /// joins its parent's job. The agent then lives or dies by limits set for a session-0
+        /// service — and on this machine it died: the process was created, vanished within about
+        /// sixty milliseconds, never got as far as creating its own single-instance mutex, and
+        /// left no crash report, because a job kill is not a user-mode exception.
+        /// </para>
+        /// <para>
+        /// The symptom was three launches a minute apart, each logged as "started ... but exited
+        /// within 3s", for weeks. Nothing was wrong with the agent: it started perfectly when
+        /// Explorer launched it from the Run key, which is why nobody caught it.
+        /// </para>
+        /// <para>
+        /// A job may forbid breakaway, in which case <c>CreateProcessAsUser</c> fails with
+        /// ERROR_ACCESS_DENIED rather than ignoring the flag — so the launch is retried without
+        /// it. Failing outright would be worse than the behaviour being replaced.
+        /// </para>
+        /// </remarks>
+        private const int CREATE_BREAKAWAY_FROM_JOB = 0x01000000;
+
+        private const int ERROR_ACCESS_DENIED = 5;
+        private const uint WAIT_TIMEOUT = 0x00000102;
+
         private enum SecurityImpersonationLevel { SecurityImpersonation = 2 }
         private enum TokenType { TokenPrimary = 1 }
 
@@ -163,6 +190,12 @@ namespace Sel.Agent.Service
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
 
         /// <summary>Every session with somebody signed in and a desktop to draw on.</summary>
         internal static List<uint> ActiveUserSessions()
@@ -261,23 +294,28 @@ namespace Sel.Agent.Service
                 threadAttributes.nLength = Marshal.SizeOf(typeof(SecurityAttributes));
 
                 ProcessInformation processInfo;
-                int flags = NORMAL_PRIORITY_CLASS | CREATE_UNICODE_ENVIRONMENT;
+                int flags = NORMAL_PRIORITY_CLASS | CREATE_UNICODE_ENVIRONMENT | CREATE_BREAKAWAY_FROM_JOB;
                 // Explicitly *not* CREATE_NEW_CONSOLE: a WPF application given a console shows a
                 // stray black window for a moment on start-up, which looks like a fault.
                 flags &= ~CREATE_NEW_CONSOLE;
 
+                string workingDirectory = System.IO.Path.GetDirectoryName(executablePath);
+
                 bool started = CreateProcessAsUser(
-                    primaryToken,
-                    executablePath,
-                    null,
-                    ref attributes,
-                    ref threadAttributes,
-                    false,
-                    flags,
-                    environment,
-                    System.IO.Path.GetDirectoryName(executablePath),
-                    ref startup,
-                    out processInfo);
+                    primaryToken, executablePath, null, ref attributes, ref threadAttributes,
+                    false, flags, environment, workingDirectory, ref startup, out processInfo);
+
+                if (!started && Marshal.GetLastWin32Error() == ERROR_ACCESS_DENIED)
+                {
+                    // This job forbids breakaway. Try again inside it: the agent then inherits
+                    // the service's job limits, which is what it did before this flag was added,
+                    // and is better than not starting at all.
+                    log("Breakaway from the service's job object was refused; launching inside it.");
+                    flags &= ~CREATE_BREAKAWAY_FROM_JOB;
+                    started = CreateProcessAsUser(
+                        primaryToken, executablePath, null, ref attributes, ref threadAttributes,
+                        false, flags, environment, workingDirectory, ref startup, out processInfo);
+                }
 
                 if (!started)
                 {
@@ -286,32 +324,45 @@ namespace Sel.Agent.Service
                 }
 
                 CloseHandle(processInfo.hThread);
-                CloseHandle(processInfo.hProcess);
 
-                // Did it survive?
+                // Did it survive, and if not, why?
                 //
                 // CreateProcessAsUser returning a pid means Windows created a process, not that
-                // the application ran. An agent that exits during start-up — a held
-                // single-instance mutex, an unusable configuration, a missing dependency —
-                // leaves this method reporting success every sixty seconds while nothing is
-                // running, which is indistinguishable in the event log from working properly.
-                // That is precisely the shape of failure this service exists to notice.
+                // the application ran. An agent that exits during start-up leaves this method
+                // reporting success every minute while nothing is running, which in the event
+                // log is indistinguishable from working properly — precisely the shape of
+                // failure this service exists to notice.
                 //
-                // Three seconds on a sixty-second watchdog, and only on the path that has just
-                // decided to launch something.
-                System.Threading.Thread.Sleep(StartupGrace);
-                if (!IsAgentRunningInSession(sessionId, System.IO.Path.GetFileNameWithoutExtension(executablePath)))
+                // The process handle is kept for the grace period so the exit *code* can be
+                // read, because that single number is the difference between a diagnosis and a
+                // guess: 0 means the agent chose to exit and its own log will say why, while
+                // 0xC000_0000-something means Windows killed it and no amount of reading the
+                // agent's log will help. The previous version closed the handle immediately and
+                // then speculated in the event log about which had happened.
+                try
                 {
+                    uint wait = WaitForSingleObject(processInfo.hProcess, (uint)StartupGrace.TotalMilliseconds);
+                    if (wait == WAIT_TIMEOUT)
+                    {
+                        log("Started the desktop agent in session " + sessionId + " (pid " + processInfo.dwProcessId + ").");
+                        return processInfo.dwProcessId;
+                    }
+
+                    uint exitCode;
+                    string code = GetExitCodeProcess(processInfo.hProcess, out exitCode)
+                        ? "0x" + exitCode.ToString("X8") + " (" + exitCode + ")"
+                        : "unavailable";
+
                     log("Started the desktop agent in session " + sessionId + " (pid "
                         + processInfo.dwProcessId + ") but it exited within "
-                        + StartupGrace.TotalSeconds + "s. Check %ProgramData%\\SEL LIVE\\Agent\\agent.log "
-                        + "with verboseLogging on; a silent exit this early is usually another copy "
-                        + "already running, or an unusable agent.config.json.");
+                        + StartupGrace.TotalSeconds + "s with exit code " + code + ". "
+                        + DescribeEarlyExit(exitCode));
                     return 0;
                 }
-
-                log("Started the desktop agent in session " + sessionId + " (pid " + processInfo.dwProcessId + ").");
-                return processInfo.dwProcessId;
+                finally
+                {
+                    CloseHandle(processInfo.hProcess);
+                }
             }
             catch (Exception error)
             {
@@ -324,6 +375,32 @@ namespace Sel.Agent.Service
                 if (primaryToken != IntPtr.Zero) CloseHandle(primaryToken);
                 if (userToken != IntPtr.Zero) CloseHandle(userToken);
             }
+        }
+
+        /// <summary>
+        /// Turn an early exit code into the next thing to check.
+        /// </summary>
+        /// <remarks>
+        /// Written for whoever reads the event log on a machine that is not reporting, which is
+        /// usually somebody with one PC in front of them and no debugger. The three cases behave
+        /// completely differently and used to be described by one sentence that guessed.
+        /// </remarks>
+        private static string DescribeEarlyExit(uint exitCode)
+        {
+            if (exitCode == 0)
+            {
+                return "Exit code 0 means the agent shut itself down deliberately — another copy "
+                    + "already running, or a configuration it could not use. "
+                    + "%ProgramData%\\SEL LIVE\\Agent\\startup.log records which.";
+            }
+            if (exitCode > 0xC0000000)
+            {
+                return "A code in the 0xC0000000 range means Windows terminated it rather than the "
+                    + "agent exiting: a job-object limit, a blocked executable, or a missing "
+                    + "dependency. Nothing will appear in the agent's own log, because it never ran.";
+            }
+            return "A non-zero exit code below the Windows range comes from the agent itself; "
+                + "%ProgramData%\\SEL LIVE\\Agent\\startup.log records the reason.";
         }
 
         /// <summary>Whether the agent is already running in this session.</summary>
