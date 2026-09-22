@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -241,7 +242,28 @@ namespace Sel.Agent
                 }
 
                 var approval = new ExitApprovalWindow(host, ApprovalPurpose.Uninstall);
+
+                // Nobody answering is a refusal, not a hang. Without this, an uninstall started
+                // and walked away from leaves msiexec waiting for ever and the machine in a state
+                // where no other installation can run.
+                var unanswered = new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMinutes(3),
+                };
+                unanswered.Tick += (sender, args) =>
+                {
+                    unanswered.Stop();
+                    if (approval.IsLoaded && approval.DialogResult == null)
+                    {
+                        StartupTrace.Write("uninstall refused: the approval window went unanswered for 3 minutes");
+                        approval.DialogResult = false;
+                        approval.Close();
+                    }
+                };
+                unanswered.Start();
+
                 bool? approved = approval.ShowDialog();
+                unanswered.Stop();
 
                 if (approved == true)
                 {
