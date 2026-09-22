@@ -45,7 +45,7 @@ import {
 import { db } from './firebase';
 import { ACTIVITY_MODULES } from './activity-modules';
 import type { WorkflowStep } from './types';
-import { toWorkDate, type WorkItem, type WorkLane } from './work-dashboard';
+import { toWorkDate, type WorkItem, type WorkKind, type WorkLane } from './work-dashboard';
 import type { WorkContext, WorkSource } from './work-dashboard-sources';
 import { PM_PROJECT_COLLECTION } from './project-management-projects';
 
@@ -248,6 +248,7 @@ function projectWorkflowSource(config: ProjectWorkflowConfig): WorkSource {
           return {
             id: `${config.id}:${docId}`,
             sourceId: config.id,
+            kind: 'approval' as WorkKind,
             module: ACTIVITY_MODULES.PROJECT_MANAGEMENT,
             lane: 'action' as WorkLane,
             title: described.title,

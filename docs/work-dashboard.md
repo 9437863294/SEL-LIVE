@@ -102,6 +102,29 @@ leading or trailing day is fetched rather than leaving a populated-looking cell 
 Undated rows — the aggregate shared-queue rows especially — are counted and reported at the foot
 rather than parked on today.
 
+### Colour carries information
+
+Two scales, deliberately, because they answer different questions:
+
+- **`moduleBadgeClass`** (twenty-odd values, from `activity-modules.ts`) tells you whose screen you
+  are about to land on. It stays on the chip.
+- **`WORK_KIND_ACCENT` / `WORK_KIND_BADGE`** (four values) tells you what sort of thing it is —
+  amber for a decision waiting, emerald for work to carry out, sky for a timed commitment, violet for
+  a nudge. On the calendar that is the one worth reading at a glance, so it gets the strong accent:
+  a 4px coloured edge on every chip, plus an icon, so colour is never the only channel.
+
+The year view is a proper heatmap: `densityStep` bands a day's count into four steps of **one hue**,
+because a ranking has to read as an ordering and multiple hues cannot. Rose overrides the ramp where
+something is overdue — that is a different statement, not a busier one. The ramp is labelled
+("Quieter → Busier"), since an unlabelled ramp is decoration.
+
+Weekends are tinted (`isWeekend`) so the eye finds the week boundaries without counting columns, and
+there is a test pinning `isWeekend` against `monthGrid`'s column order — if those two ever disagreed
+the tint would land on the wrong days.
+
+All of these are literal Tailwind classes, never `--chart-*` tokens: those are defined only for the
+dark theme in `globals.css` and render invisible against the light default this application uses.
+
 ### The date arithmetic is tested, not trusted
 
 All of it is in `work-dashboard.ts` and covered by `tests/work-dashboard.test.mjs`: leap years (2028
@@ -113,6 +136,47 @@ from 31 January lands on February rather than skipping to March.
 built around Office Hub's own entry shape with four views and drag-to-reschedule through
 `updateMeeting` — the right screen for working *on* meetings, and structurally unable to show an
 approval deadline. This one is read-only and cross-module. Two different jobs.
+
+## One table, one header
+
+The list is a single `DataList` holding every lane, not one table per lane. It was four, each with
+its own header row — which repeated ITEM / MODULE / STAGE / … down the page and, worse, let each
+table size its own columns to its own content, so the four headers did not line up with each other.
+
+The lane survives as the **Type** column (`Needs you` / `Meeting` / `Team queue` / `Waiting`), because
+the distinction between work that names you and work merely open to your role is the most useful
+thing this screen knows and was not worth losing to merge the tables. Ordering is
+`compareMergedWorkItems` — lane first, urgency within — so rows naming you stay on top and a deep
+shared queue can never bury them. The per-lane counts moved to a one-line `LaneSummary` above.
+
+## Filters
+
+The calendar filters on two dimensions, both multi-select:
+
+- **Kind** — `WorkKind`: `approval`, `task`, `meeting`, `reminder`.
+- **Module** — whatever modules the data actually holds.
+
+They compose as AND, so "approvals in Project Management" is two clicks. An empty selection means
+*everything*, not nothing — a chip row that blanks the screen when you deselect the last chip reads
+as broken. `filterWorkItems` encodes that and `tests/work-dashboard.test.mjs` asserts it.
+
+The whole toolbar — navigation, month label, count, both filter groups, Clear, and the Year/Month/Day
+switcher — is one row. It is `flex-nowrap` with `overflow-x-auto` and every group `shrink-0`, so a
+narrow screen pans the toolbar sideways rather than reflowing it into two or three lines. Do not swap
+that back to `flex-wrap`: with this many controls it wraps immediately, which is what it looked like
+before. Allowing the groups to shrink instead of scroll is the other trap — the chips compress to
+unreadable slivers long before anything overflows.
+
+`kind` is declared by each source, never inferred from the module. Only the source knows: an
+`insuranceTasks` row and an `officeHubTasks` row are both tasks despite sharing no fields, and a
+`poIssueApprovals` row is a decision despite living in Project Management. Inferring from the module
+name would collapse all seven Project Management workflows into one bucket — which is what the module
+badge already gives you. Two judgement calls worth knowing:
+
+- **HR interviews are `task`, not `meeting`.** An interview has a time, but it is not an Office Hub
+  meeting, and it must not surface under a Meetings filter people use to find their calendar.
+- **Insurance and vehicle-insurance renewals are `task`, not `approval`.** They are workflows with a
+  step and an assignee, but what they ask is that you *do* the renewal, not approve someone else's.
 
 ## Rows are one line, and the table scrolls itself
 

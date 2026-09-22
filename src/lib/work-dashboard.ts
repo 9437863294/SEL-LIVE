@@ -61,6 +61,56 @@ export const WORK_LANE_HINT: Record<WorkLane, string> = {
   watching: 'Raised by you, or you are a watcher. Nothing to do yet.',
 };
 
+/**
+ * What kind of thing a row is, independent of which module it came from.
+ *
+ * Declared by each source rather than inferred here, because only the source knows: an
+ * `insuranceTasks` row and an `officeHubTasks` row are both "a task" despite sharing no fields, and
+ * a `poIssueApprovals` row is a decision despite living in Project Management. Guessing from the
+ * module name would put all seven Project Management workflows in one bucket and all of Office Hub
+ * in another, which is the grouping the module badge already gives you.
+ *
+ * Four, because four is what the filters need to be useful: "just my meetings", "just approvals".
+ */
+export type WorkKind = 'meeting' | 'approval' | 'task' | 'reminder';
+
+export const WORK_KINDS: readonly WorkKind[] = ['approval', 'task', 'meeting', 'reminder'] as const;
+
+export const WORK_KIND_LABEL: Record<WorkKind, string> = {
+  approval: 'Approvals',
+  task: 'Tasks',
+  meeting: 'Meetings',
+  reminder: 'Reminders',
+};
+
+/**
+ * A colour per kind, used on the calendar.
+ *
+ * Distinct from `moduleBadgeClass`, which colours by *module* and has twenty-odd values. Two scales
+ * sound like one too many, but they answer different questions and the calendar needs both: the
+ * module tells you whose screen you are about to land on, the kind tells you what sort of thing it
+ * is. On the calendar the kind is the one worth reading at a glance, so it gets the strong accent
+ * and the module keeps the chip.
+ *
+ * Four hues, far enough apart to survive being 3px wide: amber for a decision waiting on somebody,
+ * emerald for work to carry out, sky for a commitment with a time, violet for a nudge. Written as
+ * literal classes rather than `--chart-*` tokens, which are defined only for the dark theme in
+ * `globals.css` and render invisible against the light default this application uses.
+ */
+export const WORK_KIND_ACCENT: Record<WorkKind, string> = {
+  approval: 'bg-amber-500',
+  task: 'bg-emerald-500',
+  meeting: 'bg-sky-500',
+  reminder: 'bg-violet-500',
+};
+
+export const WORK_KIND_BADGE: Record<WorkKind, string> = {
+  approval: 'border-amber-200 bg-amber-50 text-amber-800',
+  task: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  meeting: 'border-sky-200 bg-sky-50 text-sky-800',
+  reminder: 'border-violet-200 bg-violet-50 text-violet-800',
+};
+
 /** How close an item is to — or past — its deadline. */
 export type WorkUrgency = 'overdue' | 'today' | 'soon' | 'later' | 'undated';
 
@@ -103,6 +153,8 @@ export interface WorkItem {
   /** Canonical module name from `@/lib/activity-modules`, for the badge and the grouping. */
   module: string;
   lane: WorkLane;
+  /** Declared by the source. Drives the calendar's kind filter. */
+  kind: WorkKind;
   /** What the item is, in the words the owning module uses. */
   title: string;
   /** The module's own human reference — `NS-2451`, `DR-8890`, a policy number. */
@@ -309,6 +361,75 @@ export function groupWorkItems(items: WorkItem[], today: string): WorkLanes {
 }
 
 /**
+ * The lanes in reading order, for the merged table.
+ *
+ * Exported because the single-table view has to sort by lane before urgency, and that ranking is the
+ * same judgement `dropLowerLaneDuplicates` makes about which lane wins: accountability first.
+ */
+export const WORK_LANE_RANK: Record<WorkLane, number> = {
+  action: 0,
+  meeting: 1,
+  shared: 2,
+  watching: 3,
+};
+
+/**
+ * Ordering for one table holding every lane.
+ *
+ * Lane first, so the things naming you stay at the top and a hundred shared-queue rows can never
+ * bury them; urgency within a lane, exactly as the per-lane view ordered it.
+ */
+export function compareMergedWorkItems(left: WorkItem, right: WorkItem, today: string): number {
+  const byLane = WORK_LANE_RANK[left.lane] - WORK_LANE_RANK[right.lane];
+  if (byLane !== 0) return byLane;
+  return compareWorkItems(left, right, today);
+}
+
+/** Every lane's rows in one list, ordered for a single table. */
+export function mergedWorkItems(lanes: WorkLanes, today: string): WorkItem[] {
+  return [...lanes.action, ...lanes.meeting, ...lanes.shared, ...lanes.watching].sort((left, right) =>
+    compareMergedWorkItems(left, right, today),
+  );
+}
+
+/* ── filtering ─────────────────────────────────────────────────────────────────────────────────── */
+
+export interface WorkFilter {
+  /** Empty or absent means every kind — "no filter", not "nothing". */
+  kinds?: ReadonlySet<WorkKind>;
+  /** Empty or absent means every module. */
+  modules?: ReadonlySet<string>;
+}
+
+/**
+ * Apply a filter, treating an empty selection as "everything".
+ *
+ * That convention matters: a filter UI where deselecting the last chip empties the screen reads as
+ * broken, and the useful meaning of "no kinds ticked" is "do not filter by kind" rather than "show
+ * me nothing".
+ */
+export function filterWorkItems(items: WorkItem[], filter: WorkFilter): WorkItem[] {
+  const { kinds, modules } = filter;
+  const byKind = kinds && kinds.size > 0 ? kinds : null;
+  const byModule = modules && modules.size > 0 ? modules : null;
+  if (!byKind && !byModule) return items;
+  return items.filter(
+    (item) => (!byKind || byKind.has(item.kind)) && (!byModule || byModule.has(item.module)),
+  );
+}
+
+/** The kinds actually present, so the filter offers only what the data holds. Fixed order. */
+export function kindsPresent(items: WorkItem[]): WorkKind[] {
+  const present = new Set(items.map((item) => item.kind));
+  return WORK_KINDS.filter((kind) => present.has(kind));
+}
+
+/** The modules actually present, alphabetical. */
+export function modulesPresent(items: WorkItem[]): string[] {
+  return [...new Set(items.map((item) => item.module))].sort();
+}
+
+/**
  * An item that is in `action` is not also shown in `shared` or `watching`.
  *
  * A file pending with you personally is also, technically, pending with your department, and you are
@@ -317,14 +438,13 @@ export function groupWorkItems(items: WorkItem[], today: string): WorkLanes {
  * the row appears once, in `action`.
  */
 export function dropLowerLaneDuplicates(items: WorkItem[]): WorkItem[] {
-  const laneRank: Record<WorkLane, number> = { action: 0, meeting: 1, shared: 2, watching: 3 };
   const best = new Map<string, WorkItem>();
 
   for (const item of items) {
     // Keyed on the underlying record, not on `item.id`, which already includes the source.
     const key = `${item.module}:${item.href}`;
     const existing = best.get(key);
-    if (!existing || laneRank[item.lane] < laneRank[existing.lane]) best.set(key, item);
+    if (!existing || WORK_LANE_RANK[item.lane] < WORK_LANE_RANK[existing.lane]) best.set(key, item);
   }
   return [...best.values()];
 }
@@ -443,6 +563,33 @@ export function daysInMonth(month: string): number {
 export const WEEK_STARTS_ON = 1;
 
 export const WEEKDAY_LABELS: readonly string[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/**
+ * Saturday or Sunday.
+ *
+ * Tinting the weekend is what makes a month grid readable without counting columns — the eye finds
+ * the week boundaries instead of the day numbers. Computed in UTC like the rest of the calendar
+ * arithmetic, so it agrees with `monthGrid` about which column a date is in.
+ */
+export function isWeekend(date: string): boolean {
+  const parsed = Date.parse(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed)) return false;
+  const day = new Date(parsed).getUTCDay();
+  return day === 0 || day === 6;
+}
+
+/**
+ * How busy a day is, on a four-step scale — for the year view's heat cells.
+ *
+ * Bands rather than a continuous ramp: at 20px square the eye cannot rank eleven shades, and the
+ * question a year view answers is "is this week quiet, busy or brutal".
+ */
+export function densityStep(count: number): 0 | 1 | 2 | 3 {
+  if (count <= 0) return 0;
+  if (count === 1) return 1;
+  if (count <= 3) return 2;
+  return 3;
+}
 
 /**
  * The month as weeks of ISO dates, including the leading and trailing days that complete them.

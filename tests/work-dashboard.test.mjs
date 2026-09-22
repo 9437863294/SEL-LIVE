@@ -3,10 +3,16 @@ import { test } from 'node:test';
 
 import {
   DUE_SOON_DAYS,
+  WORK_KINDS,
+  WORK_KIND_ACCENT,
+  WORK_KIND_BADGE,
+  WORK_KIND_LABEL,
   addDays,
   addMonths,
   calendarItems,
   daysInMonth,
+  densityStep,
+  isWeekend,
   itemsByDate,
   monthGrid,
   monthLabel,
@@ -16,8 +22,13 @@ import {
   viewRange,
   yearMonths,
   yearOf,
+  compareMergedWorkItems,
   compareWorkItems,
   countByModule,
+  filterWorkItems,
+  kindsPresent,
+  mergedWorkItems,
+  modulesPresent,
   daysUntil,
   dropLowerLaneDuplicates,
   dueLabel,
@@ -37,6 +48,7 @@ const item = (overrides = {}) => ({
   sourceId: overrides.sourceId ?? 'source',
   module: overrides.module ?? 'E-Approval',
   lane: overrides.lane ?? 'action',
+  kind: overrides.kind ?? 'approval',
   title: overrides.title ?? 'An item',
   href: overrides.href ?? '/e-approval/doc',
   ...overrides,
@@ -493,4 +505,153 @@ test('viewLabel names each view usefully', () => {
 test('yearOf reads the year off a date', () => {
   assert.equal(yearOf('2026-09-22'), '2026');
   assert.equal(yearOf('2026-09'), '2026');
+});
+
+/* ── the merged table ─────────────────────────────────────────────────────────────────────────── */
+
+test('mergedWorkItems orders by lane first, urgency within', () => {
+  const lanes = groupWorkItems(
+    [
+      // A shared row far more overdue than anything in `action` — it must still sort below, or a
+      // deep team queue would bury the work that actually names you.
+      item({ id: 's-ancient', lane: 'shared', dueAt: '2026-01-01' }),
+      item({ id: 'a-later', lane: 'action', dueAt: '2026-12-01' }),
+      item({ id: 'a-overdue', lane: 'action', dueAt: '2026-09-20' }),
+      item({ id: 'm', lane: 'meeting', dueAt: TODAY, startTime: '10:00' }),
+      item({ id: 'w', lane: 'watching', dueAt: '2026-09-21' }),
+    ],
+    TODAY,
+  );
+  assert.deepEqual(mergedWorkItems(lanes, TODAY).map((row) => row.id), [
+    'a-overdue',
+    'a-later',
+    'm',
+    's-ancient',
+    'w',
+  ]);
+});
+
+test('compareMergedWorkItems is consistent with the lane ranking', () => {
+  const action = item({ id: 'a', lane: 'action', dueAt: null });
+  const shared = item({ id: 's', lane: 'shared', dueAt: '2020-01-01' });
+  assert.ok(compareMergedWorkItems(action, shared, TODAY) < 0);
+  assert.ok(compareMergedWorkItems(shared, action, TODAY) > 0);
+});
+
+test('mergedWorkItems holds every row exactly once', () => {
+  const rows = [
+    item({ id: 'a1', lane: 'action' }),
+    item({ id: 'a2', lane: 'action' }),
+    item({ id: 's1', lane: 'shared' }),
+    item({ id: 'm1', lane: 'meeting' }),
+    item({ id: 'w1', lane: 'watching' }),
+  ];
+  const merged = mergedWorkItems(groupWorkItems(rows, TODAY), TODAY);
+  assert.equal(merged.length, rows.length);
+  assert.equal(new Set(merged.map((row) => row.id)).size, rows.length);
+});
+
+/* ── filtering ────────────────────────────────────────────────────────────────────────────────── */
+
+const mixed = () => [
+  item({ id: 'm1', kind: 'meeting', module: 'Office Hub' }),
+  item({ id: 't1', kind: 'task', module: 'Office Hub' }),
+  item({ id: 'ap1', kind: 'approval', module: 'E-Approval' }),
+  item({ id: 'ap2', kind: 'approval', module: 'Project Management' }),
+  item({ id: 'r1', kind: 'reminder', module: 'Office Hub' }),
+];
+
+test('an empty filter means everything, not nothing', () => {
+  // The important case: a chip row that empties the screen when you deselect the last chip reads as
+  // broken, so "no kinds ticked" has to mean "do not filter by kind".
+  assert.equal(filterWorkItems(mixed(), {}).length, 5);
+  assert.equal(filterWorkItems(mixed(), { kinds: new Set(), modules: new Set() }).length, 5);
+});
+
+test('filtering by kind keeps only that kind', () => {
+  const meetings = filterWorkItems(mixed(), { kinds: new Set(['meeting']) });
+  assert.deepEqual(meetings.map((row) => row.id), ['m1']);
+
+  const both = filterWorkItems(mixed(), { kinds: new Set(['meeting', 'task']) });
+  assert.deepEqual(both.map((row) => row.id), ['m1', 't1']);
+});
+
+test('filtering by module keeps only that module', () => {
+  const officeHub = filterWorkItems(mixed(), { modules: new Set(['Office Hub']) });
+  assert.deepEqual(officeHub.map((row) => row.id), ['m1', 't1', 'r1']);
+});
+
+test('kind and module filters compose as AND', () => {
+  const result = filterWorkItems(mixed(), {
+    kinds: new Set(['approval']),
+    modules: new Set(['Project Management']),
+  });
+  assert.deepEqual(result.map((row) => row.id), ['ap2']);
+});
+
+test('a filter matching nothing returns empty rather than everything', () => {
+  const result = filterWorkItems(mixed(), {
+    kinds: new Set(['meeting']),
+    modules: new Set(['Project Management']),
+  });
+  assert.deepEqual(result, []);
+});
+
+test('kindsPresent lists only what the data holds, in the canonical order', () => {
+  assert.deepEqual(kindsPresent(mixed()), ['approval', 'task', 'meeting', 'reminder']);
+  assert.deepEqual(kindsPresent([item({ kind: 'task' })]), ['task']);
+  assert.deepEqual(kindsPresent([]), []);
+});
+
+test('modulesPresent is de-duplicated and alphabetical', () => {
+  assert.deepEqual(modulesPresent(mixed()), ['E-Approval', 'Office Hub', 'Project Management']);
+});
+
+/* ── calendar colouring ───────────────────────────────────────────────────────────────────────── */
+
+test('isWeekend finds Saturday and Sunday, Monday-first week', () => {
+  // 2026-09-21 is a Monday, so 26th is Saturday and 27th is Sunday.
+  assert.equal(isWeekend('2026-09-21'), false, 'Monday');
+  assert.equal(isWeekend('2026-09-25'), false, 'Friday');
+  assert.equal(isWeekend('2026-09-26'), true, 'Saturday');
+  assert.equal(isWeekend('2026-09-27'), true, 'Sunday');
+  assert.equal(isWeekend('2026-09-28'), false, 'Monday again');
+});
+
+test('isWeekend agrees with monthGrid about which column a date sits in', () => {
+  // The tint would land on the wrong columns if these two disagreed, so it is worth pinning.
+  for (const week of monthGrid('2026-09')) {
+    assert.equal(isWeekend(week[5]), true, `${week[5]} is column 6 and should be Saturday`);
+    assert.equal(isWeekend(week[6]), true, `${week[6]} is column 7 and should be Sunday`);
+    for (const date of week.slice(0, 5)) {
+      assert.equal(isWeekend(date), false, `${date} is a weekday column`);
+    }
+  }
+});
+
+test('isWeekend is false for an unparseable date rather than throwing', () => {
+  assert.equal(isWeekend('not-a-date'), false);
+});
+
+test('densityStep bands a count into four steps', () => {
+  assert.equal(densityStep(0), 0);
+  assert.equal(densityStep(1), 1);
+  assert.equal(densityStep(2), 2);
+  assert.equal(densityStep(3), 2);
+  assert.equal(densityStep(4), 3);
+  assert.equal(densityStep(50), 3);
+});
+
+test('densityStep treats a negative count as empty', () => {
+  assert.equal(densityStep(-1), 0);
+});
+
+test('every kind has an accent and a badge style', () => {
+  // A kind added to the union without a colour would render an unstyled chip, which is the kind of
+  // thing that only shows up on the one screen nobody opens.
+  for (const kind of WORK_KINDS) {
+    assert.ok(WORK_KIND_ACCENT[kind], `${kind} has no accent colour`);
+    assert.ok(WORK_KIND_BADGE[kind], `${kind} has no badge style`);
+    assert.ok(WORK_KIND_LABEL[kind], `${kind} has no label`);
+  }
 });

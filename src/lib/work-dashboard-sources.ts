@@ -53,6 +53,7 @@ import {
   normalizeWorkPriority,
   toWorkDate,
   type WorkItem,
+  type WorkKind,
   type WorkLane,
 } from './work-dashboard';
 
@@ -208,6 +209,9 @@ function eApprovalItem(row: Row, lane: WorkLane, sourceId: string): WorkItem {
     sourceId,
     module: ACTIVITY_MODULES.E_APPROVAL,
     lane,
+    // Constant across all four E-Approval sources: whether a file is pending with you, your
+    // department, your role, or was raised by you, the thing it is waiting for is a decision.
+    kind: 'approval',
     title: text(row.subject, 'Approval request'),
     reference: text(row.referenceNo) || null,
     stage: eApprovalStage(row),
@@ -319,6 +323,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `office-hub-tasks:${row.id}`,
           sourceId: 'office-hub-tasks',
+          kind: 'task' as WorkKind,
           module: ACTIVITY_MODULES.OFFICE_HUB,
           lane: 'action' as WorkLane,
           title: text(row.title, 'Task'),
@@ -342,6 +347,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `office-hub-action-items:${row.id}`,
           sourceId: 'office-hub-action-items',
+          kind: 'task' as WorkKind,
           module: ACTIVITY_MODULES.OFFICE_HUB,
           lane: 'action' as WorkLane,
           title: text(row.title, 'Action item'),
@@ -365,6 +371,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `office-hub-decisions:${row.id}`,
           sourceId: 'office-hub-decisions',
+          kind: 'task' as WorkKind,
           module: ACTIVITY_MODULES.OFFICE_HUB,
           lane: 'action' as WorkLane,
           title: text(row.title, 'Decision'),
@@ -393,6 +400,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `office-hub-meetings:${row.id}`,
           sourceId: 'office-hub-meetings',
+          kind: 'meeting' as WorkKind,
           module: ACTIVITY_MODULES.OFFICE_HUB,
           lane: 'meeting' as WorkLane,
           title: text(row.title, 'Meeting'),
@@ -439,6 +447,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map(({ row, meeting }) => ({
           id: `office-hub-invites:${row.id}`,
           sourceId: 'office-hub-invites',
+          kind: 'meeting' as WorkKind,
           module: ACTIVITY_MODULES.OFFICE_HUB,
           lane: 'meeting' as WorkLane,
           title: text(meeting!.title, 'Meeting invitation'),
@@ -463,6 +472,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `office-hub-watching:${row.id}`,
           sourceId: 'office-hub-watching',
+          kind: 'task' as WorkKind,
           module: ACTIVITY_MODULES.OFFICE_HUB,
           lane: 'watching' as WorkLane,
           title: text(row.title, 'Task'),
@@ -493,6 +503,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `office-hub-reminders:${row.id}`,
           sourceId: 'office-hub-reminders',
+          kind: 'reminder' as WorkKind,
           module: ACTIVITY_MODULES.OFFICE_HUB,
           lane: 'watching' as WorkLane,
           title: text(row.entityTitle, 'Reminder'),
@@ -507,6 +518,7 @@ export const WORK_SOURCES: WorkSource[] = [
   /* ---- the assignee-routed workflows ------------------------------------------------------- */
   workflowSource({
     id: 'site-fund-request',
+    kind: 'approval',
     module: ACTIVITY_MODULES.SITE_FUND_REQUISITION,
     label: 'Site fund requests at your stage',
     permission: 'Site Fund Request',
@@ -515,6 +527,7 @@ export const WORK_SOURCES: WorkSource[] = [
   }),
   workflowSource({
     id: 'site-fund-requisition-2',
+    kind: 'approval',
     module: ACTIVITY_MODULES.SITE_FUND_REQUISITION,
     label: 'Site fund requisitions at your stage',
     permission: 'Site Fund Requisition 2',
@@ -535,6 +548,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `insurance-tasks:${row.id}`,
           sourceId: 'insurance-tasks',
+          kind: 'task' as WorkKind,
           module: ACTIVITY_MODULES.INSURANCE,
           lane: 'action' as WorkLane,
           title: `${text(row.taskType, 'Task')} — ${text(row.insuredPerson, 'policy')}`,
@@ -559,6 +573,7 @@ export const WORK_SOURCES: WorkSource[] = [
           return {
             id: `tour-travel:${row.id}`,
             sourceId: 'tour-travel',
+            kind: 'approval' as WorkKind,
             module: 'Tour, Travel & Expense',
             lane: 'action' as WorkLane,
             title: `Tour request — ${text(row.employeeName, 'employee')}`,
@@ -606,6 +621,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `recurring-payments:${row.id}`,
           sourceId: 'recurring-payments',
+          kind: 'approval' as WorkKind,
           module: ACTIVITY_MODULES.RECURRING_PAYMENTS,
           lane: 'action' as WorkLane,
           title: text(row.title, 'Payment obligation'),
@@ -630,6 +646,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `vehicle-insurance:${row.id}`,
           sourceId: 'vehicle-insurance',
+          kind: 'task' as WorkKind,
           module: ACTIVITY_MODULES.VEHICLE_MANAGEMENT,
           lane: 'action' as WorkLane,
           title: `Insurance renewal — ${text(row.vehicleNumber, 'vehicle')}`,
@@ -656,6 +673,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `hr-requirements:${row.id}`,
           sourceId: 'hr-requirements',
+          kind: 'approval' as WorkKind,
           module: ACTIVITY_MODULES.HR_RECRUITMENT,
           lane: 'action' as WorkLane,
           title: `Manpower requirement — ${text(row.designation, 'position')}`,
@@ -678,6 +696,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `hr-compensation:${row.id}`,
           sourceId: 'hr-compensation',
+          kind: 'approval' as WorkKind,
           module: ACTIVITY_MODULES.HR_RECRUITMENT,
           lane: 'action' as WorkLane,
           title: `Compensation — ${text(row.candidateName, 'candidate')}`,
@@ -700,6 +719,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `hr-offers:${row.id}`,
           sourceId: 'hr-offers',
+          kind: 'approval' as WorkKind,
           module: ACTIVITY_MODULES.HR_RECRUITMENT,
           lane: 'action' as WorkLane,
           title: `Offer — ${text(row.candidateName, 'candidate')}`,
@@ -722,6 +742,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map((row) => ({
           id: `hr-interviews:${row.id}`,
           sourceId: 'hr-interviews',
+          kind: 'task' as WorkKind,
           module: ACTIVITY_MODULES.HR_RECRUITMENT,
           lane: 'action' as WorkLane,
           title: `Interview — ${text(row.candidateName, 'candidate')}`,
@@ -770,6 +791,7 @@ export const WORK_SOURCES: WorkSource[] = [
         .map(({ moduleName, route, matches }) => ({
           id: `instrument-approvals:${moduleName}`,
           sourceId: 'instrument-approvals',
+          kind: 'approval' as WorkKind,
           module: moduleName,
           lane: 'shared' as WorkLane,
           title: `${matches.length} approval${matches.length === 1 ? '' : 's'} awaiting ${context.role}`,
@@ -804,6 +826,7 @@ export const WORK_SOURCES: WorkSource[] = [
         {
           id: 'daily-requisition-queue:open',
           sourceId: 'daily-requisition-queue',
+          kind: 'approval' as WorkKind,
           module: ACTIVITY_MODULES.DAILY_REQUISITION,
           lane: 'shared' as WorkLane,
           title: `${open} entr${open === 1 ? 'y' : 'ies'} awaiting action`,
@@ -830,6 +853,7 @@ export const WORK_SOURCES: WorkSource[] = [
         {
           id: 'store-stock-submitted:open',
           sourceId: 'store-stock-submitted',
+          kind: 'approval' as WorkKind,
           module: ACTIVITY_MODULES.STORE_STOCK,
           lane: 'shared' as WorkLane,
           title: `${open} document${open === 1 ? '' : 's'} submitted for approval`,
@@ -901,6 +925,7 @@ export async function loadWorkItems(context: WorkContext): Promise<WorkLoadResul
 function workflowSource(config: {
   id: string;
   module: string;
+  kind: WorkKind;
   label: string;
   permission: string;
   collectionName: string;
@@ -918,6 +943,7 @@ function workflowSource(config: {
         .map((row) => ({
           id: `${config.id}:${row.id}`,
           sourceId: config.id,
+          kind: config.kind,
           module: config.module,
           lane: 'action' as WorkLane,
           title: text(row.partyName) || text(row.description, 'Requisition'),
@@ -980,6 +1006,7 @@ export async function loadMeetingsInRange(
       // The same id the upcoming-meetings source produces, so the two de-duplicate on merge.
       id: `office-hub-meetings:${row.id}`,
       sourceId: 'office-hub-meetings',
+      kind: 'meeting' as WorkKind,
       module: ACTIVITY_MODULES.OFFICE_HUB,
       lane: 'meeting' as WorkLane,
       title: text(row.title, 'Meeting'),

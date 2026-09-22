@@ -68,11 +68,12 @@ import {
   WORK_LANE_TITLE,
   WORK_URGENCY_BADGE,
   calendarItems,
-  countByModule,
+  mergedWorkItems,
   dueLabel,
   workUrgency,
   type WorkItem,
   type WorkLane,
+  type WorkLanes,
   type WorkSummary,
 } from '@/lib/work-dashboard';
 import { useWorkDashboard } from './hooks';
@@ -314,23 +315,68 @@ const laneRowClass = (item: WorkItem, today: string): string => {
 /** How many rows a lane shows before it offers to show the rest. */
 const COLLAPSED_ROWS = 8;
 
-function LaneSection({ lane, items, today }: { lane: WorkLane; items: WorkItem[]; today: string }) {
+/**
+ * One table, one header, every lane.
+ *
+ * It used to be four sections, each with its own `DataList` and therefore its own header row. That
+ * repeated ITEM / MODULE / STAGE / … up to four times down the page, and — worse — each table sized
+ * its own columns to its own content, so the four header rows did not line up with one another. Four
+ * tables of the same thing that disagree about where their columns are is harder to read than one
+ * table, whatever the headings say.
+ *
+ * The lane survives as the `Type` column rather than as a heading. That matters: the distinction
+ * between work that names you and work merely open to your role is the one genuinely useful thing
+ * this screen knows, and dropping it to merge the tables would have been the wrong trade. Sorting is
+ * `compareMergedWorkItems` — lane first, urgency within — so the rows naming you stay at the top and
+ * a deep shared queue can never bury them.
+ */
+const LANE_BADGE: Record<WorkLane, string> = {
+  action: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  meeting: 'bg-blue-50 text-blue-700 border-blue-200',
+  shared: 'bg-violet-50 text-violet-700 border-violet-200',
+  watching: 'bg-slate-50 text-slate-600 border-slate-200',
+};
+
+const LANE_SHORT: Record<WorkLane, string> = {
+  action: 'Needs you',
+  meeting: 'Meeting',
+  shared: 'Team queue',
+  watching: 'Waiting',
+};
+
+function WorkTable({ items, today }: { items: WorkItem[]; today: string }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? items : items.slice(0, COLLAPSED_ROWS);
-  const byModule = useMemo(() => countByModule(items), [items]);
+
+  const columns = useMemo<Array<ListColumn<WorkItem>>>(
+    () => [
+      {
+        header: 'Type',
+        mobile: 'detail',
+        className: 'whitespace-nowrap',
+        cell: (item) => (
+          <Badge
+            variant="outline"
+            title={WORK_LANE_HINT[item.lane]}
+            className={cn('whitespace-nowrap px-1.5 py-0 text-[10px] font-medium', LANE_BADGE[item.lane])}
+          >
+            {LANE_SHORT[item.lane]}
+          </Badge>
+        ),
+      },
+      ...workColumns(today),
+    ],
+    [today],
+  );
 
   if (!items.length) {
-    // An empty `action` lane is the one worth saying out loud — it is the answer to the question the
-    // screen exists to ask. The other three are simply left out rather than shown as a wall of
-    // zeroes, the same choice `MyHrTasks` makes.
-    if (lane !== 'action') return null;
     return (
       <Card className="border-dashed border-slate-200 bg-white/60">
         <CardContent className="flex flex-col items-center gap-1.5 py-10 text-center">
           <CheckCircle2 className="h-8 w-8 text-emerald-500/70" />
           <p className="font-medium text-slate-700">Nothing is waiting on you.</p>
           <p className="max-w-sm text-sm text-muted-foreground">
-            Approvals, tasks and workflow steps assigned to you will appear here.
+            Approvals, tasks, workflow steps and meetings assigned to you will appear here.
           </p>
         </CardContent>
       </Card>
@@ -338,45 +384,22 @@ function LaneSection({ lane, items, today }: { lane: WorkLane; items: WorkItem[]
   }
 
   return (
-    <section>
-      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <div className="flex items-baseline gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{WORK_LANE_TITLE[lane]}</h2>
-          <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
-          <span className="hidden text-xs text-muted-foreground sm:inline">· {WORK_LANE_HINT[lane]}</span>
-        </div>
-        {byModule.length > 1 ? (
-          <div className="flex flex-wrap gap-1">
-            {byModule.slice(0, 4).map(({ module, count }) => (
-              <Badge
-                key={module}
-                variant="outline"
-                className={cn('px-1.5 py-0 text-[10px] font-medium', moduleBadgeClass(module))}
-              >
-                {module} {count}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
-      </div>
-
+    <div>
       <DataList
         rows={visible}
-        columns={workColumns(today)}
+        columns={columns}
         rowClassName={(item) => laneRowClass(item, today)}
         // No `cardHref`: the row holds an Open button, and DataList only leaves a phone card's
         // footer tappable when the card itself is not wrapped in a link.
         dense
         /*
           The rows scroll inside the table, with the header pinned, instead of lengthening the page.
-          Seventeen overdue approvals should not push the figures and the other lanes off screen.
-          `maxHeightClassName` is DataList's own mechanism for this — it moves the scroll to the
-          table's wrapper and makes the header sticky against it. Wrapping this in a `ScrollArea`
-          instead would not work: that wrapper is already a scroll container, so a sticky header
-          pins to the wrong element and rides away with the rows. Desktop only; the phone card list
-          is scrolled by the page, which is right on a phone.
+          Seventeen overdue approvals should not push the figures off screen. `maxHeightClassName` is
+          DataList's own mechanism — it moves the scroll to the table's wrapper and makes the header
+          sticky against it. Wrapping this in a `ScrollArea` would not work: that wrapper is already a
+          scroll container, so a sticky header pins to the wrong element and rides away with the rows.
         */
-        maxHeightClassName="sm:max-h-[28rem]"
+        maxHeightClassName="sm:max-h-[32rem]"
       />
 
       {items.length > COLLAPSED_ROWS ? (
@@ -390,7 +413,30 @@ function LaneSection({ lane, items, today }: { lane: WorkLane; items: WorkItem[]
           {expanded ? 'Show less' : `Show all ${items.length}`}
         </Button>
       ) : null}
-    </section>
+    </div>
+  );
+}
+
+/** The lane counts, as a line of text instead of four section headings. */
+function LaneSummary({ lanes }: { lanes: WorkLanes }) {
+  const present = WORK_LANES.filter((lane) => lanes[lane].length > 0);
+  if (present.length <= 1) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      {present.map((lane) => (
+        <span key={lane} className="inline-flex items-center gap-1" title={WORK_LANE_HINT[lane]}>
+          <Badge
+            variant="outline"
+            className={cn('px-1.5 py-0 text-[10px] font-medium', LANE_BADGE[lane])}
+          >
+            {LANE_SHORT[lane]}
+          </Badge>
+          <span className="tabular-nums">{lanes[lane].length}</span>
+          <span className="hidden sm:inline">{WORK_LANE_TITLE[lane].toLowerCase()}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -473,6 +519,8 @@ export default function WorkDashboard({
     onSummaryChange?.(summary);
   }, [summary, onSummaryChange]);
 
+  const merged = useMemo(() => mergedWorkItems(lanes, today), [lanes, today]);
+
   // How many rows the calendar can actually place, for the count on its tab.
   const datedCount = useMemo(() => calendarItems(lanes).dated.length, [lanes]);
 
@@ -546,9 +594,8 @@ export default function WorkDashboard({
         </TabsList>
 
         <TabsContent value="list" forceMount className="space-y-4 data-[state=inactive]:hidden">
-          {WORK_LANES.map((lane) => (
-            <LaneSection key={lane} lane={lane} items={lanes[lane]} today={today} />
-          ))}
+          <LaneSummary lanes={lanes} />
+          <WorkTable items={merged} today={today} />
         </TabsContent>
 
         <TabsContent value="calendar" forceMount className="data-[state=inactive]:hidden">
