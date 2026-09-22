@@ -219,6 +219,36 @@ and through it `hr-policy.ts` — roughly 3,600 lines of HR business rules. Fine
 not fine on the home page, which wanted a KPI card and a table and would otherwise have shipped the
 entire HR rulebook to draw them. New code should import from `@/components/shared/`.
 
+## A shared queue is gated on permission to *act*
+
+Not on permission to look. This was wrong on first release and is worth recording, because the
+distinction is easy to lose: both permission-routed queues were gated on `can('View Module', …)`.
+That put a row reading "4 entries awaiting action", with an Open button, in front of anybody who
+could merely *see* the module — including people with no power to move a single one of those
+entries. A dashboard that says something needs your action when it does not is worse than one that
+omits it, because the only way to find out is to open it and discover there are no buttons.
+
+`shared` still means "nobody is named" — that part was right. It now *also* means "and you are one
+of the people who could take it".
+
+- **Daily Requisition** goes further than gating: `actionableRequisitionStatuses` maps each pipeline
+  stage to the permissions that move an entry out of it, and the count covers **only the stages this
+  viewer can move**. A verifier sees the entries awaiting verification, not the whole pipeline
+  including the ones sitting with Finance. The row's `stage` names which stages were counted, so it
+  cannot imply more than it means. No actionable stage → the source is skipped entirely.
+- **Store & Stock** requires one of `STOCK_POSTING_ACTIONS` (Post Receipt, Post Issue, Approve
+  Transfer, …) on `Store & Stock Management.Inventory`.
+
+The two E-Approval queues and the FD/BG/LC one are untouched, and correctly so: those are routed by
+the workflow itself — `currentDepartmentIds`, `currentRoles`, `requiredRole` — so the record really
+is addressed to that department or role. That is different from "you happen to be able to see this
+module".
+
+This logic lives in `work-dashboard.ts`, not in the sources file, specifically so it can be tested
+without Firestore. `tests/work-dashboard.test.mjs` asserts that a view-only permission set yields no
+actionable stages, that a verifier gets exactly `['Received']`, and that no member of
+`STOCK_POSTING_ACTIONS` is a `View*` permission.
+
 ## The lanes
 
 - `action` — a field on the record names this user. They are accountable.

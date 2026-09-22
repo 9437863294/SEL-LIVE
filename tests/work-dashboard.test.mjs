@@ -3,10 +3,14 @@ import { test } from 'node:test';
 
 import {
   DUE_SOON_DAYS,
+  REQUISITION_STAGES,
+  REQUISITION_STAGE_LABEL,
+  STOCK_POSTING_ACTIONS,
   WORK_KINDS,
   WORK_KIND_ACCENT,
   WORK_KIND_BADGE,
   WORK_KIND_LABEL,
+  actionableRequisitionStatuses,
   addDays,
   addMonths,
   calendarItems,
@@ -653,5 +657,100 @@ test('every kind has an accent and a badge style', () => {
     assert.ok(WORK_KIND_ACCENT[kind], `${kind} has no accent colour`);
     assert.ok(WORK_KIND_BADGE[kind], `${kind} has no badge style`);
     assert.ok(WORK_KIND_LABEL[kind], `${kind} has no label`);
+  }
+});
+
+/* ── who may act on a shared queue ────────────────────────────────────────────────────────────── */
+
+/** A `can` that grants exactly the listed `action@resource` pairs. */
+const grants = (...pairs) => {
+  const allowed = new Set(pairs);
+  return (action, resource) => allowed.has(`${action}@${resource}`);
+};
+
+const NOTHING = () => false;
+
+test('somebody who can only view the module can action nothing', () => {
+  // The bug this file exists for: the Daily Requisition queue was gated on `View Module`, so a row
+  // reading "4 entries awaiting action" with an Open button appeared for people with no power to
+  // move a single entry. Viewing is not acting.
+  const viewerOnly = grants('View Module@Daily Requisition', 'View@Daily Requisition.Entry Sheet');
+  assert.deepEqual(actionableRequisitionStatuses(viewerOnly), []);
+  assert.deepEqual(actionableRequisitionStatuses(NOTHING), []);
+});
+
+test('a finance receiver sees only the stages they can move', () => {
+  const receiver = grants('Mark as Received@Daily Requisition.Receiving at Finance');
+  const statuses = actionableRequisitionStatuses(receiver);
+  assert.ok(statuses.includes('Pending'), 'Pending sits at Receiving at Finance');
+  assert.ok(statuses.includes('Needs Review'), 'Needs Review sits there too');
+  // Not theirs: these belong to verification and payment.
+  assert.ok(!statuses.includes('Received'));
+  assert.ok(!statuses.includes('Verified'));
+  assert.ok(!statuses.includes('Received for Payment'));
+});
+
+test('a verifier sees the verification stage and nothing else', () => {
+  const verifier = grants('Verify@Daily Requisition.GST & TDS Verification');
+  assert.deepEqual(actionableRequisitionStatuses(verifier), ['Received']);
+});
+
+test('a payment approver sees both payment stages', () => {
+  const approver = grants('Approve@Daily Requisition.Processed for Payment');
+  assert.deepEqual(actionableRequisitionStatuses(approver), ['Verified', 'Received for Payment']);
+});
+
+test('any one action on a stage is enough to be admitted to it', () => {
+  // The stages list several actions each; holding any of them means you can move the entry on.
+  for (const action of ['Mark as Received', 'Reject', 'Cancel']) {
+    const who = grants(`${action}@Daily Requisition.Receiving at Finance`);
+    assert.ok(
+      actionableRequisitionStatuses(who).includes('Pending'),
+      `'${action}' should admit somebody to the Pending stage`,
+    );
+  }
+});
+
+test('holding everything yields every stage, in pipeline order', () => {
+  const everything = () => true;
+  assert.deepEqual(actionableRequisitionStatuses(everything), [
+    'Pending',
+    'Needs Review',
+    'Received',
+    'Verified',
+    'Received for Payment',
+  ]);
+});
+
+test('the actionable statuses always fit a Firestore `in` filter', () => {
+  // `fetchCount` slices to ten; more stages than that would silently drop one from the count.
+  const everything = () => true;
+  assert.ok(actionableRequisitionStatuses(everything).length <= 10);
+});
+
+test('every requisition stage has a label and at least one action', () => {
+  for (const stage of REQUISITION_STAGES) {
+    assert.ok(stage.label, `${stage.status} has no label`);
+    assert.ok(stage.resource.startsWith('Daily Requisition.'), `${stage.status} has a foreign resource`);
+    assert.ok(stage.actions.length > 0, `${stage.status} has no actions, so nobody can ever be admitted`);
+    assert.equal(REQUISITION_STAGE_LABEL[stage.status], stage.label);
+  }
+});
+
+test('the stock posting actions are all real inventory permissions', () => {
+  // Kept in step by hand with permissions.ts; a typo here silently hides the queue from everybody.
+  const real = new Set([
+    'View Inventory', 'View Cost', 'Create Receipt', 'Post Receipt', 'Create Issue', 'Post Issue',
+    'Create Transfer', 'Approve Transfer', 'Dispatch Transfer', 'Receive Transfer',
+    'Perform Stock Adjustment', 'Build Pack', 'Unbuild Pack', 'Perform Stock Count',
+    'Approve Stock Count', 'View Reports', 'Allow Negative Inventory', 'Manage All',
+  ]);
+  assert.ok(STOCK_POSTING_ACTIONS.length > 0);
+  for (const action of STOCK_POSTING_ACTIONS) {
+    assert.ok(real.has(action), `'${action}' is not a Store & Stock Management.Inventory action`);
+  }
+  // And none of them is a mere read — that was the original mistake.
+  for (const action of STOCK_POSTING_ACTIONS) {
+    assert.ok(!action.startsWith('View'), `'${action}' is a read permission, not an action`);
   }
 });

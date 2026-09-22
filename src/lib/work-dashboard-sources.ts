@@ -49,6 +49,9 @@ import {
 import { db } from './firebase';
 import { ACTIVITY_MODULES } from './activity-modules';
 import {
+  REQUISITION_STAGE_LABEL,
+  STOCK_POSTING_ACTIONS,
+  actionableRequisitionStatuses,
   addDays,
   normalizeWorkPriority,
   toWorkDate,
@@ -807,20 +810,17 @@ export const WORK_SOURCES: WorkSource[] = [
   {
     id: 'daily-requisition-queue',
     module: ACTIVITY_MODULES.DAILY_REQUISITION,
-    label: 'Daily requisition entries in progress',
+    label: 'Daily requisition entries you can action',
     lane: 'shared',
-    visible: (context) => context.can('View Module', 'Daily Requisition'),
+    // Permission to *act*, not permission to look. See `actionableRequisitionStatuses`.
+    visible: (context) => actionableRequisitionStatuses(context.can).length > 0,
     load: async (context) => {
       // Daily Requisition has no assignee field at all — `DailyRequisitionEntry` routes by status,
-      // and each stage is worked by whoever holds the permission for that tab. So it is a shared
-      // queue by design, and the honest row is its depth.
-      const open = await fetchCount('dailyRequisitions', 'status', [
-        'Pending',
-        'Received',
-        'Verified',
-        'Received for Payment',
-        'Needs Review',
-      ]);
+      // and each stage is worked by whoever holds that tab's permission. So it is a shared queue by
+      // design, and the honest row is its depth — but only of the stages this person can move.
+      const statuses = actionableRequisitionStatuses(context.can);
+      if (!statuses.length) return [];
+      const open = await fetchCount('dailyRequisitions', 'status', statuses);
       if (!open) return [];
       return [
         {
@@ -831,7 +831,8 @@ export const WORK_SOURCES: WorkSource[] = [
           lane: 'shared' as WorkLane,
           title: `${open} entr${open === 1 ? 'y' : 'ies'} awaiting action`,
           reference: null,
-          stage: null,
+          // Names the stages counted, so the row cannot imply the whole pipeline is this person's.
+          stage: statuses.map((status) => REQUISITION_STAGE_LABEL[status] ?? status).join(', '),
           href: '/daily-requisition',
           dueAt: null,
           count: open,
@@ -844,9 +845,10 @@ export const WORK_SOURCES: WorkSource[] = [
     module: ACTIVITY_MODULES.STORE_STOCK,
     label: 'Stock documents awaiting approval',
     lane: 'shared',
-    visible: (context) => context.can('View Module', 'Store & Stock Management'),
+    // Posting or approving, not viewing — the same correction as Daily Requisition above.
+    visible: (context) => STOCK_POSTING_ACTIONS.some((action) => context.can(action, 'Store & Stock Management.Inventory')),
     load: async () => {
-      // Inventory documents carry no approver — `Submitted` means "open to anyone holding Approve".
+      // Inventory documents carry no approver — `Submitted` means "open to anyone who can post it".
       const open = await fetchCount(INVENTORY_COLLECTIONS.documents, 'status', ['Submitted']);
       if (!open) return [];
       return [

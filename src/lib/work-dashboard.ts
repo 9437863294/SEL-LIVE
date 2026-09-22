@@ -509,6 +509,92 @@ export const WORK_URGENCY_BADGE: Record<WorkUrgency, string> = {
   undated: 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800',
 };
 
+/** The `can` from `useAuthorization`, narrowed to what these checks need. */
+export type PermissionProbe = (action: string, resource: string) => boolean;
+
+/* ── who may act on a shared queue ─────────────────────────────────────────────────────────────── */
+
+/**
+ * A shared queue is gated on permission to **act**, never on permission to look.
+ *
+ * This was wrong on first release and the bug is worth recording, because the distinction is easy to
+ * lose: both of the permission-routed queues were gated on `can('View Module', …)`. That put a row
+ * reading "4 entries awaiting action", with an Open button, in front of anybody who could merely see
+ * the module — including people with no power to move a single one of those entries. A dashboard that
+ * tells you something needs your action when it does not is worse than one that omits it, because the
+ * only way to find out is to open it and discover there are no buttons.
+ *
+ * `shared` still means "nobody is named" — that part of the lane was right. What it now also means
+ * is "and you are one of the people who could take it".
+ */
+
+/** Each stage of the Daily Requisition pipeline, and what it takes to move an entry out of it. */
+export const REQUISITION_STAGES: ReadonlyArray<{
+  status: string;
+  label: string;
+  resource: string;
+  actions: readonly string[];
+}> = [
+  {
+    status: 'Pending',
+    label: 'Receiving at Finance',
+    resource: 'Daily Requisition.Receiving at Finance',
+    actions: ['Mark as Received', 'Reject', 'Cancel'],
+  },
+  {
+    status: 'Needs Review',
+    label: 'Receiving at Finance',
+    resource: 'Daily Requisition.Receiving at Finance',
+    actions: ['Mark as Received', 'Return to Pending'],
+  },
+  {
+    status: 'Received',
+    label: 'GST & TDS Verification',
+    resource: 'Daily Requisition.GST & TDS Verification',
+    actions: ['Verify', 'Re-verify', 'Send for Payment'],
+  },
+  {
+    status: 'Verified',
+    label: 'Processed for Payment',
+    resource: 'Daily Requisition.Processed for Payment',
+    actions: ['Mark as Received for Payment', 'Approve'],
+  },
+  {
+    status: 'Received for Payment',
+    label: 'Processed for Payment',
+    resource: 'Daily Requisition.Processed for Payment',
+    actions: ['Approve'],
+  },
+];
+
+export const REQUISITION_STAGE_LABEL: Record<string, string> = Object.fromEntries(
+  REQUISITION_STAGES.map((stage) => [stage.status, stage.label]),
+);
+
+/**
+ * The statuses this viewer could actually move an entry out of.
+ *
+ * Counting only these is what makes the number mean something: a verifier sees the entries awaiting
+ * verification, not the whole pipeline including the ones sitting with Finance. Empty means the
+ * source is skipped entirely.
+ */
+export function actionableRequisitionStatuses(can: PermissionProbe): string[] {
+  return REQUISITION_STAGES.filter((stage) =>
+    stage.actions.some((action) => can(action, stage.resource)),
+  ).map((stage) => stage.status);
+}
+
+/** Inventory actions that let somebody clear a `Submitted` document. */
+export const STOCK_POSTING_ACTIONS: readonly string[] = [
+  'Post Receipt',
+  'Post Issue',
+  'Approve Transfer',
+  'Dispatch Transfer',
+  'Receive Transfer',
+  'Approve Stock Count',
+  'Manage All',
+];
+
 /* ── calendar ──────────────────────────────────────────────────────────────────────────────────── */
 
 /**
