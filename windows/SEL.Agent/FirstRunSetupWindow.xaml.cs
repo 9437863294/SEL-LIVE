@@ -377,11 +377,22 @@ namespace Sel.Agent
                     return message + "Press Save and start.";
                 }
             }
+            catch (SelApiException error) when (error.StatusCode == 404)
+            {
+                // The server is older than this agent and has no check-code route. Not a refusal:
+                // registration validates the code itself, so an invalid one still cannot onboard
+                // this PC — the check simply happens a few seconds later. Treating 404 as "bad
+                // code" would make a new agent unable to enrol against an older ERP at all, and
+                // the message would blame the code rather than the server.
+                _log.Write("This server cannot check enrolment codes (404); deferring to registration.");
+                return "This SEL LIVE server cannot check codes in advance, so " + code
+                    + " will be checked when the computer registers. Press Save and start.";
+            }
             catch (SelApiException error)
             {
                 _log.Write("Enrolment code " + code + " was refused: " + error.Message);
                 ShowStatus(
-                    error.StatusCode == 0
+                    error.IsTransient
                         ? "The enrolment code could not be checked: " + error.Message
                           + " This computer has not been set up."
                         : error.Message + " Ask IT for a current code for this computer.",

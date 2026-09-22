@@ -319,6 +319,13 @@ gives whoever is standing there "Setup failed" and puts the reason in an MSI log
 while the agent's own window states it plainly and fixes it on the spot. A code that cannot be
 *checked* — no network during the install — is kept and validated again before it is redeemed.
 
+> **Deploy the server before rolling out this agent.** A server without
+> `/api/windows-agent/device/register`'s companion `check-code` route answers 404, and an agent
+> that treated that as a refusal would be unable to enrol anywhere. It does not: a 404 is read as
+> "this server cannot check codes in advance", the code is kept, and registration validates it a
+> few seconds later as it always has. So an agent ahead of its server still works — it just loses
+> the early warning. Nothing is *less* strict: an invalid code cannot onboard a PC either way.
+
 **Unattended — the one to use for a rollout.** GPO, SCCM, or a script:
 
 ```

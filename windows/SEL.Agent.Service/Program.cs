@@ -353,11 +353,14 @@ namespace Sel.Agent.Service
             }
             catch (Core.Contracts.SelApiException error)
             {
-                if (error.IsTransient)
+                // 404 means this server is older than the agent and has no check-code route;
+                // transient means it could not be reached. Neither is "invalid", and registration
+                // validates the code anyway, so the code is kept in both cases.
+                if (error.IsTransient || error.StatusCode == 404)
                 {
                     Console.Error.WriteLine(
                         "Could not check the enrolment code (" + error.Message
-                        + "). Keeping it; the agent checks it again before registering.");
+                        + "). Keeping it; it is checked again when the computer registers.");
                     return null;
                 }
                 return error.Message;
