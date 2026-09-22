@@ -75,9 +75,9 @@
       Keep the three numbers here, Package.wxs and build.ps1's -Version default in step; the
       installer's file name comes from the last of those.
     -->
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
-    <Version>1.1.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
+    <Version>1.2.0</Version>
     <Company>Siddhartha Engineering Limited</Company>
     <Product>SEL LIVE Windows Agent</Product>
     <Copyright>© Siddhartha Engineering Limited</Copyright>

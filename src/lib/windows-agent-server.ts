@@ -1240,6 +1240,7 @@ export async function ingestActivityBatch(options: {
     now,
     allowWindowTitles: options.policy.settings.windowTitleTrackingEnabled,
     allowBrowserDomains: options.policy.settings.browserDomainTrackingEnabled,
+    allowDocumentNames: options.policy.settings.documentNameTrackingEnabled,
   });
   const spans = resolveSpanOverlaps(normalized);
   if (!spans.length) {
@@ -1320,6 +1321,7 @@ export async function ingestActivityBatch(options: {
       classification: dominantClassification(span, thresholds),
       windowTitle: span.windowTitle,
       browserDomain: span.browserDomain,
+      documentName: span.documentName,
       recordedOffline: span.recordedOffline,
       ingestedAt: nowIso,
     });

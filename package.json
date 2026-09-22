@@ -50,7 +50,7 @@
     "typecheck:office-hub": "tsc -p tsconfig.office-hub.json",
     "seed:office-hub": "node scripts/seed-office-hub.mjs",
     "test:daily-requisition": "node --experimental-strip-types --test tests/daily-requisition-import.test.mjs",
-    "test:windows-agent": "node --experimental-strip-types --test tests/windows-agent-domain.test.mjs",
+    "test:windows-agent": "node --experimental-strip-types --test tests/windows-agent-domain.test.mjs tests/windows-agent-detail.test.mjs",
     "typecheck:windows-agent": "tsc -p tsconfig.windows-agent.json",
     "setup:windows-agent": "node scripts/setup-windows-agent.mjs",
     "check:agent-login": "node scripts/check-agent-login.mjs",

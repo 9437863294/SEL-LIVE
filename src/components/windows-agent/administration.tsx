@@ -90,7 +90,11 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
   },
   browserDomainTrackingEnabled: {
     label: 'Record website domains',
-    help: 'Off by default, and needs the managed browser extension. Domains only — never paths, search terms or page contents.',
+    help: 'Off by default. Gives time per site — drive.google.com, 25 minutes. Domains only, never paths, search terms or page contents, and nothing at all is read from the address bar while this is off.',
+  },
+  documentNameTrackingEnabled: {
+    label: 'Record document names',
+    help: 'Off by default. Which file was open in Excel, Word, AutoCAD or a PDF reader — the name only. Never cell contents, formulas or text.',
   },
   notificationMode: { label: 'Desktop notifications', help: 'How alerts appear on the PC.' },
   autoUpdateEnabled: { label: 'Update the agent automatically', help: 'Within the device’s rollout ring.' },

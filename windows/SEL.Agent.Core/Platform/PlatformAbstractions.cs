@@ -49,6 +49,26 @@ namespace Sel.Agent.Core.Platform
         /// <summary>What is in front right now. Null when nothing can be determined.</summary>
         ForegroundSnapshot Capture();
 
+        /// <summary>
+        /// Read the address bar of a browser in front, to record time per website (§14).
+        /// </summary>
+        /// <remarks>
+        /// Off unless the effective policy says otherwise, and off is the default. It is a
+        /// *collection* switch rather than a reporting one: with it off the address bar is never
+        /// read at all, so there is no copy of it in the agent's memory to leak, and none of the
+        /// accessibility work it costs is done.
+        /// </remarks>
+        bool CollectBrowserDomains { get; set; }
+
+        /// <summary>
+        /// Record which document is open in Excel, Word and the rest (§13).
+        /// </summary>
+        /// <remarks>
+        /// Also off by default, and also a collection switch. Separate from browser domains
+        /// because an installation may reasonably want one without the other.
+        /// </remarks>
+        bool CollectDocumentNames { get; set; }
+
         void Start();
         void Stop();
     }

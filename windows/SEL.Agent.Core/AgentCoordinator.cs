@@ -189,6 +189,13 @@ namespace Sel.Agent.Core
             {
                 _api.SetRequestTimeout(TimeSpan.FromSeconds(policy.Settings.RequestTimeoutSeconds));
             }
+
+            // Two collection switches, pushed rather than polled so that switching them off in
+            // SEL LIVE stops the collection on the next heartbeat rather than at the next
+            // restart. Both default to false in the policy, so a device that has never reached
+            // the server collects neither.
+            _foreground.CollectBrowserDomains = policy.Settings.BrowserDomainTrackingEnabled;
+            _foreground.CollectDocumentNames = policy.Settings.DocumentNameTrackingEnabled;
         }
 
         /// <summary>
@@ -452,6 +459,20 @@ namespace Sel.Agent.Core
                         {
                             _builder.Offline = !_online;
                             _builder.OnTick(DateTime.UtcNow, _idle.GetIdleSeconds());
+
+                            // Re-sample what is in front, because the two things this now
+                            // measures change *without* a foreground event: switching browser tab
+                            // and opening another workbook both keep the same window in focus.
+                            // SetWinEventHook says nothing about either, so the tick is the only
+                            // place a tab change can be noticed.
+                            //
+                            // Cheap when there is nothing to do: the snapshot is a handful of
+                            // Win32 calls, the address bar is only read when the title has
+                            // changed, and the builder does nothing unless the domain or the
+                            // document differs from the open span's.
+                            ForegroundSnapshot resampled = _foreground.Capture();
+                            if (resampled != null) _builder.OnForegroundChanged(DateTime.UtcNow, resampled);
+
                             FlushBuilderToQueue();
                         }
                     }

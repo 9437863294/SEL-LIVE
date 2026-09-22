@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import {
   WINDOWS_AGENT_ROUTES,
   buildApplicationBreakdown,
+  buildDetailBreakdown,
   buildTimeline,
   formatSeconds,
   todayWorkDate,
@@ -102,6 +103,10 @@ export function EmployeeActivity({ userId, selfView = false }: { userId: string;
     return {
       rollup,
       breakdown,
+      // Both are empty unless the matching policy is on, which is how the cards below know to
+      // say "not being recorded" rather than "nothing happened".
+      websites: buildDetailBreakdown(events, { detail: 'browserDomain' }),
+      documents: buildDetailBreakdown(events, { detail: 'documentName' }),
       timeline: buildTimeline(events),
       hasData: events.length > 0 || Boolean(rollup),
     };
@@ -232,6 +237,58 @@ export function EmployeeActivity({ userId, selfView = false }: { userId: string;
                   valueLabel={(value) => formatSeconds(value)}
                   tone="indigo"
                   emptyLabel="No application time recorded."
+                />
+              </CardContent>
+            </Card>
+
+            {/*
+              Websites and documents: the two questions "Chrome, four hours" cannot answer.
+
+              Each is only populated when its policy is on — see §13 and §14 — so an empty list
+              here means one of two quite different things, and the empty text says which. A card
+              that just said "nothing recorded" would send an administrator looking for a fault
+              when the answer is that they have not switched it on.
+            */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Websites</CardTitle>
+                <CardDescription>
+                  Time per site, and how many separate visits made it up. Domains only — never
+                  paths, search terms or page contents.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <HrBarList
+                  rows={summary.websites.rows.map((row) => ({
+                    label: row.label,
+                    value: row.activeSeconds,
+                    hint: `${row.percentOfActive}% of browsing · ${row.visits} ${row.visits === 1 ? 'visit' : 'visits'}`,
+                  }))}
+                  valueLabel={(value) => formatSeconds(value)}
+                  tone="emerald"
+                  emptyLabel="No websites recorded. Switch on “Record website domains” in Policies to collect them."
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Documents</CardTitle>
+                <CardDescription>
+                  Which file was open in Excel, Word, AutoCAD or a PDF reader. The name only —
+                  never cell contents, formulas or text.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <HrBarList
+                  rows={summary.documents.rows.map((row) => ({
+                    label: row.label,
+                    value: row.activeSeconds,
+                    hint: `${row.applicationName ?? 'Document'} · ${row.visits} ${row.visits === 1 ? 'spell' : 'spells'}`,
+                  }))}
+                  valueLabel={(value) => formatSeconds(value)}
+                  tone="amber"
+                  emptyLabel="No documents recorded. Switch on “Record document names” in Policies to collect them."
                 />
               </CardContent>
             </Card>

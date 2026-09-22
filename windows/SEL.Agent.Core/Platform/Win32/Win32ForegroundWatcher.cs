@@ -137,6 +137,13 @@ namespace Sel.Agent.Core.Platform.Win32
         private Thread _pump;
         private uint _pumpThreadId;
         private readonly ManualResetEventSlim _ready = new ManualResetEventSlim(false);
+        private readonly BrowserAddressBarReader _addressBar = new BrowserAddressBarReader();
+
+        /// <inheritdoc />
+        public bool CollectBrowserDomains { get; set; }
+
+        /// <inheritdoc />
+        public bool CollectDocumentNames { get; set; }
 
         public event EventHandler<ForegroundSnapshot> ForegroundChanged;
 
@@ -279,7 +286,7 @@ namespace Sel.Agent.Core.Platform.Win32
 
         private static readonly uint OwnProcessId = (uint)Process.GetCurrentProcess().Id;
 
-        private static ForegroundSnapshot Describe(IntPtr hwnd)
+        private ForegroundSnapshot Describe(IntPtr hwnd)
         {
             uint processId;
             GetWindowThreadProcessId(hwnd, out processId);
@@ -291,13 +298,29 @@ namespace Sel.Agent.Core.Platform.Win32
                 : System.IO.Path.GetFileName(executablePath);
             if (string.IsNullOrEmpty(processName)) return null;
 
-            return new ForegroundSnapshot
+            string title = TryGetWindowTitle(hwnd);
+
+            var snapshot = new ForegroundSnapshot
             {
                 ProcessName = processName,
                 ApplicationName = DescribeApplication(executablePath, processName),
                 ExecutablePath = executablePath,
-                WindowTitle = TryGetWindowTitle(hwnd)
+                WindowTitle = title
             };
+
+            // Both are off unless the effective policy turned them on, and both are cheap to
+            // decline: no accessibility call is made, and no title is parsed.
+            if (CollectBrowserDomains && BrowserDomainRules.IsBrowser(processName))
+            {
+                snapshot.BrowserDomain = _addressBar.HostFor(hwnd, title);
+            }
+
+            if (CollectDocumentNames)
+            {
+                snapshot.DocumentName = DocumentNameRules.From(processName, title);
+            }
+
+            return snapshot;
         }
 
         private static string TryGetProcessPath(uint processId)

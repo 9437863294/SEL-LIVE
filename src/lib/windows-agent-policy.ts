@@ -66,6 +66,7 @@ export const DEFAULT_AGENT_POLICY: Required<AgentPolicySettings> = {
   // §12 and §14: both off, and both additionally enforced server-side at ingest.
   windowTitleTrackingEnabled: false,
   browserDomainTrackingEnabled: false,
+  documentNameTrackingEnabled: false,
   notificationMode: 'TOAST_AND_TRAY',
   autoUpdateEnabled: true,
   workdayStart: '09:00',
@@ -283,6 +284,7 @@ function enforceInvariants(settings: Required<AgentPolicySettings>): Required<Ag
   if (!out.applicationTrackingEnabled) {
     out.windowTitleTrackingEnabled = false;
     out.browserDomainTrackingEnabled = false;
+    out.documentNameTrackingEnabled = false;
   }
   return out;
 }

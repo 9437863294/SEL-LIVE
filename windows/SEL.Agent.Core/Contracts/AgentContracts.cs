@@ -138,6 +138,7 @@ namespace Sel.Agent.Core.Contracts
         [JsonProperty("applicationTrackingEnabled")] public bool ApplicationTrackingEnabled { get; set; }
         [JsonProperty("windowTitleTrackingEnabled")] public bool WindowTitleTrackingEnabled { get; set; }
         [JsonProperty("browserDomainTrackingEnabled")] public bool BrowserDomainTrackingEnabled { get; set; }
+        [JsonProperty("documentNameTrackingEnabled")] public bool DocumentNameTrackingEnabled { get; set; }
         [JsonProperty("notificationMode")] public string NotificationMode { get; set; }
         [JsonProperty("autoUpdateEnabled")] public bool AutoUpdateEnabled { get; set; }
         [JsonProperty("workdayStart")] public string WorkdayStart { get; set; }
@@ -204,6 +205,7 @@ namespace Sel.Agent.Core.Contracts
                 ApplicationTrackingEnabled = true,
                 WindowTitleTrackingEnabled = false,
                 BrowserDomainTrackingEnabled = false,
+                DocumentNameTrackingEnabled = false,
                 NotificationMode = "TOAST_AND_TRAY",
                 AutoUpdateEnabled = true,
                 WorkdayStart = "09:00",
@@ -310,6 +312,17 @@ namespace Sel.Agent.Core.Contracts
         [JsonProperty("recordedOffline")] public bool RecordedOffline { get; set; }
         [JsonProperty("windowTitle")] public string WindowTitle { get; set; }
         [JsonProperty("browserDomain")] public string BrowserDomain { get; set; }
+
+        /// <summary>
+        /// The name of the document that was open — never its contents. §13.
+        /// </summary>
+        /// <remarks>
+        /// Separate from <see cref="WindowTitle"/> and gated by its own policy switch, because
+        /// they are different disclosures: a title can be an email subject or a chat message,
+        /// while this is only ever a file name, from a fixed list of document applications.
+        /// See <c>DocumentNameRules</c>.
+        /// </remarks>
+        [JsonProperty("documentName")] public string DocumentName { get; set; }
     }
 
     public static class ActivityEventTypes

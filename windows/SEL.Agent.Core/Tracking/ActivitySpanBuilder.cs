@@ -12,10 +12,64 @@ namespace Sel.Agent.Core.Tracking
         public string ExecutablePath { get; set; }
         public string WindowTitle { get; set; }
 
+        /// <summary>
+        /// The host of the page in front, for a browser, under the browser-domain policy.
+        /// </summary>
+        /// <remarks>
+        /// Host only — never a path or a query. <see cref="BrowserDomainRules"/> is the only thing
+        /// that produces one and explains why.
+        /// </remarks>
+        public string BrowserDomain { get; set; }
+
+        /// <summary>
+        /// The document open in front, for a document application, under its own policy.
+        /// </summary>
+        /// <remarks>
+        /// A name, never contents. <see cref="DocumentNameRules"/> explains what is stripped.
+        /// </remarks>
+        public string DocumentName { get; set; }
+
         public bool SameApplicationAs(ForegroundSnapshot other)
         {
             if (other == null) return false;
             return string.Equals(ProcessName, other.ProcessName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Whether this is the same *piece of work* as <paramref name="other"/>, not merely the
+        /// same application.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is what decides where one span ends and the next begins, and it is the difference
+        /// between "Chrome, four hours" and "seltech.store 40m, drive.google.com 25m,
+        /// youtube.com 15m". Switching tab or opening another workbook does not change the
+        /// foreground window, so without this the whole afternoon would be one span carrying
+        /// whichever domain happened to be sampled last.
+        /// </para>
+        /// <para>
+        /// A null domain or document does not split a span. Otherwise every glance at a browser
+        /// internal page, and every moment while a workbook is still opening, would end the span
+        /// and start another — thousands of two-second rows that say nothing.
+        /// </para>
+        /// </remarks>
+        public bool SameActivityAs(ForegroundSnapshot other)
+        {
+            if (!SameApplicationAs(other)) return false;
+
+            if (!string.IsNullOrEmpty(BrowserDomain) && !string.IsNullOrEmpty(other.BrowserDomain)
+                && !string.Equals(BrowserDomain, other.BrowserDomain, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(DocumentName) && !string.IsNullOrEmpty(other.DocumentName)
+                && !string.Equals(DocumentName, other.DocumentName, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return true;
         }
     }
 
@@ -188,11 +242,16 @@ namespace Sel.Agent.Core.Tracking
                     return;
                 }
 
-                if (snapshot != null && snapshot.SameApplicationAs(_current))
+                if (snapshot != null && snapshot.SameActivityAs(_current))
                 {
-                    // Same application, different window: keep the span, refresh the title so the
-                    // most recent one is what gets recorded if titles are enabled at all.
+                    // Same application and same piece of work: keep the span, and refresh the
+                    // detail so the most recent is what gets recorded. Filling in a domain or a
+                    // document that was not known when the span opened matters — a browser that
+                    // had not finished loading, or a workbook still opening, would otherwise have
+                    // its whole span attributed to nothing.
                     _current.WindowTitle = snapshot.WindowTitle;
+                    if (!string.IsNullOrEmpty(snapshot.BrowserDomain)) _current.BrowserDomain = snapshot.BrowserDomain;
+                    if (!string.IsNullOrEmpty(snapshot.DocumentName)) _current.DocumentName = snapshot.DocumentName;
                     return;
                 }
 
@@ -378,10 +437,16 @@ namespace Sel.Agent.Core.Tracking
                 span.ProcessName = _current.ProcessName;
                 span.ApplicationName = _current.ApplicationName;
                 span.ExecutablePath = _current.ExecutablePath;
-                // Always attached; the server drops it unless the effective policy allows it.
-                // Deciding here would mean the agent had to be trusted to honour the policy,
-                // and §12's guarantee is stronger when it does not have to be.
+                // Always attached; the server drops these unless the effective policy allows
+                // them. Deciding here would mean the agent had to be trusted to honour the
+                // policy, and §12's guarantee is stronger when it does not have to be.
+                //
+                // The watcher does not collect a domain or a document name at all unless its
+                // policy switch is on, so in practice these are null twice over — belt and
+                // braces, in the direction where the braces are the server's.
                 span.WindowTitle = _current.WindowTitle;
+                span.BrowserDomain = _current.BrowserDomain;
+                span.DocumentName = _current.DocumentName;
             }
 
             _completed.Add(span);

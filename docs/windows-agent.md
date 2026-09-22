@@ -16,6 +16,8 @@ A small agent runs on each office PC. While an employee is signed in to it, it r
 | What | How |
 |---|---|
 | Which application is in the foreground, and for how long | `SetWinEventHook` on `EVENT_SYSTEM_FOREGROUND` |
+| Time per website, by host — optional, off by default | The browser address bar, read through the accessibility API |
+| Which document is open, by name — optional, off by default | The window title of a known document application |
 | Whether the keyboard and mouse are in use | `GetLastInputInfo` |
 | Lock, unlock, sleep, resume, logoff, shutdown | `SystemEvents.SessionSwitch` / `PowerModeChanged` |
 | Sign-in and sign-out times, per computer | The agent's own session, opened against the ERP |
@@ -27,9 +29,9 @@ in their own browser where that window is not available (§7a).
 
 **What it does not do, and contains no code to do:** keystroke logging, password capture, clipboard
 reading, message or document contents, screenshots, screen recording, webcam, microphone, or
-browsing history. Window titles and website domains are *optional* and **off by default**; both are
-enforced server-side, so an agent that sent them under a policy that forbids them would have them
-discarded at ingest rather than stored.
+browsing history. Window titles, website domains and document names are *optional* and **off by
+default**; all three are enforced server-side, so an agent that sent them under a policy that
+forbids them would have them discarded at ingest rather than stored.
 
 ---
 
@@ -141,6 +143,7 @@ useless on an unenrolled PC.
 | Embedded ERP window | `windows/SEL.Agent/ErpWindow.xaml{,.cs}`, `ErpBrowser.cs`, and `src/app/(public)/auth/agent/page.tsx` at the other end |
 | Admin-gated exit | `windows/SEL.Agent/ExitApprovalWindow.xaml{,.cs}`, and `src/app/api/windows-agent/exit-approval/route.ts` at the other end |
 | Idle lock | `windows/SEL.Agent.Core/Session/IdleLockPlanner.cs` (the rules, tested), `windows/SEL.Agent/SessionLifecycleController.cs` (the timer and windows) |
+| Websites and documents | `windows/SEL.Agent.Core/Tracking/BrowserDomainRules.cs`, `DocumentNameRules.cs` (the rules, tested), `Platform/Win32/BrowserAddressBarReader.cs` (the accessibility read), `buildDetailBreakdown` in `windows-agent-rules.ts` (the report) |
 | How it starts | `windows/SEL.Agent.Service/LogonTask.cs` (the scheduled task), `SelAgentService.cs` (the watchdog), `SessionLauncher.cs` (launching into a session) |
 | Start-up diagnostics | `windows/SEL.Agent/StartupTrace.cs` → `%ProgramData%\SEL LIVE\Agent\startup.log`, always on |
 | Installer | `windows/SEL.Agent.Installer/Package.wxs` (the MSI), `Bundle.wxs` (the setup .exe), `build.ps1` (both) |
@@ -213,6 +216,67 @@ The watchdog also no longer gives up. It used to stop trying for ten minutes aft
 ten minutes of a PC recording nothing, repeated all day, on exactly the machines already broken.
 Now the interval stretches (30s → 2 min → 10 min) and stays there, so a machine that can be fixed
 by retrying is fixed in two minutes and one that cannot costs six log entries an hour.
+
+### Time per website, and which document was open
+
+Both are **off by default** and each has its own switch on `/windows-agent/policies`. With them
+on, one person's day reads:
+
+```
+Applications      Google Chrome      2h 10m
+                  Microsoft Excel    1h 35m
+
+Websites          seltech.store      55m   42% of browsing · 6 visits
+                  drive.google.com   25m   19% of browsing · 3 visits
+
+Documents         Q3 Budget.xlsx     48m   Microsoft Excel · 2 spells
+                  Rate Analysis.xlsx 22m   Microsoft Excel · 1 spell
+```
+
+| Setting | What it collects |
+|---|---|
+| `browserDomainTrackingEnabled` | The **host** of the page in front of a browser. Chrome, Edge, Firefox, Brave, Opera, Vivaldi, IE |
+| `documentNameTrackingEnabled` | The **file name** open in Excel, Word, PowerPoint, Access, OneNote, Visio, Project, AutoCAD, Acrobat, Notepad, WordPad, LibreOffice |
+
+**How the website is read, since there is no extension.** Through the accessibility API — the same
+way a screen reader learns what is on screen. The agent asks the browser window for its address
+bar and passes the value straight through `BrowserDomainRules.HostOf`, which returns a host or
+nothing. Measured on a real Chrome window, the tree walk takes **14 ms**, and it only happens when
+the window title changes, because the title is the active tab's title: an unchanged title means
+the tab has not changed.
+
+**Nothing but the host survives, structurally.** The path, the query, the fragment, the port and
+any credentials are dropped inside that one function, and the raw value is never stored in a
+field or a log. That is what keeps §N intact: `google.com`, never
+`google.com/search?q=…` — the path of a search *is* the search. Anything that does not parse as
+an absolute http(s) URL returns nothing, so a half-typed search phrase cannot leak, and
+`chrome://settings`, `about:blank` and `localhost` are not websites.
+
+**How the document is read.** From the window title of a known document application, and only
+those — the title of an arbitrary window is a chat message or an email subject, which is why
+Outlook and Teams are deliberately not on the list. Office decorates its titles and all of it is
+stripped: `AutoSave •`, `[Read-Only]`, `[Compatibility Mode]`, `- Saved to OneDrive`. A file whose
+own name contains ` - ` survives intact.
+
+> **Expect names without extensions.** Verified against a real Excel on this build: a file opened
+> as `Q3 Budget Probe.csv` has the window title `Q3 Budget Probe - Excel`, so the recorded name is
+> `Q3 Budget Probe`. That is what the person sees in their own title bar. Getting the extension and
+> the folder would mean COM automation into Excel, which can block on a modal dialog — not worth
+> it for a suffix.
+
+**Where the time comes from.** A span ends when the site or the document changes, not only when the
+application does — switching tab raises no Windows event at all, so the tick re-samples what is in
+front and the span builder splits on the detail. A null domain does not split a span, or every
+moment of a page loading would produce a two-second row.
+
+**Two gates, not one.** The agent collects nothing when the policy is off — no address bar is read,
+no title is parsed — *and* the ingest route strips both fields when the effective policy forbids
+them, exactly as it does window titles. The second gate is the one that matters: it does not
+require trusting what an agent sends.
+
+Document names are also sanitised server-side: a path is reduced to its last segment, so
+`C:\Users\ashish\Personal\Resignation.docx` is stored as `Resignation.docx` — §13 asked which file,
+not where somebody keeps their private folders.
 
 ### Administrator directives, and why they expire
 
@@ -1053,10 +1117,11 @@ Stated so nobody discovers them during a rollout.
 - **`View Department` is not enforced by the Firestore rules**, only by the queries. Rules cannot
   look up a user's department during a list. See the note above `canReadWindowsActivity` in
   `firestore.rules` for the workaround.
-- **Browser domain tracking needs a managed browser extension** that is not part of this work. The
-  policy switch and the server-side handling exist; nothing populates it yet.
-- **Office document-level activity** (which file, opened when) would need an Office add-in. §13 of
-  the brief anticipated this. Foreground time per Office application works today.
+- ~~Browser domain tracking needs a managed browser extension~~ — **done**, without an extension:
+  the address bar is read through the accessibility API. Host only. §3.
+- ~~Office document-level activity would need an add-in~~ — **done** from the window title, which
+  every Office version back to 2007 populates. Names only, and usually without the extension —
+  see §3 for why that is not worth COM automation to fix.
 - **No reporting line is modelled** in this database, so `View Team` resolves to the viewer's own
   department members.
 - **Auto-update downloads and verifies but does not self-install.** The version check, hash and

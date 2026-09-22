@@ -288,6 +288,7 @@ export interface NormalizedSpan {
   recordedOffline: boolean;
   windowTitle: string | null;
   browserDomain: string | null;
+  documentName: string | null;
 }
 
 export interface SpanRejection {
@@ -318,6 +319,8 @@ export function normalizeSpans(
     now: Date;
     allowWindowTitles: boolean;
     allowBrowserDomains: boolean;
+    /** §13. Separate from titles, because a file name and a window title are not the same thing. */
+    allowDocumentNames: boolean;
   },
 ): SpanNormalizationResult {
   const spans: NormalizedSpan[] = [];
@@ -402,6 +405,7 @@ export function normalizeSpans(
       // forbids it has that title dropped here, before it is ever written.
       windowTitle: options.allowWindowTitles ? sanitizeWindowTitle(raw.windowTitle) : null,
       browserDomain: options.allowBrowserDomains ? extractBrowserDomain(raw.browserDomain) : null,
+      documentName: options.allowDocumentNames ? sanitizeDocumentName(raw.documentName) : null,
     });
   }
 
@@ -648,6 +652,92 @@ export interface ApplicationBreakdownRow {
  * hundred-row table of transient windows hides the six applications the day was actually spent in.
  * `topN` is the cut, and the folded row is labelled so nobody mistakes it for an application.
  */
+/** One website or one document, with the time spent on it. */
+export interface DetailBreakdownRow {
+  /** The host (`drive.google.com`) or the file name (`Q3 Budget.xlsx`). */
+  label: string;
+  /** Which application it was seen in — Chrome, Excel — for the row's second line. */
+  applicationName: string | null;
+  totalSeconds: number;
+  activeSeconds: number;
+  percentOfActive: number;
+  /** How many separate spans made this up: five visits to one site, not one long one. */
+  visits: number;
+}
+
+/**
+ * Time per website, or time per document, from the day's spans.
+ *
+ * ── Why this is not the application breakdown with a different key ─────────────────────────────
+ *
+ * Two differences that matter. **Visits are counted**, because "seltech.store, 40 minutes across
+ * two visits" and "seltech.store, 40 minutes across thirty visits" describe different afternoons
+ * and the second is usually somebody with a dashboard open on a second monitor. And **spans with
+ * no detail are excluded from the total**, so the percentages are shares of the time that *has* a
+ * site or a file rather than of the whole day — a day that is 20% browsing should not report
+ * `seltech.store` as 8% of it when it was 40% of the browsing.
+ *
+ * Returns nothing at all when the policy that collects the detail is off, which is the default.
+ * The screen uses the empty result to say so rather than drawing an empty table.
+ */
+export function buildDetailBreakdown(
+  events: readonly Pick<
+    WindowsActivityEvent,
+    'eventType' | 'applicationName' | 'durationSeconds' | 'activeSeconds' | 'browserDomain' | 'documentName'
+  >[],
+  options: { detail: 'browserDomain' | 'documentName'; topN?: number } = { detail: 'browserDomain' },
+): { rows: DetailBreakdownRow[]; totalActiveSeconds: number } {
+  const merged = new Map<string, DetailBreakdownRow>();
+
+  for (const event of events) {
+    if (event.eventType !== 'APP_ACTIVE') continue;
+
+    const label = options.detail === 'browserDomain' ? event.browserDomain : event.documentName;
+    if (!label) continue;
+
+    const existing = merged.get(label);
+    if (existing) {
+      existing.totalSeconds += event.durationSeconds;
+      existing.activeSeconds += event.activeSeconds;
+      existing.visits += 1;
+      continue;
+    }
+
+    merged.set(label, {
+      label,
+      applicationName: event.applicationName ?? null,
+      totalSeconds: event.durationSeconds,
+      activeSeconds: event.activeSeconds,
+      percentOfActive: 0,
+      visits: 1,
+    });
+  }
+
+  const sorted = [...merged.values()].sort((left, right) => right.activeSeconds - left.activeSeconds);
+  const totalActiveSeconds = sorted.reduce((sum, row) => sum + row.activeSeconds, 0);
+
+  const topN = options.topN ?? 10;
+  const head = sorted.slice(0, topN);
+  const tail = sorted.slice(topN);
+  if (tail.length) {
+    head.push({
+      label: `${tail.length} more`,
+      applicationName: null,
+      totalSeconds: tail.reduce((sum, row) => sum + row.totalSeconds, 0),
+      activeSeconds: tail.reduce((sum, row) => sum + row.activeSeconds, 0),
+      percentOfActive: 0,
+      visits: tail.reduce((sum, row) => sum + row.visits, 0),
+    });
+  }
+
+  for (const row of head) {
+    row.percentOfActive =
+      totalActiveSeconds > 0 ? Math.round((row.activeSeconds / totalActiveSeconds) * 1000) / 10 : 0;
+  }
+
+  return { rows: head, totalActiveSeconds };
+}
+
 export function buildApplicationBreakdown(
   usage: readonly Pick<
     WindowsApplicationUsage,
@@ -1159,6 +1249,46 @@ export function sanitizeWindowTitle(value: string | null | undefined): string | 
   return title.length > MAX_WINDOW_TITLE_LENGTH
     ? `${title.slice(0, MAX_WINDOW_TITLE_LENGTH - 1)}…`
     : title;
+}
+
+/**
+ * Clean a document name: a file name, and nothing that has wandered in with it.
+ *
+ * The agent already extracts this from a window title with a rule that only fires for known
+ * document applications, so most of the work is done before it arrives. This is the server's own
+ * check, and it exists because §12's guarantee is that these fields are enforced here rather than
+ * by trusting what an agent sends — a modified agent could put anything in this field.
+ *
+ * Three things happen:
+ *
+ *  1. A path is reduced to its last segment. `C:\Users\ashish\Payroll\March.xlsx` becomes
+ *     `March.xlsx`: the folder structure of somebody's private drive is not what §13 asked for,
+ *     and a path is how a name turns into a disclosure about where they keep things.
+ *  2. The same redactions titles get, so a file called `otp 448291.txt` does not store a code.
+ *  3. Truncation, to the same ceiling as titles.
+ */
+export function sanitizeDocumentName(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+
+  let name = value.replace(/\s+/g, ' ').trim();
+  if (!name) return null;
+
+  // Last segment of a path, whichever separator was used.
+  const lastSeparator = Math.max(name.lastIndexOf('\\'), name.lastIndexOf('/'));
+  if (lastSeparator >= 0 && lastSeparator + 1 < name.length) {
+    name = name.slice(lastSeparator + 1).trim();
+  }
+
+  for (const { pattern, replacement } of TITLE_REDACTIONS) {
+    name = name.replace(pattern, replacement);
+  }
+
+  name = name.trim();
+  if (!name) return null;
+
+  return name.length > MAX_WINDOW_TITLE_LENGTH
+    ? `${name.slice(0, MAX_WINDOW_TITLE_LENGTH - 1)}…`
+    : name;
 }
 
 /**

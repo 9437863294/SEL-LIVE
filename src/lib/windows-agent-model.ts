@@ -421,6 +421,13 @@ export interface AgentActivitySpan {
   windowTitle?: string | null;
   /** Host only, never a full URL, and only under the optional browser-domain policy (§14). */
   browserDomain?: string | null;
+  /**
+   * The file open in front — `Q3 Budget.xlsx` — under the document-name policy (§13).
+   *
+   * A name, never contents. The agent derives it from the window title of a known document
+   * application and the server strips it when the policy is off, exactly as it does for titles.
+   */
+  documentName?: string | null;
 }
 
 /** A stored span, after the server has attributed and classified it. */
@@ -447,6 +454,8 @@ export interface WindowsActivityEvent {
 
   windowTitle: string | null;
   browserDomain: string | null;
+  /** §13's document name, or null when the policy is off or the application is not one. */
+  documentName: string | null;
   recordedOffline: boolean;
   /** When the server accepted the batch this span arrived in. */
   ingestedAt: IsoInstant;
@@ -633,8 +642,27 @@ export interface AgentPolicySettings {
   applicationTrackingEnabled?: boolean;
   /** §12: off by default, and enforced server-side, not by trusting the agent. */
   windowTitleTrackingEnabled?: boolean;
-  /** §14: off by default. Requires the managed browser extension to be deployed separately. */
+  /**
+   * §14: time per website. Off by default.
+   *
+   * The agent reads the host from the browser's address bar through the accessibility API — no
+   * extension to deploy — and sends the host only. The path and query never leave the PC, which
+   * is what keeps §N's ban on search-box contents, tokens and shared-document links intact:
+   * `google.com`, never `google.com/search?q=…`.
+   */
   browserDomainTrackingEnabled?: boolean;
+  /**
+   * §13: which document is open, by name. Off by default.
+   *
+   * A file name from a fixed list of document applications — Excel, Word, PowerPoint, AutoCAD,
+   * PDF readers — taken from the window title. Never contents: §H rules out cells, formulas and
+   * values, and nothing here can reach them.
+   *
+   * Separate from `windowTitleTrackingEnabled` because the two are different disclosures. A
+   * window title can be an email subject or a chat message; this is only ever a file name. An
+   * installation can reasonably want document names and not titles, and most will.
+   */
+  documentNameTrackingEnabled?: boolean;
   notificationMode?: NotificationMode;
   autoUpdateEnabled?: boolean;
   /** `HH:mm`, organisation-local. A login after this is flagged late — never blocked. */

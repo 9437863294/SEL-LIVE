@@ -34,6 +34,17 @@
     <Reference Include="System.Configuration" />
     <!-- ProtectedData (DPAPI) lives here on .NET Framework, not in System.Core. -->
     <Reference Include="System.Security" />
+
+    <!--
+      UI Automation, for reading a browser's address bar (§14's time per website).
+
+      These are framework assemblies, not WPF: UIAutomationClient and UIAutomationTypes carry the
+      client half of MSAA/UIA and pull in neither PresentationFramework nor PresentationCore, so
+      the note at the top of this file still holds and the service does not gain a WPF dependency.
+      BrowserAddressBarReader is the only thing that touches them, and only when the policy asks.
+    -->
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
   </ItemGroup>
 
 </Project>
