@@ -63,9 +63,21 @@
     <PlatformTarget>x86</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
 
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
-    <Version>1.0.0</Version>
+    <!--
+      Bump this for every build anybody outside the developer's machine will install.
+
+      It is not cosmetic. AgentVersion.Current is read from the assembly, travels on every
+      heartbeat, and is what the fleet list and the auto-update check compare — so while every
+      build said 1.0.0.0, "is the latest build on that PC?" had no answer, and an update could
+      not be offered to a machine that needed one. Two separate afternoons were lost to that
+      question before this was bumped.
+
+      Keep the three numbers here, Package.wxs and build.ps1's -Version default in step; the
+      installer's file name comes from the last of those.
+    -->
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.1.0</Version>
     <Company>Siddhartha Engineering Limited</Company>
     <Product>SEL LIVE Windows Agent</Product>
     <Copyright>© Siddhartha Engineering Limited</Copyright>
