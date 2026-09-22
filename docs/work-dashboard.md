@@ -64,21 +64,50 @@ with `COLLECTION_GROUP` / `CONTAINS` scope. The seven Project Management ones ar
 > `jmcEntries` working is the signature of exactly this: that one override predates the feature and
 > is already live, the other six are not. Click **Details** on the notice to confirm.
 
-## One calendar, no extra queries
+## One calendar: year, month, day
 
-The work tab has two sub-tabs: **List** and **Calendar**. They are two arrangements of one dataset —
-the calendar takes the same `lanes` the list already has and groups them by date via `itemsByDate`.
-It issues **no queries of its own**, so switching is free and the two views cannot disagree.
+The work tab has two sub-tabs, **List** and **Calendar**, and the calendar has three views —
+**Year**, **Month**, **Day** (`CalendarView`). Clicking a day in the year or month view opens it in
+the day view; clicking a month name in the year view opens that month.
 
-That is also what makes it "all the calendars in one". Anything with a `dueAt`, from all four lanes,
-lands on a day: Office Hub meetings with their start times, E-Approval deadlines, task and action-item
-due dates, insurance premium and maturity dates, tour departures, recurring payment dues, vehicle
-insurance expiries, HR interview slots, reminders. Previously each of those was on its own module's
-screen, and several modules have a `/calendar` route that only ever knew about its own records.
+It is "all the calendars in one": anything with a `dueAt`, from all four lanes, lands on a day —
+Office Hub meetings with start times, E-Approval deadlines, task and action-item dues, insurance
+premium and maturity dates, tour departures, recurring payment dues, vehicle insurance expiries, HR
+interview slots, reminders. Previously each lived on its own module's screen, and several modules
+have a `/calendar` route that only ever knew its own records.
+
+### Where its rows come from
+
+Two places, merged on id:
+
+- **Deadlines and everything non-meeting** come free from the `lanes` the list tab already loaded.
+- **Meetings are fetched per visible range** by `fetchMeetings` → `loadMeetingsInRange`, because the
+  `office-hub-meetings` source only holds the next seven days of *upcoming* meetings. That window is
+  right for the lane and the "Meetings today" figure, which are about commitments still to keep — a
+  meeting held last March is not pending work and must not count towards either. But it belongs on
+  the calendar, so the calendar asks for the span it is displaying. Cancelled meetings are excluded;
+  Completed ones are kept and rendered faded, because that is what history looks like.
+
+Both paths mint the same `office-hub-meetings:{id}` key, so the merge de-duplicates and the fetched
+copy wins.
+
+`loadMeetingsInRange` is the **one** loader allowed to break the one-`where`-no-`orderBy` rule. It
+earns it: `officeHubMeetings` already carries a `participantUserIds CONTAINS, date ASC` composite
+index that predates this feature, so the range query needs nothing added. The alternative — a capped
+hundred rows filtered client-side — would silently drop months at one end of a year view.
+
+`viewRange` returns the month view's *grid* span, not the calendar month, so a meeting on a visible
+leading or trailing day is fetched rather than leaving a populated-looking cell empty.
 
 Undated rows — the aggregate shared-queue rows especially — are counted and reported at the foot
-rather than parked on today. A task with no deadline is not due now, and placing it there would make
-the day look busier than it is.
+rather than parked on today.
+
+### The date arithmetic is tested, not trusted
+
+All of it is in `work-dashboard.ts` and covered by `tests/work-dashboard.test.mjs`: leap years (2028
+yes, 2100 no), year rollover, months that start on a Monday, every day appearing exactly once with no
+gaps, month ranges always being whole weeks, and `shiftAnchor` snapping to the 1st so paging forward
+from 31 January lands on February rather than skipping to March.
 
 `@/components/office-hub/meeting-calendar` is deliberately untouched and unshared. It is 700 lines
 built around Office Hub's own entry shape with four views and drag-to-reschedule through

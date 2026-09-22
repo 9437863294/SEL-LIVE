@@ -24,10 +24,16 @@ import {
   dropLowerLaneDuplicates,
   groupWorkItems,
   summarizeWork,
+  type WorkItem,
   type WorkLanes,
   type WorkSummary,
 } from '@/lib/work-dashboard';
-import { loadWorkItems, type WorkContext, type WorkLoadResult } from '@/lib/work-dashboard-sources';
+import {
+  loadMeetingsInRange,
+  loadWorkItems,
+  type WorkContext,
+  type WorkLoadResult,
+} from '@/lib/work-dashboard-sources';
 import { resetProjectWorkLookups } from '@/lib/work-dashboard-project-sources';
 
 /** Today, as an ISO calendar date in the viewer's own timezone. */
@@ -48,6 +54,15 @@ export interface WorkDashboardState {
   /** True on a background refresh, so the screen can stay readable instead of flashing a skeleton. */
   isRefreshing: boolean;
   refresh: () => void;
+  /**
+   * Meetings over an arbitrary date range, including ones already held.
+   *
+   * The calendar's own fetch. Null until the viewer's identity is resolved, which is also the signal
+   * the calendar uses to hold off asking. See `loadMeetingsInRange` for why history is fetched here
+   * rather than widened into the meeting lane — a meeting held last March belongs on the calendar
+   * but must not count towards "Meetings today".
+   */
+  fetchMeetings: ((from: string, to: string) => Promise<WorkItem[]>) | null;
 }
 
 const EMPTY_LANES: WorkLanes = { action: [], shared: [], meeting: [], watching: [] };
@@ -57,6 +72,8 @@ export function useWorkDashboard(): WorkDashboardState {
   const { can, isLoading: permissionsLoading } = useAuthorization();
 
   const [lanes, setLanes] = useState<WorkLanes>(EMPTY_LANES);
+  // Held so the calendar can run its own range query without re-resolving the viewer's departments.
+  const [context, setContext] = useState<WorkContext | null>(null);
   const [failures, setFailures] = useState<WorkLoadResult['failures']>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -123,6 +140,8 @@ export function useWorkDashboard(): WorkDashboardState {
         can,
       };
 
+      setContext(context);
+
       const result = await loadWorkItems(context);
       if (cancelled || !mounted.current) return;
 
@@ -144,5 +163,11 @@ export function useWorkDashboard(): WorkDashboardState {
 
   const summary = useMemo(() => summarizeWork(lanes, today), [lanes, today]);
 
-  return { lanes, summary, failures, today, isLoading, isRefreshing, refresh };
+  // Memoised on the context, so the calendar's effect does not re-fire on every parent render.
+  const fetchMeetings = useMemo(
+    () => (context ? (from: string, to: string) => loadMeetingsInRange(context, from, to) : null),
+    [context],
+  );
+
+  return { lanes, summary, failures, today, isLoading, isRefreshing, refresh, fetchMeetings };
 }

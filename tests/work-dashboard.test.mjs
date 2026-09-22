@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   DUE_SOON_DAYS,
+  addDays,
   addMonths,
   calendarItems,
   daysInMonth,
@@ -10,6 +11,11 @@ import {
   monthGrid,
   monthLabel,
   monthOf,
+  shiftAnchor,
+  viewLabel,
+  viewRange,
+  yearMonths,
+  yearOf,
   compareWorkItems,
   countByModule,
   daysUntil,
@@ -414,4 +420,77 @@ test('calendarItems draws from every lane and counts what it cannot place', () =
 test('monthLabel reads as a month and year', () => {
   assert.equal(monthLabel('2026-09'), 'September 2026');
   assert.equal(monthLabel('2027-01'), 'January 2027');
+});
+
+/* ── calendar views ───────────────────────────────────────────────────────────────────────────── */
+
+test('addDays crosses month and year boundaries', () => {
+  assert.equal(addDays('2026-09-22', 7), '2026-09-29');
+  assert.equal(addDays('2026-09-28', 3), '2026-10-01');
+  assert.equal(addDays('2026-01-01', -1), '2025-12-31');
+  assert.equal(addDays('2028-02-28', 1), '2028-02-29', 'leap day exists in 2028');
+  assert.equal(addDays('not-a-date', 1), 'not-a-date', 'an unparseable date is returned unchanged');
+});
+
+test('shiftAnchor steps by the unit of the current view', () => {
+  assert.equal(shiftAnchor('2026-09-22', 'day', 1), '2026-09-23');
+  assert.equal(shiftAnchor('2026-09-22', 'day', -1), '2026-09-21');
+  // Month and year snap to the first of the period, so paging does not drift on a 31st.
+  assert.equal(shiftAnchor('2026-09-22', 'month', 1), '2026-10-01');
+  assert.equal(shiftAnchor('2026-12-31', 'month', 1), '2027-01-01');
+  assert.equal(shiftAnchor('2026-09-22', 'year', 1), '2027-01-01');
+  assert.equal(shiftAnchor('2026-09-22', 'year', -1), '2025-01-01');
+});
+
+test('paging by month from the 31st does not skip a month', () => {
+  // The classic date bug: 31 Jan + 1 month naively becomes 2 or 3 March. Snapping to the 1st avoids it.
+  let anchor = '2026-01-31';
+  const visited = [];
+  for (let step = 0; step < 4; step += 1) {
+    anchor = shiftAnchor(anchor, 'month', 1);
+    visited.push(monthOf(anchor));
+  }
+  assert.deepEqual(visited, ['2026-02', '2026-03', '2026-04', '2026-05']);
+});
+
+test('viewRange covers exactly what each view draws', () => {
+  // Day: itself.
+  assert.deepEqual(viewRange('2026-09-22', 'day'), { from: '2026-09-22', to: '2026-09-22' });
+
+  // Year: the whole calendar year.
+  assert.deepEqual(viewRange('2026-09-22', 'year'), { from: '2026-01-01', to: '2026-12-31' });
+
+  // Month: the grid's own span, which includes the days completing the first and last weeks —
+  // otherwise a meeting on a visible leading day would not be fetched and its cell would read empty.
+  const month = viewRange('2026-09-22', 'month');
+  const grid = monthGrid('2026-09').flat();
+  assert.equal(month.from, grid[0]);
+  assert.equal(month.to, grid[grid.length - 1]);
+  assert.ok(month.from <= '2026-09-01', 'the range starts no later than the 1st');
+  assert.ok(month.to >= '2026-09-30', 'the range ends no earlier than the 30th');
+});
+
+test('a month view range is always whole weeks', () => {
+  for (const anchor of ['2026-02-10', '2027-02-01', '2026-12-25', '2028-02-29']) {
+    const { from, to } = viewRange(anchor, 'month');
+    assert.equal((daysUntil(to, from) + 1) % 7, 0, `${anchor}: range is not a whole number of weeks`);
+  }
+});
+
+test('yearMonths returns twelve padded months', () => {
+  const months = yearMonths('2026');
+  assert.equal(months.length, 12);
+  assert.equal(months[0], '2026-01');
+  assert.equal(months[11], '2026-12');
+});
+
+test('viewLabel names each view usefully', () => {
+  assert.equal(viewLabel('2026-09-22', 'year'), '2026');
+  assert.equal(viewLabel('2026-09-22', 'month'), 'September 2026');
+  assert.equal(viewLabel('2026-09-22', 'day'), 'Tuesday, 22 September 2026');
+});
+
+test('yearOf reads the year off a date', () => {
+  assert.equal(yearOf('2026-09-22'), '2026');
+  assert.equal(yearOf('2026-09'), '2026');
 });

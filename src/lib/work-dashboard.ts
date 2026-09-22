@@ -404,6 +404,23 @@ export const WORK_URGENCY_BADGE: Record<WorkUrgency, string> = {
 /** `2026-09-22` → `2026-09`. */
 export const monthOf = (date: string): string => date.slice(0, 7);
 
+/** `2026-09-22` → `2026`. */
+export const yearOf = (date: string): string => date.slice(0, 4);
+
+/**
+ * `2026-09-22` + 7 → `2026-09-29`.
+ *
+ * There is a second `addDays` in `office-hub-time.ts` doing the same job for that module. This one
+ * stays here rather than importing it, because this file is deliberately dependency-free — it is
+ * unit-tested under plain node and read by nineteen modules' worth of loaders, and reaching into
+ * one module's time helpers to serve all of them is the wrong direction of dependency.
+ */
+export function addDays(date: string, days: number): string {
+  const base = Date.parse(`${date}T00:00:00Z`);
+  if (Number.isNaN(base)) return date;
+  return new Date(base + days * 86_400_000).toISOString().slice(0, 10);
+}
+
 /** `2026-09` + 1 → `2026-10`; + -1 → `2026-08`. Rolls the year. */
 export function addMonths(month: string, delta: number): string {
   const [year, index] = month.split('-').map(Number);
@@ -499,6 +516,66 @@ export function calendarItems(lanes: WorkLanes): { dated: WorkItem[]; undated: n
   const all = [...lanes.action, ...lanes.meeting, ...lanes.shared, ...lanes.watching];
   const dated = all.filter((item) => Boolean(toWorkDate(item.dueAt)));
   return { dated, undated: all.length - dated.length };
+}
+
+/* ── calendar views ────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Year, month and day.
+ *
+ * Office Hub's own calendar offers day/week/month/agenda. This one offers year/month/day, because it
+ * answers a different question: Office Hub's is for running a week of meetings, this one is for
+ * "when is everything across every module", where the year view is the one that shows you a quiet
+ * March and a brutal September at a glance.
+ */
+export type CalendarView = 'year' | 'month' | 'day';
+
+export const CALENDAR_VIEWS: readonly CalendarView[] = ['year', 'month', 'day'] as const;
+
+/** Move the anchor by one step of whatever the current view is. */
+export function shiftAnchor(anchor: string, view: CalendarView, delta: number): string {
+  if (view === 'day') return addDays(anchor, delta);
+  if (view === 'month') return `${addMonths(monthOf(anchor), delta)}-01`;
+  const year = Number(yearOf(anchor)) + delta;
+  return `${String(year).padStart(4, '0')}-01-01`;
+}
+
+/**
+ * The span of dates a view displays, which is also the span to fetch meetings for.
+ *
+ * Wider than the obvious answer for the month view: the grid shows the leading and trailing days
+ * that complete its first and last weeks, and a meeting on one of those days has to be fetched or
+ * the cell renders empty while showing a date that has something on it.
+ */
+export function viewRange(anchor: string, view: CalendarView): { from: string; to: string } {
+  if (view === 'day') return { from: anchor, to: anchor };
+  if (view === 'month') {
+    const weeks = monthGrid(monthOf(anchor));
+    if (!weeks.length) return { from: anchor, to: anchor };
+    return { from: weeks[0][0], to: weeks[weeks.length - 1][6] };
+  }
+  const year = yearOf(anchor);
+  return { from: `${year}-01-01`, to: `${year}-12-31` };
+}
+
+/** The twelve months of a year, as `YYYY-MM`. */
+export function yearMonths(year: string): string[] {
+  return Array.from({ length: 12 }, (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`);
+}
+
+/** The heading above the grid, for whichever view is showing. */
+export function viewLabel(anchor: string, view: CalendarView): string {
+  if (view === 'year') return yearOf(anchor);
+  if (view === 'month') return monthLabel(monthOf(anchor));
+  const parsed = Date.parse(`${anchor}T00:00:00Z`);
+  if (Number.isNaN(parsed)) return anchor;
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(parsed));
 }
 
 /** "September 2026". */

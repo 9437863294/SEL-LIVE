@@ -39,6 +39,7 @@ import {
   getCountFromServer,
   getDocs,
   limit as fsLimit,
+  orderBy,
   query,
   where,
   type DocumentData,
@@ -48,6 +49,7 @@ import {
 import { db } from './firebase';
 import { ACTIVITY_MODULES } from './activity-modules';
 import {
+  addDays,
   normalizeWorkPriority,
   toWorkDate,
   type WorkItem,
@@ -933,9 +935,60 @@ function workflowSource(config: {
   };
 }
 
-/** `2026-09-22` + 7 → `2026-09-29`. Calendar arithmetic, in UTC so no local DST shift applies. */
-export function addDays(date: string, days: number): string {
-  const base = Date.parse(`${date}T00:00:00Z`);
-  if (Number.isNaN(base)) return date;
-  return new Date(base + days * 86_400_000).toISOString().slice(0, 10);
+/* ── the calendar's own range query ────────────────────────────────────────────────────────────── */
+
+/**
+ * Meetings the viewer is on, over an arbitrary date range — including ones already held.
+ *
+ * The only loader that is not part of `WORK_SOURCES`, and the only one the calendar calls directly.
+ * Both because of what the dashboard's lanes are for: `office-hub-meetings` fetches the next seven
+ * days of *upcoming* meetings, because the "Meetings today" figure and the meeting lane are about
+ * commitments you still have to keep. A meeting held last March is not pending work and must not
+ * count towards either. But it is absolutely something the calendar should show, so the calendar
+ * asks for the span it is displaying.
+ *
+ * ── Why this one is allowed a three-predicate query ────────────────────────────────────────────
+ *
+ * Every source in `WORK_SOURCES` deliberately uses one `where` and no `orderBy`, so it needs no
+ * composite index. This is the exception, and it earns it: `officeHubMeetings` already has a
+ * `participantUserIds CONTAINS, date ASC` composite index — see `firestore.indexes.json`, it
+ * predates this feature — so the range query is served without adding anything. That matters more
+ * than consistency here, because the alternative is fetching a capped hundred meetings and
+ * filtering client-side, which on a year view would silently drop the months at one end.
+ *
+ * Cancelled meetings are excluded: a meeting that did not happen is not history worth drawing.
+ * Completed ones are kept — that is what a past meeting looks like, and omitting them would leave
+ * the calendar's history empty.
+ */
+export async function loadMeetingsInRange(
+  context: WorkContext,
+  from: string,
+  to: string,
+): Promise<WorkItem[]> {
+  const built = query(
+    collection(db, OFFICE_HUB_COLLECTIONS.meetings),
+    where('participantUserIds', 'array-contains', context.userId),
+    where('date', '>=', from),
+    where('date', '<=', to),
+    orderBy('date', 'asc'),
+    fsLimit(600),
+  );
+
+  return rows(await getDocs(built))
+    .filter((row) => text(row.status) !== 'Cancelled')
+    .map((row) => ({
+      // The same id the upcoming-meetings source produces, so the two de-duplicate on merge.
+      id: `office-hub-meetings:${row.id}`,
+      sourceId: 'office-hub-meetings',
+      module: ACTIVITY_MODULES.OFFICE_HUB,
+      lane: 'meeting' as WorkLane,
+      title: text(row.title, 'Meeting'),
+      reference: text(row.meetingType) || null,
+      stage: text(row.status) || null,
+      href: `${OFFICE_HUB_BASE_PATH}/meetings/${row.id}`,
+      dueAt: toWorkDate(row.date),
+      startTime: text(row.startTime) || null,
+      actionUrl: text(row.meetingUrl) || null,
+      priority: normalizeWorkPriority(row.priority),
+    }));
 }

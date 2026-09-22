@@ -463,7 +463,8 @@ export default function WorkDashboard({
    */
   onSummaryChange?: (summary: WorkSummary) => void;
 }) {
-  const { lanes, summary, failures, today, isLoading, isRefreshing, refresh } = useWorkDashboard();
+  const { lanes, summary, failures, today, isLoading, isRefreshing, refresh, fetchMeetings } =
+    useWorkDashboard();
   const [view, setView] = useState<'list' | 'calendar'>('list');
 
   // `summary` is memoised on the lanes, so this fires when the counts actually change rather than
@@ -551,7 +552,7 @@ export default function WorkDashboard({
         </TabsContent>
 
         <TabsContent value="calendar" forceMount className="data-[state=inactive]:hidden">
-          <WorkCalendar lanes={lanes} today={today} />
+          <WorkCalendar lanes={lanes} today={today} fetchMeetings={fetchMeetings} />
         </TabsContent>
       </Tabs>
     </div>
