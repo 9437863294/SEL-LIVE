@@ -120,6 +120,15 @@ export interface WorkItem {
   /** Who raised it, where that is the useful second line. */
   raisedBy?: string | null;
   /**
+   * An external link that *is* the action, rather than a screen about it.
+   *
+   * Only meetings set this, from `OfficeHubMeeting.meetingUrl` — the field every Office Hub screen
+   * reads for "the joining link". For an online meeting the useful button is Join, not View: opening
+   * the meeting's detail page to then find the link is a step nobody wants at two minutes to the
+   * hour. Rendered alongside the normal link, never instead of it.
+   */
+  actionUrl?: string | null;
+  /**
    * Set when the row stands for a queue rather than for one record.
    *
    * Shared queues are bulk by nature — Daily Requisition can have several hundred entries sitting at
@@ -379,6 +388,127 @@ export const WORK_URGENCY_BADGE: Record<WorkUrgency, string> = {
   later: 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800',
   undated: 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:border-slate-800',
 };
+
+/* ── calendar ──────────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Calendar arithmetic on `YYYY-MM-DD` and `YYYY-MM` strings, in UTC.
+ *
+ * UTC throughout, deliberately. These are calendar dates, not instants — "the 22nd" is the same
+ * square on the grid wherever you are — and doing the arithmetic through a local-timezone `Date`
+ * is how a month grid ends up starting a day early for half the world, or loses an hour to a DST
+ * boundary and renders the 31st twice. `toWorkDate` has already reduced every stored value to one
+ * of these strings, so nothing downstream needs a timezone.
+ */
+
+/** `2026-09-22` → `2026-09`. */
+export const monthOf = (date: string): string => date.slice(0, 7);
+
+/** `2026-09` + 1 → `2026-10`; + -1 → `2026-08`. Rolls the year. */
+export function addMonths(month: string, delta: number): string {
+  const [year, index] = month.split('-').map(Number);
+  if (!year || !index) return month;
+  // Zero-based month arithmetic, so December + 1 lands on the next January rather than month 13.
+  const total = year * 12 + (index - 1) + delta;
+  const nextYear = Math.floor(total / 12);
+  const nextMonth = (total % 12) + 1;
+  return `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}`;
+}
+
+export function daysInMonth(month: string): number {
+  const [year, index] = month.split('-').map(Number);
+  if (!year || !index) return 0;
+  // Day 0 of the *next* month is the last day of this one — avoids a leap-year table.
+  return new Date(Date.UTC(year, index, 0)).getUTCDate();
+}
+
+/** Monday. The working week this application is used in starts there, and so does every module's UI. */
+export const WEEK_STARTS_ON = 1;
+
+export const WEEKDAY_LABELS: readonly string[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/**
+ * The month as weeks of ISO dates, including the leading and trailing days that complete them.
+ *
+ * Always whole weeks, so the grid is rectangular and the days either side of the month are real
+ * dates rather than blanks — an item due on the 1st of next month should still be visible in the
+ * last row rather than vanishing until you page forward.
+ */
+export function monthGrid(month: string): string[][] {
+  const first = `${month}-01`;
+  const firstMs = Date.parse(`${first}T00:00:00Z`);
+  if (Number.isNaN(firstMs)) return [];
+
+  const firstWeekday = new Date(firstMs).getUTCDay();
+  const lead = (firstWeekday - WEEK_STARTS_ON + 7) % 7;
+  const span = lead + daysInMonth(month);
+  const cells = Math.ceil(span / 7) * 7;
+
+  const start = firstMs - lead * 86_400_000;
+  const weeks: string[][] = [];
+  for (let index = 0; index < cells; index += 7) {
+    weeks.push(
+      Array.from({ length: 7 }, (_, offset) =>
+        new Date(start + (index + offset) * 86_400_000).toISOString().slice(0, 10),
+      ),
+    );
+  }
+  return weeks;
+}
+
+/**
+ * Items bucketed by the calendar date they fall on.
+ *
+ * Undated items are dropped rather than parked on today — a task with no deadline is not due now,
+ * and putting it there would make the calendar lie about the day's workload. `calendarItems` reports
+ * how many were left out so the view can say so.
+ */
+export function itemsByDate(items: WorkItem[]): Map<string, WorkItem[]> {
+  const byDate = new Map<string, WorkItem[]>();
+  for (const item of items) {
+    const date = toWorkDate(item.dueAt);
+    if (!date) continue;
+    const bucket = byDate.get(date);
+    if (bucket) bucket.push(item);
+    else byDate.set(date, [item]);
+  }
+  // Meetings first within a day, then by clock time, so a day cell reads chronologically.
+  for (const bucket of byDate.values()) {
+    bucket.sort((left, right) => {
+      const leftTime = left.startTime ?? '';
+      const rightTime = right.startTime ?? '';
+      if (leftTime !== rightTime) {
+        if (!leftTime) return 1;
+        if (!rightTime) return -1;
+        return leftTime < rightTime ? -1 : 1;
+      }
+      return left.title.localeCompare(right.title);
+    });
+  }
+  return byDate;
+}
+
+/**
+ * Everything the calendar draws: the dated items across every lane, and the count it could not place.
+ *
+ * Drawn from all four lanes rather than just meetings, which is the point of having one calendar —
+ * an approval deadline, a premium due date, a tour departure and a stand-up are all things that
+ * happen on a day, and keeping them on separate screens is what made people miss them.
+ */
+export function calendarItems(lanes: WorkLanes): { dated: WorkItem[]; undated: number } {
+  const all = [...lanes.action, ...lanes.meeting, ...lanes.shared, ...lanes.watching];
+  const dated = all.filter((item) => Boolean(toWorkDate(item.dueAt)));
+  return { dated, undated: all.length - dated.length };
+}
+
+/** "September 2026". */
+export function monthLabel(month: string): string {
+  const parsed = Date.parse(`${month}-01T00:00:00Z`);
+  if (Number.isNaN(parsed)) return month;
+  return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(parsed),
+  );
+}
 
 /** "2 days overdue", "Due today", "Due in 3 days" — the phrase under a row. */
 export function dueLabel(item: Pick<WorkItem, 'dueAt'>, today: string): string {

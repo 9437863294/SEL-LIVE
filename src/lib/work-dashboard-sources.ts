@@ -401,6 +401,9 @@ export const WORK_SOURCES: WorkSource[] = [
           // Office Hub stores a calendar date plus a wall time, never an instant — see the note on
           // timezones in `office-hub-time.ts`. The clock time is carried separately for that reason.
           startTime: text(row.startTime) || null,
+          // `meetingUrl` is the field every Office Hub screen reads for the joining link, so an
+          // online meeting gets a Join button straight from the dashboard.
+          actionUrl: text(row.meetingUrl) || null,
           priority: normalizeWorkPriority(row.priority),
         }));
     },

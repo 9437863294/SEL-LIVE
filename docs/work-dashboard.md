@@ -21,6 +21,9 @@ Code:
 | `src/lib/work-dashboard-project-sources.ts` | Project Management's seven workflows, which need collection-group queries. |
 | `src/components/work-dashboard/hooks.ts` | Identity resolution, then the fan-out. |
 | `src/components/work-dashboard/work-dashboard.tsx` | The screen. |
+| `src/components/work-dashboard/work-calendar.tsx` | The unified month calendar. |
+| `src/components/shared/kpi-card.tsx` | `KpiCard` / `PageHeader`, moved out of `hr-ui.tsx`. |
+| `src/components/shared/data-list.tsx` | `DataList` / `CellLink`, moved out of `hr-ui.tsx`. |
 | `tests/work-dashboard.test.mjs` | Ordering, urgency and de-duplication rules. |
 | `tests/work-dashboard-links.test.mjs` | Every link the dashboard emits resolves to a real route. |
 
@@ -60,6 +63,68 @@ with `COLLECTION_GROUP` / `CONTAINS` scope. The seven Project Management ones ar
 > dashboard catches and reports in its "queues could not be read" notice. Six such failures with
 > `jmcEntries` working is the signature of exactly this: that one override predates the feature and
 > is already live, the other six are not. Click **Details** on the notice to confirm.
+
+## One calendar, no extra queries
+
+The work tab has two sub-tabs: **List** and **Calendar**. They are two arrangements of one dataset —
+the calendar takes the same `lanes` the list already has and groups them by date via `itemsByDate`.
+It issues **no queries of its own**, so switching is free and the two views cannot disagree.
+
+That is also what makes it "all the calendars in one". Anything with a `dueAt`, from all four lanes,
+lands on a day: Office Hub meetings with their start times, E-Approval deadlines, task and action-item
+due dates, insurance premium and maturity dates, tour departures, recurring payment dues, vehicle
+insurance expiries, HR interview slots, reminders. Previously each of those was on its own module's
+screen, and several modules have a `/calendar` route that only ever knew about its own records.
+
+Undated rows — the aggregate shared-queue rows especially — are counted and reported at the foot
+rather than parked on today. A task with no deadline is not due now, and placing it there would make
+the day look busier than it is.
+
+`@/components/office-hub/meeting-calendar` is deliberately untouched and unshared. It is 700 lines
+built around Office Hub's own entry shape with four views and drag-to-reschedule through
+`updateMeeting` — the right screen for working *on* meetings, and structurally unable to show an
+approval deadline. This one is read-only and cross-module. Two different jobs.
+
+## Rows are one line, and the table scrolls itself
+
+Each row is a single line. The `Item` column carries `w-full max-w-0` — the CSS-table truncation
+idiom, which looks like a mistake and is not: a table cell ignores `text-overflow: ellipsis` while
+its intrinsic width can still grow, so a long subject either wraps or pushes the other columns off.
+`max-width: 0` with `width: 100%` makes it the column that absorbs the leftover width and clips
+inside it. Every other column is `whitespace-nowrap`.
+
+The rows scroll inside the table with the header pinned (`maxHeightClassName="sm:max-h-[28rem]"`),
+rather than lengthening the page — seventeen overdue approvals should not push the figures and the
+other lanes off screen. Do **not** wrap it in a `ScrollArea` to achieve this: `DataList`'s wrapper is
+already a scroll container, so a sticky header pins to the wrong element and rides away with the
+rows. `maxHeightClassName` is the mechanism that handles it correctly.
+
+## The table, and why the only action is "Open"
+
+Each lane is a `DataList` — a real table on a desktop, one card per row on a phone, from a single
+column spec. The action column holds **Open** (or **Details** for a meeting), plus **Join** when the
+row carries an `actionUrl`, which only meetings set, from `OfficeHubMeeting.meetingUrl`.
+
+There is deliberately no inline Approve or Reject. Each of the nineteen assigned sources has its own
+decision rules — E-Approval alone has a policy engine covering the verification stack,
+return-to-any-step, supersede-on-material-change and the approval matrix, and most modules require a
+comment or an attachment with a decision. A one-click Approve here would either reimplement all of
+that and drift from it, or bypass it. Neither is an acceptable thing to do to an approval trail, so
+the dashboard's job ends one click from the screen that owns the decision.
+
+If inline decisions are ever wanted, do it per module against that module's own service function —
+not generically across the registry.
+
+## The `shared/` components
+
+`KpiCard`, `PageHeader`, `DataList` and `CellLink` were all in `@/components/hr/hr-ui` and are used
+far beyond HR — fifty files. They now live in `@/components/shared/`, and `hr-ui.tsx` re-exports them
+under their original `Hr`-prefixed names, so no existing call site changed.
+
+They moved because `hr-ui.tsx` imports `@/lib/hr-requirement` for its status and currency helpers,
+and through it `hr-policy.ts` — roughly 3,600 lines of HR business rules. Fine on an HR screen;
+not fine on the home page, which wanted a KPI card and a table and would otherwise have shipped the
+entire HR rulebook to draw them. New code should import from `@/components/shared/`.
 
 ## The lanes
 

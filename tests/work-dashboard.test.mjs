@@ -3,6 +3,13 @@ import { test } from 'node:test';
 
 import {
   DUE_SOON_DAYS,
+  addMonths,
+  calendarItems,
+  daysInMonth,
+  itemsByDate,
+  monthGrid,
+  monthLabel,
+  monthOf,
   compareWorkItems,
   countByModule,
   daysUntil,
@@ -307,4 +314,104 @@ test('countByModule orders by count, then by module name', () => {
     { module: 'Office Hub', count: 2 },
     { module: 'Insurance', count: 1 },
   ]);
+});
+
+/* ── calendar arithmetic ──────────────────────────────────────────────────────────────────────── */
+
+test('monthOf and addMonths roll the year correctly', () => {
+  assert.equal(monthOf('2026-09-22'), '2026-09');
+  assert.equal(addMonths('2026-09', 1), '2026-10');
+  assert.equal(addMonths('2026-12', 1), '2027-01');
+  assert.equal(addMonths('2026-01', -1), '2025-12');
+  assert.equal(addMonths('2026-09', 0), '2026-09');
+  // Multi-year jumps, in both directions. Sep 2026 + 12 is Sep 2027, so + 16 lands on Jan 2028.
+  assert.equal(addMonths('2026-09', 12), '2027-09');
+  assert.equal(addMonths('2026-09', 16), '2028-01');
+  assert.equal(addMonths('2026-09', -21), '2024-12');
+});
+
+test('daysInMonth handles short months and leap years', () => {
+  assert.equal(daysInMonth('2026-09'), 30);
+  assert.equal(daysInMonth('2026-01'), 31);
+  assert.equal(daysInMonth('2026-02'), 28);
+  assert.equal(daysInMonth('2028-02'), 29, 'a leap year February has 29 days');
+  assert.equal(daysInMonth('2100-02'), 28, '2100 is not a leap year');
+});
+
+test('monthGrid returns whole weeks starting on Monday', () => {
+  const weeks = monthGrid('2026-09');
+  assert.ok(weeks.length >= 4 && weeks.length <= 6, `expected 4-6 weeks, got ${weeks.length}`);
+  for (const week of weeks) assert.equal(week.length, 7);
+
+  // 2026-09-01 is a Tuesday, so the grid opens on Monday 31 August.
+  assert.equal(weeks[0][0], '2026-08-31');
+  assert.equal(weeks[0][1], '2026-09-01');
+});
+
+test('monthGrid covers every day of the month exactly once', () => {
+  for (const month of ['2026-02', '2026-09', '2028-02', '2026-12', '2027-01']) {
+    const dates = monthGrid(month).flat();
+    const inMonth = dates.filter((date) => date.startsWith(month));
+    assert.equal(
+      inMonth.length,
+      daysInMonth(month),
+      `${month}: grid holds ${inMonth.length} of its own days, expected ${daysInMonth(month)}`,
+    );
+    assert.equal(new Set(dates).size, dates.length, `${month}: a date appears twice`);
+  }
+});
+
+test('monthGrid cells are consecutive days with no gap', () => {
+  const dates = monthGrid('2026-10').flat();
+  for (let index = 1; index < dates.length; index += 1) {
+    assert.equal(daysUntil(dates[index], dates[index - 1]), 1, `gap before ${dates[index]}`);
+  }
+});
+
+test('monthGrid spans a month that starts on a Monday without a leading week', () => {
+  // 2027-02-01 is a Monday — the grid must not prepend a dead week.
+  const weeks = monthGrid('2027-02');
+  assert.equal(weeks[0][0], '2027-02-01');
+});
+
+test('itemsByDate buckets by calendar date and drops undated items', () => {
+  const byDate = itemsByDate([
+    item({ id: 'a', dueAt: '2026-09-22' }),
+    item({ id: 'b', dueAt: '2026-09-22T18:00:00Z' }),
+    item({ id: 'c', dueAt: '2026-09-25' }),
+    item({ id: 'd', dueAt: null }),
+  ]);
+  assert.equal(byDate.get('2026-09-22')?.length, 2, 'an instant and a date on the same day share a bucket');
+  assert.equal(byDate.get('2026-09-25')?.length, 1);
+  assert.equal([...byDate.values()].flat().length, 3, 'the undated item is not placed');
+});
+
+test('itemsByDate orders a day chronologically, timed before untimed', () => {
+  const byDate = itemsByDate([
+    item({ id: 'untimed', dueAt: '2026-09-22', title: 'A deadline' }),
+    item({ id: 'late', dueAt: '2026-09-22', startTime: '16:00' }),
+    item({ id: 'early', dueAt: '2026-09-22', startTime: '09:00' }),
+  ]);
+  assert.deepEqual(byDate.get('2026-09-22')?.map((row) => row.id), ['early', 'late', 'untimed']);
+});
+
+test('calendarItems draws from every lane and counts what it cannot place', () => {
+  const lanes = groupWorkItems(
+    [
+      item({ id: 'a', lane: 'action', dueAt: '2026-09-22' }),
+      item({ id: 'm', lane: 'meeting', dueAt: '2026-09-23' }),
+      item({ id: 'w', lane: 'watching', dueAt: '2026-09-24' }),
+      item({ id: 's', lane: 'shared', dueAt: null, count: 4 }),
+      item({ id: 'a2', lane: 'action', dueAt: null }),
+    ],
+    TODAY,
+  );
+  const { dated, undated } = calendarItems(lanes);
+  assert.equal(dated.length, 3);
+  assert.equal(undated, 2, 'the two undated rows are reported, not silently dropped');
+});
+
+test('monthLabel reads as a month and year', () => {
+  assert.equal(monthLabel('2026-09'), 'September 2026');
+  assert.equal(monthLabel('2027-01'), 'January 2027');
 });

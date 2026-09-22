@@ -43,25 +43,31 @@ import {
   AlertTriangle,
   ArrowRight,
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   Clock,
   Inbox,
+  List as ListIcon,
   RefreshCw,
   Users,
+  Video,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { moduleBadgeClass } from '@/lib/activity-modules';
 import { KpiCard, PageHeader, type Tone } from '@/components/shared/kpi-card';
+import { CellLink, DataList, type ListColumn } from '@/components/shared/data-list';
 import {
   WORK_LANES,
   WORK_LANE_HINT,
   WORK_LANE_TITLE,
   WORK_URGENCY_BADGE,
+  calendarItems,
   countByModule,
   dueLabel,
   workUrgency,
@@ -70,6 +76,7 @@ import {
   type WorkSummary,
 } from '@/lib/work-dashboard';
 import { useWorkDashboard } from './hooks';
+import WorkCalendar from './work-calendar';
 
 /* ── figures ───────────────────────────────────────────────────────────────────────────────────── */
 
@@ -150,71 +157,159 @@ const formatAmount = (value: number) =>
     notation: value >= 1_00_00_000 ? 'compact' : 'standard',
   }).format(value);
 
-function WorkRow({ item, today }: { item: WorkItem; today: string }) {
-  const urgency = workUrgency(item, today);
-  const isQueue = typeof item.count === 'number' && item.count > 0;
-
-  // Joined with a middot rather than laid out in columns: the fields that are present vary by
-  // module, and a column grid over optional values leaves visible gaps where a module has no stage
-  // or no amount.
-  const details = [item.stage, item.raisedBy, typeof item.amount === 'number' ? formatAmount(item.amount) : null]
-    .filter((part): part is string => Boolean(part));
-
-  return (
-    <Link
-      href={item.href}
-      className={cn(
-        'group relative flex items-start gap-3 py-2.5 pl-4 pr-3 transition-colors',
-        'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-      )}
-    >
-      {/* The urgency cue, repeated as words in the badge — colour is never the only carrier. */}
-      <span
-        aria-hidden
-        className={cn(
-          'absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r',
-          urgency === 'overdue' && 'bg-rose-500',
-          urgency === 'today' && 'bg-amber-500',
-          urgency === 'soon' && 'bg-blue-400',
-          (urgency === 'later' || urgency === 'undated') && 'bg-transparent',
-        )}
-      />
-
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="text-sm font-medium text-slate-800">{item.title}</span>
+/**
+ * The columns, as a table on a desktop and a card per row on a phone.
+ *
+ * Declared once and rendered twice by `DataList`, which is why each column carries a `mobile` slot:
+ * the phone card needs to know which value is the headline and which belongs in the label/value
+ * grid. Getting that wrong is how a register ends up readable on one device and not the other.
+ *
+ * The urgency colour is a left border on the whole row rather than a column of its own — a column of
+ * coloured squares would be a second, worse copy of the Due column, which already says "14 days
+ * overdue" in words.
+ */
+function workColumns(today: string): Array<ListColumn<WorkItem>> {
+  return [
+    {
+      header: 'Item',
+      mobile: 'title',
+      /**
+       * `w-full max-w-0` is the CSS-table truncation idiom, not a mistake.
+       *
+       * A table cell will not honour `text-overflow: ellipsis` while its intrinsic width can grow to
+       * fit the text, so a long subject either wraps to a second line or pushes the other columns
+       * off. Setting `max-width: 0` with `width: 100%` makes this the one column that absorbs the
+       * leftover width, and lets its content clip inside whatever is left.
+       */
+      className: 'w-full max-w-0',
+      cell: (item) => (
+        <div className="flex min-w-0 items-baseline gap-2">
+          <CellLink
+            href={item.href}
+            className="truncate text-sm font-medium text-slate-800 hover:underline"
+          >
+            {item.title}
+          </CellLink>
           {item.reference ? (
-            <span className="font-mono text-[11px] text-muted-foreground">{item.reference}</span>
+            <span className="shrink-0 whitespace-nowrap font-mono text-[11px] text-muted-foreground">
+              {item.reference}
+            </span>
           ) : null}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px] font-medium', moduleBadgeClass(item.module))}>
-            {item.module}
-          </Badge>
-          {details.length ? (
-            <span className="truncate text-xs text-muted-foreground">{details.join(' · ')}</span>
+      ),
+    },
+    {
+      header: 'Module',
+      mobile: 'detail',
+      className: 'whitespace-nowrap',
+      cell: (item) => (
+        <Badge
+          variant="outline"
+          className={cn('whitespace-nowrap px-1.5 py-0 text-[10px] font-medium', moduleBadgeClass(item.module))}
+        >
+          {item.module}
+        </Badge>
+      ),
+    },
+    {
+      header: 'Stage',
+      mobile: 'detail',
+      className: 'hidden max-w-[14rem] truncate whitespace-nowrap lg:table-cell',
+      cell: (item) => <span className="text-xs text-muted-foreground">{item.stage ?? '—'}</span>,
+    },
+    {
+      header: 'With / raised by',
+      mobile: 'detail',
+      className: 'hidden max-w-[12rem] truncate whitespace-nowrap xl:table-cell',
+      cell: (item) => <span className="text-xs text-muted-foreground">{item.raisedBy ?? '—'}</span>,
+    },
+    {
+      header: 'Amount',
+      align: 'right',
+      mobile: 'detail',
+      className: 'hidden whitespace-nowrap md:table-cell',
+      cell: (item) => (
+        <span className="text-xs tabular-nums text-slate-700">
+          {typeof item.amount === 'number' ? formatAmount(item.amount) : '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Due',
+      align: 'right',
+      mobile: 'aside',
+      cell: (item) => {
+        if (typeof item.count === 'number' && item.count > 0) {
+          return (
+            <Badge variant="outline" className="whitespace-nowrap px-1.5 py-0 text-[11px] tabular-nums">
+              {item.count} waiting
+            </Badge>
+          );
+        }
+        const urgency = workUrgency(item, today);
+        if (urgency === 'undated') return <span className="text-xs text-muted-foreground">—</span>;
+        return (
+          <div className="flex items-center justify-end gap-1.5">
+            {item.startTime ? (
+              <span className="text-xs font-semibold tabular-nums text-slate-700">{item.startTime}</span>
+            ) : null}
+            <Badge variant="outline" className={cn('whitespace-nowrap px-1.5 py-0 text-[11px] font-medium', WORK_URGENCY_BADGE[urgency])}>
+              {dueLabel(item, today)}
+            </Badge>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Action',
+      align: 'right',
+      // 'footer' puts the button in the card's action strip on a phone, where `DataList` stops
+      // wrapping the card in a link so the button can receive the tap.
+      mobile: 'footer',
+      cell: (item) => (
+        <div className="flex items-center justify-end gap-1.5">
+          {item.actionUrl ? (
+            // `target="_blank"` with `rel="noreferrer"`: a video call belongs in its own tab, and
+            // the dashboard should still be there when the meeting ends.
+            <Button asChild size="sm" className="h-7 gap-1 px-2 text-xs">
+              <a href={item.actionUrl} target="_blank" rel="noreferrer">
+                <Video className="h-3 w-3" /> Join
+              </a>
+            </Button>
           ) : null}
+          <Button asChild size="sm" variant="outline" className="h-7 gap-1 px-2 text-xs">
+            <Link href={item.href}>
+              {item.lane === 'meeting' ? 'Details' : 'Open'}
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          </Button>
         </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2 pt-0.5">
-        {item.startTime ? (
-          <span className="text-sm font-semibold tabular-nums text-slate-700">{item.startTime}</span>
-        ) : null}
-        {isQueue ? (
-          <Badge variant="outline" className="px-1.5 py-0 text-[11px] tabular-nums">
-            {item.count} waiting
-          </Badge>
-        ) : urgency === 'undated' ? null : (
-          <Badge variant="outline" className={cn('px-1.5 py-0 text-[11px] font-medium', WORK_URGENCY_BADGE[urgency])}>
-            {dueLabel(item, today)}
-          </Badge>
-        )}
-        <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
-      </div>
-    </Link>
-  );
+      ),
+    },
+  ];
 }
+
+/**
+ * Why the action is "Open" and not "Approve".
+ *
+ * Every one of these nineteen sources has its own decision rules — E-Approval alone has a policy
+ * engine covering the verification stack, return-to-any-step, supersede-on-material-change and the
+ * approval matrix, and most modules require a comment or an attachment with the decision. A one-click
+ * Approve here would either reimplement all of that (and drift from it) or bypass it. Neither is an
+ * acceptable thing to do to an approval trail, so the dashboard's job ends at putting the work one
+ * click from the screen that owns the decision.
+ */
+const laneRowClass = (item: WorkItem, today: string): string => {
+  const urgency = workUrgency(item, today);
+  if (typeof item.count === 'number' && item.count > 0) return 'border-l-[3px] border-l-transparent';
+  return cn(
+    'border-l-[3px]',
+    urgency === 'overdue' && 'border-l-rose-500',
+    urgency === 'today' && 'border-l-amber-500',
+    urgency === 'soon' && 'border-l-blue-400',
+    (urgency === 'later' || urgency === 'undated') && 'border-l-transparent',
+  );
+};
 
 /** How many rows a lane shows before it offers to show the rest. */
 const COLLAPSED_ROWS = 8;
@@ -265,13 +360,24 @@ function LaneSection({ lane, items, today }: { lane: WorkLane; items: WorkItem[]
         ) : null}
       </div>
 
-      <Card className="overflow-hidden border-white/60 bg-white/80 shadow-sm backdrop-blur-sm">
-        <CardContent className="divide-y divide-slate-100 p-0">
-          {visible.map((item) => (
-            <WorkRow key={item.id} item={item} today={today} />
-          ))}
-        </CardContent>
-      </Card>
+      <DataList
+        rows={visible}
+        columns={workColumns(today)}
+        rowClassName={(item) => laneRowClass(item, today)}
+        // No `cardHref`: the row holds an Open button, and DataList only leaves a phone card's
+        // footer tappable when the card itself is not wrapped in a link.
+        dense
+        /*
+          The rows scroll inside the table, with the header pinned, instead of lengthening the page.
+          Seventeen overdue approvals should not push the figures and the other lanes off screen.
+          `maxHeightClassName` is DataList's own mechanism for this — it moves the scroll to the
+          table's wrapper and makes the header sticky against it. Wrapping this in a `ScrollArea`
+          instead would not work: that wrapper is already a scroll container, so a sticky header
+          pins to the wrong element and rides away with the rows. Desktop only; the phone card list
+          is scrolled by the page, which is right on a phone.
+        */
+        maxHeightClassName="sm:max-h-[28rem]"
+      />
 
       {items.length > COLLAPSED_ROWS ? (
         <Button
@@ -358,12 +464,16 @@ export default function WorkDashboard({
   onSummaryChange?: (summary: WorkSummary) => void;
 }) {
   const { lanes, summary, failures, today, isLoading, isRefreshing, refresh } = useWorkDashboard();
+  const [view, setView] = useState<'list' | 'calendar'>('list');
 
   // `summary` is memoised on the lanes, so this fires when the counts actually change rather than
   // on every render — which is what stops the callback becoming a render loop.
   useEffect(() => {
     onSummaryChange?.(summary);
   }, [summary, onSummaryChange]);
+
+  // How many rows the calendar can actually place, for the count on its tab.
+  const datedCount = useMemo(() => calendarItems(lanes).dated.length, [lanes]);
 
   // Full width, by request. There is no `max-w-*` here on purpose: on a wide monitor a row's title
   // ends up a long way from its deadline badge, and that trade was made knowingly in favour of
@@ -409,9 +519,41 @@ export default function WorkDashboard({
 
       <FailureNotice failures={failures} />
 
-      {WORK_LANES.map((lane) => (
-        <LaneSection key={lane} lane={lane} items={lanes[lane]} today={today} />
-      ))}
+      {/*
+        List and Calendar are two arrangements of one dataset, not two screens. The calendar issues
+        no queries of its own — it takes the same `lanes` and groups them by date — so switching is
+        free, and the two can never disagree about what is pending.
+
+        Both panels are `forceMount`ed for the same reason as the outer tabs, plus one of its own:
+        each lane's table owns its expand-all state and the calendar remembers the month you paged
+        to. Letting Radix unmount them would reset all of that on every switch. As there, `forceMount`
+        stops Radix applying `hidden`, so `data-[state=inactive]:hidden` does the hiding.
+      */}
+      <Tabs value={view} onValueChange={(value) => setView(value === 'calendar' ? 'calendar' : 'list')}>
+        <TabsList className="h-8">
+          <TabsTrigger value="list" className="h-6 gap-1.5 text-xs">
+            <ListIcon className="h-3.5 w-3.5" /> List
+          </TabsTrigger>
+          <TabsTrigger value="calendar" className="h-6 gap-1.5 text-xs">
+            <CalendarDays className="h-3.5 w-3.5" /> Calendar
+            {datedCount > 0 ? (
+              <Badge variant="outline" className="ml-0.5 px-1 py-0 text-[10px] tabular-nums">
+                {datedCount}
+              </Badge>
+            ) : null}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="list" forceMount className="space-y-4 data-[state=inactive]:hidden">
+          {WORK_LANES.map((lane) => (
+            <LaneSection key={lane} lane={lane} items={lanes[lane]} today={today} />
+          ))}
+        </TabsContent>
+
+        <TabsContent value="calendar" forceMount className="data-[state=inactive]:hidden">
+          <WorkCalendar lanes={lanes} today={today} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
