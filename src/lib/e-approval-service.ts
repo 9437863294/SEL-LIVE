@@ -4,6 +4,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -186,6 +187,25 @@ const pruneUndefined = <T>(value: T): T => {
   }
   return value;
 };
+
+/**
+ * Like `pruneUndefined`, but a top-level `undefined` becomes an instruction to *remove* the field.
+ *
+ * For a merge write, the two are opposites. The engine clears a field by setting it to `undefined` —
+ * `reopenStep` does it to `actedByUserId`/`onBehalfOfUserId`, Forward and Escalate do it to
+ * `ownedByUserId`/`delegatedToUserId`. Pruning those keys and then merging leaves the *old* value in
+ * Firestore untouched, so a step forwarded away from whoever had claimed it kept that claim, and a
+ * step reopened by a return still carried the approver who had already acted on it. The step looked
+ * settled when it was not, and the stale claim decided who was allowed to act on it next.
+ *
+ * `deleteField()` only works at the top level of a merge, so nested values are still pruned: those
+ * are whole objects the engine replaces rather than clears, and Firestore rejects `undefined` inside
+ * them either way.
+ */
+const pruneUndefinedClearing = (value: Record<string, unknown>): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [key, entry === undefined ? deleteField() : pruneUndefined(entry)]),
+  );
 
 /** Firestore document ids for engine-created steps, so nothing is renumbered on write. */
 const firestoreIdFactory = () => () => doc(collection(db, E_APPROVAL_COLLECTIONS.steps)).id;
@@ -2176,7 +2196,9 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
     if (previous && JSON.stringify(stripAudit(previous)) === JSON.stringify(step)) return;
     batch.set(
       doc(db, E_APPROVAL_COLLECTIONS.steps, step.id),
-      pruneUndefined({
+      // Clearing, not pruning — see `pruneUndefinedClearing`. A step is the one record here whose
+      // fields the engine genuinely un-sets.
+      pruneUndefinedClearing({
         ...step,
         approvalId: request.id,
         organizationId: actor.organizationId ?? null,

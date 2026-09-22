@@ -149,6 +149,30 @@ thing this screen knows and was not worth losing to merge the tables. Ordering i
 `compareMergedWorkItems` — lane first, urgency within — so rows naming you stay on top and a deep
 shared queue can never bury them. The per-lane counts moved to a one-line `LaneSummary` above.
 
+## Motion
+
+Defined in `globals.css` alongside the existing module animation sets, and following a constraint
+already recorded there for `am-card-in` and `vm-reveal-up`: **fade and rise, never scale.** The KPI
+cards are `bg-white/80 backdrop-blur-sm`, and scaling a blurred surface resamples the blur every
+frame, which reads as a flash rather than a movement.
+
+- `animate-wd-card-in` — the four figures rise in, staggered 70ms apart, so the row assembles as four
+  objects rather than one painted band.
+- `animate-wd-accent` — the gradient bar across each card's top draws on from the left, 170ms after
+  its own card lands.
+- `useCountUp` — the figures animate from their **previous** value, not from zero. Counting up from
+  zero on every refresh would make a number that did not change look like news. It runs on
+  `requestAnimationFrame`, so a dashboard left open on another monitor is not burning cycles.
+
+The stagger is one `--wd-delay` custom property per card, not two inline `animationDelay` values:
+the accent bar is a child, so it inherits the number and offsets from it.
+
+All of it has a `prefers-reduced-motion` branch — `animation: none` for the entrances, and
+`useCountUp` returns the value untouched without ever scheduling a frame. That media listener is
+live, so toggling the OS setting takes effect without a reload. The rule is scoped to these classes
+rather than applied globally: the rest of the application's animations predate it, and silencing
+them from here would change screens this work never touched.
+
 ## Filters
 
 The calendar filters on two dimensions, both multi-select:

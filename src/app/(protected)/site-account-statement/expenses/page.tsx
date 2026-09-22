@@ -321,6 +321,15 @@ export default function SiteExpensesPage() {
   /** Cache identity — a write bumps `reloadToken`, which must invalidate a cached full scope. */
   const scopeCacheKey = `${scopeKey}#${reloadToken}`;
 
+  /*
+   * The live scope key, readable from inside an async callback.
+   *
+   * `loadMore` closes over the value at the moment it was called; this is what it compares against
+   * to notice that the filters moved while its request was in flight.
+   */
+  const scopeCacheKeyRef = useRef(scopeCacheKey);
+  useEffect(() => { scopeCacheKeyRef.current = scopeCacheKey; }, [scopeCacheKey]);
+
   /**
    * The scope, settled.
    *
@@ -436,9 +445,17 @@ export default function SiteExpensesPage() {
   async function loadMore() {
     if (!pageCursor || loadingMore) return;
     setLoadingMore(true);
+    // Remembered so a reply that arrives after the scope moved on can be discarded.
+    const requestedFor = scopeCacheKey;
     try {
       const page = await expensesPage(ledgerScope, { cursor: pageCursor, pageSize: SAS_PAGE_SIZE });
-      setExpenses(prev => [...prev, ...page.rows]);
+      if (requestedFor !== scopeCacheKeyRef.current) return;
+      setExpenses(prev => {
+        // Guards against a repeated cursor and against a fallback that resumed from the wrong
+        // offset: the same record must never appear twice, because the totals add these up.
+        const seen = new Set(prev.map(row => row.id));
+        return [...prev, ...page.rows.filter(row => !seen.has(row.id))];
+      });
       setPageCursor(page.cursor);
     } catch (e: any) {
       toast({ title: 'Could not load more', description: e?.message, variant: 'destructive' });

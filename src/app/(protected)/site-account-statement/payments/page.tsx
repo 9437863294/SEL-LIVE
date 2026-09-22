@@ -359,9 +359,17 @@ export default function PaymentsPage() {
   async function loadMore() {
     if (!pageCursor || loadingMore) return;
     setLoadingMore(true);
+    // Remembered so a reply that arrives after the scope moved on can be discarded.
+    const requestedFor = scopeCacheKey;
     try {
       const page = await paymentsPage(ledgerScope, { cursor: pageCursor, pageSize: SAS_PAGE_SIZE });
-      setPayments(prev => [...prev, ...page.rows]);
+      if (requestedFor !== scopeCacheKeyRef.current) return;
+      setPayments(prev => {
+        // Guards against a repeated cursor and against a fallback that resumed from the wrong
+        // offset: the same record must never appear twice, because the totals add these up.
+        const seen = new Set(prev.map(row => row.id));
+        return [...prev, ...page.rows.filter(row => !seen.has(row.id))];
+      });
       setPageCursor(page.cursor);
     } catch (e: any) {
       toast({ title: 'Could not load more', description: e?.message, variant: 'destructive' });
@@ -626,6 +634,15 @@ export default function PaymentsPage() {
   const [scopeCache, setScopeCache] = useState<{ key: string; rows: SASPayment[]; truncated: boolean } | null>(null);
   const [scopeLoading, setScopeLoading] = useState(false);
   const scopeCacheKey = `${scopeKey}#${reloadToken}`;
+
+  /*
+   * The live scope key, readable from inside an async callback.
+   *
+   * `loadMore` closes over the value at the moment it was called; this is what it compares against
+   * to notice that the filters moved while its request was in flight.
+   */
+  const scopeCacheKeyRef = useRef(scopeCacheKey);
+  useEffect(() => { scopeCacheKeyRef.current = scopeCacheKey; }, [scopeCacheKey]);
 
   useEffect(() => {
     if (!staticLoaded || !needsFullScope) return;

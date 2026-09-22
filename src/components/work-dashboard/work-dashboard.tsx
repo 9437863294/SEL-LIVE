@@ -77,20 +77,43 @@ import {
   type WorkSummary,
 } from '@/lib/work-dashboard';
 import { useWorkDashboard } from './hooks';
+import { useCountUp } from './use-count-up';
 import WorkCalendar from './work-calendar';
 
 /* ── figures ───────────────────────────────────────────────────────────────────────────────────── */
 
 /**
- * A zero is rendered muted rather than in the same weight as a real figure.
+ * Compact above a thousand.
+ *
+ * A shared queue can genuinely hold four figures — Daily Requisition's open pipeline runs into the
+ * thousands — and `1799` sitting next to `1` makes the small number look like the unimportant one,
+ * when it is the only one naming this person. `1.8k` keeps the magnitude without the visual weight.
+ */
+const formatFigure = (value: number): string =>
+  value >= 1000
+    ? new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+    : String(value);
+
+/**
+ * A count, animated to its new value, and muted when it is zero.
  *
  * On a typical day most of these are zero — one person's four counts are not four pieces of news —
  * and four confident black zeroes give a screen with one real item on it the visual weight of a
  * screen with forty. Muting them keeps the eye on the number that is actually saying something.
  */
 function Figure({ value }: { value: number }) {
+  const shown = useCountUp(value);
   return (
-    <span className={cn('tabular-nums', value === 0 && 'font-normal text-muted-foreground/60')}>{value}</span>
+    <span
+      className={cn(
+        'tabular-nums transition-colors',
+        value === 0 && 'font-normal text-muted-foreground/60',
+      )}
+    >
+      {/* The animated value while counting, the exact one once settled — so a compacted figure never
+          shows a rounding artefact mid-flight. */}
+      {formatFigure(shown)}
+    </span>
   );
 }
 
@@ -134,7 +157,7 @@ function SummaryFigures({ summary, weekMeetings }: { summary: WorkSummary; weekM
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-      {figures.map((figure) => (
+      {figures.map((figure, index) => (
         <KpiCard
           key={figure.label}
           label={figure.label}
@@ -142,6 +165,23 @@ function SummaryFigures({ summary, weekMeetings }: { summary: WorkSummary; weekM
           hint={figure.hint}
           icon={figure.icon}
           tone={figure.tone}
+          accent
+          accentClassName="animate-wd-accent"
+          className={cn(
+            'animate-wd-card-in',
+            // A lift on hover, so the row reads as a set of objects rather than a painted band.
+            'hover:-translate-y-0.5 hover:shadow-md motion-reduce:hover:translate-y-0',
+            'transition-[transform,box-shadow] duration-200',
+          )}
+          /*
+            Staggered by index, so the row assembles left to right rather than appearing at once —
+            which is what makes four cards read as four things rather than one painted band.
+
+            Set as a custom property, not `animationDelay`, because the accent bar inside the card
+            needs the same number plus an offset. A custom property inherits to it; an inline
+            `animationDelay` would apply only to the card itself.
+          */
+          style={{ '--wd-delay': `${index * 70}ms` } as React.CSSProperties}
         />
       ))}
     </div>
@@ -579,11 +619,11 @@ export default function WorkDashboard({
         stops Radix applying `hidden`, so `data-[state=inactive]:hidden` does the hiding.
       */}
       <Tabs value={view} onValueChange={(value) => setView(value === 'calendar' ? 'calendar' : 'list')}>
-        <TabsList className="h-8">
-          <TabsTrigger value="list" className="h-6 gap-1.5 text-xs">
+        <TabsList className="h-9 border border-slate-200/80 bg-slate-100/80 p-1 shadow-sm">
+          <TabsTrigger value="list" className='h-7 gap-1.5 px-2.5 text-xs transition-all data-[state=active]:shadow-sm'>
             <ListIcon className="h-3.5 w-3.5" /> List
           </TabsTrigger>
-          <TabsTrigger value="calendar" className="h-6 gap-1.5 text-xs">
+          <TabsTrigger value="calendar" className='h-7 gap-1.5 px-2.5 text-xs transition-all data-[state=active]:shadow-sm'>
             <CalendarDays className="h-3.5 w-3.5" /> Calendar
             {datedCount > 0 ? (
               <Badge variant="outline" className="ml-0.5 px-1 py-0 text-[10px] tabular-nums">

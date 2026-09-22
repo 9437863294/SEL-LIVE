@@ -128,14 +128,25 @@ export interface SASCursor {
    * sorts client-side and pages by position instead.
    */
   readonly offset?: number;
+  /**
+   * How many rows this cursor has already produced across all pages.
+   *
+   * The indexed and unindexed paths can swap mid-pagination: the composite index may still be
+   * building, or the circuit breaker may trip between one page and the next. When that happens
+   * the snapshot marks are useless to the fallback, which pages by position — and without a
+   * running count it restarted at zero and handed back rows the caller had already appended,
+   * so every row of page one appeared twice. This is what lets the fallback resume.
+   */
+  readonly served: number;
 }
 
 function makeCursor(
   marks: (QueryDocumentSnapshot<DocumentData> | null)[],
   done: readonly number[],
+  served: number,
   offset?: number,
 ): SASCursor {
-  return { __brand: 'SASCursor', marks, done, offset } as SASCursor;
+  return { __brand: 'SASCursor', marks, done, served, offset } as SASCursor;
 }
 
 const chunkScope = (projectIds: string[] | null) => chunkProjectIds(projectIds);
@@ -419,16 +430,24 @@ export async function fetchLedgerPage<T>(
     const hasMore = docs.length > offset + pageSize;
     return {
       rows: slice.map(doc => ({ id: doc.id, ...doc.data() } as T)),
-      cursor: hasMore ? makeCursor([], [], offset + pageSize) : null,
+      cursor: hasMore ? makeCursor([], [], offset + slice.length, offset + slice.length) : null,
       hasMore,
     };
   }
+
+  /*
+   * Where the fallback has to pick up from.
+   *
+   * `served` rather than zero: this call may be the first to fall back after earlier pages came
+   * from the indexed path, and restarting would re-serve rows the caller has already appended.
+   */
+  const alreadyServed = options.cursor?.served ?? 0;
 
   // Already paging through a fallback result — stay on that path rather than flip-flopping.
   if (options.cursor?.offset !== undefined) return unindexedPage(options.cursor.offset);
 
   const shape = `${kind}:page`;
-  if (indexKnownMissing(shape)) return unindexedPage(0);
+  if (indexKnownMissing(shape)) return unindexedPage(alreadyServed);
 
   /** The merge below works on plain records, so each snapshot is carried alongside its sort key. */
   type Carried = OrderedRecord & { snapshot: QueryDocumentSnapshot<DocumentData> };
@@ -463,7 +482,7 @@ export async function fetchLedgerPage<T>(
   } catch (error) {
     if (!isMissingIndex(error)) throw error;
     noteMissingIndex(shape);
-    return unindexedPage(0);
+    return unindexedPage(alreadyServed);
   }
 
   const previousCarried: (Carried | null)[] = marks.map(mark =>
@@ -475,7 +494,11 @@ export async function fetchLedgerPage<T>(
   return {
     rows: merged.rows.map(entry => ({ id: entry.id, ...entry.snapshot.data() } as T)),
     cursor: merged.hasMore
-      ? makeCursor(merged.marks.map(mark => mark?.snapshot ?? null), merged.done)
+      ? makeCursor(
+          merged.marks.map(mark => mark?.snapshot ?? null),
+          merged.done,
+          alreadyServed + merged.rows.length,
+        )
       : null,
     hasMore: merged.hasMore,
   };

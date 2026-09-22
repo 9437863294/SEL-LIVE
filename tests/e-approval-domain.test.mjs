@@ -1008,6 +1008,90 @@ test('an added approver takes a midpoint position so nothing is renumbered', () 
   assert.equal(onlyActive(state).name, 'Approval — Extra Approver', 'and runs immediately after the inserter');
 });
 
+test('approvers added one after another run in the order they were added', () => {
+  let state = submitted();
+  ['First', 'Second', 'Third'].forEach((label, index) => {
+    state = act(state, {
+      kind: 'Add Approver',
+      actor: { userId: 'u-mgr' },
+      targets: [user(`u-add-${index}`, `${label} Added`)],
+      now: `2026-08-22T1${index}:00:00.000Z`,
+    });
+  });
+
+  // Anchored on the step itself each time, the midpoints walked backwards — 1.5, then 1.25, then
+  // 1.125 — and the chain visited the three in the reverse of the order they were named.
+  assert.deepEqual(
+    state.steps
+      .filter((step) => step.name.startsWith('Approval — '))
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((step) => step.name),
+    ['Approval — First Added', 'Approval — Second Added', 'Approval — Third Added'],
+  );
+
+  const reached = [];
+  let guard = 0;
+  while (state.request.status !== 'Approved' && guard++ < 10) {
+    const step = state.steps.find((candidate) => candidate.status === 'Active');
+    reached.push(step.name);
+    state = act(state, {
+      kind: 'Approve',
+      actor: { userId: step.assignment.userId },
+      stepId: step.id,
+      now: `2026-08-23T0${guard}:00:00.000Z`,
+    });
+  }
+  assert.deepEqual(reached, [
+    'Manager',
+    'Approval — First Added',
+    'Approval — Second Added',
+    'Approval — Third Added',
+    'Finance',
+    'Director',
+    'ED',
+  ]);
+});
+
+test('an added approver records the step it was inserted after', () => {
+  let state = submitted();
+  const inserter = onlyActive(state);
+  state = act(state, {
+    kind: 'Add Approver',
+    actor: { userId: 'u-mgr' },
+    targets: [user('u-x', 'Extra Approver')],
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  assert.equal(stepNamed(state, 'Approval — Extra').insertedAfterStepId, inserter.id);
+});
+
+test('an approver added by an inserted approver lands after them, not beside them', () => {
+  let state = submitted();
+  state = act(state, {
+    kind: 'Add Approver',
+    actor: { userId: 'u-mgr' },
+    targets: [user('u-x', 'Extra Approver')],
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  const first = stepNamed(state, 'Approval — Extra');
+  // The inserted approver has to be holding the file before they can add anyone of their own.
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-mgr' }, now: '2026-08-22T11:30:00.000Z' });
+  state = act(state, {
+    kind: 'Add Approver',
+    actor: { userId: 'u-x' },
+    targets: [user('u-y', 'Deeper Approver')],
+    now: '2026-08-22T12:00:00.000Z',
+  });
+
+  const second = stepNamed(state, 'Approval — Deeper');
+  assert.ok(
+    second.sequence > first.sequence,
+    `expected the deeper approver after ${first.sequence}, got ${second.sequence}`,
+  );
+  assert.equal(second.insertedAfterStepId, first.id);
+  state = act(state, { kind: 'Approve', actor: { userId: 'u-x' }, now: '2026-08-22T12:30:00.000Z' });
+  assert.equal(onlyActive(state).name, 'Approval — Deeper Approver');
+});
+
 test('escalating moves the step to the senior authority with a fresh clock', () => {
   let state = submitted();
   state = act(state, {

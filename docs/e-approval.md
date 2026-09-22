@@ -76,6 +76,12 @@ Key fields:
 
 - `sequence` — position in the primary chain. **Fractional values are legitimate**: an inserted
   approver takes the midpoint between its neighbours, so no step with history is ever renumbered.
+  The midpoint is anchored on the last approver *already inserted from the same step*
+  (`insertedAfterStepId`), not on the step itself. Anchoring on the step put each new approver in
+  front of the last one added — midpoint(1, 2) = 1.5, then midpoint(1, 1.5) = 1.25, then 1.125 — so
+  naming three approvers ran them backwards. Nothing was lost, which is why it survived: the chain
+  visited all three, in the reverse of the order they were named, and the first person named looked
+  passed over until last.
 - `depth` — 0 for the primary chain, 1 for a verification of it, 2 for a verification of that.
 - `parentStepId` / `originStepId` — the verification stack.
 - `groupId` / `groupMode` / `groupRequiredCount` — parallel approval (All / Any / N-of-M).
@@ -83,6 +89,17 @@ Key fields:
   verification, or a file on hold, accumulates paused time and `dueAt` is recomputed from it.
   Otherwise every approver who asked a question would breach an SLA for the time the answer took.
 - `version` / `supersededInVersion` — which version of the content this step's decision relates to.
+
+**A step write clears, it does not prune.** The engine un-sets a field by assigning `undefined` —
+`reopenStep` does it to `actedByUserId`/`onBehalfOfUserId`, Forward and Escalate to
+`ownedByUserId`/`delegatedToUserId`. `pruneUndefined` drops those keys, and a `{ merge: true }` write
+then leaves the *old* value in Firestore, so a step forwarded away from whoever claimed it kept that
+claim and a step reopened by a return still carried the approver who had already acted. The claim is
+not cosmetic: `isEApprovalStepAssignee` reads `ownedByUserId` to decide who may act, so the stale
+value locked the new holder out. `pruneUndefinedClearing` sends `deleteField()` for a top-level
+`undefined` instead; nested values are still pruned, since `deleteField()` is only valid at the top
+level of a merge. The request write already guarded against this with `?? null`; the step write did
+not.
 
 `isChildEApprovalStep` decides pop-vs-advance by **position (`depth`), not by type**. A template may
 legitimately place a verification stage in the primary chain ("Finance Verification" between Purchase

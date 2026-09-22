@@ -47,6 +47,20 @@ export const TONES: Record<Tone, { bg: string; text: string; ring: string }> = {
   cyan: { bg: 'bg-cyan-50', text: 'text-cyan-600', ring: 'ring-cyan-100' },
 };
 
+/** Tailwind gradient classes per tone, for the optional accent bar. */
+const ACCENT: Record<Tone, string> = {
+  slate: 'from-slate-300 to-slate-400',
+  emerald: 'from-emerald-400 to-emerald-500',
+  amber: 'from-amber-400 to-amber-500',
+  rose: 'from-rose-400 to-rose-500',
+  blue: 'from-blue-400 to-blue-500',
+  indigo: 'from-indigo-400 to-indigo-500',
+  orange: 'from-orange-400 to-orange-500',
+  violet: 'from-violet-400 to-violet-500',
+  teal: 'from-teal-400 to-teal-500',
+  cyan: 'from-cyan-400 to-cyan-500',
+};
+
 export function KpiCard({
   label,
   value,
@@ -54,6 +68,10 @@ export function KpiCard({
   icon: Icon,
   tone = 'slate',
   href,
+  className,
+  style,
+  accent = false,
+  accentClassName,
 }: {
   label: string;
   /** A node so a card can show a `<Money>` figure without the caller stringifying it. */
@@ -62,16 +80,42 @@ export function KpiCard({
   icon?: React.ElementType;
   tone?: Tone;
   href?: string;
+  /** Extra classes on the card — entrance animation, hover lift, a stagger delay. */
+  className?: string;
+  /** Inline style on the card — the home dashboard uses it to set its `--wd-delay` stagger. */
+  style?: React.CSSProperties;
+  /**
+   * Draws a thin gradient bar across the top of the card in the tone's colour.
+   *
+   * Off by default, so the fifty screens already using this card look exactly as they did. On, it
+   * gives a row of cards a colour identity without tinting the whole surface — which on a
+   * `bg-white/80 backdrop-blur-sm` card muddies the text rather than decorating it.
+   */
+  accent?: boolean;
+  /** Classes for the accent bar itself, e.g. an animation. */
+  accentClassName?: string;
 }) {
   const palette = TONES[tone] || TONES.slate;
 
   const body = (
     <Card
       className={cn(
-        'h-full border-white/60 bg-white/80 shadow-sm backdrop-blur-sm transition-shadow',
+        'relative h-full overflow-hidden border-white/60 bg-white/80 shadow-sm backdrop-blur-sm transition-shadow',
         href && 'hover:shadow-md',
+        className,
       )}
+      style={style}
     >
+      {accent && (
+        <span
+          aria-hidden
+          className={cn(
+            'absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r',
+            ACCENT[tone] || ACCENT.slate,
+            accentClassName,
+          )}
+        />
+      )}
       <CardContent className="flex items-start gap-3 p-4">
         {Icon && (
           <span

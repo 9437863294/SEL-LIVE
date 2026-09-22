@@ -536,6 +536,15 @@ export interface EApprovalStepRecord {
   supersededInVersion?: number;
   /** Reassignment trail — forward, delegate and escalate all move ownership in place. */
   reassignments?: EApprovalReassignment[];
+  /**
+   * For a step created by `Add Approver`: the step it was inserted after.
+   *
+   * Provenance, and load-bearing. Adding a second approver from the same stage has to land *after*
+   * the first one added, not between the stage and it — see the sequence arithmetic in that action.
+   * Without a record of where each insertion came from there is no way to tell an approver inserted
+   * a moment ago from an original later stage, and the midpoint walks backwards.
+   */
+  insertedAfterStepId?: string;
 
   /* ── Mirrored steps (a chain standing in for another module's workflow) ─────────────────────── */
 
@@ -4289,9 +4298,25 @@ export function applyEApprovalAction(
       const targets = (input.targets ?? []).filter(Boolean);
       if (!targets.length) throw new EApprovalRuleError('Choose the approver to add.');
       const primary = primaryEApprovalSteps(steps);
-      const nextSequence = primary.find((candidate) => candidate.sequence > step.sequence)?.sequence;
-      // A midpoint, so an inserted approver never renumbers a step that already has history.
-      const sequence = nextSequence != null ? (step.sequence + nextSequence) / 2 : step.sequence + 1;
+      /*
+       * Insert after the approvers already added from this same step, not immediately after the
+       * step itself.
+       *
+       * The midpoint is what keeps an insertion from renumbering a step that already has history.
+       * But anchoring it on `step.sequence` every time put each new approver *in front of* the last
+       * one added — midpoint(1, 2) = 1.5, then midpoint(1, 1.5) = 1.25, then 1.125 — so adding
+       * three approvers ran them in the reverse of the order they were named. Everybody still
+       * approved, which is why it survived: the chain simply visited them backwards, and the first
+       * person named looked passed over until last.
+       *
+       * Anchoring on the last sibling instead gives 1.5, 1.75, 1.875 — the order they were added.
+       */
+      const siblings = steps.filter((candidate) => candidate.insertedAfterStepId === step.id);
+      const anchor = siblings.length
+        ? Math.max(step.sequence, ...siblings.map((candidate) => candidate.sequence))
+        : step.sequence;
+      const nextSequence = primary.find((candidate) => candidate.sequence > anchor)?.sequence;
+      const sequence = nextSequence != null ? (anchor + nextSequence) / 2 : anchor + 1;
       const groupId = nextId('grp-added');
       targets.forEach((assignment) => {
         steps.push({
@@ -4308,6 +4333,7 @@ export function applyEApprovalAction(
           assignment,
           status: 'Pending',
           outcome: null,
+          insertedAfterStepId: step.id,
           instruction: input.instruction,
           slaHours: eApprovalStepSla(input.slaHours, request.priority, settings),
           mandatory: true,

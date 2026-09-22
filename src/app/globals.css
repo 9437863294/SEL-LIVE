@@ -590,6 +590,58 @@ main {
   }
 }
 
+/* ── Work dashboard (home) animations ── */
+@keyframes wd-card-in {
+  /* Fade + rise, no scale — the same constraint as am-card-in and vm-reveal-up above. The KPI cards
+     on this dashboard are `bg-white/80 backdrop-blur-sm`, and scaling a blurred surface resamples
+     the blur every frame, which reads as a flash rather than a movement. */
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes wd-accent-grow {
+  /* The coloured bar across the top of each card, drawn on from the left after the card lands. */
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@layer utilities {
+  /*
+    The stagger comes from `--wd-delay`, set once on the card.
+
+    A CSS custom property rather than two inline `animation-delay` values because it *inherits*: the
+    accent bar is a child of the card and picks the same delay up without being told it, then offsets
+    from it. One number per card, set in one place.
+  */
+  .animate-wd-card-in {
+    /* `both` so the card holds its opening frame during its stagger delay instead of appearing,
+       vanishing, then animating — which is what `forwards` alone does to a delayed animation. */
+    animation: wd-card-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: var(--wd-delay, 0ms);
+  }
+
+  .animate-wd-accent {
+    transform-origin: left;
+    animation: wd-accent-grow 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    /* Drawn on after its card has landed, not racing it up the screen. */
+    animation-delay: calc(var(--wd-delay, 0ms) + 170ms);
+  }
+}
+
+/*
+  Honour the OS setting.
+
+  Scoped to this dashboard's own classes rather than applied globally: the rest of the application's
+  animations predate this rule and silencing all of them here would be a change to screens this work
+  never touched. New animation should come with its own reduced-motion branch, as these do.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .animate-wd-card-in,
+  .animate-wd-accent {
+    animation: none;
+  }
+}
+
 /* ─── Mobile: compact vm-panel card padding ──────────────────────── */
 @media (max-width: 640px) {
   .vm-module-root {
