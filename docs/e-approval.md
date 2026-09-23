@@ -512,6 +512,68 @@ Other notes:
 - A request raised before rich text existed has no `bodyHtml` and renders from `body` exactly as it
   always did. Opening one to edit seeds the editor via `plainTextToEApprovalHtml`.
 
+### Fitting a pasted proposal onto the paper
+
+A twelve-column comparative statement out of Excel is wider than A4, and the browser's answer is to
+clip it — so the note that gets signed is missing its last columns with nothing on the paper to say
+so. `e-approval-print-fit.ts` decides what to do about it, purely and unit-tested; the print page
+measures and applies.
+
+The note sets **its own half-inch page margin** (`E_APPROVAL_PAGE_MARGIN_IN`) rather than inheriting
+the app-wide `@page` from `globals.css`, which other modules' print views are built around. That
+constant is the single source of truth: the `@page` rule the printer is handed and the printable
+width the scale is calculated from both come from it. A margin set in CSS and a width assumed in the
+arithmetic that disagree by a few millimetres give a note scaled to *almost* fit, and the symptom is
+a last column shaved off the right edge with nothing to explain it. At half an inch the paper gives
+**697px portrait, 1026px landscape**.
+
+The fit targets slightly less than that — `PRINT_SAFETY_FRACTION`, 2%, giving **681px and 1003px**.
+The arithmetic is exact (measured in Chrome, a fitted table lands within 0.3px of its target) and the
+printed note *still* lost its right-hand border and the last digit of the last column, because the
+print pipeline adds insets the page cannot see: device-pixel snapping, a collapsed outer border
+straddling the table's border box, and the printer driver rounding the margins it was handed. Those
+are absorbed rather than modelled. 2% of A4 is about 4mm — a scale change no reader notices, against
+a failure where a figure silently loses a digit on a document somebody signs. If a sliver is still
+lost on a particular printer, that constant is the one number to turn.
+
+Two levers, in order:
+
+1. **Shrink.** A mild reduction is invisible and keeps the note portrait, which is how it is filed.
+2. **Rotate.** Below `MIN_READABLE_SCALE` (0.8) shrinking stops meaning "slightly smaller" and starts
+   meaning "unreadable" — a rate table at 55% is one nobody checks figures against — so the page
+   turns landscape instead, and shrinks again from there only if still too wide. `MIN_SCALE` (0.45)
+   is the hard floor, and a fit that hits it reports `clipped` so the print bar can say so rather
+   than cropping quietly.
+
+Implementation notes, each one a bug that was actually hit:
+
+- **`zoom`, not `transform: scale()`.** They look identical on screen and differ completely on paper:
+  a transform is a paint-time effect, so a transformed block taller than one sheet is *clipped* at
+  the page boundary instead of continuing onto the next — a long rate table printed fitted to the
+  width and then cut off halfway down. `zoom` is a layout property, so the content paginates like any
+  other block and nothing has to reserve height for it. Verified in Chrome: at `zoom: 0.64` a tall
+  table's layout height goes 2268px → 1473px, which is what makes the pagination work.
+- **Width is set to the content, not the paper.** `zoom` multiplies the layout box, so a natural
+  1000px at `zoom: 0.7` occupies 700px. Pinning the width to the paper *and then* zooming shrinks it
+  twice.
+- **The width is measured, not assumed.** A pasted table carries its own column widths, so the widest
+  `table.scrollWidth` counts alongside the block's own — the table is what overflows while the block
+  around it sits happily clipped to its container.
+- **A `ResizeObserver`, not a measurement on mount.** `EApprovalRichText` shows a 64px placeholder
+  until DOMPurify has finished, asynchronously. Measuring once on mount measured the placeholder, so
+  the note printed with the approval history on top of the proposal table.
+- **`beforeprint`, not just the Print button** — Ctrl+P and the browser menu never touch our button —
+  and cleared on `afterprint`, because nothing is scaled on screen.
+- **The orientation `<style>` is rendered by React, from state.** `@page { size }` cannot come from a
+  class; the decision therefore has to be in the DOM *before* the print starts, so it is computed by
+  the observer and mirrored into a ref that the `beforeprint` handler reads. Pushed into
+  `document.head` by hand it would outlive the page and silently rotate whatever was printed next.
+- **`thead` repeats on each sheet** and the table is explicitly allowed to break, so a continuation
+  is not a grid of figures with no column names.
+
+The print bar shows what was decided (`describeEApprovalPrintFit`) and offers Portrait/Landscape as a
+manual override, because "fit automatically" is a good default and a bad cage.
+
 ## Removing an attachment
 
 A file dropped in by mistake can be taken off again — but only while the request is a **Draft**, and

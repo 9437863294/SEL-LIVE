@@ -6,6 +6,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   describeEApprovalAssignment,
@@ -16,6 +17,13 @@ import {
   type EApprovalStep,
 } from '@/lib/e-approval';
 import { loadEApprovalDetail } from '@/lib/e-approval-service';
+import {
+  describeEApprovalPrintFit,
+  E_APPROVAL_PAGE_MARGIN_CSS,
+  eApprovalPrintFit,
+  type EApprovalPrintFit,
+  type PrintOrientation,
+} from '@/lib/e-approval-print-fit';
 import { EApprovalRichText } from '@/components/e-approval/rich-text-editor';
 import {
   formatEApprovalAmount,
@@ -77,6 +85,12 @@ export default function EApprovalNotePage() {
   const [detail, setDetail] = useState<EApprovalDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const printRef = useRef<HTMLDivElement>(null);
+  const fitInnerRef = useRef<HTMLDivElement>(null);
+  /** 'auto' lets the content decide; the other two are the manual override on the print bar. */
+  const [orientation, setOrientation] = useState<'auto' | PrintOrientation>('auto');
+  const [fit, setFit] = useState<EApprovalPrintFit | null>(null);
+  /** The same decision the print handler reads — a listener must not close over stale state. */
+  const fitRef = useRef<EApprovalPrintFit | null>(null);
 
   const load = useCallback(async () => {
     if (!approvalId) return;
@@ -88,6 +102,103 @@ export default function EApprovalNotePage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * What the proposal wants to be, in CSS pixels. Reads only — never mutates.
+   *
+   * Measured rather than assumed: a table pasted from Excel carries its own column widths, and the
+   * only way to know what it needs is to let it lay out and look. The widest table counts as well as
+   * the block itself, because the table is what overflows while the block around it sits happily
+   * clipped to its container.
+   */
+  const measureProposalWidth = useCallback((): number => {
+    const inner = fitInnerRef.current;
+    if (!inner) return 0;
+    return Array.from(inner.querySelectorAll('table')).reduce(
+      (max, table) => Math.max(max, table.scrollWidth),
+      inner.scrollWidth,
+    );
+  }, []);
+
+  /**
+   * Keep the decision current as the proposal settles.
+   *
+   * A `ResizeObserver` rather than a measurement on mount, because `EApprovalRichText` renders a
+   * 64px placeholder until DOMPurify has finished sanitising, asynchronously. Measuring once on
+   * mount measured that placeholder — which is how the note came out with the approval history
+   * printed on top of the proposal table: the height reserved for a scaled block was the height of
+   * a spinner, and the real table overflowed it by several hundred pixels.
+   *
+   * The decision is mirrored into a ref as well as state. The `<style>` that turns the page
+   * landscape is rendered from the state, so it has to be in the DOM *before* the print starts —
+   * computing it inside `beforeprint` would be one React render too late for this print job.
+   */
+  useEffect(() => {
+    const inner = fitInnerRef.current;
+    if (isLoading || !detail || !inner) return;
+    const update = () => {
+      const next = eApprovalPrintFit(
+        measureProposalWidth(),
+        orientation === 'auto' ? {} : { force: orientation },
+      );
+      fitRef.current = next;
+      setFit(next);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [measureProposalWidth, orientation, isLoading, detail]);
+
+  /**
+   * Apply the fit for the duration of the print, and only then.
+   *
+   * **`zoom`, not `transform: scale()`.** The two look identical on screen and behave completely
+   * differently on paper: a transform is a paint-time effect, so a transformed block taller than
+   * one sheet is *clipped* at the page boundary rather than continuing onto the next. A twelve-row
+   * rate table would have come out fitted to the width and then cut off. `zoom` is a layout
+   * property — the content genuinely becomes smaller, paginates like any other block, and needs no
+   * height compensation, because the space it occupies shrinks with it.
+   *
+   * The width is set to what the content wants, not to the paper: `zoom` multiplies the layout box,
+   * so a natural 1000px at `zoom: 0.7` occupies 700px. Pinning the width to the paper first and
+   * then zooming would shrink it twice.
+   *
+   * On screen the proposal stays exactly as written — a wide table scrolls, as it does everywhere
+   * else in the module. Bound to `beforeprint`/`afterprint` rather than to the Print button, because
+   * Ctrl+P and the browser's own menu never touch our button.
+   */
+  useEffect(() => {
+    if (isLoading || !detail) return;
+
+    const clear = () => {
+      const inner = fitInnerRef.current;
+      if (!inner) return;
+      inner.style.removeProperty('zoom');
+      inner.style.removeProperty('width');
+    };
+
+    const apply = () => {
+      const inner = fitInnerRef.current;
+      if (!inner) return;
+      clear();
+      const next = fitRef.current;
+      if (!next || next.scale >= 1) return;
+      const natural = measureProposalWidth();
+      if (natural > 0) inner.style.width = `${natural}px`;
+      // `setProperty` rather than `style.zoom`: it is absent from the CSSStyleDeclaration typings
+      // in this TypeScript version, and this is a plain string assignment either way.
+      inner.style.setProperty('zoom', String(next.scale));
+    };
+
+    window.addEventListener('beforeprint', apply);
+    window.addEventListener('afterprint', clear);
+    return () => {
+      window.removeEventListener('beforeprint', apply);
+      window.removeEventListener('afterprint', clear);
+      clear();
+    };
+  }, [isLoading, detail, measureProposalWidth]);
 
   if (isLoading) return <Skeleton className="h-96 w-full" />;
 
@@ -141,11 +252,51 @@ export default function EApprovalNotePage() {
               <ArrowLeft className="h-3.5 w-3.5" /> Back to the approval
             </Link>
           </Button>
-          <Button size="sm" className="h-8 gap-1.5" onClick={() => window.print()}>
-            <Printer className="h-3.5 w-3.5" /> Print
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {fit && (
+              <span
+                className={
+                  fit.clipped
+                    ? 'text-[11px] font-medium text-destructive'
+                    : 'text-[11px] text-muted-foreground'
+                }
+              >
+                {describeEApprovalPrintFit(fit)}
+              </span>
+            )}
+            <Select value={orientation} onValueChange={(next) => setOrientation(next as typeof orientation)}>
+              <SelectTrigger className="h-8 w-[130px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Fit automatically</SelectItem>
+                <SelectItem value="portrait">Portrait</SelectItem>
+                <SelectItem value="landscape">Landscape</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button size="sm" className="h-8 gap-1.5" onClick={() => window.print()}>
+              <Printer className="h-3.5 w-3.5" /> Print
+            </Button>
+          </div>
         </CardHeader>
       </Card>
+
+      {/*
+        The note's own page setup, rather than the app-wide `@page` in globals.css.
+
+        Neither size nor margin can be set from a class, so this has to be a real stylesheet — and it
+        is rendered by React rather than pushed into document.head so React owns its lifetime: a
+        stray landscape rule left behind after navigating away would silently rotate the next thing
+        printed. Scoped to this page for the same reason, since `@page` is document-wide and the
+        other modules' print views are built around the margins they already have.
+
+        The margin comes from the same constant the fit is calculated against. A margin set here and
+        a width assumed there that disagree by a few millimetres give a note scaled to *almost* fit,
+        and the symptom is a last column shaved off the right edge with nothing to explain it.
+      */}
+      <style>
+        {`@page { size: A4 ${fit?.orientation ?? 'portrait'}; margin: ${E_APPROVAL_PAGE_MARGIN_CSS}; }`}
+      </style>
 
       <div
         ref={printRef}
@@ -268,13 +419,19 @@ export default function EApprovalNotePage() {
           {/*
             The formatting matters most here of all: this is the sheet that gets signed and filed, so
             a pasted comparative statement has to print as the table it was, not as a run of
-            tab-separated text. `ea-rich-text`'s print rules keep tables whole across a page break.
+            tab-separated text.
+
+            One wrapper, not two: `zoom` shrinks the layout box along with the content, so there is
+            nothing to compensate for and the block paginates like any other — a tall table simply
+            runs onto the next sheet, with its header row repeated. See the beforeprint effect above.
           */}
-          {request.bodyHtml ? (
-            <EApprovalRichText html={request.bodyHtml} className="mt-1" />
-          ) : (
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{request.body}</p>
-          )}
+          <div ref={fitInnerRef} className="ea-print-fit mt-1">
+            {request.bodyHtml ? (
+              <EApprovalRichText html={request.bodyHtml} />
+            ) : (
+              <p className="whitespace-pre-wrap text-sm leading-relaxed">{request.body}</p>
+            )}
+          </div>
         </div>
 
         <div className="mt-5">

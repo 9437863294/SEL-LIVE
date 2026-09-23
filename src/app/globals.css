@@ -1196,6 +1196,49 @@ main {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────────────────────
+ * Shrink-to-fit for a pasted proposal
+ *
+ * A twelve-column comparative statement out of Excel is wider than A4, and the browser's answer is
+ * to clip it — so the note that gets signed is missing its last columns with nothing on the paper
+ * to say so. The print page measures the content and sets `zoom` on this element; these rules are
+ * what let the zoomed block behave like a document.
+ *
+ * `zoom` and not `transform: scale()`, which is the whole reason this works: a transform is a
+ * paint-time effect, so a transformed block taller than one sheet is clipped at the page boundary
+ * instead of continuing onto the next — a long rate table would print fitted to the width and then
+ * cut off halfway down. `zoom` shrinks the layout box too, so the content paginates normally and
+ * nothing has to reserve height for it.
+ * ────────────────────────────────────────────────────────────────────────────────────────────── */
+@media print {
+  /* Nothing here may establish a scroll container or a width cap: clipping is the exact failure
+     being fixed, and the block is deliberately laid out wider than its on-screen column before
+     being zoomed down onto the paper. */
+  .ea-print-fit,
+  .ea-print-fit .ea-rich-text,
+  .ea-print-fit .ea-rich-text table {
+    overflow: visible !important;
+    max-width: none !important;
+  }
+
+  /* A proposal table that runs onto a second sheet repeats its header there. Without this the
+     continuation is a grid of figures with no column names — the reader has to page back to find
+     out which column is "Up To Date". */
+  .ea-print-fit .ea-rich-text thead {
+    display: table-header-group;
+  }
+  .ea-print-fit .ea-rich-text tfoot {
+    display: table-footer-group;
+  }
+
+  /* Rows stay whole, but the *table* is explicitly allowed to break — the default `avoid` inherited
+     from a wrapper would push a tall table onto a fresh page and leave most of one blank. */
+  .ea-print-fit .ea-rich-text table {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────────────────────
  * The printed Approval Note
  *
  * The note is the document that gets signed and filed, so it prints as a document: no rounded
