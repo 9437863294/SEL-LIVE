@@ -20,7 +20,7 @@
 import * as React from 'react';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Building2, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Building2, Loader2, Pencil, Plus, Sparkles, Trash2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,7 +39,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { hrDialog, HrEmptyState } from '@/components/hr/hr-ui';
-import { AccessCard } from './access-ui';
+import {
+  ACCESS_ACTION_CLASS,
+  ACCESS_ACTION_ICON,
+  ACCESS_ACTION_TONES,
+  AccessCard,
+} from './access-ui';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import {
@@ -180,10 +185,10 @@ function TemplateManager({
           }
         />
       ) : (
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid auto-rows-fr gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {templates.map((template) => (
-            <AccessCard key={template.id}>
-              <CardContent className="space-y-2.5 p-3.5">
+            <AccessCard key={template.id} className="flex h-full flex-col transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
+              <CardContent className="flex flex-1 flex-col gap-2.5 p-3.5">
                 <div>
                   <p className="truncate text-sm font-semibold text-slate-800">{template.name}</p>
                   <p className="line-clamp-2 text-xs text-muted-foreground">
@@ -220,34 +225,43 @@ function TemplateManager({
                   permission(s)
                 </p>
 
-                <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5 [&>*]:flex-1 sm:[&>*]:flex-none">
+                {/* Same action row as the role card — `mt-auto` puts it on the bottom edge of every
+                    card in the grid, and the shared spec keeps the three one size. Delete was an
+                    icon with a hover-only `title`, which said nothing at all on a touch device. */}
+                <div className="mt-auto flex gap-1.5 border-t border-slate-100 pt-2.5">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 flex-1 text-xs"
+                    className={cn(ACCESS_ACTION_CLASS, ACCESS_ACTION_TONES.indigo)}
                     onClick={() => onApplyTemplate(template.id)}
                   >
-                    Apply to users
+                    <Users className={ACCESS_ACTION_ICON} />
+                    Apply
                   </Button>
                   {canManage && (
                     <>
-                      <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className={cn(ACCESS_ACTION_CLASS, ACCESS_ACTION_TONES.sky)}
+                      >
                         <Link
                           href={`/settings/access-management/templates/${template.id}?returnTo=${TEMPLATES_RETURN_TO}`}
                         >
+                          <Pencil className={ACCESS_ACTION_ICON} />
                           Edit
                         </Link>
                       </Button>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        className="h-8 text-xs text-destructive"
-                        title="Delete template"
+                        className={cn(ACCESS_ACTION_CLASS, ACCESS_ACTION_TONES.rose)}
                         aria-label={`Delete ${template.name}`}
                         onClick={() => setPendingDelete({ id: template.id, name: template.name })}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span className="ml-1 sm:hidden">Delete</span>
+                        <Trash2 className={ACCESS_ACTION_ICON} />
+                        Delete
                       </Button>
                     </>
                   )}

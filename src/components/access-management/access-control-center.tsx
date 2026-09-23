@@ -86,6 +86,7 @@ import {
 } from './pickers';
 import {
   ACCESS_SCROLL_FRAME_CLASS,
+  ACCESS_STICKY_TOOLBAR_CLASS,
   AccessCard,
   AccessPageShell,
   RiskBadges,
@@ -632,7 +633,10 @@ function UsersTab({
 
   return (
     <div className="space-y-3">
-      <AccessCard>
+      {/* Pinned to the top of the tab's frame, like the role library's — filtering ~1,300 users
+          from halfway down the register should not mean scrolling back up to reach the control,
+          and the "N of M users" readout belongs with the filter that produces it. */}
+      <AccessCard className={ACCESS_STICKY_TOOLBAR_CLASS}>
         <CardContent className="space-y-2.5 p-3">
           <UserFilterBar
             filter={filter}
