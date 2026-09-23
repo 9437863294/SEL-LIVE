@@ -318,7 +318,7 @@ export default function WindowsAgentLayoutShell({ children }: { children: React.
 }
 
 function ShellBody({ children }: { children: React.ReactNode }) {
-  const { viewer, loading, canOpenModule } = useWindowsAgent();
+  const { viewer, loading } = useWindowsAgent();
   const pathname = usePathname() || '';
   const [sheetOpen, setSheetOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -362,7 +362,22 @@ function ShellBody({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!canOpenModule) {
+  const visible = SECTIONS.filter((section) => isVisible(section.gate, viewer));
+
+  /**
+   * Denied only when there is nothing at all to show.
+   *
+   * This used to test `canOpenModule`, which asks whether the viewer holds an *administrative*
+   * permission — and three of the sections are deliberately not administrative. "What is
+   * recorded" is §52's disclosure and is meant to be readable by the people being measured;
+   * "My activity" is §37's self-view, which `windows-agent-permissions.ts` is explicit is not a
+   * privilege; "Work calls" is a thing field staff do several times a day.
+   *
+   * So an ordinary employee was shown "you do not have access to this module" in front of the
+   * three pages written for them. Now the sidebar lists whatever they can see — often just those
+   * three — and the card appears only when that list is empty.
+   */
+  if (visible.length === 0) {
     return (
       <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
         <Card>
@@ -370,15 +385,13 @@ function ShellBody({ children }: { children: React.ReactNode }) {
             <CardTitle>Windows Agent</CardTitle>
             <CardDescription>
               You do not have access to this module. It needs at least one Windows Agent
-              permission — ask an administrator to grant one in Role Management.
+              permission — ask an administrator to grant one in Settings, Access Management.
             </CardDescription>
           </CardHeader>
         </Card>
       </div>
     );
   }
-
-  const visible = SECTIONS.filter((section) => isVisible(section.gate, viewer));
 
   /**
    * One row. A tile, a label when there is room, and a tooltip that always has something to say.
