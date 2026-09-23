@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Plus, ScrollText, Shield } from 'lucide-react';
+import { AlertTriangle, KeyRound, Plus, ScrollText, Shield } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,7 @@ import {
 } from '@/lib/windows-agent-permissions';
 import {
   deletePolicy,
+  fetchAgentApprovers,
   fetchAgentVersions,
   fetchAppCatalog,
   fetchAuditLogs,
@@ -144,6 +145,119 @@ const SETTING_LABELS: Record<keyof AgentPolicySettings, { label: string; help: s
   },
 };
 
+/**
+ * Who can approve closing, removing or stopping the agent.
+ *
+ * Sits on this page because the switch beside it — "Closing the agent needs an administrator" —
+ * is what makes the question urgent, and the answer used to require opening Access Management and
+ * reading every user one at a time. A fresh installation grants `Devices / Edit` to a *role* and
+ * frequently to no actual person, so "nobody" is a real answer and is said out loud rather than
+ * shown as an empty table.
+ */
+function ApproversCard() {
+  const approvers = useWindowsAgentQuery('Loading approvers', fetchAgentApprovers, []);
+  // HrDataList keys on `id`; an approver is keyed by the user they are.
+  const rows = (approvers.data?.approvers ?? []).map((approver) => ({ ...approver, id: approver.userId }));
+  const carryingRoles = approvers.data?.carryingRoles ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <KeyRound className="h-4 w-4 text-muted-foreground" aria-hidden />
+          Who can approve stopping the agent
+        </CardTitle>
+        <CardDescription>
+          Closing the agent, removing it, and stopping its Windows service all ask one of these
+          people to sign in. They hold <strong>Windows Agent / Devices / Edit</strong>.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {approvers.loading ? (
+          <HrLoader />
+        ) : approvers.error ? (
+          <p className="text-sm text-rose-600">{approvers.error.message}</p>
+        ) : rows.length === 0 ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="font-medium">Nobody can approve it.</p>
+            <p className="mt-1">
+              Nobody active holds the permission, so an agent on any PC cannot be closed,
+              removed or stopped by anyone.{' '}
+              {carryingRoles.length > 0 ? (
+                <>
+                  Grant the <strong>{carryingRoles.join(' or ')}</strong> role to at least two
+                  people — one is a single point of failure on the day they are on leave.
+                </>
+              ) : (
+                <>
+                  No role carries <strong>Windows Agent / Devices / Edit</strong> either, so it has
+                  to be added to a role or granted directly first.
+                </>
+              )}
+            </p>
+          </div>
+        ) : (
+          <HrDataList
+            rows={rows}
+            dense
+            columns={[
+              {
+                header: 'Name',
+                mobile: 'title',
+                cell: (row) => (
+                  <span>
+                    <span className="block font-medium">{row.name}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {[row.email, row.departmentName].filter(Boolean).join(' · ') || '—'}
+                    </span>
+                  </span>
+                ),
+              },
+              {
+                header: 'Through',
+                cell: (row) => (
+                  <span className="flex flex-wrap gap-1">
+                    {row.via.map((source) => (
+                      <Badge key={source} variant="secondary" className="font-normal">
+                        {source}
+                      </Badge>
+                    ))}
+                  </span>
+                ),
+              },
+              {
+                header: 'Until',
+                cell: (row) =>
+                  row.temporaryOnly && row.expiresAt ? (
+                    <span className="text-amber-700">
+                      expires {new Date(row.expiresAt).toLocaleDateString()}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">no expiry</span>
+                  ),
+              },
+            ]}
+          />
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          Add or remove people in <strong>Settings → Access Management</strong>.{' '}
+          {carryingRoles.length > 0 ? (
+            <>
+              Granting the <strong>{carryingRoles.join(' or ')}</strong> role is enough; so is
+              granting <strong>Windows Agent / Devices / Edit</strong> directly.
+            </>
+          ) : (
+            <>Grant <strong>Windows Agent / Devices / Edit</strong> to a role or to a person.</>
+          )}{' '}
+          It is the same permission that already covers blocking a device and forcing a
+          re-authentication, so anyone who can do those can approve this too.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function PoliciesPage() {
   const { viewer, actor, departments, directory, loading } = useWindowsAgent();
   const { run, pending } = useWindowsAgentAction();
@@ -180,6 +294,8 @@ export function PoliciesPage() {
           ) : null
         }
       />
+
+      <ApproversCard />
 
       <Card>
         <CardContent className="pt-6">

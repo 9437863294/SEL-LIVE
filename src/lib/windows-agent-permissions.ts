@@ -43,7 +43,12 @@
  *     not entitled to it.
  */
 
-import { hasAnyPermission, hasPermission, type PermissionSubject } from './access-control.ts';
+import {
+  PERMISSION_KEY_SEPARATOR,
+  hasAnyPermission,
+  hasPermission,
+  type PermissionSubject,
+} from './access-control.ts';
 
 export const WINDOWS_AGENT_PERMISSION_RESOURCE = 'Windows Agent';
 export const WINDOWS_AGENT_ACTIVITY_MODULE = 'Windows Agent';
@@ -176,6 +181,87 @@ export function canSignOutUser(viewer: WindowsAgentViewer): boolean {
  */
 export function canStopAgent(viewer: WindowsAgentViewer): boolean {
   return can(viewer, WINDOWS_AGENT_RESOURCES.devices, 'Edit');
+}
+
+/** One person who can approve closing, removing or stopping the agent, and how they got it. */
+export interface AgentApprover {
+  userId: string;
+  name: string;
+  email: string | null;
+  departmentName: string | null;
+  /** Where the permission comes from: a role name, "Direct", a template. */
+  via: string[];
+  /** True when every source is time-boxed — the approver stops being one on that date. */
+  temporaryOnly: boolean;
+  /** The earliest expiry among temporary sources, when there is one. */
+  expiresAt: string | null;
+}
+
+/**
+ * Everybody who can approve an agent Exit, an uninstall, or a service stop.
+ *
+ * ── Why this list needs to exist on a screen ───────────────────────────────────────────────────
+ *
+ * All three approvals check `Windows Agent / Devices / Edit`, and until now the only way to find
+ * out who holds it was to open Access Management and look through every user one at a time. That
+ * is the wrong place to discover, at five o'clock, that the answer is nobody — which is a state
+ * a fresh installation is in by default, because the permission is granted to a role rather than
+ * to a person.
+ *
+ * ── Why the sources are shown and not just the names ───────────────────────────────────────────
+ *
+ * "Priya can approve" and "Priya can approve until 30 September because of a temporary grant"
+ * are different facts, and the second one expires. Showing where each approver's permission
+ * comes from is also what makes it fixable: somebody holding it through a role nobody intended
+ * to be an agent administrator is visible here rather than in a role document.
+ *
+ * Pure, so the screen and the tests agree: it takes resolved access rather than fetching it.
+ */
+export function listAgentApprovers(
+  users: readonly {
+    id: string;
+    name?: string | null;
+    email?: string | null;
+    departmentName?: string | null;
+    status?: string | null;
+  }[],
+  accessByUserId: Record<
+    string,
+    { permissions: PermissionSubject; sources?: Record<string, { label: string; expiresAt?: string }[]> }
+  >,
+): AgentApprover[] {
+  const key = `${WINDOWS_AGENT_RESOURCES.devices}${PERMISSION_KEY_SEPARATOR}Edit`;
+  const approvers: AgentApprover[] = [];
+
+  for (const user of users) {
+    // A deactivated account cannot sign in, so it cannot approve anything. Listing one would be
+    // worse than listing nobody: somebody would ring them.
+    if (typeof user.status === 'string' && user.status.toLowerCase() === 'inactive') continue;
+
+    const access = accessByUserId[user.id];
+    if (!access) continue;
+    if (!hasPermission(access.permissions, WINDOWS_AGENT_RESOURCES.devices, 'Edit')) continue;
+
+    const sources = access.sources?.[key] ?? [];
+    const via = sources.length ? sources.map((source) => source.label) : ['Role'];
+
+    const expiries = sources
+      .map((source) => source.expiresAt)
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+    approvers.push({
+      userId: user.id,
+      name: user.name || user.email || user.id,
+      email: user.email ?? null,
+      departmentName: user.departmentName ?? null,
+      via: [...new Set(via)],
+      // Only when *every* source expires. One permanent source makes the temporary ones noise.
+      temporaryOnly: sources.length > 0 && expiries.length === sources.length,
+      expiresAt: expiries.length ? expiries.sort()[0] : null,
+    });
+  }
+
+  return approvers.sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export function canManageEnrollmentCodes(viewer: WindowsAgentViewer): boolean {

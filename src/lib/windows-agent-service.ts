@@ -20,7 +20,7 @@ import {
   type QueryConstraint,
 } from 'firebase/firestore';
 
-import { db } from './firebase';
+import { auth, db } from './firebase';
 import { ACTIVITY_MODULES } from './activity-modules';
 import { logUserActivity } from './activity-logger';
 import {
@@ -29,7 +29,7 @@ import {
   windowsAgentIds,
 } from './windows-agent';
 import { sanitizePolicySettings } from './windows-agent-policy';
-import type { ActivityScope } from './windows-agent-permissions';
+import type { ActivityScope, AgentApprover } from './windows-agent-permissions';
 import type {
   AppCategory,
   IsoDate,
@@ -536,6 +536,32 @@ export async function setAppCategory(
 export async function fetchPolicies(): Promise<WindowsAgentPolicy[]> {
   const snapshot = await getDocs(col(WINDOWS_AGENT_COLLECTIONS.policies));
   return readAll<WindowsAgentPolicy>(snapshot);
+}
+
+/**
+ * Who can approve closing, removing or stopping the agent.
+ *
+ * Through the API rather than Firestore because answering it needs every user, role and access
+ * grant, and a Windows Agent administrator is usually not allowed to read those — see the route
+ * for the full reasoning. The browser gets a list of names, not a permission graph.
+ */
+export async function fetchAgentApprovers(): Promise<{
+  approvers: AgentApprover[];
+  /** The roles that carry the permission — what to grant somebody to add them. */
+  carryingRoles: string[];
+}> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Your sign-in has expired. Reload the page and try again.');
+
+  const response = await fetch('/api/windows-agent/approvers', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || 'Could not load the approver list.');
+  return {
+    approvers: (body.approvers ?? []) as AgentApprover[],
+    carryingRoles: (body.carryingRoles ?? []) as string[],
+  };
 }
 
 export async function savePolicy(

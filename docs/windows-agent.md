@@ -793,6 +793,32 @@ sc sdset SELLiveAgent "D:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTL
 somebody ran that command looks identical from the outside. Re-running the installer, or a repair,
 puts it back.
 
+### Who can approve, and where you set it
+
+**`/windows-agent/policies` now lists them**, at the top of the page, beside the switch that makes
+the question matter. Each name shows the role or grant it comes from, and any expiry.
+
+All three approvals — closing the agent, removing it, stopping the service — check the same
+permission: **`Windows Agent / Devices / Edit`**. It is deliberately the permission that already
+covers blocking a device and forcing a re-authentication, because anyone who can block a PC can
+already stop it reporting.
+
+**To add people:** Settings → **Access Management**. Either grant a role that carries the
+permission — the card names which roles do, so it is a role name rather than a hunt through role
+documents — or grant `Windows Agent / Devices / Edit` directly to a person.
+
+> **Grant it to at least two.** One approver is a single point of failure on the day they are on
+> leave, and the failure mode is that nobody can close, remove or stop an agent anywhere in the
+> company. The card says so in as many words when the list is empty, which is the state a fresh
+> installation is in: the permission ships on a role, and a role with no holders approves nothing.
+
+The list is computed server-side, by `/api/windows-agent/approvers`, and gated on
+`Devices / View` rather than `Devices / Edit` — the person who most needs to know who can approve
+is the one who cannot, and has to find somebody who can. It is a route rather than a query because
+resolving it reads every user, role and access grant, and a Windows Agent administrator is usually
+not permitted to read those; the browser receives a list of names rather than the organisation's
+permission graph.
+
 ### Removing the agent needs the same approval
 
 Closing the agent needed an administrator; uninstalling it needed nothing at all, and took two
