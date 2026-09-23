@@ -792,10 +792,33 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                                   {file.extension || '?'}
                                 </span>
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium text-slate-800">{file.name}</p>
+                                  <p className="flex flex-wrap items-center gap-1.5 truncate text-sm font-medium text-slate-800">
+                                    {file.name}
+                                    {/*
+                                      greytHR holds genuine duplicates — the same file uploaded twice
+                                      seconds apart, under two document ids. Both are listed because
+                                      removing one is greytHR's decision, but two rows that look
+                                      identical otherwise read as a rendering fault.
+                                    */}
+                                    {file.duplicateName && (
+                                      <Badge
+                                        variant="outline"
+                                        className="border-amber-200 bg-amber-50 text-[10px] font-normal text-amber-800"
+                                        title="Another file in this category has the same name. Both exist in greytHR — compare the upload times."
+                                      >
+                                        Same name as another file
+                                      </Badge>
+                                    )}
+                                  </p>
                                   {file.createdAt && (
                                     <p className="text-[11px] text-muted-foreground">
-                                      Uploaded {new Date(file.createdAt).toLocaleString()}
+                                      {/* To the second: it is the only thing distinguishing two
+                                          same-named uploads 0.4s apart. */}
+                                      Uploaded{' '}
+                                      {new Date(file.createdAt).toLocaleString(undefined, {
+                                        dateStyle: 'medium',
+                                        timeStyle: 'medium',
+                                      })}
                                     </p>
                                   )}
                                 </div>

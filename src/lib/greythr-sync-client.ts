@@ -19,6 +19,7 @@ import type {
   EmployeeLeaveBalance,
   EmployeeOperationalDetail,
   EmployeeSensitiveDetail,
+  EmployeeSwipeMonth,
   EmploymentState,
   GreytHRSyncRun,
   GreytHRSyncSettings,
@@ -507,6 +508,72 @@ export interface AttendanceRegisterResponse {
   unidentified: number;
 }
 
-/** Everyone's monthly attendance summary. Not a muster roll — see the API route for why. */
+/** Everyone's monthly attendance summary. The day-by-day detail is the swipe register below. */
 export const fetchAttendanceRegister = (): Promise<AttendanceRegisterResponse> =>
   authorizedFetch<AttendanceRegisterResponse>('/api/greythr/employees/attendance');
+
+/* ------------------------------------------------------------------------------------------------
+ * The daily swipe register
+ * ---------------------------------------------------------------------------------------------- */
+
+export interface SwipeRegisterRow {
+  employeeId: string;
+  /** Empty when the mirror holds no record for them — see `LeaveRegisterRow.name`. */
+  name: string;
+  employeeNo: string;
+  department: string;
+  designation: string;
+  employmentState: string;
+  inMirror: boolean;
+  month: EmployeeSwipeMonth;
+}
+
+export interface SwipeRegisterResponse {
+  ok: boolean;
+  rows: SwipeRegisterRow[];
+  /** `YYYY-MM`. */
+  month: string;
+  period: { start: string; end: string };
+  count: number;
+  /** Swipe documents whose employee is not in the mirror. */
+  unidentified: number;
+  /** Mirror employees with no swipe document for this month. */
+  missing: number;
+  totals: {
+    swiped: number;
+    present: number;
+    absent: number;
+    lateIn: number;
+    earlyOut: number;
+    workMinutes: number;
+    daysRecorded: number;
+  };
+  syncedAt: string | null;
+}
+
+/** The result of fetching a month on demand, which also returns the stored month afterwards. */
+export interface SwipeFetchResponse extends SwipeRegisterResponse {
+  fetched: number;
+  written: number;
+  skipped: number;
+  /** False when the muster did not page to the end, so the month may be partial. */
+  complete: boolean;
+}
+
+/** The stored swipes for a month, joined against the mirror for names. */
+export const fetchSwipeRegister = (month?: string): Promise<SwipeRegisterResponse> =>
+  authorizedFetch<SwipeRegisterResponse>(
+    month ? `/api/greythr/employees/swipes?month=${encodeURIComponent(month)}` : '/api/greythr/employees/swipes',
+  );
+
+/**
+ * Fetch one month's muster from greytHR and store it.
+ *
+ * Needs `Sync from GreytHR`, because it calls the API and writes — the register itself only needs
+ * `View`. The heaviest request in the integration: a month of muster for everybody.
+ */
+export const fetchSwipeMonthFromGreytHR = (month: string): Promise<SwipeFetchResponse> =>
+  authorizedFetch<SwipeFetchResponse>('/api/greythr/employees/swipes', {
+    method: 'POST',
+    body: JSON.stringify({ month }),
+  });

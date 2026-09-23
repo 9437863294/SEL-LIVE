@@ -244,8 +244,27 @@ export function useEApprovalDirectoryStandalone(enabled = true) {
     void refresh();
   }, [refresh]);
 
+  /**
+   * Everyone who can be picked, A→Z.
+   *
+   * `useAuth().users` is in Firestore's insertion order, which is to say the order accounts were
+   * created — so the picker listed a few familiar names first and then became a lucky dip. Sorted
+   * here rather than in the picker for two reasons: every consumer of the directory wants the same
+   * order (the register's filters, the delegation screen), and the picker re-derives its filtered
+   * list on each keystroke, where this runs once per directory load.
+   *
+   * `sensitivity: 'base'` because the directory mixes "PUJA BEHERA" with "Rukmuni Mohanty", and a
+   * plain code-point sort puts every capitalised name in a block above the rest.
+   */
   const activeUsers = useMemo(
-    () => (users ?? []).filter((row) => row.status !== 'Inactive'),
+    () =>
+      (users ?? [])
+        .filter((row) => row.status !== 'Inactive')
+        .sort((a, b) =>
+          (a.name || a.email || '').localeCompare(b.name || b.email || '', undefined, {
+            sensitivity: 'base',
+          }),
+        ),
     [users],
   );
 

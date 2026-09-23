@@ -17,11 +17,22 @@ import {
   GREYTHR_LOV_KEYS,
   attendanceLabel,
   buildAttendanceSummary,
+  buildSwipeMonth,
+  summarizeSwipeDays,
+  swipeClock,
+  swipeHours,
+  swipeMinutes,
+  swipeMonthRange,
+  swipeStatusLabel,
   buildCategoryIdMaps,
   buildLeaveBalance,
+  categoryDocId,
   currentAttendancePeriod,
   currentLeaveYear,
   hasAttendanceData,
+  hasSwipeData,
+  isSinglePunchDay,
+  qualificationLabel,
   leaveTypeNamesFrom,
   buildCategoryWriteBody,
   buildDocumentTree,
@@ -902,6 +913,15 @@ test('buildCategoryIdMaps tolerates a missing or malformed LOV', () => {
   assert.deepEqual(messy.categoryIdByName, { Designation: 6 });
 });
 
+test('categoryDocId is stable and path-safe, so both writers upsert the same document', () => {
+  assert.equal(categoryDocId('Designation', 47), 'Designation_47');
+  // The unified sync reads its value ids off an object, so they arrive as strings.
+  assert.equal(categoryDocId('Designation', '47'), categoryDocId('Designation', 47));
+  // A space is legal in a category name but a slash would nest the document under a subcollection.
+  assert.equal(categoryDocId('Project Name', 12), 'Project_Name_12');
+  assert.equal(categoryDocId('Cost/Center', 3), 'Cost_Center_3');
+});
+
 test('the maps resolve a single-employee category response, which carries ids only', () => {
   // GET /employees/{id}/categories returns [{category: 6, value: 31}] with no descriptions.
   const maps = buildCategoryIdMaps(LOV);
@@ -960,11 +980,28 @@ test('buildCategoryWriteBody skips blank values silently', () => {
  * Detail groups, and the operational / restricted split
  * ---------------------------------------------------------------------------------------------- */
 
-test('every sensitive group is off by default and every operational one is on', () => {
+/**
+ * Groups that are operational and still default off, and why.
+ *
+ * Until `swipes` there was one reason to leave a group off — the data is sensitive — so
+ * "operational implies on" held as a generalisation. The daily muster breaks it on cost rather than
+ * sensitivity: one record per employee per day is the heaviest fetch in the integration and the
+ * largest thing it stores, so switching it on should be a decision. The exception is listed here
+ * rather than loosening the assertion, so a group that quietly flips its default still fails.
+ */
+const OPERATIONAL_BUT_OFF_BY_DEFAULT = new Set(['swipes']);
+
+test('every sensitive group is off by default, and operational ones are on unless listed', () => {
   // The whole point of the split: nobody's Aadhaar number arrives because a sync was switched on.
   for (const spec of EMPLOYEE_DETAIL_GROUPS) {
     if (spec.destination === 'sensitive') {
       assert.equal(spec.defaultEnabled, false, `${spec.group} is sensitive and must default off`);
+    } else if (OPERATIONAL_BUT_OFF_BY_DEFAULT.has(spec.group)) {
+      assert.equal(
+        spec.defaultEnabled,
+        false,
+        `${spec.group} is listed as opted out on volume and must default off`,
+      );
     } else {
       assert.equal(spec.defaultEnabled, true, `${spec.group} is operational and should default on`);
     }
@@ -2237,4 +2274,309 @@ test('shouldReplaceRosterSnapshot checks completeness before anything else', () 
   const decision = shouldReplaceRosterSnapshot({ fetched: 0, complete: false, totalElements: null, previousCount: 128 });
   assert.equal(decision.replace, false);
   assert.match(decision.reason, /whole roster/i);
+});
+
+
+/* ------------------------------------------------------------------------------------------------
+ * Daily swipes — the muster
+ *
+ * The fixtures below are real `/attendance/v2/employee/muster` responses, trimmed: employee 7 on
+ * 2026-09-16 (a late arrival with punches) and employee 257 on 2026-09-15 (no scheme, no punches).
+ * ---------------------------------------------------------------------------------------------- */
+
+const MUSTER_WITH_PUNCHES = {
+  employeeId: 7,
+  period: { startDate: '2026-09-15', endDate: '2026-09-16' },
+  records: [
+    {
+      summary: {
+        attendanceDate: '2026-09-16',
+        schemeName: 'Head Office Travelling',
+        dayType: 'Regular',
+        shift: {
+          id: 3,
+          name: '09:30am To 06:30pm (managers)',
+          code: 'HOS2',
+          // UTC, unlike the punches below — the trap the module is written around.
+          startTime: '2026-09-16T04:00:00',
+          endTime: '2026-09-16T13:00:00',
+        },
+        firstInTime: '2026-09-16T11:28:00.993',
+        lastOutTime: '2026-09-16T19:29:15',
+        totalWorkHrs: '08:01',
+        actualWorkHrs: '08:01',
+        shortFallHrs: '00:59',
+        excessWorkHrs: '00:00',
+        overridden: false,
+        regularized: false,
+        session1Label: 'P',
+        session2Label: 'P',
+        absentReason: null,
+        onLeave: false,
+      },
+      exceptions: ['Late In'],
+    },
+  ],
+};
+
+const MUSTER_BLANK = {
+  employeeId: 257,
+  period: { startDate: '2026-09-15', endDate: '2026-09-16' },
+  records: [
+    {
+      summary: {
+        attendanceDate: '2026-09-15',
+        schemeName: 'OFFROLL EMP',
+        dayType: 'Regular',
+        shift: { id: 4, name: 'Off Roll', code: 'OR' },
+        firstInTime: null,
+        lastOutTime: null,
+        totalWorkHrs: '00:00',
+        actualWorkHrs: '00:00',
+        shortFallHrs: '08:00',
+        excessWorkHrs: '00:00',
+        session1Label: 'A',
+        session2Label: 'A',
+        absentReason: 'Absent',
+        onLeave: false,
+      },
+      exceptions: [],
+    },
+  ],
+};
+
+const buildMonth = (row) =>
+  buildSwipeMonth(row, { month: '2026-09', periodStart: '2026-09-01', periodEnd: '2026-09-30', syncedAt: 'now' });
+
+test('swipeClock slices the wall clock out without going through Date', () => {
+  // The whole point: a Date would re-interpret this in the runtime's zone and move the punch.
+  assert.equal(swipeClock('2026-09-16T11:28:00.993'), '11:28');
+  assert.equal(swipeClock('2026-09-16T19:29:15'), '19:29');
+  assert.equal(swipeClock(null), null);
+  assert.equal(swipeClock(''), null);
+  assert.equal(swipeClock('not a timestamp'), null);
+});
+
+test('swipeMinutes and swipeHours round-trip greytHR H:mm strings', () => {
+  assert.equal(swipeMinutes('08:01'), 481);
+  assert.equal(swipeHours(481), '08:01');
+  assert.equal(swipeMinutes('0:59'), 59);
+  assert.equal(swipeHours(59), '00:59');
+  // A bare number is hours, which is how `breakHours` arrives.
+  assert.equal(swipeMinutes('2'), 120);
+  assert.equal(swipeMinutes(null), 0);
+  assert.equal(swipeMinutes('rubbish'), 0);
+  assert.equal(swipeHours(0), '00:00');
+  assert.equal(swipeHours(-5), '00:00');
+});
+
+test('buildSwipeMonth keeps punches as wall-clock text and drops the shift timestamps', () => {
+  const month = buildMonth(MUSTER_WITH_PUNCHES);
+  assert.equal(month.employeeId, '7');
+  assert.equal(month.month, '2026-09');
+  assert.equal(month.days.length, 1);
+
+  const day = month.days[0];
+  assert.equal(day.date, '2026-09-16');
+  assert.equal(day.firstIn, '11:28', 'the punch is 11:28 wherever this runs');
+  assert.equal(day.lastOut, '19:29');
+  assert.equal(day.workHrs, '08:01');
+  assert.equal(day.shortfallHrs, '00:59');
+  // `00:00` means "nothing recorded", so it is dropped rather than shown as a worked total of zero.
+  assert.equal(day.excessHrs, null);
+  assert.equal(day.shift, '09:30am To 06:30pm (managers)', 'the name, not the UTC timestamps');
+  assert.deepEqual(day.exceptions, ['Late In']);
+  assert.equal(day.status, 'P');
+});
+
+test('buildSwipeMonth totals count half-days as halves', () => {
+  const halfDay = {
+    employeeId: 9,
+    records: [
+      {
+        summary: {
+          attendanceDate: '2026-09-17',
+          session1Label: 'P',
+          session2Label: 'A',
+          firstInTime: '2026-09-17T09:32:00',
+          lastOutTime: '2026-09-17T13:31:00',
+          totalWorkHrs: '04:00',
+        },
+        exceptions: [],
+      },
+    ],
+  };
+  const month = buildMonth(halfDay);
+  assert.equal(month.days[0].status, 'P/A', 'a half day carries both session labels');
+  assert.equal(month.totals.present, 0.5);
+  assert.equal(month.totals.absent, 0.5);
+  assert.equal(month.totals.swiped, 1);
+  assert.equal(month.totals.workMinutes, 240);
+});
+
+test('buildSwipeMonth counts late and early flags separately', () => {
+  const flagged = {
+    employeeId: 11,
+    records: [
+      { summary: { attendanceDate: '2026-09-01', session1Label: 'P', session2Label: 'P' }, exceptions: ['Late In'] },
+      { summary: { attendanceDate: '2026-09-02', session1Label: 'P', session2Label: 'P' }, exceptions: ['Early Out'] },
+      {
+        summary: { attendanceDate: '2026-09-03', session1Label: 'P', session2Label: 'P' },
+        exceptions: ['Late In', 'Early Out'],
+      },
+    ],
+  };
+  const totals = buildMonth(flagged).totals;
+  assert.equal(totals.lateIn, 2);
+  assert.equal(totals.earlyOut, 2);
+  assert.equal(totals.daysRecorded, 3);
+  assert.equal(totals.swiped, 0, 'no punch time means no swipe, whatever the labels say');
+});
+
+test('buildSwipeMonth sorts days and ignores records with no date', () => {
+  const jumbled = {
+    employeeId: 12,
+    records: [
+      { summary: { attendanceDate: '2026-09-03', session1Label: 'P', session2Label: 'P' }, exceptions: [] },
+      { summary: { attendanceDate: null }, exceptions: [] },
+      { summary: { attendanceDate: '2026-09-01', session1Label: 'P', session2Label: 'P' }, exceptions: [] },
+      { summary: null, exceptions: [] },
+    ],
+  };
+  const month = buildMonth(jumbled);
+  assert.deepEqual(
+    month.days.map((day) => day.date),
+    ['2026-09-01', '2026-09-03'],
+  );
+});
+
+test('hasSwipeData rejects a month of nothing but blank days', () => {
+  // Employee 257 is on no attendance scheme: greytHR returns labelled absences with no punches.
+  // That is real data and is kept; a month with no labels, no punches and no flags is not.
+  assert.equal(hasSwipeData(buildMonth(MUSTER_BLANK)), true, 'labelled absences are data');
+
+  const nothing = buildMonth({
+    employeeId: 99,
+    records: [{ summary: { attendanceDate: '2026-09-01', session1Label: '', session2Label: '' }, exceptions: [] }],
+  });
+  assert.equal(hasSwipeData(nothing), false);
+});
+
+test('summarizeSwipeDays can re-total a filtered subset', () => {
+  // The register re-totals whatever the filters left, so this must not depend on the whole month.
+  const month = buildMonth(MUSTER_WITH_PUNCHES);
+  const empty = summarizeSwipeDays([]);
+  assert.equal(empty.daysRecorded, 0);
+  assert.equal(empty.workMinutes, 0);
+  assert.deepEqual(summarizeSwipeDays(month.days), month.totals);
+});
+
+test('swipeMonthRange ends a past month on its last day', () => {
+  const now = new Date(2026, 8, 23); // 23 September 2026
+  assert.deepEqual(swipeMonthRange('2026-02', now), { start: '2026-02-01', end: '2026-02-28' });
+  assert.deepEqual(swipeMonthRange('2024-02', now), { start: '2024-02-01', end: '2024-02-29' }, 'leap year');
+  assert.deepEqual(swipeMonthRange('2026-08', now), { start: '2026-08-01', end: '2026-08-31' });
+});
+
+test('swipeMonthRange stops the current month at today', () => {
+  // A range running to the 30th invites greytHR to return empty future days, which then read as
+  // absences in the register.
+  const now = new Date(2026, 8, 23);
+  assert.deepEqual(swipeMonthRange('2026-09', now), { start: '2026-09-01', end: '2026-09-23' });
+});
+
+test('swipeStatusLabel names both halves of a half day', () => {
+  assert.equal(swipeStatusLabel('P'), 'Present');
+  assert.equal(swipeStatusLabel('A'), 'Absent');
+  assert.equal(swipeStatusLabel('WO'), 'Weekly off');
+  assert.equal(swipeStatusLabel('P/A'), 'Present / Absent');
+  assert.equal(swipeStatusLabel('ZZ'), 'ZZ', 'an unknown code is shown as itself, not hidden');
+});
+
+test('isSinglePunchDay recognises an in with no out', () => {
+  // Seen live: greytHR reports one punch as firstIn === lastOut with no work hours, which renders
+  // as a day somebody arrived and left in the same minute.
+  const month = buildMonth({
+    employeeId: 259,
+    records: [
+      {
+        summary: {
+          attendanceDate: '2026-09-15',
+          session1Label: 'P',
+          session2Label: 'P',
+          firstInTime: '2026-09-15T09:04:00',
+          lastOutTime: '2026-09-15T09:04:00',
+          totalWorkHrs: '00:00',
+        },
+        exceptions: [],
+      },
+    ],
+  });
+  assert.equal(isSinglePunchDay(month.days[0]), true);
+  assert.equal(month.days[0].workHrs, null);
+
+  const full = buildMonth(MUSTER_WITH_PUNCHES);
+  assert.equal(isSinglePunchDay(full.days[0]), false, 'a real in and out pair is not a single punch');
+
+  const noPunch = buildMonth(MUSTER_BLANK);
+  assert.equal(isSinglePunchDay(noPunch.days[0]), false, 'no punch at all is not a single punch');
+});
+
+
+/* ------------------------------------------------------------------------------------------------
+ * Qualifications and documents — codes greytHR does not name, and duplicates it really holds
+ * ---------------------------------------------------------------------------------------------- */
+
+test('qualificationLabel labels a bare code rather than printing it', () => {
+  // greytHR sends `qualDescription: 8`, an id into a master it does not publish: lov::qualification,
+  // lov::qualificationtype, lov::degree, lov::course and lov::institute all answer 200 with [].
+  // Printed raw, the profile showed a qualification called "8".
+  assert.equal(qualificationLabel(8), 'Qualification 8');
+  assert.equal(qualificationLabel('10'), 'Qualification 10');
+  // Words are left exactly as sent — a tenant that fills this in properly must not be relabelled.
+  assert.equal(qualificationLabel('B.Tech Civil'), 'B.Tech Civil');
+  assert.equal(qualificationLabel(''), undefined);
+  assert.equal(qualificationLabel(null), undefined);
+  assert.equal(qualificationLabel(undefined), undefined);
+});
+
+test('buildDocumentTree flags two files sharing a name in one category', () => {
+  // Verbatim from employee 70: two documents, distinct ids, same file name, 0.4s apart.
+  const tree = buildDocumentTree('70', [
+    {
+      category: 2,
+      document: [
+        {
+          id: '42a3c526-ceef-49a3-a8c0-e88b233c0f25',
+          files: [{ id: '116561bd', name: '20240729082258.pdf', createdDate: '2024-07-29T10:53:10.456' }],
+        },
+        {
+          id: '23589a7c-1c46-40aa-a783-9a193744af34',
+          files: [{ id: '48d18d4c', name: '20240729082258.pdf', createdDate: '2024-07-29T10:53:10.817' }],
+        },
+      ],
+    },
+  ]);
+
+  const category = tree.categories[0];
+  assert.equal(category.files.length, 2, 'both are listed — deleting one is greytHR\'s decision');
+  assert.ok(
+    category.files.every((file) => file.duplicateName),
+    'two files with one name in one category are both flagged',
+  );
+  // Distinct ids, so the rows are genuinely different documents rather than one rendered twice.
+  assert.equal(new Set(category.files.map((file) => file.documentId)).size, 2);
+});
+
+test('buildDocumentTree does not flag the same name filed under two categories', () => {
+  // A certificate legitimately filed in two places is not a duplicate.
+  const tree = buildDocumentTree('70', [
+    { category: 2, document: [{ id: 'd1', files: [{ id: 'f1', name: 'aadhaar.pdf', createdDate: null }] }] },
+    { category: 5, document: [{ id: 'd2', files: [{ id: 'f2', name: 'aadhaar.pdf', createdDate: null }] }] },
+  ]);
+  assert.equal(tree.categories.length, 2);
+  assert.ok(
+    tree.categories.every((category) => category.files.every((file) => !file.duplicateName)),
+    'the flag is per category, not per tree',
+  );
 });

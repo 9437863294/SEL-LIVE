@@ -867,7 +867,7 @@ greytHR publishes 155 endpoints across five modules. What this integration cover
 | **Employee** | ~70 | ✅ Roster, work, separation, categories, profile, personal, org tree, qualifications, assets, addresses, statutory, identities, bank/PF, passport/visa |
 | **List of Values** | 5 | ✅ Employment types, all category value lists |
 | **Leave** | 5 | ⚠️ Balances ✅, now with an org-wide register · transactions ❌ |
-| **Attendance** | 6 | ⚠️ Summary ✅, now with an org-wide register · muster and swipes ❌ |
+| **Attendance** | 6 | ✅ Summary, org-wide register, and the daily muster with its own screen |
 | **Payroll** | ~25 | ❌ Salary statement only, via the separate legacy flow |
 | **Documents** | 4 | ✅ Proxied on demand — deliberately not synced |
 | Employee family | 6 | ❌ bulk fetch needs an undocumented relation-type id |
@@ -904,10 +904,46 @@ neither collection alone can answer — leave balance by type, across everyone. 
 design: applying, approving or rejecting leave writes back to greytHR, which this integration does not
 do (§12) — these show what greytHR has already decided, not a place to decide it.
 
-Not a muster roll. The attendance register is the same monthly *summary* the profile tab already
-shows, gathered into one table — greytHR's day-level swipe data is a separate, much larger endpoint
-this integration has never fetched, and pulling it for ~1,300 employees across a month is its own
-decision about volume and retention, not an extension of this register.
+### Daily swipes
+
+The attendance register above is the monthly *summary*. The day-level record is its own screen,
+`/employee/swipes`, backed by `employeeSwipes` — and it is worth being precise about what greytHR
+actually gives, because the obvious assumption is wrong.
+
+**There is no raw punch list.** `GET /attendance/v2/employee/muster?start&end` is the only
+day-level attendance endpoint published. `/swipes`, `/punches`, `/logs`, `/transactions`, their
+per-employee variants, and `swipes=true` / `includeSwipes=true` / `expand=swipes` parameters on
+muster itself were all probed against the live tenant: every one 404s or changes nothing in the
+response. So the finest available grain is **one first-in and one last-out per day**, with hours,
+shift, session labels and greytHR's own exception flags. A break taken and returned from is not
+recoverable through this API, and the screen says so rather than implying it holds every card tap.
+
+**Two timezones in one record.** For an employee on the "09:30am To 06:30pm" shift, greytHR sends
+`shift.startTime: "…T04:00:00"` — 09:30 IST as UTC — next to `firstInTime: "…T11:28:00.993"`,
+which is local: the gap to `lastOutTime` equals the reported `totalWorkHrs` exactly, and the day
+carries a `Late In` exception that only makes sense if 11:28 is morning where the employee is.
+`swipeClock` therefore *slices* the `HH:mm` out of the string and never constructs a `Date`,
+which would shift every punch by the host's offset; the shift's own timestamps are not stored at
+all, since `shift.name` already carries the scheduled hours in words.
+
+**One document per employee per month**, keyed `{employeeId}_{YYYY-MM}` — the retention decision
+this was deferred over. A document per swipe is tens of thousands a month; a month per person is
+about one per employee, holding its ~30 day entries in a few kilobytes, and a month is the unit
+people ask about, export and would eventually prune. Written with `set` and no merge, because a
+merge cannot remove an array entry and a day greytHR later corrected away would otherwise survive
+in the stored month forever.
+
+**Off by default.** `swipes` is the one *operational* detail group that ships disabled — not for
+sensitivity but for cost, being the heaviest fetch in the integration. A sync run maintains only
+the current month; `POST /api/greythr/employees/swipes` with `{ month }` fetches any month on
+demand behind `Sync from GreytHR`, which is what the screen's **Fetch from greytHR** button calls.
+
+`npm run check:greythr-swipes` fetches a window live and prints what would be stored, which is how
+the wire shape above was established.
+
+A single punch — `firstIn === lastOut` with no hours — is ~10% of days with any punch and greytHR
+does not reliably flag it, so `isSinglePunchDay` recognises it and the register shows it as a
+missing swipe rather than printing a zero-length working day.
 
 ### Documents are proxied, not synced
 
@@ -951,9 +987,9 @@ if you want it.
 
 ### What was deliberately left out
 
-- **Attendance muster and swipes** — the daily grid. At ~1,300 employees that is tens of thousands
-  of records a month. It belongs in its own module with a retention policy, not appended to the
-  employee mirror on a nightly cron.
+- **Raw punch data** — individual card taps. Not a decision: greytHR does not publish it. The
+  daily muster *is* now synced, with its own screen, its own collection and its own opt-in group —
+  see "Daily swipes" above — but it carries one in and one out per day, which is all the API has.
 - **Leave transactions** — the ledger behind the balances. Same reasoning; the balance is the
   answer, the ledger is the audit trail, and they have different lifetimes.
 - **Payroll** — ~25 endpoints covering salary revisions, LOP, loans, payslip PDFs and Form 16. Also

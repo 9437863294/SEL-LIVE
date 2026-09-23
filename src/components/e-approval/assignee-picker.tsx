@@ -107,6 +107,8 @@ export function AssigneePicker({
     const rows = term
       ? directory.users.filter((row) => personSearchText(row).includes(term))
       : directory.users;
+    // The directory arrives A→Z, so the cap is the first 60 alphabetically rather than an arbitrary
+    // 60 — and typing narrows the list instead of shuffling which slice of it you get.
     return rows.slice(0, 60);
   }, [directory.users, search]);
 

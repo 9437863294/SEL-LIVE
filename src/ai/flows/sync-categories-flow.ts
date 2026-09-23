@@ -8,7 +8,8 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'zod';
 import { db } from '@/lib/firebase';
-import { collection, writeBatch, getDocs, query, doc } from 'firebase/firestore';
+import { collection, writeBatch, getDocs, query, doc, type DocumentData, type DocumentReference } from 'firebase/firestore';
+import { categoryDocId } from '@/lib/greythr';
 
 const allCategoryTypes = [
     "cat::Department", "cat::Designation", "cat::Grade", "cat::Location",
@@ -91,20 +92,20 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
     const categoryData = await fetchGreytHRCategoriesData(token, domain);
 
     const categoriesRef = collection(db, 'categories');
-    
-    // Clear existing categories
-    const existingCategoriesSnap = await getDocs(query(categoriesRef));
-    if (!existingCategoriesSnap.empty) {
-        const deleteBatch = writeBatch(db);
-        existingCategoriesSnap.forEach(doc => {
-            deleteBatch.delete(doc.ref);
-        });
-        await deleteBatch.commit();
-    }
-    
-    // Add new categories
-    const addBatch = writeBatch(db);
+
+    /**
+     * Upserted under `categoryDocId`, not re-created under auto-generated ids.
+     *
+     * This flow used to delete the whole collection and add every value back with `doc(ref)`, which
+     * had two consequences. A reader who loaded the Category screen mid-sync saw an empty master;
+     * and because the hourly unified sync upserts the same values under deterministic ids, the next
+     * run re-created all of them a second time — two documents for `Designation 47`, two identical
+     * rows on screen, two React children with the same key. Sharing one id scheme makes the two
+     * writers idempotent against each other instead.
+     */
     const counts: Record<string, number> = {};
+    const writes: Array<{ ref: DocumentReference; data: DocumentData }> = [];
+    const written = new Set<string>();
 
     for (const catKey of allCategoryTypes) {
         const categoryName = catKey.replace('cat::', '');
@@ -112,13 +113,56 @@ const syncGreytHRCategoriesFlow = ai.defineFlow(
         if (data) {
             counts[categoryName] = data.length;
             data.forEach((item: [number, string, any]) => {
-                const docRef = doc(categoriesRef); // Auto-generate document ID
-                addBatch.set(docRef, { id: item[0], name: item[1], type: categoryName });
+                const id = categoryDocId(categoryName, item[0]);
+                written.add(id);
+                writes.push({ ref: doc(categoriesRef, id), data: { id: item[0], name: item[1], type: categoryName } });
             });
         }
     }
-    
-    await addBatch.commit();
+
+    /**
+     * Then converge whatever earlier runs left behind under the old scheme.
+     *
+     * An auto-id document is either a duplicate of a value this run just wrote, or a value greytHR
+     * has since dropped. The duplicate is deleted outright; the dropped one is first re-written
+     * under its canonical id, because a retired category value is still referenced by historical
+     * employee records and deleting it would turn those rows into blanks. Either way the collection
+     * ends up with exactly one document per value, so this runs once in practice.
+     */
+    const existingSnap = await getDocs(query(categoriesRef));
+    const deletions: DocumentReference[] = [];
+    existingSnap.forEach(existing => {
+        const data = existing.data();
+        if (typeof data.type !== 'string' || (typeof data.id !== 'number' && typeof data.id !== 'string')) return;
+        const canonical = categoryDocId(data.type, data.id);
+        if (canonical === existing.id) return;
+        if (!written.has(canonical)) {
+            written.add(canonical);
+            writes.push({ ref: doc(categoriesRef, canonical), data });
+        }
+        deletions.push(existing.ref);
+    });
+
+    /**
+     * Committed in chunks, writes before deletes.
+     *
+     * A Firestore batch takes 500 operations and this run can exceed that on its own once the
+     * re-keying above is counted. Ordering every write ahead of every delete means a chunk that
+     * fails part-way leaves a duplicate behind — which the next run cleans up — rather than
+     * deleting a value whose replacement never landed.
+     */
+    const operations: Array<{ ref: DocumentReference; data?: DocumentData }> = [
+        ...writes,
+        ...deletions.map(ref => ({ ref })),
+    ];
+    for (let index = 0; index < operations.length; index += 450) {
+        const batch = writeBatch(db);
+        for (const operation of operations.slice(index, index + 450)) {
+            if (operation.data) batch.set(operation.ref, operation.data, { merge: true });
+            else batch.delete(operation.ref);
+        }
+        await batch.commit();
+    }
 
     return { 
         success: true, 

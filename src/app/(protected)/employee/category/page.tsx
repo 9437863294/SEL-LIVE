@@ -13,24 +13,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { Clock, Layers, Loader2, RefreshCw, Search, Tags } from 'lucide-react';
+import { ChevronRight, Clock, Loader2, RefreshCw, Search, Tags, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
-  HrAlertNotice,
-  HrDataList,
   HrEmptyState,
-  HrFilterCard,
   HrLoader,
   HrAccessDenied,
-  type HrListColumn,
 } from '@/components/hr/hr-ui';
+import { cn } from '@/lib/utils';
 import {
   EmployeeHeader,
-  EmployeeKpiCard,
   EmployeePageShell,
   EmployeeStatusPill,
   EmployeeSubNav,
@@ -48,7 +43,7 @@ interface Category {
   type: string;
 }
 
-/** One row of a type's table. `id` is the composite key `HrDataList` needs. */
+/** One value of a category type. */
 type CategoryRow = { id: string; categoryId: number; name: string };
 
 /**
@@ -69,20 +64,6 @@ function toDate(value: unknown): Date | null {
   return null;
 }
 
-const COLUMNS: Array<HrListColumn<CategoryRow>> = [
-  {
-    header: 'ID',
-    cell: row => <span className="tabular-nums text-muted-foreground">{row.categoryId}</span>,
-    className: 'w-24',
-    mobile: 'aside',
-  },
-  {
-    header: 'Name',
-    cell: row => <span className="font-medium text-slate-800">{row.name}</span>,
-    mobile: 'title',
-  },
-];
-
 export default function ManageCategoryPage() {
   const { toast } = useToast();
   const { can, isLoading: isAuthLoading } = useAuthorization();
@@ -91,12 +72,8 @@ export default function ManageCategoryPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  /**
-   * Which accordions are open. Controlled rather than `defaultValue` so an active search can force
-   * matching sections open — a match hidden inside a section the reader collapsed earlier looks
-   * like no match at all.
-   */
-  const [openTypes, setOpenTypes] = useState<string[]>([]);
+  /** Which type's values are on the right. Falls back to the first available — see the effect below. */
+  const [selectedType, setSelectedType] = useState<string>('');
   /** When the mirror was last written, and by which flow — see the file header. */
   const [lastSynced, setLastSynced] = useState<{ at: Date; successful: boolean } | null>(null);
 
@@ -116,8 +93,22 @@ export default function ManageCategoryPage() {
       ]);
       const categoriesData = querySnapshot.docs.map(document => document.data() as Category);
 
+      /**
+       * Grouped by type, and deduplicated by type + id on the way in.
+       *
+       * Two documents can describe the same value: the manual sync wrote auto-generated ids until
+       * it was aligned with the hourly one, so a collection touched by both held `Designation 47`
+       * twice. The screen should not list "Site Engineer" twice, the counts above it should not
+       * count it twice, and the row key below is `type-id` — which React saw duplicated. The
+       * writers converge the stored documents on their next run; this keeps the screen honest
+       * against whatever is in the collection right now.
+       */
+      const seen = new Set<string>();
       const grouped = categoriesData.reduce((acc, category) => {
         const { type } = category;
+        const key = `${type}::${category.id}`;
+        if (seen.has(key)) return acc;
+        seen.add(key);
         if (!acc[type]) {
           acc[type] = [];
         }
@@ -131,7 +122,6 @@ export default function ManageCategoryPage() {
       }
 
       setCategoriesByType(grouped);
-      setOpenTypes(Object.keys(grouped));
 
       if (syncDoc?.exists()) {
         const data = syncDoc.data();
@@ -230,6 +220,32 @@ export default function ManageCategoryPage() {
     [matchingTypes, visibleRowsByType],
   );
 
+  /**
+   * The types the rail offers: everything, or only those with a match while searching.
+   *
+   * Narrowing the rail rather than only the values is what makes the search answer "which category
+   * is this value in" — the question somebody searching a master list usually has.
+   */
+  const railTypes = term ? matchingTypes : types;
+
+  /**
+   * Hold the selection somewhere real.
+   *
+   * A type that has just been filtered out of the rail must not stay selected, or the right pane
+   * shows values for a type the reader can no longer see. Falls forward to the first type that does
+   * match, which is also what makes a search land on its own first result.
+   */
+  useEffect(() => {
+    if (!railTypes.length) {
+      if (selectedType) setSelectedType('');
+      return;
+    }
+    if (!railTypes.includes(selectedType)) setSelectedType(railTypes[0]);
+  }, [railTypes, selectedType]);
+
+  const selectedValues = visibleRowsByType[selectedType] ?? [];
+  const selectedTotal = categoriesByType[selectedType]?.length ?? 0;
+
   const syncButton = (
     <Button onClick={() => void handleSync()} disabled={isSyncing || !canSync} size="sm">
       {isSyncing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
@@ -282,54 +298,27 @@ export default function ManageCategoryPage() {
             </EmployeeStatusPill>
           )
         }
+        meta={
+          /* Was a whole blue callout band. The point it makes — that this list maintains itself —
+             belongs next to the timestamp it qualifies, not in a panel of its own. */
+          lastSynced
+            ? 'The hourly greytHR sync rewrites these values on every run, so that timestamp is the honest age of this list. Sync from GreytHR is a top-up, not the only path.'
+            : 'The hourly greytHR sync writes these values on every run.'
+        }
         actions={syncButton}
       />
 
       <EmployeeSubNav current="category" />
 
-      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-        <EmployeeKpiCard
-          label="Category types"
-          value={isLoading ? '—' : types.length}
-          icon={Layers}
-          tone="indigo"
-          index={0}
-        />
-        <EmployeeKpiCard
-          label="Values mirrored"
-          value={isLoading ? '—' : totalValues}
-          icon={Tags}
-          tone="teal"
-          index={1}
-        />
-        <EmployeeKpiCard
-          label="Last synced"
-          value={lastSynced ? formatDistanceToNow(lastSynced.at, { addSuffix: true }) : 'Unknown'}
-          hint={
-            lastSynced
-              ? lastSynced.successful
-                ? 'Last successful greytHR sync run'
-                : 'Last attempted run — it did not succeed'
-              : 'No greytHR sync run recorded yet'
-          }
-          icon={Clock}
-          tone={lastSynced?.successful ? 'emerald' : 'amber'}
-          index={2}
-        />
-      </div>
-
       {/*
-        Stated plainly because the old screen's single "Sync from GreytHR" button implied this data
-        only moves when somebody presses it — which sent people hunting for a stale-data problem that
-        the hourly sync had already fixed.
+        No KPI row here, deliberately.
+
+        "Category types: 11" and "Values mirrored: 312" are the two figures this screen would have
+        put in cards, and both are visible in the rail below — every type with its own count, which
+        is more useful than their total. The freshness stamp moved to the header's status pill, where
+        the other screens in the module carry theirs. That is a third of the page's height returned
+        to the thing it is for.
       */}
-      <div className="mb-3">
-        <HrAlertNotice tone="blue" title="Refreshed automatically">
-          The hourly greytHR sync writes these categories itself, so the timestamp above is the honest
-          age of this list. <strong>Sync from GreytHR</strong> is a top-up for when you cannot wait for
-          the next run — not the only path.
-        </HrAlertNotice>
-      </div>
 
       {isLoading ? (
         <HrLoader label="Loading categories…" />
@@ -341,30 +330,53 @@ export default function ManageCategoryPage() {
             <Button size="sm" onClick={() => void fetchCategories()}>Try again</Button>
           </CardContent>
         </Card>
-      ) : types.length > 0 ? (
+      ) : types.length === 0 ? (
+        <HrEmptyState
+          icon={Tags}
+          title="No categories mirrored yet"
+          description="The hourly greytHR sync writes these on every run. If it has never run here, sync now to get started."
+          action={canSync ? syncButton : undefined}
+        />
+      ) : (
         <>
-          <HrFilterCard
-            summary={
-              term
-                ? `${matchCount} of ${totalValues} values match`
-                : `${totalValues} values across ${types.length} types`
-            }
-            actions={
-              term ? (
-                <Button variant="ghost" size="sm" onClick={() => setSearch('')}>Clear</Button>
-              ) : undefined
-            }
-          >
-            <div className="relative">
+          {/* ── Search ──────────────────────────────────────────────────────────────────────────
+              A bare input rather than the collapsible filter card the registers use: one control
+              does not need a panel with a header and a summary line around it. */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 flex-1 sm:max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search category values…"
-                className="pl-8"
+                placeholder="Search any value, id or type…"
+                className="bg-white/80 pl-8 pr-8"
                 value={search}
                 onChange={event => setSearch(event.target.value)}
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="hr-inline-action absolute inset-y-0 right-0 flex w-8 items-center justify-center text-muted-foreground hover:text-slate-600"
+                  aria-label="Clear search"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
-          </HrFilterCard>
+            <p className="text-xs text-muted-foreground">
+              {term ? (
+                <>
+                  <span className="font-medium text-slate-700">{matchCount}</span> value
+                  {matchCount === 1 ? '' : 's'} in {matchingTypes.length} type
+                  {matchingTypes.length === 1 ? '' : 's'}
+                </>
+              ) : (
+                <>
+                  <span className="font-medium text-slate-700">{totalValues}</span> values across{' '}
+                  {types.length} types
+                </>
+              )}
+            </p>
+          </div>
 
           {term && matchingTypes.length === 0 ? (
             <HrEmptyState
@@ -376,50 +388,94 @@ export default function ManageCategoryPage() {
               }
             />
           ) : (
-            <Card className={EMP_CARD_CLASS}>
-              <CardContent className="p-2 sm:p-3">
-                <Accordion
-                  type="multiple"
-                  value={term ? matchingTypes : openTypes}
-                  onValueChange={value => {
-                    if (!term) setOpenTypes(value);
-                  }}
+            /* ── Master / detail ────────────────────────────────────────────────────────────────
+               The types are the master list and stay on screen, because "which types exist" is the
+               first question a master screen should answer. On a phone the rail becomes a scrolling
+               pill strip above the values — a 14rem sidebar on a 390px screen leaves no room for
+               what it is pointing at. */
+            <div className="grid gap-3 lg:grid-cols-[15rem_minmax(0,1fr)]">
+              <Card className={cn('overflow-hidden rounded-2xl p-1.5', EMP_CARD_CLASS)}>
+                <nav
+                  aria-label="Category types"
+                  className="flex gap-1 overflow-x-auto pb-0.5 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
-                  {(term ? matchingTypes : types).map(type => (
-                    <AccordionItem value={type} key={type} className="border-slate-100 last:border-0">
-                      <AccordionTrigger className="px-1.5 py-3 text-sm font-semibold text-slate-800 hover:no-underline">
-                        <span className="flex items-center gap-2">
-                          {type}
-                          <Badge variant="outline" className="border-indigo-200 bg-indigo-50 text-[10px] text-indigo-700">
-                            {term
-                              ? `${(visibleRowsByType[type] ?? []).length} of ${categoriesByType[type].length}`
-                              : categoriesByType[type].length}
-                          </Badge>
+                  {railTypes.map(type => {
+                    const isActive = type === selectedType;
+                    const shown = (visibleRowsByType[type] ?? []).length;
+                    const all = categoriesByType[type]?.length ?? 0;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setSelectedType(type)}
+                        aria-current={isActive ? 'true' : undefined}
+                        className={cn(
+                          'group flex shrink-0 items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm transition-colors lg:w-full',
+                          isActive
+                            ? 'bg-slate-900 text-white shadow-sm'
+                            : 'text-slate-700 hover:bg-slate-50',
+                        )}
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium">{type}</span>
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums',
+                            isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600',
+                          )}
+                        >
+                          {/* While searching, how many of the type's values matched — not its size. */}
+                          {term ? `${shown}/${all}` : all}
                         </span>
-                      </AccordionTrigger>
-                      <AccordionContent className="px-1.5 pb-3">
-                        <HrDataList
-                          rows={visibleRowsByType[type] ?? []}
-                          columns={COLUMNS}
-                          tableClassName="w-auto"
-                          fitContent
-                          empty={<HrEmptyState icon={Tags} title="No values in this category" />}
+                        <ChevronRight
+                          className={cn(
+                            'hidden h-3.5 w-3.5 shrink-0 lg:block',
+                            isActive ? 'text-white/70' : 'text-slate-300 group-hover:text-slate-400',
+                          )}
                         />
-                      </AccordionContent>
-                    </AccordionItem>
-                  ))}
-                </Accordion>
-              </CardContent>
-            </Card>
+                      </button>
+                    );
+                  })}
+                </nav>
+              </Card>
+
+              <Card className={cn('min-w-0 rounded-2xl', EMP_CARD_CLASS)}>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Tags className="h-4 w-4 text-teal-600" />
+                    <h2 className="text-sm font-semibold text-slate-800">{selectedType || 'Select a type'}</h2>
+                    <Badge variant="outline" className="border-teal-200 bg-teal-50 text-[10px] text-teal-700">
+                      {term ? `${selectedValues.length} of ${selectedTotal}` : `${selectedTotal} values`}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">Read-only — greytHR owns these values</p>
+                </div>
+
+                {selectedValues.length === 0 ? (
+                  <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    {term ? 'No value in this type matches your search.' : 'This type has no values mirrored.'}
+                  </p>
+                ) : (
+                  /* Wrapped across columns rather than one row per value: a list of sixty
+                     designations was sixty table rows to scroll, and the only thing each row carried
+                     was a name and an id. */
+                  <ul className="grid gap-x-4 gap-y-0.5 p-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {selectedValues.map(row => (
+                      <li
+                        key={row.id}
+                        className="flex items-baseline justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-50"
+                      >
+                        <span className="min-w-0 break-words text-sm text-slate-800">{row.name}</span>
+                        {/* The id is what greytHR keys on, so it stays available — quietly, because
+                            nobody reads a master list to find out that Designation 41 is 41. */}
+                        <span className="shrink-0 text-[10px] tabular-nums text-slate-400">#{row.categoryId}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            </div>
           )}
         </>
-      ) : (
-        <HrEmptyState
-          icon={Tags}
-          title="No categories mirrored yet"
-          description="The hourly greytHR sync writes these on every run. If it has never run here, sync now to get started."
-          action={canSync ? syncButton : undefined}
-        />
       )}
     </EmployeePageShell>
   );

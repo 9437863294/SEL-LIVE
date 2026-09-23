@@ -38,6 +38,7 @@ import {
   Clock,
   DownloadCloud,
   FileText,
+  Fingerprint,
   IndianRupee,
   LayoutGrid,
   Link2,
@@ -219,6 +220,7 @@ export type EmployeeNavKey =
   | 'reports'
   | 'leave'
   | 'attendance'
+  | 'swipes'
   | 'sync'
   | 'category'
   | 'position'
@@ -300,6 +302,17 @@ export const EMPLOYEE_NAV: EmployeeNavItem[] = [
     href: '/employee/attendance',
     icon: Clock,
     tone: 'blue',
+    group: 'register',
+    need: 'view',
+  },
+  {
+    key: 'swipes',
+    label: 'Daily swipes',
+    short: 'Swipes',
+    description: 'Day-by-day first in, last out and hours worked, per month.',
+    href: '/employee/swipes',
+    icon: Fingerprint,
+    tone: 'violet',
     group: 'register',
     need: 'view',
   },

@@ -245,7 +245,8 @@ export type EmployeeDetailGroup =
   | 'bank'
   | 'travel'
   | 'leave'
-  | 'attendance';
+  | 'attendance'
+  | 'swipes';
 
 /**
  * Where a group's data is stored, and therefore who can read it.
@@ -376,11 +377,22 @@ export const EMPLOYEE_DETAIL_GROUPS: EmployeeDetailGroupSpec[] = [
     label: 'Attendance summary',
     description:
       'Aggregate attendance for the current month — average hours and in/out times, late arrivals, ' +
-      'absences. The daily muster is deliberately not synced: at ~1,300 people it is tens of ' +
-      'thousands of records a month and belongs in its own module with a retention policy.',
+      'absences. One figure per employee per month; the day-by-day detail is the separate ' +
+      '"Daily swipes" group below.',
     destination: 'operational',
     defaultEnabled: true,
     contains: 'average work hours, in/out times, late arrivals, early departures, absent days',
+  },
+  {
+    group: 'swipes',
+    label: 'Daily swipes',
+    description:
+      'The day-by-day muster for the current month: first in, last out, hours worked and what ' +
+      'greytHR flagged. Off by default — it is the largest group here, one record per employee per ' +
+      'day, and storing a month of everybody’s movements should be a decision rather than a default.',
+    destination: 'operational',
+    defaultEnabled: false,
+    contains: 'first in, last out, work hours, shortfall, shift, late-in and early-out flags',
   },
 ];
 
@@ -894,7 +906,20 @@ export function buildOperationalDetail(input: BuildDetailInput): EmployeeOperati
     emergencyContactPhone: text(emergency?.mobile) ?? text(emergency?.phone1),
     qualifications: (input.qualifications ?? [])
       .map((row) => ({
-        description: text(row.qualDescription) ?? text(row.qualArea) ?? '',
+        /*
+          `qualDescription` is a numeric code, not a description.
+
+          greytHR sends `qualDescription: 8` / `10` / `5` — an id into a qualification master it
+          does not publish. `lov::qualification`, `lov::qualificationtype`, `lov::degree`,
+          `lov::course` and `lov::institute` were all probed against a live tenant and every one
+          answers 200 with an empty array, so there is nothing to look the code up in.
+
+          Printed raw, the profile rendered a qualification called "8" above "Panchasakha High
+          School · 2012". Labelled, it reads as the unresolved code it is — the same fallback
+          `buildLeaveBalance` uses for a leave type with no name, and for the same reason: an id a
+          reader can go and look up beats a bare number that looks like a mistake.
+        */
+        description: qualificationLabel(row.qualDescription) ?? text(row.qualArea) ?? '',
         level: text(row.qualLevel),
         institute: text(row.institute),
         university: text(row.university),
@@ -2404,6 +2429,16 @@ export interface EmployeeDocumentFile {
   /** Lower-case, no dot. `''` when the name has no extension. */
   extension: string;
   createdAt: string | null;
+  /**
+   * Another file in the same category shares this name.
+   *
+   * greytHR really does hold duplicates: employee 70 has two separate documents in category 2, with
+   * different document ids, the same file name and upload timestamps 0.4 seconds apart — a
+   * double-submit when the records were created. Both are listed, because deleting one is greytHR's
+   * decision and not this screen's, but a reader looking at two identical-looking rows needs to
+   * know that is real rather than a rendering fault. The precise time tells them apart.
+   */
+  duplicateName: boolean;
 }
 
 export interface EmployeeDocumentCategory {
@@ -2477,11 +2512,24 @@ export function buildDocumentTree(
           name,
           extension: fileExtension(name),
           createdAt: file?.createdDate ?? null,
+          // Set below, once the whole category is known.
+          duplicateName: false,
         });
       }
     }
 
     if (!files.length) continue;
+
+    // Flagged per category rather than across the whole tree: the same certificate legitimately
+    // filed under two categories is not a duplicate, whereas twice in one category is.
+    const nameCounts = new Map<string, number>();
+    for (const file of files) {
+      const key = file.name.toLowerCase();
+      nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+    }
+    for (const file of files) {
+      if ((nameCounts.get(file.name.toLowerCase()) ?? 0) > 1) file.duplicateName = true;
+    }
 
     files.sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
     totalFiles += files.length;
@@ -2798,6 +2846,358 @@ export function currentAttendancePeriod(now: Date = new Date()): { start: string
 
 /** The leave year to fetch. greytHR keys balances by calendar year. */
 export const currentLeaveYear = (now: Date = new Date()): string => String(now.getFullYear());
+
+/**
+ * A qualification's display text, given greytHR's `qualDescription`.
+ *
+ * Returns the value unchanged when greytHR sent words, and `Qualification 8` when it sent a bare
+ * code — which is what it sends on this tenant, with no list published that would name it. Exported
+ * so the label is defined once and can be tested; see the note at the call site in
+ * `buildOperationalDetail`.
+ */
+export function qualificationLabel(value: string | number | null | undefined): string | undefined {
+  const text = String(value ?? '').trim();
+  if (!text) return undefined;
+  return /^\d+$/.test(text) ? `Qualification ${text}` : text;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Daily swipes — the muster
+ *
+ * The day-level record behind the monthly summary above: when somebody first came in, when they
+ * last went out, how long they worked, and what the system flagged about it.
+ *
+ * ── What greytHR actually publishes ─────────────────────────────────────────────────────────────
+ *
+ * Not a raw punch list. `GET /attendance/v2/employee/muster?start&end` is the only day-level
+ * endpoint on the API — `/swipes`, `/punches`, `/logs`, `/transactions`, per-employee variants of
+ * each, and `swipes=true`-style parameters on muster itself were all probed against this tenant and
+ * every one is a 404 or changes nothing. So the finest grain available is **one first-in and one
+ * last-out per day**, which is what a swipe register can show. If somebody stepped out at lunch and
+ * back, greytHR does not tell us through this API.
+ *
+ * ── The timezone trap ───────────────────────────────────────────────────────────────────────────
+ *
+ * A single record mixes two zones. For an employee on the "09:30am To 06:30pm" shift, greytHR sent
+ * `shift.startTime: "…T04:00:00"` — 09:30 IST expressed as UTC — alongside
+ * `firstInTime: "…T11:28:00.993"` and `lastOutTime: "…T19:29:15"`, which are local: their difference
+ * is exactly the reported `totalWorkHrs` of `08:01`, and greytHR flagged the day `Late In` against
+ * that 09:30 shift, which only holds if 11:28 is 11:28 in the morning where the employee is.
+ *
+ * So the punches are read as wall-clock text — the `HH:mm` is sliced out of the string and never
+ * passed through `Date`, which would shift it by the runtime's offset — and the shift's own
+ * timestamps are not stored at all. `shift.name` already carries the scheduled hours in words
+ * ("09:30am To 06:30pm (managers)"), so the scheduled-versus-actual comparison survives without
+ * this module having to take a position on which field is in which zone.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** `GET /attendance/v2/employee/muster?start&end` — one row per employee, one record per day. */
+export interface GreytHRMusterRow {
+  employeeId: number;
+  period?: { startDate?: string | null; endDate?: string | null } | null;
+  records?: Array<{
+    summary?: {
+      attendanceDate?: string | null;
+      schemeName?: string | null;
+      dayType?: string | null;
+      shift?: {
+        id?: number | null;
+        name?: string | null;
+        code?: string | null;
+        /** UTC, unlike the punches — see the note above. Deliberately not stored. */
+        startTime?: string | null;
+        endTime?: string | null;
+      } | null;
+      firstInTime?: string | null;
+      lastOutTime?: string | null;
+      totalWorkHrs?: string | null;
+      actualWorkHrs?: string | null;
+      shortFallHrs?: string | null;
+      excessWorkHrs?: string | null;
+      productionHours?: string | null;
+      breakHours?: string | number | null;
+      overridden?: boolean | null;
+      regularized?: boolean | null;
+      /** `P`, `A`, `WO`, `H`, `L`… one per half-day, which is how a half day is expressed. */
+      session1Label?: string | null;
+      session2Label?: string | null;
+      holidayAbsent?: boolean | null;
+      absentReason?: string | null;
+      onLeave?: boolean | null;
+      leave?: unknown;
+      lastProcessed?: string | null;
+    } | null;
+    /** greytHR's own flags: `Late In`, `Early Out`, `Missing Swipe`… */
+    exceptions?: string[] | null;
+  }> | null;
+}
+
+export interface EmployeeSwipeDay {
+  /** `YYYY-MM-DD`. */
+  date: string;
+  /** The two half-day labels, and a single label when they agree. */
+  session1: string;
+  session2: string;
+  /** `P`, `A`, `WO`… or `P/A` for a half day. Empty when greytHR labelled neither session. */
+  status: string;
+  dayType: string;
+  /** greytHR's shift name, which carries the scheduled hours as text. */
+  shift: string;
+  /** Wall-clock `HH:mm`, exactly as greytHR sent it. Null when there was no punch. */
+  firstIn: string | null;
+  lastOut: string | null;
+  /** greytHR's own `HH:mm` figures, kept as strings for the same reason the averages are. */
+  workHrs: string | null;
+  actualWorkHrs: string | null;
+  shortfallHrs: string | null;
+  excessHrs: string | null;
+  exceptions: string[];
+  absentReason: string | null;
+  onLeave: boolean;
+  /** An edited day. Worth surfacing: the figures are a human's, not the clock's. */
+  regularized: boolean;
+  overridden: boolean;
+}
+
+export interface EmployeeSwipeTotals {
+  daysRecorded: number;
+  /** Days with at least one punch — the count a swipe register is actually about. */
+  swiped: number;
+  /** In days, counting each labelled half-day as 0.5, so a half day is not a whole one. */
+  present: number;
+  absent: number;
+  leave: number;
+  weeklyOff: number;
+  holiday: number;
+  lateIn: number;
+  earlyOut: number;
+  /** Summed from `workHrs`, for an average the caller can format however it likes. */
+  workMinutes: number;
+}
+
+export interface EmployeeSwipeMonth {
+  employeeId: string;
+  /** `YYYY-MM`. One document per employee per month — see `swipeDocId`. */
+  month: string;
+  periodStart: string;
+  periodEnd: string;
+  days: EmployeeSwipeDay[];
+  totals: EmployeeSwipeTotals;
+  syncedAt: string;
+}
+
+/**
+ * One document per employee per month.
+ *
+ * The retention decision the integration doc deferred this feature over. A document per *swipe*
+ * would be tens of thousands a month; a document per employee per month is one per person — about
+ * 190 here — each holding its ~30 day entries in a few kilobytes, and a month is the unit anybody
+ * asks about, exports, or would eventually want to delete. It also matches how leave and attendance
+ * are already stored: periodic data carries its own period rather than overwriting last month's.
+ */
+export const swipeDocId = (employeeId: string | number, month: string): string => `${employeeId}_${month}`;
+
+/** `YYYY-MM` for a date. */
+export const swipeMonthKey = (now: Date = new Date()): string =>
+  `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+/**
+ * The date range to ask greytHR for, given a `YYYY-MM`.
+ *
+ * Ends today for the month in progress rather than at the 31st: a future date is not wrong exactly,
+ * but it invites greytHR to return empty days that then look like absences in the register.
+ */
+export function swipeMonthRange(month: string, now: Date = new Date()): { start: string; end: string } {
+  const [year, monthNumber] = month.split('-').map(Number);
+  if (!year || !monthNumber) {
+    const fallback = swipeMonthKey(now);
+    return swipeMonthRange(fallback, now);
+  }
+  const start = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+  const isCurrentMonth = year === now.getFullYear() && monthNumber === now.getMonth() + 1;
+  const endDay = isCurrentMonth ? Math.min(now.getDate(), lastDay) : lastDay;
+  return { start, end: `${year}-${String(monthNumber).padStart(2, '0')}-${String(endDay).padStart(2, '0')}` };
+}
+
+/**
+ * The `HH:mm` out of one of greytHR's timestamps, as text.
+ *
+ * Deliberately a slice, not a `Date`. `new Date("2026-09-16T11:28:00.993")` is parsed as *local* by
+ * every runtime, and formatting it back would move the punch by the server's offset — so a swipe at
+ * 11:28 would read as 16:58 on a UTC host. See the timezone note above.
+ */
+export function swipeClock(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const match = /T(\d{2}):(\d{2})/.exec(String(value));
+  return match ? `${match[1]}:${match[2]}` : null;
+}
+
+/** `"08:01"` → 481. Tolerates `null`, `""`, `"0"` and `"8:1"`. */
+export function swipeMinutes(value: string | null | undefined): number {
+  if (!value) return 0;
+  const parts = String(value).trim().split(':');
+  if (parts.length === 1) {
+    const hours = Number(parts[0]);
+    return Number.isFinite(hours) ? Math.round(hours * 60) : 0;
+  }
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 0;
+  return hours * 60 + minutes;
+}
+
+/** 481 → `"08:01"`. The inverse, for totals and averages. */
+export function swipeHours(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes <= 0) return '00:00';
+  const whole = Math.floor(minutes / 60);
+  const rest = Math.round(minutes % 60);
+  return `${String(whole).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+}
+
+/** What greytHR's half-day codes mean, for a legend and a tooltip. */
+export const SWIPE_STATUS_LABELS: Record<string, string> = {
+  P: 'Present',
+  A: 'Absent',
+  WO: 'Weekly off',
+  H: 'Holiday',
+  L: 'Leave',
+  OD: 'On duty',
+  HD: 'Half day',
+  '': 'Not labelled',
+};
+
+export const swipeStatusLabel = (status: string): string => {
+  if (SWIPE_STATUS_LABELS[status]) return SWIPE_STATUS_LABELS[status];
+  // A half day arrives as two different session labels, so it is labelled from both halves.
+  const [first, second] = status.split('/');
+  if (first && second) {
+    return `${SWIPE_STATUS_LABELS[first] ?? first} / ${SWIPE_STATUS_LABELS[second] ?? second}`;
+  }
+  return status;
+};
+
+const halfDayValue = (label: string, code: string): number => (label === code ? 0.5 : 0);
+
+/** Totals for a set of days. Separate from `buildSwipeMonth` so a filtered view can re-total. */
+export function summarizeSwipeDays(days: EmployeeSwipeDay[]): EmployeeSwipeTotals {
+  const totals: EmployeeSwipeTotals = {
+    daysRecorded: days.length,
+    swiped: 0,
+    present: 0,
+    absent: 0,
+    leave: 0,
+    weeklyOff: 0,
+    holiday: 0,
+    lateIn: 0,
+    earlyOut: 0,
+    workMinutes: 0,
+  };
+
+  for (const day of days) {
+    if (day.firstIn) totals.swiped += 1;
+    totals.workMinutes += swipeMinutes(day.workHrs);
+
+    // Counted per half-day session, which is the only way a half day comes out as half a day.
+    for (const session of [day.session1, day.session2]) {
+      totals.present += halfDayValue(session, 'P');
+      totals.absent += halfDayValue(session, 'A');
+      totals.leave += halfDayValue(session, 'L');
+      totals.weeklyOff += halfDayValue(session, 'WO');
+      totals.holiday += halfDayValue(session, 'H');
+    }
+    // `onLeave` is greytHR's own flag and can be set on a day whose labels say something else.
+    if (day.onLeave && day.session1 !== 'L' && day.session2 !== 'L') totals.leave += 1;
+
+    for (const exception of day.exceptions) {
+      const normalized = exception.toLowerCase();
+      if (normalized.includes('late')) totals.lateIn += 1;
+      else if (normalized.includes('early')) totals.earlyOut += 1;
+    }
+  }
+
+  return totals;
+}
+
+/** Normalise one employee's muster rows into the stored month document. */
+export function buildSwipeMonth(
+  row: GreytHRMusterRow,
+  options: { month: string; periodStart: string; periodEnd: string; syncedAt?: string },
+): EmployeeSwipeMonth {
+  const days: EmployeeSwipeDay[] = [];
+
+  for (const record of row.records ?? []) {
+    const summary = record?.summary;
+    const date = String(summary?.attendanceDate ?? '').slice(0, 10);
+    if (!date) continue;
+
+    const session1 = String(summary?.session1Label ?? '').trim().toUpperCase();
+    const session2 = String(summary?.session2Label ?? '').trim().toUpperCase();
+
+    days.push({
+      date,
+      session1,
+      session2,
+      status: session1 === session2 ? session1 : [session1, session2].filter(Boolean).join('/'),
+      dayType: String(summary?.dayType ?? '').trim(),
+      // The name, not the timestamps — see the timezone note.
+      shift: String(summary?.shift?.name ?? summary?.shift?.code ?? '').trim(),
+      firstIn: swipeClock(summary?.firstInTime),
+      lastOut: swipeClock(summary?.lastOutTime),
+      // `00:00` is dropped: greytHR emits it for "nothing recorded", and a register showing a
+      // worked total of zero for a weekly off reads as a missed shift.
+      workHrs: normalizeHrs(summary?.totalWorkHrs),
+      actualWorkHrs: normalizeHrs(summary?.actualWorkHrs),
+      shortfallHrs: normalizeHrs(summary?.shortFallHrs),
+      excessHrs: normalizeHrs(summary?.excessWorkHrs),
+      exceptions: (record?.exceptions ?? []).map((value) => String(value).trim()).filter(Boolean),
+      absentReason: summary?.absentReason ? String(summary.absentReason).trim() : null,
+      onLeave: summary?.onLeave === true,
+      regularized: summary?.regularized === true,
+      overridden: summary?.overridden === true,
+    });
+  }
+
+  days.sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    employeeId: String(row.employeeId),
+    month: options.month,
+    periodStart: options.periodStart,
+    periodEnd: options.periodEnd,
+    days,
+    totals: summarizeSwipeDays(days),
+    syncedAt: options.syncedAt ?? new Date().toISOString(),
+  };
+}
+
+const normalizeHrs = (value: string | null | undefined): string | null => {
+  const text = String(value ?? '').trim();
+  if (!text || text === '00:00' || text === '0:00' || text === '0') return null;
+  return text;
+};
+
+/**
+ * Whether a month is worth storing.
+ *
+ * A month of nothing but unlabelled empty days is what greytHR returns for somebody who is not on
+ * an attendance scheme at all, and writing those documents would fill the collection with rows the
+ * register then has to explain.
+ */
+export const hasSwipeData = (month: EmployeeSwipeMonth): boolean =>
+  month.days.some((day) => day.firstIn || day.status || day.exceptions.length > 0);
+
+/**
+ * A day with one punch and no second one.
+ *
+ * greytHR reports these as `firstInTime === lastOutTime` with no work hours, which renders as
+ * "in 09:04, out 09:04" — a day that looks like somebody arrived and left in the same instant. It
+ * is really a missing punch: they swiped in and never swiped out, or only one reader saw them. Seen
+ * live on ~10% of the days with any punch at all, and greytHR does not always raise an exception for
+ * it, so the register has to recognise it rather than print the pair and hope the reader infers it.
+ */
+export const isSinglePunchDay = (day: EmployeeSwipeDay): boolean =>
+  Boolean(day.firstIn) && day.firstIn === day.lastOut && !day.workHrs;
 
 /* ------------------------------------------------------------------------------------------------
  * Telling employee records apart from salary rows
@@ -3242,6 +3642,23 @@ export function buildCategoryIdMaps(lov: GreytHRLovResponse | null | undefined):
   }
 
   return { categoryIdByName, categoryNameById, valueNamesByCategory, valueIdsByCategory };
+}
+
+/**
+ * The document id for one value of the category master — `Designation_47`.
+ *
+ * Every writer of the `categories` collection goes through here. They used to disagree: the hourly
+ * unified sync upserted each value under this deterministic id, while the manual button wiped the
+ * collection and re-added everything under auto-generated ids. Whichever ran second therefore
+ * doubled the master — two documents describing `Designation 47`, two identical rows on the
+ * Category screen, and two React children with the same key. One shared id makes the two writes
+ * idempotent against each other.
+ *
+ * Anything outside `[A-Za-z0-9_-]` is folded to `_`, because a greytHR category name can carry a
+ * space (`Project Name`) and a `/` in a document id would nest it under a subcollection path.
+ */
+export function categoryDocId(type: string, valueId: number | string): string {
+  return `${type}_${valueId}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 /** One entry of the `POST`/`PUT /employees/{id}/categories` body. */

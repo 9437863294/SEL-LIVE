@@ -49,6 +49,7 @@ import {
   type GreytHRLeaveBalanceDetail,
   type GreytHRLeaveBalanceRow,
   type GreytHRLovResponse,
+  type GreytHRMusterRow,
   type GreytHROrgTreeRow,
   type GreytHRPagedResponse,
   type GreytHRPersonalRow,
@@ -743,6 +744,58 @@ export const fetchAttendanceInsights = (
   });
 };
 
+/**
+ * The daily muster — first in, last out and the day's flags, per employee per day.
+ *
+ * The only day-level attendance endpoint greytHR publishes. `/swipes`, `/punches`, `/logs`,
+ * `/transactions`, their per-employee variants and `swipes=true`-style parameters on this endpoint
+ * were all probed against a live tenant: every one 404s or changes nothing in the response. So this
+ * is the finest grain available, and a raw punch list is not obtainable through the API.
+ *
+ * Heavier than anything else here — one record per employee per day, so a month is roughly thirty
+ * times the row count of the summary endpoint. `size` defaults to 100 rather than the shared 500
+ * because each row carries its whole month of records and the pages get large.
+ */
+export const fetchMuster = (
+  start: string,
+  end: string,
+  options: { size?: number; config?: GreytHRConfig } = {},
+) => {
+  for (const [name, value] of [['start', start], ['end', end]] as const) {
+    if (!isGreytHRTimestamp(value)) {
+      throw new Error(
+        `Muster ${name} date "${value}" is not a format greytHR accepts. Use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ.`,
+      );
+    }
+  }
+
+  return fetchAllPages<GreytHRMusterRow>('/attendance/v2/employee/muster', {
+    label: 'daily muster',
+    query: { start, end },
+    size: options.size ?? 100,
+    config: options.config,
+  });
+};
+
+/**
+ * One employee's muster.
+ *
+ * `/attendance/v2/employee/{id}/muster` — a real endpoint, and the reason the swipe screen can open
+ * a single person's month without paging the whole organisation to find them.
+ */
+export const fetchEmployeeMuster = (
+  employeeId: string | number,
+  start: string,
+  end: string,
+  options: { size?: number; config?: GreytHRConfig } = {},
+) =>
+  fetchAllPages<GreytHRMusterRow>(`/attendance/v2/employee/${encodeURIComponent(String(employeeId))}/muster`, {
+    label: 'employee muster',
+    query: { start, end },
+    size: options.size ?? 100,
+    config: options.config,
+  });
+
 /* ------------------------------------------------------------------------------------------------
  * Single employee
  * ---------------------------------------------------------------------------------------------- */
@@ -883,13 +936,33 @@ export async function fetchSingleEmployeeDetail(
   const config = options.config ?? greytHRConfig();
   const unavailable: string[] = [];
 
+  /**
+   * One detail endpoint, with 404 treated as an answer rather than a failure.
+   *
+   * greytHR says `404 EMPLOYEE-IDENTITY-EXCEPTION / error.employee.identity.notfound` for an
+   * identity type the employee does not hold — which is most of them for most people. This used to
+   * catch every throw into `unavailable`, so a profile reported "7 detail group(s) could not be read
+   * from greytHR: identities/PRAN, identities/PASSPORT, identities/DL…" for an employee whose PAN,
+   * Aadhaar and bank account all came back perfectly. Measured on employee 70: those seven were
+   * plain 404s, and the three that returned data were not mentioned.
+   *
+   * Two costs to that. The warning was false on the normal case, which trains people to ignore it;
+   * and because a missing record and a broken endpoint went into the same list, a *real* failure —
+   * greytHR 500s on the PAN and BANKACCNO bulk endpoints for this tenant — was indistinguishable
+   * from "no passport on file".
+   *
+   * So a 404 returns null quietly, and only a genuine fault (5xx, 401/403, a network error, an
+   * unparseable body) is reported. `GreytHRError` carries the status, which is what makes the
+   * distinction available here at all.
+   */
   const request = async <T>(path: string, label: string): Promise<T | null> => {
     try {
       return await greytHRRequest<T>(`/employee/v2/employees/${encodeURIComponent(id)}${path}`, {
         label: `${label} ${id}`,
         config,
       });
-    } catch {
+    } catch (error) {
+      if (error instanceof GreytHRError && error.status === 404) return null;
       unavailable.push(label);
       return null;
     }

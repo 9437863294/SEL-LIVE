@@ -35,12 +35,15 @@ import {
   buildAttendanceSummary,
   buildCategoryIdMaps,
   buildLeaveBalance,
+  categoryDocId,
   currentAttendancePeriod,
   currentLeaveYear,
   hasAttendanceData,
+  hasSwipeData,
   leaveTypeNamesFrom,
   buildOperationalDetail,
   buildSensitiveDetail,
+  buildSwipeMonth,
   buildSyncedEmployee,
   detailGroupSpec,
   hasSensitiveDetail,
@@ -62,6 +65,9 @@ import {
   shouldForceFullResync,
   shouldDeactivateOnResignation,
   summarizeRun,
+  swipeDocId,
+  swipeMonthKey,
+  swipeMonthRange,
   todayIso,
   type EmployeeDetailGroup,
   type EmploymentState,
@@ -92,6 +98,7 @@ import { replaceCurrentRosterSnapshot } from './greythr-roster-store';
 import {
   fetchAttendanceInsights,
   fetchLeaveBalances,
+  fetchMuster,
   fetchLeaveTypeDictionary,
   fetchEmployeeAddresses,
   fetchEmployeeAssets,
@@ -154,6 +161,14 @@ export const GREYTHR_COLLECTIONS = {
    */
   leaveBalance: 'employeeLeaveBalance',
   attendance: 'employeeAttendance',
+  /**
+   * The daily muster, one document per employee per month — keyed by `swipeDocId`.
+   *
+   * A document per *swipe* would be tens of thousands a month at this headcount. A month per person
+   * is ~190 documents holding ~30 day entries each, and a month is the unit anybody asks about,
+   * exports, or would eventually prune.
+   */
+  swipes: 'employeeSwipes',
   /** One document per run. */
   runs: 'greythrSyncRuns',
   users: 'users',
@@ -657,6 +672,7 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
 
     const leaveWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
     const attendanceWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
+    const swipeWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
 
     if (settings.detailGroups.leave) {
       try {
@@ -718,6 +734,47 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
       }
     }
 
+    /**
+     * The daily muster — one document per employee per month.
+     *
+     * Off unless the group is enabled, because this is the heaviest fetch in the run: one record per
+     * employee per day, so the current month is roughly thirty times the row count of the attendance
+     * summary above. Its own try/catch for the same reason as the others — a muster failure must not
+     * cost the run the employee records everything else depends on.
+     */
+    if (settings.detailGroups.swipes) {
+      try {
+        const month = swipeMonthKey();
+        const range = swipeMonthRange(month);
+        const { rows, complete } = await fetchMuster(range.start, range.end);
+        if (!complete) {
+          warnings.push(
+            'The daily muster did not page to the end, so some employees may be missing swipe data for this month.',
+          );
+        }
+        for (const row of rows) {
+          const stored = buildSwipeMonth(row, {
+            month,
+            periodStart: range.start,
+            periodEnd: range.end,
+            syncedAt: startedAt,
+          });
+          // Employees on no attendance scheme come back as a month of blank days; writing those
+          // would fill the collection with rows the register then has to explain away.
+          if (hasSwipeData(stored)) {
+            swipeWrites.push({
+              id: swipeDocId(stored.employeeId, month),
+              data: stored as unknown as Record<string, unknown>,
+            });
+          }
+        }
+      } catch (error) {
+        warnings.push(
+          `Daily swipes failed and were skipped: ${error instanceof Error ? error.message : 'unknown error'}`,
+        );
+      }
+    }
+
     /* ── Category master lists ── */
 
     /**
@@ -725,10 +782,11 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
      * and the rest.
      *
      * Written from the reference data this run already fetched, so the Category screen stops
-     * depending on somebody remembering to press its own button. Keyed by `type_id` rather than an
-     * auto-id: the previous flow deleted the whole collection and re-added it on every sync, which
-     * meant a reader mid-sync saw an empty list. A deterministic id makes the write an idempotent
-     * upsert instead.
+     * depending on somebody remembering to press its own button. Keyed by `categoryDocId` rather
+     * than an auto-id: the manual flow used to delete the whole collection and re-add it on every
+     * sync, which meant a reader mid-sync saw an empty list. A deterministic id makes the write an
+     * idempotent upsert instead — and, now that the manual flow writes the same ids, one the two
+     * writers share rather than duplicate.
      *
      * Stale values are left rather than deleted. A category value removed in greytHR is still
      * referenced by historical employee records, and deleting it would turn those into blanks.
@@ -739,7 +797,7 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
       for (const [categoryName, valuesById] of Object.entries(maps.valueNamesByCategory)) {
         for (const [valueId, valueName] of Object.entries(valuesById)) {
           categoryWrites.push({
-            id: `${categoryName}_${valueId}`.replace(/[^a-zA-Z0-9_-]/g, '_'),
+            id: categoryDocId(categoryName, valueId),
             data: { id: Number(valueId), name: valueName, type: categoryName, syncedAt: startedAt },
           });
         }
@@ -816,6 +874,14 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
           ref: db.collection(GREYTHR_COLLECTIONS.attendance).doc(write.id),
           data: write.data,
           merge: true,
+        })),
+        ...swipeWrites.map((write) => ({
+          ref: db.collection(GREYTHR_COLLECTIONS.swipes).doc(write.id),
+          // Replaced, not merged: the month's `days` array is rebuilt from greytHR on every run,
+          // and a merge does not remove array entries — a day greytHR later corrected away would
+          // survive in the stored month forever.
+          data: write.data,
+          merge: false,
         })),
         ...categoryWrites.map((write) => ({
           ref: db.collection(GREYTHR_COLLECTIONS.categories).doc(write.id),
