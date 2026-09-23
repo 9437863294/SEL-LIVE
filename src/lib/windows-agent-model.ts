@@ -986,7 +986,15 @@ export type WindowsAuditAction =
    * whereas uninstalling it stops recording permanently and leaves a PC that looks like one that
    * was never enrolled. "Why has this machine no data since March" needs to be answerable.
    */
-  | 'AGENT_UNINSTALL_APPROVED';
+  | 'AGENT_UNINSTALL_APPROVED'
+  /**
+   * A SEL LIVE administrator authorised stopping the Windows service on one computer.
+   *
+   * The third of the set, and the one with the widest blast radius: the service is what starts
+   * the agent at sign-in and restarts it when somebody ends it from Task Manager, so stopping it
+   * leaves a PC that records nothing and has nothing left to put that right until it reboots.
+   */
+  | 'AGENT_SERVICE_STOP_APPROVED';
 
 /**
  * One administrative action. Append-only — §50 is explicit that an audit trail an administrator can

@@ -32,6 +32,8 @@ namespace Sel.Agent.Service
             if (HasFlag(args, "--reset-identity")) return ResetIdentity();
             if (HasFlag(args, "--install-logon-task")) return LogonTask.Install();
             if (HasFlag(args, "--remove-logon-task")) return LogonTask.Remove();
+            if (HasFlag(args, "--protect-service")) return ServiceProtection.Protect();
+            if (HasFlag(args, "--unprotect-service")) return ServiceProtection.Unprotect();
 
             if (HasFlag(args, "--console"))
             {
@@ -143,6 +145,16 @@ namespace Sel.Agent.Service
                 ? "registered (\"" + LogonTask.TaskName + "\")"
                 : "MISSING - re-run the installer, or --install-logon-task as an administrator"));
             if (!taskExists) ok = false;
+
+            // Whether the Stop button is actually protected. Reported rather than assumed,
+            // because the descriptor is one command away from being put back and a machine where
+            // somebody did that looks identical from the outside.
+            string sddl = ServiceProtection.CurrentSddl();
+            Console.WriteLine("Stop protection  : " + (sddl == null
+                ? "unknown - could not read the service descriptor"
+                : Core.Security.ServiceSecurityRules.IsProtected(sddl)
+                    ? "on - administrators cannot stop the service from services.msc"
+                    : "OFF - anybody with administrator rights can stop the service"));
 
             Console.WriteLine(new string('-', 60));
             Console.WriteLine(ok ? "All checks passed." : "One or more checks failed — see above.");

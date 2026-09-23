@@ -473,6 +473,60 @@ namespace Sel.Agent
             return RequestExitApprovalAsync(email, password, reason, "EXIT");
         }
 
+        /// <summary>
+        /// Ask the Windows service to stop, on the authority of a SEL LIVE administrator.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The one approval this process does <b>not</b> make itself. The service is what holds
+        /// the right to stop, so it has to be the one that asks the server — otherwise it would
+        /// be taking this process's word for the answer, and this process runs as the very person
+        /// whose monitoring is being switched off.
+        /// </para>
+        /// <para>
+        /// So the sign-in happens here, where the window is, and the resulting token goes down
+        /// the local pipe. The service calls <c>/api/windows-agent/exit-approval</c> with its own
+        /// device credential and stops only if the server says yes.
+        /// </para>
+        /// </remarks>
+        public async Task<ExitApprovalOutcome> RequestServiceStopAsync(
+            string email, string password, string reason)
+        {
+            try
+            {
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                {
+                    FirebaseSession session = await _auth
+                        .SignInAsync(email, password, timeout.Token)
+                        .ConfigureAwait(false);
+
+                    ServiceControlClient.Result result = ServiceControlClient.RequestStop(session.IdToken, reason);
+
+                    _log.Write(result.Ok
+                        ? "The SEL LIVE Agent service was stopped after approval by " + email + "."
+                        : "The service stop was refused: " + result.Message);
+
+                    return new ExitApprovalOutcome
+                    {
+                        Approved = result.Ok,
+                        // The service knows who approved it; this end only knows who signed in.
+                        ApprovedByName = result.Ok ? email : null,
+                        Message = result.Ok ? null : result.Message,
+                    };
+                }
+            }
+            catch (FirebaseAuthException error)
+            {
+                _log.Write("Service stop sign-in failed for " + email + ": " + error.Message);
+                return new ExitApprovalOutcome { Message = error.Message };
+            }
+            catch (Exception error)
+            {
+                _log.Write("Service stop request failed: " + error.Message);
+                return new ExitApprovalOutcome { Message = "Could not ask the service to stop: " + error.Message };
+            }
+        }
+
         /// <param name="action">
         /// <c>EXIT</c> or <c>UNINSTALL</c>. Both need the same permission; they are recorded
         /// separately because stopping the agent and removing it are different events with

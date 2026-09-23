@@ -145,6 +145,7 @@ useless on an unenrolled PC.
 | Idle lock | `windows/SEL.Agent.Core/Session/IdleLockPlanner.cs` (the rules, tested), `windows/SEL.Agent/SessionLifecycleController.cs` (the timer and windows) |
 | Websites and documents | `windows/SEL.Agent.Core/Tracking/BrowserDomainRules.cs`, `DocumentNameRules.cs` (the rules, tested), `Platform/Win32/BrowserAddressBarReader.cs` (the accessibility read), `buildDetailBreakdown` in `windows-agent-rules.ts` (the report) |
 | How it starts | `windows/SEL.Agent.Service/LogonTask.cs` (the scheduled task), `SelAgentService.cs` (the watchdog), `SessionLauncher.cs` (launching into a session) |
+| How it is stopped | `SEL.Agent.Core/Security/ServiceSecurityRules.cs` (the descriptor, tested), `SEL.Agent.Service/ServiceProtection.cs` (applying it), `ControlPipe.cs` with `SEL.Agent/ServiceControlClient.cs` (the approved stop) |
 | Start-up diagnostics | `windows/SEL.Agent/StartupTrace.cs` → `%ProgramData%\SEL LIVE\Agent\startup.log`, always on |
 | Installer | `windows/SEL.Agent.Installer/Package.wxs` (the MSI), `Bundle.wxs` (the setup .exe), `build.ps1` (both) |
 | Tests | `tests/windows-agent-domain.test.mjs`, `windows/SEL.Agent.Tests` |
@@ -152,7 +153,7 @@ useless on an unenrolled PC.
 ```
 npm run test:windows-agent          # 61 domain tests
 npm run typecheck:windows-agent
-dotnet test windows/SEL.Agent.Tests # 105 agent tests: OS compatibility, idle-lock rules, gate keys, directive expiry
+dotnet test windows/SEL.Agent.Tests # 176 agent tests, including the control pipe against a real named pipe
 ```
 
 ### How the agent starts, and why it cannot be switched off
@@ -752,6 +753,46 @@ says. What this adds is that the obvious, discoverable way to close it produces 
 did this PC stop reporting at half past two" — and does not happen by accident on the way out at
 5 p.m.
 
+### Stopping the Windows service needs it too
+
+Closing the agent needed approval and removing it needed approval, while anybody who could open
+`services.msc` could press **Stop** and take the watchdog with it — wider than either, because the
+service is what starts the agent at sign-in and what brings it back when somebody ends it from
+Task Manager.
+
+The installer now hardens the service's own security descriptor. Windows checks `SERVICE_STOP` in
+the Service Control Manager, **before any of this agent's code runs**, so:
+
+| | |
+|---|---|
+| Stop in services.msc | Greyed out. `sc stop SELLiveAgent` answers "Access is denied" |
+| SYSTEM | Keeps every right, so upgrades and uninstalls still stop and remove the service normally |
+| Administrators | Keep start, configure, delete — and `WRITE_DAC`, deliberately: the way back is one documented command |
+| Everyone | Can still see the service and its state; monitoring tools are unaffected |
+
+**The approved way to stop it** is **Shift + right-click the tray icon → Stop background service**.
+That asks for the same `Devices / Edit` permission as Exit, and is recorded as
+`AGENT_SERVICE_STOP_APPROVED` — a separate audit action, because closing the agent pauses recording
+until the next sign-in while stopping the service removes the thing that would restart it.
+
+**The agent does not decide, and cannot stop anything.** It collects the administrator's sign-in
+and hands the token to the service over a local named pipe; the service asks
+`/api/windows-agent/exit-approval` itself, with its own device credential, and stops only if the
+server says yes. That distinction is the whole design: the agent runs as the very person whose
+monitoring is being switched off, so its word is not what the service acts on. A caller who cannot
+produce a real administrator's token gets a refusal, and an unreachable server is a refusal too —
+otherwise the service could be stopped by pulling out the network cable.
+
+**Recovery, for an administrator who needs the Stop button back:**
+
+```
+sc sdset SELLiveAgent "D:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
+```
+
+`SEL.Agent.Service.exe --check` reports whether the protection is on, because a machine where
+somebody ran that command looks identical from the outside. Re-running the installer, or a repair,
+puts it back.
+
 ### Removing the agent needs the same approval
 
 Closing the agent needed an administrator; uninstalling it needed nothing at all, and took two
@@ -1087,6 +1128,8 @@ office work last March" stays answerable indefinitely, while "which window was o
 | The agent never appears at all | `%ProgramData%\SEL LIVE\Agent\startup.log`, then the event log's exit code. §3 has the table: 0 means the agent chose to exit, 0xC0000000-something means Windows stopped it before it ran. |
 | "started the desktop agent … but it exited within 3s", repeatedly | Read the exit code in the same entry. Historically this was the service's job object killing the child; if it recurs with a 0xC0000000 code, look for AppLocker, WDAC or an antivirus blocking `SEL.Agent.exe` when it is launched by a service. |
 | No Uninstall button in Apps and Features | Intended. Removal needs a SEL LIVE administrator's approval — run the setup .exe with `/uninstall`. §7b. |
+| Stop is greyed out in services.msc, or `sc stop` says "Access is denied" | Intended. Use Shift + right-click the tray icon → Stop background service, which asks for the same approval. The recovery command is in §7b. |
+| The service stopped and nobody pressed Stop | An approved stop went through the control pipe. `AGENT_SERVICE_STOP_APPROVED` in the audit log names who approved it and why. |
 | "That enrolment code has reached its registration limit" | `maxRegistrations` is exhausted. Raise it, or issue a new code. The setup window warns when a code has three or fewer left, so this is usually avoidable. |
 | "That enrolment code is not recognised" on a code that looks right | Check it against the enrolment codes page: it is a document id, so `SEL-HO-2026` and `SEL-H0-2026` are different codes and both look correct on paper. |
 | Nothing syncs, no error visible | TLS 1.2 on Windows 7. Run `--check`. |

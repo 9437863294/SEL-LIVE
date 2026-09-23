@@ -30,4 +30,12 @@
     <ProjectReference Include="..\SEL.Agent.Core\SEL.Agent.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- ControlPipe is internal and stays internal; the tests drive it directly because a
+         channel that stops a SYSTEM service should not be verified by inspection. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>SEL.Agent.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

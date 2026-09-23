@@ -44,6 +44,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SEL.Agent.Core\SEL.Agent.Core.csproj" />
+    <!--
+      The service, so the control pipe can be tested for real rather than reasoned about.
+
+      It is the channel by which an approved administrator stops a SYSTEM service, so "does it
+      refuse when the server says no" is not a question to answer by reading the code. The tests
+      drive the actual pipe with the actual client; only the server's verdict is substituted.
+    -->
+    <ProjectReference Include="..\SEL.Agent.Service\SEL.Agent.Service.csproj" />
   </ItemGroup>
 
 </Project>

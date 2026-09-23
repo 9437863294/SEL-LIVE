@@ -24,7 +24,7 @@
 
   <Package Name="SEL LIVE Windows Agent"
            Manufacturer="Siddhartha Engineering Limited"
-           Version="1.2.0.0"
+           Version="1.3.0.0"
            UpgradeCode="7E2D9A34-4C6B-4E3B-9A1D-2C7F8B5E6D41"
            Language="1033"
            Scope="perMachine"
@@ -445,6 +445,50 @@
                   Impersonate="no"
                   Return="ignore" />
 
+    <!--
+      ══ The Stop button ══════════════════════════════════════════════════════════════════════
+
+      Closing the agent needs a SEL LIVE administrator's approval, and so does removing it — but
+      until now anybody who could open services.msc could press Stop and take the watchdog with
+      it, which is wider than either: the service is what starts the agent at sign-in and what
+      brings it back when somebody ends it from Task Manager.
+
+      So the installer hardens the service's own security descriptor. Windows checks
+      SERVICE_STOP in the Service Control Manager, before any of this agent's code runs, so a
+      Stop that the descriptor does not permit fails there — greyed out in services.msc, "Access
+      is denied" from sc.exe, whatever the caller. SYSTEM keeps everything, so uninstalling and
+      upgrading still work, and the service can stop itself once an approval has been granted
+      through the control pipe.
+
+      Return="ignore" on both: a machine where sc.exe is restricted by policy should still end
+      up with a working agent, and the check switch reports the protection as OFF so the
+      difference is visible rather than silent. ServiceSecurityRules has the descriptor and the
+      reasoning.
+    -->
+    <SetProperty Id="ProtectService"
+                 Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --protect-service"
+                 Before="ProtectService"
+                 Sequence="execute" />
+
+    <CustomAction Id="ProtectService"
+                  BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <SetProperty Id="UnprotectService"
+                 Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --unprotect-service"
+                 Before="UnprotectService"
+                 Sequence="execute" />
+
+    <CustomAction Id="UnprotectService"
+                  BinaryRef="Wix4UtilCA_X86"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <SetProperty Id="RemoveLogonTask"
                  Value="&quot;[INSTALLFOLDER]SEL.Agent.Service.exe&quot; --remove-logon-task"
                  Before="RemoveLogonTask"
@@ -520,6 +564,22 @@
         /F and the task is identical.
       -->
       <Custom Action="RemoveLogonTask" Before="RemoveFiles"
+              Condition="REMOVE~=&quot;ALL&quot;" />
+
+      <!--
+        Applied after the service exists and has been started, and on a repair as well: a
+        descriptor somebody has put back is exactly the thing a repair should re-apply.
+      -->
+      <Custom Action="ProtectService" After="StartServices"
+              Condition="NOT REMOVE" />
+
+      <!--
+        Put back before Windows Installer tries to stop the service during a removal or an
+        upgrade. In principle unnecessary — the execute sequence runs as SYSTEM, which keeps the
+        stop right — but a machine whose descriptor has been edited by hand should still
+        uninstall, and the cost is one sc.exe call.
+      -->
+      <Custom Action="UnprotectService" Before="StopServices"
               Condition="REMOVE~=&quot;ALL&quot;" />
 
       <!--

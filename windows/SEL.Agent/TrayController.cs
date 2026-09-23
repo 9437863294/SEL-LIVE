@@ -50,6 +50,16 @@ namespace Sel.Agent
         /// <summary>Raised when a signed-out user asks to sign in from the menu.</summary>
         public event EventHandler SignInRequested;
 
+        /// <summary>
+        /// Raised by the Shift-revealed "Stop background service" item.
+        /// </summary>
+        /// <remarks>
+        /// The service's Stop button is refused by Windows to everybody but SYSTEM, so this is
+        /// the supported way to stop it on a machine somebody is standing at. It leads to the
+        /// same approval window as Exit.
+        /// </remarks>
+        public event EventHandler StopServiceRequested;
+
         public TrayController(AgentHost host)
         {
             _host = host ?? throw new ArgumentNullException("host");
@@ -181,6 +191,16 @@ namespace Sel.Agent
                 }));
                 _menu.Items.Add(Item("Agent status", ShowStatus));
                 _menu.Items.Add(Item("Monitoring policy", () => _host.OpenErp("/windows-agent/monitoring-policy")));
+
+                // Behind Shift because it is an IT action, not an employee one — and because
+                // the Stop button in services.msc no longer works, so this is the only way to
+                // stop the service on a machine somebody is standing at. It asks for the same
+                // SEL LIVE approval as Exit, and the service checks that approval itself.
+                _menu.Items.Add(Item("Stop background service…", () =>
+                {
+                    EventHandler handler = StopServiceRequested;
+                    if (handler != null) handler(this, EventArgs.Empty);
+                }));
             }
 
             _menu.Items.Add(new ToolStripSeparator());

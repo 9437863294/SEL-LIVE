@@ -47,7 +47,7 @@ param(
     # Override to produce an MSI whose agent runs on Windows 8.0. See Directory.Build.props.
     [string]$TargetFramework = 'net48',
 
-    [string]$Version = '1.2.0.0',
+    [string]$Version = '1.3.0.0',
 
     # §43 requires the agent to verify an update's Authenticode signature before running it, which
     # means the installer has to carry one. An unsigned MSI is fine for a pilot and is not fine

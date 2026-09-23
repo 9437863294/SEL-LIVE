@@ -63,10 +63,16 @@ export async function POST(request: Request) {
     // it and leaves a machine indistinguishable from one that was never enrolled. An audit trail
     // that called them the same thing would answer "why did this PC stop reporting in March"
     // with "somebody closed the agent", which would be wrong.
-    const uninstall = String(body.action || '').toUpperCase() === 'UNINSTALL';
+    const requested = String(body.action || '').toUpperCase();
+    const action =
+      requested === 'UNINSTALL'
+        ? 'AGENT_UNINSTALL_APPROVED'
+        : requested === 'SERVICE_STOP'
+          ? 'AGENT_SERVICE_STOP_APPROVED'
+          : 'AGENT_EXIT_APPROVED';
 
     await writeAudit({
-      action: uninstall ? 'AGENT_UNINSTALL_APPROVED' : 'AGENT_EXIT_APPROVED',
+      action,
       actorId: approver.userId,
       actorName: approver.userName,
       targetType: 'device',

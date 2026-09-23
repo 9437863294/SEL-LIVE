@@ -13,6 +13,15 @@ namespace Sel.Agent
     {
         Exit = 0,
         Uninstall = 1,
+        /// <summary>
+        /// Stopping the Windows service — the widest of the three.
+        /// </summary>
+        /// <remarks>
+        /// Exit closes the agent until the next sign-in and the service brings it back. Stopping
+        /// the service removes the thing that would bring it back, so the PC records nothing
+        /// until somebody restarts it or reboots.
+        /// </remarks>
+        StopService = 2,
     }
 
     /// <summary>

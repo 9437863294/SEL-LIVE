@@ -41,6 +41,7 @@ namespace Sel.Agent
             InitializeComponent();
 
             bool uninstalling = purpose == ApprovalPurpose.Uninstall;
+            bool stoppingService = purpose == ApprovalPurpose.StopService;
             string signedIn = host.CurrentLogin != null ? host.CurrentLogin.UserName : null;
 
             if (uninstalling)
@@ -56,6 +57,18 @@ namespace Sel.Agent
                 // "Keep running" is the right words for the tray's Exit and the wrong ones here:
                 // the question being cancelled is an uninstall, not whether to stop the agent.
                 CancelButton.Content = "Cancel removal";
+            }
+            else if (stoppingService)
+            {
+                // The widest of the three, and said plainly. Exit stops the agent until the next
+                // sign-in, because the service starts it again; stopping the service removes the
+                // thing that would.
+                Title = "SEL LIVE Agent — Approval to stop the service";
+                IntroText.Text = "Stopping the background service ends attendance and activity "
+                    + "recording on this computer until somebody starts it again or the PC is "
+                    + "restarted, so a SEL LIVE administrator has to approve it.";
+                ApproveButton.Content = "Approve and stop service";
+                CancelButton.Content = "Leave it running";
             }
             else
             {
@@ -88,10 +101,17 @@ namespace Sel.Agent
             SetBusy(true);
             try
             {
-                ExitApprovalOutcome outcome = await _host
-                    .RequestExitApprovalAsync(email, password, (ReasonBox.Text ?? string.Empty).Trim(),
-                        _purpose == ApprovalPurpose.Uninstall ? "UNINSTALL" : "EXIT")
-                    .ConfigureAwait(true);
+                string reason = (ReasonBox.Text ?? string.Empty).Trim();
+
+                // Stopping the service is the one case this process does not decide. It hands
+                // the sign-in to the service, which asks the server itself — see
+                // AgentHost.RequestServiceStopAsync for why that distinction is load-bearing.
+                ExitApprovalOutcome outcome = _purpose == ApprovalPurpose.StopService
+                    ? await _host.RequestServiceStopAsync(email, password, reason).ConfigureAwait(true)
+                    : await _host
+                        .RequestExitApprovalAsync(email, password, reason,
+                            _purpose == ApprovalPurpose.Uninstall ? "UNINSTALL" : "EXIT")
+                        .ConfigureAwait(true);
 
                 if (!outcome.Approved)
                 {
@@ -102,8 +122,7 @@ namespace Sel.Agent
                 }
 
                 ApprovedByName = outcome.ApprovedByName;
-                ShowStatus("Approved by " + outcome.ApprovedByName + ". "
-                    + (_purpose == ApprovalPurpose.Uninstall ? "Continuing the removal…" : "Closing the agent…"), true);
+                ShowStatus("Approved by " + outcome.ApprovedByName + ". " + Continuation(), true);
 
                 // A beat so the confirmation is readable. Closing the instant the server answers
                 // makes an approval that worked look identical to a button that did nothing.
@@ -132,9 +151,27 @@ namespace Sel.Agent
             EmailBox.IsEnabled = !busy;
             PasswordBox.IsEnabled = !busy;
             ReasonBox.IsEnabled = !busy;
-            ApproveButton.Content = busy
-                ? "Checking…"
-                : _purpose == ApprovalPurpose.Uninstall ? "Approve and remove agent" : "Approve and close agent";
+            ApproveButton.Content = busy ? "Checking…" : ApproveLabel();
+        }
+
+        private string Continuation()
+        {
+            switch (_purpose)
+            {
+                case ApprovalPurpose.Uninstall: return "Continuing the removal…";
+                case ApprovalPurpose.StopService: return "Stopping the service…";
+                default: return "Closing the agent…";
+            }
+        }
+
+        private string ApproveLabel()
+        {
+            switch (_purpose)
+            {
+                case ApprovalPurpose.Uninstall: return "Approve and remove agent";
+                case ApprovalPurpose.StopService: return "Approve and stop service";
+                default: return "Approve and close agent";
+            }
         }
 
         private void ShowStatus(string message, bool good)

@@ -143,6 +143,7 @@ namespace Sel.Agent
             _tray.ExitRequested += OnExitRequested;
             _tray.SignOutRequested += OnSignOutRequested;
             _tray.SignInRequested += (sender, args) => ShowGate();
+            _tray.StopServiceRequested += OnStopServiceRequested;
             _tray.Show();
             StartupTrace.Write("tray icon shown; start-up complete");
 
@@ -599,6 +600,46 @@ namespace Sel.Agent
 
             _log.Write("Exit approved by " + (dialog.ApprovedByName ?? "an administrator") + ".");
             await StopAndQuitAsync().ConfigureAwait(true);
+        }
+
+        /// <summary>
+        /// Stop the Windows service, if a SEL LIVE administrator approves it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The Stop button in services.msc is refused by Windows to everybody but SYSTEM, so this
+        /// is the supported route. Unlike Exit it is not gated on <c>requireAdminToExit</c>:
+        /// closing the agent is something an installation may reasonably let people do, because
+        /// the service starts it again — stopping the service is what removes that safety net,
+        /// and it always needs approval.
+        /// </para>
+        /// <para>
+        /// The agent does not decide and does not stop anything. It collects the sign-in and
+        /// hands the token to the service, which asks the server with its own device credential.
+        /// </para>
+        /// </remarks>
+        private void OnStopServiceRequested(object sender, EventArgs e)
+        {
+            var dialog = new ExitApprovalWindow(_host, ApprovalPurpose.StopService);
+            bool? approved = dialog.ShowDialog();
+
+            if (approved != true)
+            {
+                _tray.ShowBalloon(
+                    "Service still running",
+                    "Stopping the SEL LIVE Agent service needs approval from a SEL LIVE administrator.");
+                return;
+            }
+
+            // The agent itself keeps running: the person asked to stop the service, not to close
+            // the agent, and conflating the two would end somebody's work session without being
+            // asked to. What they lose is the watchdog.
+            _log.Write("The background service was stopped after approval by "
+                + (dialog.ApprovedByName ?? "an administrator") + ".");
+            _tray.ShowBalloon(
+                "Service stopped",
+                "The SEL LIVE Agent service has stopped. This computer will not restart the agent "
+                    + "automatically until the service is started again or the PC is restarted.");
         }
 
         /// <summary>Close the work session properly, then end the process.</summary>

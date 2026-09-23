@@ -108,6 +108,7 @@ namespace Sel.Agent.Service
 
         private Timer _watchdog;
         private Timer _housekeeping;
+        private ControlPipe _controlPipe;
         private readonly object _gate = new object();
         private readonly System.Collections.Generic.Dictionary<uint, LaunchRecord> _launches =
             new System.Collections.Generic.Dictionary<uint, LaunchRecord>();
@@ -150,6 +151,11 @@ namespace Sel.Agent.Service
 
             _watchdog = new Timer(OnWatchdog, null, FirstWatchdogCheck, WatchdogInterval);
             _housekeeping = new Timer(OnHousekeeping, null, TimeSpan.FromMinutes(2), HousekeepingInterval);
+
+            // The only way to stop this service once its descriptor is hardened. See ControlPipe
+            // for why the decision is the server's and not the caller's.
+            _controlPipe = new ControlPipe(ApproveServiceStop, Stop, message => Log(message));
+            _controlPipe.Start();
         }
 
         protected override void OnStop()
@@ -157,6 +163,80 @@ namespace Sel.Agent.Service
             Log("Service stopping.");
             if (_watchdog != null) { _watchdog.Dispose(); _watchdog = null; }
             if (_housekeeping != null) { _housekeeping.Dispose(); _housekeeping = null; }
+            if (_controlPipe != null) { _controlPipe.Dispose(); _controlPipe = null; }
+        }
+
+        /// <summary>
+        /// Ask SEL LIVE whether the holder of this token may stop the service.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Runs as SYSTEM, which is what makes it possible at all: the device credential is
+        /// DPAPI-protected at machine scope, so the service can read it without a user session
+        /// and prove to the server which computer is asking. The approver's token proves who is
+        /// asking for it.
+        /// </para>
+        /// <para>
+        /// Returns false on any failure, including an unreachable server. A service that stopped
+        /// itself because it could not check would be a service anybody could stop by pulling the
+        /// network cable.
+        /// </para>
+        /// </remarks>
+        private bool ApproveServiceStop(string approverIdToken, string reason)
+        {
+            AgentConfigurationProbe config = AgentConfigurationProbe.Load();
+            if (!config.Found || string.IsNullOrEmpty(config.ApiBaseUrl))
+            {
+                Log("A service stop was requested but this computer has no configuration to ask with.",
+                    EventLogEntryType.Warning);
+                return false;
+            }
+
+            var identity = new DeviceIdentityStore();
+            DeviceIdentity device = identity.Read();
+            string secret = identity.ReadSecret();
+            if (device == null || string.IsNullOrEmpty(secret))
+            {
+                Log("A service stop was requested but this computer is not enrolled, so there is "
+                    + "nobody to ask.", EventLogEntryType.Warning);
+                return false;
+            }
+
+            try
+            {
+                using (var client = new Core.Api.SelLiveApiClient(config.ApiBaseUrl, Core.AgentVersion.Current))
+                {
+                    client.DeviceId = device.DeviceId;
+                    client.DeviceSecret = secret;
+
+                    using (var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(30)))
+                    {
+                        Core.Api.ExitApprovalResponse response = client
+                            .RequestExitApprovalAsync(approverIdToken, reason, "SERVICE_STOP", timeout.Token)
+                            .GetAwaiter()
+                            .GetResult();
+
+                        if (response != null && response.Approved)
+                        {
+                            Log("Service stop approved by " + response.ApprovedByName + ".");
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Core.Contracts.SelApiException error)
+            {
+                Log("Service stop refused (" + error.StatusCode + "): " + error.Message,
+                    EventLogEntryType.Warning);
+                return false;
+            }
+            catch (Exception error)
+            {
+                Log("Service stop approval failed: " + error.Message, EventLogEntryType.Warning);
+                return false;
+            }
+
+            return false;
         }
 
         protected override void OnShutdown()
