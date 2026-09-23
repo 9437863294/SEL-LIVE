@@ -1185,7 +1185,7 @@ export function ApprovalForm({
                   onChange={setCcUsers}
                   multiple
                   allowDepartment={false}
-                  allowRole={false}
+                  allowDesignation={false}
                   label="CC — view and comment only"
                 />
                 <label className="flex cursor-pointer items-start gap-2 rounded-md border bg-muted/20 px-2.5 py-2">

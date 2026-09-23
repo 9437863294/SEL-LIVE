@@ -89,7 +89,8 @@ export function AssignAccess({
   initialTemplateIds = [],
 }: AssignAccessProps) {
   const { toast } = useToast();
-  const { directory, accessByUser, departments, projects, designations, employees, registry, roleUsage } = state;
+  const { directory, accessByUser, departments, projects, designations, employees, employeeIndex, registry, roleUsage } =
+    state;
 
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(initialUserIds);
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>(initialRoleIds);
@@ -118,8 +119,9 @@ export function AssignAccess({
       projects,
       designations,
       employees,
+      employeeIndex,
     }),
-    [directory, accessByUser, departments, projects, designations, employees],
+    [directory, accessByUser, departments, projects, designations, employees, employeeIndex],
   );
 
   const selectedUsers = useMemo(

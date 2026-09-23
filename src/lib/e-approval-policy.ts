@@ -328,7 +328,33 @@ export const eApprovalOutcomeStyles: Record<EApprovalOutcome, string> = {
  * Assignment (spec section 11 — a step is assigned to a person, a department or a role)
  * ---------------------------------------------------------------------------------------------- */
 
-export type EApprovalAssigneeKind = 'User' | 'Department' | 'Role' | 'Requester' | 'Project';
+/**
+ * `Role` and `Designation` are not the same thing, and the difference is the whole point.
+ *
+ * `Role` matches `users.role` — the permission bundle an administrator attached to a login. In this
+ * tenant that field holds values like "Default", "Office Hub" and several people's own names, so
+ * addressing a stage to one reaches an arbitrary set of accounts. It is kept because the engine has
+ * always understood it and a stored workflow may still name one, but nothing offers it any more.
+ *
+ * `Designation` matches the job title greytHR maintains — "Site Engineer", "JR. ACCOUNTANT" — which
+ * is what somebody configuring "this goes to the accountants" actually means.
+ */
+export type EApprovalAssigneeKind =
+  | 'User'
+  | 'Department'
+  | 'Designation'
+  | 'Role'
+  | 'Requester'
+  | 'Project';
+
+/**
+ * The canonical form of a designation, for both the stored pointer and every comparison.
+ *
+ * Trimmed only. Case is preserved because the Firestore `array-contains` query behind the inbox
+ * cannot fold case, and a matcher that is looser than the query is a file somebody may act on but
+ * never sees. greytHR is the single writer of this field, so one title really is one string.
+ */
+export const normaliseDesignation = (value: string | null | undefined): string => String(value ?? '').trim();
 
 /** How a department-assigned step is picked up. Modes A, B and C of spec section 11. */
 export type EApprovalDepartmentMode = 'Anyone' | 'Head' | 'Queue';
@@ -350,6 +376,14 @@ export interface EApprovalAssignment {
   /** Denormalised at assignment time so every screen and notification can name the assignee
    * without a user lookup — and so history still reads correctly after somebody is deactivated. */
   userName?: string;
+  /**
+   * On a `User` assignment: their job title at the moment they were named, denormalised so history
+   * still reads "Approved by Sarika Palo (Finance Manager)" after they move on.
+   *
+   * On a `Designation` assignment: the title **being addressed** — the assignment itself. Matched
+   * against `EApprovalActor.designation`, which `AuthProvider` fills from the same greytHR field,
+   * so the two are the same string rather than two spellings of one idea.
+   */
   designation?: string;
   /**
    * The department this step is addressed to.
@@ -400,6 +434,8 @@ export function describeEApprovalAssignment(
       if (mode === 'Queue') return `${name} Queue`;
       return `${name} Team`;
     }
+    case 'Designation':
+      return assignment.designation || 'Designation';
     case 'Role':
       return assignment.role ? `Role: ${assignment.role}` : 'Role';
     case 'Requester':
@@ -634,6 +670,10 @@ export interface EApprovalRequestState {
   currentAssigneeIds?: string[];
   currentDepartmentIds?: string[];
   currentRoles?: string[];
+  /** Designations a step is currently addressed to — the `Designation` counterpart of `currentRoles`. */
+  currentDesignations?: string[];
+  /** Projects the file is sitting with, so a project-addressed stage is findable by a list query. */
+  currentProjectIds?: string[];
   /** "Pending with Finance Manager" — the readable status of spec section 10. */
   pendingLabel?: string;
   /** Earliest `dueAt` among the active steps, so overdue lists are one indexed query. */
@@ -1024,6 +1064,41 @@ export function resolveEApprovalDelegate(
     return delegation;
   }
   return null;
+}
+
+/**
+ * The people whose approvals this actor is currently standing in for.
+ *
+ * The inverse lookup of `resolveEApprovalDelegate`, and the thing an inbox needs: "whose queues am I
+ * covering right now". Evaluated against the delegation list rather than recorded on the request,
+ * because a delegation is nearly always arranged *after* the files have already landed on the
+ * delegator's desk — that is what going on leave means — and a pointer stamped onto the request at
+ * action time would therefore never be written for exactly the files that need it. Reading it here
+ * also means the cover appears the moment it is saved and lapses the moment it expires, neither of
+ * which involves a write to the request at all.
+ */
+export function eApprovalDelegators(
+  actor: Pick<EApprovalActor, 'userId' | 'delegations'> | null | undefined,
+  now: string | Date = new Date(),
+  approvalTypeId?: string,
+): string[] {
+  if (!actor?.userId) return [];
+  const nowMs = millis(now) ?? Date.now();
+  const covered = new Set<string>();
+  for (const delegation of actor.delegations ?? []) {
+    if (delegation.active === false) continue;
+    if (delegation.toUserId !== actor.userId) continue;
+    if (!delegation.fromUserId || delegation.fromUserId === actor.userId) continue;
+    if (approvalTypeId && delegation.approvalTypeIds?.length && !delegation.approvalTypeIds.includes(approvalTypeId)) {
+      continue;
+    }
+    const from = millis(delegation.fromDate);
+    if (from != null && nowMs < from) continue;
+    const to = millis(delegation.toDate);
+    if (to != null && nowMs > to + 86_400_000 - 1) continue;
+    covered.add(delegation.fromUserId);
+  }
+  return Array.from(covered);
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1820,6 +1895,8 @@ export function eApprovalWorkflowBlockingIssues(
         // project head was configured, and `isEApprovalStepAssignee` will match nobody against it.
         case 'Project':
           return Boolean(assignment.projectId) && (assignment.projectMode ?? 'Head') !== 'Role';
+        case 'Designation':
+          return Boolean(assignment.designation);
         case 'Role':
           return Boolean(assignment.role);
         case 'Requester':
@@ -2288,6 +2365,20 @@ export function isEApprovalStepAssignee(
       if (mode === 'Queue') return Boolean(actor.isProjectHead);
       return true;
     }
+    /*
+     * Compared exactly, after trimming, and deliberately not case-insensitively.
+     *
+     * Both sides come from the same greytHR field — the picker offers titles read off the roster,
+     * and `AuthProvider` fills `actor.designation` from that same roster — so one title is one
+     * string. A looser comparison here than the `currentDesignations` Firestore query can make
+     * would be worse than useless: the engine would say a person may act on a file their own inbox
+     * query never returns.
+     */
+    case 'Designation':
+      return Boolean(
+        step.assignment.designation &&
+          normaliseDesignation(actor.designation) === normaliseDesignation(step.assignment.designation),
+      );
     case 'Role':
       return Boolean(step.assignment.role && actor.role === step.assignment.role);
     case 'Requester':
@@ -2706,7 +2797,10 @@ export function eApprovalReturnTargets(
  * or disciplinary note-sheet is not readable by everyone holding "View Department Approval".
  */
 export function canViewEApproval(
-  request: Pick<EApprovalRequestState, 'requesterId' | 'departmentId' | 'ccUserIds' | 'participantUserIds' | 'confidential'>,
+  request: Pick<
+    EApprovalRequestState,
+    'requesterId' | 'departmentId' | 'ccUserIds' | 'participantUserIds' | 'confidential' | 'approvalTypeId'
+  >,
   steps: EApprovalStepRecord[],
   viewer: EApprovalActor | null | undefined,
   permissions: {
@@ -2717,6 +2811,24 @@ export function canViewEApproval(
 ): boolean {
   if (!viewer?.userId) return false;
 
+  /**
+   * A standing delegation is authority to act on the delegator's steps, and authority to act on a
+   * file you cannot open is no authority at all.
+   *
+   * `isEApprovalStepAssignee` already lets the substitute approve, but nothing let them *see* it:
+   * the participant test below reads the step records, where a standing delegation leaves no trace
+   * (unlike the per-step Delegate action, which stamps `delegatedToUserId`). So the file stayed out
+   * of reach for the whole leave, behind "Not visible to you", while the dashboard banner told them
+   * their colleague's approvals were reaching them. This closes that gap, and grants nothing the
+   * engine would not already permit them to do.
+   */
+  const actsForDelegator = (userId: string | undefined): boolean =>
+    Boolean(
+      userId &&
+        resolveEApprovalDelegate(viewer.delegations, userId, new Date(), request.approvalTypeId)?.toUserId ===
+          viewer.userId,
+    );
+
   const isParticipant =
     request.requesterId === viewer.userId ||
     (request.ccUserIds ?? []).includes(viewer.userId) ||
@@ -2724,6 +2836,13 @@ export function canViewEApproval(
     steps.some(
       (step) =>
         step.assignment.userId === viewer.userId ||
+        // Only the User kind, matching `isEApprovalStepAssignee`, which resolves a standing
+        // delegation for that kind and no other. Extending it to a Requester-addressed stage would
+        // grant read with no authority behind it, and would quietly open every note-sheet the
+        // delegator has ever *raised* on a template carrying such a stage — including confidential
+        // ones, since a participant does not need the confidential grant. View and act have to
+        // agree; if that case is ever wanted, the engine is where it starts.
+        (step.assignment.kind === 'User' && actsForDelegator(step.assignment.userId)) ||
         step.actedByUserId === viewer.userId ||
         step.delegatedToUserId === viewer.userId ||
         step.ownedByUserId === viewer.userId ||
@@ -2733,6 +2852,9 @@ export function canViewEApproval(
         (step.assignment.kind === 'Project' &&
           step.assignment.projectId &&
           actorProjects(viewer).includes(step.assignment.projectId)) ||
+        (step.assignment.kind === 'Designation' &&
+          Boolean(step.assignment.designation) &&
+          normaliseDesignation(step.assignment.designation) === normaliseDesignation(viewer.designation)) ||
         (step.assignment.kind === 'Role' && step.assignment.role === viewer.role),
     );
 
@@ -3016,6 +3138,8 @@ export interface EApprovalNotificationIntent {
   /** Projects whose listed people should be told — the counterpart of `departmentIds`. */
   projectIds?: string[];
   roles?: string[];
+  /** Job titles whose holders should be told — resolved to users through the greytHR join. */
+  designations?: string[];
   title: string;
   body: string;
   severity?: 'INFO' | 'WARNING' | 'CRITICAL';
@@ -3136,14 +3260,104 @@ function completeStep(
   }
 }
 
-/** Recomputes the denormalised "pending with" pointers after any change to the step list. */
-function refreshPointers(request: EApprovalRequestState, steps: EApprovalStepRecord[]): void {
+
+/* ------------------------------------------------------------------------------------------------
+ * Comparing a stored step against a freshly computed one
+ *
+ * Used by the write path to decide which step documents an action actually needs to touch. Pure, and
+ * here rather than beside that write, because the write path lives in a module that imports the
+ * Firestore client and therefore cannot be unit tested — and this comparison has now been wrong
+ * twice. Getting it wrong in the direction of "these are equal" silently drops a step update, which
+ * is the one bug in this module that leaves no trace anywhere.
+ * ---------------------------------------------------------------------------------------------- */
+
+/** The audit stamps this module never produces; a write adds them, so a diff has to ignore them. */
+export const E_APPROVAL_AUDIT_STAMPS = [
+  'createdAt',
+  'createdBy',
+  'createdByName',
+  'updatedAt',
+  'updatedBy',
+  'updatedByName',
+] as const;
+
+/**
+ * A step without its audit stamps.
+ *
+ * Only the stamps. The fields denormalised from the request stay in, because the write puts them
+ * back on the step every time and a change to any of them — the priority, the reference number once
+ * one is allocated — is a change the step document has to receive. Apply it to *both* sides of a
+ * comparison: stripping one side only leaves six keys that can never match, which is exactly how
+ * this guard managed to be dead through two attempts at writing it.
+ */
+export function withoutEApprovalAuditStamps(
+  step: Record<string, unknown>,
+): Record<string, unknown> {
+  const rest: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(step)) {
+    if ((E_APPROVAL_AUDIT_STAMPS as readonly string[]).includes(key)) continue;
+    rest[key] = value;
+  }
+  return rest;
+}
+
+/**
+ * `JSON.stringify` with object keys in a fixed order, so two objects holding the same values compare
+ * equal whatever order they were built in. A Firestore document comes back with its keys in one
+ * order and an engine record is built in another, and the ordinary stringify calls that a
+ * difference.
+ */
+export function canonicalEApprovalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, inner) =>
+    inner && typeof inner === 'object' && !Array.isArray(inner)
+      ? Object.fromEntries(
+          Object.entries(inner as Record<string, unknown>).sort(([left], [right]) =>
+            left.localeCompare(right),
+          ),
+        )
+      : inner,
+  );
+}
+
+/** Whether a stored step already holds exactly what the write would put on it. */
+export function eApprovalStepUnchanged(
+  stored: Record<string, unknown>,
+  next: Record<string, unknown>,
+): boolean {
+  return (
+    canonicalEApprovalJson(withoutEApprovalAuditStamps(stored)) ===
+    canonicalEApprovalJson(withoutEApprovalAuditStamps(next))
+  );
+}
+
+/**
+ * Recomputes the denormalised "pending with" pointers after any change to the step list.
+ *
+ * Exported because these pointers *are* the inbox: a stage the engine says you may act on but that
+ * no pointer names is a file nobody is shown. Worth asserting directly rather than only through a
+ * whole transition.
+ */
+export function refreshEApprovalPointers(
+  request: EApprovalRequestState,
+  steps: EApprovalStepRecord[],
+): void {
   const active = activeEApprovalSteps(steps);
-  request.currentStepIds = active.map((step) => step.id);
+  /**
+   * Active steps plus held ones — the steps that are somebody's responsibility right now.
+   *
+   * A hold stops the clock, not the ownership: the file is still the holder's to release. Pointing
+   * only at `active` took a held file out of the holder's inbox, out of their dashboard queue and
+   * out of the work list the moment they held it, which left Resume reachable only from a link they
+   * had already navigated away from. A step paused *waiting on somebody else* — 'Awaiting
+   * Verification', 'Awaiting Clarification' — is deliberately not included: that file genuinely is
+   * with the verifier, and saying otherwise would put it in two inboxes at once.
+   */
+  const holding = [...active, ...steps.filter((step) => step.status === 'On Hold')];
+  request.currentStepIds = holding.map((step) => step.id);
   request.currentAssigneeIds = Array.from(
     new Set(
       [
-        ...active.flatMap((step) =>
+        ...holding.flatMap((step) =>
           [
             step.assignment.kind === 'User' ? step.assignment.userId : undefined,
             step.delegatedToUserId,
@@ -3154,13 +3368,20 @@ function refreshPointers(request: EApprovalRequestState, steps: EApprovalStepRec
         // A file returned to the requester has no active step, but it is very much pending with
         // somebody: the requester. Without this pointer the file is in nobody's inbox — the
         // requester's "Returned to you" count reads zero while an approver waits for a correction.
-        ...(request.status === 'Returned' && request.requesterId ? [request.requesterId] : []),
+        //
+        // Only when nothing is active, though. With `returnViaRequester` off a return re-activates
+        // the target approver immediately and the status still reads 'Returned', so an unconditional
+        // pointer put the file in the requester's inbox as well — inviting a Resubmit on a chain
+        // that is already running, from somebody the file is not actually with.
+        ...(request.status === 'Returned' && request.requesterId && !holding.length
+          ? [request.requesterId]
+          : []),
       ],
     ),
   );
   request.currentDepartmentIds = Array.from(
     new Set(
-      active
+      holding
         .filter((step) => step.assignment.kind === 'Department')
         .map((step) => step.assignment.departmentId)
         .filter(Boolean) as string[],
@@ -3168,12 +3389,43 @@ function refreshPointers(request: EApprovalRequestState, steps: EApprovalStepRec
   );
   request.currentRoles = Array.from(
     new Set(
-      active
+      holding
         .filter((step) => step.assignment.kind === 'Role')
         .map((step) => step.assignment.role)
         .filter(Boolean) as string[],
     ),
   );
+  /*
+   * Without this a stage addressed to a designation would be actionable — `isEApprovalStepAssignee`
+   * would say yes — and yet invisible: the inbox is a set of indexed queries over these pointers,
+   * and a file nothing points at is one nobody is told about.
+   */
+  request.currentDesignations = Array.from(
+    new Set(
+      holding
+        .filter((step) => step.assignment.kind === 'Designation')
+        .map((step) => normaliseDesignation(step.assignment.designation))
+        .filter(Boolean),
+    ),
+  );
+  /**
+   * Projects the file is sitting with, for the same reason departments and roles are recorded.
+   *
+   * Without this a stage addressed to a project — the "one workflow for every site" case, and any
+   * clarification asked of a project — had no pointer at all: `canViewEApproval` let the site's
+   * people open it, but no list query could find it, so it appeared in nobody's inbox and nobody's
+   * dashboard until somebody followed a link to it.
+   */
+  request.currentProjectIds = Array.from(
+    new Set(
+      holding
+        .filter((step) => step.assignment.kind === 'Project')
+        .map((step) => step.assignment.projectId)
+        .filter(Boolean) as string[],
+    ),
+  );
+  // The clock, unlike the responsibility, really does stop on a hold — so the due date shown on the
+  // register is the soonest deadline still running, not one frozen behind a hold.
   const dueDates = active
     .map((step) => millis(step.dueAt))
     .filter((value): value is number => value != null);
@@ -3183,25 +3435,61 @@ function refreshPointers(request: EApprovalRequestState, steps: EApprovalStepRec
 
 const assignmentRecipients = (
   assignments: EApprovalAssignment[],
-): Pick<EApprovalNotificationIntent, 'userIds' | 'departmentIds' | 'projectIds' | 'roles'> => ({
-  userIds: assignments.map((assignment) => assignment.userId).filter(Boolean) as string[],
-  departmentIds: assignments
-    .filter((assignment) => assignment.kind === 'Department')
-    .map((assignment) => assignment.departmentId)
-    .filter(Boolean) as string[],
-  projectIds: assignments
-    .filter((assignment) => assignment.kind === 'Project')
-    .map((assignment) => assignment.projectId)
-    .filter(Boolean) as string[],
-  roles: assignments.map((assignment) => assignment.role).filter(Boolean) as string[],
-});
+  requesterId?: string,
+): Pick<
+  EApprovalNotificationIntent,
+  'userIds' | 'departmentIds' | 'projectIds' | 'roles' | 'designations'
+> => {
+  /*
+   * A 'Requester' assignment names a person the assignment object does not carry, so it has to be
+   * resolved before the intent is built. Doing it here rather than at each call site is what stops a
+   * clarification asked *of the requester* — the commonest kind there is — from being addressed to
+   * nobody: the intent would carry no user, no department and no role, and the service drops an
+   * intent with no recipients without a word.
+   */
+  const resolved = assignments.map((assignment) =>
+    assignment.kind === 'Requester' && requesterId
+      ? ({ kind: 'User', userId: requesterId } as EApprovalAssignment)
+      : assignment,
+  );
+  return {
+    userIds: resolved.map((assignment) => assignment.userId).filter(Boolean) as string[],
+    departmentIds: resolved
+      .filter((assignment) => assignment.kind === 'Department')
+      .map((assignment) => assignment.departmentId)
+      .filter(Boolean) as string[],
+    projectIds: resolved
+      .filter((assignment) => assignment.kind === 'Project')
+      .map((assignment) => assignment.projectId)
+      .filter(Boolean) as string[],
+    roles: resolved.map((assignment) => assignment.role).filter(Boolean) as string[],
+    designations: resolved
+      .filter((assignment) => assignment.kind === 'Designation')
+      .map((assignment) => normaliseDesignation(assignment.designation))
+      .filter(Boolean),
+  };
+};
 
-const stepRecipients = (step: EApprovalStepRecord, requesterId?: string) =>
-  assignmentRecipients([
-    step.assignment.kind === 'Requester' && requesterId
-      ? { kind: 'User', userId: requesterId }
-      : step.assignment,
-  ]);
+/**
+ * Who to tell about a step, which is not always who the step names.
+ *
+ * Two cases where the assignment and the person waiting differ: a department step somebody has
+ * claimed, and a step delegated to a substitute. Addressing the assignment alone sent "clarification
+ * received" to the department at large, or to an assignee who had already handed the step on, while
+ * the person actually holding it heard nothing. Once a member has claimed a department step the
+ * department is no longer waiting on it, so it drops out of the recipients rather than being copied
+ * on work it can no longer take.
+ */
+const stepRecipients = (step: EApprovalStepRecord, requesterId?: string) => {
+  const base = assignmentRecipients([step.assignment], requesterId);
+  const holders = [step.ownedByUserId, step.delegatedToUserId].filter(Boolean) as string[];
+  if (!holders.length) return base;
+  return {
+    ...base,
+    userIds: Array.from(new Set([...(base.userIds ?? []), ...holders])),
+    departmentIds: step.ownedByUserId ? [] : base.departmentIds,
+  };
+};
 
 const actorLabel = (actor: EApprovalActor) => actor.userName || actor.userId;
 
@@ -3538,7 +3826,7 @@ export function applyEApprovalAction(
    */
   const finish = (): EApprovalTransition => {
     // Pointers first: the notice below quotes `pendingLabel`, which is only correct once refreshed.
-    refreshPointers(request, steps);
+    refreshEApprovalPointers(request, steps);
 
     // Hang the undo snapshot on the event that represents the user's action, so recalling it later
     // is a matter of reading one history row. Undoing an undo is not offered — that way lies a
@@ -3559,6 +3847,9 @@ export function applyEApprovalAction(
         (step.assignment.kind === 'User' && step.assignment.userId === request.requesterId) ||
         step.assignment.kind === 'Requester',
     );
+    // Deliberately still sent when the requester is the one who moved it: "submitting tells the
+    // requester who it went to" is the point of the intent, not an accident of it. The cost of the
+    // extra fan-out is paid off the critical path — see `commitEApprovalTransition`.
     if (movedOn && !requesterHoldsIt && !isTerminalEApprovalStatus(request.status)) {
       notifications.push({
         kind: 'Moved',
@@ -3667,6 +3958,37 @@ export function applyEApprovalAction(
         severity: 'WARNING',
       });
     }
+
+    /*
+     * …and whoever the file has landed back on has to be told it is theirs again.
+     *
+     * `releasedFrom` above only covers steps the undone action *created*, so it says nothing to the
+     * person whose existing step was completed by it and has now been re-opened — the approver whose
+     * approval was reversed, or who was holding the file before it was forwarded away. Their step
+     * simply went Active again with no notice at all, which is how a reversed approval sits
+     * untouched until somebody chases it. Anyone already holding it before the undo is left alone,
+     * and so is the actor, who is looking at the result.
+     */
+    const activeBefore = new Set(
+      stepRecords.filter((step) => step.status === 'Active').map((step) => step.id),
+    );
+    for (const step of activeEApprovalSteps(steps)) {
+      if (activeBefore.has(step.id)) continue;
+      const recipients = stepRecipients(step, request.requesterId);
+      const userIds = (recipients.userIds ?? []).filter((userId) => userId !== actor.userId);
+      const hasOthers =
+        userIds.length || recipients.departmentIds?.length || recipients.projectIds?.length || recipients.roles?.length;
+      if (!hasOthers) continue;
+      notifications.push({
+        kind: 'Assigned',
+        ...recipients,
+        userIds,
+        title: 'Back with you',
+        body: `${describeEApprovalSubject(request)} is with you again — ${actorLabel(actor)} ${
+          input.kind === 'Recall' ? 'recalled' : 'reversed'
+        } the "${undoneLabel}".`,
+      });
+    }
     return finish();
   }
 
@@ -3701,6 +4023,20 @@ export function applyEApprovalAction(
     }
     if (request.requesterId !== actor.userId) {
       throw new EApprovalRuleError('Only the requester can resubmit this approval.');
+    }
+    /*
+     * With `returnViaRequester` off, a return hands the file straight back to an earlier approver
+     * and re-activates their step while the status still reads 'Returned'. The two checks above
+     * both pass in that state, so the requester could resubmit a chain that is already running and
+     * activate a second stage alongside it. The file is only the requester's to resend when nobody
+     * else is holding it.
+     */
+    if (activeEApprovalSteps(steps).length) {
+      throw new EApprovalRuleError(
+        `This approval is already back with ${describeEApprovalAssignment(
+          activeEApprovalSteps(steps)[0].assignment,
+        )}. It does not need to be resubmitted.`,
+      );
     }
     const change = input.materialChange;
     if (change?.changed) {
@@ -4095,7 +4431,7 @@ export function applyEApprovalAction(
       });
       notifications.push({
         kind: input.kind === 'Send For Verification' ? 'Verification Assigned' : 'Clarification Requested',
-        ...assignmentRecipients(targets),
+        ...assignmentRecipients(targets, request.requesterId),
         title: input.kind === 'Send For Verification' ? 'Verification required' : 'Clarification required',
         body: input.instruction
           ? `${describeEApprovalSubject(request)}: ${input.instruction}`
@@ -4510,6 +4846,8 @@ export interface EApprovalInboxRow {
   currentAssigneeIds?: string[];
   currentDepartmentIds?: string[];
   currentRoles?: string[];
+  currentDesignations?: string[];
+  currentProjectIds?: string[];
   currentDueAt?: string | null;
   completedAt?: string | null;
   /** Type of the step currently pending, so one query can fill three cards. */
@@ -4522,7 +4860,32 @@ const rowIsWithActor = (row: EApprovalInboxRow, actor: EApprovalActor): boolean 
   const departments = actorDepartments(actor);
   if ((row.currentDepartmentIds ?? []).some((id) => departments.includes(id))) return true;
   if (actor.role && (row.currentRoles ?? []).includes(actor.role)) return true;
+  const designation = normaliseDesignation(actor.designation);
+  if (designation && (row.currentDesignations ?? []).includes(designation)) return true;
+  if ((row.currentProjectIds ?? []).some((id) => (actor.projectIds ?? []).includes(id))) return true;
+  // Files sitting with somebody this actor is standing in for. The dashboard fetches them because
+  // the subscription asks for the delegator's queue; without this they would be fetched and then
+  // dropped at counting time, which is how the covering approver's tiles all read zero.
+  const covering = coveringFor(actor);
+  if (covering.length && (row.currentAssigneeIds ?? []).some((id) => covering.includes(id))) return true;
   return false;
+};
+
+/**
+ * `eApprovalDelegators`, memoised per actor.
+ *
+ * `rowIsWithActor` runs once per row in a dashboard fan-out, and the uncached call builds a `Date`
+ * and walks the whole delegation list every time. The list is per-session configuration, so the
+ * answer is the same for every row in the pass; a `WeakMap` keyed on the actor keeps it that way
+ * without holding the actor alive.
+ */
+const coveringCache = new WeakMap<EApprovalActor, string[]>();
+const coveringFor = (actor: EApprovalActor): string[] => {
+  const cached = coveringCache.get(actor);
+  if (cached) return cached;
+  const resolved = eApprovalDelegators(actor);
+  coveringCache.set(actor, resolved);
+  return resolved;
 };
 
 /**
@@ -4718,8 +5081,18 @@ export function eApprovalWorkKindOf(row: EApprovalInboxRow): EApprovalWorkKind {
 export function eApprovalRowIsQuickApprovable(row: EApprovalInboxRow, actor: EApprovalActor): boolean {
   if (eApprovalWorkKindOf(row) !== 'Approval') return false;
   if (!isOpenEApprovalStatus(row.status)) return false;
+  // A held file is pointed at its holder — deliberately, so it stays findable — but it is paused,
+  // and the engine will refuse an approval on a step that is not Active. Offering the one-click
+  // button here would put a control on the row whose only possible outcome is an error.
+  if (row.status === 'On Hold') return false;
   if (!(row.currentAssigneeIds ?? []).includes(actor.userId)) return false;
-  if ((row.currentDepartmentIds ?? []).length || (row.currentRoles ?? []).length) return false;
+  if (
+    (row.currentDepartmentIds ?? []).length ||
+    (row.currentRoles ?? []).length ||
+    (row.currentDesignations ?? []).length
+  ) {
+    return false;
+  }
   // More than one active assignee or step means a parallel group, or more than one stage open at
   // once — either way, "approve" is one vote among several and deserves to be seen named, not
   // one-clicked from a list.

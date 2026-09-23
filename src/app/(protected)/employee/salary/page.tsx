@@ -15,27 +15,31 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Download, IndianRupee, Loader2, RefreshCw, Search, TrendingDown, Users, Wallet, X } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Download, IndianRupee, Loader2, RefreshCw, Search, TrendingDown, Users, Wallet, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
   HrDataList,
   HrEmptyState,
   HrFilterCard,
-  HrKpiCard,
   HrLoader,
-  HrPageHeader,
   SensitiveMoney,
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+  EMP_CARD_CLASS,
+  EMP_REGISTER_HEIGHT,
+} from '@/components/employee/employee-ui';
 import { useHrPermissions } from '@/components/hr/use-hr-config';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -505,31 +509,34 @@ export default function EmployeeSalaryPage() {
   );
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      <div className="mb-1 flex flex-wrap items-center gap-2">
-        <Link href="/employee">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        {!isAuthLoading && canView && (
-          lastSynced ? (
-            <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-              {monthLabel} · synced {lastSynced}
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-[10px] text-amber-800">
-              {monthLabel} · not synced yet
-            </Badge>
-          )
-        )}
-      </div>
-
-      <HrPageHeader
+    <EmployeePageShell>
+      {/*
+        The month selectors live in the header's actions, beside Export and Sync, because the month
+        *is* this screen's scope — every figure below belongs to it. They were there before; what
+        moved is the synced/not-synced badge, which used to sit on the back arrow's row as a 10px
+        chip and is now a status pill on the title's line where the scope is stated.
+      */}
+      <EmployeeHeader
+        icon={IndianRupee}
+        tone="emerald"
+        eyebrow="Employee management"
         title="Employee Salary"
+        backHref="/employee"
+        backLabel="Back to Employee Management"
         description={`Gross, deductions and net pay for ${monthLabel}, as last synced from greytHR.`}
+        status={
+          !isAuthLoading && canView ? (
+            lastSynced ? (
+              <EmployeeStatusPill tone="emerald" icon={RefreshCw}>
+                {monthLabel} · synced {lastSynced}
+              </EmployeeStatusPill>
+            ) : (
+              <EmployeeStatusPill tone="amber" icon={RefreshCw}>
+                {monthLabel} · not synced yet
+              </EmployeeStatusPill>
+            )
+          ) : undefined
+        }
         actions={
           !isAuthLoading && canView ? (
             <>
@@ -575,12 +582,14 @@ export default function EmployeeSalaryPage() {
         }
       />
 
+      <EmployeeSubNav current="salary" />
+
       {isAuthLoading ? (
         <HrLoader label="Checking your access…" />
       ) : !canView ? (
         <HrAccessDenied what="employee salary details" />
       ) : error ? (
-        <Card className="border-white/60 bg-white/80 shadow-sm">
+        <Card className={EMP_CARD_CLASS}>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <IndianRupee className="h-10 w-10 text-muted-foreground/40" />
             <div>
@@ -596,28 +605,32 @@ export default function EmployeeSalaryPage() {
         <div className="space-y-3">
           {/* ── KPIs: the month's money, before anyone scrolls a 10-column table ── */}
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <HrKpiCard
+            <EmployeeKpiCard
+              index={0}
               label="Employees"
               value={isBusy ? '—' : filteredEmployees.length}
               hint={activeFilterCount > 0 ? `of ${displayedEmployees.length} in ${monthLabel}` : monthLabel}
               icon={Users}
               tone="blue"
             />
-            <HrKpiCard
+            <EmployeeKpiCard
+              index={1}
               label="Gross salary"
               value={isBusy ? '—' : <SensitiveMoney value={totals.gross} canView={canViewSalary} />}
               hint="Sum of gross pay shown"
               icon={Wallet}
               tone="indigo"
             />
-            <HrKpiCard
+            <EmployeeKpiCard
+              index={2}
               label="Total deductions"
               value={isBusy ? '—' : <SensitiveMoney value={totals.deductions} canView={canViewSalary} />}
               hint="All DEDUCT components"
               icon={TrendingDown}
               tone="rose"
             />
-            <HrKpiCard
+            <EmployeeKpiCard
+              index={3}
               label="Net payable"
               value={isBusy ? '—' : <SensitiveMoney value={totals.net} canView={canViewSalary} />}
               hint="Gross less deductions"
@@ -723,11 +736,13 @@ export default function EmployeeSalaryPage() {
               <HrDataList
                 rows={visibleRows}
                 columns={columns}
+                dense
+                maxHeightClassName={EMP_REGISTER_HEIGHT}
                 onRowClick={canViewSalary ? (emp) => setPayslipFor(emp) : undefined}
               />
 
               {/* The old <tfoot>: totals for what the filters show, as a strip that reads on a phone. */}
-              <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+              <Card className={EMP_CARD_CLASS}>
                 <CardContent className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                   <p className="font-semibold text-slate-800">
                     Total · {filteredEmployees.length} employee{filteredEmployees.length === 1 ? '' : 's'}
@@ -838,6 +853,6 @@ export default function EmployeeSalaryPage() {
           </DialogContent>
         </Dialog>
       )}
-    </div>
+    </EmployeePageShell>
   );
 }

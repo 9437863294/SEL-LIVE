@@ -88,6 +88,7 @@ import {
 import { assertNoProtectedFields, pickGreytHRFields } from './greythr-linking';
 import { bulkLink } from './greythr-link-service';
 import { fetchCurrentEmployeeRoster } from './greythr-live-roster';
+import { replaceCurrentRosterSnapshot } from './greythr-roster-store';
 import {
   fetchAttendanceInsights,
   fetchLeaveBalances,
@@ -335,14 +336,43 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
      */
     const detail = await fetchEnabledDetailGroups(settings.detailGroups, warnings);
 
-    run.employeesFetched = employeeResult.rows.length;
+    /**
+     * Every employee greytHR knows about — both state filters, merged.
+     *
+     * ── `state=ALL` is not a superset of `state=CURRENT` ─────────────────────────────────────────
+     *
+     * Measured against this tenant (siddhartha.greythr.com) on 2026-09-23:
+     *
+     *   state=ALL       180 rows, **every one** `leftorg: true`
+     *   state=RESIGNED  180 rows, the same 180 ids
+     *   state=CURRENT   135 rows, every one `leftorg: false`
+     *   ALL ∩ CURRENT   **empty**; the real headcount is 315
+     *
+     * So "ALL" here does not mean everybody — it answers the same question RESIGNED does. Building
+     * mirror records from that result alone, which is what this did, wrote a mirror containing
+     * nothing but ex-employees.
+     *
+     * That one line is the cause of all of it: "182 records, 3 still working" on Manage Employee;
+     * the leave and attendance registers printing bare employee ids where names belong, because
+     * their documents key on the 135 current employees the `employees` collection had never heard
+     * of; and every mirror-derived report describing a workforce that had already left.
+     *
+     * The rows have identical shape in both results, so nothing downstream changes. A CURRENT row
+     * wins a collision: it is the fresher statement about somebody greytHR currently employs.
+     */
+    const mergedRows = new Map<string, (typeof employeeResult.rows)[number]>();
+    for (const row of employeeResult.rows) mergedRows.set(String(row.employeeId), row);
+    for (const row of currentRosterResult.rows) mergedRows.set(String(row.employeeId), row);
+    const employeeRows = [...mergedRows.values()];
+
+    run.employeesFetched = employeeRows.length;
     const typeLabels = employmentTypeLabels(reference);
     const currentEmployeeIds = new Set(
       currentRosterResult.rows.map((employee) => String(employee.employeeId)),
     );
     // The documented roster row also carries `leftorg`. Union explicit false values as a defensive
     // fallback in case a tenant's CURRENT filter is incomplete while the unfiltered roster is not.
-    for (const employee of employeeResult.rows) {
+    for (const employee of employeeRows) {
       if (employee.leftorg === false) currentEmployeeIds.add(String(employee.employeeId));
     }
 
@@ -421,8 +451,17 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
     const positionWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
     const userWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
     const grantWrites: Array<{ id: string; data: Record<string, unknown> }> = [];
+    /**
+     * The CURRENT roster this run saw, for the stored snapshot `/employee/current` reads.
+     *
+     * Until now only that page's own route wrote the snapshot, on every GET — so the page paid a
+     * live greytHR round trip per visit and the stored copy only ever moved when somebody happened
+     * to open it. Writing it here makes the sync the thing that refreshes it: one replacement per
+     * run, and the page can serve the stored answer in between.
+     */
+    const currentRoster: SyncedEmployee[] = [];
 
-    for (const employee of employeeResult.rows) {
+    for (const employee of employeeRows) {
       const id = String(employee.employeeId);
       const separation = separationById.get(id) ?? null;
       const categoryRow = categoriesById.get(id) ?? null;
@@ -450,6 +489,11 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
         addresses,
         labels,
       });
+
+      // The snapshot is a roster, so it carries the core record rather than the detail block
+      // merged onto the mirror document — name, employee number, department, designation, project
+      // and state are what `/employee/current` renders.
+      if (currentEmployeeIds.has(id)) currentRoster.push(record);
 
       const stored = storedEmployees.get(id);
       const changes = diffSyncedEmployee(stored, record);
@@ -577,7 +621,10 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
     /* ── Employees present locally but absent from a full fetch ── */
 
     if (run.fullResync) {
-      const fetchedIds = new Set(employeeResult.rows.map((row) => String(row.employeeId)));
+      // The merged set, not the ALL result: on a tenant where ALL means "resigned" (see the merge
+      // above) comparing against ALL alone would report every current employee as one greytHR had
+      // stopped returning — precisely inverted.
+      const fetchedIds = new Set(employeeRows.map((row) => String(row.employeeId)));
       const missing = [...storedEmployees.keys()].filter((id) => !fetchedIds.has(id));
       if (missing.length) {
         // Deliberately not actioned. An employee absent from greytHR may have been deleted, or the
@@ -776,6 +823,41 @@ export async function runGreytHRSync(options: RunSyncOptions): Promise<GreytHRSy
           merge: true,
         })),
       ]);
+    }
+
+    /* ── Replace the stored CURRENT roster ── */
+
+    /**
+     * Written after the mirror, in its own collection, and never fatal.
+     *
+     * `replaceCurrentRosterSnapshot` deletes every stored employee the incoming roster does not
+     * mention, so this is the "sync replaces all the old data" step — the snapshot holds exactly
+     * one dated answer to "who works here" and never accumulates leavers. Its own guards refuse the
+     * write rather than empty the store when the incoming roster looks wrong (an incomplete page
+     * walk, an implausible collapse in headcount); a refusal is surfaced as a warning because a
+     * snapshot that has quietly stopped updating is the failure worth knowing about.
+     */
+    if (!options.dryRun) {
+      try {
+        const snapshotResult = await replaceCurrentRosterSnapshot(
+          {
+            employees: currentRoster,
+            fetchedAt: startedAt,
+            complete: currentRosterResult.complete,
+            totalElements: currentRosterResult.totalElements,
+          },
+          db,
+        );
+        if (!snapshotResult.replaced) {
+          warnings.push(
+            `The stored current-employee roster was left unchanged: ${snapshotResult.refusedReason ?? 'a guard declined the write'}`,
+          );
+        }
+      } catch (error) {
+        warnings.push(
+          `The stored current-employee roster could not be written: ${error instanceof Error ? error.message : 'unknown error'}`,
+        );
+      }
     }
 
     /* ── Link logins to employees ── */

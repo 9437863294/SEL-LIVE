@@ -30,7 +30,7 @@ import {
   isTerminalEApprovalStatus,
   type EApprovalDetail,
 } from '@/lib/e-approval';
-import { loadEApprovalDetail } from '@/lib/e-approval-service';
+import { loadEApprovalDetail, subscribeEApprovalRequest } from '@/lib/e-approval-service';
 import { ActionPanel } from '@/components/e-approval/action-panel';
 import { AttachmentList } from '@/components/e-approval/attachment-list';
 import { CommentThread } from '@/components/e-approval/comment-thread';
@@ -55,6 +55,7 @@ import {
   useEApprovalActor,
   useEApprovalDirectory,
   useEApprovalPermissions,
+  useEApprovalRefreshOnReturn,
   useEApprovalSettings,
 } from '@/components/e-approval/hooks';
 
@@ -78,27 +79,61 @@ export default function EApprovalDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!approvalId) return;
-    setIsLoading(true);
-    try {
-      const loaded = await loadEApprovalDetail(approvalId);
-      if (!loaded) setNotFound(true);
-      setDetail(loaded);
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Could not load the approval',
-        description: error instanceof Error ? error.message : 'Something went wrong.',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [approvalId, toast]);
+  /**
+   * `background` is what a live update passes: the screen already has a file on it, and replacing
+   * it with skeletons every time somebody adds a comment is worse than the staleness it is curing.
+   * Only the first load of a screen with nothing on it is allowed to blank.
+   */
+  const load = useCallback(
+    async ({ background = false }: { background?: boolean } = {}) => {
+      if (!approvalId) return;
+      if (!background) setIsLoading(true);
+      try {
+        const loaded = await loadEApprovalDetail(approvalId);
+        if (!loaded) setNotFound(true);
+        setDetail(loaded);
+      } catch (error) {
+        // A failed background refresh keeps what is on screen and says so quietly; only a failed
+        // first load is worth an error state, because there the alternative is an empty page.
+        if (background) {
+          console.error('[e-approval] background refresh failed', error);
+          return;
+        }
+        toast({
+          variant: 'destructive',
+          title: 'Could not load the approval',
+          description: error instanceof Error ? error.message : 'Something went wrong.',
+        });
+      } finally {
+        if (!background) setIsLoading(false);
+      }
+    },
+    [approvalId, toast],
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Keeps the screen honest while it is open.
+   *
+   * The approver who sent a file for clarification waits on this page, and before this listener
+   * existed nothing told them the answer had come back: the request document was updated within a
+   * second and the page went on showing the paused step until they thought to press Refresh. That
+   * gap is the "it took ten minutes to update" the module was reported for.
+   */
+  useEffect(() => {
+    if (!approvalId) return;
+    return subscribeEApprovalRequest(approvalId, () => {
+      void load({ background: true });
+    });
+  }, [approvalId, load]);
+
+  // The listener covers anything written through this app. A refetch on returning to the tab covers
+  // the rest: a dropped socket, a laptop resumed from sleep, a phone coming back from the
+  // background — cases where the listener itself may have quietly stopped delivering.
+  useEApprovalRefreshOnReturn(useCallback(() => void load({ background: true }), [load]));
 
   const canView = useMemo(() => {
     if (!detail || !engineActor) return false;

@@ -11,6 +11,7 @@ import {
   type GreytHRSyncSettings,
 } from '@/lib/greythr';
 import { isGreytHRConfigured, testGreytHRConnection } from '@/lib/greythr-client';
+import { readSnapshotMeta } from '@/lib/greythr-roster-store';
 import {
   countMirrorEmployees,
   listSyncRuns,
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
     try {
       const context = await authenticateAccess(request);
       requireAccess(context, 'Settings.Employee Management', 'View');
-      const [settings, runs, mirror] = await Promise.all([
+      const [settings, runs, mirror, rosterMeta] = await Promise.all([
         readSyncSettings(),
         listSyncRuns(20),
         /**
@@ -76,6 +77,18 @@ export async function GET(request: Request) {
          * report path, which loads whenever the console opens.
          */
         countMirrorEmployees(),
+        /**
+         * How many people greytHR says currently work here, and when it said so.
+         *
+         * Not the same question as anything above it, and the difference is the point. Every figure
+         * the console and the Employee hub showed came from the mirror, so a mirror holding nothing
+         * but ex-employees reported "182 records, 3 still working" and looked merely unremarkable.
+         * The correct answer was already on disk in the roster snapshot — nothing read it.
+         *
+         * One document read: `settings/greythrCurrentRoster` carries the count and the timestamp, so
+         * this costs the report path a single get rather than a collection scan.
+         */
+        readSnapshotMeta(),
       ]);
       const due = isSyncDue(settings.schedule, settings.lastSuccessfulRunAt);
       const mirrorRefresh = shouldForceFullResync(settings);
@@ -87,6 +100,7 @@ export async function GET(request: Request) {
         nextRun: due,
         mirrorRefresh,
         mirror,
+        currentRoster: { count: rosterMeta.count, fetchedAt: rosterMeta.fetchedAt },
       });
     } catch (error) {
       const { message, status } = accessErrorResponse(error);

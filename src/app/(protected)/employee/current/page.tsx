@@ -30,13 +30,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 import {
-  ArrowLeft,
   Briefcase,
   Building2,
   Calendar,
+  CloudOff,
+  Database,
   Download,
   MapPin,
   RefreshCw,
@@ -52,16 +52,23 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
   HrAlertNotice,
   HrDataList,
-  HrKpiCard,
   HrLoader,
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+  EMP_CARD_CLASS,
+  EMP_REGISTER_HEIGHT,
+} from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -106,18 +113,18 @@ function initials(name: string): string {
 }
 
 /**
- * How often the page re-fetches greytHR's CURRENT roster on its own.
+ * Why there is no refresh timer any more.
  *
- * Every fetch replaces the list wholesale rather than merging into it, and the stored snapshot is
- * replaced the same way. That is what makes "remove anyone who has left" automatic rather than a
- * separate rule to get wrong: a person absent from the freshest CURRENT response simply isn't in the
- * new array, and isn't in the new snapshot either — whatever either looked like five minutes ago.
+ * This page used to re-fetch greytHR every five minutes, and every fetch also replaced the stored
+ * snapshot — so a tab left open all day was a standing greytHR and Firestore cost, and the roster
+ * could change under somebody mid-scroll.
  *
- * Five minutes balances that against hammering greytHR from every open tab. Note each tick now also
- * writes, so this interval is a Firestore cost as well as an API one; the write is idempotent, so a
- * tick that finds nothing changed replaces the snapshot with an identical one.
+ * The greytHR sync now owns that snapshot: each run replaces it wholesale, dropping anyone greytHR
+ * no longer lists as current. So the stored roster is exactly as fresh as the last sync, the page
+ * reads it in one Firestore call, and it says on screen when that was. Refresh still asks greytHR
+ * directly for anyone who cannot wait for the next run, and finishing a sync still pushes a new
+ * roster here through the `greytHRSyncSuccess` event.
  */
-const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 /**
  * Rows in the DOM at once. The responsive register renders a phone card *and* a table row for every
@@ -184,7 +191,7 @@ export default function CurrentEmployeesLivePage() {
       else setRefreshing(true);
       setError(null);
       try {
-        const result = await fetchCurrentEmployeesLive();
+        const result = await fetchCurrentEmployeesLive({ refresh: mode === 'manual' });
         // A full replace, not a merge — see the note on `AUTO_REFRESH_MS`. This is the entirety of
         // how a departed employee disappears from the page: they are simply not in this array.
         setEmployees(result.employees.map((employee) => ({ ...employee, id: employee.employeeId })));
@@ -218,13 +225,11 @@ export default function CurrentEmployeesLivePage() {
     }
     void load('initial');
 
-    const interval = setInterval(() => void load('auto'), AUTO_REFRESH_MS);
-    // The greytHR sync workspace announces a finished run with this event — refetch rather than
-    // wait out the five-minute tick. `load` already drops the call while a fetch is in flight.
+    // The greytHR sync workspace announces a finished run with this event. That run has just
+    // replaced the stored roster, so re-reading it is the whole update — no greytHR call needed.
     const onSyncSuccess = () => void load('auto');
     window.addEventListener('greytHRSyncSuccess', onSyncSuccess);
     return () => {
-      clearInterval(interval);
       window.removeEventListener('greytHRSyncSuccess', onSyncSuccess);
     };
   }, [authLoading, canView, load]);
@@ -367,67 +372,69 @@ export default function CurrentEmployeesLivePage() {
    */
   if (authLoading || loading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Fetching the current roster from greytHR…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrAccessDenied what="the greytHR employee roster" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      {/* ── Header ── */}
-      <Card className="mb-4 overflow-hidden border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
-        <CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <div className="flex items-start gap-3">
-            <Link href="/employee">
-              <Button variant="ghost" size="icon" className="mt-0.5 shrink-0 rounded-full bg-white/70 shadow-sm">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            </Link>
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 ring-4 ring-emerald-100">
-              <Users className="h-5 w-5 text-emerald-600" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">Current employees</h1>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  </span>
-                  Live from greytHR
-                </span>
-              </div>
-              <p className="mt-0.5 max-w-xl text-sm text-muted-foreground">
-                Fetched directly from greytHR&apos;s CURRENT roster on every load — not the stored employee mirror.
-                Use this when Manage Employee looks wrong.
-              </p>
-              {fetchedAt && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Last fetched {formatDistanceToNow(new Date(fetchedAt), { addSuffix: true })} · auto-refreshes every 5 min
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row">
+    <EmployeePageShell>
+      {/*
+        This screen's own header card was the best one in the module — icon tile, live pill,
+        freshness stamp — and `EmployeeHeader` is that design, generalised, so its nine siblings wear
+        it too. The only thing lost in the move is the bespoke pulse markup, now `pulse` on the pill.
+      */}
+      <EmployeeHeader
+        icon={Users}
+        tone="emerald"
+        eyebrow="Employee management"
+        title="Current employees"
+        backHref="/employee"
+        backLabel="Back to Employee Management"
+        description="Fetched directly from greytHR's CURRENT roster on every load — not the stored employee mirror. Use this when Manage Employee looks wrong."
+        status={
+          /*
+            Three states, because the page now has three. Freshly fetched from greytHR is the only
+            one that earns the pulsing "live" dot; the stored roster says so plainly, with its age on
+            the line below; and a stored copy served because greytHR was unreachable is a warning,
+            not a status.
+          */
+          store?.stale ? (
+            <EmployeeStatusPill tone="amber" icon={CloudOff}>
+              Stored — greytHR unreachable
+            </EmployeeStatusPill>
+          ) : store?.source === 'greythr-live' ? (
+            <EmployeeStatusPill tone="emerald" pulse>
+              Live from greytHR
+            </EmployeeStatusPill>
+          ) : (
+            <EmployeeStatusPill tone="blue" icon={Database}>
+              Stored roster
+            </EmployeeStatusPill>
+          )
+        }
+        meta={
+          fetchedAt
+            ? `Roster stored ${formatDistanceToNow(new Date(fetchedAt), { addSuffix: true })} · replaced by each greytHR sync`
+            : undefined
+        }
+        actions={
+          <>
             <Button
               variant="outline"
               size="sm"
               onClick={() => void handleExport()}
               disabled={filtered.length === 0}
-              className="bg-white"
+              className="bg-white/80"
             >
               <Download className="mr-1.5 h-4 w-4" />
               Export
@@ -437,17 +444,19 @@ export default function CurrentEmployeesLivePage() {
               size="sm"
               onClick={() => void load('manual')}
               disabled={refreshing}
-              className="bg-white"
+              className="bg-white/80"
             >
               <RefreshCw className={cn('mr-1.5 h-4 w-4', refreshing && 'animate-spin')} />
               Refresh
             </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </>
+        }
+      />
+
+      <EmployeeSubNav current="current" />
 
       {error ? (
-        <Card className="border-white/60 bg-white/80 shadow-sm">
+        <Card className={EMP_CARD_CLASS}>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Users className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">{error}</p>
@@ -490,11 +499,11 @@ export default function CurrentEmployeesLivePage() {
           )}
 
           {/* ── KPIs ── */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <HrKpiCard label="Current employees" value={employees.length} icon={Users} tone="emerald" />
-            <HrKpiCard label="On notice period" value={stats.notice} icon={UserCheck} tone="amber" />
-            <HrKpiCard label="Departments" value={stats.departments} icon={Building2} tone="blue" />
-            <HrKpiCard label="Locations" value={stats.locations} icon={MapPin} tone="violet" />
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <EmployeeKpiCard label="Current employees" value={employees.length} icon={Users} tone="emerald" index={0} />
+            <EmployeeKpiCard label="On notice period" value={stats.notice} icon={UserCheck} tone="amber" index={1} />
+            <EmployeeKpiCard label="Departments" value={stats.departments} icon={Building2} tone="blue" index={2} />
+            <EmployeeKpiCard label="Locations" value={stats.locations} icon={MapPin} tone="violet" index={3} />
           </div>
 
           {/* ── Search / toolbar ── */}
@@ -576,7 +585,7 @@ export default function CurrentEmployeesLivePage() {
 
           {/* ── Register ── */}
           {filtered.length === 0 ? (
-            <Card className="bg-white/80 backdrop-blur-sm">
+            <Card className={EMP_CARD_CLASS}>
               <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
                 <Users className="h-10 w-10 text-muted-foreground/40" />
                 <p className="text-sm text-muted-foreground">
@@ -591,7 +600,13 @@ export default function CurrentEmployeesLivePage() {
             </Card>
           ) : (
             <div className="space-y-2.5">
-              <HrDataList rows={visibleRows} columns={columns} onRowClick={(row) => setViewEmployee(row)} />
+              <HrDataList
+                rows={visibleRows}
+                columns={columns}
+                dense
+                maxHeightClassName={EMP_REGISTER_HEIGHT}
+                onRowClick={(row) => setViewEmployee(row)}
+              />
 
               {/* The old <tfoot> total, as a line that reads on a phone too. */}
               <div className="flex flex-col items-center gap-2 pb-2 text-center">
@@ -688,6 +703,6 @@ export default function CurrentEmployeesLivePage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </EmployeePageShell>
   );
 }

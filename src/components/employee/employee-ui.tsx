@@ -310,7 +310,7 @@ export const EMPLOYEE_NAV: EmployeeNavItem[] = [
     description: 'Schedule, run and review the sync that keeps the mirror current.',
     href: '/employee/sync',
     icon: DownloadCloud,
-    tone: 'indigo',
+    tone: 'blue',
     group: 'primary',
     need: 'sync',
   },
@@ -728,13 +728,21 @@ export function EmployeeKpiCard({
         className={cn('animate-emp-accent block h-[3px] w-full bg-gradient-to-r', palette.bar)}
         style={{ animationDelay: `calc(${delay} + 170ms)` }}
       />
-      {/* Two of these share a 360px row on a phone, so the icon goes rather than the label
-          truncating to "Position rec…". */}
+      {/*
+        The icon appears only from `lg`, and nothing here truncates.
+
+        Four of these share the row, so between a phone and a laptop each card is 180–260px wide.
+        With the icon present from `sm` and `truncate` on the value, a tablet rendered "Last synced
+        18 days a…" and "Checked against …" — the card's whole payload, cut. A decorative chip is
+        not worth 48px of a 185px card, and a KPI whose *value* is elided is worse than a KPI with
+        no icon. Long values and hints wrap to two lines instead; the grid stretches the row to
+        match, so the cards stay level.
+      */}
       <div className="flex items-start gap-3 p-3 sm:p-4">
         {Icon && (
           <span
             className={cn(
-              'hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-4 transition-transform duration-300 group-hover:scale-110 sm:flex',
+              'hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-4 transition-transform duration-300 group-hover:scale-110 lg:flex',
               palette.bg,
               palette.ring,
             )}
@@ -743,13 +751,13 @@ export function EmployeeKpiCard({
           </span>
         )}
         <div className="min-w-0">
-          <p className="text-[11px] font-medium uppercase leading-tight tracking-wide text-muted-foreground sm:truncate">
+          <p className="text-[11px] font-medium uppercase leading-tight tracking-wide text-muted-foreground">
             {label}
           </p>
-          <p className="mt-0.5 truncate text-lg font-semibold leading-tight text-slate-800">
+          <p className="mt-0.5 text-lg font-semibold leading-tight text-slate-800">
             {typeof value === 'number' ? <CountUp value={value} /> : value}
           </p>
-          {hint && <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground sm:truncate">{hint}</p>}
+          {hint && <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{hint}</p>}
         </div>
       </div>
     </SpotlightCard>
@@ -802,16 +810,19 @@ export function EmployeeSpotlightCard({
   item,
   footer,
   index = 0,
+  className,
 }: {
   item: EmployeeNavItem;
   /** A live figure — record counts, a freshness pill. Nodes, because most are pills. */
   footer?: React.ReactNode;
   index?: number;
+  /** Grid placement from the caller — the odd card out spans the row on a two-column layout. */
+  className?: string;
 }) {
   const palette = toneOf(item.tone);
 
   return (
-    <Link href={item.href} className="group block h-full no-underline">
+    <Link href={item.href} className={cn('group block h-full no-underline', className)}>
       <SpotlightCard
         spotlightColor={palette.glow}
         style={{ animationDelay: `${index * 70}ms` }}
@@ -826,7 +837,11 @@ export function EmployeeSpotlightCard({
           style={{ animationDelay: `calc(${index * 70}ms + 170ms)` }}
         />
         <div className="flex flex-1 flex-col p-4">
-          <div className="flex items-start gap-3">
+          {/* `flex-1` on the content row, not just on the column: it makes this row absorb the
+              card's spare height so the footer sits on the bottom edge. Without it a card whose
+              description runs to one line puts its footer a line higher than its neighbours', and
+              three cards in a row show three different divider heights. */}
+          <div className="flex flex-1 items-start gap-3">
             <span
               className={cn(
                 'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm transition-transform duration-300 group-hover:scale-105',

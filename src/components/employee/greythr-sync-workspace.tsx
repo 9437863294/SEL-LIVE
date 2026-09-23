@@ -14,7 +14,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   AlertTriangle,
-  ArrowLeft,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -41,8 +40,15 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
-import { HrAccessDenied, HrEmptyState, HrKpiCard, HrLoader, HrPageHeader } from '@/components/hr/hr-ui';
+import { HrAccessDenied, HrEmptyState, HrLoader } from '@/components/hr/hr-ui';
+import {
+  EmployeeErrorBanner,
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+} from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -222,67 +228,72 @@ export function GreytHRSyncWorkspace() {
 
   if (authLoading || loading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Loading greytHR sync settings…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
-        <div className="mb-4 flex items-center gap-2">
-          <Link href="/employee">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-semibold text-slate-800">greytHR Sync</h1>
-        </div>
+      <EmployeePageShell>
+        <EmployeeHeader
+          icon={DownloadCloud}
+          tone="blue"
+          eyebrow="Employee management"
+          title="greytHR Sync"
+          backHref="/employee"
+          backLabel="Back to Employee Management"
+        />
         <HrAccessDenied what="the greytHR sync settings" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   const settings = draft ?? report?.settings;
 
+  /**
+   * The mirror against greytHR's own headcount.
+   *
+   * The panel below already shouted when *no* mirror record was still working, which is the extreme
+   * case. It said nothing about the one that actually occurs: a mirror holding a handful of the
+   * workforce and 180 leavers reports "3 still working" and reads as unremarkable. Comparing against
+   * the stored current roster catches both, and names the gap.
+   */
+  const rosterCount = report?.currentRoster.count ?? 0;
+  const mirrorWorking = report?.mirror.working ?? 0;
+  const mirrorGap = rosterCount > 0 ? rosterCount - mirrorWorking : 0;
+  const mirrorIncomplete = mirrorGap > Math.max(2, Math.round(rosterCount * 0.05));
+
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
+    <EmployeePageShell>
       <div className="relative">
-        <div className="mb-1 flex items-center gap-2">
-          <Link href="/employee">
-            <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          {/* Three states, not two. Without a report we do not *know* whether the credentials are
-              set — saying they are missing would be a guess, and a misleading one: the usual reason
-              the report failed is the Admin SDK, which has nothing to do with greytHR. */}
-          {!report ? (
-            <Badge variant="outline" className="gap-1 border-slate-200 bg-white text-[10px] text-slate-500">
-              <PlugZap className="h-3 w-3" />
-              Credential status unknown
-            </Badge>
-          ) : report.configured ? (
-            <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
-              <PlugZap className="h-3 w-3" />
-              greytHR credentials configured
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="gap-1 border-rose-200 bg-rose-50 text-[10px] text-rose-700">
-              <ShieldAlert className="h-3 w-3" />
-              greytHR credentials not configured
-            </Badge>
-          )}
-        </div>
-
-        <HrPageHeader
+        <EmployeeHeader
+          icon={DownloadCloud}
+          tone="blue"
+          eyebrow="Employee management"
           title="greytHR Employee Sync"
+          backHref="/employee"
+          backLabel="Back to Employee Management"
           description="Keeps designation, department, project and employment status in step with greytHR — and controls what happens to a platform login when somebody leaves."
+          status={
+            /* Three states, not two. Without a report we do not *know* whether the credentials are
+               set — saying they are missing would be a guess, and a misleading one: the usual reason
+               the report failed is the Admin SDK, which has nothing to do with greytHR. */
+            !report ? (
+              <EmployeeStatusPill tone="slate" icon={PlugZap}>
+                Credential status unknown
+              </EmployeeStatusPill>
+            ) : report.configured ? (
+              <EmployeeStatusPill tone="emerald" icon={PlugZap}>
+                Credentials configured
+              </EmployeeStatusPill>
+            ) : (
+              <EmployeeStatusPill tone="rose" icon={ShieldAlert}>
+                Credentials not configured
+              </EmployeeStatusPill>
+            )
+          }
           actions={
             <>
               <Button variant="outline" size="sm" onClick={() => void handleTest()} disabled={busy !== null}>
@@ -305,11 +316,9 @@ export function GreytHRSyncWorkspace() {
           }
         />
 
-        {error && (
-          <div className="mb-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
-            {error}
-          </div>
-        )}
+        <EmployeeSubNav current="sync" />
+
+        {error && <EmployeeErrorBanner>{error}</EmployeeErrorBanner>}
 
         {/* Only when the server actually told us they are missing. Showing this because the report
             call failed was a false alarm — and it sent the reader after the wrong variables. */}
@@ -323,11 +332,7 @@ export function GreytHRSyncWorkspace() {
           </div>
         )}
 
-        {connection && !connection.ok && (
-          <div className="mb-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
-            {connection.message}
-          </div>
-        )}
+        {connection && !connection.ok && <EmployeeErrorBanner>{connection.message}</EmployeeErrorBanner>}
 
         <Tabs defaultValue="status">
           {/* A flex row rather than a four-column grid: the module's phone ruleset lets a tab strip
@@ -374,7 +379,7 @@ export function GreytHRSyncWorkspace() {
               <Card
                 className={cn(
                   'shadow-sm',
-                  report.mirror.working === 0 && report.mirror.employees > 0
+                  (report.mirror.working === 0 && report.mirror.employees > 0) || mirrorIncomplete
                     ? 'border-rose-200 bg-rose-50/70'
                     : 'border-white/60 bg-white/85 backdrop-blur-sm',
                 )}
@@ -390,13 +395,18 @@ export function GreytHRSyncWorkspace() {
                       variant="outline"
                       className={cn(
                         'text-[10px]',
-                        report.mirror.working > 0
+                        report.mirror.working > 0 && !mirrorIncomplete
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                           : 'border-rose-200 bg-rose-50 text-rose-700',
                       )}
                     >
                       {report.mirror.working} still working
                     </Badge>
+                    {rosterCount > 0 && (
+                      <Badge variant="outline" className="border-blue-200 bg-blue-50 text-[10px] text-blue-700">
+                        greytHR: {rosterCount} current
+                      </Badge>
+                    )}
                     {report.mirror.salaryRows > 0 && (
                       <Badge variant="outline" className="text-[10px] text-slate-500">
                         + {report.mirror.salaryRows} salary rows
@@ -425,6 +435,18 @@ export function GreytHRSyncWorkspace() {
                       ))}
                   </div>
 
+                  {mirrorIncomplete && report.mirror.working > 0 && (
+                    <p className="text-xs text-rose-800">
+                      <strong>
+                        greytHR lists {rosterCount} current employees; the mirror accounts for{' '}
+                        {mirrorWorking}.
+                      </strong>{' '}
+                      The {mirrorGap} missing are the people the roster, the leave and attendance
+                      registers, Reports and Salary all fail to describe — those screens read this
+                      mirror. Run <strong>Full resync</strong> to fetch them.
+                    </p>
+                  )}
+
                   {report.mirror.employees > 0 && report.mirror.working === 0 && (
                     <p className="text-xs text-rose-800">
                       <strong>No employee in the mirror is recorded as still working.</strong> That is
@@ -446,21 +468,24 @@ export function GreytHRSyncWorkspace() {
             )}
 
             <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-              <HrKpiCard
+              <EmployeeKpiCard
+                index={0}
                 label="Employees checked"
                 value={shownRun?.employeesFetched ?? '—'}
                 hint={shownRun?.fullResync ? 'Full refresh' : 'Changed since last run'}
                 icon={UserCheck}
                 tone="blue"
               />
-              <HrKpiCard
+              <EmployeeKpiCard
+                index={1}
                 label="Added / updated"
                 value={shownRun ? `${shownRun.employeesCreated} / ${shownRun.employeesUpdated}` : '—'}
                 hint={`${shownRun?.employeesUnchanged ?? 0} unchanged`}
                 icon={RefreshCw}
                 tone="indigo"
               />
-              <HrKpiCard
+              <EmployeeKpiCard
+                index={2}
                 label="Logins deactivated"
                 value={shownRun?.usersDeactivated ?? 0}
                 hint={
@@ -471,7 +496,8 @@ export function GreytHRSyncWorkspace() {
                 icon={UserX}
                 tone={(shownRun?.usersDeactivated ?? 0) > 0 ? 'rose' : 'slate'}
               />
-              <HrKpiCard
+              <EmployeeKpiCard
+                index={3}
                 label="Flagged for review"
                 value={shownRun?.flaggedForReview ?? 0}
                 hint="Need a human decision"
@@ -483,7 +509,8 @@ export function GreytHRSyncWorkspace() {
                 that matters, because an account nobody has linked is one the exit policy cannot touch
                 however it is configured.
               */}
-              <HrKpiCard
+              <EmployeeKpiCard
+                index={4}
                 label="Logins linked"
                 value={shownRun?.usersAutoLinked ?? 0}
                 hint={
@@ -794,7 +821,11 @@ export function GreytHRSyncWorkspace() {
                             )}
                           >
                             <div className="min-w-0">
-                              <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
+                              {/* A `<div>`, not a `<p>`: `Badge` renders a `<div>`, and a div inside a
+                                  p is invalid HTML — React hydrates it, the browser restructures it,
+                                  and Next reports a hydration error. The flex classes were already
+                                  doing a block container's job. */}
+                              <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
                                 {spec.label}
                                 {sensitive && (
                                   <Badge
@@ -805,7 +836,7 @@ export function GreytHRSyncWorkspace() {
                                     Restricted
                                   </Badge>
                                 )}
-                              </p>
+                              </div>
                               <p className="mt-0.5 text-[11px] text-muted-foreground">{spec.description}</p>
                               <p className="mt-0.5 text-[11px] text-slate-400">Includes: {spec.contains}</p>
                             </div>
@@ -911,7 +942,7 @@ export function GreytHRSyncWorkspace() {
           </TabsContent>
         </Tabs>
       </div>
-    </div>
+    </EmployeePageShell>
   );
 }
 
@@ -1141,7 +1172,8 @@ function RunHistory({ runs }: { runs: GreytHRSyncRun[] }) {
           <CardContent className="space-y-2 p-3.5">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-800">
+                {/* A `<div>`, not a `<p>` — see the detail-group row above: these badges are divs. */}
+                <div className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-slate-800">
                   {formatWhen(run.startedAt)}
                   <Badge variant="outline" className="text-[10px] capitalize text-slate-600">{run.trigger}</Badge>
                   {run.fullResync && (
@@ -1159,7 +1191,7 @@ function RunHistory({ runs }: { runs: GreytHRSyncRun[] }) {
                   >
                     {run.ok ? 'Succeeded' : 'Failed'}
                   </Badge>
-                </p>
+                </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {run.triggeredByName ? `by ${run.triggeredByName} · ` : ''}
                   {Math.round(run.tookMs / 1000)}s

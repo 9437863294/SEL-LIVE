@@ -463,8 +463,9 @@ function UsersTab({
       projects,
       designations,
       employees,
+      employeeIndex,
     }),
-    [directory, accessByUser, departments, projects, designations, employees],
+    [directory, accessByUser, departments, projects, designations, employees, employeeIndex],
   );
 
   const filtered = useMemo(() => filterUsers(context, filter), [context, filter]);

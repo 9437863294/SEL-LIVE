@@ -416,7 +416,7 @@ export function ProjectRoutingPanel({
               }
               multiple
               allowDepartment={false}
-              allowRole={false}
+              allowDesignation={false}
               allowProject={false}
               label="Team members who may act for this project"
             />

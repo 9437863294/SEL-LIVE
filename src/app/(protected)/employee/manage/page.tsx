@@ -35,7 +35,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
 import {
-  ArrowLeft,
   Building2,
   CloudOff,
   Download,
@@ -64,19 +63,25 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
   HrAlertNotice,
   HrDataList,
   HrEmptyState,
   HrFilterCard,
-  HrKpiCard,
   HrLoader,
-  HrPageHeader,
   hrDialog,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeHeader,
+  EmployeeKpiCard,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EmployeeSubNav,
+  EMP_CARD_CLASS,
+  EMP_REGISTER_HEIGHT,
+} from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { useToast } from '@/hooks/use-toast';
 import { db } from '@/lib/firebase';
@@ -606,42 +611,53 @@ export default function ManageEmployeePage() {
 
   if (isAuthLoading || loading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Loading the employee roster…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrAccessDenied what="Employee Management" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   const counts = report?.counts;
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
-      <div className="mb-1 flex items-center gap-2">
-        <Link href="/employee">
-          <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
-
-      <HrPageHeader
+    <EmployeePageShell>
+      {/*
+        The header carries the live/stored pill but no freshness line: when the roster is stored
+        rather than live, the notice further down says so at length, and the pill is the glance
+        version of it. A third copy of the same sentence in the header would be noise.
+      */}
+      <EmployeeHeader
+        icon={Users}
+        tone="indigo"
+        eyebrow="Employee management"
         title="Manage Employee"
+        backHref="/employee"
+        backLabel="Back to Employee Management"
         description="The complete greytHR roster, current and departed — verified against greytHR on load."
+        status={
+          report ? (
+            report.liveRoster ? (
+              <EmployeeStatusPill tone="emerald" pulse>
+                Verified against greytHR
+              </EmployeeStatusPill>
+            ) : (
+              <EmployeeStatusPill tone="amber" icon={CloudOff}>
+                Stored mirror only
+              </EmployeeStatusPill>
+            )
+          ) : undefined
+        }
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => void load('manual')} disabled={refreshing} className="bg-white">
+            <Button variant="outline" size="sm" onClick={() => void load('manual')} disabled={refreshing} className="bg-white/80">
               <RefreshCw className={cn('mr-1.5 h-4 w-4', refreshing && 'animate-spin')} />
               Refresh
             </Button>
@@ -650,7 +666,7 @@ export default function ManageEmployeePage() {
               size="sm"
               onClick={() => void handleExport()}
               disabled={filtered.length === 0}
-              className="bg-white"
+              className="bg-white/80"
             >
               <Download className="mr-1.5 h-4 w-4" />
               Export
@@ -665,8 +681,10 @@ export default function ManageEmployeePage() {
         }
       />
 
+      <EmployeeSubNav current="manage" />
+
       {error ? (
-        <Card className="border-white/60 bg-white/80 shadow-sm">
+        <Card className={EMP_CARD_CLASS}>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <Users className="h-10 w-10 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">{error}</p>
@@ -735,11 +753,23 @@ export default function ManageEmployeePage() {
           )}
 
           {/* ── KPIs ── */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <HrKpiCard label="Employee records" value={counts?.total ?? 0} icon={Users} tone="slate" />
-            <HrKpiCard label="Currently working" value={counts?.working ?? 0} icon={UserCheck} tone="emerald" />
-            <HrKpiCard label="Departed" value={counts?.departed ?? 0} icon={UserMinus} tone="rose" />
-            <HrKpiCard
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <EmployeeKpiCard
+              label="Employee records"
+              value={counts?.total ?? 0}
+              icon={Users}
+              tone="indigo"
+              index={0}
+            />
+            <EmployeeKpiCard
+              label="Currently working"
+              value={counts?.working ?? 0}
+              icon={UserCheck}
+              tone="emerald"
+              index={1}
+            />
+            <EmployeeKpiCard label="Departed" value={counts?.departed ?? 0} icon={UserMinus} tone="rose" index={2} />
+            <EmployeeKpiCard
               label="Verified"
               value={report?.liveRoster ? 'Live' : 'Stored'}
               hint={
@@ -751,6 +781,7 @@ export default function ManageEmployeePage() {
               }
               icon={report?.liveRoster ? ShieldCheck : CloudOff}
               tone={report?.liveRoster ? 'blue' : 'amber'}
+              index={3}
             />
           </div>
 
@@ -958,9 +989,14 @@ export default function ManageEmployeePage() {
             />
           ) : (
             <div className="space-y-2.5">
-              <HrDataList rows={visibleRows} columns={columns} />
+              {/* `dense` and a scroll frame: at 1,300 rows the page-level scroll took the column
+                  headers away with it, leaving unlabelled lines of dates and badges. The table now
+                  scrolls inside its own frame with the header pinned. */}
+              <HrDataList rows={visibleRows} columns={columns} dense maxHeightClassName={EMP_REGISTER_HEIGHT} />
 
-              {/* The old <tfoot> totals, as a line that reads on a phone too. */}
+              {/* The old <tfoot> totals, as a line that reads on a phone too. Kept bespoke rather
+                  than swapped for `EmployeeListFooter`: this one also splits the filtered set into
+                  working and departed, which the shared footer does not do. */}
               <div className="flex flex-col items-center gap-2 pb-2 text-center">
                 <p className="text-xs text-muted-foreground">
                   Showing <span className="font-medium text-slate-700">{visibleRows.length}</span> of{' '}
@@ -1110,7 +1146,6 @@ export default function ManageEmployeePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </EmployeePageShell>
   );
 }
-

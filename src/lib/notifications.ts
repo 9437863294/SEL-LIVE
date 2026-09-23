@@ -16,6 +16,8 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { canonicalModuleName } from './activity-modules';
+import { personJobTitle } from './people-directory';
+import { loadEmployeeFactsIndex } from './people-directory-client';
 
 /**
  * The central notification system.
@@ -96,6 +98,11 @@ export interface NotificationRecipients {
    * reflects role membership when the event happened.
    */
   roles?: string[];
+  /**
+   * greytHR job titles — resolved the same way, but through the employee join rather than through a
+   * field on `users`, which has none. See `resolveDesignationRecipients`.
+   */
+  designations?: string[];
 }
 
 /* ── writing ───────────────────────────────────────────────────────────────── */
@@ -159,6 +166,45 @@ export async function resolveRoleRecipients(roles: string[]): Promise<string[]> 
 }
 
 /**
+ * Resolve job titles to the IDs of the active users holding them.
+ *
+ * Unlike a role, a designation is not a field on `users`: it lives on the greytHR record the login
+ * is linked to. So this goes through the same index every person picker uses rather than through a
+ * `where('designation', 'in', …)` that would match nothing at all. One cached read, shared with
+ * whatever already loaded it this session.
+ *
+ * Inactive users are excluded, as in `resolveRoleRecipients`: notifying a deactivated account
+ * produces unread counts nobody will ever clear.
+ */
+export async function resolveDesignationRecipients(designations: string[]): Promise<string[]> {
+  const wanted = new Set(designations.map((entry) => entry.trim()).filter(Boolean));
+  if (!wanted.size) return [];
+
+  try {
+    const [snap, index] = await Promise.all([
+      getDocs(collection(db, 'users')),
+      loadEmployeeFactsIndex(),
+    ]);
+    const ids: string[] = [];
+    for (const entry of snap.docs) {
+      const user = entry.data() as {
+        status?: string;
+        email?: string;
+        employeeId?: string;
+        employeeNo?: string;
+      };
+      if (user.status === 'Inactive') continue;
+      const designation = personJobTitle(user, index);
+      if (designation && wanted.has(designation)) ids.push(entry.id);
+    }
+    return ids;
+  } catch (err) {
+    console.error('[notifications] Failed to resolve designation recipients:', err);
+    return [];
+  }
+}
+
+/**
  * Deliver one notification to every recipient, one document per user.
  *
  * Fanning out at write time keeps the read side a single indexed
@@ -175,10 +221,15 @@ export async function dispatchNotification(
   payload: NotificationPayload,
 ): Promise<number> {
   try {
-    const fromRoles = recipients.roles?.length
-      ? await resolveRoleRecipients(recipients.roles)
-      : [];
-    const targets = [...new Set([...(recipients.userIds ?? []), ...fromRoles])].filter(Boolean);
+    const [fromRoles, fromDesignations] = await Promise.all([
+      recipients.roles?.length ? resolveRoleRecipients(recipients.roles) : Promise.resolve([]),
+      recipients.designations?.length
+        ? resolveDesignationRecipients(recipients.designations)
+        : Promise.resolve([]),
+    ]);
+    const targets = [
+      ...new Set([...(recipients.userIds ?? []), ...fromRoles, ...fromDesignations]),
+    ].filter(Boolean);
 
     if (!targets.length) return 0;
 
@@ -242,6 +293,11 @@ export async function requestPushDelivery(notificationIds: string[]): Promise<vo
         Authorization: `Bearer ${idToken}`,
       },
       body: JSON.stringify({ notificationIds }),
+      // The route answers 202 as soon as it has queued the work, so a call that has not come back
+      // in eight seconds is not going to. Without a deadline this is an unbounded wait on whatever
+      // path the caller is on, and the browser imposes none of its own; the notification is already
+      // in the database by this point, so giving up here costs the phone alert, not the alert.
+      signal: AbortSignal.timeout(8000),
     });
   } catch (err) {
     console.warn('[notifications] Push delivery could not be requested:', err);

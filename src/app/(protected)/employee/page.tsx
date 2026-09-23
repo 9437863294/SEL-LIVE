@@ -43,6 +43,7 @@ import {
   DownloadCloud,
   RefreshCw,
   ShieldAlert,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -70,6 +71,8 @@ const STAMP_REFRESH_MS = 60 * 1000;
 /** Beyond a day the mirror is worth a warning; beyond a week it is worth an alarm. */
 const WARN_AFTER_HOURS = 24;
 const ALERT_AFTER_HOURS = 7 * 24;
+
+const screenCount = (count: number) => `${count} ${count === 1 ? 'screen' : 'screens'}`;
 
 /* ------------------------------------------------------------------------------------------------
  * Sync freshness
@@ -246,10 +249,43 @@ export default function EmployeeHubPage() {
   const schedule = report?.settings.schedule;
   const departed = mirror ? Math.max(0, mirror.employees - mirror.working) : 0;
 
+  /**
+   * greytHR's own count of who currently works here, and whether the mirror agrees.
+   *
+   * `mirror.working` is not the headcount — it counts *mirror records* that look employed. On a
+   * mirror that is missing most of the workforce those are different numbers by an order of
+   * magnitude, and the hub used to print only the second one: "182 records, 3 still working", as a
+   * neutral fact, next to a green sync pill. The roster snapshot has had the real answer all along.
+   *
+   * A gap is reported whenever greytHR lists materially more current employees than the mirror can
+   * account for. Not an exact inequality: a snapshot taken an hour before the last sync can be off
+   * by a joiner or two without anything being wrong, and a notice that cries wolf gets ignored.
+   */
+  const rosterCount = report?.currentRoster.count ?? 0;
+  const mirrorGap = mirror && rosterCount > 0 ? rosterCount - mirror.working : 0;
+  const mirrorIncomplete = mirrorGap > Math.max(2, Math.round(rosterCount * 0.05));
+
   const notices = useMemo<Notice[]>(() => {
     if (!report) return [];
     const list: Notice[] = [];
     const syncHref = '/employee/sync';
+
+    /*
+      First, and rose, because it invalidates every other number on the page. While it holds, the
+      roster, the registers, the reports and the salary screens are all describing whoever happens
+      to be in the mirror rather than whoever works here.
+    */
+    if (mirrorIncomplete) {
+      list.push({
+        id: 'mirror-gap',
+        tone: 'rose',
+        icon: Users,
+        title: `greytHR lists ${rosterCount.toLocaleString()} current employees; the mirror accounts for ${(mirror?.working ?? 0).toLocaleString()}`,
+        detail:
+          'Manage Employee, the leave and attendance registers, Reports and Salary are all built from the mirror, so until a sync fills the gap they describe the wrong people. Current Employees is unaffected — it reads the roster directly.',
+        action: access.canSync ? { label: 'Sync now', href: syncHref } : undefined,
+      });
+    }
 
     if (!report.configured) {
       list.push({
@@ -310,7 +346,7 @@ export default function EmployeeHubPage() {
     // Three is the point at which a list of warnings stops being read. The rest are all visible on
     // the sync console, which every one of these links to.
     return list.slice(0, 3);
-  }, [report, freshness, schedule, access.canSync]);
+  }, [report, freshness, schedule, access.canSync, mirrorIncomplete, rosterCount, mirror?.working]);
 
   /* ── Destinations ── */
 
@@ -326,7 +362,13 @@ export default function EmployeeHubPage() {
           <span aria-hidden className="text-slate-300">
             ·
           </span>
-          <span>{mirror.working.toLocaleString()} still working</span>
+          {/* "3 still working" is exactly the misreading to avoid while the mirror is short of the
+              roster: the screen behind this card can only show what the mirror holds. */}
+          {mirrorIncomplete ? (
+            <span className="font-medium text-amber-700">mirror incomplete</span>
+          ) : (
+            <span>{mirror.working.toLocaleString()} still working</span>
+          )}
         </>
       );
     }
@@ -423,12 +465,6 @@ export default function EmployeeHubPage() {
                 </p>
               </div>
             )}
-
-            <p className="mt-3 max-w-2xl text-sm text-white/80">
-              The roster and its greytHR sync, leave and attendance registers, category masters,
-              position history and salary — each opening only for the permissions you hold.
-            </p>
-
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span
                 className={cn(
@@ -456,15 +492,27 @@ export default function EmployeeHubPage() {
 
           {access.canView && (
             <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[20rem] lg:grid-cols-2">
+              {/*
+                greytHR's figure, not the mirror's. "How many people work here" has one right answer
+                and the mirror is not where it lives — see `mirrorIncomplete` above. The mirror's own
+                count follows in the hint whenever the two disagree, so the gap is visible on the
+                same line rather than only in the notice below.
+              */}
               <HeroStat
-                label="Still working"
-                value={statsLoading || !mirror ? '—' : mirror.working.toLocaleString()}
-                hint="Currently employed"
+                label="Currently employed"
+                value={statsLoading ? '—' : rosterCount > 0 ? rosterCount.toLocaleString() : (mirror?.working.toLocaleString() ?? '—')}
+                hint={
+                  statsLoading
+                    ? undefined
+                    : mirrorIncomplete
+                      ? `Per greytHR · mirror has ${(mirror?.working ?? 0).toLocaleString()}`
+                      : 'Per greytHR'
+                }
               />
               <HeroStat
                 label="Departed"
                 value={statsLoading || !mirror ? '—' : departed.toLocaleString()}
-                hint="Exited or inactive"
+                hint="Records in the mirror"
               />
               <HeroStat
                 label="Full baseline"
@@ -496,19 +544,38 @@ export default function EmployeeHubPage() {
         </div>
       )}
 
-      {/* ── Start here ───────────────────────────────────────────────────────────────────────── */}
+      {/* ── Start here ───────────────────────────────────────────────────────────────────────────
+          Every section label carries a count on the right and its explanation underneath, including
+          this one. The first draft put the primary section's sentence in the hint slot and the other
+          two sections' counts there, which read as a mistake: three labels in a column, one ending
+          in prose and two in a figure. */}
       {primaries.length > 0 && (
         <section className="mb-4">
           <EmployeeSectionLabel
             icon={EMPLOYEE_GROUPS[0].icon}
             title={EMPLOYEE_GROUPS[0].title}
-            hint={EMPLOYEE_GROUPS[0].blurb}
+            hint={screenCount(primaries.length)}
           />
           <div className={cn('grid gap-3', primaries.length === 3 ? 'sm:grid-cols-2 lg:grid-cols-3' : 'sm:grid-cols-2')}>
             {primaries.map((item, index) => (
-              <EmployeeSpotlightCard key={item.key} item={item} index={index} footer={spotlightFooter(item.key)} />
+              <EmployeeSpotlightCard
+                key={item.key}
+                item={item}
+                index={index}
+                footer={spotlightFooter(item.key)}
+                /*
+                  Three cards in a two-column grid leave the third alone beside an empty cell — the
+                  ragged row this redesign set out to remove, reappearing between 640px and 1024px.
+                  On that range the last one spans both columns instead; at `lg` the row is three
+                  across and the span is dropped.
+                */
+                className={
+                  primaries.length === 3 && index === 2 ? 'sm:col-span-2 lg:col-span-1' : undefined
+                }
+              />
             ))}
           </div>
+          <p className="mt-1.5 px-1 text-[11px] text-muted-foreground">{EMPLOYEE_GROUPS[0].blurb}</p>
         </section>
       )}
 
@@ -516,11 +583,7 @@ export default function EmployeeHubPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         {rowGroups.map(group => (
           <section key={group.key} className="min-w-0">
-            <EmployeeSectionLabel
-              icon={group.icon}
-              title={group.title}
-              hint={`${group.items.length} ${group.items.length === 1 ? 'screen' : 'screens'}`}
-            />
+            <EmployeeSectionLabel icon={group.icon} title={group.title} hint={screenCount(group.items.length)} />
             <Card className={cn('rounded-2xl p-1.5', EMP_CARD_CLASS)}>
               <div className="grid gap-0.5">
                 {group.items.map((item, index) => (

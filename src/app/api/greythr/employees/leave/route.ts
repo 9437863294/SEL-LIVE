@@ -53,6 +53,7 @@ export async function GET(request: Request) {
       department: string;
       designation: string;
       employmentState: string;
+      inMirror: boolean;
       balance: EmployeeLeaveBalance;
     }> = [];
 
@@ -69,11 +70,14 @@ export async function GET(request: Request) {
       // still shown — the balance is a fact about a person, not about whether they still work here.
       rows.push({
         employeeId: doc.id,
-        name: String(employee?.name ?? balance.employeeId ?? doc.id),
+        // Blank, not the employee id — see `LeaveRegisterRow.name`. The row still appears; the
+        // screen labels it as unidentified rather than inventing a name for it.
+        name: String(employee?.name ?? ''),
         employeeNo: String(employee?.employeeNo ?? ''),
         department: String(employee?.department ?? ''),
         designation: String(employee?.designation ?? ''),
         employmentState: String(employee?.employmentState ?? 'Unknown'),
+        inMirror: Boolean(employee),
         balance,
       });
       for (const line of balance.lines ?? []) {
@@ -84,7 +88,14 @@ export async function GET(request: Request) {
       }
     }
 
-    rows.sort((a, b) => a.name.localeCompare(b.name));
+    // Named rows first, then the unidentified ones by id: a block of bare ids interleaved through
+    // an alphabetical list looks like corruption, and at the end it reads as what it is — a queue of
+    // people the mirror cannot name yet.
+    rows.sort((a, b) => {
+      if (Boolean(a.name) !== Boolean(b.name)) return a.name ? -1 : 1;
+      if (a.name) return a.name.localeCompare(b.name);
+      return Number(a.employeeId) - Number(b.employeeId);
+    });
 
     /** Total balance per leave type, across everyone — the number a register can answer that no
      * single profile page can. */
@@ -109,6 +120,7 @@ export async function GET(request: Request) {
        * negative and mean nothing.
        */
       missing: [...employees.keys()].filter((id) => !leaveIds.has(id)).length,
+      unidentified: rows.filter((row) => !row.inMirror).length,
     });
   } catch (error) {
     const { message, status } = accessErrorResponse(error);

@@ -54,6 +54,7 @@ export async function GET(request: Request) {
       department: string;
       designation: string;
       employmentState: string;
+      inMirror: boolean;
       summary: EmployeeAttendanceSummary;
     }> = [];
 
@@ -68,11 +69,14 @@ export async function GET(request: Request) {
       const employee = employees.get(doc.id);
       rows.push({
         employeeId: doc.id,
-        name: String(employee?.name ?? doc.id),
+        // Blank, not the document id — the same change as the leave register. A register that puts
+        // "10" in its Employee column is claiming that is somebody's name.
+        name: String(employee?.name ?? ''),
         employeeNo: String(employee?.employeeNo ?? ''),
         department: String(employee?.department ?? ''),
         designation: String(employee?.designation ?? ''),
         employmentState: String(employee?.employmentState ?? 'Unknown'),
+        inMirror: Boolean(employee),
         summary,
       });
       for (const type of Object.keys(summary.averages ?? {})) {
@@ -89,7 +93,12 @@ export async function GET(request: Request) {
       }
     }
 
-    rows.sort((a, b) => a.name.localeCompare(b.name));
+    // Named rows first, unidentified ones last by id — see the leave register for why.
+    rows.sort((a, b) => {
+      if (Boolean(a.name) !== Boolean(b.name)) return a.name ? -1 : 1;
+      if (a.name) return a.name.localeCompare(b.name);
+      return Number(a.employeeId) - Number(b.employeeId);
+    });
 
     const period = rows[0]?.summary
       ? { start: rows[0].summary.periodStart, end: rows[0].summary.periodEnd }
@@ -103,6 +112,7 @@ export async function GET(request: Request) {
       period,
       count: rows.length,
       missing: [...employees.keys()].filter((id) => !attendanceIds.has(id)).length,
+      unidentified: rows.filter((row) => !row.inMirror).length,
     });
   } catch (error) {
     const { message, status } = accessErrorResponse(error);

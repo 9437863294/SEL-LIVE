@@ -360,16 +360,40 @@ export function ActionPanel({
   const submit = async () => {
     if (!serviceActor || !dialog) return;
     setBusy(true);
+    /*
+     * Say something if the write is taking an unreasonable time, without pretending to know how it
+     * ended.
+     *
+     * A Firestore write resolves only when the server acknowledges it, and the SDK's own watchdog on
+     * a stalled channel is five to ten minutes — so a half-open connection leaves this dialog
+     * spinning far longer than anybody will wait. What the screen must not do is guess the outcome.
+     * The transition runs in a transaction, which needs a live round trip and is not queued for
+     * later, so it may equally have committed or not; saying so, and telling the person to look
+     * before they retry, is what stops the same file being approved twice.
+     */
+    const slowNotice = setTimeout(() => {
+      toast({
+        title: 'Still sending',
+        description:
+          'This is taking longer than usual. It may or may not have been recorded — check the file before trying again. It will update on its own if it goes through.',
+      });
+    }, 15_000);
     try {
       // Attachments first: a file that failed to upload must not leave a transition claiming it is
       // there, and an orphaned attachment on a transition that then failed is harmless.
-      for (const file of files) {
-        await uploadEApprovalAttachment(request.id, file, serviceActor, {
-          stepId: activeStep?.id ?? null,
-          stepName: activeStep?.name,
-          description: `Added with ${E_APPROVAL_ACTION_LABELS[dialog.kind]}`,
-        });
-      }
+      //
+      // Together rather than one after another: each upload is a storage round trip plus a document
+      // write, and three files attached to a clarification made the approver wait for all three in
+      // series before the action itself even started.
+      await Promise.all(
+        files.map((file) =>
+          uploadEApprovalAttachment(request.id, file, serviceActor, {
+            stepId: activeStep?.id ?? null,
+            stepName: activeStep?.name,
+            description: `Added with ${E_APPROVAL_ACTION_LABELS[dialog.kind]}`,
+          }),
+        ),
+      );
 
       if (dialog.kind === 'Submit') {
         await submitEApproval(request.id, serviceActor, { comment: comment.trim() || undefined });
@@ -405,6 +429,9 @@ export function ActionPanel({
         description: error instanceof Error ? error.message : 'Something went wrong.',
       });
     } finally {
+      // Before anything else: an action that finished in half a second must not be followed,
+      // fifteen seconds later, by a notice telling the person it might not have worked.
+      clearTimeout(slowNotice);
       setBusy(false);
     }
   };
@@ -596,7 +623,7 @@ export function ActionPanel({
                   multiple={dialog.needsTargets === 'multiple'}
                   allowRequester={dialog.kind === 'Request Clarification'}
                   allowDepartment={dialog.kind !== 'Assign'}
-                  allowRole={dialog.kind !== 'Assign'}
+                  allowDesignation={dialog.kind !== 'Assign'}
                   label={
                     dialog.kind === 'Send For Verification'
                       ? 'Verify with'
@@ -618,7 +645,7 @@ export function ActionPanel({
                   onChange={setTargets}
                   multiple
                   allowDepartment={false}
-                  allowRole={false}
+                  allowDesignation={false}
                   label="Participants"
                 />
               )}

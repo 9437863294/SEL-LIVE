@@ -99,6 +99,36 @@ export function useWorkDashboard(): WorkDashboardState {
     setNonce((value) => value + 1);
   }, []);
 
+  /**
+   * Refetch when the user comes back to the screen, or the device comes back online.
+   *
+   * Every lane here is a one-shot read, so this dashboard was a photograph taken when the tab was
+   * opened: work cleared elsewhere stayed on it, and work that arrived never appeared, until
+   * somebody pressed Refresh. It is the screen people leave open all day, which is the worst
+   * possible combination. Ten seconds between runs, so flicking between tabs does not re-run the
+   * whole fan-out each time.
+   */
+  useEffect(() => {
+    let lastRun = Date.now();
+    const run = () => {
+      const now = Date.now();
+      if (now - lastRun < 10_000) return;
+      lastRun = now;
+      refresh();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', run);
+    window.addEventListener('online', run);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', run);
+      window.removeEventListener('online', run);
+    };
+  }, [refresh]);
+
   useEffect(() => {
     if (authLoading || permissionsLoading) return;
     if (!user?.id) {
@@ -120,7 +150,8 @@ export function useWorkDashboard(): WorkDashboardState {
           userId: user.id,
           userName: user.name || user.email || 'User',
           userEmail: user.email ?? null,
-          designation: user.role,
+          // The job title, not the permission bundle — the last actor builder still conflating them.
+          designation: user.designation || undefined,
           role: user.role,
           organizationId: user.organizationId,
         });
@@ -134,6 +165,7 @@ export function useWorkDashboard(): WorkDashboardState {
         userId: user.id,
         userName: user.name || user.email || 'User',
         role: user.role || '',
+        designation: user.designation || undefined,
         organizationId: user.organizationId,
         departmentIds,
         today,

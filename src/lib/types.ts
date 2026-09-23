@@ -73,6 +73,8 @@ export interface User {
    */
   designation?: string | null;
   department?: string | null;
+  /** Posting location, from the same record. Derived and never persisted, as above. */
+  location?: string | null;
   /**
    * Why — and, for a temporary one, until when — the account is deactivated. Written by Access
    * Management's "Disable account"; a legacy Inactive user, or one deactivated from User Management,

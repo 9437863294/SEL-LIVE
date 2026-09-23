@@ -469,12 +469,38 @@ questions, and every "choose a person" control in the application answers the se
 approver dropdown that reads *Ramesh Kumar — Site Engineer* is useful, one that reads *Ramesh Kumar
 — Site User* is not.
 
-`src/lib/people-directory.ts` holds the rule, `people-directory-client.ts` the one cached read of
-the `employees` mirror behind it:
+In this tenant the role field is not even close to a job title. 31 of 54 logins are "Default",
+several are module names ("Recurring Payments", "Site Fund Management"), and one account's role is
+the holder's own name. Any of those rendered under a person's name states a title nobody chose.
+
+#### Where the designation actually lives
+
+Not in `employees`. The mirror carries `designation: ''` for most people — 232 of 412, including
+**every** person who holds a login. The populated copy is in the roster snapshot:
+
+```text
+users/{uid}
+  │  employeeId "313"     greytHR's numeric id
+  │  employeeNo "E1597"   the human-facing code
+  ├──▶ greythrCurrentRoster/313     designation "HR Asst."   ← 132 of 135 rows populated
+  └──▶ employees/{randomId}         designation ""           ← employeeId field holds "E1597"
+```
+
+The two collections do not share a key space, and the mirror holds duplicate documents for some
+people. So every row is indexed under its document id, its `employeeId`, its `employeeNo` and its
+email; when two rows collide, **the one carrying a designation wins**, and source order only breaks
+the tie. Both collections are read — the roster for titles, the mirror because it is the only record
+of somebody on notice or already left who still has a login.
+
+#### The API
+
+`src/lib/people-directory.ts` holds the rules; `people-directory-client.ts` does the two reads,
+cached for five minutes and de-duplicated across concurrent callers.
 
 | Function | What it gives a control |
 | --- | --- |
-| `personSubtitle(person)` | The line under a name — designation → role → email |
+| `personSubtitle(person)` | The line under a name — designation → department → email |
+| `personJobTitle(person)` | The title alone, or `''`. No fallbacks — for anything *stored* |
 | `personOptionLabel(person)` | `"Name — Designation"`, for a single-line `<SelectItem>` |
 | `personSearchText(person)` | Name, email, role, designation, department and employee number |
 | `attachDesignations(users, index)` | The join, applied to a whole directory |
@@ -483,15 +509,24 @@ the `employees` mirror behind it:
 chat, E-Approval, Tour & Travel, Recurring Payments — already has `user.designation`. The dozen
 settings screens that load `users` themselves call `await withDesignations(...)` instead.
 
-Three things this deliberately does **not** change:
+#### What this deliberately does not change
 
 1. **Routing and permissions still read `role`.** The designation is a label. `roleByUserId` in the
    HR approval policy and every `can(...)` check are untouched.
-2. **Screens whose subject is roles still show roles.** Access Management's Roles column, its base-role
-   badges and the role editor all read `users.role` — that is what they are for.
-3. **An unlinked account keeps its old label.** Contractors, service accounts and anyone not yet
-   linked fall back to `role`, and a failed `employees` read falls back everywhere at once, so the
-   worst case is exactly the behaviour that shipped before this existed.
+2. **Screens whose subject is roles still show roles.** Access Management's Roles column, its
+   base-role badges and the role editor all read `users.role` — that is what they are for.
+3. **The role is still searchable**, just never displayed as a title.
+
+When greytHR has no title for somebody, the subtitle falls back to their department and then their
+email — both facts about the person. It never falls back to the role. A failed read falls back
+everywhere at once, which is why `personSubtitle` is the only place the order is written down.
+
+#### Routing an approval to a designation
+
+E-Approval can address a stage to a job title — "this goes to the accountants" — rather than to a
+named person. See `docs/e-approval.md` §11 for the assignment kinds; the designation one matches
+`EApprovalActor.designation`, which `AuthProvider` fills from the same greytHR field the picker
+offers, so one title is one string on both sides.
 
 ### Linking employees to users
 

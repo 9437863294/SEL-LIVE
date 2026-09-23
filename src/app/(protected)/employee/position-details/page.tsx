@@ -17,7 +17,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { Briefcase, Clock, Download, Layers, Loader2, RefreshCw, Search, Tags, Trash2, Users, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -476,6 +475,8 @@ export default function EmployeePositionDetailsPage() {
           </>
         }
       />
+
+      <EmployeeSubNav current="position" />
 
       <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <EmployeeKpiCard

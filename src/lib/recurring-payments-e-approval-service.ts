@@ -104,8 +104,8 @@ export function recurringPaymentEApprovalActor(
     userName: user.name || user.email || 'User',
     userEmail: user.email ?? null,
     // Job title for the request header, permission bundle for the routing — see the same split in
-    // `useEApprovalActorStandalone`.
-    designation: user.designation || user.role,
+    // `useEApprovalActorStandalone`. No `role` fallback: it is not a job title.
+    designation: user.designation || undefined,
     role: user.role,
     organizationId: user.organizationId,
   };

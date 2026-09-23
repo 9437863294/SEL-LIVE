@@ -51,8 +51,8 @@ export function useEApprovalActorStandalone(enabled = true) {
             userEmail: user.email ?? null,
             // The job title, not the permission bundle. It is stamped onto every request header and
             // every comment ("Raised by Sarika Palo, Site Engineer"), so it has to be what HR says
-            // the person is — `role` only stands in when there is no linked greytHR record.
-            designation: user.designation || user.role,
+            // the person is — left undefined, not filled with `role`, when greytHR has none.
+            designation: user.designation || undefined,
             role: user.role,
             organizationId: user.organizationId,
           }
@@ -152,7 +152,19 @@ export interface EApprovalDirectory {
   users: User[];
   departments: Department[];
   projects: Project[];
+  /**
+   * The ERP `roles` master. Still loaded because stored settings reference role names, but no
+   * longer offered as a way to address a stage — see `designations`.
+   */
   roles: string[];
+  /**
+   * Every greytHR job title held by somebody with a login, sorted.
+   *
+   * Derived from the directory rather than read from a master, because addressing a stage to a
+   * title nobody holds produces a step with no possible approver. The picker offers exactly the
+   * titles that can actually receive work.
+   */
+  designations: string[];
   types: EApprovalType[];
   /**
    * Who holds which post on which project.
@@ -237,12 +249,25 @@ export function useEApprovalDirectoryStandalone(enabled = true) {
     [users],
   );
 
+  /**
+   * `AuthProvider` has already joined each user to their greytHR record, so this is a fold over
+   * data in memory rather than another read.
+   */
+  const designations = useMemo(
+    () =>
+      Array.from(
+        new Set(activeUsers.map((row) => (row.designation ?? '').trim()).filter(Boolean)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [activeUsers],
+  );
+
   const directory: EApprovalDirectory = useMemo(
     () => ({
       users: activeUsers,
       departments,
       projects,
       roles,
+      designations,
       types,
       projectRouting,
       userById: new Map(activeUsers.map((row) => [row.id, row])),
@@ -250,7 +275,7 @@ export function useEApprovalDirectoryStandalone(enabled = true) {
       projectById: new Map(projects.map((row) => [row.id, row])),
       projectRoutingById: new Map(projectRouting.map((row) => [row.projectId, row])),
     }),
-    [activeUsers, departments, projects, roles, types, projectRouting],
+    [activeUsers, departments, projects, roles, designations, types, projectRouting],
   );
 
   // Stable identity — see the note on `useEApprovalActorStandalone`'s return.
@@ -411,6 +436,52 @@ export function useEApprovalPermissions() {
     }),
     [can, isLoading, resource],
   );
+}
+
+/**
+ * Re-runs `refresh` when the user comes back to the screen, or the device comes back online.
+ *
+ * For the screens that read once and then sit there. A register or a report is a photograph of a
+ * queue that other people are working through, and the module had no way at all of noticing that
+ * the photograph had gone out of date: no listener, no focus handler, no timer. Somebody who left a
+ * tab open over lunch came back to the morning's inbox and believed it.
+ *
+ * Deliberately not a poll. These reads are whole-collection queries and a fixed interval would run
+ * them against every open tab in the building whether or not anybody was looking; coming back to
+ * the screen is both the moment the data starts mattering again and the moment the user expects it
+ * to be right. The gap keeps a tab that is switched to and from repeatedly from refetching on every
+ * flick.
+ */
+export function useEApprovalRefreshOnReturn(refresh: () => void, minimumGapMs = 10_000) {
+  const latest = useRef(refresh);
+  // In an effect rather than during render: writing a ref while rendering is not safe under
+  // concurrent rendering, where a render can be thrown away.
+  useEffect(() => {
+    latest.current = refresh;
+  }, [refresh]);
+  // Seeded to now, so a tab that is focused moments after mounting does not immediately refetch
+  // what the mount has just loaded.
+  const lastRun = useRef(Date.now());
+
+  useEffect(() => {
+    const run = () => {
+      const now = Date.now();
+      if (now - lastRun.current < minimumGapMs) return;
+      lastRun.current = now;
+      latest.current();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', run);
+    window.addEventListener('online', run);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', run);
+      window.removeEventListener('online', run);
+    };
+  }, [minimumGapMs]);
 }
 
 /** ₹2,50,000 — the Indian grouping every other money field in the app uses. */

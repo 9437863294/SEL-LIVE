@@ -90,6 +90,13 @@ export interface WorkContext {
   userName: string;
   /** The viewer's role name, for the queues that route by role rather than by user. */
   role: string;
+  /**
+   * The viewer's greytHR job title, for the queues addressed to a designation.
+   *
+   * Separate from `role`, and not a fallback for it: one says what the person may do, the other
+   * says what they are. See `src/lib/people-directory.ts`.
+   */
+  designation?: string;
   organizationId?: string;
   /** Resolved by `loadEApprovalActorContext`; empty when it could not be determined. */
   departmentIds: string[];
@@ -296,6 +303,31 @@ export const WORK_SOURCES: WorkSource[] = [
         .filter((row) => isOpen(row.status))
         .filter((row) => !list(row.currentAssigneeIds).includes(context.userId))
         .map((row) => eApprovalItem(row, 'shared', 'e-approval-role')),
+  },
+  {
+    /*
+     * The designation counterpart of the queue above. A separate source rather than an `or` because
+     * Firestore cannot express one — the same reason "mine / my departments / my roles" are already
+     * three queries — and because the two deserve different labels on the dashboard.
+     */
+    id: 'e-approval-designation',
+    module: ACTIVITY_MODULES.E_APPROVAL,
+    label: 'Approvals pending with your designation',
+    lane: 'shared',
+    visible: (context) => eApprovalVisible(context) && Boolean(context.designation),
+    load: async (context) =>
+      (
+        await fetchWhere(
+          E_APPROVAL_COLLECTIONS.requests,
+          'currentDesignations',
+          'array-contains',
+          // Guarded by `visible` above; the fallback only satisfies the signature.
+          context.designation ?? '',
+        )
+      )
+        .filter((row) => isOpen(row.status))
+        .filter((row) => !list(row.currentAssigneeIds).includes(context.userId))
+        .map((row) => eApprovalItem(row, 'shared', 'e-approval-designation')),
   },
   {
     id: 'e-approval-raised',

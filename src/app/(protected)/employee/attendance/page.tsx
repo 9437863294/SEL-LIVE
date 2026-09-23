@@ -37,6 +37,7 @@ import {
   type EmpTone,
 } from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { cn } from '@/lib/utils';
 import { attendanceLabel } from '@/lib/greythr';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import {
@@ -104,7 +105,8 @@ export default function AttendanceRegisterPage() {
     const scoped = rows.filter((row) => {
       if (department !== 'all' && row.department !== department) return false;
       if (!query) return true;
-      return [row.name, row.employeeNo, row.department, row.designation]
+      // `employeeId` included so an unidentified row can still be searched for.
+      return [row.name, row.employeeNo, row.employeeId, row.department, row.designation]
         .filter(Boolean)
         .some((field) => field.toLowerCase().includes(query));
     });
@@ -174,7 +176,8 @@ export default function AttendanceRegisterPage() {
         'Attendance register',
         filtered.map((row) => ({
           'Employee No': row.employeeNo,
-          Name: row.name,
+          Name: row.name || `Employee ${row.employeeId}`,
+          'In roster mirror': row.inMirror ? 'Yes' : 'No',
           Department: row.department,
           Designation: row.designation,
           ...Object.fromEntries(
@@ -195,9 +198,15 @@ export default function AttendanceRegisterPage() {
     {
       header: 'Employee',
       mobile: 'title',
+      // Labelled as unidentified rather than shown as a person named "10" — see the leave register.
       cell: (row) => (
-        <Link href={`/employee/${row.employeeId}`} className="font-medium text-slate-800 hover:underline">
-          {row.name}
+        <Link href={`/employee/${row.employeeId}`} className="group/name block">
+          <span className={cn('font-medium', row.name ? 'text-slate-800 group-hover/name:underline' : 'text-slate-500')}>
+            {row.name || `Employee ${row.employeeId}`}
+          </span>
+          {!row.inMirror && (
+            <span className="block text-[11px] font-normal text-amber-700">Not in the roster mirror</span>
+          )}
         </Link>
       ),
     },
@@ -207,7 +216,7 @@ export default function AttendanceRegisterPage() {
       className: 'hidden md:table-cell',
       cell: (row) => (
         <span className="text-xs text-muted-foreground">
-          {[row.designation, row.department].filter(Boolean).join(' · ') || '—'}
+          {[row.designation, row.department].filter(Boolean).join(' · ') || (row.inMirror ? '—' : 'Unknown')}
         </span>
       ),
     },
@@ -308,6 +317,27 @@ export default function AttendanceRegisterPage() {
           />
         ))}
       </div>
+
+      {/*
+        Rows this register cannot name: greytHR has their attendance, the employee mirror has never
+        heard of them. A gap in the mirror, not in the attendance data — and the more serious of the
+        two notices, so it goes first.
+      */}
+      {report && report.unidentified > 0 && (
+        <div className="mb-3">
+          <HrAlertNotice
+            tone="amber"
+            title={`${report.unidentified} of ${report.count} rows could not be matched to an employee`}
+          >
+            No employee record exists here for these ids, so their name, department and designation
+            are blank. Run a full sync from{' '}
+            <Link href="/employee/sync" className="font-medium underline">
+              greytHR Sync
+            </Link>{' '}
+            to fetch the missing employees.
+          </HrAlertNotice>
+        </div>
+      )}
 
       {/* A tinted notice rather than the grey paragraph this used to be — see the same change on the
           leave register. An employee missing from the register is a gap in the data, not a footnote. */}

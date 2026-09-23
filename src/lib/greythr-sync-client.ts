@@ -49,6 +49,16 @@ export interface SyncReport {
     salaryRows: number;
     byState: Record<string, number>;
   };
+  /**
+   * What greytHR says about who currently works here, from the stored roster snapshot.
+   *
+   * Deliberately separate from `mirror`. They answer different questions and the app had only
+   * ever asked one of them: `mirror.working` counts *mirror records* that look employed, which on
+   * an incomplete mirror is a count of how much of the workforce happens to have been written
+   * here — not of the workforce. When these two disagree, the mirror is wrong, and every screen
+   * built on it is describing the wrong people.
+   */
+  currentRoster: { count: number; fetchedAt: string | null };
 }
 
 async function authorizedFetch<T>(input: string, init?: RequestInit): Promise<T> {
@@ -354,8 +364,19 @@ export interface LiveCurrentEmployeesResponse {
  * For the times the mirror itself is suspect: every field here is derived from this request alone,
  * so it cannot show a stale or placeholder-date-corrupted result.
  */
-export const fetchCurrentEmployeesLive = (): Promise<LiveCurrentEmployeesResponse> =>
-  authorizedFetch<LiveCurrentEmployeesResponse>('/api/greythr/employees/current');
+/**
+ * The current roster.
+ *
+ * Serves the roster the greytHR sync last stored. `refresh` asks greytHR directly instead and
+ * replaces that stored copy — what the screen's Refresh button does. Left off, a page visit costs a
+ * Firestore read rather than a live greytHR round trip.
+ */
+export const fetchCurrentEmployeesLive = (
+  options: { refresh?: boolean } = {},
+): Promise<LiveCurrentEmployeesResponse> =>
+  authorizedFetch<LiveCurrentEmployeesResponse>(
+    options.refresh ? '/api/greythr/employees/current?refresh=1' : '/api/greythr/employees/current',
+  );
 
 /* ------------------------------------------------------------------------------------------------
  * The full roster — mirror, corrected against the live roster
@@ -419,11 +440,21 @@ export const fetchEmployeeRoster = (): Promise<EmployeeRosterResponse> =>
 
 export interface LeaveRegisterRow {
   employeeId: string;
+  /**
+   * The employee's name, or empty when the mirror holds no record for them.
+   *
+   * Empty rather than the employee id, which is what this used to fall back to: a register showing
+   * "10" in the Employee column reads as a person named 10, and the reader has no way to tell that
+   * apart from a genuine name. The screen decides how to label an unidentified row; the API's job
+   * is to be clear that it could not identify it.
+   */
   name: string;
   employeeNo: string;
   department: string;
   designation: string;
   employmentState: string;
+  /** Whether an employee record was found. False means name/department/designation are all blank. */
+  inMirror: boolean;
   balance: EmployeeLeaveBalance;
 }
 
@@ -438,6 +469,13 @@ export interface LeaveRegisterResponse {
   count: number;
   /** Mirror employees with no leave record at all — usually the detail group was enabled recently. */
   missing: number;
+  /**
+   * Leave records whose employee is not in the mirror — the opposite of `missing`, and a different
+   * problem. greytHR returned a balance for somebody the employee sync never wrote, so the row
+   * cannot be named. A non-zero count here means the mirror is incomplete, not that the leave data
+   * is wrong.
+   */
+  unidentified: number;
 }
 
 /** Everyone's leave balance, joined against the mirror for name and department. */
@@ -446,11 +484,14 @@ export const fetchLeaveRegister = (): Promise<LeaveRegisterResponse> =>
 
 export interface AttendanceRegisterRow {
   employeeId: string;
+  /** Empty when the mirror holds no record for them — see `LeaveRegisterRow.name`. */
   name: string;
   employeeNo: string;
   department: string;
   designation: string;
   employmentState: string;
+  /** Whether an employee record was found. */
+  inMirror: boolean;
   summary: EmployeeAttendanceSummary;
 }
 
@@ -462,6 +503,8 @@ export interface AttendanceRegisterResponse {
   period: { start: string; end: string };
   count: number;
   missing: number;
+  /** Attendance records whose employee is not in the mirror — see `LeaveRegisterResponse`. */
+  unidentified: number;
 }
 
 /** Everyone's monthly attendance summary. Not a muster roll — see the API route for why. */

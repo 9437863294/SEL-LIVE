@@ -185,7 +185,17 @@ export default function EApprovalDashboardPage() {
   const quickApprove = async (row: EApprovalRequest) => {
     if (!serviceActor) return;
     try {
-      await performEApprovalAction(row.id, { kind: 'Approve' }, serviceActor);
+      // Name the step rather than letting the engine infer it from "there is only one actionable
+      // step". The inference is true of the row the user clicked — `eApprovalRowIsQuickApprovable`
+      // insists on a single current step — but an action can now be retried against freshly read
+      // state, and on a chain where the same desk holds two stages the inference could land on a
+      // different step the second time round. Approving from a list is exactly where nobody is
+      // watching closely enough to catch that.
+      await performEApprovalAction(
+        row.id,
+        { kind: 'Approve', stepId: row.currentStepIds?.[0] },
+        serviceActor,
+      );
       toast({ title: 'Approved', description: row.subject });
     } catch (actionError) {
       toast({

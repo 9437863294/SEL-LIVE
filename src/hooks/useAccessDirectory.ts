@@ -35,8 +35,11 @@ import {
 import {
   attachDesignations,
   buildEmployeeFactsIndex,
+  EMPTY_EMPLOYEE_FACTS_INDEX,
+  type EmployeeFacts,
   type EmployeeFactsIndex,
 } from '@/lib/people-directory';
+import { loadEmployeeFactsIndex } from '@/lib/people-directory-client';
 
 const EMPTY_DIRECTORY: AccessDirectory = {
   users: [],
@@ -57,8 +60,8 @@ export const REGISTRY_NODES: RegistryNode[] = flattenPermissionRegistry(permissi
 
 export interface AccessDirectoryState {
   directory: AccessDirectory;
-  /** The employee master keyed for the user→employee join. See `src/lib/people-directory.ts`. */
-  employeeIndex: EmployeeFactsIndex<Employee>;
+  /** Every HR fact keyed for the user→employee join. See `src/lib/people-directory.ts`. */
+  employeeIndex: EmployeeFactsIndex<EmployeeFacts>;
   /** Effective access per user id, resolved from the directory. */
   accessByUser: Record<string, EffectiveAccess>;
   /** Organisation masters the assignment screens filter and scope by. */
@@ -87,6 +90,7 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeeFacts, setEmployeeFacts] = useState<EmployeeFactsIndex>(EMPTY_EMPLOYEE_FACTS_INDEX);
   const [batchCount, setBatchCount] = useState(0);
   const [inFlight, setInFlight] = useState(false);
   /**
@@ -105,13 +109,17 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
     setInFlight(true);
     setError(null);
     try {
-      const [nextDirectory, departmentSnap, projectSnap, employeeSnap, batches] = await Promise.all([
+      const [nextDirectory, departmentSnap, projectSnap, employeeSnap, facts, batches] = await Promise.all([
         loadAccessDirectory(),
         getDocs(query(collection(db, 'departments'), where('status', '==', 'Active'))),
         getDocs(collection(db, 'projects')),
-        // The employee master is the only place department and designation live per person. It is
-        // read for filtering and display; nothing here writes to it.
+        // The employee master, for this module's own department filter and its employee-ID column.
+        // Read for filtering and display; nothing here writes to it.
         getDocs(collection(db, 'employees')).catch(() => null),
+        // Designations come from the shared reader rather than from the snapshot above, because in
+        // this tenant the mirror's `designation` is blank for every person who has a login — the
+        // populated copy is in `greythrCurrentRoster`. See `src/lib/people-directory.ts`.
+        loadEmployeeFactsIndex(),
         listAccessBatches(50).catch(() => []),
       ]);
 
@@ -127,6 +135,7 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
       setEmployees(
         employeeSnap?.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as Employee) ?? [],
       );
+      setEmployeeFacts(facts);
       setBatchCount(batches.length);
     } catch (err) {
       console.error('[access] Failed to load access directory', err);
@@ -144,16 +153,27 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
     void refresh();
   }, [enabled, refresh]);
 
-  /**
-   * The employee master indexed by every key the join can use — greytHR's employee id, the employee
-   * number, and email as the fallback for accounts created before the linking screen existed.
+/**
+   * Every HR fact these screens read about a person, from both greytHR collections.
+   *
+   * `employeeFacts` already indexes the roster and the mirror; this folds in the `employees`
+   * snapshot the hook loaded for its own filters, so a row present only in that snapshot still
+   * resolves. The index prefers whichever copy of a person actually carries a designation, so
+   * merging cannot make an answer worse.
    *
    * Built here rather than in each tab because four of them want the same lookup, and because the
    * email-only map the pickers used to build silently missed every site user who has no email
-   * address: they showed up with a blank department and designation, which reads as "greytHR has no
-   * record of this person" when in fact the record was linked all along.
+   * address: they showed up blank, which reads as "greytHR has no record of this person" when in
+   * fact the record was linked all along.
    */
-  const employeeIndex = useMemo(() => buildEmployeeFactsIndex(employees), [employees]);
+  const employeeIndex = useMemo(
+    () =>
+      buildEmployeeFactsIndex(
+        [...employeeFacts.byEmployeeId.values(), ...employeeFacts.byEmail.values()],
+        employees,
+      ),
+    [employeeFacts, employees],
+  );
 
   /**
    * The directory with each user's current job title joined on.
@@ -171,7 +191,9 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
 
   const designations = useMemo(() => {
     const seen = new Set<string>();
-    for (const employee of employees) {
+    // From the index, not from `employees`: the mirror's titles are blank in this tenant, so a list
+    // built from it alone offers almost nothing to filter by.
+    for (const employee of employeeIndex.byEmployeeId.values()) {
       const designation = (employee.designation || '').trim();
       if (designation) seen.add(designation);
     }
@@ -181,7 +203,7 @@ export function useAccessDirectory(enabled = true): AccessDirectoryState {
       if (grant.scopeType === 'Designation' && grant.scopeId) seen.add(grant.scopeId);
     }
     return [...seen].sort();
-  }, [employees, directory.scopeGrants]);
+  }, [employeeIndex, directory.scopeGrants]);
 
   const dashboard = useMemo(
     () =>

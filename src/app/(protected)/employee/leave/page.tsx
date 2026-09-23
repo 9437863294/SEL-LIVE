@@ -40,6 +40,7 @@ import {
   EMP_REGISTER_HEIGHT,
 } from '@/components/employee/employee-ui';
 import { useAuthorization } from '@/hooks/useAuthorization';
+import { cn } from '@/lib/utils';
 import { exportRowsToExcel } from '@/lib/report-excel';
 import { fetchLeaveRegister, type LeaveRegisterResponse, type LeaveRegisterRow } from '@/lib/greythr-sync-client';
 
@@ -107,7 +108,9 @@ export default function LeaveRegisterPage() {
     const scoped = rows.filter((row) => {
       if (department !== 'all' && row.department !== department) return false;
       if (!query) return true;
-      return [row.name, row.employeeNo, row.department, row.designation]
+      // `employeeId` is in the searchable set because for an unidentified row it is the only
+      // thing on screen — leaving it out would make those rows impossible to search for.
+      return [row.name, row.employeeNo, row.employeeId, row.department, row.designation]
         .filter(Boolean)
         .some((field) => field.toLowerCase().includes(query));
     });
@@ -138,7 +141,9 @@ export default function LeaveRegisterPage() {
         'Leave register',
         filtered.map((row) => ({
           'Employee No': row.employeeNo,
-          Name: row.name,
+          // The same label the screen shows, so a workbook row is never a blank name cell.
+          Name: row.name || `Employee ${row.employeeId}`,
+          'In roster mirror': row.inMirror ? 'Yes' : 'No',
           Department: row.department,
           Designation: row.designation,
           ...Object.fromEntries((report?.leaveTypes ?? []).map((type) => [type, balanceOf(row, type)])),
@@ -155,9 +160,21 @@ export default function LeaveRegisterPage() {
     {
       header: 'Employee',
       mobile: 'title',
+      /*
+        An unnamed row is labelled as one rather than shown as a person called "10".
+        `inMirror: false` means greytHR returned a leave balance for somebody the employee sync has
+        never written here — so the id is genuinely all this screen knows, and saying so is the
+        difference between a gap in the data and a person with a numeric name. The link still works:
+        the profile route falls back to asking greytHR directly for an employee the mirror lacks.
+      */
       cell: (row) => (
-        <Link href={`/employee/${row.employeeId}`} className="font-medium text-slate-800 hover:underline">
-          {row.name}
+        <Link href={`/employee/${row.employeeId}`} className="group/name block">
+          <span className={cn('font-medium', row.name ? 'text-slate-800 group-hover/name:underline' : 'text-slate-500')}>
+            {row.name || `Employee ${row.employeeId}`}
+          </span>
+          {!row.inMirror && (
+            <span className="block text-[11px] font-normal text-amber-700">Not in the roster mirror</span>
+          )}
         </Link>
       ),
     },
@@ -167,7 +184,7 @@ export default function LeaveRegisterPage() {
       className: 'hidden md:table-cell',
       cell: (row) => (
         <span className="text-xs text-muted-foreground">
-          {[row.designation, row.department].filter(Boolean).join(' · ') || '—'}
+          {[row.designation, row.department].filter(Boolean).join(' · ') || (row.inMirror ? '—' : 'Unknown')}
         </span>
       ),
     },
@@ -264,6 +281,29 @@ export default function LeaveRegisterPage() {
           />
         ))}
       </div>
+
+      {/*
+        The register cannot name these people, and that is a fact about the *mirror*, not about
+        their leave. It goes above the "not covered" notice because it is the more serious of the
+        two: one says some employees are missing from this register, the other says this register
+        holds balances for employees the roster has never heard of.
+      */}
+      {report && report.unidentified > 0 && (
+        <div className="mb-3">
+          <HrAlertNotice
+            tone="amber"
+            title={`${report.unidentified} of ${report.count} rows could not be matched to an employee`}
+          >
+            greytHR returned a leave balance for these employee ids, but no employee record exists
+            here for them — so their name, department and designation are blank. That is a gap in the
+            roster mirror rather than in the leave data. Run a full sync from{' '}
+            <Link href="/employee/sync" className="font-medium underline">
+              greytHR Sync
+            </Link>{' '}
+            to fetch the missing employees.
+          </HrAlertNotice>
+        </div>
+      )}
 
       {/* A tinted notice rather than the grey paragraph this used to be: "1,100 of your employees
           are missing from this register" is not a footnote, and at `text-muted-foreground` on the

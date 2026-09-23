@@ -39,7 +39,12 @@ import {
   type RegistryNode,
   type UserAccessGrant,
 } from '@/lib/access-control';
-import { buildEmployeeFactsIndex, employeeFactsFor, personSubtitle } from '@/lib/people-directory';
+import {
+  employeeFactsFor,
+  personSubtitle,
+  type EmployeeFacts,
+  type EmployeeFactsIndex,
+} from '@/lib/people-directory';
 import { RiskBadges, RoleBadge } from './access-ui';
 
 /* ------------------------------------------------------------------------------------------------
@@ -76,11 +81,13 @@ export interface UserDirectoryContext {
   projects: Project[];
   designations: string[];
   employees: Employee[];
+  /** Built once by `useAccessDirectory` over both greytHR collections. */
+  employeeIndex: EmployeeFactsIndex<EmployeeFacts>;
 }
 
 export function filterUsers(context: UserDirectoryContext, filter: UserFilterState): User[] {
   const term = filter.term.trim().toLowerCase();
-  const employeeIndex = buildEmployeeFactsIndex(context.employees);
+  const employeeIndex = context.employeeIndex;
 
   return context.users.filter((user) => {
     if (filter.status !== 'all' && (user.status ?? 'Active') !== filter.status) return false;
@@ -428,7 +435,7 @@ export function UserPicker({
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
   const windowed = filtered.slice(0, USER_WINDOW);
 
-  const employeeIndex = useMemo(() => buildEmployeeFactsIndex(context.employees), [context.employees]);
+  const employeeIndex = context.employeeIndex;
 
   const toggle = (userId: string) => {
     onSelectionChange(

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { HrDataList, type HrListColumn } from '@/components/hr/hr-ui';
 import { cn } from '@/lib/utils';
 import {
   describeEApprovalAssignment,
@@ -15,7 +16,12 @@ import {
   type EApprovalDepartmentMode,
   type EApprovalProjectMode,
 } from '@/lib/e-approval';
-import { personSubtitle, personSearchText } from '@/lib/people-directory';
+import {
+  personJobTitle,
+  personSearchText,
+  resolveDesignation,
+} from '@/lib/people-directory';
+import type { User } from '@/lib/types';
 import type { EApprovalDirectory } from './hooks';
 
 /**
@@ -44,7 +50,7 @@ export function AssigneePicker({
   multiple = false,
   label = 'Send to',
   allowDepartment = true,
-  allowRole = true,
+  allowDesignation = true,
   allowRequester = false,
   allowProject = true,
   /** Off on the request form, where the request's own project is already known and picked. */
@@ -57,7 +63,7 @@ export function AssigneePicker({
   multiple?: boolean;
   label?: string;
   allowDepartment?: boolean;
-  allowRole?: boolean;
+  allowDesignation?: boolean;
   allowRequester?: boolean;
   allowProject?: boolean;
   allowDynamic?: boolean;
@@ -77,6 +83,8 @@ export function AssigneePicker({
         return `Department:${entry.departmentId ?? 'SELF'}:${entry.departmentMode ?? 'Anyone'}`;
       case 'Project':
         return `Project:${entry.projectId ?? 'SELF'}:${entry.projectMode ?? 'Head'}:${(entry.projectRole ?? '').toLowerCase()}`;
+      case 'Designation':
+        return `Designation:${entry.designation ?? ''}`;
       case 'Role':
         return `Role:${entry.role ?? ''}`;
       default:
@@ -107,10 +115,19 @@ export function AssigneePicker({
     return term ? directory.departments.filter((row) => row.name?.toLowerCase().includes(term)) : directory.departments;
   }, [directory.departments, search]);
 
-  const filteredRoles = useMemo(() => {
+  /**
+   * The greytHR job titles, not the ERP roles.
+   *
+   * This tab has always been labelled "Designation" and has always listed `directory.roles` — the
+   * permission bundles — so it offered "Default", "Office Hub" and a handful of people's own names
+   * as things to address an approval to. `directory.designations` is the list it was describing.
+   */
+  const filteredDesignations = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return term ? directory.roles.filter((row) => row.toLowerCase().includes(term)) : directory.roles;
-  }, [directory.roles, search]);
+    return term
+      ? directory.designations.filter((row) => row.toLowerCase().includes(term))
+      : directory.designations;
+  }, [directory.designations, search]);
 
   const filteredProjects = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -138,11 +155,67 @@ export function AssigneePicker({
     [directory.projectRouting],
   );
 
+  const choosePerson = (row: User) =>
+    add({
+      kind: 'User',
+      userId: row.id,
+      userName: row.name,
+      // The job title only — never the department or email `personSubtitle` would fall back to.
+      // This is denormalised onto the step and read back as "Approved by X (Y)" long after the
+      // user record has changed.
+      designation: personJobTitle(row) || undefined,
+    });
+
+  /**
+   * Name, designation, location, employee ID — the four facts that identify a colleague.
+   *
+   * All four come off the row itself: `AuthProvider` joined the greytHR record onto the directory
+   * once, so nothing here reads a database or needs the index passed down.
+   */
+  const personColumns: HrListColumn<User>[] = [
+    {
+      header: 'Name',
+      mobile: 'title',
+      cell: (row) => (
+        <span className="flex items-center gap-1.5">
+          <span className="truncate font-medium">{row.name || row.email}</span>
+          {chosenKeys.has(`User:${row.id}`) && (
+            <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-label="Already added" />
+          )}
+        </span>
+      ),
+    },
+    {
+      header: 'Designation',
+      mobile: 'title',
+      cell: (row) => {
+        const { designation, source } = resolveDesignation(row);
+        return designation ? (
+          <span className="truncate">{designation}</span>
+        ) : (
+          // Named rather than left blank: an empty cell reads as a rendering fault, where "not in
+          // greytHR" is a fact about the account — usually a contractor or a service login.
+          <span className="text-muted-foreground/70">{source === 'none' ? 'Not in greytHR' : '—'}</span>
+        );
+      },
+    },
+    {
+      header: 'Location',
+      mobile: 'detail',
+      cell: (row) => resolveDesignation(row).location ?? <span className="text-muted-foreground/70">—</span>,
+    },
+    {
+      header: 'Emp ID',
+      mobile: 'detail',
+      className: 'font-mono text-[11px]',
+      cell: (row) => resolveDesignation(row).employeeCode ?? <span className="font-sans text-muted-foreground/70">—</span>,
+    },
+  ];
+
   const nothingMatches =
-    (kind === 'User' && !filteredUsers.length) ||
     (kind === 'Department' && !filteredDepartments.length && !allowDynamic) ||
     (kind === 'Project' && !filteredProjects.length && !allowDynamic) ||
-    (kind === 'Role' && !filteredRoles.length);
+    (kind === 'Designation' && !filteredDesignations.length);
 
   const iconFor = (assignment: EApprovalAssignment) =>
     assignment.kind === 'User' ? (
@@ -226,13 +299,13 @@ export function AssigneePicker({
                 <HardHat className="h-3.5 w-3.5" /> Project
               </Button>
             )}
-            {allowRole && (
+            {allowDesignation && (
               <Button
                 type="button"
                 size="sm"
-                variant={kind === 'Role' ? 'default' : 'outline'}
+                variant={kind === 'Designation' ? 'default' : 'outline'}
                 className="h-7 gap-1 px-2 text-xs"
-                onClick={() => setKind('Role')}
+                onClick={() => setKind('Designation')}
               >
                 <Shield className="h-3.5 w-3.5" /> Designation
               </Button>
@@ -333,169 +406,174 @@ export function AssigneePicker({
             className="mt-2 h-8 text-xs"
           />
 
-          <ScrollArea className="mt-1.5 h-32 rounded-md border bg-background">
-            <div className="p-1">
-              {kind === 'User' &&
-                filteredUsers.map((row) => {
-                  const chosen = chosenKeys.has(`User:${row.id}`);
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      onClick={() =>
-                        add({
-                          kind: 'User',
-                          userId: row.id,
-                          userName: row.name,
-                          designation: personSubtitle(row),
-                        })
-                      }
-                      className={cn(
-                        'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted',
-                        chosen && 'opacity-50',
-                      )}
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{row.name}</span>
-                        <span className="block truncate text-[10px] text-muted-foreground">
-                          {personSubtitle(row)}
-                        </span>
-                      </span>
-                      {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
-                    </button>
-                  );
-                })}
-
-              {/* The dynamic entry sits first because it is the right answer more often than any one
-                  named department is: it is what makes a workflow reusable across all of them. */}
-              {kind === 'Department' && allowDynamic && !search.trim() && (
-                <button
-                  type="button"
-                  onClick={() => add({ kind: 'Department', departmentMode })}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded border border-dashed border-sky-300 bg-sky-50/60 px-2 py-1.5 text-left text-xs hover:bg-sky-100/60',
-                    chosenKeys.has(`Department:SELF:${departmentMode}`) && 'opacity-50',
-                  )}
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium text-sky-900">The request&rsquo;s own department</span>
-                    <span className="block truncate text-[10px] text-sky-700">
-                      Resolved when the approval is raised — one workflow serves every department
-                    </span>
-                  </span>
-                  {chosenKeys.has(`Department:SELF:${departmentMode}`) && (
-                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                  )}
-                </button>
-              )}
-
-              {kind === 'Project' && allowDynamic && !search.trim() && (
-                <button
-                  type="button"
-                  onClick={() => addProject()}
-                  disabled={projectMode === 'Role' && !projectRole.trim()}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded border border-dashed border-sky-300 bg-sky-50/60 px-2 py-1.5 text-left text-xs hover:bg-sky-100/60 disabled:opacity-40',
-                    chosenKeys.has(
-                      `Project:SELF:${projectMode}:${projectRole.trim().toLowerCase()}`,
-                    ) && 'opacity-50',
-                  )}
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium text-sky-900">
-                      {projectMode === 'Role'
-                        ? `${projectRole.trim() || 'The post'} on the request’s project`
-                        : 'The request’s own project'}
-                    </span>
-                    <span className="block truncate text-[10px] text-sky-700">
-                      {projectMode === 'Role'
-                        ? 'A different person on each project — this is the reusable option'
-                        : 'Resolved when the approval is raised'}
-                    </span>
-                  </span>
-                  {chosenKeys.has(`Project:SELF:${projectMode}:${projectRole.trim().toLowerCase()}`) && (
-                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                  )}
-                </button>
-              )}
-
-              {kind === 'Project' &&
-                filteredProjects.map((row) => {
-                  const key = `Project:${row.id}:${projectMode}:${projectRole.trim().toLowerCase()}`;
-                  const chosen = chosenKeys.has(key);
-                  const configured = directory.projectRouting.find((entry) => entry.projectId === row.id);
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      onClick={() => addProject(row.id, row.projectName)}
-                      disabled={projectMode === 'Role' && !projectRole.trim()}
-                      className={cn(
-                        'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-40',
-                        chosen && 'opacity-50',
-                      )}
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">{row.projectName}</span>
-                        {!configured && (
-                          <span className="block truncate text-[10px] text-amber-700">No routing configured</span>
-                        )}
-                      </span>
-                      {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
-                    </button>
-                  );
-                })}
-
-              {kind === 'Department' &&
-                filteredDepartments.map((row) => {
-                  const chosen = chosenKeys.has(`Department:${row.id}:${departmentMode}`);
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      onClick={() =>
-                        add({
-                          kind: 'Department',
-                          departmentId: row.id,
-                          departmentName: row.name,
-                          departmentMode,
-                        })
-                      }
-                      className={cn(
-                        'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted',
-                        chosen && 'opacity-50',
-                      )}
-                    >
-                      <span className="truncate font-medium">{row.name}</span>
-                      {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
-                    </button>
-                  );
-                })}
-
-              {kind === 'Role' &&
-                filteredRoles.map((row) => {
-                  const chosen = chosenKeys.has(`Role:${row}`);
-                  return (
-                    <button
-                      key={row}
-                      type="button"
-                      onClick={() => add({ kind: 'Role', role: row })}
-                      className={cn(
-                        'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted',
-                        chosen && 'opacity-50',
-                      )}
-                    >
-                      <span className="truncate font-medium">{row}</span>
-                      {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
-                    </button>
-                  );
-                })}
-
-              {nothingMatches && (
-                <p className="px-2 py-6 text-center text-xs text-muted-foreground">Nothing matches that search.</p>
-              )}
+          {/*
+            * People get a table; the other three tabs stay a plain list.
+            *
+            * A person is picked by recognising them, and four facts do that where a name alone does
+            * not — this organisation has two people called Sahoo and several titles that differ only
+            * by their bracketed suffix. Departments and projects have one identifying field each, so
+            * a table around them would be three empty columns.
+            *
+            * `HrDataList` rather than a hand-rolled `<table>`: it already collapses to one card per
+            * person under `sm`, where four columns do not fit. `maxHeightClassName` is its own
+            * scroll container with a pinned header — deliberately *not* wrapped in the `ScrollArea`
+            * the other tabs use, inside which a sticky header never sticks.
+            */}
+          {kind === 'User' ? (
+            <div className="mt-1.5">
+              <HrDataList
+                rows={filteredUsers}
+                columns={personColumns}
+                dense
+                maxHeightClassName="sm:max-h-52"
+                onRowClick={choosePerson}
+                rowClassName={(row) =>
+                  cn(
+                    'cursor-pointer',
+                    chosenKeys.has(`User:${row.id}`) && 'opacity-50',
+                  )
+                }
+                empty={
+                  <p className="rounded-md border bg-background px-2 py-6 text-center text-xs text-muted-foreground">
+                    Nothing matches that search.
+                  </p>
+                }
+              />
             </div>
-          </ScrollArea>
+          ) : (
+            <ScrollArea className="mt-1.5 h-32 rounded-md border bg-background">
+              <div className="p-1">
+                {/* The dynamic entry sits first because it is the right answer more often than any one
+                    named department is: it is what makes a workflow reusable across all of them. */}
+                {kind === 'Department' && allowDynamic && !search.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => add({ kind: 'Department', departmentMode })}
+                    className={cn(
+                      'flex w-full items-center justify-between gap-2 rounded border border-dashed border-sky-300 bg-sky-50/60 px-2 py-1.5 text-left text-xs hover:bg-sky-100/60',
+                      chosenKeys.has(`Department:SELF:${departmentMode}`) && 'opacity-50',
+                    )}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-sky-900">The request&rsquo;s own department</span>
+                      <span className="block truncate text-[10px] text-sky-700">
+                        Resolved when the approval is raised — one workflow serves every department
+                      </span>
+                    </span>
+                    {chosenKeys.has(`Department:SELF:${departmentMode}`) && (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                    )}
+                  </button>
+                )}
+
+                {kind === 'Project' && allowDynamic && !search.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => addProject()}
+                    disabled={projectMode === 'Role' && !projectRole.trim()}
+                    className={cn(
+                      'flex w-full items-center justify-between gap-2 rounded border border-dashed border-sky-300 bg-sky-50/60 px-2 py-1.5 text-left text-xs hover:bg-sky-100/60 disabled:opacity-40',
+                      chosenKeys.has(
+                        `Project:SELF:${projectMode}:${projectRole.trim().toLowerCase()}`,
+                      ) && 'opacity-50',
+                    )}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-sky-900">
+                        {projectMode === 'Role'
+                          ? `${projectRole.trim() || 'The post'} on the request’s project`
+                          : 'The request’s own project'}
+                      </span>
+                      <span className="block truncate text-[10px] text-sky-700">
+                        {projectMode === 'Role'
+                          ? 'A different person on each project — this is the reusable option'
+                          : 'Resolved when the approval is raised'}
+                      </span>
+                    </span>
+                    {chosenKeys.has(`Project:SELF:${projectMode}:${projectRole.trim().toLowerCase()}`) && (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                    )}
+                  </button>
+                )}
+
+                {kind === 'Project' &&
+                  filteredProjects.map((row) => {
+                    const key = `Project:${row.id}:${projectMode}:${projectRole.trim().toLowerCase()}`;
+                    const chosen = chosenKeys.has(key);
+                    const configured = directory.projectRouting.find((entry) => entry.projectId === row.id);
+                    return (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => addProject(row.id, row.projectName)}
+                        disabled={projectMode === 'Role' && !projectRole.trim()}
+                        className={cn(
+                          'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-40',
+                          chosen && 'opacity-50',
+                        )}
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-medium">{row.projectName}</span>
+                          {!configured && (
+                            <span className="block truncate text-[10px] text-amber-700">No routing configured</span>
+                          )}
+                        </span>
+                        {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                      </button>
+                    );
+                  })}
+
+                {kind === 'Department' &&
+                  filteredDepartments.map((row) => {
+                    const chosen = chosenKeys.has(`Department:${row.id}:${departmentMode}`);
+                    return (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() =>
+                          add({
+                            kind: 'Department',
+                            departmentId: row.id,
+                            departmentName: row.name,
+                            departmentMode,
+                          })
+                        }
+                        className={cn(
+                          'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted',
+                          chosen && 'opacity-50',
+                        )}
+                      >
+                        <span className="truncate font-medium">{row.name}</span>
+                        {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                      </button>
+                    );
+                  })}
+
+                {kind === 'Designation' &&
+                  filteredDesignations.map((row) => {
+                    const chosen = chosenKeys.has(`Designation:${row}`);
+                    return (
+                      <button
+                        key={row}
+                        type="button"
+                        onClick={() => add({ kind: 'Designation', designation: row })}
+                        className={cn(
+                          'flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted',
+                          chosen && 'opacity-50',
+                        )}
+                      >
+                        <span className="truncate font-medium">{row}</span>
+                        {chosen && <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                      </button>
+                    );
+                  })}
+
+                {nothingMatches && (
+                  <p className="px-2 py-6 text-center text-xs text-muted-foreground">Nothing matches that search.</p>
+                )}
+              </div>
+            </ScrollArea>
+          )}
         </div>
       )}
     </div>

@@ -23,9 +23,7 @@
 
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import {
-  ArrowLeft,
   BadgeCheck,
   Banknote,
   Building2,
@@ -60,7 +58,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AuroraBackdrop } from '@/components/effects/AuroraBackdrop';
 import {
   HrAccessDenied,
   HrAlertNotice,
@@ -68,9 +65,14 @@ import {
   HrEmptyState,
   HrField,
   HrLoader,
-  HrPageHeader,
   type HrListColumn,
 } from '@/components/hr/hr-ui';
+import {
+  EmployeeHeader,
+  EmployeePageShell,
+  EmployeeStatusPill,
+  EMP_CARD_CLASS,
+} from '@/components/employee/employee-ui';
 import type { LeaveBalanceLine } from '@/lib/greythr';
 import { useAuthorization } from '@/hooks/useAuthorization';
 import { cn } from '@/lib/utils';
@@ -310,28 +312,39 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
 
   if (authLoading || loading) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
+      <EmployeePageShell>
         <HrLoader label="Loading employee…" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!canView) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
-        <BackLink />
+      <EmployeePageShell>
+        <EmployeeHeader
+          icon={UserRound}
+          tone="indigo"
+          eyebrow="Employee record"
+          title="Employee"
+          backHref="/employee/manage"
+          backLabel="Back to the employee roster"
+        />
         <HrAccessDenied what="employee records" />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (loadError) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
-        <BackLink />
+      <EmployeePageShell>
+        <EmployeeHeader
+          icon={UserRound}
+          tone="indigo"
+          eyebrow="Employee record"
+          title="Employee"
+          backHref="/employee/manage"
+          backLabel="Back to the employee roster"
+        />
         <HrEmptyState
           icon={ShieldAlert}
           title="Could not load this employee"
@@ -342,15 +355,21 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
             </Button>
           }
         />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   if (!employee) {
     return (
-      <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-        <AuroraBackdrop />
-        <BackLink />
+      <EmployeePageShell>
+        <EmployeeHeader
+          icon={UserRound}
+          tone="indigo"
+          eyebrow="Employee record"
+          title="Employee"
+          backHref="/employee/manage"
+          backLabel="Back to the employee roster"
+        />
         <HrEmptyState
           icon={UserRound}
           title="Employee not found"
@@ -361,25 +380,32 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
             </Button>
           }
         />
-      </div>
+      </EmployeePageShell>
     );
   }
 
   const state = employee.employmentState ?? (employee.status === 'Active' ? 'Active' : 'Unknown');
 
   return (
-    <div className="relative min-h-[calc(100dvh-4rem)] overflow-hidden px-4 py-3 sm:px-5">
-      <AuroraBackdrop />
-
+    <EmployeePageShell>
       <div className="relative">
-        <BackLink />
-
-        <HrPageHeader
+        {/*
+          One person's record, so the status badges sit on the name's line rather than among the
+          buttons, where three of them used to crowd Refresh. No sub-nav here either: this is a leaf
+          reached from a register row, and its way back is to that register, not to a sibling section.
+        */}
+        <EmployeeHeader
+          icon={UserRound}
+          tone="indigo"
+          eyebrow="Employee record"
           title={employee.name || employee.employeeNo || employee.employeeId}
+          backHref="/employee/manage"
+          backLabel="Back to the employee roster"
           description={[employee.designation, employee.department, employee.projectName]
             .filter(Boolean)
             .join(' · ')}
-          actions={
+          showDescriptionOnMobile
+          status={
             <>
               <Badge variant="outline" className={cn('text-xs', STATE_TONE[state] ?? STATE_TONE.Unknown)}>
                 {state}
@@ -389,34 +415,30 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
               )}
               {/* Live-verified or mirror-only, stated rather than implied — the distinction this
                   screen could not previously draw at all. */}
-              <Badge
-                variant="outline"
-                className={cn(
-                  'gap-1 text-xs',
-                  provenance?.live.ok
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-amber-200 bg-amber-50 text-amber-800',
-                )}
+              <EmployeeStatusPill
+                tone={provenance?.live.ok ? 'emerald' : 'amber'}
+                icon={provenance?.live.ok ? ShieldCheck : CloudOff}
                 title={
                   provenance?.live.ok
                     ? 'Refreshed from greytHR when this page loaded'
                     : (provenance?.live.error ?? 'Showing stored data')
                 }
               >
-                {provenance?.live.ok ? <ShieldCheck className="h-3 w-3" /> : <CloudOff className="h-3 w-3" />}
                 {provenance?.live.ok ? 'Live' : 'Stored'}
-              </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 bg-white/80 text-xs"
-                onClick={() => void load('refresh')}
-                disabled={refreshing}
-              >
-                <RefreshCw className={cn('mr-1 h-3.5 w-3.5', refreshing && 'animate-spin')} />
-                Refresh
-              </Button>
+              </EmployeeStatusPill>
             </>
+          }
+          actions={
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-white/80"
+              onClick={() => void load('refresh')}
+              disabled={refreshing}
+            >
+              <RefreshCw className={cn('mr-1.5 h-4 w-4', refreshing && 'animate-spin')} />
+              Refresh
+            </Button>
           }
         />
 
@@ -593,7 +615,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
 
           {/* ── Education & assets ── */}
           <TabsContent value="history" className="mt-3 space-y-3">
-            <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+            <Card className={EMP_CARD_CLASS}>
               <CardHeader className="px-4 py-3">
                 <CardTitle className="flex items-center gap-1.5 text-sm">
                   <GraduationCap className="h-4 w-4 text-indigo-600" />
@@ -604,7 +626,9 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                 {employee.qualifications?.length ? (
                   employee.qualifications.map((qualification, index) => (
                     <div key={index} className="rounded-xl border border-white bg-white/80 px-3 py-2">
-                      <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
+                      {/* A `<div>`, not a `<p>`: `Badge` renders a `<div>`, and a div inside a p is
+                          invalid HTML that React reports as a hydration error. */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
                         {qualification.description}
                         {qualification.level && (
                           <Badge variant="outline" className="text-[10px] text-slate-500">{qualification.level}</Badge>
@@ -614,7 +638,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                             Current
                           </Badge>
                         )}
-                      </p>
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {[qualification.institute, qualification.university, qualification.year, qualification.grade]
                           .filter(Boolean)
@@ -630,7 +654,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
               </CardContent>
             </Card>
 
-            <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+            <Card className={EMP_CARD_CLASS}>
               <CardHeader className="px-4 py-3">
                 <CardTitle className="flex items-center gap-1.5 text-sm">
                   <Laptop className="h-4 w-4 text-indigo-600" />
@@ -641,7 +665,8 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                 {employee.assets?.length ? (
                   employee.assets.map((asset, index) => (
                     <div key={index} className="rounded-xl border border-white bg-white/80 px-3 py-2">
-                      <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
+                      {/* A `<div>`, not a `<p>` — same reason as the qualification row above. */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-800">
                         {asset.assetType}
                         {asset.assetId && (
                           <Badge variant="outline" className="text-[10px] text-slate-500">{asset.assetId}</Badge>
@@ -659,7 +684,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                             {asset.status}
                           </Badge>
                         )}
-                      </p>
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {asset.details}
                         {asset.issuedDate ? ` · issued ${formatGrantDate(asset.issuedDate)}` : ''}
@@ -807,7 +832,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
 
           {/* ── Leave & attendance ── */}
           <TabsContent value="timeoff" className="mt-3 space-y-3">
-            <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+            <Card className={EMP_CARD_CLASS}>
               <CardHeader className="px-4 py-3">
                 <CardTitle className="flex items-center gap-1.5 text-sm">
                   <CalendarDays className="h-4 w-4 text-indigo-600" />
@@ -841,7 +866,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
               </CardContent>
             </Card>
 
-            <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+            <Card className={EMP_CARD_CLASS}>
               <CardHeader className="px-4 py-3">
                 <CardTitle className="flex items-center gap-1.5 text-sm">
                   <Clock className="h-4 w-4 text-indigo-600" />
@@ -983,7 +1008,7 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
                     )}
 
                     {sensitive?.addresses && (
-                      <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+                      <Card className={EMP_CARD_CLASS}>
                         <CardHeader className="px-4 py-3">
                           <CardTitle className="flex items-center gap-1.5 text-sm">
                             <MapPin className="h-4 w-4 text-indigo-600" />
@@ -1042,24 +1067,12 @@ export function EmployeeProfile({ employeeId }: { employeeId: string }) {
           </TabsContent>
         </Tabs>
       </div>
-    </div>
+    </EmployeePageShell>
   );
 }
 
 const formatFlag = (value: boolean | undefined): string =>
   value === true ? 'Yes' : value === false ? 'No' : '';
-
-function BackLink() {
-  return (
-    <div className="mb-2 flex items-center gap-2">
-      <Link href="/employee/manage">
-        <Button variant="ghost" size="icon" className="rounded-full bg-white/70 shadow-sm backdrop-blur">
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-      </Link>
-    </div>
-  );
-}
 
 function Section({
   title,
@@ -1073,7 +1086,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="border-white/60 bg-white/85 shadow-sm backdrop-blur-sm">
+    <Card className={EMP_CARD_CLASS}>
       <CardHeader className="px-4 py-3">
         <CardTitle className="flex items-center gap-1.5 text-sm">
           <Icon className="h-4 w-4 text-indigo-600" />

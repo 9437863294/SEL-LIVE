@@ -11,28 +11,38 @@
  * whenever a role was named for convenience rather than for the org chart.
  *
  * The designation greytHR holds *is* maintained — effective-dated, resolved to the window containing
- * today by the sync (`docs/greythr-integration.md` §"Designation and project live in categories")
- * and mirrored onto `employees/{id}.designation`. That is the value these controls should show.
+ * today by the sync (`docs/greythr-integration.md` §"Designation and project live in categories").
+ * That is the value these controls should show.
  *
- * ── The join ────────────────────────────────────────────────────────────────────────────────────
+ * ── Where the designation actually lives ────────────────────────────────────────────────────────
  *
- *     users/{uid}          the login — owns role, permissions, scope
- *          │  employeeId   maintained by Access Management → greytHR Linking
- *          ▼
- *     employees/{id}       the HR record — owns name, department, designation, location
+ *     users/{uid}                 the login — owns role, permissions, scope
+ *          │  employeeId          greytHR's numeric id, e.g. "313"
+ *          │  employeeNo          the human-facing code, e.g. "E1597"
+ *          ├─▶ greythrCurrentRoster/{employeeId}   ← keyed by the numeric id. **Has designations.**
+ *          └─▶ employees/{docId}                   ← keyed by a random id; `employeeId` holds "E1597"
  *
- * Driven from `users`, because a picker offers *logins*: an employee with no account cannot be sent
- * an approval. `employeeId` is the join, falling back to a case-insensitive email match for accounts
- * created before the linking screen existed — the same two-step fallback
- * `loadOfficeHubDirectory` already uses, kept identical on purpose so the two never disagree about
- * who somebody is.
+ * Both are read, **roster first**. This ordering is not a preference, it is the whole fix: in this
+ * tenant the `employees` mirror carries `designation: ''` for most people — 232 of 412 at the time
+ * of writing, including every account that has a login — while the roster snapshot has one for 132
+ * of its 135 rows. Joining only against the mirror therefore found the right person and read an
+ * empty title off them, which is why these controls kept showing `role` instead.
  *
- * ── Why the fallback chain ends at `role` ───────────────────────────────────────────────────────
+ * The mirror is still read, second: it is the only record of somebody who has left or is on notice,
+ * and those people still hold logins that appear in a picker.
  *
- * Contractors, service accounts and not-yet-linked joiners have no HR record at all. Blanking their
- * subtitle would make the list look broken and would hide the one identifying fact those rows do
- * have. So the chain is designation → role → email, and callers that need to *distinguish* the two
- * can read `designationSource`.
+ * Note the two collections do not share a key space. The roster's document id and `employeeId` are
+ * greytHR's numeric id; the mirror's `employeeId` field holds the employee *number*. Every row is
+ * therefore indexed under its document id, its `employeeId`, its `employeeNo` and its email, so a
+ * user matches whichever of those their `employeeId` was written from.
+ *
+ * ── The subtitle never falls back to `role` ─────────────────────────────────────────────────────
+ *
+ * It did, on the reasoning that a blank line looks broken. That was wrong here: this tenant's roles
+ * include "Default" (31 of 54 logins), module names like "Recurring Payments", and at least one
+ * account whose role is the holder's own name. Rendering any of those under a person's name states
+ * a job title that nobody chose and HR never saw. The chain is **designation → department → email**:
+ * every link in it is a fact about the person rather than about their access.
  *
  * ── Why the Firestore half lives next door ──────────────────────────────────────────────────────
  *
@@ -48,6 +58,8 @@ export interface EmployeeFacts {
   employeeId?: string;
   employeeNo?: string;
   email?: string;
+  /** Searched on by the Access Management user filter. */
+  phone?: string;
   department?: string;
   designation?: string;
   location?: string;
@@ -79,23 +91,42 @@ const normaliseEmail = (value: unknown): string => String(value ?? '').trim().to
 const normaliseKey = (value: unknown): string => String(value ?? '').trim();
 
 /**
+ * Index rows from one or more collections, **highest priority first**.
+ *
  * Generic in the row type so a screen that already holds full `Employee` records — Access
  * Management loads them for its department and designation filters — can index those and still read
  * the fields this module does not name, rather than fetching the collection a second time.
+ *
+ * When two rows collide on a key, the one that actually carries a designation wins, and priority
+ * order only breaks the tie. Two things make that rule necessary rather than clever:
+ *
+ *   - the roster and the mirror hold the same person, and it is the mirror's copy that is blank;
+ *   - the mirror itself has duplicate documents for some people (one employee number, two random
+ *     document ids), of which at most one is populated.
+ *
+ * Taking whichever arrived first would make the label depend on Firestore's iteration order.
  */
-export function buildEmployeeFactsIndex<T extends EmployeeFacts>(rows: T[]): EmployeeFactsIndex<T> {
+export function buildEmployeeFactsIndex<T extends EmployeeFacts>(...sources: T[][]): EmployeeFactsIndex<T> {
   const byEmployeeId = new Map<string, T>();
   const byEmail = new Map<string, T>();
-  for (const row of rows) {
-    // Three keys per row, because `users.employeeId` has historically been written from all three:
-    // the document id, greytHR's numeric employee id, and the human-facing employee number.
-    for (const key of [row.id, row.employeeId, row.employeeNo]) {
-      const id = normaliseKey(key);
-      if (id && !byEmployeeId.has(id)) byEmployeeId.set(id, row);
+
+  /** Keep `next` only if the slot is empty, or if it says something the incumbent does not. */
+  const better = (incumbent: T | undefined, next: T): boolean =>
+    !incumbent || (!normaliseKey(incumbent.designation) && Boolean(normaliseKey(next.designation)));
+
+  for (const rows of sources) {
+    for (const row of rows) {
+      // Four keys per row: `users.employeeId` has been written from the document id, greytHR's
+      // numeric id and the employee number, and the two collections disagree about which is which.
+      for (const key of [row.id, row.employeeId, row.employeeNo]) {
+        const id = normaliseKey(key);
+        if (id && better(byEmployeeId.get(id), row)) byEmployeeId.set(id, row);
+      }
+      const email = normaliseEmail(row.email);
+      if (email && better(byEmail.get(email), row)) byEmail.set(email, row);
     }
-    const email = normaliseEmail(row.email);
-    if (email && !byEmail.has(email)) byEmail.set(email, row);
   }
+
   return { byEmployeeId, byEmail, fetchedAt: Date.now(), loaded: true };
 }
 
@@ -114,6 +145,8 @@ export interface PersonLike {
   designation?: string | null;
   /** Same: the caller's own department, when it has one. */
   department?: string | null;
+  /** Same: the posting location, once `attachDesignations` has copied it across. */
+  location?: string | null;
 }
 
 export function employeeFactsFor<T extends EmployeeFacts>(
@@ -129,14 +162,32 @@ export function employeeFactsFor<T extends EmployeeFacts>(
   return (email && index.byEmail.get(email)) || null;
 }
 
-/** Where a label came from, so a screen can mark an unlinked account rather than imply HR said so. */
-export type DesignationSource = 'greythr' | 'role' | 'none';
+/**
+ * Where the answer came from.
+ *
+ * `'person'` means the caller had already resolved it (Office Hub and Tour & Travel carry their
+ * own); `'record'` means this module read it off greytHR. Deliberately no `'role'` member — the
+ * role is not a designation, and a type that could return one would invite the bug back.
+ */
+export type DesignationSource = 'person' | 'record' | 'none';
 
+/**
+ * Everything a person picker puts in a row: who they are, where they sit, and the code HR knows
+ * them by. Resolved together because they come from one record and a picker shows them as one line.
+ */
 export interface ResolvedDesignation {
-  /** What to show. Empty string when there is nothing at all — callers show the email instead. */
-  label: string;
+  /** The job title, or `''` when greytHR has none. Never the role. */
+  designation: string;
   source: DesignationSource;
   department: string | null;
+  /** Posting location — greytHR's `cat::Location`. */
+  location: string | null;
+  /**
+   * The employee number if there is one, else greytHR's numeric id.
+   *
+   * The number ("E1597") first because it is the one printed on a card and quoted in a corridor;
+   * the numeric id ("313") is an API key that happens to be visible.
+   */
   employeeCode: string | null;
 }
 
@@ -145,37 +196,48 @@ export function resolveDesignation(
   index: EmployeeFactsIndex = EMPTY_EMPLOYEE_FACTS_INDEX,
 ): ResolvedDesignation {
   const facts = employeeFactsFor(person, index);
-  const fromHr = normaliseKey(person?.designation) || normaliseKey(facts?.designation);
-  if (fromHr) {
-    return {
-      label: fromHr,
-      source: 'greythr',
-      department: normaliseKey(facts?.department) || null,
-      employeeCode: normaliseKey(facts?.employeeNo ?? facts?.employeeId) || null,
-    };
-  }
-  const role = normaliseKey(person?.role);
+  const own = normaliseKey(person?.designation);
+  const fromRecord = normaliseKey(facts?.designation);
   return {
-    label: role,
-    source: role ? 'role' : 'none',
-    department: normaliseKey(facts?.department) || null,
-    employeeCode: normaliseKey(facts?.employeeNo ?? facts?.employeeId) || null,
+    designation: own || fromRecord,
+    source: own ? 'person' : fromRecord ? 'record' : 'none',
+    department: normaliseKey(person?.department) || normaliseKey(facts?.department) || null,
+    location: normaliseKey(person?.location) || normaliseKey(facts?.location) || null,
+    // `person.employeeNo` first: a directory already through `attachDesignations` carries it, and
+    // those callers pass no index.
+    employeeCode:
+      normaliseKey(person?.employeeNo) || normaliseKey(facts?.employeeNo ?? facts?.employeeId) || null,
   };
+}
+
+/**
+ * The job title alone, or `''`.
+ *
+ * Separate from `personSubtitle` because two callers must not accept its fallbacks: E-Approval
+ * denormalises a designation onto every step it routes, and "Finance" or an email address stored
+ * there would be read back months later as somebody's job title.
+ */
+export function personJobTitle(
+  person: PersonLike | null | undefined,
+  index: EmployeeFactsIndex = EMPTY_EMPLOYEE_FACTS_INDEX,
+): string {
+  return resolveDesignation(person, index).designation;
 }
 
 /**
  * The one-line subtitle a person row shows under the name.
  *
- * Designation first, then the role as the stand-in for somebody with no HR record, then the email so
- * the row is never a bare name. This is the function every picker calls; keeping the fallback order
- * in one place is what stops the application drifting back to labelling people by their role.
+ * Designation, then the department, then the email — three facts about the person, in decreasing
+ * order of how much they tell you. Never the role. This is the function every picker calls; keeping
+ * the order in one place is what stops the application drifting back to labelling people by their
+ * access.
  */
 export function personSubtitle(
   person: PersonLike | null | undefined,
   index: EmployeeFactsIndex = EMPTY_EMPLOYEE_FACTS_INDEX,
 ): string {
-  const { label } = resolveDesignation(person, index);
-  return label || normaliseKey(person?.email);
+  const { designation, department } = resolveDesignation(person, index);
+  return designation || department || normaliseKey(person?.email);
 }
 
 /** `"Sarika Palo — Site Engineer"`, for the single-line `<SelectItem>` controls. */
@@ -196,7 +258,9 @@ export function personOptionLabel(
  * Everything a person row can be searched by.
  *
  * Designation is in here as well as on screen: an administrator looking for "the site engineers"
- * types the title, and a filter that only matched name and role would return nothing.
+ * types the title, and a filter that only matched name and role would return nothing. The role stays
+ * in the haystack even though it is no longer displayed — somebody who knows a colleague is "the
+ * Recurring Payments one" should still find them.
  */
 export function personSearchText(
   person: PersonLike | null | undefined,
@@ -208,8 +272,11 @@ export function personSearchText(
     person?.email,
     person?.role,
     person?.designation ?? facts?.designation,
-    facts?.department,
-    facts?.employeeNo ?? facts?.employeeId,
+    // `person.department` first: a directory that has already been through `attachDesignations`
+    // carries it, and those callers pass no index.
+    person?.department ?? facts?.department,
+    person?.location ?? facts?.location,
+    person?.employeeNo ?? facts?.employeeNo ?? facts?.employeeId,
   ]
     .filter(Boolean)
     .join(' ')
@@ -234,6 +301,12 @@ export function attachDesignations<T extends PersonLike>(people: T[], index: Emp
       ...person,
       designation: designation || null,
       department: normaliseKey(facts?.department) || null,
+      location: normaliseKey(facts?.location) || null,
+      // Only when there is one: `User.employeeNo` is `string | undefined`, and writing `null` over
+      // a code the user document already had would lose it.
+      ...(normaliseKey(person.employeeNo) || normaliseKey(facts?.employeeNo)
+        ? { employeeNo: normaliseKey(person.employeeNo) || normaliseKey(facts?.employeeNo) }
+        : {}),
     } as T;
   });
 }

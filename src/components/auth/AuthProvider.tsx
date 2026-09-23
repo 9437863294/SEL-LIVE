@@ -132,8 +132,8 @@ const AuthContext = createContext<AuthContextType>({
  */
 function pickDesignation(person: User, index: EmployeeFactsIndex): Partial<User> {
   const resolved = resolveDesignation(person, index);
-  if (resolved.source !== 'greythr') return {};
-  return { designation: resolved.label, department: resolved.department };
+  if (resolved.source === 'none' && !resolved.department) return {};
+  return { designation: resolved.designation || null, department: resolved.department };
 }
 
 /* ---------------- provider ---------------- */

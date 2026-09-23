@@ -44,7 +44,9 @@ import {
   E_APPROVAL_BASE_PATH,
   E_APPROVAL_COLLECTIONS,
   E_APPROVAL_STORAGE_PREFIX,
+  eApprovalDelegators,
   eApprovalDepartmentCode,
+  eApprovalStepUnchanged,
   eApprovalMaterialFingerprint,
   eApprovalReference,
   eApprovalStepSla,
@@ -971,6 +973,46 @@ export async function loadEApprovalDetail(approvalId: string): Promise<EApproval
 }
 
 /**
+ * Tells the caller whenever this approval changes, so a screen showing it can reload itself.
+ *
+ * One listener on the request document rather than on the whole detail, because every write in this
+ * service touches that document: a transition rewrites its pointers and bumps `stateRevision`, a
+ * comment bumps `commentCount`, an attachment bumps `attachmentCount`. So it is the cheapest thing
+ * to watch that still catches everything, and the callback then re-reads the detail in full rather
+ * than trying to patch a partial view together from one snapshot.
+ *
+ * This is what closes the loop the module was missing. The detail screen loaded once and never
+ * again, so the approver who asked for a clarification sat in front of "Awaiting clarification"
+ * indefinitely after it had been answered — the data was correct within a second, and the screen
+ * showing it was not, until somebody pressed Refresh.
+ */
+export function subscribeEApprovalRequest(
+  approvalId: string,
+  onChange: () => void,
+  onError?: (error: Error) => void,
+): () => void {
+  return onSnapshot(
+    doc(db, E_APPROVAL_COLLECTIONS.requests, approvalId),
+    (snapshot) => {
+      // The first snapshot is deliberately *not* skipped. It usually repeats the state the caller
+      // has just loaded, and one extra read per page open is the whole cost of that; but a write
+      // landing between the caller's read and this first delivery arrives in exactly that snapshot,
+      // and discarding it would leave the screen stale until the next write — which on a settled
+      // file may never come. That is the original bug, reintroduced at the one moment it is hardest
+      // to notice.
+      //
+      // Local echoes of our own un-acked write are skipped: the acked snapshot follows immediately.
+      if (snapshot.metadata.hasPendingWrites) return;
+      onChange();
+    },
+    (error) => {
+      console.error('[e-approval] detail listener failed', error);
+      onError?.(error);
+    },
+  );
+}
+
+/**
  * Everything one person has done, across every approval — the personal log behind the "My Activity"
  * screen. One query against `eApprovalHistory` by `actorId`, made possible by denormalising
  * `referenceNo`/`subject` onto each entry at write time (see `commitEApprovalTransition`); reading
@@ -1004,8 +1046,12 @@ export interface EApprovalListFilter {
   assigneeId?: string;
   /** Pending with any of these departments. */
   departmentIds?: string[];
-  /** Pending with this role. */
+  /** Pending with this role. Legacy — nothing configures a `Role` stage any more. */
   role?: string;
+  /** Pending with this greytHR job title. */
+  designation?: string;
+  /** Pending with any of these projects — a stage addressed to a site rather than to a person. */
+  pendingProjectIds?: string[];
   requesterId?: string;
   statuses?: EApprovalStatus[];
   approvalTypeId?: string;
@@ -1050,6 +1096,12 @@ function buildEApprovalListQuery(filter: EApprovalListFilter): {
     filterStatusInMemory = true;
   } else if (filter.role) {
     constraints.push(where('currentRoles', 'array-contains', filter.role));
+    filterStatusInMemory = true;
+  } else if (filter.designation) {
+    constraints.push(where('currentDesignations', 'array-contains', filter.designation));
+    filterStatusInMemory = true;
+  } else if (filter.pendingProjectIds?.length) {
+    constraints.push(where('currentProjectIds', 'array-contains-any', filter.pendingProjectIds.slice(0, 30)));
     filterStatusInMemory = true;
   }
 
@@ -1140,8 +1192,18 @@ export function subscribeEApprovalWorkload(
 ): () => void {
   const sources: EApprovalListFilter[] = [
     { organizationId, assigneeId: actor.userId, limit: 300 },
+    // Whoever's approvals this person is standing in for. Without it a substitute's dashboard read
+    // zero all through the cover period while the banner told them they were covering.
+    ...eApprovalDelegators(actor).map((delegatorId) => ({
+      organizationId,
+      assigneeId: delegatorId,
+      limit: 300,
+    })),
     ...(actor.departmentIds?.length ? [{ organizationId, departmentIds: actor.departmentIds, limit: 300 }] : []),
     ...(actor.role ? [{ organizationId, role: actor.role, limit: 300 }] : []),
+    // A stage addressed to "JR. ACCOUNTANT" reaches every accountant's inbox through this source.
+    ...(actor.designation ? [{ organizationId, designation: actor.designation, limit: 300 }] : []),
+    ...(actor.projectIds?.length ? [{ organizationId, pendingProjectIds: actor.projectIds, limit: 300 }] : []),
     { organizationId, requesterId: actor.userId, limit: 300 },
   ];
   const latest = new Map<number, EApprovalRequest[]>();
@@ -1158,7 +1220,14 @@ export function subscribeEApprovalWorkload(
         latest.set(index, rows);
         emit();
       },
-      onError,
+      (error) => {
+        // A source that fails still has to report, or `emit` waits for it forever and the dashboard
+        // never paints at all — every tile stuck at zero because one of five queries was refused.
+        // Degrading to "without those rows" keeps the other four useful.
+        latest.set(index, []);
+        emit();
+        onError?.(error);
+      },
     ),
   );
   return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
@@ -1713,8 +1782,58 @@ export async function performEApprovalAction(
   approvalId: string,
   input: PerformEApprovalActionInput,
   actor: EApprovalServiceActor,
+  options: {
+    /**
+     * Wait for the write-back to the source module before resolving.
+     *
+     * Off for anything a person is watching: the bridge is several sequential round trips, none of
+     * them with a timeout, and none of them anything the approver needs to see before their screen
+     * refreshes. The mirrored path turns it on, because there the two modules are mid-handshake and
+     * the caller's next read has to see the result of this one.
+     */
+    awaitSourceWriteBack?: boolean;
+  } = {},
 ): Promise<void> {
   const who = requireActor(actor);
+
+  /*
+   * Read, decide, write — and if the file moved underneath us, do all three again.
+   *
+   * The retry is the point of the revision check rather than an afterthought to it. Two verifiers
+   * answering the same request within a second of each other is an ordinary Tuesday, and the second
+   * one's action is perfectly valid — it was simply decided against a snapshot that had just gone
+   * stale. Re-reading and re-running the engine gives the correct outcome, which in that example is
+   * the one that releases the parent step; failing the second actor instead would leave the file
+   * stalled and blame the person who did nothing wrong. Three attempts, because a fourth collision
+   * on one document means something other than ordinary contention.
+   */
+  const ATTEMPTS = 3;
+  let applied: EApprovalRequest | null = null;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      applied = await runEApprovalAction(approvalId, input, who);
+      break;
+    } catch (error) {
+      if (!(error instanceof EApprovalConcurrencyError) || attempt >= ATTEMPTS) throw error;
+      console.warn(`[e-approval] ${input.kind} raced another action; retrying (${attempt}/${ATTEMPTS - 1})`);
+    }
+  }
+
+  const writeBack = propagateToSource(applied, who);
+  if (options.awaitSourceWriteBack) await writeBack;
+}
+
+/**
+ * One attempt at `performEApprovalAction`: read the current state, run the engine, write the result.
+ *
+ * Returns the request as it was read, which is what the caller needs to decide whether a source
+ * module has to be told about the outcome.
+ */
+async function runEApprovalAction(
+  approvalId: string,
+  input: PerformEApprovalActionInput,
+  who: EApprovalServiceActor,
+): Promise<EApprovalRequest> {
   const [request, steps, settings, engineActor] = await Promise.all([
     getEApprovalRequest(approvalId),
     listEApprovalSteps(approvalId),
@@ -1793,7 +1912,7 @@ export async function performEApprovalAction(
     activityAction: input.kind,
   });
 
-  await propagateToSource(request, who);
+  return request;
 }
 
 /**
@@ -1869,7 +1988,7 @@ export async function applyMirroredEApprovalAction(
       ...withUpdateAudit(who),
     });
   }
-  await performEApprovalAction(approvalId, input, who);
+  await performEApprovalAction(approvalId, input, who, { awaitSourceWriteBack: true });
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -2127,16 +2246,40 @@ interface CommitTransitionParams {
 }
 
 /**
- * Runs the engine and writes the result in one batch.
+ * Raised when the approval changed between the read this action was decided on and the write.
  *
- * One batch, because a transition that updated the steps but not the request — or wrote the request
+ * Its own type so the caller can retry it — a stale read is not a user error and should not be
+ * reported as one.
+ */
+export class EApprovalConcurrencyError extends EApprovalServiceError {
+  constructor(message = 'Somebody else acted on this approval a moment ago.') {
+    super(message);
+    this.name = 'EApprovalConcurrencyError';
+  }
+}
+
+/**
+ * Runs the engine and writes the result in one transaction.
+ *
+ * One write, because a transition that updated the steps but not the request — or wrote the request
  * without its history entry — is a file in a state no screen can explain. Notifications and the
  * activity log are sent *after* the commit: a failed notification must not roll back an approval, and
  * an approval that committed without its notification is recoverable (the file is still in the
  * assignee's inbox) in a way the reverse is not.
+ *
+ * A transaction rather than a plain batch, and guarded by `stateRevision`, because the engine runs
+ * on a snapshot read a round trip earlier and every decision it makes rests on that snapshot being
+ * current. The case that matters is two people answering the same request at once — two verifiers,
+ * two clarification targets, two members of a parallel approval group. Each of them sees the other's
+ * step still open in their own copy, so each concludes the parent is still waiting, and the parent is
+ * never released: both answers are recorded and the file stops dead with nobody able to act on it,
+ * because every action requires an Active step. Re-checking the revision inside the transaction
+ * turns that silent stall into a retry against fresh state, which then resolves it correctly.
  */
 async function commitEApprovalTransition(params: CommitTransitionParams): Promise<void> {
   const { request, steps, actor, input, extraRequestFields, versionSnapshot, activityAction } = params;
+  /** What the request's revision was when this action was decided. Absent on a request never written by this path. */
+  const expectedRevision = Number(request.stateRevision ?? 0);
 
   const state: EApprovalRequestState = {
     id: request.id,
@@ -2161,6 +2304,7 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
     currentAssigneeIds: request.currentAssigneeIds,
     currentDepartmentIds: request.currentDepartmentIds,
     currentRoles: request.currentRoles,
+    currentDesignations: request.currentDesignations,
     pendingLabel: request.pendingLabel,
     currentDueAt: request.currentDueAt,
     requiredBy: request.requiredBy,
@@ -2178,27 +2322,35 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
 
   const transition = applyEApprovalAction(state, steps as EApprovalStepRecord[], input);
 
-  const batch = writeBatch(db);
   const previousById = new Map(steps.map((step) => [step.id, step]));
   const activeStep = transition.steps.find((step) => step.status === 'Active');
+  const requestRef = doc(db, E_APPROVAL_COLLECTIONS.requests, request.id);
 
-  // A recall removes the steps its action created, so a step can legitimately disappear from the
-  // transition. Deleting it rather than leaving it behind is the difference between "that request was
-  // withdrawn" and a cancelled step sitting in somebody's history for a dispatch that was taken back
-  // within two minutes.
-  const survivingIds = new Set(transition.steps.map((step) => step.id));
-  steps.forEach((step) => {
-    if (!survivingIds.has(step.id)) batch.delete(doc(db, E_APPROVAL_COLLECTIONS.steps, step.id));
-  });
+  await runTransaction(db, async (transaction) => {
+    // Reads first — a Firestore transaction allows no read after a write. This one doubles as the
+    // staleness check and as the source of the next revision number.
+    const live = await transaction.get(requestRef);
+    const liveRevision = Number((live.data() as { stateRevision?: number } | undefined)?.stateRevision ?? 0);
+    if (liveRevision !== expectedRevision) {
+      throw new EApprovalConcurrencyError(
+        'This approval moved on while you were acting on it. Your action was not applied.',
+      );
+    }
 
-  transition.steps.forEach((step) => {
-    const previous = previousById.get(step.id);
-    if (previous && JSON.stringify(stripAudit(previous)) === JSON.stringify(step)) return;
-    batch.set(
-      doc(db, E_APPROVAL_COLLECTIONS.steps, step.id),
-      // Clearing, not pruning — see `pruneUndefinedClearing`. A step is the one record here whose
-      // fields the engine genuinely un-sets.
-      pruneUndefinedClearing({
+    // A recall removes the steps its action created, so a step can legitimately disappear from the
+    // transition. Deleting it rather than leaving it behind is the difference between "that request was
+    // withdrawn" and a cancelled step sitting in somebody's history for a dispatch that was taken back
+    // within two minutes.
+    const survivingIds = new Set(transition.steps.map((step) => step.id));
+    steps.forEach((step) => {
+      if (!survivingIds.has(step.id)) transaction.delete(doc(db, E_APPROVAL_COLLECTIONS.steps, step.id));
+    });
+
+    transition.steps.forEach((step) => {
+      const previous = previousById.get(step.id);
+      // Everything this write puts on the step, audit stamps aside: the engine's own fields plus the
+      // values denormalised from the request so a step document can be read without it.
+      const payload = {
         ...step,
         approvalId: request.id,
         organizationId: actor.organizationId ?? null,
@@ -2207,86 +2359,131 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
         requesterId: request.requesterId,
         priority: transition.request.priority,
         amount: request.amount ?? null,
-        ...(previous ? withUpdateAudit(actor) : withCreateAudit(actor)),
+      } as Record<string, unknown>;
+      /*
+       * Skip the steps this action did not touch.
+       *
+       * The comparison used to strip the previous step and compare it against the bare engine step,
+       * which could never be equal: the stripping removed the denormalised fields from one side only,
+       * and the two
+       * objects carry their keys in different orders, so `JSON.stringify` disagreed even on a step
+       * nothing had happened to. Every action therefore rewrote every step in the chain from the
+       * acting user's snapshot — a five-stage approval wrote five step documents to record one
+       * signature, and a second person acting at the same moment overwrote the first person's changes
+       * across the whole chain rather than just colliding on the one step they shared.
+       *
+       * Comparing the whole payload, canonically, is what makes the guard mean what it says. A
+       * mismatch that is not a real change only costs the write we were making anyway, so the failure
+       * direction is the harmless one.
+       */
+      //
+      // Both sides are stripped. The engine is handed the raw Firestore documents and `cloneStep`
+      // spreads them, so the audit stamps ride along into the payload too — stripping only the
+      // stored side leaves six keys that can never match, which is the same way this guard was dead
+      // before.
+      if (previous && eApprovalStepUnchanged(previous as unknown as Record<string, unknown>, payload)) return;
+      transaction.set(
+        doc(db, E_APPROVAL_COLLECTIONS.steps, step.id),
+        // Clearing, not pruning — see `pruneUndefinedClearing`. A step is the one record here whose
+        // fields the engine genuinely un-sets.
+        pruneUndefinedClearing({
+          ...payload,
+          ...(previous ? withUpdateAudit(actor) : withCreateAudit(actor)),
+        }),
+        { merge: true },
+      );
+    });
+
+    transaction.set(
+      requestRef,
+      pruneUndefined({
+        status: transition.request.status,
+        version: transition.request.version,
+        // `?? null` rather than left out entirely: a material-change resubmission clears this by
+        // setting it to `undefined`, and the merge write below must carry that null through, or the
+        // old figure survives in Firestore untouched.
+        approvedAmount: transition.request.approvedAmount ?? null,
+        currentStepIds: transition.request.currentStepIds ?? [],
+        currentAssigneeIds: transition.request.currentAssigneeIds ?? [],
+        currentDepartmentIds: transition.request.currentDepartmentIds ?? [],
+        currentRoles: transition.request.currentRoles ?? [],
+        currentDesignations: transition.request.currentDesignations ?? [],
+        currentProjectIds: transition.request.currentProjectIds ?? [],
+        currentStepType: activeStep?.type ?? null,
+        currentStepName: activeStep?.name ?? null,
+        currentDueAt: transition.request.currentDueAt ?? null,
+        pendingLabel: transition.request.pendingLabel ?? null,
+        participantUserIds: transition.request.participantUserIds ?? [],
+        submittedAt: transition.request.submittedAt ?? null,
+        completedAt: transition.request.completedAt ?? null,
+        returnResumeStepId: transition.request.returnResumeStepId ?? null,
+        returnedByStepId: transition.request.returnedByStepId ?? null,
+        returnReason: transition.request.returnReason ?? null,
+        holdReason: transition.request.holdReason ?? null,
+        rejectionReason: transition.request.rejectionReason ?? null,
+        cancelReason: transition.request.cancelReason ?? null,
+        supersededCount: transition.request.supersededCount ?? 0,
+        // The concurrency token every action checks and advances. Not `version`, which is the
+        // content version the material-change rules depend on.
+        stateRevision: liveRevision + 1,
+        ...(extraRequestFields || {}),
+        ...withUpdateAudit(actor),
       } as Record<string, unknown>),
       { merge: true },
     );
+
+    transition.events.forEach((event) => {
+      transaction.set(doc(collection(db, E_APPROVAL_COLLECTIONS.history)), {
+        ...pruneUndefined(event as unknown as Record<string, unknown>),
+        approvalId: request.id,
+        organizationId: actor.organizationId ?? null,
+        // Denormalised so a person's own activity log (every action they have taken, across every
+        // approval) is one query rather than one read per approval a matching entry belongs to — the
+        // same reasoning `referenceNo`/`subject` are copied onto each step a few lines above.
+        referenceNo: transition.request.referenceNo ?? request.referenceNo ?? null,
+        subject: request.subject ?? null,
+        requesterId: request.requesterId ?? null,
+        requesterName: request.requesterName ?? null,
+        departmentName: request.departmentName ?? null,
+        recordedAt: serverTimestamp(),
+      });
+    });
+
+    if (versionSnapshot) {
+      transaction.set(doc(collection(db, E_APPROVAL_COLLECTIONS.versions)), {
+        approvalId: request.id,
+        organizationId: actor.organizationId ?? null,
+        version: versionSnapshot.version,
+        snapshot: pruneUndefined(versionSnapshot.snapshot as Record<string, unknown>),
+        fingerprint: versionSnapshot.fingerprint,
+        supersededAt: nowIso(),
+        supersededReason: transition.events.find((event) => event.kind === 'Superseded')?.reason ?? null,
+        approvals: steps
+          .filter((step) => step.outcome && step.actedByUserId)
+          .map((step) => ({
+            stepName: step.name,
+            assignee: step.actedByName || step.actedByUserId || '',
+            outcome: String(step.outcome),
+            at: step.completedAt ?? null,
+          })),
+        ...withCreateAudit(actor),
+      });
+    }
   });
 
-  batch.set(
-    doc(db, E_APPROVAL_COLLECTIONS.requests, request.id),
-    pruneUndefined({
-      status: transition.request.status,
-      version: transition.request.version,
-      // `?? null` rather than left out entirely: a material-change resubmission clears this by
-      // setting it to `undefined`, and the merge write below must carry that null through, or the
-      // old figure survives in Firestore untouched.
-      approvedAmount: transition.request.approvedAmount ?? null,
-      currentStepIds: transition.request.currentStepIds ?? [],
-      currentAssigneeIds: transition.request.currentAssigneeIds ?? [],
-      currentDepartmentIds: transition.request.currentDepartmentIds ?? [],
-      currentRoles: transition.request.currentRoles ?? [],
-      currentStepType: activeStep?.type ?? null,
-      currentStepName: activeStep?.name ?? null,
-      currentDueAt: transition.request.currentDueAt ?? null,
-      pendingLabel: transition.request.pendingLabel ?? null,
-      participantUserIds: transition.request.participantUserIds ?? [],
-      submittedAt: transition.request.submittedAt ?? null,
-      completedAt: transition.request.completedAt ?? null,
-      returnResumeStepId: transition.request.returnResumeStepId ?? null,
-      returnedByStepId: transition.request.returnedByStepId ?? null,
-      returnReason: transition.request.returnReason ?? null,
-      holdReason: transition.request.holdReason ?? null,
-      rejectionReason: transition.request.rejectionReason ?? null,
-      cancelReason: transition.request.cancelReason ?? null,
-      supersededCount: transition.request.supersededCount ?? 0,
-      ...(extraRequestFields || {}),
-      ...withUpdateAudit(actor),
-    } as Record<string, unknown>),
-    { merge: true },
-  );
-
-  transition.events.forEach((event) => {
-    batch.set(doc(collection(db, E_APPROVAL_COLLECTIONS.history)), {
-      ...pruneUndefined(event as unknown as Record<string, unknown>),
-      approvalId: request.id,
-      organizationId: actor.organizationId ?? null,
-      // Denormalised so a person's own activity log (every action they have taken, across every
-      // approval) is one query rather than one read per approval a matching entry belongs to — the
-      // same reasoning `referenceNo`/`subject` are copied onto each step a few lines above.
-      referenceNo: transition.request.referenceNo ?? request.referenceNo ?? null,
-      subject: request.subject ?? null,
-      requesterId: request.requesterId ?? null,
-      requesterName: request.requesterName ?? null,
-      departmentName: request.departmentName ?? null,
-      recordedAt: serverTimestamp(),
-    });
-  });
-
-  if (versionSnapshot) {
-    batch.set(doc(collection(db, E_APPROVAL_COLLECTIONS.versions)), {
-      approvalId: request.id,
-      organizationId: actor.organizationId ?? null,
-      version: versionSnapshot.version,
-      snapshot: pruneUndefined(versionSnapshot.snapshot as Record<string, unknown>),
-      fingerprint: versionSnapshot.fingerprint,
-      supersededAt: nowIso(),
-      supersededReason: transition.events.find((event) => event.kind === 'Superseded')?.reason ?? null,
-      approvals: steps
-        .filter((step) => step.outcome && step.actedByUserId)
-        .map((step) => ({
-          stepName: step.name,
-          assignee: step.actedByName || step.actedByUserId || '',
-          outcome: String(step.outcome),
-          at: step.completedAt ?? null,
-        })),
-      ...withCreateAudit(actor),
-    });
-  }
-
-  await batch.commit();
-
-  await Promise.all([
+  /*
+   * The transition is now durable, and that is the moment the caller is waiting for.
+   *
+   * Everything below is delivery: the bell, the phones, the audit log. It used to be awaited here,
+   * which put a second Firestore batch, a role lookup and an HTTP request to the push route — none
+   * of them with a timeout — between the approver pressing the button and their screen reloading.
+   * On a slow connection that is the whole of the "nothing happened" complaint, and on a failed
+   * push route it was worse than slow: the rejection propagated out of a transition that had already
+   * committed, so the screen showed "Could not approve" and skipped its refresh while the approval
+   * sat safely in Firestore. The action is decided by the commit above; notifications are best
+   * effort, and a best-effort step must not be able to fail or delay the thing it reports on.
+   */
+  void Promise.allSettled([
     deliverEApprovalNotifications(transition.notifications, transition.request.referenceNo || request.referenceNo, request.id),
     logEApprovalActivity(
       actor,
@@ -2298,29 +2495,15 @@ async function commitEApprovalTransition(params: CommitTransitionParams): Promis
       },
       { recordId: request.id, recordRef: transition.request.referenceNo || request.referenceNo },
     ),
-  ]);
+  ]).then((outcomes) => {
+    for (const outcome of outcomes) {
+      if (outcome.status === 'rejected') {
+        console.error('[e-approval] post-transition delivery failed', outcome.reason);
+      }
+    }
+  });
 }
 
-/** Audit stamps are written by this service, not produced by the engine; ignore them when diffing. */
-const stripAudit = (step: EApprovalStep): Record<string, unknown> => {
-  const {
-    createdAt,
-    createdBy,
-    createdByName,
-    updatedAt,
-    updatedBy,
-    updatedByName,
-    approvalId,
-    organizationId,
-    referenceNo,
-    subject,
-    requesterId,
-    priority,
-    amount,
-    ...rest
-  } = step;
-  return rest;
-};
 
 /**
  * Delivers the engine's notification intents through the central notification system.
@@ -2339,7 +2522,10 @@ async function deliverEApprovalNotifications(
   // membership resolution and dispatch. Run serially they add up in front of the approver, who is
   // waiting on this before their screen refreshes; they are independent of one another, so nothing
   // is gained by making the second wait for the first.
-  await Promise.all(
+  // `allSettled`, not `all`: the membership reads below are the one part of delivery that can
+  // reject, and one department whose routing document cannot be read must not cancel the notices
+  // addressed to everybody else on the same transition.
+  const delivered = await Promise.allSettled(
     intents.map(async (intent) => {
       const [departmentUserIds, projectUserIds] = await Promise.all([
         resolveDepartmentUserIds(intent.departmentIds ?? []),
@@ -2348,9 +2534,20 @@ async function deliverEApprovalNotifications(
       const userIds = Array.from(
         new Set([...(intent.userIds ?? []), ...departmentUserIds, ...projectUserIds]),
       ).filter(Boolean);
-      if (!userIds.length && !intent.roles?.length) return;
+      if (!userIds.length && !intent.roles?.length && !intent.designations?.length) {
+        // An intent that reaches nobody is almost always a department or project with no routing
+        // document and no head on the department master, which is a configuration gap rather than
+        // an event worth ignoring: the file has moved to a queue that will never be told about it.
+        if (intent.departmentIds?.length || intent.projectIds?.length) {
+          console.warn(
+            `[e-approval] "${intent.title}" on ${referenceNo || approvalId} reached nobody:`,
+            { departmentIds: intent.departmentIds, projectIds: intent.projectIds },
+          );
+        }
+        return;
+      }
       await dispatchNotification(
-        { userIds, roles: intent.roles },
+        { userIds, roles: intent.roles, designations: intent.designations },
         {
           // 'Moved' is the requester being kept informed, not somebody being asked to act, so it does
           // not carry the type the bell renders as a call to action.
@@ -2366,6 +2563,15 @@ async function deliverEApprovalNotifications(
       );
     }),
   );
+
+  // Reported here rather than left to the caller. `allSettled` never rejects, so a delivery that
+  // failed for every recipient would otherwise leave no trace anywhere — the one state in which
+  // somebody is waiting on a file nothing has told them about.
+  for (const outcome of delivered) {
+    if (outcome.status === 'rejected') {
+      console.error(`[e-approval] notification delivery failed for ${referenceNo || approvalId}`, outcome.reason);
+    }
+  }
 }
 
 async function logEApprovalActivity(
@@ -2872,12 +3078,17 @@ export async function runEApprovalEscalations(
       if (step.assignment.kind === 'Project' && step.assignment.projectId) {
         (await resolveProjectUserIds([step.assignment.projectId])).forEach((userId) => recipients.add(userId));
       }
-      if (!recipients.size && !step.assignment.role) continue;
+      const designationTarget =
+        step.assignment.kind === 'Designation' && step.assignment.designation
+          ? [step.assignment.designation]
+          : undefined;
+      if (!recipients.size && !step.assignment.role && !designationTarget) continue;
 
       const sent = await dispatchNotification(
         {
           userIds: Array.from(recipients),
           roles: step.assignment.kind === 'Role' && step.assignment.role ? [step.assignment.role] : undefined,
+          designations: designationTarget,
         },
         {
           type: entry.rule.kind === 'Escalation' ? 'tat_escalation' : 'approval_required',

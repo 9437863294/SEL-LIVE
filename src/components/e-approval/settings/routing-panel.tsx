@@ -287,7 +287,7 @@ export function DepartmentRoutingPanel({
               }
               multiple
               allowDepartment={false}
-              allowRole={false}
+              allowDesignation={false}
               label="Members who may act for this department"
             />
             {!(form.draft?.memberUserIds ?? []).length && (

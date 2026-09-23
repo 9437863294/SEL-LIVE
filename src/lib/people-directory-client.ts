@@ -1,10 +1,11 @@
 'use client';
 
 /**
- * The one Firestore read behind every designation label in the application.
+ * The Firestore reads behind every designation label in the application.
  *
  * Split from `people-directory.ts` so the resolution rules there stay unit-testable — see that
- * module's header for what a designation is and why it is not `users.role`.
+ * module's header for what a designation is, why it is not `users.role`, and why the roster is read
+ * before the mirror.
  */
 
 import { collection, getDocs } from 'firebase/firestore';
@@ -19,15 +20,36 @@ import {
 } from '@/lib/people-directory';
 
 /**
+ * greytHR's CURRENT roster snapshot, and the full employee mirror.
+ *
+ * Read in that order and indexed in that order. The roster is the one that actually carries job
+ * titles; the mirror is read second because it is the only record of somebody on notice or already
+ * left, and those people still hold logins that show up in a picker.
+ *
+ * Both are `get, list: if signedIn()` in `firestore.rules` — the roster's own rule says it "holds no
+ * field that [`employees`] does not already expose", so reading it here grants nobody anything new.
+ */
+const SOURCES = {
+  roster: 'greythrCurrentRoster',
+  mirror: 'employees',
+} as const;
+
+/**
  * The employee master, cached for the session.
  *
- * One read shared by every picker in the app. It changes when somebody joins, leaves or is promoted
- * — which is to say between sessions, not during one — so a five-minute window costs nothing and
- * saves a 400-document read per screen. `force` is for the screens that have just written a link.
+ * One pair of reads shared by every picker in the app. It changes when somebody joins, leaves or is
+ * promoted — which is to say between sessions, not during one — so a five-minute window costs
+ * nothing and saves ~550 document reads per screen. `force` is for a screen that has just written a
+ * link and needs to see its own effect.
  */
 const CACHE_TTL_MS = 5 * 60_000;
 let cache: { at: number; value: EmployeeFactsIndex } | null = null;
 let inFlight: Promise<EmployeeFactsIndex> | null = null;
+
+const readRows = async (name: string): Promise<EmployeeFacts[]> => {
+  const snapshot = await getDocs(collection(db, name));
+  return snapshot.docs.map((entry) => ({ id: entry.id, ...(entry.data() as Omit<EmployeeFacts, 'id'>) }));
+};
 
 export async function loadEmployeeFactsIndex(
   options: { force?: boolean } = {},
@@ -38,16 +60,28 @@ export async function loadEmployeeFactsIndex(
 
   const run = (async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'employees'));
-      const index = buildEmployeeFactsIndex(
-        snapshot.docs.map((entry) => ({ id: entry.id, ...(entry.data() as Omit<EmployeeFacts, 'id'>) })),
-      );
+      // Settled rather than all: a tenant that has never run a roster sync has no snapshot
+      // collection, and that must not cost us the mirror's rows as well.
+      const [roster, mirror] = await Promise.all([
+        readRows(SOURCES.roster).catch((err) => {
+          console.warn('[people] greytHR roster unreadable; falling back to the employee mirror', err);
+          return [] as EmployeeFacts[];
+        }),
+        readRows(SOURCES.mirror).catch((err) => {
+          console.warn('[people] employee mirror unreadable', err);
+          return [] as EmployeeFacts[];
+        }),
+      ]);
+
+      if (!roster.length && !mirror.length) return EMPTY_EMPLOYEE_FACTS_INDEX;
+
+      const index = buildEmployeeFactsIndex(roster, mirror);
       cache = { at: Date.now(), value: index };
       return index;
     } catch (err) {
       // A permissions or network failure must not blank out every person picker in the app: the
-      // callers all fall back to the role they were showing before this existed.
-      console.error('[people] Failed to load the employee master for designations', err);
+      // callers all fall back to the department, then the email.
+      console.error('[people] Failed to load employee designations', err);
       return EMPTY_EMPLOYEE_FACTS_INDEX;
     } finally {
       inFlight = null;

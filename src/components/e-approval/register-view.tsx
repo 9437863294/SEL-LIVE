@@ -7,17 +7,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import {
+  eApprovalDelegators,
   E_APPROVAL_BASE_PATH,
   OPEN_E_APPROVAL_STATUSES,
   isTerminalEApprovalStatus,
   type EApprovalRequest,
   type EApprovalStatus,
 } from '@/lib/e-approval';
-import { listEApprovals } from '@/lib/e-approval-service';
+import { listEApprovals, subscribeEApprovals, type EApprovalListFilter } from '@/lib/e-approval-service';
 import { DeleteApprovalDialog, DeleteApprovalRowButton } from './delete-request-dialog';
 import { EApprovalRequestTable } from './request-table';
 import { PageHeader } from './page-header';
-import { useEApprovalActor, useEApprovalPermissions } from './hooks';
+import { useEApprovalActor, useEApprovalPermissions, useEApprovalRefreshOnReturn } from './hooks';
 
 export type RegisterScope =
   | 'inbox'
@@ -131,36 +132,58 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
     [serviceActor, permissions.canDeleteDraft, permissions.canDeleteAnyRequest],
   );
 
+  /**
+   * The queries behind a queue that other people are also working through.
+   *
+   * Several, because a step can be addressed to a person, a department, a role or a project, and
+   * Firestore cannot express "any of these four arrays contains me" in one. The last group is the
+   * one people had to do by hand: an inbound standing delegation means the delegator's queue is
+   * yours for the duration, and nothing anywhere asked for it — the substitute was given authority
+   * to act and no list that would ever show them the file. It is the same query shape as the first,
+   * so it needs no new index.
+   */
+  const pendingSources = useMemo<EApprovalListFilter[] | null>(() => {
+    if (!serviceActor) return null;
+    const organizationId = serviceActor.organizationId;
+    const statuses = config.statuses;
+    if (scope === 'inbox') {
+      return [
+        { organizationId, assigneeId: serviceActor.userId, statuses },
+        ...eApprovalDelegators(engineActor).map((delegatorId) => ({
+          organizationId,
+          assigneeId: delegatorId,
+          statuses,
+        })),
+        ...(engineActor?.departmentIds?.length
+          ? [{ organizationId, departmentIds: engineActor.departmentIds, statuses }]
+          : []),
+        ...(serviceActor.role ? [{ organizationId, role: serviceActor.role, statuses }] : []),
+        ...(engineActor?.projectIds?.length
+          ? [{ organizationId, pendingProjectIds: engineActor.projectIds, statuses }]
+          : []),
+      ];
+    }
+    if (scope === 'department') {
+      return engineActor?.departmentIds?.length
+        ? [{ organizationId, departmentIds: engineActor.departmentIds, statuses }]
+        : [];
+    }
+    return null;
+  }, [scope, serviceActor, engineActor, config.statuses]);
+
+  /** Stable across renders that did not actually change the queries, so the listeners stay up. */
+  const pendingSourcesKey = pendingSources ? JSON.stringify(pendingSources) : '';
+
   const load = useCallback(async () => {
     if (!serviceActor) return;
     setIsLoading(true);
     try {
       const organizationId = serviceActor.organizationId;
-      if (scope === 'inbox') {
-        // Three queries because a step can be assigned to a person, a department or a role, and
-        // Firestore cannot express "any of these three arrays contains me" in one.
-        const [mine, byDepartment, byRole] = await Promise.all([
-          listEApprovals({ organizationId, assigneeId: serviceActor.userId, statuses: config.statuses }),
-          engineActor?.departmentIds?.length
-            ? listEApprovals({ organizationId, departmentIds: engineActor.departmentIds, statuses: config.statuses })
-            : Promise.resolve([]),
-          serviceActor.role
-            ? listEApprovals({ organizationId, role: serviceActor.role, statuses: config.statuses })
-            : Promise.resolve([]),
-        ]);
+      if (pendingSources) {
+        const results = await Promise.all(pendingSources.map((filter) => listEApprovals(filter)));
         const byId = new Map<string, EApprovalRequest>();
-        [...mine, ...byDepartment, ...byRole].forEach((row) => byId.set(row.id, row));
+        results.flat().forEach((row) => byId.set(row.id, row));
         setRows(Array.from(byId.values()));
-      } else if (scope === 'department') {
-        setRows(
-          engineActor?.departmentIds?.length
-            ? await listEApprovals({
-                organizationId,
-                departmentIds: engineActor.departmentIds,
-                statuses: config.statuses,
-              })
-            : [],
-        );
       } else if (scope === 'all') {
         setRows(await listEApprovals({ organizationId, limit: 400 }));
       } else if (scope === 'completed' || scope === 'rejected') {
@@ -185,11 +208,85 @@ export function RegisterView({ scope }: { scope: RegisterScope }) {
     } finally {
       setIsLoading(false);
     }
-  }, [scope, serviceActor, engineActor, config.statuses, permissions.canViewAll, toast]);
+  }, [scope, serviceActor, engineActor, config.statuses, permissions.canViewAll, pendingSources, toast]);
+
+  /**
+   * The queues people wait on are live; the registers they browse are not.
+   *
+   * My Inbox and the Department Inbox are where somebody sits waiting for a file to arrive, so they
+   * hold standing listeners and a file that reaches them appears on its own — which is the whole of
+   * the complaint that an answered clarification "took ten minutes to show". The historical
+   * registers, All / Completed / Rejected / Created by me / Drafts, are read rather than watched:
+   * four hundred rows apiece, changing rarely, and nobody is staring at them waiting for movement.
+   * Those refresh when the user comes back to them instead.
+   */
+  useEffect(() => {
+    if (!pendingSources) return;
+    if (!pendingSources.length) {
+      setRows([]);
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    const latest = new Map<number, EApprovalRequest[]>();
+    const emit = () => {
+      // Nothing is painted until every source has reported once, so the list does not visibly grow
+      // from one query's results to all of them on first load.
+      if (latest.size < pendingSources.length) return;
+      const byId = new Map<string, EApprovalRequest>();
+      for (const group of latest.values()) group.forEach((row) => byId.set(row.id, row));
+      setRows(Array.from(byId.values()));
+      setIsLoading(false);
+    };
+    const unsubscribes = pendingSources.map((filter, index) =>
+      subscribeEApprovals(
+        filter,
+        (next) => {
+          latest.set(index, next);
+          emit();
+        },
+        (error) => {
+          // Report the failed source as empty rather than leaving it silent. `emit` waits for every
+          // source before it paints, so a source that never reports holds the whole list back for
+          // good — one query failing, for instance because its composite index has not been
+          // deployed yet, would leave the screen saying "Your inbox is clear" while the other
+          // queries returned rows all along. Missing some rows is recoverable and visible; a
+          // confidently empty inbox is neither.
+          latest.set(index, []);
+          emit();
+          setIsLoading(false);
+          toast({
+            variant: 'destructive',
+            title: 'Some approvals could not be loaded',
+            description: error instanceof Error ? error.message : 'Something went wrong.',
+          });
+        },
+      ),
+    );
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+    // Keyed on the serialised filters rather than the array, which is a new object every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSourcesKey, toast]);
 
   useEffect(() => {
+    if (pendingSources) return;
     void load();
-  }, [load]);
+  }, [load, pendingSources]);
+
+  /*
+   * Covers the one-shot registers only.
+   *
+   * A live list must not be refetched this way: `load` blanks the table to skeletons on its way
+   * past, so every return to the tab would flash a populated inbox back to a loading state, and a
+   * one-shot result landing after a newer listener push would roll the list backwards. The
+   * listeners are the freshness mechanism there; this is the freshness mechanism for the screens
+   * that have none.
+   */
+  const refreshIfOneShot = useCallback(() => {
+    if (pendingSources) return;
+    void load();
+  }, [load, pendingSources]);
+  useEApprovalRefreshOnReturn(refreshIfOneShot);
 
   const visible = useMemo(() => {
     if (scope === 'inbox') {

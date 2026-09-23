@@ -169,6 +169,9 @@ export interface EApprovalRequest extends EApprovalAuditFields {
   currentAssigneeIds?: string[];
   currentDepartmentIds?: string[];
   currentRoles?: string[];
+  /** Job titles the file is sitting with — the `Designation` counterpart of `currentRoles`. */
+  currentDesignations?: string[];
+  currentProjectIds?: string[];
   /** Type of the step currently pending, so the three inbox cards are one query. */
   currentStepType?: EApprovalStepType | null;
   currentStepName?: string;
@@ -180,6 +183,17 @@ export interface EApprovalRequest extends EApprovalAuditFields {
   /* Change control (spec section 6) */
   materialFingerprint?: string;
   supersededCount?: number;
+
+  /**
+   * Bumped by every workflow transition, and checked against the value the acting client read
+   * before it decided what to do.
+   *
+   * Deliberately separate from `version`: that one counts *content* revisions and drives the
+   * material-change rules, so overloading it would make a concurrent approval look like an edited
+   * proposal. This one exists only to catch two people acting on the same file at the same moment —
+   * see `commitEApprovalTransition`.
+   */
+  stateRevision?: number;
 
   /* Reasons, kept on the request so a register row can explain itself without a history read */
   returnResumeStepId?: string | null;
@@ -537,6 +551,9 @@ export interface EApprovalRow {
   currentAssigneeIds?: string[];
   currentDepartmentIds?: string[];
   currentRoles?: string[];
+  /** Job titles the file is sitting with — the `Designation` counterpart of `currentRoles`. */
+  currentDesignations?: string[];
+  currentProjectIds?: string[];
   submittedAt?: string | null;
   completedAt?: string | null;
   confidential?: boolean;

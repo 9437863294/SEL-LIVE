@@ -704,6 +704,48 @@ from Settings → Policies → **Run now**.
 7. **Module Hub** — add a module titled `E-Approval` with icon `Stamp`; the card links to
    `/e-approval` automatically.
 8. **Roles** — grant `E-Approval` permissions, including the `Settings → Project Routing` node.
+
+---
+
+## Addressing a stage to a designation
+
+A stage can be assigned to a **person**, a **department**, a **project post**, the **requester** — or
+a **designation**: the job title greytHR maintains, matched against `EApprovalActor.designation`.
+
+```text
+{ kind: 'Designation', designation: 'JR. ACCOUNTANT' }
+```
+
+Whoever currently holds that title can act on it. Nobody has to re-point the workflow when a person
+is promoted or replaced, which is the reason to prefer it over naming an individual.
+
+### Why not `kind: 'Role'`
+
+The engine has always had a `Role` kind matching `users.role`, and the picker's fourth tab has
+always been *labelled* "Designation" while listing that field. `users.role` is the permission
+bundle an administrator attached to a login: in this tenant its values include "Default" (31 of 54
+logins), module names like "Recurring Payments", and several people's own names. Addressing an
+approval to one of those reaches an arbitrary set of accounts.
+
+`Role` is still in the engine and still matches — a workflow saved before this existed must not
+quietly stop routing — but nothing offers it any more. No stored assignment used it: every one of
+the 122 live steps at the time of the change was `kind: 'User'`.
+
+### What it touches
+
+| Concern | Where |
+| --- | --- |
+| Who may act | `isEApprovalStepAssignee` → `actor.designation` |
+| Who may see it | `canViewEApproval` |
+| Being findable | `request.currentDesignations`, written by `refreshEApprovalPointers` |
+| The inbox query | `EApprovalListFilter.designation` → `currentDesignations array-contains` |
+| The dashboard | the `e-approval-designation` work source |
+| Notifications | `resolveDesignationRecipients` in `notifications.ts` |
+
+Matching is **exact after trimming**, deliberately not case-insensitive. `currentDesignations` is
+queried with `array-contains`, which cannot fold case; a looser matcher than the query would tell
+somebody they may act on a file their own inbox never returns. `normaliseDesignation` is the single
+definition both sides call. Both indexes are in `firestore.indexes.json`, mirroring `currentRoles`.
    Remember there is no "Approve" permission by design.
 9. Deploy the new Firestore indexes (`firebase deploy --only firestore:indexes`).
 

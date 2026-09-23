@@ -44,6 +44,37 @@ export async function GET(request: Request) {
     const context = await authenticateAccess(request);
     requireAccess(context, 'Settings.Employee Management', 'View');
 
+    /**
+     * ── Stored by default; live only when asked ─────────────────────────────────────────────────
+     *
+     * This route used to fetch greytHR on every single GET. That made opening the page a live API
+     * round trip — and, with the page's five-minute timer, a recurring one for every tab left open.
+     *
+     * The greytHR sync now replaces this snapshot on each run (see `greythr-sync-service.ts`), so
+     * the stored roster is as current as the last sync and there is no reason to re-ask greytHR just
+     * because somebody opened a page. A visit serves the store; `?refresh=1` — the screen's Refresh
+     * button — still goes to greytHR and replaces the snapshot with what it finds.
+     */
+    const wantsLive = new URL(request.url).searchParams.get('refresh') === '1';
+
+    if (!wantsLive) {
+      const { employees, meta } = await readCurrentRosterSnapshot();
+      if (employees.length) {
+        return NextResponse.json({
+          ok: true,
+          employees,
+          totalCurrent: employees.length,
+          fetchedAt: meta.fetchedAt ?? new Date().toISOString(),
+          // Not live, and the screen says so rather than implying otherwise.
+          source: 'snapshot',
+          stale: false,
+          snapshot: { fetchedAt: meta.fetchedAt, count: meta.count, replaced: false, refusedReason: null },
+        });
+      }
+      // Nothing stored yet — a tenant whose sync has not run since this changed. Fall through and
+      // fetch, so a first visit is never an empty screen.
+    }
+
     if (!isGreytHRConfigured()) {
       return NextResponse.json(
         { ok: false, error: 'greytHR credentials are not configured on the server.' },
