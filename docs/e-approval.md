@@ -65,6 +65,19 @@ cron run. `completeAndAdvance` pops it by re-activating `originStepId` once no o
 Forwarding and delegation are deliberately *not* child steps — they change who owns the current step,
 so they reassign it in place rather than pushing a level.
 
+**A clarification nests too, and for a while it did not.** `availableEApprovalActions` offered a
+`CLARIFICATION` step only Provide / Return / Delegate, so somebody asked to clarify could not ask
+anyone else. That broke the ordinary case rather than an exotic one: a Director asks the Project GM
+to confirm a figure, the GM does not hold that figure — the site coordinator does — and the GM's only
+moves were to answer from memory, return the file, or hand the whole question away with Delegate.
+Nothing else had to change to fix it: the reducer never restricted these actions by parent type, and
+the pop mechanism keys on `depth`/`originStepId` rather than on what kind of step asked. Only the
+action list disagreed with the paragraph above.
+
+Related, and found with it: `Request Clarification` creates a child, so it obeys `maxVerificationDepth`
+like verification does. It was offered without that check, so at the cap the button appeared and the
+reducer refused it.
+
 ## Step model
 
 Steps are documents in `eApprovalSteps`, not an array on the request: "everything pending with me" has
@@ -119,7 +132,7 @@ testable as a table and lets the same function run on the client, in a service c
 | Approve & Complete | Approves and skips every remaining step. Only where the stage enables `canFinalise`. Same amount option as Approve. |
 | Send for Verification | Creates child step(s); the parent goes to `Awaiting Verification` with its clock paused. |
 | Verify | Verified / Verified With Observation / Not Verified. Pops to the parent. |
-| Request Clarification / Provide Clarification | Same mechanism, `CLARIFICATION` type. |
+| Request Clarification / Provide Clarification | Same mechanism, `CLARIFICATION` type. The person asked can ask onward — see below. |
 | Return | To the requester, or to any earlier completed step. Reason required. |
 | Forward | Reassigns the current step. Ownership transfers; fresh clock. |
 | Delegate | Adds an authorised actor; the assignee keeps the step. Recorded as "on behalf of". |

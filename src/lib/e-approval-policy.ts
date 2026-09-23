@@ -2603,7 +2603,17 @@ export function availableEApprovalActions(
   if (isTerminalEApprovalStatus(request.status)) return [];
 
   const actions: EApprovalActionKind[] = [];
-  const canNest = settings.allowNestedVerification && step.depth < settings.maxVerificationDepth;
+  /**
+   * Room for another level, regardless of what kind of child it would be.
+   *
+   * Separate from `canNest` because the depth cap and the nesting switch answer different
+   * questions. `allowNestedVerification` is about *verification*; the cap is about not building a
+   * stack nobody can read. Asking for a clarification creates a child too, so the reducer refuses it
+   * past the cap — and offering an action the reducer will refuse is how a visible button turns into
+   * an error message.
+   */
+  const withinDepth = step.depth < settings.maxVerificationDepth;
+  const canNest = settings.allowNestedVerification && withinDepth;
 
   if (step.type === 'APPROVAL') {
     actions.push('Approve');
@@ -2611,7 +2621,7 @@ export function availableEApprovalActions(
       actions.push('Approve And Complete');
     }
     if (eApprovalCapability(step, 'canVerify') && canNest) actions.push('Send For Verification');
-    if (eApprovalCapability(step, 'canRequestClarification')) actions.push('Request Clarification');
+    if (eApprovalCapability(step, 'canRequestClarification') && withinDepth) actions.push('Request Clarification');
     if (eApprovalCapability(step, 'canReturn')) actions.push('Return');
     if (eApprovalCapability(step, 'canForward')) actions.push('Forward');
     if (eApprovalCapability(step, 'canDelegate')) actions.push('Delegate');
@@ -2622,12 +2632,31 @@ export function availableEApprovalActions(
   } else if (step.type === 'VERIFICATION' || step.type === 'REVIEW') {
     actions.push('Verify');
     if (eApprovalCapability(step, 'canVerify') && canNest) actions.push('Send For Verification');
-    if (eApprovalCapability(step, 'canRequestClarification')) actions.push('Request Clarification');
+    if (eApprovalCapability(step, 'canRequestClarification') && withinDepth) actions.push('Request Clarification');
     if (eApprovalCapability(step, 'canReturn')) actions.push('Return');
     if (eApprovalCapability(step, 'canDelegate')) actions.push('Delegate');
     if (eApprovalCapability(step, 'canHold')) actions.push('Hold');
   } else if (step.type === 'CLARIFICATION') {
     actions.push('Provide Clarification');
+    /*
+     * Somebody asked to clarify can ask onward, exactly as a verifier can.
+     *
+     * This was missing, and the omission broke the ordinary case rather than an exotic one: a
+     * Director asks the Project GM to confirm a figure, the GM does not hold that figure — the site
+     * coordinator does — and the GM's only moves were to answer from memory, return the file, or
+     * hand the whole question to somebody else with Delegate. Answering an approval question with a
+     * guess is the outcome this module exists to prevent.
+     *
+     * Nothing else needed changing for it: the reducer never restricted these two by parent type,
+     * and the pop mechanism keys on `depth` and `originStepId`, not on what kind of step asked — so
+     * a clarification raised from a clarification returns up the chain like any other child. The
+     * header at the top of this file already describes clarification as a child step that returns
+     * "however deep the nesting went"; only this list disagreed.
+     */
+    if (eApprovalCapability(step, 'canVerify') && canNest) actions.push('Send For Verification');
+    if (eApprovalCapability(step, 'canRequestClarification') && withinDepth) {
+      actions.push('Request Clarification');
+    }
     if (eApprovalCapability(step, 'canReturn')) actions.push('Return');
     if (eApprovalCapability(step, 'canDelegate')) actions.push('Delegate');
   }

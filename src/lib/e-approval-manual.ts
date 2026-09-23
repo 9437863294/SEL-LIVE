@@ -352,6 +352,10 @@ export const E_APPROVAL_MANUAL: ManualPart[] = [
               ],
               ['Request Clarification', 'Ask a question. The answer returns to you the same way.'],
               [
+                'Asked to clarify yourself?',
+                'You can ask onward. Somebody asked to clarify keeps Send for Verification and Request Clarification, so a question you cannot answer goes to whoever can — and the answer comes back up the same chain, to you and then to whoever asked you. You are never forced to answer from memory or hand the whole question away.',
+              ],
+              [
                 'Return',
                 'Send it back — to the requester, or to any earlier approver. A reason is required. Steps between them and you run again in their original order.',
               ],

@@ -644,6 +644,108 @@ test('a clarification request returns to the asker automatically', () => {
   assert.equal(state.request.status, 'Pending Approval');
 });
 
+test('somebody asked to clarify can ask onward, rather than having to answer from memory', () => {
+  let state = submitted([{ id: 't1', name: 'Director', assignments: [user('u-dir', 'Director')] }]);
+  state = act(state, {
+    kind: 'Request Clarification',
+    actor: { userId: 'u-dir' },
+    targets: [user('u-gm', 'Project GM')],
+    instruction: 'Confirm the pit count.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+
+  const clarification = onlyActive(state);
+  assert.equal(clarification.type, 'CLARIFICATION');
+  const offered = availableEApprovalActions(state.request, clarification, { hasRemainingSteps: false });
+  assert.ok(
+    offered.includes('Request Clarification'),
+    'the GM does not hold the figure — the coordinator does',
+  );
+  assert.ok(offered.includes('Send For Verification'));
+});
+
+test('a clarification raised from a clarification pops back through every level', () => {
+  let state = submitted([{ id: 't1', name: 'Director', assignments: [user('u-dir', 'Director')] }]);
+  state = act(state, {
+    kind: 'Request Clarification',
+    actor: { userId: 'u-dir' },
+    targets: [user('u-gm', 'Project GM')],
+    instruction: 'Confirm the pit count.',
+    now: '2026-08-22T11:00:00.000Z',
+  });
+  state = act(state, {
+    kind: 'Request Clarification',
+    actor: { userId: 'u-gm' },
+    stepId: onlyActive(state).id,
+    targets: [user('u-coord', 'Coordinator')],
+    instruction: 'How many pits in August?',
+    now: '2026-08-22T12:00:00.000Z',
+  });
+
+  const deepest = onlyActive(state);
+  assert.equal(deepest.assignment.userId, 'u-coord');
+  assert.equal(deepest.depth, 2, 'a child of a child, not a sibling of the first request');
+
+  state = act(state, {
+    kind: 'Provide Clarification',
+    actor: { userId: 'u-coord' },
+    comment: '215 pits.',
+    now: '2026-08-22T13:00:00.000Z',
+  });
+  assert.equal(onlyActive(state).assignment.userId, 'u-gm', 'the coordinator answers the GM, not the Director');
+
+  state = act(state, {
+    kind: 'Provide Clarification',
+    actor: { userId: 'u-gm' },
+    comment: 'Confirmed 215.',
+    now: '2026-08-22T14:00:00.000Z',
+  });
+  assert.equal(onlyActive(state).assignment.userId, 'u-dir', 'and the GM answers the Director');
+  assert.equal(state.request.status, 'Pending Approval');
+});
+
+test('the depth cap is never offered past — an offered action must not be one the reducer refuses', () => {
+  const clarificationAt = (depth) => ({
+    id: `c-${depth}`,
+    type: 'CLARIFICATION',
+    name: 'Clarification',
+    sequence: 1,
+    depth,
+    parentStepId: 'p',
+    originStepId: 'p',
+    assignment: user('u-x', 'Somebody'),
+    status: 'Active',
+  });
+  const request = { status: 'Pending Clarification', priority: 'Normal' };
+  const settings = { maxVerificationDepth: 2 };
+
+  const inside = availableEApprovalActions(request, clarificationAt(1), { settings });
+  assert.ok(inside.includes('Request Clarification'));
+
+  const atCap = availableEApprovalActions(request, clarificationAt(2), { settings });
+  assert.ok(!atCap.includes('Request Clarification'), 'the reducer would throw, so it must not be offered');
+  assert.ok(!atCap.includes('Send For Verification'));
+  assert.ok(atCap.includes('Provide Clarification'), 'answering is always available');
+});
+
+test('a stage with clarification switched off does not gain it by being asked to clarify', () => {
+  const step = {
+    id: 'c1',
+    type: 'CLARIFICATION',
+    name: 'Clarification',
+    sequence: 1,
+    depth: 1,
+    parentStepId: 'p',
+    originStepId: 'p',
+    assignment: user('u-x', 'Somebody'),
+    status: 'Active',
+    capabilities: { canRequestClarification: false, canVerify: false },
+  };
+  const offered = availableEApprovalActions({ status: 'Pending Clarification', priority: 'Normal' }, step);
+  assert.ok(!offered.includes('Request Clarification'));
+  assert.ok(!offered.includes('Send For Verification'));
+});
+
 /* ── return to any step (spec section 5) ────────────────────────────────────────────────────── */
 
 test('returning to an earlier step re-opens everything between it and the returner', () => {
